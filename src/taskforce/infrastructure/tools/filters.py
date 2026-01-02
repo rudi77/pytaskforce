@@ -1,6 +1,8 @@
 import json
 from typing import Any, Dict
 
+from taskforce.core.domain.errors import ToolError
+
 def simplify_wiki_list_output(result: Dict[str, Any]) -> Dict[str, Any]:
     """
     Reduces the massive Azure DevOps Wiki JSON to just Name and ID.
@@ -42,9 +44,12 @@ def simplify_wiki_list_output(result: Dict[str, Any]) -> Dict[str, Any]:
             # Always return string as output is expected to be string
             result["output"] = json.dumps(lean_data, indent=2)
             
-    except Exception:
-        # If anything goes wrong during filtering, return original result
-        pass 
+    except Exception as e:
+        tool_error = ToolError(
+            f"output_filter failed: {e}",
+            tool_name="output_filter",
+            details={"filter": "simplify_wiki_list_output"},
+        )
+        result.setdefault("filter_errors", []).append(str(tool_error))
 
     return result
-

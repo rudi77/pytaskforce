@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -134,7 +135,12 @@ class ShellTool(ToolProtocol):
                 }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"command": command, "cwd": cwd, "timeout": timeout},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -282,7 +288,12 @@ class PowerShellTool(ToolProtocol):
                 cwd=cwd_path,
             )
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"command": command, "cwd": cwd_path, "timeout": timeout},
+            )
+            return tool_error_payload(tool_error)
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -317,12 +328,14 @@ class PowerShellTool(ToolProtocol):
                 process.kill()
             except Exception:
                 pass
-            return {
-                "success": False,
-                "error": str(e),
-                "command": command,
-                "cwd": cwd_path,
-            }
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"command": command, "cwd": cwd_path},
+            )
+            return tool_error_payload(
+                tool_error, extra={"command": command, "cwd": cwd_path}
+            )
 
         success = process.returncode == 0
         stdout_text = stdout.decode() if stdout else ""
@@ -348,4 +361,3 @@ class PowerShellTool(ToolProtocol):
         if not isinstance(kwargs["command"], str):
             return False, "Parameter 'command' must be a string"
         return True, None
-

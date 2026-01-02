@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 import structlog
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -162,17 +163,21 @@ class LLMTool(ToolProtocol):
             # Catch any unexpected errors
             error_type = type(e).__name__
             error_msg = str(e)
+            hints = self._get_error_hints(error_type, error_msg)
 
             self.logger.error(
                 "llm_generate_exception", error_type=error_type, error=error_msg[:200]
             )
 
-            return {
-                "success": False,
-                "error": error_msg,
-                "type": error_type,
-                "hints": self._get_error_hints(error_type, error_msg),
-            }
+            tool_error = ToolError(
+                f"{self.name} failed: {error_msg}",
+                tool_name=self.name,
+                details={"error_type": error_type, "hints": hints},
+            )
+            return tool_error_payload(
+                tool_error,
+                extra={"type": error_type, "hints": hints},
+            )
 
     def _get_error_hints(self, error_type: str, error_msg: str) -> list:
         """
@@ -209,4 +214,3 @@ class LLMTool(ToolProtocol):
         if not isinstance(kwargs["prompt"], str):
             return False, "Parameter 'prompt' must be a string"
         return True, None
-
