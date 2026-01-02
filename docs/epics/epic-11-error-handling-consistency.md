@@ -1,6 +1,6 @@
 # Epic 11: Error-Handling Consistency & Standardized API Errors - Brownfield Enhancement
 
-**Status:** Draft  
+**Status:** Completed  
 **Priorität:** Hoch  
 **Owner:** Development Team  
 **Scope:** Small brownfield epic (max 3 stories)

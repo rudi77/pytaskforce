@@ -1,6 +1,6 @@
 # Epic 10: Pluggable Planning Strategies (LeanAgent) - Brownfield Enhancement
 
-**Status:** Draft  
+**Status:** Completed
 **Priorität:** Hoch  
 **Owner:** Development Team  
 **Scope:** Small brownfield epic (max 3 stories) focused on planning strategy interchangeability

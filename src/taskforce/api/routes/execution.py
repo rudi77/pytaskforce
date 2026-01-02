@@ -19,7 +19,7 @@ import json
 from dataclasses import asdict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -37,6 +37,128 @@ from taskforce.core.domain.errors import (
 
 router = APIRouter()
 executor = AgentExecutor()
+
+REQUEST_EXAMPLES = {
+    "legacy_react": {
+        "summary": "Legacy Agent (ReAct loop)",
+        "value": {
+            "mission": "Summarize the top 5 AI news stories this week.",
+            "profile": "dev",
+            "lean": False,
+        },
+    },
+    "lean_plan_and_execute": {
+        "summary": "LeanAgent with plan-and-execute strategy",
+        "value": {
+            "mission": "Create a 3-step onboarding checklist for new engineers.",
+            "profile": "dev",
+            "lean": True,
+            "planning_strategy": "plan_and_execute",
+            "planning_strategy_params": {"max_plan_steps": 3},
+        },
+    },
+    "custom_agent": {
+        "summary": "Custom agent by ID",
+        "value": {
+            "mission": "Audit dependencies and flag outdated packages.",
+            "profile": "dev",
+            "agent_id": "web-agent",
+            "lean": True,
+        },
+    },
+}
+
+ERROR_RESPONSE_HEADERS = {
+    "X-Taskforce-Error": {
+        "description": "Indicates standardized Taskforce error payload.",
+        "schema": {"type": "string"},
+    }
+}
+
+EXECUTE_RESPONSE_EXAMPLES = {
+    "completed": {
+        "summary": "Mission completed",
+        "value": {
+            "session_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "completed",
+            "message": "Collected 5 articles and summarized key trends.",
+        },
+    },
+    "paused": {
+        "summary": "Paused awaiting user input",
+        "value": {
+            "session_id": "7f3a44f1-52ab-4d3f-9a20-0b83f5a6d2ee",
+            "status": "paused",
+            "message": "Waiting for user confirmation on tool approval.",
+        },
+    },
+}
+
+ERROR_RESPONSE_EXAMPLES = {
+    "invalid_request": {
+        "summary": "Invalid request payload",
+        "value": {
+            "code": "invalid_request",
+            "message": "Invalid agent definition: missing tools",
+            "details": {"field": "tools"},
+            "detail": "Invalid agent definition: missing tools",
+        },
+    },
+    "not_found": {
+        "summary": "Agent not found",
+        "value": {
+            "code": "not_found",
+            "message": "Agent not found: custom/unknown-agent.yaml",
+            "detail": "Agent not found: custom/unknown-agent.yaml",
+        },
+    },
+    "llm_error": {
+        "summary": "Upstream LLM error",
+        "value": {
+            "code": "llm_error",
+            "message": "Rate limit exceeded",
+            "details": {"provider": "openai"},
+            "detail": "Rate limit exceeded",
+        },
+    },
+    "tool_error": {
+        "summary": "Tool execution failure",
+        "value": {
+            "code": "tool_error",
+            "message": "web_search failed",
+            "details": {"tool": "web_search", "upstream": True},
+            "detail": "web_search failed",
+        },
+    },
+}
+
+STREAM_RESPONSE_EXAMPLES = {
+    "started": {
+        "summary": "Started event",
+        "value": (
+            "data: {\"timestamp\":\"2025-01-02T12:00:00.123456\","
+            "\"event_type\":\"started\",\"message\":\"Starting mission\","
+            "\"details\":{\"session_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+            "\"profile\":\"dev\",\"lean\":true}}\n\n"
+        ),
+    },
+    "final_answer": {
+        "summary": "Final answer event",
+        "value": (
+            "data: {\"timestamp\":\"2025-01-02T12:00:08.123456\","
+            "\"event_type\":\"final_answer\",\"message\":\"Summary ready.\","
+            "\"details\":{\"content\":\"Here are the key points...\"}}\n\n"
+        ),
+    },
+    "error": {
+        "summary": "Error event",
+        "value": (
+            "data: {\"timestamp\":\"2025-01-02T12:00:05.123456\","
+            "\"event_type\":\"error\",\"message\":\"Execution failed\","
+            "\"details\":{\"error\":\"Rate limit exceeded\",\"status_code\":502}}\n\n"
+        ),
+    },
+}
 
 
 def _build_error_payload(
@@ -209,8 +331,98 @@ class ExecuteMissionResponse(BaseModel):
     )
 
 
-@router.post("/execute", response_model=ExecuteMissionResponse)
-async def execute_mission(request: ExecuteMissionRequest):
+@router.post(
+    "/execute",
+    response_model=ExecuteMissionResponse,
+    responses={
+        200: {
+            "description": "Mission result.",
+            "content": {
+                "application/json": {"examples": EXECUTE_RESPONSE_EXAMPLES}
+            },
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid request or config.",
+            "headers": ERROR_RESPONSE_HEADERS,
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_request": ERROR_RESPONSE_EXAMPLES[
+                            "invalid_request"
+                        ],
+                    }
+                }
+            },
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "Agent or profile not found.",
+            "headers": ERROR_RESPONSE_HEADERS,
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_found": ERROR_RESPONSE_EXAMPLES["not_found"],
+                    }
+                }
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "Execution cancelled.",
+            "headers": ERROR_RESPONSE_HEADERS,
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "cancelled": {
+                            "summary": "Cancelled",
+                            "value": {
+                                "code": "cancelled",
+                                "message": "Execution cancelled",
+                                "detail": "Execution cancelled",
+                            },
+                        }
+                    }
+                }
+            },
+        },
+        502: {
+            "model": ErrorResponse,
+            "description": "Upstream dependency failed.",
+            "headers": ERROR_RESPONSE_HEADERS,
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "llm_error": ERROR_RESPONSE_EXAMPLES["llm_error"],
+                        "tool_error": ERROR_RESPONSE_EXAMPLES["tool_error"],
+                    }
+                }
+            },
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Unexpected server error.",
+            "headers": ERROR_RESPONSE_HEADERS,
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "internal_error": {
+                            "summary": "Internal error",
+                            "value": {
+                                "code": "internal_server_error",
+                                "message": "Unexpected error",
+                                "detail": "Unexpected error",
+                            },
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
+async def execute_mission(
+    request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
+):
     """Execute agent mission synchronously.
 
     Executes the given mission and returns the final result when complete.
@@ -293,8 +505,18 @@ async def execute_mission(request: ExecuteMissionRequest):
         )
 
 
-@router.post("/execute/stream")
-async def execute_mission_stream(request: ExecuteMissionRequest):
+@router.post(
+    "/execute/stream",
+    responses={
+        200: {
+            "description": "Server-Sent Events stream of progress updates.",
+            "content": {"text/event-stream": {"examples": STREAM_RESPONSE_EXAMPLES}},
+        },
+    },
+)
+async def execute_mission_stream(
+    request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
+):
     """Execute mission with streaming progress via Server-Sent Events.
 
     Streams execution progress as SSE events for real-time UI updates.
@@ -496,7 +718,7 @@ async def execute_mission_stream(request: ExecuteMissionRequest):
 
     EventSource doesn't support POST, use fetch with ReadableStream::
 
-        const response = await fetch('/api/agent/execute/stream', {
+        const response = await fetch('/api/v1/execute/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mission: 'Find AI news', lean: true })
@@ -545,7 +767,7 @@ async def execute_mission_stream(request: ExecuteMissionRequest):
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 'POST',
-                'http://localhost:8000/api/agent/execute/stream',
+                'http://localhost:8000/api/v1/execute/stream',
                 json={'mission': 'Find AI news', 'lean': True}
             ) as response:
                 async for line in response.aiter_lines():
