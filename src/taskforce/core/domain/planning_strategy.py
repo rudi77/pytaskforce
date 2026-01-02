@@ -48,20 +48,444 @@ class PlanningStrategy(Protocol):
 
 
 class NativeReActStrategy:
-    """Strategy that preserves the existing LeanAgent native tool calling loop."""
+    """Strategy that owns the native tool calling ReAct loop."""
 
     name = "native_react"
 
     async def execute(
         self, agent: "LeanAgent", mission: str, session_id: str
     ) -> ExecutionResult:
-        return await agent._execute_native_react(mission, session_id)
+        agent.logger.info("execute_start", session_id=session_id, mission=mission[:100])
+
+        state = await agent.state_manager.load_state(session_id) or {}
+        execution_history: list[dict[str, Any]] = []
+
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
+
+        messages = agent._build_initial_messages(mission, state)
+
+        step = 0  # Counts meaningful progress steps (tool calls or final answer)
+        loop_iterations = 0  # Counts all loop iterations (for debugging)
+        final_message = ""
+
+        while step < agent.max_steps:
+            loop_iterations += 1
+            agent.logger.debug(
+                "loop_iteration",
+                session_id=session_id,
+                iteration=loop_iterations,
+                progress_steps=step,
+                max_steps=agent.max_steps,
+            )
+
+            current_system_prompt = agent._build_system_prompt(
+                mission=mission, state=state, messages=messages
+            )
+            messages[0] = {"role": "system", "content": current_system_prompt}
+
+            # Compress messages if exceeding threshold (async LLM-based)
+            # messages = await agent._compress_messages(messages)
+
+            # Preflight budget check (Story 9.3)
+            # messages = await agent._preflight_budget_check(messages)
+
+            result = await agent.llm_provider.complete(
+                messages=messages,
+                model=agent.model_alias,
+                tools=agent._openai_tools,
+                tool_choice="auto",
+                temperature=0.2,
+            )
+
+            if not result.get("success"):
+                agent.logger.error(
+                    "llm_call_failed",
+                    error=result.get("error"),
+                    iteration=loop_iterations,
+                    step=step,
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"[System Error: {result.get('error')}. Please try again.]",
+                    }
+                )
+                continue
+
+            tool_calls = result.get("tool_calls")
+
+            if tool_calls:
+                step += 1
+                agent.logger.info(
+                    "tool_calls_received",
+                    step=step,
+                    iteration=loop_iterations,
+                    count=len(tool_calls),
+                    tools=[tc["function"]["name"] for tc in tool_calls],
+                )
+
+                messages.append(assistant_tool_calls_to_message(tool_calls))
+
+                for tool_call in tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    tool_call_id = tool_call["id"]
+
+                    try:
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                        agent.logger.warning(
+                            "tool_args_parse_failed",
+                            tool=tool_name,
+                            raw_args=tool_call["function"]["arguments"],
+                        )
+
+                    tool_result = await agent._execute_tool(tool_name, tool_args)
+
+                    execution_history.append(
+                        {
+                            "type": "tool_call",
+                            "step": step,
+                            "tool": tool_name,
+                            "args": tool_args,
+                            "result": tool_result,
+                        }
+                    )
+
+                    tool_message = await agent._create_tool_message(
+                        tool_call_id, tool_name, tool_result, session_id, step
+                    )
+                    messages.append(tool_message)
+
+                    if not tool_result.get("success"):
+                        agent.logger.warning(
+                            "tool_failed",
+                            step=step,
+                            tool=tool_name,
+                            error=tool_result.get("error"),
+                        )
+
+            else:
+                content = result.get("content", "")
+
+                if content:
+                    step += 1
+                    agent.logger.info(
+                        "final_answer_received",
+                        step=step,
+                        iteration=loop_iterations,
+                        total_iterations=loop_iterations,
+                    )
+                    final_message = content
+
+                    execution_history.append(
+                        {
+                            "type": "final_answer",
+                            "step": step,
+                            "content": content,
+                        }
+                    )
+                    break
+                else:
+                    agent.logger.warning(
+                        "empty_response",
+                        step=step,
+                        iteration=loop_iterations,
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[System: Your response was empty. Please provide an answer "
+                                "or use a tool.]"
+                            ),
+                        }
+                    )
+
+        if step >= agent.max_steps and not final_message:
+            status = "failed"
+            final_message = f"Exceeded maximum steps ({agent.max_steps})"
+        else:
+            status = "completed"
+
+        await agent._save_state(session_id, state)
+
+        agent.logger.info(
+            "execute_complete",
+            session_id=session_id,
+            status=status,
+            progress_steps=step,
+            total_iterations=loop_iterations,
+            overhead_iterations=loop_iterations - step,
+        )
+
+        return ExecutionResult(
+            session_id=session_id,
+            status=status,
+            final_message=final_message,
+            execution_history=execution_history,
+        )
 
     async def execute_stream(
         self, agent: "LeanAgent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
-        async for event in agent._execute_stream_native_react(mission, session_id):
-            yield event
+        agent.logger.info("execute_stream_start", session_id=session_id)
+
+        if not hasattr(agent.llm_provider, "complete_stream"):
+            agent.logger.warning("llm_provider_no_streaming", fallback="execute")
+            result = await agent.execute(mission, session_id)
+
+            for event in result.execution_history:
+                event_type = event.get("type", "unknown")
+                if event_type == "tool_call":
+                    yield StreamEvent(
+                        event_type="tool_call",
+                        data={
+                            "tool": event.get("tool", ""),
+                            "status": "completed",
+                        },
+                    )
+                    yield StreamEvent(
+                        event_type="tool_result",
+                        data={
+                            "tool": event.get("tool", ""),
+                            "success": event.get("result", {}).get("success", False),
+                            "output": agent._truncate_output(
+                                event.get("result", {}).get("output", "")
+                            ),
+                        },
+                    )
+                elif event_type == "final_answer":
+                    yield StreamEvent(
+                        event_type="final_answer",
+                        data={"content": event.get("content", "")},
+                    )
+
+            if not any(e.get("type") == "final_answer" for e in result.execution_history):
+                yield StreamEvent(
+                    event_type="final_answer",
+                    data={"content": result.final_message},
+                )
+            return
+
+        state = await agent.state_manager.load_state(session_id) or {}
+
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
+
+        messages = agent._build_initial_messages(mission, state)
+
+        step = 0  # Counts meaningful progress steps (tool calls or final answer)
+        loop_iterations = 0  # Counts all loop iterations (for debugging)
+        final_message = ""
+
+        while step < agent.max_steps:
+            loop_iterations += 1
+            agent.logger.debug(
+                "stream_loop_iteration",
+                session_id=session_id,
+                iteration=loop_iterations,
+                progress_steps=step,
+                max_steps=agent.max_steps,
+            )
+
+            yield StreamEvent(
+                event_type="step_start",
+                data={"step": step, "max_steps": agent.max_steps, "iteration": loop_iterations},
+            )
+
+            current_system_prompt = agent._build_system_prompt(
+                mission=mission, state=state, messages=messages
+            )
+            messages[0] = {"role": "system", "content": current_system_prompt}
+
+            messages = await agent._compress_messages(messages)
+            messages = await agent._preflight_budget_check(messages)
+
+            tool_calls_accumulated: dict[int, dict[str, Any]] = {}
+            content_accumulated = ""
+
+            try:
+                async for chunk in agent.llm_provider.complete_stream(
+                    messages=messages,
+                    model=agent.model_alias,
+                    tools=agent._openai_tools,
+                    tool_choice="auto",
+                    temperature=0.2,
+                ):
+                    chunk_type = chunk.get("type")
+
+                    if chunk_type == "token":
+                        token_content = chunk.get("content", "")
+                        if token_content:
+                            yield StreamEvent(
+                                event_type="llm_token",
+                                data={"content": token_content},
+                            )
+                            content_accumulated += token_content
+
+                    elif chunk_type == "tool_call_start":
+                        tc_id = chunk.get("id", "")
+                        tc_name = chunk.get("name", "")
+                        tc_index = chunk.get("index", 0)
+
+                        tool_calls_accumulated[tc_index] = {
+                            "id": tc_id,
+                            "name": tc_name,
+                            "arguments": "",
+                        }
+
+                        yield StreamEvent(
+                            event_type="tool_call",
+                            data={
+                                "tool": tc_name,
+                                "id": tc_id,
+                                "status": "starting",
+                            },
+                        )
+
+                    elif chunk_type == "tool_call_delta":
+                        tc_index = chunk.get("index", 0)
+                        if tc_index in tool_calls_accumulated:
+                            tool_calls_accumulated[tc_index]["arguments"] += chunk.get(
+                                "arguments_delta", ""
+                            )
+
+                    elif chunk_type == "tool_call_end":
+                        tc_index = chunk.get("index", 0)
+                        if tc_index in tool_calls_accumulated:
+                            tool_calls_accumulated[tc_index]["arguments"] = chunk.get(
+                                "arguments", tool_calls_accumulated[tc_index]["arguments"]
+                            )
+
+                    elif chunk_type == "error":
+                        yield StreamEvent(
+                            event_type="error",
+                            data={"message": chunk.get("message", "Unknown error"), "step": step},
+                        )
+
+            except Exception as e:
+                agent.logger.error("stream_error", error=str(e), step=step)
+                yield StreamEvent(
+                    event_type="error",
+                    data={"message": str(e), "step": step},
+                )
+                continue
+
+            if tool_calls_accumulated:
+                step += 1
+
+                tool_calls_list = [
+                    {
+                        "id": tc_data["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc_data["name"],
+                            "arguments": tc_data["arguments"],
+                        },
+                    }
+                    for tc_data in tool_calls_accumulated.values()
+                ]
+
+                agent.logger.info(
+                    "stream_tool_calls_received",
+                    step=step,
+                    iteration=loop_iterations,
+                    count=len(tool_calls_list),
+                    tools=[tc["function"]["name"] for tc in tool_calls_list],
+                )
+
+                messages.append(assistant_tool_calls_to_message(tool_calls_list))
+
+                for tool_call in tool_calls_list:
+                    tool_name = tool_call["function"]["name"]
+                    tool_call_id = tool_call["id"]
+
+                    try:
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                        agent.logger.warning(
+                            "stream_tool_args_parse_failed",
+                            tool=tool_name,
+                            raw_args=tool_call["function"]["arguments"],
+                        )
+
+                    tool_result = await agent._execute_tool(tool_name, tool_args)
+
+                    yield StreamEvent(
+                        event_type="tool_result",
+                        data={
+                            "tool": tool_name,
+                            "id": tool_call_id,
+                            "success": tool_result.get("success", False),
+                            "output": agent._truncate_output(
+                                tool_result.get("output", str(tool_result.get("error", "")))
+                            ),
+                        },
+                    )
+
+                    if tool_name in ("planner", "manage_plan") and tool_result.get("success"):
+                        yield StreamEvent(
+                            event_type="plan_updated",
+                            data={"action": tool_args.get("action", "unknown")},
+                        )
+
+                    tool_message = await agent._create_tool_message(
+                        tool_call_id, tool_name, tool_result, session_id, step
+                    )
+                    messages.append(tool_message)
+
+            elif content_accumulated:
+                step += 1
+                final_message = content_accumulated
+                agent.logger.info(
+                    "stream_final_answer",
+                    step=step,
+                    iteration=loop_iterations,
+                    total_iterations=loop_iterations,
+                )
+
+                yield StreamEvent(
+                    event_type="final_answer",
+                    data={"content": final_message},
+                )
+                break
+
+            else:
+                agent.logger.warning(
+                    "stream_empty_response",
+                    step=step,
+                    iteration=loop_iterations,
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[System: Empty response. Please provide an answer or use a tool.]"
+                        ),
+                    }
+                )
+
+        if step >= agent.max_steps and not final_message:
+            final_message = f"Exceeded maximum steps ({agent.max_steps})"
+            yield StreamEvent(
+                event_type="error",
+                data={"message": final_message, "step": step},
+            )
+
+        await agent._save_state(session_id, state)
+
+        agent.logger.info(
+            "execute_stream_complete",
+            session_id=session_id,
+            progress_steps=step,
+            total_iterations=loop_iterations,
+            overhead_iterations=loop_iterations - step,
+        )
+
+        agent.logger.info("execute_stream_complete", session_id=session_id, steps=step)
 
 
 class PlanAndExecuteStrategy:
