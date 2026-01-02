@@ -288,7 +288,10 @@ class ExecuteMissionRequest(BaseModel):
     )
     planning_strategy: Optional[str] = Field(
         default=None,
-        description="LeanAgent planning strategy override (native_react or plan_and_execute).",
+        description=(
+            "LeanAgent planning strategy override "
+            "(native_react, plan_and_execute, or plan_and_react)."
+        ),
     )
     planning_strategy_params: Optional[Dict[str, Any]] = Field(
         default=None,
