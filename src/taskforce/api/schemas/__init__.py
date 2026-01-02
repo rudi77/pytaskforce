@@ -7,6 +7,7 @@ from taskforce.api.schemas.agent_schemas import (
     ProfileAgentResponse,
     AgentListResponse,
 )
+from taskforce.api.schemas.errors import ErrorResponse
 
 __all__ = [
     "CustomAgentCreate",
@@ -14,5 +15,5 @@ __all__ = [
     "CustomAgentResponse",
     "ProfileAgentResponse",
     "AgentListResponse",
+    "ErrorResponse",
 ]
-
