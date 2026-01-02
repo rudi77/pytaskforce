@@ -337,6 +337,15 @@ class PlannerTool(ToolProtocol):
 
         return {"success": True, "output": self._format_plan()}
 
+    def get_plan_summary(self) -> str:
+        """
+        Return the current plan summary as formatted Markdown.
+
+        Returns:
+            Formatted plan string or 'No active plan.' if no plan exists.
+        """
+        return self._read_plan().get("output", "")
+
     def _update_plan(
         self,
         add_steps: list[str] | None = None,

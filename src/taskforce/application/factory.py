@@ -124,53 +124,18 @@ class AgentFactory:
         state_manager = self._create_state_manager(config)
         llm_provider = self._create_llm_provider(config)
 
-        # Select tools: config tools override specialist defaults
-        tools_config = config.get("tools", [])
-        has_config_tools = bool(tools_config)
-
-        if has_config_tools:
-            # Config defines tools explicitly - use those
-            self.logger.debug(
-                "using_config_tools",
-                specialist=effective_specialist,
-                tool_count=len(tools_config),
-            )
-            tools = self._create_native_tools(config, llm_provider)
-            # Load MCP tools if configured
-            mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-            tools.extend(mcp_tools)
-        elif effective_specialist in ("coding", "rag"):
-            # No config tools - use specialist defaults
-            self.logger.debug(
-                "using_specialist_defaults",
-                specialist=effective_specialist,
-            )
-            tools = self._create_specialist_tools(
-                effective_specialist, config, llm_provider
-            )
-            mcp_contexts = []
-        else:
-            # Generic without config - use default tools
-            tools = self._create_default_tools(llm_provider)
-            # Load MCP tools if configured
-            mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-            tools.extend(mcp_tools)
-
-        # CRITICAL: Filter out llm_generate tool for executor agent
-        # The agent has internal generation capabilities and should NOT use llm_generate
-        # This tool is only for PlanGenerator, not for execution
-        execution_tools = [t for t in tools if t.name != "llm_generate"]
-        
-        if len(tools) != len(execution_tools):
-            self.logger.debug(
-                "filtered_llm_generate_tool",
-                original_count=len(tools),
-                filtered_count=len(execution_tools),
-                reason="Agent has internal generation - llm_generate causes inefficiency"
-            )
-        
+        include_mcp = not (
+            effective_specialist in ("coding", "rag") and not config.get("tools")
+        )
+        tools, mcp_contexts = await self._build_tools(
+            config=config,
+            llm_provider=llm_provider,
+            specialist=effective_specialist,
+            use_specialist_defaults=True,
+            include_mcp=include_mcp,
+        )
         todolist_manager = self._create_todolist_manager(config, llm_provider)
-        system_prompt = self._assemble_system_prompt(effective_specialist, execution_tools)
+        system_prompt = self._assemble_system_prompt(effective_specialist, tools)
 
         # Get model_alias from config (default to "main" for backward compatibility)
         llm_config = config.get("llm", {})
@@ -213,7 +178,7 @@ class AgentFactory:
         agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
-            tools=execution_tools,  # Use filtered tools, not original tools
+            tools=tools,
             todolist_manager=todolist_manager,
             system_prompt=system_prompt,
             model_alias=model_alias,
@@ -277,13 +242,12 @@ class AgentFactory:
         state_manager = self._create_state_manager(config)
         llm_provider = self._create_llm_provider(config)
 
-        # RAG agent tools are now specified in config (includes RAG + native tools)
-        # user_context is injected into RAG tools
-        tools = self._create_native_tools(config, llm_provider, user_context=user_context)
-        
-        # Load MCP tools if configured
-        mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-        tools.extend(mcp_tools)
+        tools, mcp_contexts = await self._build_tools(
+            config=config,
+            llm_provider=llm_provider,
+            user_context=user_context,
+            include_mcp=True,
+        )
 
         todolist_manager = self._create_todolist_manager(config, llm_provider)
         system_prompt = self._assemble_system_prompt("rag", tools)
@@ -403,20 +367,12 @@ class AgentFactory:
         state_manager = self._create_state_manager(config)
         llm_provider = self._create_llm_provider(config)
 
-        # Create tools - LeanAgent will add PlannerTool if not present
-        # Pass user_context for RAG tools if provided
-        tools_config = config.get("tools", [])
-        has_config_tools = bool(tools_config)
-        mcp_contexts = []
-
-        if has_config_tools:
-            tools = self._create_native_tools(config, llm_provider, user_context=user_context)
-            mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-            tools.extend(mcp_tools)
-        else:
-            tools = self._create_default_tools(llm_provider)
-            mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-            tools.extend(mcp_tools)
+        tools, mcp_contexts = await self._build_tools(
+            config=config,
+            llm_provider=llm_provider,
+            user_context=user_context,
+            include_mcp=True,
+        )
 
         # Build system prompt - use LEAN_KERNEL_PROMPT or specialist variant
         system_prompt = self._assemble_lean_system_prompt(effective_specialist, tools)
@@ -1137,6 +1093,44 @@ class AgentFactory:
                 )
         
         return mcp_tools, client_contexts
+
+    async def _build_tools(
+        self,
+        *,
+        config: dict,
+        llm_provider: LLMProviderProtocol,
+        user_context: Optional[dict[str, Any]] = None,
+        specialist: Optional[str] = None,
+        use_specialist_defaults: bool = False,
+        include_mcp: bool = True,
+    ) -> tuple[list[ToolProtocol], list[Any]]:
+        """Build tool list and MCP contexts based on configuration."""
+        tools_config = config.get("tools", [])
+        has_config_tools = bool(tools_config)
+
+        if has_config_tools:
+            self.logger.debug(
+                "using_config_tools",
+                specialist=specialist,
+                tool_count=len(tools_config),
+            )
+            tools = self._create_native_tools(
+                config, llm_provider, user_context=user_context
+            )
+        elif use_specialist_defaults and specialist in ("coding", "rag"):
+            self.logger.debug("using_specialist_defaults", specialist=specialist)
+            tools = self._create_specialist_tools(
+                specialist, config, llm_provider, user_context=user_context
+            )
+        else:
+            tools = self._create_default_tools(llm_provider)
+
+        if not include_mcp:
+            return tools, []
+
+        mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
+        tools.extend(mcp_tools)
+        return tools, mcp_contexts
     
     def _create_default_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
         """
@@ -1469,4 +1463,3 @@ class AgentFactory:
 
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")
-

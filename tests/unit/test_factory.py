@@ -11,7 +11,7 @@ Tests verify:
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -106,6 +106,60 @@ class TestAgentFactory:
         from taskforce.infrastructure.llm.openai_service import OpenAIService
 
         assert isinstance(llm_provider, OpenAIService)
+
+    @pytest.mark.asyncio
+    async def test_build_tools_uses_config_tools_without_mcp(self):
+        """Test tool builder uses config tools when provided."""
+        factory = AgentFactory(config_dir="configs")
+        factory._create_native_tools = MagicMock(return_value=[MagicMock(name="tool")])
+        factory._create_mcp_tools = AsyncMock(return_value=([], []))
+
+        tools, mcp_contexts = await factory._build_tools(
+            config={"tools": [{"type": "Foo", "module": "bar"}]},
+            llm_provider=MagicMock(),
+            include_mcp=False,
+        )
+
+        assert len(tools) == 1
+        assert mcp_contexts == []
+        factory._create_mcp_tools.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_build_tools_uses_specialist_defaults(self):
+        """Test tool builder uses specialist defaults when configured."""
+        factory = AgentFactory(config_dir="configs")
+        factory._create_specialist_tools = MagicMock(
+            return_value=[MagicMock(name="spec_tool")]
+        )
+
+        tools, mcp_contexts = await factory._build_tools(
+            config={},
+            llm_provider=MagicMock(),
+            specialist="coding",
+            use_specialist_defaults=True,
+            include_mcp=False,
+        )
+
+        assert len(tools) == 1
+        assert mcp_contexts == []
+
+    @pytest.mark.asyncio
+    async def test_build_tools_includes_mcp_tools(self):
+        """Test tool builder appends MCP tools when enabled."""
+        factory = AgentFactory(config_dir="configs")
+        base_tool = MagicMock(name="base")
+        factory._create_default_tools = MagicMock(return_value=[base_tool])
+        mcp_tool = MagicMock(name="mcp_tool")
+        factory._create_mcp_tools = AsyncMock(return_value=([mcp_tool], ["ctx"]))
+
+        tools, mcp_contexts = await factory._build_tools(
+            config={},
+            llm_provider=MagicMock(),
+            include_mcp=True,
+        )
+
+        assert tools == [base_tool, mcp_tool]
+        assert mcp_contexts == ["ctx"]
 
     def test_create_native_tools(self):
         """Test creating native tools."""

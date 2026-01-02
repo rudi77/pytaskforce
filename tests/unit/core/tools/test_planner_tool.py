@@ -196,6 +196,26 @@ class TestPlannerToolReadPlan:
         assert "[ ] 2. Ergebnisse zusammenfassen" in result["output"]
 
 
+class TestPlannerToolSummary:
+    """Tests for plan summary access."""
+
+    def test_get_plan_summary_empty(self):
+        """Empty plan should return no active plan summary."""
+        tool = PlannerTool()
+
+        assert tool.get_plan_summary() == "No active plan."
+
+    @pytest.mark.asyncio
+    async def test_get_plan_summary_with_tasks(self):
+        """Plan summary should reflect current plan state."""
+        tool = PlannerTool()
+        await tool.execute(action="create_plan", tasks=["Task 1"])
+
+        summary = tool.get_plan_summary()
+
+        assert "[ ] 1. Task 1" in summary
+
+
 class TestPlannerToolUpdatePlan:
     """Tests for update_plan action."""
 
@@ -526,4 +546,3 @@ class TestPlannerToolAcceptanceCriteria:
 
         assert result["success"] is True
         assert result["output"] == "No active plan."
-
