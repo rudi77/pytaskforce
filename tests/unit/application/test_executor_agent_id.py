@@ -11,6 +11,7 @@ import pytest
 
 from taskforce.api.schemas.agent_schemas import CustomAgentResponse
 from taskforce.application.executor import AgentExecutor
+from taskforce.core.domain.errors import NotFoundError, ValidationError
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.models import ExecutionResult
 
@@ -92,8 +93,8 @@ async def test_execute_mission_agent_id_not_found():
 
         executor = AgentExecutor(factory=mock_factory)
 
-        # Should raise FileNotFoundError (404)
-        with pytest.raises(FileNotFoundError, match="Agent 'nonexistent' not found"):
+        # Should raise NotFoundError (404)
+        with pytest.raises(NotFoundError, match="Agent 'nonexistent' not found"):
             await executor.execute_mission(
                 mission="Test mission",
                 profile="dev",
@@ -128,9 +129,9 @@ async def test_execute_mission_agent_id_profile_agent_rejected():
 
         executor = AgentExecutor(factory=mock_factory)
 
-        # Should raise ValueError (400)
+        # Should raise ValidationError (400)
         with pytest.raises(
-            ValueError, match="is a profile agent, not a custom agent"
+            ValidationError, match="is a profile agent, not a custom agent"
         ):
             await executor.execute_mission(
                 mission="Test mission",
@@ -322,4 +323,3 @@ async def test_execute_mission_with_agent_id_and_mcp_tools():
         assert len(agent_def["mcp_servers"]) == 1
         assert agent_def["mcp_tool_allowlist"] == ["read_file", "write_file"]
         assert result.status == "completed"
-

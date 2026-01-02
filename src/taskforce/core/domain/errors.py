@@ -1,71 +1,94 @@
-"""Domain-specific error types for Taskforce."""
+"""Domain-specific exception types for Taskforce."""
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Dict
 
 
+@dataclass
 class TaskforceError(Exception):
-    """Base class for Taskforce domain/application errors."""
+    """Base exception for Taskforce domain errors."""
 
-    default_code = "taskforce_error"
+    message: str
+    code: str = "taskforce_error"
+    details: Dict[str, Any] | None = None
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str | None = None,
-        details: dict[str, Any] | None = None,
-        status_code: int | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code or self.default_code
-        self.details = details
-        self.status_code = status_code
-
-
-class PlanningError(TaskforceError):
-    """Raised when planning or plan validation fails."""
-
-    default_code = "planning_error"
-
-
-class ConfigError(TaskforceError):
-    """Raised when configuration is invalid or missing."""
-
-    default_code = "config_error"
-
-
-class ToolError(TaskforceError):
-    """Raised when tool execution fails."""
-
-    default_code = "tool_error"
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str | None = None,
-        details: dict[str, Any] | None = None,
-        status_code: int | None = None,
-        upstream: bool | None = None,
-    ) -> None:
-        super().__init__(
-            message,
-            code=code,
-            details=details,
-            status_code=status_code,
-        )
-        self.upstream = upstream
-
-
-class CancelledError(TaskforceError):
-    """Raised when execution is cancelled."""
-
-    default_code = "cancelled_error"
+    def __post_init__(self) -> None:
+        super().__init__(self.message)
+        if self.details is None:
+            self.details = {}
 
 
 class LLMError(TaskforceError):
-    """Raised when LLM service fails."""
+    """Error raised for LLM invocation failures."""
 
-    default_code = "llm_error"
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="llm_error", details=details)
+
+
+class ToolError(TaskforceError):
+    """Error raised for tool invocation failures."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool_name: str | None = None,
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        details = dict(details or {})
+        if tool_name:
+            details.setdefault("tool_name", tool_name)
+        self.tool_name = tool_name
+        super().__init__(message=message, code="tool_error", details=details)
+
+
+class PlanningError(TaskforceError):
+    """Error raised for planning failures."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="planning_error", details=details)
+
+
+class ConfigError(TaskforceError):
+    """Error raised for configuration failures."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="config_error", details=details)
+
+
+class CancelledError(TaskforceError):
+    """Error raised when execution is cancelled."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="cancelled", details=details)
+
+
+class NotFoundError(TaskforceError):
+    """Error raised when a resource is not found."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="not_found", details=details)
+
+
+class ValidationError(TaskforceError):
+    """Error raised for validation failures."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="validation_error", details=details)
+
+
+def tool_error_payload(
+    error: ToolError, extra: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
+    """Convert a ToolError into a standardized tool response payload."""
+    payload = {
+        "success": False,
+        "error": str(error),
+        "error_type": type(error).__name__,
+        "details": error.details or {},
+    }
+    if extra:
+        payload.update(extra)
+    return payload

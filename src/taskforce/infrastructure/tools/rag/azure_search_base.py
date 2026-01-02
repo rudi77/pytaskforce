@@ -8,6 +8,8 @@ that integrate with Azure AI Search.
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+from taskforce.core.domain.errors import ToolError
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents.aio import SearchClient
 
@@ -376,6 +378,13 @@ class Document:
                 chunks=chunks
             )
         except KeyError as e:
-            raise ValueError(f"Missing required field in document data: {e}")
+            raise ToolError(
+                f"Document parse failed: Missing required field in document data: {e}",
+                tool_name="rag_document",
+                details={"missing_field": str(e)},
+            ) from e
         except Exception as e:
-            raise ValueError(f"Failed to create Document from dict: {e}")
+            raise ToolError(
+                f"Document parse failed: Failed to create Document from dict: {e}",
+                tool_name="rag_document",
+            ) from e

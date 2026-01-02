@@ -1,5 +1,7 @@
 from typing import Any, Callable, Dict
-from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
+
+from taskforce.core.domain.errors import ToolError
+from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 class OutputFilteringTool:
     """
@@ -45,8 +47,13 @@ class OutputFilteringTool:
         # 2. Filter the result immediately (before it hits Agent memory)
         try:
             return self._filter_func(raw_result)
-        except Exception:
+        except Exception as e:
+            tool_error = ToolError(
+                f"{self.name} output filter failed: {e}",
+                tool_name=self.name,
+                details={"filter": getattr(self._filter_func, "__name__", "unknown")},
+            )
             # Fallback: If filtering fails, return raw result but log warning
             # (You might want to inject a logger here)
+            raw_result.setdefault("filter_errors", []).append(str(tool_error))
             return raw_result
-

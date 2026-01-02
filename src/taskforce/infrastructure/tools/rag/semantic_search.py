@@ -12,6 +12,7 @@ from azure.search.documents.models import (
     QueryAnswerType
 )
 
+from taskforce.core.domain.errors import ToolError
 from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 
@@ -262,8 +263,16 @@ class SemanticSearchTool:
 
         self.logger.error("search_failed", error=error_msg)
         
+        tool_error = ToolError(
+            f"{self.name} failed: {error_msg}",
+            tool_name=self.name,
+            details={"query": query, "hints": hints},
+        )
+
         return {
-            "success": False, 
-            "error": error_msg, 
-            "hints": hints
+            "success": False,
+            "error": str(tool_error),
+            "hints": hints,
+            "error_type": type(tool_error).__name__,
+            "details": tool_error.details,
         }

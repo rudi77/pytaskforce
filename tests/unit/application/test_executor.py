@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.core.domain.errors import LLMError
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.models import ExecutionResult
 
@@ -134,10 +135,26 @@ async def test_execute_mission_error_handling():
     executor = AgentExecutor(factory=mock_factory)
 
     # Verify exception is raised
-    with pytest.raises(RuntimeError, match="LLM failure"):
+    with pytest.raises(LLMError, match="LLM failure"):
         await executor.execute_mission("Test mission")
 
     # Verify agent was called
+    mock_agent.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_mission_error_handling_lean_agent():
+    """Test error handling during LeanAgent execution."""
+    mock_factory = MagicMock(spec=AgentFactory)
+    mock_agent = AsyncMock()
+    mock_agent.execute.side_effect = RuntimeError("LLM failure")
+    mock_factory.create_lean_agent.return_value = mock_agent
+
+    executor = AgentExecutor(factory=mock_factory)
+
+    with pytest.raises(LLMError, match="LLM failure"):
+        await executor.execute_mission("Test mission", use_lean_agent=True)
+
     mock_agent.execute.assert_called_once()
 
 
@@ -360,4 +377,3 @@ async def test_progress_update_structure():
     assert update.message == "Analyzing task"
     assert update.details["step"] == 1
     assert update.details["rationale"] == "Need to read file"
-

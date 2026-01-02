@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, Optional
 import structlog
 
+from taskforce.core.domain.errors import ToolError
 from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 
@@ -428,10 +429,21 @@ class ListDocumentsTool(ToolProtocol):
             traceback=traceback.format_exc()
         )
 
+        tool_error = ToolError(
+            f"{self.name} failed: {error_message}",
+            tool_name=self.name,
+            details={
+                "error_type": error_type,
+                "hints": hints,
+                "index": self.azure_base.content_index,
+            },
+        )
+
         return {
             "success": False,
-            "error": error_message,
+            "error": str(tool_error),
             "type": error_type,
-            "hints": hints
+            "hints": hints,
+            "error_type": type(tool_error).__name__,
+            "details": tool_error.details,
         }
-

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -364,14 +365,20 @@ except ImportError:
                 hints.append("Make sure the object is of the expected type")
                 hints.append("Use type() or isinstance() to verify object types")
 
-            return {
-                "success": False,
-                "error": error_msg,
-                "type": error_type,
-                "traceback": traceback.format_exc(),
-                "hints": hints,
-                "code_snippet": code[:200] + "..." if len(code) > 200 else code,
-            }
+            tool_error = ToolError(
+                f"{self.name} failed: {error_msg}",
+                tool_name=self.name,
+                details={"error_type": error_type, "hints": hints},
+            )
+            return tool_error_payload(
+                tool_error,
+                extra={
+                    "type": error_type,
+                    "traceback": traceback.format_exc(),
+                    "hints": hints,
+                    "code_snippet": code[:200] + "..." if len(code) > 200 else code,
+                },
+            )
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -380,4 +387,3 @@ except ImportError:
         if not isinstance(kwargs["code"], str):
             return False, "Parameter 'code' must be a string"
         return True, None
-
