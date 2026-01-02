@@ -7,6 +7,7 @@ enabling seamless integration of external MCP tools into the agent framework.
 
 from typing import Any
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 from taskforce.infrastructure.tools.mcp.client import MCPClient
 
@@ -171,11 +172,12 @@ class MCPToolWrapper(ToolProtocol):
                     "error_type": result.get("error_type", "MCPError"),
                 }
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-            }
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"params": kwargs},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """

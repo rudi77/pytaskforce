@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import structlog
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -129,10 +130,16 @@ class GitTool(ToolProtocol):
                         repo_path.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
                     logger.error("git_execute_exception", error=str(e))
-                    return {
-                        "success": False,
-                        "error": f"Failed to prepare repo directory: {e}",
-                    }
+                    tool_error = ToolError(
+                        f"{self.name} failed: {e}",
+                        tool_name=self.name,
+                        details={
+                            "operation": operation,
+                            "repo_path": str(repo_path),
+                            "stage": "prepare_repo",
+                        },
+                    )
+                    return tool_error_payload(tool_error)
             elif operation != "clone":
                 # For all other operations that use cwd=repo_path, ensure it exists
                 if not repo_path.exists():
@@ -212,10 +219,20 @@ class GitTool(ToolProtocol):
 
         except subprocess.TimeoutExpired:
             logger.error("git_execute_timeout")
-            return {"success": False, "error": "Command timed out"}
+            tool_error = ToolError(
+                f"{self.name} failed: Command timed out",
+                tool_name=self.name,
+                details={"operation": operation, "repo_path": str(repo_path)},
+            )
+            return tool_error_payload(tool_error)
         except Exception as e:
             logger.error("git_execute_exception", error=str(e))
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"operation": operation, "repo_path": str(repo_path)},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -458,13 +475,30 @@ class GitHubTool(ToolProtocol):
             logger.error(
                 "github_http_error", status=getattr(e, "code", None), detail=detail
             )
-            return {"success": False, "error": f"HTTPError {e.code}: {detail}"}
+            tool_error = ToolError(
+                f"{self.name} failed: HTTPError {e.code}: {detail}",
+                tool_name=self.name,
+                details={"action": action, "status": e.code, "detail": detail},
+            )
+            return tool_error_payload(
+                tool_error, extra={"response_status": getattr(e, "code", None)}
+            )
         except urllib.error.URLError as e:
             logger.error("github_url_error", reason=getattr(e, "reason", None))
-            return {"success": False, "error": f"URLError: {e.reason}"}
+            tool_error = ToolError(
+                f"{self.name} failed: URLError: {e.reason}",
+                tool_name=self.name,
+                details={"action": action, "reason": getattr(e, "reason", None)},
+            )
+            return tool_error_payload(tool_error)
         except Exception as e:
             logger.error("github_execute_exception", error=str(e))
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"action": action},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -474,4 +508,3 @@ class GitHubTool(ToolProtocol):
         if action not in ["create_repo", "list_repos", "delete_repo"]:
             return False, f"Invalid action: {action}"
         return True, None
-

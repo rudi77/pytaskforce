@@ -9,6 +9,8 @@ Provides connection management for Model Context Protocol servers via:
 from contextlib import asynccontextmanager
 from typing import Any
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
+
 try:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.sse import sse_client
@@ -181,11 +183,12 @@ class MCPClient:
                     "result": str(response),
                 }
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-            }
+            tool_error = ToolError(
+                f"MCP tool '{tool_name}' failed: {e}",
+                tool_name=tool_name,
+                details={"arguments": arguments},
+            )
+            return tool_error_payload(tool_error)
 
     async def close(self):
         """Close the connection to the MCP server."""

@@ -8,6 +8,7 @@ Migrated from Agent V2 with full preservation of functionality.
 from pathlib import Path
 from typing import Any, Dict
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -96,7 +97,12 @@ class FileReadTool(ToolProtocol):
                 "path": str(file_path.absolute()),
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"path": path},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -198,7 +204,12 @@ class FileWriteTool(ToolProtocol):
                 "backed_up": backed_up,
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"path": path, "backup": backup},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -211,4 +222,3 @@ class FileWriteTool(ToolProtocol):
         if not isinstance(kwargs["content"], str):
             return False, "Parameter 'content' must be a string"
         return True, None
-
