@@ -169,36 +169,73 @@ class LeanAgent:
             Complete system prompt with plan context and context pack.
         """
         prompt = self._base_system_prompt
+        plan_section = self._build_plan_section()
+        if plan_section:
+            prompt += plan_section
 
-        # Inject current plan status if PlannerTool exists and has a plan
-        if self._planner:
-            plan_result = self._planner._read_plan()
-            plan_output = plan_result.get("output", "")
+        context_section = self._build_context_pack_section(
+            mission=mission,
+            state=state,
+            messages=messages,
+        )
+        if context_section:
+            prompt += context_section
 
-            # Only inject if there's an actual plan (not "No active plan.")
-            if plan_output and plan_output != "No active plan.":
-                plan_section = (
-                    "\n\n## CURRENT PLAN STATUS\n"
-                    "The following plan is currently active. "
-                    "Use it to guide your next steps.\n\n"
-                    f"{plan_output}"
-                )
-                prompt += plan_section
-                self.logger.debug("plan_injected", plan_steps=plan_output.count("\n") + 1)
+        return prompt
 
-        # Build and inject context pack (Story 9.2)
+    def _build_plan_section(self) -> str:
+        """
+        Build the plan status section for the system prompt.
+
+        Returns:
+            Plan section string or empty string if no active plan.
+        """
+        if not self._planner:
+            return ""
+
+        plan_output = self._planner.get_plan_summary()
+        if not plan_output or plan_output == "No active plan.":
+            return ""
+
+        plan_section = (
+            "\n\n## CURRENT PLAN STATUS\n"
+            "The following plan is currently active. "
+            "Use it to guide your next steps.\n\n"
+            f"{plan_output}"
+        )
+        self.logger.debug("plan_injected", plan_steps=plan_output.count("\n") + 1)
+        return plan_section
+
+    def _build_context_pack_section(
+        self,
+        *,
+        mission: str | None,
+        state: dict[str, Any] | None,
+        messages: list[dict[str, Any]] | None,
+    ) -> str:
+        """
+        Build the context pack section for the system prompt.
+
+        Args:
+            mission: Optional mission description for context pack
+            state: Optional session state for context pack
+            messages: Optional message history for context pack
+
+        Returns:
+            Context pack section string or empty string if no context pack.
+        """
         context_pack = self.context_builder.build_context_pack(
             mission=mission, state=state, messages=messages
         )
-        if context_pack:
-            prompt += f"\n\n{context_pack}"
-            self.logger.debug(
-                "context_pack_injected",
-                pack_length=len(context_pack),
-                policy_max=self.context_policy.max_total_chars,
-            )
+        if not context_pack:
+            return ""
 
-        return prompt
+        self.logger.debug(
+            "context_pack_injected",
+            pack_length=len(context_pack),
+            policy_max=self.context_policy.max_total_chars,
+        )
+        return f"\n\n{context_pack}"
 
     async def execute(self, mission: str, session_id: str) -> ExecutionResult:
         """

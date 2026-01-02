@@ -131,9 +131,7 @@ class AgentExecutor:
         """
         start_time = datetime.now()
 
-        # Generate session ID if not provided
-        if session_id is None:
-            session_id = self._generate_session_id()
+        session_id = self._resolve_session_id(session_id)
 
         if planning_strategy and not use_lean_agent and not agent_id:
             use_lean_agent = True
@@ -161,11 +159,11 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
             )
 
-            # Store conversation history in state if provided
-            if conversation_history:
-                state = await agent.state_manager.load_state(session_id) or {}
-                state["conversation_history"] = conversation_history
-                await agent.state_manager.save_state(session_id, state)
+            await self._maybe_store_conversation_history(
+                agent=agent,
+                session_id=session_id,
+                conversation_history=conversation_history,
+            )
 
             # Execute ReAct loop with progress tracking
             result = await self._execute_with_progress(
@@ -260,9 +258,7 @@ class AgentExecutor:
         if planning_strategy and not use_lean_agent and not agent_id:
             use_lean_agent = True
 
-        # Generate session ID if not provided
-        if session_id is None:
-            session_id = self._generate_session_id()
+        session_id = self._resolve_session_id(session_id)
 
         self.logger.info(
             "mission.streaming.started",
@@ -299,11 +295,11 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
             )
 
-            # Store conversation history in state if provided
-            if conversation_history:
-                state = await agent.state_manager.load_state(session_id) or {}
-                state["conversation_history"] = conversation_history
-                await agent.state_manager.save_state(session_id, state)
+            await self._maybe_store_conversation_history(
+                agent=agent,
+                session_id=session_id,
+                conversation_history=conversation_history,
+            )
 
             # Execute with streaming
             async for update in self._execute_streaming(agent, mission, session_id):
@@ -661,6 +657,26 @@ class AgentExecutor:
             UUID-based session identifier
         """
         return str(uuid.uuid4())
+
+    def _resolve_session_id(self, session_id: str | None) -> str:
+        """Return an existing session ID or generate a new one."""
+        if session_id is not None:
+            return session_id
+        return self._generate_session_id()
+
+    async def _maybe_store_conversation_history(
+        self,
+        agent: Agent | LeanAgent,
+        session_id: str,
+        conversation_history: list[dict[str, Any]] | None,
+    ) -> None:
+        """Store conversation history in agent state when provided."""
+        if not conversation_history:
+            return
+
+        state = await agent.state_manager.load_state(session_id) or {}
+        state["conversation_history"] = conversation_history
+        await agent.state_manager.save_state(session_id, state)
 
     def _wrap_exception(
         self,

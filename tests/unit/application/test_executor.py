@@ -356,6 +356,64 @@ async def test_generate_session_id_uniqueness():
         assert session_id.count("-") == 4
 
 
+def test_resolve_session_id_prefers_existing():
+    """Test that resolver returns provided session ID."""
+    executor = AgentExecutor()
+
+    session_id = executor._resolve_session_id("existing-session")
+
+    assert session_id == "existing-session"
+
+
+def test_resolve_session_id_generates_when_missing():
+    """Test that resolver generates session ID when missing."""
+    executor = AgentExecutor()
+    executor._generate_session_id = MagicMock(return_value="generated-session")
+
+    session_id = executor._resolve_session_id(None)
+
+    assert session_id == "generated-session"
+
+
+@pytest.mark.asyncio
+async def test_maybe_store_conversation_history_skips_empty():
+    """Test that empty conversation history does not write state."""
+    executor = AgentExecutor()
+    mock_agent = MagicMock()
+    mock_agent.state_manager = AsyncMock()
+
+    await executor._maybe_store_conversation_history(
+        agent=mock_agent,
+        session_id="test-session",
+        conversation_history=None,
+    )
+
+    mock_agent.state_manager.load_state.assert_not_called()
+    mock_agent.state_manager.save_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_store_conversation_history_persists():
+    """Test that conversation history is persisted when provided."""
+    executor = AgentExecutor()
+    mock_agent = MagicMock()
+    mock_agent.state_manager = AsyncMock()
+    mock_agent.state_manager.load_state.return_value = {"existing": True}
+
+    history = [{"role": "user", "content": "hi"}]
+    await executor._maybe_store_conversation_history(
+        agent=mock_agent,
+        session_id="test-session",
+        conversation_history=history,
+    )
+
+    mock_agent.state_manager.load_state.assert_called_once_with("test-session")
+    mock_agent.state_manager.save_state.assert_called_once_with(
+        "test-session",
+        {"existing": True, "conversation_history": history},
+    )
+
+
 @pytest.mark.asyncio
 async def test_executor_uses_default_factory():
     """Test that executor creates default factory if none provided."""

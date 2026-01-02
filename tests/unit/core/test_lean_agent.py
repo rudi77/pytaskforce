@@ -142,6 +142,61 @@ class TestLeanAgentInitialization:
             assert "parameters" in tool["function"]
 
 
+class TestLeanAgentPromptSections:
+    """Tests for LeanAgent prompt section helpers."""
+
+    def test_build_plan_section_empty(self, lean_agent):
+        """Plan section should be empty when no plan exists."""
+        plan_section = lean_agent._build_plan_section()
+
+        assert plan_section == ""
+
+    def test_build_plan_section_with_plan(self, lean_agent):
+        """Plan section should include current plan status."""
+        lean_agent.tools["planner"]._create_plan(tasks=["Step 1"])
+
+        plan_section = lean_agent._build_plan_section()
+
+        assert "CURRENT PLAN STATUS" in plan_section
+        assert "[ ] 1. Step 1" in plan_section
+
+    def test_build_context_pack_section_empty(
+        self, mock_state_manager, mock_llm_provider, mock_tool
+    ):
+        """Context pack section should be empty when no pack exists."""
+        agent = LeanAgent(
+            state_manager=mock_state_manager,
+            llm_provider=mock_llm_provider,
+            tools=[mock_tool],
+            system_prompt="Test",
+        )
+        agent.context_builder.build_context_pack = MagicMock(return_value="")
+
+        context_section = agent._build_context_pack_section(
+            mission=None, state=None, messages=None
+        )
+
+        assert context_section == ""
+
+    def test_build_context_pack_section_with_pack(
+        self, mock_state_manager, mock_llm_provider, mock_tool
+    ):
+        """Context pack section should include formatted pack."""
+        agent = LeanAgent(
+            state_manager=mock_state_manager,
+            llm_provider=mock_llm_provider,
+            tools=[mock_tool],
+            system_prompt="Test",
+        )
+        agent.context_builder.build_context_pack = MagicMock(return_value="CTX")
+
+        context_section = agent._build_context_pack_section(
+            mission="m", state={}, messages=[]
+        )
+
+        assert context_section == "\n\nCTX"
+
+
 class TestLeanAgentNativeToolCalling:
     """Tests for native tool calling (no JSON parsing)."""
 
