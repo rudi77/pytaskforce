@@ -182,6 +182,39 @@ Taskforce supports multiple deployment profiles loaded from `configs/{profile}.y
 - **staging**: PostgreSQL state, cloud LLM, structured logging
 - **prod**: PostgreSQL state, cloud LLM, JSON logging, monitoring
 
+### LeanAgent Planning Strategies
+
+LeanAgent supports configurable planning strategies. By default, it uses the
+current native tool-calling loop.
+
+Example profile snippet:
+
+```yaml
+agent:
+  planning_strategy: native_react  # default
+  planning_strategy_params: {}
+```
+
+Available strategies:
+
+- `native_react` (default): Current LeanAgent behavior.
+- `plan_and_execute`: Generate a plan up front and execute steps sequentially.
+
+You can also override via API or CLI:
+
+```json
+{
+  "mission": "Investigate customer churn drivers",
+  "lean": true,
+  "planning_strategy": "plan_and_execute",
+  "planning_strategy_params": {"max_plan_steps": 8}
+}
+```
+
+```powershell
+taskforce run mission "Investigate customer churn drivers" --lean --planning-strategy plan_and_execute --planning-strategy-params "{\"max_plan_steps\":8}"
+```
+
 ## License
 
 MIT License - see LICENSE file for details

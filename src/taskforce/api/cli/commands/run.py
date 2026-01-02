@@ -1,6 +1,7 @@
 """Run command - Execute agent missions."""
 
 import asyncio
+import json
 
 import typer
 from rich.console import Console, Group
@@ -28,6 +29,16 @@ def run_mission(
     ),
     lean: bool = typer.Option(
         False, "--lean", "-l", help="Use LeanAgent (native tool calling, PlannerTool)"
+    ),
+    planning_strategy: str | None = typer.Option(
+        None,
+        "--planning-strategy",
+        help="LeanAgent planning strategy (native_react or plan_and_execute).",
+    ),
+    planning_strategy_params: str | None = typer.Option(
+        None,
+        "--planning-strategy-params",
+        help="JSON string for planning strategy params.",
     ),
     stream: bool = typer.Option(
         False, "--stream", "-S",
@@ -83,8 +94,17 @@ def run_mission(
     if session_id:
         tf_console.print_system_message(f"Resuming session: {session_id}", "info")
     tf_console.print_system_message(f"Profile: {profile}", "info")
+    if planning_strategy and not lean:
+        lean = True
+        tf_console.print_system_message(
+            "Planning strategy override requested; enabling LeanAgent.", "info"
+        )
     if lean:
         tf_console.print_system_message("Using LeanAgent (native tool calling)", "info")
+    if planning_strategy:
+        tf_console.print_system_message(
+            f"Planning strategy: {planning_strategy}", "info"
+        )
     if stream:
         tf_console.print_system_message("Streaming mode enabled", "info")
     tf_console.print_divider()
@@ -96,6 +116,8 @@ def run_mission(
             profile=profile,
             session_id=session_id,
             lean=lean,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
             console=tf_console.console,
         ))
     else:
@@ -105,6 +127,8 @@ def run_mission(
             session_id=session_id,
             lean=lean,
             debug=debug,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
             tf_console=tf_console,
         )
 
@@ -115,6 +139,8 @@ def _execute_standard_mission(
     session_id: str | None,
     lean: bool,
     debug: bool,
+    planning_strategy: str | None,
+    planning_strategy_params: str | None,
     tf_console: TaskforceConsole,
 ) -> None:
     """Execute mission with standard progress bar."""
@@ -134,6 +160,7 @@ def _execute_standard_mission(
                 progress.update(task, description="[>] Working...")
 
         # Execute mission with progress tracking
+        strategy_params = _parse_strategy_params(planning_strategy_params)
         result = asyncio.run(
             executor.execute_mission(
                 mission=mission,
@@ -141,6 +168,8 @@ def _execute_standard_mission(
                 session_id=session_id,
                 progress_callback=progress_callback,
                 use_lean_agent=lean,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=strategy_params,
             )
         )
 
@@ -162,10 +191,14 @@ async def _execute_streaming_mission(
     profile: str,
     session_id: str | None,
     lean: bool,
+    planning_strategy: str | None,
+    planning_strategy_params: str | None,
     console: Console,
 ) -> None:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
+
+    strategy_params = _parse_strategy_params(planning_strategy_params)
 
     # State for live display
     current_step = 0
@@ -218,6 +251,8 @@ async def _execute_streaming_mission(
             profile=profile,
             session_id=session_id,
             use_lean_agent=lean,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=strategy_params,
         ):
             event_type = update.event_type
             should_update = False  # Only update display on meaningful changes
@@ -296,3 +331,17 @@ async def _execute_streaming_mission(
         border_style="green",
     ))
 
+
+
+def _parse_strategy_params(raw_params: str | None) -> dict | None:
+    if not raw_params:
+        return None
+    try:
+        data = json.loads(raw_params)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(
+            f"Invalid JSON for --planning-strategy-params: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise typer.BadParameter("--planning-strategy-params must be a JSON object")
+    return data

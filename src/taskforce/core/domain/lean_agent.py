@@ -28,6 +28,10 @@ import structlog
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
+from taskforce.core.domain.planning_strategy import (
+    NativeReActStrategy,
+    PlanningStrategy,
+)
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
@@ -80,6 +84,7 @@ class LeanAgent:
         max_input_tokens: int | None = None,
         compression_trigger: int | None = None,
         max_steps: int | None = None,
+        planning_strategy: PlanningStrategy | None = None,
     ):
         """
         Initialize LeanAgent with injected dependencies.
@@ -98,6 +103,7 @@ class LeanAgent:
             compression_trigger: Token count to trigger compression (default: 80k)
             max_steps: Maximum execution steps allowed (default: 30 for simple agents,
                       should be higher for RAG/document agents ~50-100)
+            planning_strategy: Optional planning strategy override for LeanAgent.
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -108,6 +114,7 @@ class LeanAgent:
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
+        self.planning_strategy = planning_strategy or NativeReActStrategy()
 
         # Context pack configuration (Story 9.2)
         self.context_policy = context_policy or ContextPolicy.conservative_default()
@@ -210,6 +217,12 @@ class LeanAgent:
 
         Returns:
             ExecutionResult with status and final message
+        """
+        return await self.planning_strategy.execute(self, mission, session_id)
+
+    async def _execute_native_react(self, mission: str, session_id: str) -> ExecutionResult:
+        """
+        Execute mission using native tool calling loop.
         """
         self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
 
@@ -434,6 +447,19 @@ class LeanAgent:
             - plan_updated: PlannerTool modified the plan
             - final_answer: Agent completed with final response
             - error: Error occurred during execution
+        """
+        async for event in self.planning_strategy.execute_stream(
+            self, mission, session_id
+        ):
+            yield event
+
+    async def _execute_stream_native_react(
+        self,
+        mission: str,
+        session_id: str,
+    ) -> AsyncIterator[StreamEvent]:
+        """
+        Execute mission with streaming progress events using native tool calling.
         """
         self.logger.info("execute_stream_start", session_id=session_id)
 

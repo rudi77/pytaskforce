@@ -643,6 +643,40 @@ class TestLeanAgentFactory:
         assert ".lean_test_workdir" in str(agent.state_manager.work_dir)
 
     @pytest.mark.asyncio
+    async def test_lean_agent_planning_strategy_default(self):
+        """Test that LeanAgent defaults to NativeReAct strategy."""
+        from taskforce.core.domain.planning_strategy import NativeReActStrategy
+
+        factory = AgentFactory(config_dir="configs")
+        agent = await factory.create_lean_agent(profile="dev")
+
+        assert isinstance(agent.planning_strategy, NativeReActStrategy)
+
+    @pytest.mark.asyncio
+    async def test_lean_agent_planning_strategy_override(self):
+        """Test overriding planning strategy for LeanAgent."""
+        from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
+
+        factory = AgentFactory(config_dir="configs")
+        agent = await factory.create_lean_agent(
+            profile="dev",
+            planning_strategy="plan_and_execute",
+            planning_strategy_params={"max_step_iterations": 2, "max_plan_steps": 3},
+        )
+
+        assert isinstance(agent.planning_strategy, PlanAndExecuteStrategy)
+        assert agent.planning_strategy.max_step_iterations == 2
+        assert agent.planning_strategy.max_plan_steps == 3
+
+    @pytest.mark.asyncio
+    async def test_lean_agent_invalid_planning_strategy(self):
+        """Test invalid planning strategy raises ValueError."""
+        factory = AgentFactory(config_dir="configs")
+
+        with pytest.raises(ValueError):
+            await factory.create_lean_agent(profile="dev", planning_strategy="invalid")
+
+    @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_no_specialist(self):
         """Test lean system prompt assembly without specialist."""
         factory = AgentFactory(config_dir="configs")

@@ -105,6 +105,8 @@ class ExecuteMissionRequest(BaseModel):
         scope: Access scope for RAG security filtering (optional).
         lean: If true, uses LeanAgent with native OpenAI tool calling.
             If false (default), uses legacy Agent with ReAct loop.
+        planning_strategy: Optional LeanAgent planning strategy override.
+        planning_strategy_params: Optional parameters for planning strategy.
 
     Example::
 
@@ -161,6 +163,14 @@ class ExecuteMissionRequest(BaseModel):
     agent_id: Optional[str] = Field(
         default=None,
         description="Custom agent ID to use (forces LeanAgent). If provided, loads agent from configs/custom/{agent_id}.yaml"
+    )
+    planning_strategy: Optional[str] = Field(
+        default=None,
+        description="LeanAgent planning strategy override (native_react or plan_and_execute).",
+    )
+    planning_strategy_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional parameters for the selected planning strategy.",
     )
 
 
@@ -244,6 +254,8 @@ async def execute_mission(request: ExecuteMissionRequest):
             user_context=user_context,
             use_lean_agent=request.lean,
             agent_id=request.agent_id,
+            planning_strategy=request.planning_strategy,
+            planning_strategy_params=request.planning_strategy_params,
         )
 
         return ExecuteMissionResponse(
@@ -560,6 +572,8 @@ async def execute_mission_stream(request: ExecuteMissionRequest):
                 user_context=user_context,
                 use_lean_agent=request.lean,
                 agent_id=request.agent_id,
+                planning_strategy=request.planning_strategy,
+                planning_strategy_params=request.planning_strategy_params,
             ):
                 # Serialize dataclass to JSON, handling datetime
                 data = json.dumps(asdict(update), default=str)

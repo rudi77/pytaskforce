@@ -89,6 +89,8 @@ class AgentExecutor:
         user_context: dict[str, Any] | None = None,
         use_lean_agent: bool = False,
         agent_id: str | None = None,
+        planning_strategy: str | None = None,
+        planning_strategy_params: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Execute agent mission with comprehensive orchestration.
 
@@ -115,6 +117,8 @@ class AgentExecutor:
             agent_id: Optional custom agent ID. If provided, loads agent
                      definition from configs/custom/{agent_id}.yaml and
                      creates LeanAgent (ignores use_lean_agent flag).
+            planning_strategy: Optional LeanAgent planning strategy override.
+            planning_strategy_params: Optional params for planning strategy.
 
         Returns:
             ExecutionResult with completion status and history
@@ -128,6 +132,9 @@ class AgentExecutor:
         if session_id is None:
             session_id = self._generate_session_id()
 
+        if planning_strategy and not use_lean_agent and not agent_id:
+            use_lean_agent = True
+
         self.logger.info(
             "mission.execution.started",
             mission=mission[:100],
@@ -136,6 +143,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             use_lean_agent=use_lean_agent,
             agent_id=agent_id,
+            planning_strategy=planning_strategy,
         )
 
         agent = None
@@ -146,6 +154,8 @@ class AgentExecutor:
                 user_context=user_context,
                 use_lean_agent=use_lean_agent,
                 agent_id=agent_id,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
             )
 
             # Store conversation history in state if provided
@@ -216,6 +226,8 @@ class AgentExecutor:
         user_context: dict[str, Any] | None = None,
         use_lean_agent: bool = False,
         agent_id: str | None = None,
+        planning_strategy: str | None = None,
+        planning_strategy_params: dict[str, Any] | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute mission with streaming progress updates.
 
@@ -238,6 +250,9 @@ class AgentExecutor:
         Raises:
             Exception: If agent creation or execution fails
         """
+        if planning_strategy and not use_lean_agent and not agent_id:
+            use_lean_agent = True
+
         # Generate session ID if not provided
         if session_id is None:
             session_id = self._generate_session_id()
@@ -273,6 +288,8 @@ class AgentExecutor:
                 user_context=user_context,
                 use_lean_agent=use_lean_agent,
                 agent_id=agent_id,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
             )
 
             # Store conversation history in state if provided
@@ -339,6 +356,8 @@ class AgentExecutor:
         user_context: dict[str, Any] | None = None,
         use_lean_agent: bool = False,
         agent_id: str | None = None,
+        planning_strategy: str | None = None,
+        planning_strategy_params: dict[str, Any] | None = None,
     ) -> Agent | LeanAgent:
         """Create agent using factory.
 
@@ -367,6 +386,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             use_lean_agent=use_lean_agent,
             agent_id=agent_id,
+            planning_strategy=planning_strategy,
         )
 
         # agent_id takes highest priority - load custom agent definition
@@ -410,12 +430,17 @@ class AgentExecutor:
             return await self.factory.create_lean_agent_from_definition(
                 agent_definition=agent_definition,
                 profile=profile,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
             )
 
         # LeanAgent takes priority if requested (with optional user_context for RAG)
         if use_lean_agent:
             return await self.factory.create_lean_agent(
-                profile=profile, user_context=user_context
+                profile=profile,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
             )
 
         # Use RAG agent factory when user_context is provided

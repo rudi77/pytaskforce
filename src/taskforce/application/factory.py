@@ -25,6 +25,11 @@ import yaml
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.planning_strategy import (
+    NativeReActStrategy,
+    PlanAndExecuteStrategy,
+    PlanningStrategy,
+)
 from taskforce.core.domain.router import QueryRouter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.infrastructure.cache.tool_cache import ToolResultCache
@@ -341,6 +346,8 @@ class AgentFactory:
         specialist: Optional[str] = None,
         work_dir: Optional[str] = None,
         user_context: Optional[dict[str, Any]] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
     ) -> LeanAgent:
         """
         Create LeanAgent with simplified ReAct loop.
@@ -361,6 +368,8 @@ class AgentFactory:
             specialist: Specialist profile override. If None, uses LEAN_KERNEL_PROMPT.
             work_dir: Optional override for work directory
             user_context: Optional user context for RAG tools (user_id, org_id, scope)
+            planning_strategy: Optional planning strategy override
+            planning_strategy_params: Optional planning strategy parameters
 
         Returns:
             LeanAgent instance with injected dependencies
@@ -422,6 +431,17 @@ class AgentFactory:
         # Get max_steps from config (defaults to LeanAgent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
+        strategy_name = (
+            planning_strategy
+            if planning_strategy is not None
+            else agent_config.get("planning_strategy")
+        )
+        strategy_params = (
+            planning_strategy_params
+            if planning_strategy_params is not None
+            else agent_config.get("planning_strategy_params")
+        )
+        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
 
         self.logger.debug(
             "lean_agent_created",
@@ -430,6 +450,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy_max_items=context_policy.max_items,
             max_steps=max_steps or "default",
+            planning_strategy=selected_strategy.name,
         )
 
         agent = LeanAgent(
@@ -440,6 +461,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy=context_policy,
             max_steps=max_steps,
+            planning_strategy=selected_strategy,
         )
 
         # Store MCP contexts on agent for lifecycle management
@@ -500,6 +522,8 @@ class AgentFactory:
         agent_definition: dict[str, Any],
         profile: str = "dev",
         work_dir: Optional[str] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
     ) -> LeanAgent:
         """
         Create LeanAgent from custom agent definition.
@@ -522,6 +546,8 @@ class AgentFactory:
                             tool_allowlist, mcp_servers, mcp_tool_allowlist
             profile: Configuration profile for infrastructure settings
             work_dir: Optional override for work directory
+            planning_strategy: Optional planning strategy override
+            planning_strategy_params: Optional planning strategy parameters
 
         Returns:
             LeanAgent instance configured from definition
@@ -586,6 +612,17 @@ class AgentFactory:
         # Get max_steps from config (defaults to LeanAgent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
+        strategy_name = (
+            planning_strategy
+            if planning_strategy is not None
+            else agent_config.get("planning_strategy")
+        )
+        strategy_params = (
+            planning_strategy_params
+            if planning_strategy_params is not None
+            else agent_config.get("planning_strategy_params")
+        )
+        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
 
         self.logger.debug(
             "lean_agent_from_definition_created",
@@ -595,6 +632,7 @@ class AgentFactory:
             prompt_length=len(system_prompt),
             context_policy_max_items=context_policy.max_items,
             max_steps=max_steps or "default",
+            planning_strategy=selected_strategy.name,
         )
 
         agent = LeanAgent(
@@ -605,6 +643,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy=context_policy,
             max_steps=max_steps,
+            planning_strategy=selected_strategy,
         )
 
         # Store MCP contexts on agent for lifecycle management
@@ -612,6 +651,47 @@ class AgentFactory:
         agent._mcp_contexts = []
 
         return agent
+
+    def _select_planning_strategy(
+        self, strategy_name: str | None, params: dict[str, Any] | None
+    ) -> PlanningStrategy:
+        """
+        Select and instantiate planning strategy for LeanAgent.
+
+        Args:
+            strategy_name: Strategy name (native_react or plan_and_execute)
+            params: Optional strategy parameters
+
+        Returns:
+            PlanningStrategy instance
+
+        Raises:
+            ValueError: If strategy name is invalid or params are malformed
+        """
+        normalized = (strategy_name or "native_react").strip().lower().replace("-", "_")
+        params = params or {}
+        if not isinstance(params, dict):
+            raise ValueError("planning_strategy_params must be a dictionary")
+
+        if normalized == "native_react":
+            return NativeReActStrategy()
+        if normalized == "plan_and_execute":
+            max_step_iterations_value = params.get("max_step_iterations")
+            max_plan_steps_value = params.get("max_plan_steps")
+            return PlanAndExecuteStrategy(
+                max_step_iterations=(
+                    int(max_step_iterations_value)
+                    if max_step_iterations_value is not None
+                    else 4
+                ),
+                max_plan_steps=(
+                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
+                ),
+            )
+
+        raise ValueError(
+            "Invalid planning_strategy. Supported values: native_react, plan_and_execute"
+        )
 
     async def _create_tools_from_allowlist(
         self,
