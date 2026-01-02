@@ -288,6 +288,20 @@ async def _execute_streaming_chat(
     tool_results: list[str] = []
     final_answer_tokens: list[str] = []
     status_message = "Thinking..."
+    plan_steps: list[dict[str, str]] = []
+    plan_text: str | None = None
+
+    def format_plan() -> str | None:
+        """Format current plan for display."""
+        if plan_steps:
+            lines = []
+            for index, step in enumerate(plan_steps, start=1):
+                description = step.get("description", "").strip()
+                status = step.get("status", "PENDING").upper()
+                checkbox = "x" if status in {"DONE", "COMPLETED"} else " "
+                lines.append(f"[{checkbox}] {index}. {description}")
+            return "\n".join(lines)
+        return plan_text
 
     def build_display() -> Group:
         """Build Rich display group for current state."""
@@ -311,6 +325,14 @@ async def _execute_streaming_chat(
                 Text(results_text),
                 title="Tool Results",
                 border_style="green",
+            ))
+
+        plan_display = format_plan()
+        if plan_display:
+            elements.append(Panel(
+                Text(plan_display),
+                title="🧭 Plan",
+                border_style="magenta",
             ))
 
         # Streaming answer
@@ -372,6 +394,21 @@ async def _execute_streaming_chat(
 
             elif event_type == "plan_updated":
                 action = update.details.get("action", "updated")
+                if update.details.get("steps"):
+                    plan_steps = [
+                        {"description": step, "status": "PENDING"}
+                        for step in update.details.get("steps", [])
+                    ]
+                    plan_text = None
+                if update.details.get("plan"):
+                    plan_text = update.details.get("plan")
+                    plan_steps = []
+                if update.details.get("step") and update.details.get("status"):
+                    step_index = update.details.get("step") - 1
+                    if 0 <= step_index < len(plan_steps):
+                        plan_steps[step_index]["status"] = update.details.get(
+                            "status", "PENDING"
+                        )
                 status_message = f"Plan {action}"
                 should_update = True
 

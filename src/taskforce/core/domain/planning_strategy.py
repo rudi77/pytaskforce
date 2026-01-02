@@ -48,6 +48,27 @@ class PlanningStrategy(Protocol):
         """Execute a mission with streaming updates."""
 
 
+def _build_plan_update(
+    action: str,
+    *,
+    steps: list[str] | None = None,
+    step: int | None = None,
+    status: str | None = None,
+    plan: str | None = None,
+) -> dict[str, Any]:
+    """Build a consistent plan update payload."""
+    data: dict[str, Any] = {"action": action}
+    if steps is not None:
+        data["steps"] = list(steps)
+    if step is not None:
+        data["step"] = step
+    if status is not None:
+        data["status"] = status
+    if plan:
+        data["plan"] = plan
+    return data
+
+
 async def _collect_execution_result(
     session_id: str,
     events: AsyncIterator[StreamEvent],
@@ -278,9 +299,15 @@ class NativeReActStrategy:
                         if tool_name in ("planner", "manage_plan") and tool_result.get(
                             "success"
                         ):
+                            plan_output = tool_result.get("output")
+                            if not plan_output and agent._planner:
+                                plan_output = agent._planner.get_plan_summary()
                             yield StreamEvent(
                                 event_type="plan_updated",
-                                data={"action": tool_args.get("action", "unknown")},
+                                data=_build_plan_update(
+                                    action=tool_args.get("action", "unknown"),
+                                    plan=plan_output,
+                                ),
                             )
 
                         tool_message = await agent._create_tool_message(
@@ -491,9 +518,15 @@ class NativeReActStrategy:
                     )
 
                     if tool_name in ("planner", "manage_plan") and tool_result.get("success"):
+                        plan_output = tool_result.get("output")
+                        if not plan_output and agent._planner:
+                            plan_output = agent._planner.get_plan_summary()
                         yield StreamEvent(
                             event_type="plan_updated",
-                            data={"action": tool_args.get("action", "unknown")},
+                            data=_build_plan_update(
+                                action=tool_args.get("action", "unknown"),
+                                plan=plan_output,
+                            ),
                         )
 
                     tool_message = await agent._create_tool_message(
@@ -608,7 +641,11 @@ class PlanAndExecuteStrategy:
             await agent._planner.execute(action="create_plan", tasks=plan_steps)
             yield StreamEvent(
                 event_type="plan_updated",
-                data={"action": "create_plan", "steps": list(plan_steps)},
+                data=_build_plan_update(
+                    action="create_plan",
+                    steps=plan_steps,
+                    plan=agent._planner.get_plan_summary(),
+                ),
             )
 
         progress_steps = 0
@@ -714,9 +751,15 @@ class PlanAndExecuteStrategy:
                         if tool_name in ("planner", "manage_plan") and tool_result.get(
                             "success"
                         ):
+                            plan_output = tool_result.get("output")
+                            if not plan_output and agent._planner:
+                                plan_output = agent._planner.get_plan_summary()
                             yield StreamEvent(
                                 event_type="plan_updated",
-                                data={"action": tool_args.get("action", "unknown")},
+                                data=_build_plan_update(
+                                    action=tool_args.get("action", "unknown"),
+                                    plan=plan_output,
+                                ),
                             )
 
                         tool_message = await agent._create_tool_message(
@@ -733,7 +776,16 @@ class PlanAndExecuteStrategy:
                         await agent._planner.execute(action="mark_done", step_index=index)
                     yield StreamEvent(
                         event_type="plan_updated",
-                        data={"step": index, "status": "completed"},
+                        data=_build_plan_update(
+                            action="mark_done",
+                            step=index,
+                            status="completed",
+                            plan=(
+                                agent._planner.get_plan_summary()
+                                if agent._planner
+                                else None
+                            ),
+                        ),
                     )
                     step_complete = True
                 else:
@@ -844,7 +896,11 @@ class PlanAndReactStrategy:
             await agent._planner.execute(action="create_plan", tasks=plan_steps)
             yield StreamEvent(
                 event_type="plan_updated",
-                data={"action": "create_plan", "steps": list(plan_steps)},
+                data=_build_plan_update(
+                    action="create_plan",
+                    steps=plan_steps,
+                    plan=agent._planner.get_plan_summary(),
+                ),
             )
 
         await agent._save_state(session_id, state)
