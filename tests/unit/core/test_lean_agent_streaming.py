@@ -384,7 +384,7 @@ class TestLeanAgentStreaming:
     async def test_execute_still_works_after_streaming_added(
         self, mock_state_manager, mock_tool
     ):
-        """Test backward compatibility: execute() still works unchanged."""
+        """Test execute() uses the same final answer as execute_stream()."""
         mock_provider = AsyncMock()
         mock_provider.complete.return_value = {
             "success": True,
@@ -392,7 +392,9 @@ class TestLeanAgentStreaming:
             "tool_calls": None,
         }
         mock_provider.complete_stream = MagicMock(
-            return_value=mock_stream_simple_response("Hello")
+            side_effect=lambda *args, **kwargs: mock_stream_simple_response(
+                "Hello from streaming"
+            )
         )
 
         agent = LeanAgent(
@@ -402,11 +404,18 @@ class TestLeanAgentStreaming:
             system_prompt="Test prompt",
         )
 
-        # Test that regular execute() still works
+        stream_events = []
+        async for event in agent.execute_stream("Test execute", "test-session"):
+            stream_events.append(event)
+
+        final_event = next(
+            event for event in stream_events if event.event_type == "final_answer"
+        )
+
         result = await agent.execute("Test execute", "test-session")
 
         assert result.status == "completed"
-        assert result.final_message == "Hello from execute()!"
+        assert result.final_message == final_event.data["content"]
 
 
 class TestStreamEventDataclass:
@@ -553,4 +562,3 @@ class TestTruncateOutput:
 
         assert len(result) == 203  # 200 + "..."
         assert result.endswith("...")
-

@@ -47,6 +47,46 @@ class PlanningStrategy(Protocol):
         """Execute a mission with streaming updates."""
 
 
+async def _collect_execution_result(
+    session_id: str,
+    events: AsyncIterator[StreamEvent],
+) -> ExecutionResult:
+    """Collect stream events into an ExecutionResult."""
+    execution_history: list[dict[str, Any]] = []
+    final_message = ""
+    last_error = ""
+    history_event_types = {
+        "tool_call",
+        "tool_result",
+        "plan_updated",
+        "final_answer",
+        "error",
+    }
+
+    async for event in events:
+        event_type = event.event_type
+        if event_type in history_event_types:
+            execution_history.append({"type": event_type, **event.data})
+        if event_type == "final_answer":
+            final_message = event.data.get("content", "")
+        elif event_type == "error":
+            last_error = event.data.get("message", "")
+
+    if not final_message and last_error:
+        final_message = last_error
+
+    status = "completed"
+    if last_error or not final_message:
+        status = "failed"
+
+    return ExecutionResult(
+        session_id=session_id,
+        status=status,
+        final_message=final_message,
+        execution_history=execution_history,
+    )
+
+
 class NativeReActStrategy:
     """Strategy that owns the native tool calling ReAct loop."""
 
@@ -57,175 +97,17 @@ class NativeReActStrategy:
     ) -> ExecutionResult:
         agent.logger.info("execute_start", session_id=session_id, mission=mission[:100])
 
-        state = await agent.state_manager.load_state(session_id) or {}
-        execution_history: list[dict[str, Any]] = []
-
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
-
-        messages = agent._build_initial_messages(mission, state)
-
-        step = 0  # Counts meaningful progress steps (tool calls or final answer)
-        loop_iterations = 0  # Counts all loop iterations (for debugging)
-        final_message = ""
-
-        while step < agent.max_steps:
-            loop_iterations += 1
-            agent.logger.debug(
-                "loop_iteration",
-                session_id=session_id,
-                iteration=loop_iterations,
-                progress_steps=step,
-                max_steps=agent.max_steps,
-            )
-
-            current_system_prompt = agent._build_system_prompt(
-                mission=mission, state=state, messages=messages
-            )
-            messages[0] = {"role": "system", "content": current_system_prompt}
-
-            # Compress messages if exceeding threshold (async LLM-based)
-            # messages = await agent._compress_messages(messages)
-
-            # Preflight budget check (Story 9.3)
-            # messages = await agent._preflight_budget_check(messages)
-
-            result = await agent.llm_provider.complete(
-                messages=messages,
-                model=agent.model_alias,
-                tools=agent._openai_tools,
-                tool_choice="auto",
-                temperature=0.2,
-            )
-
-            if not result.get("success"):
-                agent.logger.error(
-                    "llm_call_failed",
-                    error=result.get("error"),
-                    iteration=loop_iterations,
-                    step=step,
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"[System Error: {result.get('error')}. Please try again.]",
-                    }
-                )
-                continue
-
-            tool_calls = result.get("tool_calls")
-
-            if tool_calls:
-                step += 1
-                agent.logger.info(
-                    "tool_calls_received",
-                    step=step,
-                    iteration=loop_iterations,
-                    count=len(tool_calls),
-                    tools=[tc["function"]["name"] for tc in tool_calls],
-                )
-
-                messages.append(assistant_tool_calls_to_message(tool_calls))
-
-                for tool_call in tool_calls:
-                    tool_name = tool_call["function"]["name"]
-                    tool_call_id = tool_call["id"]
-
-                    try:
-                        tool_args = json.loads(tool_call["function"]["arguments"])
-                    except json.JSONDecodeError:
-                        tool_args = {}
-                        agent.logger.warning(
-                            "tool_args_parse_failed",
-                            tool=tool_name,
-                            raw_args=tool_call["function"]["arguments"],
-                        )
-
-                    tool_result = await agent._execute_tool(tool_name, tool_args)
-
-                    execution_history.append(
-                        {
-                            "type": "tool_call",
-                            "step": step,
-                            "tool": tool_name,
-                            "args": tool_args,
-                            "result": tool_result,
-                        }
-                    )
-
-                    tool_message = await agent._create_tool_message(
-                        tool_call_id, tool_name, tool_result, session_id, step
-                    )
-                    messages.append(tool_message)
-
-                    if not tool_result.get("success"):
-                        agent.logger.warning(
-                            "tool_failed",
-                            step=step,
-                            tool=tool_name,
-                            error=tool_result.get("error"),
-                        )
-
-            else:
-                content = result.get("content", "")
-
-                if content:
-                    step += 1
-                    agent.logger.info(
-                        "final_answer_received",
-                        step=step,
-                        iteration=loop_iterations,
-                        total_iterations=loop_iterations,
-                    )
-                    final_message = content
-
-                    execution_history.append(
-                        {
-                            "type": "final_answer",
-                            "step": step,
-                            "content": content,
-                        }
-                    )
-                    break
-                else:
-                    agent.logger.warning(
-                        "empty_response",
-                        step=step,
-                        iteration=loop_iterations,
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "[System: Your response was empty. Please provide an answer "
-                                "or use a tool.]"
-                            ),
-                        }
-                    )
-
-        if step >= agent.max_steps and not final_message:
-            status = "failed"
-            final_message = f"Exceeded maximum steps ({agent.max_steps})"
-        else:
-            status = "completed"
-
-        await agent._save_state(session_id, state)
+        result = await _collect_execution_result(
+            session_id,
+            self.execute_stream(agent, mission, session_id),
+        )
 
         agent.logger.info(
             "execute_complete",
             session_id=session_id,
-            status=status,
-            progress_steps=step,
-            total_iterations=loop_iterations,
-            overhead_iterations=loop_iterations - step,
+            status=result.status,
         )
-
-        return ExecutionResult(
-            session_id=session_id,
-            status=status,
-            final_message=final_message,
-            execution_history=execution_history,
-        )
+        return result
 
     async def execute_stream(
         self, agent: "LeanAgent", mission: str, session_id: str
@@ -234,39 +116,162 @@ class NativeReActStrategy:
 
         if not hasattr(agent.llm_provider, "complete_stream"):
             agent.logger.warning("llm_provider_no_streaming", fallback="execute")
-            result = await agent.execute(mission, session_id)
+            state = await agent.state_manager.load_state(session_id) or {}
 
-            for event in result.execution_history:
-                event_type = event.get("type", "unknown")
-                if event_type == "tool_call":
-                    yield StreamEvent(
-                        event_type="tool_call",
-                        data={
-                            "tool": event.get("tool", ""),
-                            "status": "completed",
-                        },
+            if agent._planner and state.get("planner_state"):
+                agent._planner.set_state(state["planner_state"])
+
+            messages = agent._build_initial_messages(mission, state)
+
+            step = 0
+            loop_iterations = 0
+            final_message = ""
+
+            while step < agent.max_steps:
+                loop_iterations += 1
+                agent.logger.debug(
+                    "loop_iteration",
+                    session_id=session_id,
+                    iteration=loop_iterations,
+                    progress_steps=step,
+                    max_steps=agent.max_steps,
+                )
+
+                current_system_prompt = agent._build_system_prompt(
+                    mission=mission, state=state, messages=messages
+                )
+                messages[0] = {"role": "system", "content": current_system_prompt}
+
+                result = await agent.llm_provider.complete(
+                    messages=messages,
+                    model=agent.model_alias,
+                    tools=agent._openai_tools,
+                    tool_choice="auto",
+                    temperature=0.2,
+                )
+
+                if not result.get("success"):
+                    agent.logger.error(
+                        "llm_call_failed",
+                        error=result.get("error"),
+                        iteration=loop_iterations,
+                        step=step,
                     )
-                    yield StreamEvent(
-                        event_type="tool_result",
-                        data={
-                            "tool": event.get("tool", ""),
-                            "success": event.get("result", {}).get("success", False),
-                            "output": agent._truncate_output(
-                                event.get("result", {}).get("output", "")
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[System Error: {result.get('error')}. Please try again.]"
                             ),
-                        },
+                        }
                     )
-                elif event_type == "final_answer":
+                    continue
+
+                tool_calls = result.get("tool_calls")
+
+                if tool_calls:
+                    step += 1
+                    agent.logger.info(
+                        "tool_calls_received",
+                        step=step,
+                        iteration=loop_iterations,
+                        count=len(tool_calls),
+                        tools=[tc["function"]["name"] for tc in tool_calls],
+                    )
+
+                    messages.append(assistant_tool_calls_to_message(tool_calls))
+
+                    for tool_call in tool_calls:
+                        tool_name = tool_call["function"]["name"]
+                        tool_call_id = tool_call["id"]
+
+                        try:
+                            tool_args = json.loads(tool_call["function"]["arguments"])
+                        except json.JSONDecodeError:
+                            tool_args = {}
+                            agent.logger.warning(
+                                "tool_args_parse_failed",
+                                tool=tool_name,
+                                raw_args=tool_call["function"]["arguments"],
+                            )
+
+                        yield StreamEvent(
+                            event_type="tool_call",
+                            data={"tool": tool_name, "id": tool_call_id, "status": "completed"},
+                        )
+
+                        tool_result = await agent._execute_tool(tool_name, tool_args)
+                        yield StreamEvent(
+                            event_type="tool_result",
+                            data={
+                                "tool": tool_name,
+                                "id": tool_call_id,
+                                "success": tool_result.get("success", False),
+                                "output": agent._truncate_output(
+                                    tool_result.get(
+                                        "output", str(tool_result.get("error", ""))
+                                    )
+                                ),
+                                "args": tool_args,
+                            },
+                        )
+
+                        if tool_name in ("planner", "manage_plan") and tool_result.get(
+                            "success"
+                        ):
+                            yield StreamEvent(
+                                event_type="plan_updated",
+                                data={"action": tool_args.get("action", "unknown")},
+                            )
+
+                        tool_message = await agent._create_tool_message(
+                            tool_call_id, tool_name, tool_result, session_id, step
+                        )
+                        messages.append(tool_message)
+
+                    continue
+
+                content = result.get("content", "")
+                if content:
+                    step += 1
+                    final_message = content
                     yield StreamEvent(
                         event_type="final_answer",
-                        data={"content": event.get("content", "")},
+                        data={"content": content},
                     )
+                    break
 
-            if not any(e.get("type") == "final_answer" for e in result.execution_history):
-                yield StreamEvent(
-                    event_type="final_answer",
-                    data={"content": result.final_message},
+                agent.logger.warning(
+                    "empty_response",
+                    step=step,
+                    iteration=loop_iterations,
                 )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[System: Your response was empty. Please provide an answer "
+                            "or use a tool.]"
+                        ),
+                    }
+                )
+
+            if step >= agent.max_steps and not final_message:
+                final_message = f"Exceeded maximum steps ({agent.max_steps})"
+                yield StreamEvent(
+                    event_type="error",
+                    data={"message": final_message, "step": step},
+                )
+
+            await agent._save_state(session_id, state)
+
+            agent.logger.info(
+                "execute_stream_complete",
+                session_id=session_id,
+                progress_steps=step,
+                total_iterations=loop_iterations,
+                overhead_iterations=loop_iterations - step,
+            )
             return
 
         state = await agent.state_manager.load_state(session_id) or {}
@@ -506,9 +511,24 @@ class PlanAndExecuteStrategy:
         self, agent: "LeanAgent", mission: str, session_id: str
     ) -> ExecutionResult:
         self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
+        result = await _collect_execution_result(
+            session_id,
+            self.execute_stream(agent, mission, session_id),
+        )
+
+        self.logger.info(
+            "execute_complete",
+            session_id=session_id,
+            status=result.status,
+        )
+        return result
+
+    async def execute_stream(
+        self, agent: "LeanAgent", mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        self.logger.info("execute_stream_start", session_id=session_id)
 
         state = await agent.state_manager.load_state(session_id) or {}
-        execution_history: list[dict[str, Any]] = []
 
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
@@ -527,8 +547,9 @@ class PlanAndExecuteStrategy:
 
         if agent._planner:
             await agent._planner.execute(action="create_plan", tasks=plan_steps)
-            execution_history.append(
-                {"type": "plan_created", "steps": list(plan_steps)}
+            yield StreamEvent(
+                event_type="plan_updated",
+                data={"action": "create_plan", "steps": list(plan_steps)},
             )
 
         progress_steps = 0
@@ -606,17 +627,38 @@ class PlanAndExecuteStrategy:
                                 raw_args=tool_call["function"]["arguments"],
                             )
 
-                        tool_result = await agent._execute_tool(tool_name, tool_args)
-                        execution_history.append(
-                            {
-                                "type": "tool_call",
-                                "step": progress_steps,
-                                "plan_step": index,
+                        yield StreamEvent(
+                            event_type="tool_call",
+                            data={
                                 "tool": tool_name,
-                                "args": tool_args,
-                                "result": tool_result,
-                            }
+                                "id": tool_call_id,
+                                "status": "completed",
+                            },
                         )
+
+                        tool_result = await agent._execute_tool(tool_name, tool_args)
+                        yield StreamEvent(
+                            event_type="tool_result",
+                            data={
+                                "tool": tool_name,
+                                "id": tool_call_id,
+                                "success": tool_result.get("success", False),
+                                "output": agent._truncate_output(
+                                    tool_result.get(
+                                        "output", str(tool_result.get("error", ""))
+                                    )
+                                ),
+                                "args": tool_args,
+                            },
+                        )
+
+                        if tool_name in ("planner", "manage_plan") and tool_result.get(
+                            "success"
+                        ):
+                            yield StreamEvent(
+                                event_type="plan_updated",
+                                data={"action": tool_args.get("action", "unknown")},
+                            )
 
                         tool_message = await agent._create_tool_message(
                             tool_call_id, tool_name, tool_result, session_id, progress_steps
@@ -627,16 +669,13 @@ class PlanAndExecuteStrategy:
                 content = result.get("content", "")
                 if content:
                     progress_steps += 1
-                    execution_history.append(
-                        {
-                            "type": "plan_step_complete",
-                            "step": index,
-                            "content": content,
-                        }
-                    )
                     messages.append({"role": "assistant", "content": content})
                     if agent._planner:
                         await agent._planner.execute(action="mark_done", step_index=index)
+                    yield StreamEvent(
+                        event_type="plan_updated",
+                        data={"step": index, "status": "completed"},
+                    )
                     step_complete = True
                 else:
                     messages.append(
@@ -670,65 +709,31 @@ class PlanAndExecuteStrategy:
                 final_message = result.get("content", "") or ""
 
         if progress_steps >= agent.max_steps and not final_message:
-            status = "failed"
             final_message = f"Exceeded maximum steps ({agent.max_steps})"
+            yield StreamEvent(
+                event_type="error",
+                data={"message": final_message, "step": progress_steps},
+            )
         elif not final_message:
-            status = "failed"
             final_message = "Plan execution did not produce a final response."
-        else:
-            status = "completed"
+            yield StreamEvent(
+                event_type="error",
+                data={"message": final_message, "step": progress_steps},
+            )
+
+        if final_message:
+            yield StreamEvent(
+                event_type="final_answer",
+                data={"content": final_message},
+            )
 
         await agent._save_state(session_id, state)
 
         self.logger.info(
-            "execute_complete",
+            "execute_stream_complete",
             session_id=session_id,
-            status=status,
             progress_steps=progress_steps,
             total_iterations=loop_iterations,
-        )
-
-        return ExecutionResult(
-            session_id=session_id,
-            status=status,
-            final_message=final_message,
-            execution_history=execution_history,
-        )
-
-    async def execute_stream(
-        self, agent: "LeanAgent", mission: str, session_id: str
-    ) -> AsyncIterator[StreamEvent]:
-        result = await self.execute(agent, mission, session_id)
-
-        for event in result.execution_history:
-            event_type = event.get("type", "unknown")
-            if event_type == "tool_call":
-                yield StreamEvent(
-                    event_type="tool_call",
-                    data={
-                        "tool": event.get("tool", ""),
-                        "status": "completed",
-                    },
-                )
-                yield StreamEvent(
-                    event_type="tool_result",
-                    data={
-                        "tool": event.get("tool", ""),
-                        "success": event.get("result", {}).get("success", False),
-                        "output": agent._truncate_output(
-                            event.get("result", {}).get("output", "")
-                        ),
-                    },
-                )
-            elif event_type == "plan_step_complete":
-                yield StreamEvent(
-                    event_type="plan_updated",
-                    data={"step": event.get("step"), "status": "completed"},
-                )
-
-        yield StreamEvent(
-            event_type="final_answer",
-            data={"content": result.final_message},
         )
 
     async def _generate_plan(self, agent: "LeanAgent", mission: str) -> list[str]:
