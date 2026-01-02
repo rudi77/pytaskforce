@@ -15,6 +15,7 @@ The implementation is compatible with Agent V2 state files and provides:
 
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,11 @@ class FileStateManager(StateManagerProtocol):
         >>> assert loaded["todolist_id"] == "abc-123"
     """
 
-    def __init__(self, work_dir: str = ".taskforce"):
+    def __init__(
+        self,
+        work_dir: str = ".taskforce",
+        time_provider: Callable[[], datetime] | None = None,
+    ):
         """
         Initialize the file-based state manager.
 
@@ -64,6 +69,80 @@ class FileStateManager(StateManagerProtocol):
         self.states_dir.mkdir(parents=True, exist_ok=True)
         self.locks: dict[str, asyncio.Lock] = {}
         self.logger = structlog.get_logger()
+        self._time_provider = time_provider or datetime.now
+
+    def _now_isoformat(self) -> str:
+        """
+        Return current timestamp in ISO format.
+
+        Returns:
+            ISO-formatted timestamp string
+        """
+        return self._time_provider().isoformat()
+
+    def _build_state_payload(
+        self,
+        session_id: str,
+        state_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Build a new state payload with versioning metadata.
+
+        Args:
+            session_id: Unique identifier for the session
+            state_data: Dictionary containing session state
+
+        Returns:
+            State payload ready for JSON serialization
+        """
+        state_copy = dict(state_data)
+        current_version = int(state_copy.get("_version", 0))
+        state_copy["_version"] = current_version + 1
+        state_copy["_updated_at"] = self._now_isoformat()
+        return {
+            "session_id": session_id,
+            "timestamp": self._now_isoformat(),
+            "state_data": state_copy,
+        }
+
+    def _serialize_state_payload(
+        self,
+        session_id: str,
+        state_data: dict[str, Any],
+    ) -> tuple[str, int]:
+        """
+        Serialize state payload to JSON.
+
+        Args:
+            session_id: Unique identifier for the session
+            state_data: Dictionary containing session state
+
+        Returns:
+            Tuple of JSON payload string and version number
+        """
+        payload = self._build_state_payload(session_id, state_data)
+        payload_json = json.dumps(payload, indent=2, ensure_ascii=False)
+        return payload_json, int(payload["state_data"]["_version"])
+
+    async def _write_state_file(
+        self,
+        temp_file: Path,
+        state_file: Path,
+        payload_json: str,
+    ) -> None:
+        """
+        Write the state payload to disk atomically.
+
+        Args:
+            temp_file: Temporary file path
+            state_file: Final file path
+            payload_json: JSON payload string
+        """
+        async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
+            await f.write(payload_json)
+        if state_file.exists():
+            state_file.unlink()
+        temp_file.rename(state_file)
 
     def _get_lock(self, session_id: str) -> asyncio.Lock:
         """
@@ -91,52 +170,41 @@ class FileStateManager(StateManagerProtocol):
 
         Args:
             session_id: Unique identifier for the session
-            state_data: Dictionary containing session state. Will be modified
-                       to include _version and _updated_at fields.
+            state_data: Dictionary containing session state.
 
         Returns:
             True if state was saved successfully, False otherwise
         """
         async with self._get_lock(session_id):
+            state_file = self.states_dir / f"{session_id}.json"
+            temp_file = self.states_dir / f"{session_id}.json.tmp"
+
             try:
-                state_file = self.states_dir / f"{session_id}.json"
-                temp_file = self.states_dir / f"{session_id}.json.tmp"
-
-                # Increment version
-                current_version = state_data.get("_version", 0)
-                state_data["_version"] = current_version + 1
-                state_data["_updated_at"] = datetime.now().isoformat()
-
-                # Wrap state data with metadata
-                state_to_save = {
-                    "session_id": session_id,
-                    "timestamp": datetime.now().isoformat(),
-                    "state_data": state_data
-                }
-
-                # Atomic write: write to temp file, then rename
-                async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
-                    await f.write(json.dumps(state_to_save, indent=2, ensure_ascii=False))
-
-                # Atomic rename (Windows requires removing target first)
-                if state_file.exists():
-                    state_file.unlink()
-                temp_file.rename(state_file)
-
-                self.logger.info(
-                    "state_saved",
+                payload_json, version = self._serialize_state_payload(session_id, state_data)
+            except (TypeError, ValueError) as exc:
+                self.logger.error(
+                    "state_save_serialization_failed",
                     session_id=session_id,
-                    version=state_data["_version"]
+                    error=str(exc),
                 )
-                return True
+                return False
 
-            except Exception as e:
+            try:
+                await self._write_state_file(temp_file, state_file, payload_json)
+            except OSError as exc:
                 self.logger.error(
                     "state_save_failed",
                     session_id=session_id,
-                    error=str(e)
+                    error=str(exc),
                 )
                 return False
+
+            self.logger.info(
+                "state_saved",
+                session_id=session_id,
+                version=version,
+            )
+            return True
 
     async def load_state(self, session_id: str) -> dict[str, Any] | None:
         """
@@ -147,28 +215,27 @@ class FileStateManager(StateManagerProtocol):
 
         Returns:
             Dictionary containing session state if found, empty dict if session
-            file exists but is empty, None if session doesn't exist or on error
+            doesn't exist, None on error
         """
+        state_file = self.states_dir / f"{session_id}.json"
+
+        if not state_file.exists():
+            return {}
+
         try:
-            state_file = self.states_dir / f"{session_id}.json"
-
-            if not state_file.exists():
-                return {}
-
             async with aiofiles.open(state_file, encoding="utf-8") as f:
                 content = await f.read()
-                state = json.loads(content)
-
-            self.logger.info("state_loaded", session_id=session_id)
-            return state["state_data"]
-
-        except Exception as e:
+            state = json.loads(content)
+        except (OSError, json.JSONDecodeError, KeyError) as exc:
             self.logger.error(
                 "state_load_failed",
                 session_id=session_id,
-                error=str(e)
+                error=str(exc),
             )
             return None
+
+        self.logger.info("state_loaded", session_id=session_id)
+        return state.get("state_data", {})
 
     async def delete_state(self, session_id: str) -> None:
         """
@@ -180,23 +247,22 @@ class FileStateManager(StateManagerProtocol):
         Args:
             session_id: Unique identifier for the session
         """
-        try:
-            state_file = self.states_dir / f"{session_id}.json"
+        state_file = self.states_dir / f"{session_id}.json"
 
+        try:
             if state_file.exists():
                 state_file.unlink()
                 self.logger.info("state_deleted", session_id=session_id)
-
-            # Clean up lock
-            if session_id in self.locks:
-                del self.locks[session_id]
-
-        except Exception as e:
+        except OSError as exc:
             self.logger.error(
                 "state_delete_failed",
                 session_id=session_id,
-                error=str(e)
+                error=str(exc),
             )
+            return
+
+        if session_id in self.locks:
+            del self.locks[session_id]
 
     async def list_sessions(self) -> list[str]:
         """
@@ -208,17 +274,13 @@ class FileStateManager(StateManagerProtocol):
             List of session IDs (strings), sorted alphabetically.
             Returns empty list if no sessions or on error.
         """
+        sessions = []
         try:
-            sessions = []
             for state_file in self.states_dir.glob("*.json"):
-                # Extract session_id from filename (remove .json extension)
                 if not state_file.name.endswith(".tmp"):
-                    session_id = state_file.stem
-                    sessions.append(session_id)
-
-            return sorted(sessions)
-
-        except Exception as e:
-            self.logger.error("list_sessions_failed", error=str(e))
+                    sessions.append(state_file.stem)
+        except OSError as exc:
+            self.logger.error("list_sessions_failed", error=str(exc))
             return []
 
+        return sorted(sessions)
