@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test:*)",
+      "Bash(uv run:*)",
+      "Bash(find:*)",
+      "Bash(md-tree:*)",
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
+      "Bash(sed:*)",
+      "Bash(timeout 10s uv run:*)",
+      "Bash(python:*)",
+      "Read(//c/Users/rudi/source/ai_solution_architect/payment-api/**)",
+      "Read(//c/Users/rudi/source/**)",
+      "Bash(uv add:*)",
+      "Bash(uv pip install:*)",
+      "Bash(NUL)",
+      "Bash(findstr:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
