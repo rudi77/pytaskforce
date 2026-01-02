@@ -13,7 +13,6 @@ import structlog
 from structlog.testing import LogCapture
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
-from taskforce.core.domain.errors import LLMError
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.exceptions import (
     AgentExecutionError,
@@ -141,7 +140,7 @@ async def test_execute_mission_error_handling():
     executor = AgentExecutor(factory=mock_factory)
 
     # Verify exception is raised
-    with pytest.raises(LLMError, match="LLM failure"):
+    with pytest.raises(AgentExecutionError, match="LLM failure"):
         await executor.execute_mission("Test mission")
 
     # Verify agent was called
@@ -158,7 +157,7 @@ async def test_execute_mission_error_handling_lean_agent():
 
     executor = AgentExecutor(factory=mock_factory)
 
-    with pytest.raises(LLMError, match="LLM failure"):
+    with pytest.raises(LeanAgentExecutionError, match="LLM failure"):
         await executor.execute_mission("Test mission", use_lean_agent=True)
 
     mock_agent.execute.assert_called_once()
@@ -283,7 +282,7 @@ async def test_execute_mission_streaming_error_handling():
 
     # Collect updates until error
     updates = []
-    with pytest.raises(RuntimeError, match="Execution failed"):
+    with pytest.raises(AgentExecutionError, match="Execution failed"):
         async for update in executor.execute_mission_streaming("Test mission"):
             updates.append(update)
 

@@ -26,10 +26,13 @@ from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.errors import (
     CancelledError,
-    LLMError,
     NotFoundError,
     TaskforceError,
     ValidationError,
+)
+from taskforce.core.domain.exceptions import (
+    AgentExecutionError,
+    LeanAgentExecutionError,
 )
 from taskforce.core.domain.lean_agent import LeanAgent
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
@@ -209,7 +212,11 @@ class AgentExecutor:
                 duration_seconds=duration,
             )
             raise self._wrap_exception(
-                e, context="Mission execution failed", session_id=session_id
+                e,
+                context="Mission execution failed",
+                session_id=session_id,
+                agent_id=agent_id,
+                use_lean_agent=use_lean_agent,
             ) from e
 
         finally:
@@ -342,7 +349,11 @@ class AgentExecutor:
             )
 
             raise self._wrap_exception(
-                e, context="Mission streaming failed", session_id=session_id
+                e,
+                context="Mission streaming failed",
+                session_id=session_id,
+                agent_id=agent_id,
+                use_lean_agent=use_lean_agent,
             ) from e
 
         finally:
@@ -652,7 +663,13 @@ class AgentExecutor:
         return str(uuid.uuid4())
 
     def _wrap_exception(
-        self, error: Exception, *, context: str, session_id: str
+        self,
+        error: Exception,
+        *,
+        context: str,
+        session_id: str,
+        agent_id: str | None,
+        use_lean_agent: bool,
     ) -> TaskforceError:
         """Wrap unknown exceptions into a TaskforceError subtype."""
         if isinstance(error, TaskforceError):
@@ -662,7 +679,36 @@ class AgentExecutor:
                 f"{context}: {str(error)}",
                 details={"session_id": session_id},
             )
-        return LLMError(
+        error_context = self._extract_error_context(
+            error=error, session_id=session_id, agent_id=agent_id
+        )
+        details = {
+            "session_id": error_context["session_id"],
+            "agent_id": error_context["agent_id"],
+            "lean_agent_id": error_context["lean_agent_id"],
+            "tool_name": error_context["tool_name"],
+            "error_code": error_context["error_code"],
+            "error_type": type(error).__name__,
+        }
+        lean_execution = bool(agent_id) or use_lean_agent or bool(
+            error_context["lean_agent_id"]
+        )
+        if lean_execution:
+            return LeanAgentExecutionError(
+                f"{context}: {str(error)}",
+                session_id=error_context["session_id"],
+                lean_agent_id=error_context["lean_agent_id"] or agent_id,
+                tool_name=error_context["tool_name"],
+                error_code=error_context["error_code"],
+                status_code=500,
+                details=details,
+            )
+        return AgentExecutionError(
             f"{context}: {str(error)}",
-            details={"session_id": session_id, "error_type": type(error).__name__},
+            session_id=error_context["session_id"],
+            agent_id=error_context["agent_id"],
+            tool_name=error_context["tool_name"],
+            error_code=error_context["error_code"],
+            status_code=500,
+            details=details,
         )

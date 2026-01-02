@@ -13,6 +13,7 @@ class TaskforceError(Exception):
     message: str
     code: str = "taskforce_error"
     details: Dict[str, Any] | None = None
+    status_code: int | None = None
 
     def __post_init__(self) -> None:
         super().__init__(self.message)
