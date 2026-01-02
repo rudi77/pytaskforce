@@ -13,6 +13,7 @@ The AgentExecutor:
 - Provides error handling with clear messages
 """
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -23,6 +24,13 @@ import structlog
 
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.agent import Agent
+from taskforce.core.domain.errors import (
+    CancelledError,
+    LLMError,
+    NotFoundError,
+    TaskforceError,
+    ValidationError,
+)
 from taskforce.core.domain.lean_agent import LeanAgent
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
@@ -166,6 +174,20 @@ class AgentExecutor:
 
             return result
 
+        except asyncio.CancelledError as e:
+            duration = (datetime.now() - start_time).total_seconds()
+
+            self.logger.warning(
+                "mission.execution.cancelled",
+                session_id=session_id,
+                error=str(e),
+                duration_seconds=duration,
+                agent_id=agent_id,
+            )
+            raise CancelledError(
+                f"Mission execution cancelled: {str(e)}",
+                details={"session_id": session_id},
+            ) from e
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
 
@@ -176,7 +198,9 @@ class AgentExecutor:
                 agent_id=agent_id,
                 duration_seconds=duration,
             )
-            raise
+            raise self._wrap_exception(
+                e, context="Mission execution failed", session_id=session_id
+            ) from e
 
         finally:
             # Clean up MCP connections to avoid cancel scope errors
@@ -265,6 +289,25 @@ class AgentExecutor:
                 "mission.streaming.completed", session_id=session_id, agent_id=agent_id
             )
 
+        except asyncio.CancelledError as e:
+            self.logger.warning(
+                "mission.streaming.cancelled",
+                session_id=session_id,
+                error=str(e),
+                agent_id=agent_id,
+            )
+
+            yield ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type="error",
+                message=f"Execution cancelled: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+
+            raise CancelledError(
+                f"Mission streaming cancelled: {str(e)}",
+                details={"session_id": session_id},
+            ) from e
         except Exception as e:
             self._log_execution_failure(
                 event_name="mission.streaming.failed",
@@ -281,7 +324,9 @@ class AgentExecutor:
                 details={"error": str(e), "error_type": type(e).__name__},
             )
 
-            raise
+            raise self._wrap_exception(
+                e, context="Mission streaming failed", session_id=session_id
+            ) from e
 
         finally:
             # Clean up MCP connections to avoid cancel scope errors
@@ -334,13 +379,17 @@ class AgentExecutor:
             agent_response = registry.get_agent(agent_id)
 
             if not agent_response:
-                raise FileNotFoundError(f"Agent '{agent_id}' not found")
+                raise NotFoundError(
+                    f"Agent '{agent_id}' not found",
+                    details={"agent_id": agent_id},
+                )
 
             # Only custom agents can be used for execution (not profile agents)
             if agent_response.source != "custom":
-                raise ValueError(
+                raise ValidationError(
                     f"Agent '{agent_id}' is a profile agent, not a custom agent. "
-                    "Use 'profile' parameter for profile agents."
+                    "Use 'profile' parameter for profile agents.",
+                    details={"agent_id": agent_id, "source": agent_response.source},
                 )
 
             # Convert response to definition dict
@@ -576,3 +625,19 @@ class AgentExecutor:
             UUID-based session identifier
         """
         return str(uuid.uuid4())
+
+    def _wrap_exception(
+        self, error: Exception, *, context: str, session_id: str
+    ) -> TaskforceError:
+        """Wrap unknown exceptions into a TaskforceError subtype."""
+        if isinstance(error, TaskforceError):
+            return error
+        if isinstance(error, asyncio.CancelledError):
+            return CancelledError(
+                f"{context}: {str(error)}",
+                details={"session_id": session_id},
+            )
+        return LLMError(
+            f"{context}: {str(error)}",
+            details={"session_id": session_id, "error_type": type(error).__name__},
+        )

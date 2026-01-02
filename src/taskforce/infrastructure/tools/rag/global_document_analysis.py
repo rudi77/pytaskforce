@@ -3,6 +3,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 import structlog
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase, Document
@@ -151,8 +152,17 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
                 try:
                     document = Document.from_dict(document_data)
                 except Exception as e:
-                    self.logger.error("Failed to convert document data", error=str(e), document_data=document_data)
-                    return {"success": False, "error": f"Failed to process document data: {str(e)}"}
+                    self.logger.error(
+                        "Failed to convert document data",
+                        error=str(e),
+                        document_data=document_data,
+                    )
+                    tool_error = ToolError(
+                        f"{self.name} failed: Failed to process document data: {e}",
+                        tool_name=self.name,
+                        details={"document_id": document_id, "stage": "parse_document"},
+                    )
+                    return tool_error_payload(tool_error)
 
             # 1. Get the total length of the chunks in the document
             total_chunks = len(document.chunks) if document.chunks else 0
@@ -227,11 +237,15 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
             }
 
         except Exception as e:
-            self.logger.error("Global document analysis failed", error=str(e), document_id=document_id)
-            return {
-                "success": False, 
-                "error": f"Global document analysis failed: {str(e)}"
-            }
+            self.logger.error(
+                "Global document analysis failed", error=str(e), document_id=document_id
+            )
+            tool_error = ToolError(
+                f"{self.name} failed: Global document analysis failed: {e}",
+                tool_name=self.name,
+                details={"document_id": document_id},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""

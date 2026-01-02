@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 import aiohttp
 
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -127,7 +128,12 @@ class WebSearchTool(ToolProtocol):
                     }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"query": query, "num_results": num_results},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -225,9 +231,19 @@ class WebFetchTool(ToolProtocol):
                     }
 
         except asyncio.TimeoutError:
-            return {"success": False, "error": "Request timed out"}
+            tool_error = ToolError(
+                f"{self.name} failed: Request timed out",
+                tool_name=self.name,
+                details={"url": url},
+            )
+            return tool_error_payload(tool_error)
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"url": url},
+            )
+            return tool_error_payload(tool_error)
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -236,4 +252,3 @@ class WebFetchTool(ToolProtocol):
         if not isinstance(kwargs["url"], str):
             return False, "Parameter 'url' must be a string"
         return True, None
-

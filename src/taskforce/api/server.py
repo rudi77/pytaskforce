@@ -2,8 +2,10 @@ import logging
 import os
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from taskforce.api.routes import agents, execution, health, sessions, tools
 from taskforce.infrastructure.tracing import init_tracing, shutdown_tracing
 
@@ -27,6 +29,20 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+
+
+async def taskforce_http_exception_handler(
+    request: Request,
+    exc: HTTPException,
+) -> JSONResponse:
+    """Return standardized error responses for Taskforce exceptions."""
+    if (
+        exc.headers
+        and exc.headers.get("X-Taskforce-Error") == "1"
+        and isinstance(exc.detail, dict)
+    ):
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return await http_exception_handler(request, exc)
 
 
 @asynccontextmanager
@@ -61,6 +77,8 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+
+    app.add_exception_handler(HTTPException, taskforce_http_exception_handler)
 
     # CORS middleware
     app.add_middleware(

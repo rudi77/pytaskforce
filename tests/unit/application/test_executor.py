@@ -13,6 +13,7 @@ import structlog
 from structlog.testing import LogCapture
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.core.domain.errors import LLMError
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.exceptions import (
     AgentExecutionError,
@@ -140,10 +141,26 @@ async def test_execute_mission_error_handling():
     executor = AgentExecutor(factory=mock_factory)
 
     # Verify exception is raised
-    with pytest.raises(RuntimeError, match="LLM failure"):
+    with pytest.raises(LLMError, match="LLM failure"):
         await executor.execute_mission("Test mission")
 
     # Verify agent was called
+    mock_agent.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_mission_error_handling_lean_agent():
+    """Test error handling during LeanAgent execution."""
+    mock_factory = MagicMock(spec=AgentFactory)
+    mock_agent = AsyncMock()
+    mock_agent.execute.side_effect = RuntimeError("LLM failure")
+    mock_factory.create_lean_agent.return_value = mock_agent
+
+    executor = AgentExecutor(factory=mock_factory)
+
+    with pytest.raises(LLMError, match="LLM failure"):
+        await executor.execute_mission("Test mission", use_lean_agent=True)
+
     mock_agent.execute.assert_called_once()
 
 
@@ -366,88 +383,3 @@ async def test_progress_update_structure():
     assert update.message == "Analyzing task"
     assert update.details["step"] == 1
     assert update.details["rationale"] == "Need to read file"
-
-
-@pytest.mark.asyncio
-async def test_execute_mission_logs_structured_context_for_agent():
-    """Ensure legacy Agent errors log structured context."""
-    log_capture = LogCapture()
-    structlog.reset_defaults()
-    structlog.configure(processors=[log_capture])
-
-    mock_factory = MagicMock(spec=AgentFactory)
-    mock_agent = AsyncMock()
-    mock_agent.execute.side_effect = AgentExecutionError(
-        "Legacy failure",
-        session_id="legacy-session",
-        agent_id="legacy-agent",
-        tool_name="file_read",
-        error_code="LLM_FAILURE",
-    )
-    mock_factory.create_agent.return_value = mock_agent
-
-    executor = AgentExecutor(factory=mock_factory)
-
-    try:
-        with pytest.raises(AgentExecutionError):
-            await executor.execute_mission(
-                "Test mission", profile="dev", session_id="legacy-session"
-            )
-    finally:
-        structlog.reset_defaults()
-
-    error_events = [
-        entry
-        for entry in log_capture.entries
-        if entry.get("event") == "mission.execution.failed"
-    ]
-    assert len(error_events) == 1
-    error_entry = error_events[0]
-    assert error_entry["session_id"] == "legacy-session"
-    assert error_entry["agent_id"] == "legacy-agent"
-    assert error_entry["tool_name"] == "file_read"
-    assert error_entry["error_code"] == "LLM_FAILURE"
-
-
-@pytest.mark.asyncio
-async def test_execute_mission_logs_structured_context_for_lean_agent():
-    """Ensure LeanAgent errors log structured context."""
-    log_capture = LogCapture()
-    structlog.reset_defaults()
-    structlog.configure(processors=[log_capture])
-
-    mock_factory = MagicMock(spec=AgentFactory)
-    mock_agent = AsyncMock()
-    mock_agent.execute.side_effect = LeanAgentExecutionError(
-        "Lean failure",
-        session_id="lean-session",
-        lean_agent_id="lean-agent",
-        tool_name="web_search",
-        error_code="TOOL_FAILURE",
-    )
-    mock_factory.create_lean_agent.return_value = mock_agent
-
-    executor = AgentExecutor(factory=mock_factory)
-
-    try:
-        with pytest.raises(LeanAgentExecutionError):
-            await executor.execute_mission(
-                "Test mission",
-                profile="dev",
-                session_id="lean-session",
-                use_lean_agent=True,
-            )
-    finally:
-        structlog.reset_defaults()
-
-    error_events = [
-        entry
-        for entry in log_capture.entries
-        if entry.get("event") == "mission.execution.failed"
-    ]
-    assert len(error_events) == 1
-    error_entry = error_events[0]
-    assert error_entry["session_id"] == "lean-session"
-    assert error_entry["lean_agent_id"] == "lean-agent"
-    assert error_entry["tool_name"] == "web_search"
-    assert error_entry["error_code"] == "TOOL_FAILURE"

@@ -25,9 +25,66 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 from taskforce.application.executor import AgentExecutor
+from taskforce.api.schemas.errors import ErrorResponse
+from taskforce.core.domain.errors import (
+    CancelledError,
+    ConfigError,
+    LLMError,
+    PlanningError,
+    TaskforceError,
+    ToolError,
+)
 
 router = APIRouter()
 executor = AgentExecutor()
+
+
+def _build_error_payload(
+    *,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return ErrorResponse(
+        code=code,
+        message=message,
+        details=details,
+        detail=message,
+    ).model_dump(exclude_none=True)
+
+
+def _taskforce_status_code(error: TaskforceError) -> int:
+    if error.status_code is not None:
+        return error.status_code
+    if isinstance(error, PlanningError):
+        return 400
+    if isinstance(error, ConfigError):
+        return 400
+    if isinstance(error, ToolError):
+        return 502 if error.upstream else 500
+    if isinstance(error, CancelledError):
+        return 409
+    if isinstance(error, LLMError):
+        return 502
+    return 500
+
+
+def _http_exception(
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail=_build_error_payload(
+            code=code,
+            message=message,
+            details=details,
+        ),
+        headers={"X-Taskforce-Error": "1"},
+    )
 
 
 class ExecuteMissionRequest(BaseModel):
@@ -194,15 +251,34 @@ async def execute_mission(request: ExecuteMissionRequest):
             status=result.status,
             message=result.final_message
         )
+    except TaskforceError as e:
+        raise _http_exception(
+            status_code=_taskforce_status_code(e),
+            code=e.code,
+            message=str(e),
+            details=e.details,
+        )
     except FileNotFoundError as e:
         # agent_id not found -> 404
-        raise HTTPException(status_code=404, detail=str(e))
+        raise _http_exception(
+            status_code=404,
+            code="not_found",
+            message=str(e),
+        )
     except ValueError as e:
         # Invalid agent definition -> 400
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _http_exception(
+            status_code=400,
+            code="invalid_request",
+            message=str(e),
+        )
     except Exception as e:
         # Other errors -> 500
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _http_exception(
+            status_code=500,
+            code="internal_server_error",
+            message=str(e),
+        )
 
 
 @router.post("/execute/stream")
