@@ -9,10 +9,16 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
+import structlog
+from structlog.testing import LogCapture
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.core.domain.errors import LLMError
 from taskforce.application.factory import AgentFactory
+from taskforce.core.domain.exceptions import (
+    AgentExecutionError,
+    LeanAgentExecutionError,
+)
 from taskforce.core.domain.models import ExecutionResult
 
 
