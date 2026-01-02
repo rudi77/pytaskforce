@@ -169,13 +169,12 @@ class AgentExecutor:
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
 
-            self.logger.error(
-                "mission.execution.failed",
+            self._log_execution_failure(
+                event_name="mission.execution.failed",
+                error=e,
                 session_id=session_id,
-                error=str(e),
-                error_type=type(e).__name__,
-                duration_seconds=duration,
                 agent_id=agent_id,
+                duration_seconds=duration,
             )
             raise
 
@@ -267,11 +266,10 @@ class AgentExecutor:
             )
 
         except Exception as e:
-            self.logger.error(
-                "mission.streaming.failed",
+            self._log_execution_failure(
+                event_name="mission.streaming.failed",
+                error=e,
                 session_id=session_id,
-                error=str(e),
-                error_type=type(e).__name__,
                 agent_id=agent_id,
             )
 
@@ -530,6 +528,47 @@ class AgentExecutor:
             details=event.data,
         )
 
+    def _log_execution_failure(
+        self,
+        event_name: str,
+        error: Exception,
+        session_id: str,
+        agent_id: str | None,
+        duration_seconds: float | None = None,
+    ) -> None:
+        error_context = self._extract_error_context(
+            error=error, session_id=session_id, agent_id=agent_id
+        )
+
+        log_payload: dict[str, Any] = {
+            "session_id": error_context["session_id"],
+            "agent_id": error_context["agent_id"],
+            "lean_agent_id": error_context["lean_agent_id"],
+            "tool_name": error_context["tool_name"],
+            "error_code": error_context["error_code"],
+            "error": str(error),
+            "error_type": type(error).__name__,
+        }
+
+        if duration_seconds is not None:
+            log_payload["duration_seconds"] = duration_seconds
+
+        self.logger.exception(event_name, **log_payload)
+
+    def _extract_error_context(
+        self,
+        error: Exception,
+        session_id: str,
+        agent_id: str | None,
+    ) -> dict[str, str | None]:
+        return {
+            "session_id": getattr(error, "session_id", None) or session_id,
+            "agent_id": getattr(error, "agent_id", None) or agent_id,
+            "lean_agent_id": getattr(error, "lean_agent_id", None),
+            "tool_name": getattr(error, "tool_name", None),
+            "error_code": getattr(error, "error_code", None),
+        }
+
     def _generate_session_id(self) -> str:
         """Generate unique session ID.
 
@@ -537,4 +576,3 @@ class AgentExecutor:
             UUID-based session identifier
         """
         return str(uuid.uuid4())
-
