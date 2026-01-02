@@ -1,0 +1,78 @@
+schema: 1
+story: '6.4'
+story_title: 'Dynamic Context Injection (Das Herzstück)'
+gate: PASS
+status_reason: 'All acceptance criteria met with comprehensive test coverage. Dynamic context injection is elegantly implemented with proper resilience checks and efficient execution.'
+reviewer: 'Quinn (Test Architect)'
+updated: '2025-12-04T15:30:00Z'
+
+top_issues: []
+waiver: { active: false }
+
+quality_score: 100
+expires: '2025-12-18T15:30:00Z'
+
+evidence:
+  tests_reviewed: 6
+  risks_identified: 0
+  trace:
+    ac_covered: [1, 2, 3, 4]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: 'No sensitive data handling. Plan injection is read-only operation using validated PlannerTool output.'
+  performance:
+    status: PASS
+    notes: 'Plan read is lightweight internal method call. System prompt rebuild overhead is acceptable (once per loop iteration).'
+  reliability:
+    status: PASS
+    notes: 'Graceful handling when no plan exists. Proper null checks prevent errors. Defensive coding throughout.'
+  maintainability:
+    status: PASS
+    notes: 'Clear method separation, well-documented with docstrings, follows existing patterns, easy to extend.'
+
+test_coverage:
+  lean_agent.py: 85%
+  autonomous_prompts.py: 100% (LEAN_KERNEL_PROMPT)
+
+test_classes:
+  - TestDynamicContextInjection: 6 tests
+    - test_build_system_prompt_without_plan
+    - test_build_system_prompt_with_active_plan
+    - test_build_system_prompt_reflects_completed_steps
+    - test_plan_updates_in_system_prompt_during_loop
+    - test_system_prompt_property_returns_base_prompt
+    - test_uses_lean_kernel_prompt_by_default
+
+acceptance_criteria_mapping:
+  AC1_plan_sichtbarkeit:
+    test: test_build_system_prompt_with_active_plan
+    given: 'PlannerTool with active plan exists'
+    when: '_build_system_prompt() is called'
+    then: 'Plan appears in system prompt with ## CURRENT PLAN STATUS section'
+  AC2_aktualitaet:
+    test: test_plan_updates_in_system_prompt_during_loop
+    given: 'Plan exists, step marked done via tool call'
+    when: 'Next loop iteration executes'
+    then: 'System prompt shows [x] for completed step in next iteration'
+  AC3_resilience:
+    test: test_build_system_prompt_without_plan
+    given: 'No plan exists or plan is empty'
+    when: '_build_system_prompt() is called'
+    then: 'No CURRENT PLAN STATUS section injected (prevents confusion)'
+  AC4_verhalten:
+    test: test_plan_updates_in_system_prompt_during_loop
+    given: 'Multi-step mission with sequential plan'
+    when: 'Agent executes plan steps'
+    then: 'System prompt updates reflect current state, enabling sequential execution'
+
+recommendations:
+  immediate: []
+  future:
+    - action: 'Consider adding integration test with real LLM to verify prompt injection behavior in end-to-end scenario'
+      refs: ['tests/integration/']
+    - action: 'Consider adding performance benchmark for prompt rebuild overhead if loop performance becomes concern'
+      refs: ['lean_agent.py:_build_system_prompt']
+

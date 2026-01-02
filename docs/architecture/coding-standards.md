@@ -1,0 +1,115 @@
+# Python Best Practices (Team Edition)
+
+## 1) Code Style & Benennung
+
+* Halte dich an **PEP 8** (Formatierung, Imports, Zeilenlängen, Docstrings).
+* **Englische, sprechende Namen**: `user_count`, `is_valid`, `document_id`, `ingestion_job_id`.
+* Vermeide Abkürzungen, außer allgemein üblich (`url`, `id`, `db`).
+* Einfache, konsistente **Modulebene-Imports**; keine relativen „dot-dot“-Importketten.
+
+## 2) Architektur: Functional Core, OO Shell
+
+* **Business-Logik** als **pure, kleine Funktionen** (leicht testbar, keine Side-Effects).
+* **Klassen gezielt** für: IO/Adapter (DB, Storage, Vektorstore), Zustandsverwaltung, Framework-Integrationen (FastAPI Dependencies), Orchestrierung.
+* **Dependency Injection** statt globaler Singletons. Zustände klar begrenzen (pro Request/Job).
+* Halte Services **klein & fokussiert** (eine Verantwortung).
+
+## 3) Funktionen & Methoden
+
+* Max. **30 Zeilen** pro Funktion/Methode. Zerlege komplexe Flows.
+* **Keine Duplikate**: extrahiere wiederverwendbare Util-Funktionen/Helper.
+* Vollständige **Typannotationen** für alle Signaturen und Rückgaben.
+* **Docstring** (Google- oder NumPy-Style) mit Zweck, Parametern, Rückgabewerten, Fehlern.
+* Komplexe Stellen **kommentieren**, aber Code lesbar halten (Kommentare erklären *Warum*, nicht *Was*).
+
+## 4) Fehlerbehandlung & Logging
+
+* Spezifisch abfangen (`ValueError`, `HTTPException`, `TimeoutError`), **kein** generisches `except Exception` ohne Re-Raise oder Kontext.
+* Fehlermeldungen **hilfreich & kontextreich** (z. B. `document_id`, `user_id`, `scope`), aber **keine sensiblen Daten** loggen.
+* Nutze strukturierte Logs (JSON-fähig) mit Leveln (`debug`, `info`, `warning`, `error`).
+
+## 5) Sicherheit & Secrets
+
+* **Nie** Secrets im Code oder Default-Configs. Alles über **ENV**/**Secrets Manager**.
+* Eingaben validieren (Pydantic/DTOs). **Whitelisting** statt Blacklisting bei Filtern/Scopes.
+* Pfad- und Scope-Parsing robust (Org/Shared/Conversation unterscheiden).
+* Externe URLs signieren/zeitlich begrenzen; **Least Privilege** für Keys/Rollen.
+* PII/Vertragsdaten: nur anonymisierte IDs in Logs, **kein** Klartext.
+
+## 6) Konfiguration
+
+* Zentrale Config via `pydantic-settings` oder eigener `settings`-Klasse.
+* **Explizite Defaults** (konservativ) + `.env.example` dokumentieren.
+* Environment-abhängige Settings (`DEV`, `STAGING`, `PROD`) klar trennen.
+
+## 7) Tooling & Qualität
+
+* **Black** (Format) & **Ruff** (Lint/Fix) verpflichtend; in CI ausführen.
+* **MyPy** optional streng für Core-Module (mind. `--strict` light).
+* Pre-commit Hooks: `ruff check --fix`, `black`, (optional) `mypy`.
+* API-Stabilität: bei Breaking Changes **Deprecation-Hinweise** & Migrationsnotizen.
+
+## 8) Tests
+
+* Für **jede neue Funktion/Fehlerklasse** mindestens ein Unit-Test.
+* Ordnerstruktur: `tests/` spiegelt `src/` (z. B. `tests/services/test_document.py`).
+* Pytest-Stil: **kleine, unabhängige** Tests; IO via Mocks/Fakes.
+* Für Pipelines/Indexer: **integrierte Smoke-Tests** mit Mini-Fixtures.
+* Coverage-Ziel vereinbaren (z. B. Core ≥ 85 %, Gesamtsuite ≥ 75 %).
+
+## 9) Projektstruktur
+
+```
+root/
+  src/                # Applikationscode
+  docs/               # Arch, ADRs, API, Readmes
+  config/             # env templates, compose, infra hints
+  scripts/            # dev tools, one-off maintenance
+  pyproject.toml      # Black, Ruff, Mypy, Build
+```
+
+## 10) Performance & Resilienz
+
+* Große Dateien: **Streaming** statt alles in den RAM.
+* Parallele Jobs: **Backpressure** & Limits; Timeouts/Circuit-Breaker bei externen Diensten.
+* Embedding/LLM-Batching: **Grenzen beachten**, Chunk-Größen konfigurieren.
+* Caching nur mit **klarer Invalidierung**.
+
+## 11) Abhängigkeiten
+
+* Pinne Runtime-kritische Versionen (`^`/`~` sinnvoll einsetzen).
+* Regelmäßige **Vulnerability-Scans** (pip-audit, dependabot/renovate).
+* Entferne nur Abhängigkeiten/Code, **die wirklich entfallen müssen** (Stabilität vor Aktionismus).
+
+## 12) Dokumentation
+
+* Module/Funktionen mit Docstrings; **README pro Paket** mit Zweck/Beispielen.
+* **API-Doku** (OpenAPI) aktuell halten; Beispiele für Requests/Responses.
+* **ADR-Kurznotizen** (Architecture Decision Records) für größere Entscheidungen.
+
+## 13) Datenmodelle & Schemas
+
+* Pydantic: **`Field(default_factory=...)`** für mutables, Validatoren für Invarianten.
+* Response-Modelle **explizit** (keine nackten `dict`), Versionierung bei Public APIs.
+* Serde (JSON) eindeutig; Datums-/Zahlenformate vereinheitlichen.
+
+## 14) Observability
+
+* Korrelation (`request_id`, `job_id`) über Dienste hinweg mitführen.
+* Metriken (Latenz, Throughput, Fehlerquote) pro Service/Endpoint.
+* Tracing (OpenTelemetry) für kritische Pfade (Ingestion → Embedding → Retrieval).
+
+---
+
+## Minimal-Checkliste für PRs
+
+* [ ] PEP8, Black, Ruff sauber; keine toten Imports.
+* [ ] Vollständige Typannotationen & Docstrings.
+* [ ] Keine Secrets/PII im Code, Logs oder Tests.
+* [ ] Tests hinzugefügt/aktualisiert; grün in CI; sinnvolle Coverage.
+* [ ] Fehlerbehandlung spezifisch, sinnvolle Log-Kontexte.
+* [ ] Keine Duplikate; Funktionen ≤ 30 Zeilen oder sinnvoll zerlegt.
+* [ ] Public API/Schemas dokumentiert; Migrationshinweise bei Changes.
+* [ ] Nur notwendige Löschungen/Refactorings — **Stabilität first**.
+
+

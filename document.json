@@ -1,0 +1,413 @@
+{
+    "document_id": "2a7bf582-06f8-45fc-8e4f-a9ae84c4d218",
+    "document_title": "resume.pdf",
+    "document_type": null,
+    "org_id": "MS-corp",
+    "user_id": "ms-user",
+    "scope": "conversation",
+    "chunk_count": 21,
+    "page_count": 3,
+    "has_images": true,
+    "has_text": true,
+    "chunks": [
+        {
+            "document_id": "2a7bf582-06f8-45fc-8e4f-a9ae84c4d218",
+            "content_id": "64258321-4085-47f3-91b4-f8914a964610",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "d3dd2fdf-d904-48a0-b934-ae204aacae2f",
+            "content_id": "559a9afa-66a0-429e-a56c-10c4415d0fef",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_d3dd2fdf-d904-48a0-b934-ae204aacae2f_d3dd2fdf-d904-48a0-b934-ae204aacae2f_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n[PAGE_TYPE: IMAGE-ONLY]  \n[SOURCE_PAGE: 1]  \n\n[NO_TEXT_FOUND]",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7",
+            "content_id": "09a222ca-2183-4faa-8f89-f5beabf7f9f7",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "34cb9270-9a74-49d5-99e0-881369b7d146",
+            "content_id": "827fd63c-cc27-4f44-bc8d-f37d35572c4e",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_34cb9270-9a74-49d5-99e0-881369b7d146_34cb9270-9a74-49d5-99e0-881369b7d146_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7",
+            "content_id": "87e70234-5948-41f1-9b3b-0971f2eed556",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "0f484d40-1f7f-422c-a994-cecf5fd0697c",
+            "content_id": "3faff061-3e16-4512-a8d1-810cd23dcc2c",
+            "scope": "org",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_0f484d40-1f7f-422c-a994-cecf5fd0697c_0f484d40-1f7f-422c-a994-cecf5fd0697c_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "34cb9270-9a74-49d5-99e0-881369b7d146",
+            "content_id": "d8158084-d170-4e74-be7b-43af61ad6e61",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_34cb9270-9a74-49d5-99e0-881369b7d146_34cb9270-9a74-49d5-99e0-881369b7d146_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "2b564282-49f2-432d-a72c-7c794c7e0533",
+            "content_id": "2b564282-49f2-432d-a72c-7c794c7e0533_conv-0c5a9e3a_3cd10057e79dd363",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2b564282-49f2-432d-a72c-7c794c7e0533_2b564282-49f2-432d-a72c-7c794c7e0533_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "34cb9270-9a74-49d5-99e0-881369b7d146",
+            "content_id": "1c4bce9b-534a-4281-ab74-6c8e3f8dc1af",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_34cb9270-9a74-49d5-99e0-881369b7d146_34cb9270-9a74-49d5-99e0-881369b7d146_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n[PAGE_TYPE: IMAGE-ONLY]  \n[SOURCE_PAGE: 1]  \n\n[NO_TEXT_FOUND]",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "2b564282-49f2-432d-a72c-7c794c7e0533",
+            "content_id": "2b564282-49f2-432d-a72c-7c794c7e0533_conv-0c5a9e3a_6284ee0a78352b4c",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2b564282-49f2-432d-a72c-7c794c7e0533_2b564282-49f2-432d-a72c-7c794c7e0533_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n[PAGE_TYPE: IMAGE-ONLY]  \n[SOURCE_PAGE: unknown]  \n\n[NO_TEXT_FOUND]",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "d3dd2fdf-d904-48a0-b934-ae204aacae2f",
+            "content_id": "28a48681-c6e1-4b60-8633-6ef55b30e497",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_d3dd2fdf-d904-48a0-b934-ae204aacae2f_d3dd2fdf-d904-48a0-b934-ae204aacae2f_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "2a7bf582-06f8-45fc-8e4f-a9ae84c4d218",
+            "content_id": "95a43eb6-1f58-47da-8e55-32d4676d2614",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "d3dd2fdf-d904-48a0-b934-ae204aacae2f",
+            "content_id": "c97d59f7-18ea-4952-859c-80c5d0f8b199",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_d3dd2fdf-d904-48a0-b934-ae204aacae2f_d3dd2fdf-d904-48a0-b934-ae204aacae2f_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7",
+            "content_id": "c30fb634-6297-4870-afa3-7f05b99b522d",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_8fbd24e0-d166-48ce-8b0d-5263dfe1e8b7_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n```\n[PAGE_TYPE: IMAGE-ONLY]\n[SOURCE_PAGE: unknown]\n\n[NO_TEXT_FOUND]\n```",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "eacfd549-091f-4c7b-bdbd-86505a6b2662",
+            "content_id": "868f7d88-175a-4781-a7b8-916cbc92a63d",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 2,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_eacfd549-091f-4c7b-bdbd-86505a6b2662_eacfd549-091f-4c7b-bdbd-86505a6b2662_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "08/2007 \u2013 09/2010 HALE electronic: Software developer.\nwww.hale.at\n2005 \u2013 07/2007 project assistant in the Aeronautical Digital\nCommunications (ADC) group at the University of\nSalzburg on the Institute of Computer Science.\n2003 \u2013 2004 software developer at \u201eGassner Wiegen und Messen\u201c\nwww.gassner-waagen.com\nProjects, \u27a2 BLU DELTA \u2013 Invoice Capturing System (Blumatix GmbH):\nConferences,\n\u27a2 An invoice entry system as a cloud and on-premise solution.\nExhibitions\n\u27a2 Developed as a microservice architecture. It is based on\nServiceStack, Azure WebApps, Azure Functions, Storage Queues,\nDocker Container Services and Azure MSSQL.\n\u27a2 Creation and maintenance of various CI/CD Pipelines in Azure\nDevOps.\n\u27a2 Integration of various machine learning models.\n\u27a2 Multicheck for Spark (Tecan):\n\u27a2 Architecture, design and implementation of an OQ-Tools\n(operational qualification) for Spark instruments.\n\u27a2 SparkControl Software (Tecan):\n\u27a2 Design and implementation oft the control and analysis software\nfor the \u201eMultimode Microplate Reader Spark 10M und Spark\n20M\u201c in C#.\n\u27a2 UI implementation with WPF and MVVM frameworks.\n\u27a2 Database development with Entity Framework.\n\u27a2 Implementation of a communication component in C++ used for\nPC-to-Instrument communication via USB\n\u27a2 TT-01 Taxameter-Terminal (Hale electronic):\n\u27a2 Architecture, design and implementation of SW-components in\nC++ for an linux based embedded system\n\u27a2 Codereviews, error analysis and bug fixing\n\u27a2 UI development with GTK/GTKmm\n\u27a2 System-oriented development under Linux and the Linux Kernel.\n\u27a2 Implementation of an odometer as a Linux Kernel module.\n\u27a2 Implementation of the control software for GSM/GPS modules\n(Siemens XT75)\n\u27a2 Weighting terminal DMA03 (Gassner Wiegen und Messen GmbH):\n\u27a2 Setup and commissioning of the Linux 2.4 Kernels on an ARM-\nbased Evaluation-Board.",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "0f484d40-1f7f-422c-a994-cecf5fd0697c",
+            "content_id": "a163d4a6-185e-490e-b419-d4d3f46729cd",
+            "scope": "org",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_0f484d40-1f7f-422c-a994-cecf5fd0697c_0f484d40-1f7f-422c-a994-cecf5fd0697c_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n[PAGE_TYPE: IMAGE-ONLY]  \n[SOURCE_PAGE: unknown]  \n\n[NO_TEXT_FOUND]",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "eacfd549-091f-4c7b-bdbd-86505a6b2662",
+            "content_id": "f206e3b3-26cc-4baf-8b89-46740cdcfa54",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_eacfd549-091f-4c7b-bdbd-86505a6b2662_eacfd549-091f-4c7b-bdbd-86505a6b2662_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n[PAGE_TYPE: IMAGE-ONLY]  \n[SOURCE_PAGE: 1]  \n\n[NO_TEXT_FOUND]",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "2a7bf582-06f8-45fc-8e4f-a9ae84c4d218",
+            "content_id": "20fb5ff3-8ee5-455f-8572-fa48b2062a75",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 1,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_2a7bf582-06f8-45fc-8e4f-a9ae84c4d218_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "Rudolf Dittrich\nFreidlinger Stra\u00dfe 3\n83317 Teisendorf\nTel. (+43 699) 19081305\nE-Mail: rudi.dittrich77@gmail.com\nCURRICULUM VITAE\nPersonal Marital status: married\nInformation\nNationality: Austria\nDate of birth: December 8, 1977\nPlace of birth: Saalfelden\nEducation 2001-2009 Studied applied computer science in Salzburg.\nGraduated with a MSc (Diplom. Ingenieur).\n1998\u20132000 Studied chemistry in Vienna.\n3 Semester Bundesrealgymnasium for working people in Salzburg\n27. 01.1998 matriculation examination\n7 Klassen Sport high school \u2013 HIB in Saalfelden\n4 Klassen Elementary school in Maria Alm\nInternships 05 \u2013 09/2003 Internship at the University of Salzburg\nProgrammed a robot controller.\n07 \u2013 09/2002 ACP, Salzburg (server installation, service work on\nvarious hardware products)\n06 \u2013 08/1999 T.E.C. THOMAS EBEL TEAM GMBH, Wien\n(Sale)\nBerufst\u00e4tigkeit 02/2020 \u2013 until now Blumatix GmbH: AI architect\nwww.blumatix-consulting.at, www.bludelta.ai\n11/2016 \u2013 01/2020 Blumatix GmbH: software architect\n10/2010 \u2013 11/2016 Tecan Austria GmbH: Senior software developer and\narchitect.\nwww.tecan.com\n\nImage Description:\n```\n[PAGE_TYPE: IMAGE-ONLY]\n[SOURCE_PAGE: 1]\n\n[NO_TEXT_FOUND]\n```",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "2b564282-49f2-432d-a72c-7c794c7e0533",
+            "content_id": "2b564282-49f2-432d-a72c-7c794c7e0533_conv-0c5a9e3a_dfa84f4ad3bf194a",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_2b564282-49f2-432d-a72c-7c794c7e0533_2b564282-49f2-432d-a72c-7c794c7e0533_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "0f484d40-1f7f-422c-a994-cecf5fd0697c",
+            "content_id": "5ae72c01-5cf7-4407-b895-aa4de4ca0999",
+            "scope": "org",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_0f484d40-1f7f-422c-a994-cecf5fd0697c_0f484d40-1f7f-422c-a994-cecf5fd0697c_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        },
+        {
+            "document_id": "eacfd549-091f-4c7b-bdbd-86505a6b2662",
+            "content_id": "4ea94fd7-e3e5-4686-8e70-c595202eaea6",
+            "scope": "conversation",
+            "document_type": null,
+            "locationMetadata": {
+                "pageNumber": 3,
+                "boundingPolygons": null
+            },
+            "content_path": "/tmp/worker_eacfd549-091f-4c7b-bdbd-86505a6b2662_eacfd549-091f-4c7b-bdbd-86505a6b2662_resume.pdf",
+            "org_id": "MS-corp",
+            "content_text": "\u27a2 Integration of a CAN fieldbus connection using Linux CAN drivers\nand CANopen.\n\u27a2 Broadband VHF \u201eB-VHF\u201c (Uni Salzburg): A digital Layer-2\ncommunication system for aviation. Implementation of a \u201cDiscrete\nEvent Simulator\u201d to evaluate the B-VHF protocol.\nhttp://www.b-vhf.org\n\u27a2 B-AMC: continuation von B-VHF\n\u27a2 Aeronautics Days 2006 (participation with poster presentation)\n\u27a2 ATC Maastrich 2006 (participation with poster presentation)\nExpertise: \u27a2 Programming:\nC#, C/C++, Python, Powershell, WPF, WinForms, WCF, Git,\nVisualStudio, VS Code\n\u27a2 Container technologies: Docker, Docker-Compose, Kubernetes\n\u27a2 Cloud Development: Azure\n\u27a2 Azure Devops: CI/CD Pipelines\n\u27a2 MachineLearning, DeepLearning: Tensorflow, Keras, Scikit\n\u27a2 Databases: SQLite, MSSQL, Entity Framework 6.x\n\u27a2 Xamarin \u2013 Mobile App development (Basics)\n\u27a2 Good Linux knowledge (user- und kernel space)\n\u27a2 Software engineering concepts (Desgin Patterns, OOP, UML)\n\u27a2 Agile Software development - SCRUM\n\u27a2 Spoken and written English\n\u27a2 French (school knowledge)\nQualifications: \u27a2 Determined and used to working independently\n\u27a2 Curiosity, ready to learn new things\n\u27a2 Resilient, reliable, flexible and punctual\nAdditional training \u27a2 Deep Learning Specialization (Coursera, 2019)\n\u27a2 Microsoft Exam 532: Developing Microsoft Azure Solutions (exam on\n27.06.2018)\n\u27a2 Self-Driving Car Nanodegree Program (Udacity, 2017)\n\u27a2 Machine Learning (Coursera, 2016)",
+            "document_title": "resume.pdf",
+            "user_id": "ms-user",
+            "@search.score": 1.0,
+            "@search.reranker_score": null,
+            "@search.highlights": null,
+            "@search.captions": null
+        }
+    ]
+}

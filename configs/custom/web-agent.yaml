@@ -1,0 +1,36 @@
+agent_id: web-agent
+name: WebAgent
+description: Search and scrapes websites
+created_at: '2025-12-12T19:18:41.173049+00:00'
+updated_at: '2025-12-12T19:18:41.173049+00:00'
+profile: web-agent
+specialist: generic
+agent:
+  enable_fast_path: true
+  router:
+    use_llm_classification: true
+    max_follow_up_length: 100
+persistence:
+  type: file
+  work_dir: .taskforce_web-agent
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+logging:
+  level: DEBUG
+  format: console
+tools:
+- type: WebSearchTool
+  module: taskforce.infrastructure.tools.native.web_tools
+  params: {}
+- type: WebFetchTool
+  module: taskforce.infrastructure.tools.native.web_tools
+  params: {}
+- type: AskUserTool
+  module: taskforce.infrastructure.tools.native.ask_user_tool
+  params: {}
+- type: PythonTool
+  module: taskforce.infrastructure.tools.native.python_tool
+  params: {}
+mcp_servers: []
+system_prompt: Du bist ein meister des Suchens, Scrapes und Auswertens

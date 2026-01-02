@@ -1,0 +1,81 @@
+# DevOps Wiki Agent Configuration
+# Agent specialized for interacting with Azure DevOps Wiki
+name: DevOpsAgent
+profile: devops_agent
+agent_type: devops_agent
+
+
+# Agent configuration
+agent:
+  enable_fast_path: true  # Enable fast-path for follow-up queries
+  max_steps: 50  # DevOps agents need more steps for wiki operations (default: 30)
+  router:
+    use_llm_classification: true  # Use LLM for better accuracy in prod
+    max_follow_up_length: 100  # Max query length for follow-up classification
+
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_devops
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Tool configuration
+tools:
+  # - type: LLMTool
+  #   module: taskforce.infrastructure.tools.native.llm_tool
+  #   params:
+  #     model_alias: "main"
+
+  # - type: PythonTool
+  #   module: taskforce.infrastructure.tools.native.python_tool
+  #   params: {}
+
+  # - type: FileReadTool
+  #   module: taskforce.infrastructure.tools.native.file_tools
+  #   params: {}
+
+  # - type: FileWriteTool
+  #   module: taskforce.infrastructure.tools.native.file_tools
+  #   params: {}
+
+  # - type: PowerShellTool
+  #   module: taskforce.infrastructure.tools.native.shell_tool
+  #   params: {}
+
+  - type: AskUserTool
+    module: taskforce.infrastructure.tools.native.ask_user_tool
+    params: {}
+
+# MCP Server Configuration
+mcp_servers:
+  # - type: stdio
+  #   command: npx
+  #   args:
+  #     - "-y"
+  #     - "azure-devops-wiki-mcp"
+  #   env:
+  #     AZURE_DEVOPS_URL: "https://dev.azure.com/blumatix"
+  #     AZURE_DEVOPS_PROJECT: "Rechnungserkennung"
+  #     AZURE_DEVOPS_PAT: ""
+  #     AZURE_DEVOPS_ORGANIZATION: "blumatix"
+
+  - type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@tiberriver256/mcp-server-azure-devops"
+    env:
+      AZURE_DEVOPS_ORG_URL: "https://dev.azure.com/blumatix"
+      AZURE_DEVOPS_DEFAULT_PROJECT: "Rechnungserkennung"
+      AZURE_DEVOPS_PAT: ""
+      AZURE_DEVOPS_AUTH_METHOD: "pat"

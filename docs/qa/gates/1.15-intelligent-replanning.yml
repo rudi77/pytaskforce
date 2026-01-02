@@ -1,0 +1,53 @@
+schema: 1
+story: '1.15'
+story_title: 'Implement Intelligent Replanning (Self-Healing)'
+gate: PASS
+status_reason: 'All acceptance criteria met, code quality is high, tests pass. Minor improvements identified are non-blocking.'
+reviewer: 'Quinn (Test Architect)'
+updated: '2025-01-27T00:00:00Z'
+
+top_issues: []
+
+waiver:
+  active: false
+
+quality_score: 90
+expires: '2025-02-10T00:00:00Z'
+
+evidence:
+  tests_reviewed: 10
+  risks_identified: 2
+  trace:
+    ac_covered: [1, 2, 3, 4, 5]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: 'No security concerns. Replanning operates on domain entities with validated LLM responses.'
+  performance:
+    status: PASS
+    notes: 'Async LLM calls, lightweight validation, in-memory plan modifications before persistence.'
+  reliability:
+    status: PASS
+    notes: 'Robust error handling with fallback to SKIP strategy. LLM failures handled gracefully.'
+  maintainability:
+    status: PASS
+    notes: 'Clean architecture separation, comprehensive docstrings, type annotations, structured logging.'
+
+recommendations:
+  immediate: []
+  future:
+    - action: 'Add replan_count enforcement (max 2 attempts per protocol)'
+      refs: ['taskforce/src/taskforce/core/domain/agent.py:264']
+      owner: 'dev'
+    - action: 'Add integration test for Agent._replan execution flow'
+      refs: ['taskforce/tests/integration/']
+      owner: 'dev'
+    - action: 'Add unit test for Agent._replan with mocked strategies'
+      refs: ['taskforce/tests/unit/test_replanning.py']
+      owner: 'dev'
+    - action: 'Increment replan_count on original step before DECOMPOSE removal'
+      refs: ['taskforce/src/taskforce/core/domain/agent.py:302']
+      owner: 'dev'
+
