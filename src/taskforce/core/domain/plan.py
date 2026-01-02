@@ -63,6 +63,108 @@ def parse_task_status(value: Any) -> TaskStatus:
         return TaskStatus.PENDING
 
 
+def _parse_dependencies(raw_dependencies: Any) -> list[int]:
+    """
+    Parse dependencies into a list of integers.
+
+    Args:
+        raw_dependencies: Raw dependencies input
+
+    Returns:
+        List of integer dependency positions
+    """
+    if not raw_dependencies:
+        return []
+    if not isinstance(raw_dependencies, list):
+        raw_dependencies = [raw_dependencies]
+
+    dependencies: list[int] = []
+    for dep in raw_dependencies:
+        try:
+            dependencies.append(int(dep))
+        except (TypeError, ValueError):
+            continue
+    return dependencies
+
+
+def _parse_plan_json(json_text: Any) -> dict[str, Any]:
+    """
+    Parse a JSON payload into a dictionary.
+
+    Args:
+        json_text: Raw JSON string or dict
+
+    Returns:
+        Parsed dictionary payload
+    """
+    if isinstance(json_text, str):
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError:
+            return {}
+    return json_text or {}
+
+
+def _parse_position(raw: dict[str, Any], index: int) -> int:
+    """
+    Parse a task position from raw input.
+
+    Args:
+        raw: Raw item payload
+        index: Default position fallback
+
+    Returns:
+        Parsed position integer
+    """
+    try:
+        return int(raw.get("position", index))
+    except (TypeError, ValueError):
+        return index
+
+
+def _build_todo_item(raw: dict[str, Any], index: int) -> TodoItem:
+    """
+    Build a TodoItem from raw input.
+
+    Args:
+        raw: Raw item payload
+        index: Default position fallback
+
+    Returns:
+        TodoItem instance
+    """
+    return TodoItem(
+        position=_parse_position(raw, index),
+        description=str(raw.get("description", "")).strip(),
+        acceptance_criteria=str(raw.get("acceptance_criteria", "")).strip(),
+        dependencies=_parse_dependencies(raw.get("dependencies")),
+        status=parse_task_status(raw.get("status")),
+        chosen_tool=raw.get("chosen_tool"),
+        tool_input=raw.get("tool_input"),
+        execution_result=raw.get("execution_result"),
+        attempts=int(raw.get("attempts", 0)),
+        max_attempts=int(raw.get("max_attempts", 3)),
+        replan_count=int(raw.get("replan_count", 0)),
+    )
+
+
+def _parse_items(raw_items: Any) -> list[TodoItem]:
+    """
+    Parse raw items into TodoItem instances.
+
+    Args:
+        raw_items: Raw items list
+
+    Returns:
+        List of TodoItem objects
+    """
+    items: list[TodoItem] = []
+    for index, raw in enumerate(raw_items or [], start=1):
+        if isinstance(raw, dict):
+            items.append(_build_todo_item(raw, index))
+    return items
+
+
 @dataclass
 class TodoItem:
     """
@@ -165,34 +267,8 @@ class TodoList:
         Returns:
             TodoList instance with parsed data
         """
-        try:
-            data = json.loads(json_text) if isinstance(json_text, str) else (json_text or {})
-        except Exception:
-            data = {}
-
-        raw_items = data.get("items", []) or []
-        items: list[TodoItem] = []
-        for index, raw in enumerate(raw_items, start=1):
-            try:
-                position = int(raw.get("position", index))
-            except Exception:
-                position = index
-
-            item = TodoItem(
-                position=position,
-                description=str(raw.get("description", "")).strip(),
-                acceptance_criteria=str(raw.get("acceptance_criteria", "")).strip(),
-                dependencies=raw.get("dependencies") or [],
-                status=parse_task_status(raw.get("status")),
-                chosen_tool=raw.get("chosen_tool"),
-                tool_input=raw.get("tool_input"),
-                execution_result=raw.get("execution_result"),
-                attempts=int(raw.get("attempts", 0)),
-                max_attempts=int(raw.get("max_attempts", 3)),
-                replan_count=int(raw.get("replan_count", 0)),
-            )
-            items.append(item)
-
+        data = _parse_plan_json(json_text)
+        items = _parse_items(data.get("items", []) or [])
         open_questions = [str(q) for q in (data.get("open_questions", []) or [])]
         notes = str(data.get("notes", ""))
         todolist_id = str(data.get("todolist_id") or str(uuid.uuid4()))
@@ -214,27 +290,10 @@ class TodoList:
             Dictionary representation suitable for JSON serialization
         """
 
-        def serialize_item(item: TodoItem) -> dict[str, Any]:
-            return {
-                "position": item.position,
-                "description": item.description,
-                "acceptance_criteria": item.acceptance_criteria,
-                "dependencies": item.dependencies,
-                "status": (
-                    item.status.value if isinstance(item.status, TaskStatus) else str(item.status)
-                ),
-                "chosen_tool": item.chosen_tool,
-                "tool_input": item.tool_input,
-                "execution_result": item.execution_result,
-                "attempts": item.attempts,
-                "max_attempts": item.max_attempts,
-                "replan_count": item.replan_count,
-            }
-
         return {
             "todolist_id": self.todolist_id,
             "mission": self.mission,
-            "items": [serialize_item(i) for i in self.items],
+            "items": [item.to_dict() for item in self.items],
             "open_questions": list(self.open_questions or []),
             "notes": self.notes or "",
             "created_at": self.created_at.isoformat() if self.created_at else None,

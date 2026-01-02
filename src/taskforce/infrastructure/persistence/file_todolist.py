@@ -12,6 +12,7 @@ The implementation is compatible with Agent V2 todolist files and provides:
 """
 
 import json
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -125,9 +126,26 @@ class FileTodoListManager(TodoListManagerProtocol):
         if not todolist_path.exists():
             raise FileNotFoundError(f"Todolist file not found: {todolist_path}")
 
-        async with aiofiles.open(todolist_path, "r", encoding="utf-8") as f:
-            content = await f.read()
+        try:
+            async with aiofiles.open(todolist_path, "r", encoding="utf-8") as f:
+                content = await f.read()
+        except OSError as exc:
+            self.logger.error(
+                "todolist_load_failed",
+                todolist_id=todolist_id,
+                error=str(exc),
+            )
+            raise
+
+        try:
             todolist = TodoList.from_json(content)
+        except (JSONDecodeError, ValueError) as exc:
+            self.logger.error(
+                "todolist_parse_failed",
+                todolist_id=todolist_id,
+                error=str(exc),
+            )
+            raise ValueError(f"Invalid todolist JSON for {todolist_id}") from exc
 
         self.logger.info("todolist_loaded", todolist_id=todolist_id)
         return todolist
@@ -185,6 +203,36 @@ class FileTodoListManager(TodoListManagerProtocol):
         self.logger.info("todolist_deleted", todolist_id=todolist_id)
         return True
 
+    def _serialize_todolist(self, todolist: TodoList) -> str:
+        """
+        Serialize a TodoList to JSON.
+
+        Args:
+            todolist: TodoList to serialize
+
+        Returns:
+            JSON string representation
+        """
+        return json.dumps(todolist.to_dict(), indent=2, ensure_ascii=False)
+
+    async def _write_atomic_file(
+        self,
+        temp_path: Path,
+        target_path: Path,
+        content: str,
+    ) -> None:
+        """
+        Write content to a file atomically.
+
+        Args:
+            temp_path: Temporary file path
+            target_path: Target file path
+            content: File content to write
+        """
+        async with aiofiles.open(temp_path, "w", encoding="utf-8") as f:
+            await f.write(content)
+        temp_path.replace(target_path)
+
     async def _write_todolist(self, todolist: TodoList) -> None:
         """
         Write TodoList to file (internal helper).
@@ -200,13 +248,27 @@ class FileTodoListManager(TodoListManagerProtocol):
         # Ensure directory exists
         todolist_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write to temp file
-        async with aiofiles.open(temp_path, "w", encoding="utf-8") as f:
-            content = json.dumps(todolist.to_dict(), indent=2, ensure_ascii=False)
-            await f.write(content)
+        try:
+            content = self._serialize_todolist(todolist)
+        except (TypeError, ValueError) as exc:
+            self.logger.error(
+                "todolist_serialization_failed",
+                todolist_id=todolist.todolist_id,
+                error=str(exc),
+            )
+            raise
 
-        # Atomic rename
-        temp_path.replace(todolist_path)
+        try:
+            await self._write_atomic_file(temp_path, todolist_path, content)
+        except OSError as exc:
+            self.logger.error(
+                "todolist_write_failed",
+                todolist_id=todolist.todolist_id,
+                error=str(exc),
+            )
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            raise
 
     def _get_todolist_path(self, todolist_id: str) -> Path:
         """
@@ -219,4 +281,3 @@ class FileTodoListManager(TodoListManagerProtocol):
             Path to the todolist JSON file
         """
         return self.todolists_dir / f"todolist_{todolist_id}.json"
-

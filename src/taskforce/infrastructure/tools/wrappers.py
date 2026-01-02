@@ -1,7 +1,10 @@
 from typing import Any, Callable, Dict
 
-from taskforce.core.domain.errors import ToolError
+import structlog
+
+from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+
 
 class OutputFilteringTool:
     """
@@ -9,9 +12,15 @@ class OutputFilteringTool:
     It executes the original tool, then applies a filter function to the output
     before returning it to the agent.
     """
-    def __init__(self, original_tool: ToolProtocol, filter_func: Callable[[Dict[str, Any]], Dict[str, Any]]):
+
+    def __init__(
+        self,
+        original_tool: ToolProtocol,
+        filter_func: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ):
         self._original = original_tool
         self._filter_func = filter_func
+        self._logger = structlog.get_logger().bind(tool=original_tool.name)
 
     # Delegate static attributes to the original tool
     @property
@@ -40,20 +49,27 @@ class OutputFilteringTool:
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         return self._original.validate_params(**kwargs)
 
-    async def execute(self, **kwargs) -> Dict[str, Any]:
+    async def execute(self, **kwargs: Any) -> Dict[str, Any]:
         # 1. Execute the real MCP tool
         raw_result = await self._original.execute(**kwargs)
-        
+
         # 2. Filter the result immediately (before it hits Agent memory)
+        if not isinstance(raw_result, dict):
+            tool_error = ToolError(
+                f"{self.name} returned non-dict output",
+                tool_name=self.name,
+                details={"result_type": type(raw_result).__name__},
+            )
+            self._logger.error("tool_output_invalid", error=str(tool_error))
+            return tool_error_payload(tool_error)
+
         try:
             return self._filter_func(raw_result)
-        except Exception as e:
+        except Exception as exc:
             tool_error = ToolError(
-                f"{self.name} output filter failed: {e}",
+                f"{self.name} output filter failed: {exc}",
                 tool_name=self.name,
                 details={"filter": getattr(self._filter_func, "__name__", "unknown")},
             )
-            # Fallback: If filtering fails, return raw result but log warning
-            # (You might want to inject a logger here)
-            raw_result.setdefault("filter_errors", []).append(str(tool_error))
-            return raw_result
+            self._logger.error("tool_output_filter_failed", error=str(tool_error))
+            return tool_error_payload(tool_error, extra={"raw_result": raw_result})
