@@ -28,6 +28,7 @@ from taskforce.core.domain.lean_agent import LeanAgent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
     PlanAndExecuteStrategy,
+    PlanAndReactStrategy,
     PlanningStrategy,
 )
 from taskforce.core.domain.router import QueryRouter
@@ -615,7 +616,7 @@ class AgentFactory:
         Select and instantiate planning strategy for LeanAgent.
 
         Args:
-            strategy_name: Strategy name (native_react or plan_and_execute)
+            strategy_name: Strategy name (native_react, plan_and_execute, plan_and_react)
             params: Optional strategy parameters
 
         Returns:
@@ -624,7 +625,9 @@ class AgentFactory:
         Raises:
             ValueError: If strategy name is invalid or params are malformed
         """
-        normalized = (strategy_name or "native_react").strip().lower().replace("-", "_")
+        normalized = (
+            strategy_name or "plan_and_react"
+        ).strip().lower().replace("-", "_")
         params = params or {}
         if not isinstance(params, dict):
             raise ValueError("planning_strategy_params must be a dictionary")
@@ -644,9 +647,17 @@ class AgentFactory:
                     int(max_plan_steps_value) if max_plan_steps_value is not None else 12
                 ),
             )
+        if normalized == "plan_and_react":
+            max_plan_steps_value = params.get("max_plan_steps")
+            return PlanAndReactStrategy(
+                max_plan_steps=(
+                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
+                )
+            )
 
         raise ValueError(
-            "Invalid planning_strategy. Supported values: native_react, plan_and_execute"
+            "Invalid planning_strategy. Supported values: native_react, plan_and_execute, "
+            "plan_and_react"
         )
 
     async def _create_tools_from_allowlist(

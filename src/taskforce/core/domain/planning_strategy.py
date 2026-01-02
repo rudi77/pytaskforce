@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TYPE_CHECKING
 
 import structlog
+from structlog.typing import FilteringBoundLogger
 
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.infrastructure.tools.tool_converter import (
@@ -85,6 +86,64 @@ async def _collect_execution_result(
         final_message=final_message,
         execution_history=execution_history,
     )
+
+
+async def _generate_plan_steps(
+    agent: "LeanAgent",
+    mission: str,
+    logger: FilteringBoundLogger,
+) -> list[str]:
+    """Generate plan steps using the LLM and parse the response."""
+    prompt = (
+        "Create a concise step-by-step plan for the mission. "
+        "Return ONLY a JSON array of short step strings."
+    )
+    messages = [
+        {"role": "system", "content": agent.system_prompt},
+        {"role": "user", "content": f"{mission}\n\n{prompt}"},
+    ]
+    result = await agent.llm_provider.complete(
+        messages=messages,
+        model=agent.model_alias,
+        tools=None,
+        tool_choice="none",
+        temperature=0.1,
+    )
+
+    if not result.get("success"):
+        logger.warning("plan_generation_failed", error=result.get("error"))
+        return []
+
+    content = result.get("content", "") or ""
+    return _parse_plan_steps(content)
+
+
+def _parse_plan_steps(content: str) -> list[str]:
+    """Parse plan steps from an LLM response."""
+    text = content.strip()
+    if "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1].strip()
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            steps = [str(item).strip() for item in data if str(item).strip()]
+            return steps
+    except Exception:
+        pass
+
+    steps: list[str] = []
+    for line in text.splitlines():
+        candidate = line.strip().lstrip("-").strip()
+        if not candidate:
+            continue
+        if candidate[0].isdigit() and "." in candidate:
+            candidate = candidate.split(".", 1)[1].strip()
+        if candidate:
+            steps.append(candidate)
+    return steps
 
 
 class NativeReActStrategy:
@@ -535,7 +594,7 @@ class PlanAndExecuteStrategy:
 
         messages = agent._build_initial_messages(mission, state)
 
-        plan_steps = await self._generate_plan(agent, mission)
+        plan_steps = await _generate_plan_steps(agent, mission, self.logger)
         if not plan_steps:
             plan_steps = [
                 "Analyze the mission and identify required actions.",
@@ -736,52 +795,61 @@ class PlanAndExecuteStrategy:
             total_iterations=loop_iterations,
         )
 
-    async def _generate_plan(self, agent: "LeanAgent", mission: str) -> list[str]:
-        prompt = (
-            "Create a concise step-by-step plan for the mission. "
-            "Return ONLY a JSON array of short step strings."
+
+class PlanAndReactStrategy:
+    """Generate a plan and run the ReAct loop with plan context."""
+
+    name = "plan_and_react"
+
+    def __init__(self, max_plan_steps: int = 12) -> None:
+        self.max_plan_steps = max_plan_steps
+        self.logger = structlog.get_logger().bind(component="plan_and_react_strategy")
+        self._react_strategy = NativeReActStrategy()
+
+    async def execute(
+        self, agent: "LeanAgent", mission: str, session_id: str
+    ) -> ExecutionResult:
+        self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
+        result = await _collect_execution_result(
+            session_id,
+            self.execute_stream(agent, mission, session_id),
         )
-        messages = [
-            {"role": "system", "content": agent.system_prompt},
-            {"role": "user", "content": f"{mission}\n\n{prompt}"},
-        ]
-        result = await agent.llm_provider.complete(
-            messages=messages,
-            model=agent.model_alias,
-            tools=None,
-            tool_choice="none",
-            temperature=0.1,
+        self.logger.info(
+            "execute_complete",
+            session_id=session_id,
+            status=result.status,
         )
+        return result
 
-        if not result.get("success"):
-            self.logger.warning("plan_generation_failed", error=result.get("error"))
-            return []
+    async def execute_stream(
+        self, agent: "LeanAgent", mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        self.logger.info("execute_stream_start", session_id=session_id)
+        state = await agent.state_manager.load_state(session_id) or {}
 
-        content = result.get("content", "") or ""
-        return self._parse_plan_steps(content)
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
 
-    def _parse_plan_steps(self, content: str) -> list[str]:
-        text = content.strip()
-        if "```" in text:
-            parts = text.split("```")
-            if len(parts) >= 2:
-                text = parts[1].strip()
+        plan_steps = await _generate_plan_steps(agent, mission, self.logger)
+        if not plan_steps:
+            plan_steps = [
+                "Analyze the mission and identify required actions.",
+                "Execute the required actions using available tools.",
+                "Summarize the results and provide the final response.",
+            ]
 
-        try:
-            data = json.loads(text)
-            if isinstance(data, list):
-                steps = [str(item).strip() for item in data if str(item).strip()]
-                return steps
-        except Exception:
-            pass
+        plan_steps = plan_steps[: self.max_plan_steps]
 
-        steps: list[str] = []
-        for line in text.splitlines():
-            candidate = line.strip().lstrip("-").strip()
-            if not candidate:
-                continue
-            if candidate[0].isdigit() and "." in candidate:
-                candidate = candidate.split(".", 1)[1].strip()
-            if candidate:
-                steps.append(candidate)
-        return steps
+        if agent._planner:
+            await agent._planner.execute(action="create_plan", tasks=plan_steps)
+            yield StreamEvent(
+                event_type="plan_updated",
+                data={"action": "create_plan", "steps": list(plan_steps)},
+            )
+
+        await agent._save_state(session_id, state)
+
+        async for event in self._react_strategy.execute_stream(
+            agent, mission, session_id
+        ):
+            yield event
