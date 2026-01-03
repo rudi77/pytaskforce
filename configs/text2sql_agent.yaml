@@ -33,34 +33,21 @@ logging:
 # Includes standard tools plus MCP server connection for database operations
 tools:
   # Standard LLM tool for reasoning and SQL generation
-  - type: LLMTool
-    module: taskforce.infrastructure.tools.native.llm_tool
-    params:
-      model_alias: "main"  # Use powerful model for SQL generation
+  - llm
   
   # Python tool for data processing and validation
-  - type: PythonTool
-    module: taskforce.infrastructure.tools.native.python_tool
-    params: {}
+  - python
   
   # # File tools for reading/writing SQL queries and results
-  # - type: FileReadTool
-  #   module: taskforce.infrastructure.tools.native.file_tools
-  #   params: {}
+  # - file_read
   
-  # - type: FileWriteTool
-  #   module: taskforce.infrastructure.tools.native.file_tools
-  #   params: {}
+  # - file_write
   
   # # PowerShell tool for system operations
-  # - type: PowerShellTool
-  #   module: taskforce.infrastructure.tools.native.shell_tool
-  #   params: {}
+  # - powershell
   
   # Ask user tool for clarifications
-  - type: AskUserTool
-    module: taskforce.infrastructure.tools.native.ask_user_tool
-    params: {}
+  - ask_user
 
 # MCP Server Configuration
 # Connects to the Text2SQL MCP server for database schema inspection and query execution
@@ -70,4 +57,3 @@ mcp_servers:
   - type: sse
     url: http://localhost:8081/sse
     env: {}  # No additional environment variables needed
-

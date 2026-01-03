@@ -41,32 +41,13 @@ context_policy:
 # Tool configuration for coding agent
 # These tools override the specialist defaults when defined
 tools:
-  - type: FileReadTool
-    module: taskforce.infrastructure.tools.native.file_tools
-    params: {}
-
-  - type: FileWriteTool
-    module: taskforce.infrastructure.tools.native.file_tools
-    params: {}
-
-  - type: PowerShellTool
-    module: taskforce.infrastructure.tools.native.shell_tool
-    params: {}
-
-  - type: AskUserTool
-    module: taskforce.infrastructure.tools.native.ask_user_tool
-    params: {}
-
-  - type: LLMTool
-    module: taskforce.infrastructure.tools.native.llm_tool
-    params:
-      model_alias: "main"  # Use main model for LLM tool    
+  - file_read
+  - file_write
+  - powershell
+  - ask_user
+  - llm
 
   # Optional: Add more tools as needed
-  - type: GitTool
-    module: taskforce.infrastructure.tools.native.git_tools
-    params: {}
+  - git
   
-  - type: PythonTool
-    module: taskforce.infrastructure.tools.native.python_tool
-    params: {}
+  - python

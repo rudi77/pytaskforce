@@ -6,6 +6,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Execution API errors now use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header and handled in `taskforce.api.server.taskforce_http_exception_handler`.
 - Taskforce exception types live in `src/taskforce/core/domain/errors.py` (TaskforceError + LLMError, ToolError, etc.). Infra tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
 - Tool registry for short-name ↔ type/module mappings lives in `src/taskforce/infrastructure/tools/registry.py` and backs tool config resolution.
+- Profile YAML tool lists now use short tool names (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs.
 
 # Python Best Practices
 
