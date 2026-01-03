@@ -1,7 +1,6 @@
-"""State and TodoList persistence implementations."""
+"""State persistence implementations."""
 
 from taskforce.infrastructure.persistence.file_state import FileStateManager
-from taskforce.infrastructure.persistence.file_todolist import FileTodoListManager
 
-__all__ = ["FileStateManager", "FileTodoListManager"]
+__all__ = ["FileStateManager"]
 

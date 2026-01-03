@@ -9,27 +9,20 @@ Available Protocols:
     - StateManagerProtocol: Session state persistence
     - LLMProviderProtocol: Language model interactions
     - ToolProtocol: Tool execution capabilities
-    - TodoListManagerProtocol: Plan generation and management
 
 Usage:
     from taskforce.core.interfaces import StateManagerProtocol, LLMProviderProtocol
 
-    def create_agent(
+    def create_lean_agent(
         state_manager: StateManagerProtocol,
         llm_provider: LLMProviderProtocol
     ):
-        # Agent implementation uses protocols, not concrete classes
+        # LeanAgent implementation uses protocols, not concrete classes
         pass
 """
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
-from taskforce.core.interfaces.todolist import (
-    TaskStatus,
-    TodoItem,
-    TodoList,
-    TodoListManagerProtocol,
-)
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 __all__ = [
@@ -37,8 +30,4 @@ __all__ = [
     "LLMProviderProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
-    "TodoListManagerProtocol",
-    "TodoItem",
-    "TodoList",
-    "TaskStatus",
 ]

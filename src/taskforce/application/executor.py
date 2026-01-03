@@ -23,7 +23,6 @@ from typing import Any
 import structlog
 
 from taskforce.application.factory import AgentFactory
-from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.errors import (
     CancelledError,
     NotFoundError,
@@ -90,20 +89,19 @@ class AgentExecutor:
         conversation_history: list[dict[str, Any]] | None = None,
         progress_callback: Callable[[ProgressUpdate], None] | None = None,
         user_context: dict[str, Any] | None = None,
-        use_lean_agent: bool = False,
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> ExecutionResult:
-        """Execute agent mission with comprehensive orchestration.
+        """Execute LeanAgent mission with comprehensive orchestration.
 
         Main entry point for mission execution. Orchestrates the complete
         workflow from agent creation through execution to result delivery.
 
         Workflow:
-        1. Create agent using factory based on profile
+        1. Create LeanAgent using factory based on profile
         2. Generate or use provided session ID
-        3. Execute agent ReAct loop with progress tracking
+        3. Execute LeanAgent ReAct loop with progress tracking
         4. Log execution metrics and status
         5. Return execution result
 
@@ -115,13 +113,11 @@ class AgentExecutor:
             progress_callback: Optional callback for progress updates
             user_context: Optional user context for RAG security filtering
                          (user_id, org_id, scope)
-            use_lean_agent: If True, use LeanAgent instead of legacy Agent.
-                           LeanAgent uses native tool calling and PlannerTool.
             agent_id: Optional custom agent ID. If provided, loads agent
-                     definition from configs/custom/{agent_id}.yaml and
-                     creates LeanAgent (ignores use_lean_agent flag).
-            planning_strategy: Optional LeanAgent planning strategy override.
-            planning_strategy_params: Optional params for planning strategy.
+                     definition from configs/custom/{agent_id}.yaml
+            planning_strategy: Optional planning strategy override
+                              (native_react, plan_and_execute, plan_and_react)
+            planning_strategy_params: Optional params for planning strategy
 
         Returns:
             ExecutionResult with completion status and history
@@ -133,27 +129,22 @@ class AgentExecutor:
 
         session_id = self._resolve_session_id(session_id)
 
-        if planning_strategy and not use_lean_agent and not agent_id:
-            use_lean_agent = True
-
         self.logger.info(
             "mission.execution.started",
             mission=mission[:100],
             profile=profile,
             session_id=session_id,
             has_user_context=user_context is not None,
-            use_lean_agent=use_lean_agent,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
         )
 
         agent = None
         try:
-            # Create agent with appropriate adapters
+            # Create LeanAgent with appropriate adapters
             agent = await self._create_agent(
                 profile,
                 user_context=user_context,
-                use_lean_agent=use_lean_agent,
                 agent_id=agent_id,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
@@ -214,7 +205,6 @@ class AgentExecutor:
                 context="Mission execution failed",
                 session_id=session_id,
                 agent_id=agent_id,
-                use_lean_agent=use_lean_agent,
             ) from e
 
         finally:
@@ -229,12 +219,11 @@ class AgentExecutor:
         session_id: str | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
         user_context: dict[str, Any] | None = None,
-        use_lean_agent: bool = False,
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
-        """Execute mission with streaming progress updates.
+        """Execute LeanAgent mission with streaming progress updates.
 
         Yields ProgressUpdate objects as execution progresses, enabling
         real-time feedback to consumers (CLI progress bars, API SSE, etc).
@@ -245,9 +234,10 @@ class AgentExecutor:
             session_id: Optional existing session to resume
             conversation_history: Optional conversation history for chat context
             user_context: Optional user context for RAG security filtering
-            use_lean_agent: If True, use LeanAgent instead of legacy Agent
             agent_id: Optional custom agent ID. If provided, loads agent
-                     definition and creates LeanAgent (ignores use_lean_agent).
+                     definition from configs/custom/{agent_id}.yaml
+            planning_strategy: Optional planning strategy override
+            planning_strategy_params: Optional params for planning strategy
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -255,9 +245,6 @@ class AgentExecutor:
         Raises:
             Exception: If agent creation or execution fails
         """
-        if planning_strategy and not use_lean_agent and not agent_id:
-            use_lean_agent = True
-
         session_id = self._resolve_session_id(session_id)
 
         self.logger.info(
@@ -266,7 +253,6 @@ class AgentExecutor:
             profile=profile,
             session_id=session_id,
             has_user_context=user_context is not None,
-            use_lean_agent=use_lean_agent,
             agent_id=agent_id,
         )
 
@@ -278,18 +264,16 @@ class AgentExecutor:
             details={
                 "session_id": session_id,
                 "profile": profile,
-                "lean": use_lean_agent,
                 "agent_id": agent_id,
             },
         )
 
         agent = None
         try:
-            # Create agent
+            # Create LeanAgent
             agent = await self._create_agent(
                 profile,
                 user_context=user_context,
-                use_lean_agent=use_lean_agent,
                 agent_id=agent_id,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
@@ -349,7 +333,6 @@ class AgentExecutor:
                 context="Mission streaming failed",
                 session_id=session_id,
                 agent_id=agent_id,
-                use_lean_agent=use_lean_agent,
             ) from e
 
         finally:
@@ -361,37 +344,34 @@ class AgentExecutor:
         self,
         profile: str,
         user_context: dict[str, Any] | None = None,
-        use_lean_agent: bool = False,
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
-    ) -> Agent | LeanAgent:
-        """Create agent using factory.
+    ) -> LeanAgent:
+        """Create LeanAgent using factory.
 
-        Creates either legacy Agent or LeanAgent based on parameters:
-        - agent_id provided: Loads custom agent definition and creates LeanAgent
-        - use_lean_agent=True: Creates LeanAgent (native tool calling, PlannerTool)
-        - user_context provided: Creates RAG agent (legacy)
-        - Otherwise: Creates standard Agent (legacy)
+        Creates LeanAgent instance using native tool calling and PlannerTool:
+        - agent_id provided: Loads custom agent definition from registry
+        - Otherwise: Creates standard LeanAgent with optional user_context for RAG
 
         Args:
             profile: Configuration profile name
             user_context: Optional user context for RAG security filtering
-            use_lean_agent: If True, create LeanAgent instead of legacy Agent
             agent_id: Optional custom agent ID to load from registry
+            planning_strategy: Optional planning strategy override
+            planning_strategy_params: Optional planning strategy parameters
 
         Returns:
-            Agent or LeanAgent instance with injected dependencies
+            LeanAgent instance with injected dependencies
 
         Raises:
             FileNotFoundError: If agent_id provided but not found (404)
             ValueError: If agent definition is invalid/corrupt (400)
         """
         self.logger.debug(
-            "creating_agent",
+            "creating_lean_agent",
             profile=profile,
             has_user_context=user_context is not None,
-            use_lean_agent=use_lean_agent,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
         )
@@ -441,26 +421,17 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
             )
 
-        # LeanAgent takes priority if requested (with optional user_context for RAG)
-        if use_lean_agent:
-            return await self.factory.create_lean_agent(
-                profile=profile,
-                user_context=user_context,
-                planning_strategy=planning_strategy,
-                planning_strategy_params=planning_strategy_params,
-            )
-
-        # Use RAG agent factory when user_context is provided
-        if user_context:
-            return await self.factory.create_rag_agent(
-                profile=profile, user_context=user_context
-            )
-
-        return await self.factory.create_agent(profile=profile)
+        # Standard LeanAgent creation with optional user_context for RAG tools
+        return await self.factory.create_lean_agent(
+            profile=profile,
+            user_context=user_context,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
 
     async def _execute_with_progress(
         self,
-        agent: Agent | LeanAgent,
+        agent: LeanAgent,
         mission: str,
         session_id: str,
         progress_callback: Callable[[ProgressUpdate], None] | None,
@@ -505,7 +476,7 @@ class AgentExecutor:
         return result
 
     async def _execute_streaming(
-        self, agent: Agent | LeanAgent, mission: str, session_id: str
+        self, agent: LeanAgent, mission: str, session_id: str
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute agent with streaming progress updates.
 
@@ -666,7 +637,7 @@ class AgentExecutor:
 
     async def _maybe_store_conversation_history(
         self,
-        agent: Agent | LeanAgent,
+        agent: LeanAgent,
         session_id: str,
         conversation_history: list[dict[str, Any]] | None,
     ) -> None:
@@ -685,9 +656,8 @@ class AgentExecutor:
         context: str,
         session_id: str,
         agent_id: str | None,
-        use_lean_agent: bool,
     ) -> TaskforceError:
-        """Wrap unknown exceptions into a TaskforceError subtype."""
+        """Wrap unknown exceptions into LeanAgentExecutionError."""
         if isinstance(error, TaskforceError):
             return error
         if isinstance(error, asyncio.CancelledError):
@@ -706,23 +676,11 @@ class AgentExecutor:
             "error_code": error_context["error_code"],
             "error_type": type(error).__name__,
         }
-        lean_execution = bool(agent_id) or use_lean_agent or bool(
-            error_context["lean_agent_id"]
-        )
-        if lean_execution:
-            return LeanAgentExecutionError(
-                f"{context}: {str(error)}",
-                session_id=error_context["session_id"],
-                lean_agent_id=error_context["lean_agent_id"] or agent_id,
-                tool_name=error_context["tool_name"],
-                error_code=error_context["error_code"],
-                status_code=500,
-                details=details,
-            )
-        return AgentExecutionError(
+        # Always return LeanAgentExecutionError since we only use LeanAgent now
+        return LeanAgentExecutionError(
             f"{context}: {str(error)}",
             session_id=error_context["session_id"],
-            agent_id=error_context["agent_id"],
+            lean_agent_id=error_context["lean_agent_id"] or agent_id,
             tool_name=error_context["tool_name"],
             error_code=error_context["error_code"],
             status_code=500,
