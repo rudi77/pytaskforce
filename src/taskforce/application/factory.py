@@ -1,17 +1,14 @@
 """
 Application Layer - Agent Factory
 
-This module provides dependency injection factory for creating Agent instances
+This module provides dependency injection factory for creating LeanAgent instances
 with different infrastructure adapters based on configuration profiles.
-
-The factory adapts logic from Agent V2's agent_factory.py and Agent.create_agent()
-to work with the new Clean Architecture structure.
 
 Key Responsibilities:
 - Load configuration profiles (dev/staging/prod)
 - Instantiate infrastructure adapters (state managers, LLM providers, tools)
-- Wire dependencies into core domain Agent
-- Support specialist profiles (generic, coding, rag) with layered prompts
+- Wire dependencies into core domain LeanAgent
+- Support specialist profiles (coding, rag) with layered prompts
 - Inject appropriate toolsets based on specialist profile
 """
 
@@ -22,7 +19,6 @@ from typing import Any, Optional
 import structlog
 import yaml
 
-from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.lean_agent import LeanAgent
 from taskforce.core.domain.planning_strategy import (
@@ -31,10 +27,7 @@ from taskforce.core.domain.planning_strategy import (
     PlanAndReactStrategy,
     PlanningStrategy,
 )
-from taskforce.core.domain.router import QueryRouter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
-from taskforce.infrastructure.cache.tool_cache import ToolResultCache
-from taskforce.infrastructure.persistence.file_todolist import FileTodoListManager
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts import build_system_prompt, format_tools_description
@@ -44,16 +37,16 @@ from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
 
 class AgentFactory:
     """
-    Factory for creating agents with dependency injection.
+    Factory for creating LeanAgent instances with dependency injection.
 
     Wires core domain objects with infrastructure adapters based on
     configuration profiles (dev/staging/prod).
 
-    The factory follows the Agent V2 pattern but adapts it to Clean Architecture:
+    The factory follows Clean Architecture principles:
     - Reads YAML configuration profiles
     - Instantiates appropriate infrastructure adapters
-    - Injects dependencies into core Agent
-    - Supports both generic and RAG agent types
+    - Injects dependencies into LeanAgent
+    - Supports specialist profiles (coding, rag) and custom agent definitions
     """
 
     def __init__(self, config_dir: str = "configs"):
@@ -65,245 +58,6 @@ class AgentFactory:
         """
         self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
-
-    async def create_agent(
-        self,
-        profile: str = "dev",
-        specialist: Optional[str] = None,
-        mission: Optional[str] = None,
-        work_dir: Optional[str] = None,
-    ) -> Agent:
-        """
-        Create agent with specified specialist profile.
-
-        Creates an agent with the autonomous kernel prompt plus specialist-specific
-        instructions and toolset. The specialist profile determines both the
-        additional prompt instructions and the available tools.
-
-        Specialist Profiles:
-        - "generic": Full toolset with kernel prompt only (default)
-        - "coding": FileReadTool, FileWriteTool, PowerShellTool, AskUserTool
-        - "rag": SemanticSearchTool, ListDocumentsTool, GetDocumentTool, AskUserTool
-
-        Args:
-            profile: Configuration profile name (dev/staging/prod/coding_dev/rag_dev)
-            specialist: Specialist profile override. If None, reads from config YAML.
-            mission: Optional mission description
-            work_dir: Optional override for work directory
-
-        Returns:
-            Agent instance with injected dependencies
-
-        Raises:
-            FileNotFoundError: If profile YAML not found
-            ValueError: If configuration or specialist is invalid
-
-        Example:
-            >>> factory = AgentFactory()
-            >>> # Load specialist from config
-            >>> agent = await factory.create_agent(profile="coding_dev")
-            >>> # Or override specialist
-            >>> agent = await factory.create_agent(profile="dev", specialist="coding")
-        """
-        config = self._load_profile(profile)
-
-        # Override work_dir if provided
-        if work_dir:
-            config.setdefault("persistence", {})["work_dir"] = work_dir
-
-        # Determine specialist: parameter > config > default
-        effective_specialist = specialist or config.get("specialist", "generic")
-
-        self.logger.info(
-            "creating_agent",
-            profile=profile,
-            specialist=effective_specialist,
-            work_dir=config.get("persistence", {}).get("work_dir", ".taskforce"),
-        )
-
-        # Instantiate infrastructure adapters
-        state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
-
-        include_mcp = not (
-            effective_specialist in ("coding", "rag") and not config.get("tools")
-        )
-        tools, mcp_contexts = await self._build_tools(
-            config=config,
-            llm_provider=llm_provider,
-            specialist=effective_specialist,
-            use_specialist_defaults=True,
-            include_mcp=include_mcp,
-        )
-        todolist_manager = self._create_todolist_manager(config, llm_provider)
-        system_prompt = self._assemble_system_prompt(effective_specialist, tools)
-
-        # Get model_alias from config (default to "main" for backward compatibility)
-        llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
-
-        # Create tool result cache for session-scoped caching
-        # TTL can be configured per profile (default: 1 hour, 0 = session lifetime)
-        cache_config = config.get("cache", {})
-        cache_ttl = cache_config.get("tool_cache_ttl", 3600)
-        enable_cache = cache_config.get("enable_tool_cache", True)
-        tool_cache = ToolResultCache(default_ttl=cache_ttl) if enable_cache else None
-
-        if tool_cache:
-            self.logger.debug(
-                "tool_cache_created",
-                ttl=cache_ttl,
-                enabled=True,
-            )
-
-        # Create QueryRouter for fast-path routing (if enabled)
-        agent_config = config.get("agent", {})
-        enable_fast_path = agent_config.get("enable_fast_path", False)
-        router = None
-
-        if enable_fast_path:
-            router_config = agent_config.get("router", {})
-            router = QueryRouter(
-                llm_provider=llm_provider,
-                use_llm_classification=router_config.get("use_llm_classification", False),
-                max_follow_up_length=router_config.get("max_follow_up_length", 100),
-            )
-            self.logger.debug(
-                "query_router_created",
-                use_llm_classification=router_config.get("use_llm_classification", False),
-                max_follow_up_length=router_config.get("max_follow_up_length", 100),
-            )
-
-        # Create domain agent with injected dependencies
-        # Use filtered execution_tools (without llm_generate)
-        agent = Agent(
-            state_manager=state_manager,
-            llm_provider=llm_provider,
-            tools=tools,
-            todolist_manager=todolist_manager,
-            system_prompt=system_prompt,
-            model_alias=model_alias,
-            tool_cache=tool_cache,
-            router=router,
-            enable_fast_path=enable_fast_path,
-        )
-
-        # Store MCP contexts on agent for lifecycle management
-        agent._mcp_contexts = mcp_contexts
-
-        return agent
-
-    async def create_rag_agent(
-        self,
-        profile: str = "dev",
-        user_context: Optional[dict[str, Any]] = None,
-        work_dir: Optional[str] = None,
-    ) -> Agent:
-        """
-        Create RAG-enabled agent for document retrieval.
-
-        Creates an agent with RAG tools (semantic search, list documents, get document)
-        in addition to standard tools. Uses RAG-specific system prompt.
-
-        Args:
-            profile: Configuration profile name (dev/staging/prod)
-            user_context: User context for security filtering (user_id, org_id, scope)
-            work_dir: Optional override for work directory
-
-        Returns:
-            Agent instance with RAG capabilities
-
-        Raises:
-            FileNotFoundError: If profile YAML not found
-            ValueError: If RAG configuration is missing or invalid
-
-        Example:
-            >>> factory = AgentFactory()
-            >>> agent = factory.create_rag_agent(
-            ...     profile="dev",
-            ...     user_context={"user_id": "user123", "org_id": "org456"}
-            ... )
-            >>> result = await agent.execute("What does the manual say?", "session-123")
-        """
-        config = self._load_profile(profile)
-
-        # Override work_dir if provided
-        if work_dir:
-            config.setdefault("persistence", {})["work_dir"] = work_dir
-
-        self.logger.info(
-            "creating_rag_agent",
-            profile=profile,
-            agent_type="rag",
-            work_dir=config.get("persistence", {}).get("work_dir", ".taskforce"),
-            has_user_context=user_context is not None,
-        )
-
-        # Instantiate infrastructure adapters
-        state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
-
-        tools, mcp_contexts = await self._build_tools(
-            config=config,
-            llm_provider=llm_provider,
-            user_context=user_context,
-            include_mcp=True,
-        )
-
-        todolist_manager = self._create_todolist_manager(config, llm_provider)
-        system_prompt = self._assemble_system_prompt("rag", tools)
-
-        # Get model_alias from config (default to "main" for backward compatibility)
-        llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
-
-        # Create tool result cache for session-scoped caching
-        cache_config = config.get("cache", {})
-        cache_ttl = cache_config.get("tool_cache_ttl", 3600)
-        enable_cache = cache_config.get("enable_tool_cache", True)
-        tool_cache = ToolResultCache(default_ttl=cache_ttl) if enable_cache else None
-
-        if tool_cache:
-            self.logger.debug(
-                "tool_cache_created_rag",
-                ttl=cache_ttl,
-                enabled=True,
-            )
-
-        # Create QueryRouter for fast-path routing (if enabled)
-        agent_config = config.get("agent", {})
-        enable_fast_path = agent_config.get("enable_fast_path", False)
-        router = None
-
-        if enable_fast_path:
-            router_config = agent_config.get("router", {})
-            router = QueryRouter(
-                llm_provider=llm_provider,
-                use_llm_classification=router_config.get("use_llm_classification", False),
-                max_follow_up_length=router_config.get("max_follow_up_length", 100),
-            )
-            self.logger.debug(
-                "query_router_created_rag",
-                use_llm_classification=router_config.get("use_llm_classification", False),
-                max_follow_up_length=router_config.get("max_follow_up_length", 100),
-            )
-
-        agent = Agent(
-            state_manager=state_manager,
-            llm_provider=llm_provider,
-            tools=tools,
-            todolist_manager=todolist_manager,
-            system_prompt=system_prompt,
-            model_alias=model_alias,
-            tool_cache=tool_cache,
-            router=router,
-            enable_fast_path=enable_fast_path,
-        )
-        
-        # Store MCP contexts on agent for lifecycle management
-        agent._mcp_contexts = mcp_contexts
-        
-        return agent
 
     async def create_lean_agent(
         self,
@@ -1334,147 +1088,3 @@ class AgentFactory:
             )
             return None
 
-    def _create_rag_tools(
-        self, config: dict, user_context: Optional[dict[str, Any]]
-    ) -> list[ToolProtocol]:
-        """
-        Create RAG tools from configuration (deprecated - tools now in config).
-
-        This method is kept for backward compatibility but RAG tools should
-        now be specified in the tools section of the config file.
-
-        Args:
-            config: Configuration dictionary
-            user_context: User context for security filtering
-
-        Returns:
-            Empty list (tools should be in config)
-        """
-        self.logger.warning(
-            "rag_tools_deprecated",
-            hint="RAG tools should now be specified in the 'tools' section of config YAML",
-        )
-        return []
-
-    def _create_todolist_manager(
-        self, config: dict, llm_provider: LLMProviderProtocol
-    ) -> FileTodoListManager:
-        """
-        Create TodoList manager with file persistence.
-
-        Args:
-            config: Configuration dictionary
-            llm_provider: LLM provider for plan generation
-
-        Returns:
-            FileTodoListManager instance with persistence support
-        """
-        work_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
-        return FileTodoListManager(work_dir=work_dir, llm_provider=llm_provider)
-
-    def _assemble_system_prompt(
-        self, specialist: str, tools: list[ToolProtocol]
-    ) -> str:
-        """
-        Assemble system prompt from Kernel + Specialist profile + Tools.
-
-        The prompt is dynamically composed of:
-        1. GENERAL_AUTONOMOUS_KERNEL_PROMPT (shared by all agents)
-        2. Specialist-specific prompt (based on profile)
-        3. Dynamic tools description (injected at runtime)
-
-        This approach ensures the LLM always has accurate information about
-        available tools and their parameters, making tool calls more reliable.
-
-        Args:
-            specialist: Specialist profile ("generic", "coding", "rag")
-            tools: List of available tools to inject into the prompt
-
-        Returns:
-            Assembled system prompt string with tools description
-
-        Raises:
-            ValueError: If specialist profile is unknown
-        """
-        from taskforce.core.prompts.autonomous_prompts import (
-            CODING_SPECIALIST_PROMPT,
-            GENERAL_AUTONOMOUS_KERNEL_PROMPT,
-            RAG_SPECIALIST_PROMPT,
-        )
-
-        # Start with the autonomous kernel
-        base_prompt = GENERAL_AUTONOMOUS_KERNEL_PROMPT
-
-        # Append specialist-specific instructions
-        if specialist == "coding":
-            base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT
-        elif specialist == "rag":
-            base_prompt += "\n\n" + RAG_SPECIALIST_PROMPT
-        elif specialist == "generic":
-            # Generic uses just the kernel (or could use legacy prompt)
-            pass
-        else:
-            raise ValueError(f"Unknown specialist profile: {specialist}")
-
-        # Format tools description
-        tools_description = format_tools_description(tools) if tools else ""
-
-        # Build final prompt with dynamic tools injection
-        system_prompt = build_system_prompt(
-            base_prompt=base_prompt,
-            tools_description=tools_description,
-        )
-
-        self.logger.debug(
-            "system_prompt_assembled",
-            specialist=specialist,
-            tools_count=len(tools),
-            prompt_length=len(system_prompt),
-        )
-
-        return system_prompt
-
-    def _load_system_prompt(self, agent_type: str) -> str:
-        """
-        Load system prompt for agent type (legacy method).
-
-        This method is kept for backward compatibility with existing code
-        that uses agent_type instead of specialist profiles.
-
-        Args:
-            agent_type: Agent type ("generic", "rag", "text2sql", "devops_wiki")
-
-        Returns:
-            System prompt string
-
-        Raises:
-            ValueError: If agent type is unknown
-        """
-        if agent_type == "generic":
-            # Load generic system prompt
-            from taskforce.core.prompts.generic_system_prompt import (
-                GENERIC_SYSTEM_PROMPT,
-            )
-
-            return GENERIC_SYSTEM_PROMPT
-
-        elif agent_type == "rag":
-            # Load RAG system prompt
-            from taskforce.core.prompts.rag_system_prompt import RAG_SYSTEM_PROMPT
-
-            return RAG_SYSTEM_PROMPT
-
-        elif agent_type == "text2sql":
-            # Load Text2SQL system prompt
-            from taskforce.core.prompts.text2sql_system_prompt import TEXT2SQL_SYSTEM_PROMPT
-
-            return TEXT2SQL_SYSTEM_PROMPT
-
-        elif agent_type == "devops_wiki":
-            # Load DevOps Wiki system prompt
-            from taskforce.core.prompts.wiki_system_prompt import WIKI_SYSTEM_PROMPT
-            
-            return WIKI_SYSTEM_PROMPT
-
-        else:
-            raise ValueError(f"Unknown agent type: {agent_type}")
