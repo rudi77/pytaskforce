@@ -253,3 +253,28 @@ class TaskforceConsole:
 
         return Prompt.ask(f"[user]> {message}[/user]")
 
+    def print_token_usage(self, token_usage: dict[str, int]):
+        """Print token usage statistics.
+
+        Args:
+            token_usage: Dict with prompt_tokens, completion_tokens, total_tokens
+        """
+        prompt_tokens = token_usage.get("prompt_tokens", 0)
+        completion_tokens = token_usage.get("completion_tokens", 0)
+        total_tokens = token_usage.get("total_tokens", 0)
+
+        token_info = (
+            f"[info]Prompt Tokens:[/info] [cyan]{prompt_tokens:,}[/cyan]  |  "
+            f"[info]Completion Tokens:[/info] [cyan]{completion_tokens:,}[/cyan]  |  "
+            f"[info]Total:[/info] [cyan]{total_tokens:,}[/cyan]"
+        )
+
+        token_panel = Panel(
+            token_info,
+            title="[🎯 Token Usage]",
+            title_align="left",
+            border_style="cyan",
+            padding=(0, 1),
+        )
+        self.console.print(token_panel)
+

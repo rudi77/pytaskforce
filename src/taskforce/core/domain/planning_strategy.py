@@ -77,6 +77,11 @@ async def _collect_execution_result(
     execution_history: list[dict[str, Any]] = []
     final_message = ""
     last_error = ""
+    total_token_usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
     history_event_types = {
         "tool_call",
         "tool_result",
@@ -93,6 +98,12 @@ async def _collect_execution_result(
             final_message = event.data.get("content", "")
         elif event_type == "error":
             last_error = event.data.get("message", "")
+        elif event_type == "token_usage":
+            # Accumulate token usage across all LLM calls
+            usage = event.data
+            total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+            total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+            total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
 
     if not final_message and last_error:
         final_message = last_error
@@ -106,6 +117,7 @@ async def _collect_execution_result(
         status=status,
         final_message=final_message,
         execution_history=execution_history,
+        token_usage=total_token_usage,
     )
 
 
@@ -229,6 +241,13 @@ class NativeReActStrategy:
                     tool_choice="auto",
                     temperature=0.2,
                 )
+
+                # Emit token usage event if available
+                if result.get("usage"):
+                    yield StreamEvent(
+                        event_type="token_usage",
+                        data=result["usage"],
+                    )
 
                 if not result.get("success"):
                     agent.logger.error(
@@ -452,6 +471,15 @@ class NativeReActStrategy:
                         if tc_index in tool_calls_accumulated:
                             tool_calls_accumulated[tc_index]["arguments"] = chunk.get(
                                 "arguments", tool_calls_accumulated[tc_index]["arguments"]
+                            )
+
+                    elif chunk_type == "done":
+                        # Emit token usage if available in done event
+                        usage = chunk.get("usage")
+                        if usage:
+                            yield StreamEvent(
+                                event_type="token_usage",
+                                data=usage,
                             )
 
                     elif chunk_type == "error":
@@ -693,6 +721,13 @@ class PlanAndExecuteStrategy:
                     tool_choice="auto",
                     temperature=0.2,
                 )
+
+                # Emit token usage event if available
+                if result.get("usage"):
+                    yield StreamEvent(
+                        event_type="token_usage",
+                        data=result["usage"],
+                    )
 
                 if not result.get("success"):
                     self.logger.error(

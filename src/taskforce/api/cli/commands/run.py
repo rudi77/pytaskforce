@@ -185,6 +185,10 @@ def _execute_standard_mission(
         tf_console.print_debug(f"Session ID: {result.session_id}")
         tf_console.print_agent_message(result.final_message)
 
+    # Display token usage statistics
+    if result.token_usage and result.token_usage.get("total_tokens", 0) > 0:
+        tf_console.print_token_usage(result.token_usage)
+
 
 async def _execute_streaming_mission(
     mission: str,
@@ -208,6 +212,11 @@ async def _execute_streaming_mission(
     status_message = "Starting..."
     plan_steps: list[dict[str, str]] = []
     plan_text: str | None = None
+    total_token_usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
 
     def format_plan() -> str | None:
         """Format current plan for display."""
@@ -228,7 +237,12 @@ async def _execute_streaming_mission(
         # Header
         mission_display = mission[:60] + "..." if len(mission) > 60 else mission
         elements.append(Text(f"🚀 Mission: {mission_display}", style="bold cyan"))
-        elements.append(Text(f"📋 Step: {current_step}  |  {status_message}", style="dim"))
+
+        # Status line with token usage
+        status_line = f"📋 Step: {current_step}  |  {status_message}"
+        if total_token_usage["total_tokens"] > 0:
+            status_line += f"  |  🎯 Tokens: {total_token_usage['total_tokens']}"
+        elements.append(Text(status_line, style="dim"))
         elements.append(Text())
 
         # Current tool (if any)
@@ -333,6 +347,14 @@ async def _execute_streaming_mission(
                 status_message = f"Plan {action}"
                 should_update = True
 
+            elif event_type == "token_usage":
+                # Accumulate token usage from LLM calls
+                usage = update.details
+                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+                should_update = True
+
             elif event_type == "final_answer":
                 # If we didn't get streaming tokens, use the full content
                 if not final_answer_tokens:
@@ -367,6 +389,19 @@ async def _execute_streaming_mission(
         title="✅ Final Answer",
         border_style="green",
     ))
+
+    # Display token usage summary
+    if total_token_usage["total_tokens"] > 0:
+        token_info = (
+            f"Prompt Tokens: {total_token_usage['prompt_tokens']:,}  |  "
+            f"Completion Tokens: {total_token_usage['completion_tokens']:,}  |  "
+            f"Total: {total_token_usage['total_tokens']:,}"
+        )
+        console.print(Panel(
+            token_info,
+            title="🎯 Token Usage",
+            border_style="cyan",
+        ))
 
 
 
