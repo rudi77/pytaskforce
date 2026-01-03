@@ -20,17 +20,9 @@ logging:
   level: DEBUG
   format: console
 tools:
-- type: WebSearchTool
-  module: taskforce.infrastructure.tools.native.web_tools
-  params: {}
-- type: WebFetchTool
-  module: taskforce.infrastructure.tools.native.web_tools
-  params: {}
-- type: AskUserTool
-  module: taskforce.infrastructure.tools.native.ask_user_tool
-  params: {}
-- type: PythonTool
-  module: taskforce.infrastructure.tools.native.python_tool
-  params: {}
+- web_search
+- web_fetch
+- ask_user
+- python
 mcp_servers: []
 system_prompt: Du bist ein meister des Suchens, Scrapes und Auswertens
