@@ -7,6 +7,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Taskforce exception types live in `src/taskforce/core/domain/errors.py` (TaskforceError + LLMError, ToolError, etc.). Infra tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
 - Tool registry for short-name ↔ type/module mappings lives in `src/taskforce/infrastructure/tools/registry.py` and backs tool config resolution.
 - Profile YAML tool lists now use short tool names (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs.
+- LeanAgent support services live in `src/taskforce/core/domain/lean_agent_components/` (prompt builder, message history manager, tool execution helpers, state store, resource closer).
 
 # Python Best Practices
 

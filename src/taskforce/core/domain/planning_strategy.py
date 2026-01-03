@@ -349,7 +349,11 @@ class NativeReActStrategy:
                     data={"message": final_message, "step": step},
                 )
 
-            await agent._save_state(session_id, state)
+            await agent.state_store.save(
+                session_id=session_id,
+                state=state,
+                planner=agent.planner,
+            )
 
             agent.logger.info(
                 "execute_stream_complete",
@@ -572,7 +576,11 @@ class NativeReActStrategy:
                 data={"message": final_message, "step": step},
             )
 
-        await agent._save_state(session_id, state)
+        await agent.state_store.save(
+            session_id=session_id,
+            state=state,
+            planner=agent.planner,
+        )
 
         agent.logger.info(
             "execute_stream_complete",
@@ -838,7 +846,11 @@ class PlanAndExecuteStrategy:
                 data={"content": final_message},
             )
 
-        await agent._save_state(session_id, state)
+        await agent.state_store.save(
+            session_id=session_id,
+            state=state,
+            planner=agent.planner,
+        )
 
         self.logger.info(
             "execute_stream_complete",
@@ -903,7 +915,11 @@ class PlanAndReactStrategy:
                 ),
             )
 
-        await agent._save_state(session_id, state)
+        await agent.state_store.save(
+            session_id=session_id,
+            state=state,
+            planner=agent.planner,
+        )
 
         async for event in self._react_strategy.execute_stream(
             agent, mission, session_id

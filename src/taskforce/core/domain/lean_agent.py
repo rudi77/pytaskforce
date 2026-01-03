@@ -19,7 +19,6 @@ Key differences from legacy Agent:
 - Native function calling for tool invocation
 """
 
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -27,6 +26,16 @@ import structlog
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
+from taskforce.core.domain.lean_agent_components.message_history_manager import (
+    MessageHistoryManager,
+)
+from taskforce.core.domain.lean_agent_components.prompt_builder import LeanPromptBuilder
+from taskforce.core.domain.lean_agent_components.resource_closer import ResourceCloser
+from taskforce.core.domain.lean_agent_components.state_store import LeanAgentStateStore
+from taskforce.core.domain.lean_agent_components.tool_executor import (
+    ToolExecutor,
+    ToolResultMessageFactory,
+)
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
@@ -39,12 +48,7 @@ from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 from taskforce.core.tools.planner_tool import PlannerTool
-from taskforce.infrastructure.tools.tool_converter import (
-    create_tool_result_preview,
-    tool_result_preview_to_message,
-    tool_result_to_message,
-    tools_to_openai_format,
-)
+from taskforce.infrastructure.tools.tool_converter import tools_to_openai_format
 
 
 class LeanAgent:
@@ -139,13 +143,57 @@ class LeanAgent:
             self._planner = PlannerTool()
             self.tools[self._planner.name] = self._planner
 
+        # Prompt builder for plan/context injection
+        self.prompt_builder = LeanPromptBuilder(
+            base_system_prompt=self._base_system_prompt,
+            planner=self._planner,
+            context_builder=self.context_builder,
+            context_policy=self.context_policy,
+            logger=self.logger,
+        )
+
         # Pre-convert tools to OpenAI format
         self._openai_tools = tools_to_openai_format(self.tools)
+
+        # Message history manager (compression, budget checks)
+        self.message_history_manager = MessageHistoryManager(
+            token_budgeter=self.token_budgeter,
+            openai_tools=self._openai_tools,
+            llm_provider=self.llm_provider,
+            model_alias=self.model_alias,
+            summary_threshold=self.SUMMARY_THRESHOLD,
+            logger=self.logger,
+        )
+
+        # Tool execution helpers
+        self.tool_executor = ToolExecutor(
+            tools=self.tools,
+            logger=self.logger,
+        )
+        self.tool_result_message_factory = ToolResultMessageFactory(
+            tool_result_store=self.tool_result_store,
+            result_store_threshold=self.TOOL_RESULT_STORE_THRESHOLD,
+            logger=self.logger,
+        )
+
+        # State persistence helper
+        self.state_store = LeanAgentStateStore(
+            state_manager=self.state_manager,
+            logger=self.logger,
+        )
+
+        # Resource cleanup helper
+        self.resource_closer = ResourceCloser(logger=self.logger)
 
     @property
     def system_prompt(self) -> str:
         """Return base system prompt (backward compatibility)."""
         return self._base_system_prompt
+
+    @property
+    def planner(self) -> PlannerTool | None:
+        """Expose the planner instance for persistence helpers."""
+        return self._planner
 
     def _build_system_prompt(
         self,
@@ -153,89 +201,12 @@ class LeanAgent:
         state: dict[str, Any] | None = None,
         messages: list[dict[str, Any]] | None = None,
     ) -> str:
-        """
-        Build system prompt with dynamic plan and context pack injection.
-
-        Reads current plan from PlannerTool and injects it into the system
-        prompt. Also builds and injects a budgeted context pack with recent
-        tool results and other relevant context (Story 9.2).
-
-        Args:
-            mission: Optional mission description for context pack
-            state: Optional session state for context pack
-            messages: Optional message history for context pack
-
-        Returns:
-            Complete system prompt with plan context and context pack.
-        """
-        prompt = self._base_system_prompt
-        plan_section = self._build_plan_section()
-        if plan_section:
-            prompt += plan_section
-
-        context_section = self._build_context_pack_section(
+        """Build system prompt with dynamic plan and context injection."""
+        return self.prompt_builder.build_system_prompt(
             mission=mission,
             state=state,
             messages=messages,
         )
-        if context_section:
-            prompt += context_section
-
-        return prompt
-
-    def _build_plan_section(self) -> str:
-        """
-        Build the plan status section for the system prompt.
-
-        Returns:
-            Plan section string or empty string if no active plan.
-        """
-        if not self._planner:
-            return ""
-
-        plan_output = self._planner.get_plan_summary()
-        if not plan_output or plan_output == "No active plan.":
-            return ""
-
-        plan_section = (
-            "\n\n## CURRENT PLAN STATUS\n"
-            "The following plan is currently active. "
-            "Use it to guide your next steps.\n\n"
-            f"{plan_output}"
-        )
-        self.logger.debug("plan_injected", plan_steps=plan_output.count("\n") + 1)
-        return plan_section
-
-    def _build_context_pack_section(
-        self,
-        *,
-        mission: str | None,
-        state: dict[str, Any] | None,
-        messages: list[dict[str, Any]] | None,
-    ) -> str:
-        """
-        Build the context pack section for the system prompt.
-
-        Args:
-            mission: Optional mission description for context pack
-            state: Optional session state for context pack
-            messages: Optional message history for context pack
-
-        Returns:
-            Context pack section string or empty string if no context pack.
-        """
-        context_pack = self.context_builder.build_context_pack(
-            mission=mission, state=state, messages=messages
-        )
-        if not context_pack:
-            return ""
-
-        self.logger.debug(
-            "context_pack_injected",
-            pack_length=len(context_pack),
-            policy_max=self.context_policy.max_total_chars,
-        )
-        return f"\n\n{context_pack}"
 
     async def execute(self, mission: str, session_id: str) -> ExecutionResult:
         """
@@ -309,244 +280,16 @@ class LeanAgent:
         return output[:max_length] + "..."
 
     async def _compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """
-        Compress message history using safe LLM-based summarization.
-
-        Strategy (Story 9.3 - Safe Compression):
-        1. Trigger based on token budget (primary) or message count (fallback)
-        2. Build safe summary input from sanitized message previews (NO raw dumps)
-        3. Use LLM to summarize old messages (skip system prompt)
-        4. Replace old messages with summary + keep recent messages
-        5. Fallback: Simple truncation if LLM summarization fails
-
-        This prevents token overflow while preserving context.
-        """
-        message_count = len(messages)
-
-        # Budget-based trigger (primary)
-        should_compress_budget = self.token_budgeter.should_compress(
-            messages=messages,
-            tools=self._openai_tools,
-        )
-
-        # Message count trigger (fallback for backward compatibility)
-        should_compress_count = message_count > self.SUMMARY_THRESHOLD
-
-        # Check if compression needed
-        if not (should_compress_budget or should_compress_count):
-            return messages
-
-        self.logger.warning(
-            "compressing_messages",
-            message_count=message_count,
-            threshold=self.SUMMARY_THRESHOLD,
-            budget_trigger=should_compress_budget,
-            count_trigger=should_compress_count,
-        )
-
-        # Extract old messages to summarize (skip system prompt)
-        # CRITICAL: Limit to prevent explosion even in compression
-        max_messages_to_summarize = min(self.SUMMARY_THRESHOLD - 1, 15)  # Cap at 15
-        old_messages = messages[1 : 1 + max_messages_to_summarize]
-
-        # Build safe summary input (NO raw JSON dumps)
-        summary_input = self._build_safe_summary_input(old_messages)
-
-        # EMERGENCY GUARD: Check if summary input itself is too large
-        # If summary input > 50k chars (~12.5k tokens), use deterministic fallback
-        if len(summary_input) > 50000:
-            self.logger.error(
-                "compression_input_too_large",
-                input_length=len(summary_input),
-                action="using_deterministic_fallback",
-            )
-            return self._deterministic_compression(messages)
-
-        # Build summary prompt
-        summary_prompt = f"""Summarize this conversation history concisely:
-
-{summary_input}
-
-Provide a 2-3 paragraph summary of:
-- Key decisions made
-- Important tool results and findings
-- Context needed for understanding recent messages
-
-Keep it factual and concise."""
-
-        # CRITICAL: Budget-check the compression prompt itself
-        compression_messages = [{"role": "user", "content": summary_prompt}]
-        compression_estimated = self.token_budgeter.estimate_tokens(compression_messages)
-
-        if compression_estimated > self.token_budgeter.max_input_tokens:
-            self.logger.error(
-                "compression_prompt_over_budget",
-                estimated_tokens=compression_estimated,
-                max_tokens=self.token_budgeter.max_input_tokens,
-                action="using_deterministic_fallback",
-            )
-            return self._deterministic_compression(messages)
-
-        try:
-            # Use LLM to create summary
-            result = await self.llm_provider.complete(
-                messages=compression_messages,
-                model=self.model_alias,
-                temperature=0,
-            )
-
-            # Check for context length exceeded error specifically
-            error = result.get("error", "")
-            if "context length" in error.lower() or "token limit" in error.lower():
-                self.logger.error(
-                    "compression_context_length_exceeded",
-                    error=error,
-                    action="using_deterministic_fallback",
-                )
-                return self._deterministic_compression(messages)
-
-            if not result.get("success"):
-                self.logger.error(
-                    "compression_failed",
-                    error=error,
-                )
-                # Fallback: Deterministic compression
-                return self._deterministic_compression(messages)
-
-            summary = result.get("content", "")
-
-            # Build compressed message list
-            compressed = [
-                messages[0],  # System prompt
-                {
-                    "role": "system",
-                    "content": f"[Previous Context Summary]\n{summary}",
-                },
-                *messages[self.SUMMARY_THRESHOLD :],  # Recent messages
-            ]
-
-            self.logger.info(
-                "messages_compressed_with_summary",
-                original_count=message_count,
-                compressed_count=len(compressed),
-                summary_length=len(summary),
-            )
-
-            return compressed
-
-        except Exception as e:
-            self.logger.error("compression_exception", error=str(e))
-            return self._deterministic_compression(messages)
+        """Compress message history using safe LLM-based summarization."""
+        return await self.message_history_manager.compress_messages(messages)
 
     def _deterministic_compression(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """
-        Deterministic compression without LLM (emergency fallback).
-
-        This is used when:
-        - Compression prompt itself is too large
-        - LLM compression fails
-        - Context length exceeded errors
-
-        Strategy:
-        - Keep system prompt
-        - Keep last 10 messages (hard cap)
-        - Add a simple text summary of what was dropped
-
-        This NEVER calls LLM and NEVER explodes.
-        """
-        self.logger.warning(
-            "using_deterministic_compression",
-            original_count=len(messages),
-        )
-
-        # Keep system prompt
-        system_prompt = messages[0] if messages else {"role": "system", "content": ""}
-
-        # Keep last 10 messages (excluding system prompt)
-        recent_messages = messages[-10:] if len(messages) > 10 else messages[1:]
-
-        # Create simple summary of dropped content
-        dropped_count = len(messages) - len(recent_messages) - 1  # -1 for system
-        if dropped_count > 0:
-            summary_text = (
-                f"[{dropped_count} earlier messages compressed for token budget. "
-                f"Continuing from recent context.]"
-            )
-            compressed = [
-                system_prompt,
-                {"role": "system", "content": summary_text},
-                *recent_messages,
-            ]
-        else:
-            compressed = [system_prompt, *recent_messages]
-
-        self.logger.info(
-            "deterministic_compression_complete",
-            original_count=len(messages),
-            compressed_count=len(compressed),
-            dropped_count=dropped_count,
-        )
-
-        return compressed
+        """Deterministic compression without LLM (emergency fallback)."""
+        return self.message_history_manager.deterministic_compression(messages)
 
     def _build_safe_summary_input(self, messages: list[dict[str, Any]]) -> str:
-        """
-        Build safe summary input from messages without raw JSON dumps.
-
-        Extracts only essential information from messages:
-        - Role and content (sanitized)
-        - Tool call names (not full arguments)
-        - Tool result previews (not raw outputs)
-
-        Args:
-            messages: List of messages to summarize
-
-        Returns:
-            Safe text representation for summary prompt
-        """
-        summary_parts = []
-
-        for idx, msg in enumerate(messages):
-            role = msg.get("role", "unknown")
-            parts = [f"[Message {idx + 1} - {role}]"]
-
-            # Tool results (preview only, not raw output)
-            if role == "tool":
-                tool_name = msg.get("name", "unknown")
-                parts.append(f"Tool: {tool_name}")
-
-                # Try to parse content as JSON to extract preview
-                try:
-                    content_str = msg.get("content", "")
-                    if content_str:
-                        result_data = json.loads(content_str)
-                        preview = self.token_budgeter.extract_tool_output_preview(result_data)
-                        parts.append(f"Result: {preview}")
-                except (json.JSONDecodeError, TypeError):
-                    # If not JSON, just truncate content
-                    content_str = str(msg.get("content", ""))[:500]
-                    parts.append(f"Result: {content_str}")
-            else:
-                # Content (sanitized) - only for non-tool messages
-                content = msg.get("content")
-                if content:
-                    # Sanitize content to prevent overflow
-                    sanitized_msg = self.token_budgeter.sanitize_message(msg)
-                    sanitized_content = sanitized_msg.get("content", "")
-                    if sanitized_content:
-                        parts.append(f"Content: {sanitized_content[:1000]}")
-
-                # Tool calls (names only, not full arguments)
-                tool_calls = msg.get("tool_calls")
-                if tool_calls:
-                    tool_names = [
-                        tc.get("function", {}).get("name", "unknown") for tc in tool_calls
-                    ]
-                    parts.append(f"Tools called: {', '.join(tool_names)}")
-
-            summary_parts.append("\n".join(parts))
-
-        return "\n\n".join(summary_parts)
+        """Build safe summary input from messages without raw JSON dumps."""
+        return self.message_history_manager.build_safe_summary_input(messages)
 
     def _fallback_compression(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
@@ -565,44 +308,14 @@ Keep it factual and concise."""
         """
         Build initial message list for LLM conversation.
 
-        Includes conversation_history from state to support multi-turn chat.
-        The history contains previous user/assistant exchanges for context.
-
         Note: Plan status is NOT included here - it's dynamically injected
         into the system prompt on each loop iteration via _build_system_prompt().
         """
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._base_system_prompt},
-        ]
-
-        # Load conversation history from state for multi-turn context
-        conversation_history = state.get("conversation_history", [])
-        if conversation_history:
-            # Add previous conversation turns (user/assistant pairs)
-            for msg in conversation_history:
-                role = msg.get("role")
-                content = msg.get("content", "")
-                if role in ("user", "assistant") and content:
-                    messages.append({"role": role, "content": content})
-            self.logger.debug(
-                "conversation_history_loaded",
-                history_length=len(conversation_history),
-            )
-
-        # Build user message with current mission and context
-        user_answers = state.get("answers", {})
-        answers_text = ""
-        if user_answers:
-            answers_text = (
-                f"\n\n## User Provided Information\n" f"{json.dumps(user_answers, indent=2)}"
-            )
-
-        user_message = f"{mission}{answers_text}"
-
-        # Add current mission as latest user message
-        messages.append({"role": "user", "content": user_message})
-
-        return messages
+        return self.message_history_manager.build_initial_messages(
+            mission=mission,
+            state=state,
+            base_system_prompt=self._base_system_prompt,
+        )
 
     async def _execute_tool(
         self,
@@ -610,18 +323,7 @@ Keep it factual and concise."""
         tool_args: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a tool by name with given arguments."""
-        tool = self.tools.get(tool_name)
-        if not tool:
-            return {"success": False, "error": f"Tool not found: {tool_name}"}
-
-        try:
-            self.logger.info("tool_execute", tool=tool_name, args_keys=list(tool_args.keys()))
-            result = await tool.execute(**tool_args)
-            self.logger.info("tool_complete", tool=tool_name, success=result.get("success"))
-            return result
-        except Exception as e:
-            self.logger.error("tool_exception", tool=tool_name, error=str(e))
-            return {"success": False, "error": str(e)}
+        return await self.tool_executor.execute(tool_name, tool_args)
 
     async def _create_tool_message(
         self,
@@ -631,116 +333,26 @@ Keep it factual and concise."""
         session_id: str,
         step: int,
     ) -> dict[str, Any]:
-        """
-        Create a tool message for message history.
-
-        If tool_result_store is available and the result is large, stores the
-        result and returns a handle+preview message. Otherwise, returns a
-        standard message with the full result (truncated).
-
-        Args:
-            tool_call_id: Tool call ID from LLM
-            tool_name: Name of the executed tool
-            tool_result: Full tool result dictionary
-            session_id: Current session ID
-            step: Current execution step
-
-        Returns:
-            Message dictionary for message history
-        """
-        # Calculate result size
-        result_json = json.dumps(tool_result, ensure_ascii=False, default=str)
-        result_size = len(result_json)
-
-        # Use handle-based storage if store available and result is large
-        if self.tool_result_store and result_size > self.TOOL_RESULT_STORE_THRESHOLD:
-            # Store result and get handle
-            handle = await self.tool_result_store.put(
-                tool_name=tool_name,
-                result=tool_result,
-                session_id=session_id,
-                metadata={
-                    "step": step,
-                    "success": tool_result.get("success", False),
-                },
-            )
-
-            # Create preview
-            preview = create_tool_result_preview(handle, tool_result)
-
-            # Log handle usage
-            self.logger.info(
-                "tool_result_stored_with_handle",
-                tool=tool_name,
-                handle_id=handle.id,
-                size_chars=result_size,
-                preview_length=len(preview.preview_text),
-            )
-
-            # Return handle+preview message
-            return tool_result_preview_to_message(tool_call_id, tool_name, preview)
-        else:
-            # Use standard message with truncation
-            return tool_result_to_message(tool_call_id, tool_name, tool_result)
-
-    async def _preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """
-        Preflight budget check before LLM call.
-
-        If messages exceed budget even after compression, apply emergency
-        sanitization and truncation to prevent token overflow errors.
-
-        Args:
-            messages: Message list to check
-
-        Returns:
-            Sanitized/truncated message list if needed, otherwise original
-        """
-        # Check if over budget
-        if not self.token_budgeter.is_over_budget(
-            messages=messages,
-            tools=self._openai_tools,
-        ):
-            return messages
-
-        # Emergency: Still over budget after compression
-        self.logger.error(
-            "emergency_budget_enforcement",
-            message_count=len(messages),
-            action="sanitize_and_truncate",
+        """Create a tool message for message history."""
+        return await self.tool_result_message_factory.build_message(
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            tool_result=tool_result,
+            session_id=session_id,
+            step=step,
         )
 
-        # Step 1: Sanitize all messages (hard caps on content)
-        sanitized = self.token_budgeter.sanitize_messages(messages)
-
-        # Step 2: If still over budget, keep only system + recent messages
-        if self.token_budgeter.is_over_budget(
-            messages=sanitized,
-            tools=self._openai_tools,
-        ):
-            self.logger.error(
-                "emergency_truncation",
-                original_count=len(sanitized),
-                action="keep_recent_only",
-            )
-
-            # Keep system prompt + last 10 messages (aggressive truncation)
-            emergency_truncated = [sanitized[0]] + sanitized[-10:]
-
-            self.logger.warning(
-                "emergency_truncation_complete",
-                final_count=len(emergency_truncated),
-            )
-
-            return emergency_truncated
-
-        return sanitized
+    async def _preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Preflight budget check before LLM call."""
+        return await self.message_history_manager.preflight_budget_check(messages)
 
     async def _save_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Save state including PlannerTool state."""
-        if self._planner:
-            state["planner_state"] = self._planner.get_state()
-        await self.state_manager.save_state(session_id, state)
+        await self.state_store.save(
+            session_id=session_id,
+            state=state,
+            planner=self._planner,
+        )
 
     async def close(self) -> None:
         """
@@ -752,9 +364,5 @@ Keep it factual and concise."""
         """
         # Clean up MCP client contexts if they were attached by factory
         mcp_contexts = getattr(self, "_mcp_contexts", [])
-        for ctx in mcp_contexts:
-            try:
-                await ctx.__aexit__(None, None, None)
-            except Exception:
-                pass  # Ignore cleanup errors
+        await self.resource_closer.close_mcp_contexts(mcp_contexts)
         self.logger.debug("agent_closed")
