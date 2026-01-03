@@ -24,6 +24,7 @@ class StreamEvent:
     - tool_call: Tool invocation starting (before execution)
     - tool_result: Tool execution completed (after execution)
     - plan_updated: PlannerTool modified the plan
+    - token_usage: LLM token consumption metrics (prompt_tokens, completion_tokens, total_tokens)
     - final_answer: Agent completed with final response
     - error: Error occurred during execution
 
@@ -39,6 +40,7 @@ class StreamEvent:
         "tool_call",
         "tool_result",
         "plan_updated",
+        "token_usage",
         "final_answer",
         "error",
     ]
@@ -75,6 +77,7 @@ class ExecutionResult:
         execution_history: List of execution events (thoughts, actions, observations)
         todolist_id: ID of the TodoList that was executed (if any)
         pending_question: Question awaiting user response (if status is paused)
+        token_usage: Total token usage statistics (prompt_tokens, completion_tokens, total_tokens)
     """
 
     session_id: str
@@ -83,4 +86,9 @@ class ExecutionResult:
     execution_history: list[dict[str, Any]] = field(default_factory=list)
     todolist_id: str | None = None
     pending_question: dict[str, Any] | None = None
+    token_usage: dict[str, int] = field(default_factory=lambda: {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    })
 

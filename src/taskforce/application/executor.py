@@ -567,6 +567,7 @@ class AgentExecutor:
                 f"{d.get('tool', 'unknown')}: {str(d.get('output', ''))[:50]}"
             ),
             "plan_updated": lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
+            "token_usage": lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
             "final_answer": lambda d: d.get("content", ""),
             "error": lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
         }
