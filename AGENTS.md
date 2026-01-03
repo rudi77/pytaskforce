@@ -5,6 +5,7 @@ This file should be updated automatically when project-specific patterns, conven
 
 - Execution API errors now use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header and handled in `taskforce.api.server.taskforce_http_exception_handler`.
 - Taskforce exception types live in `src/taskforce/core/domain/errors.py` (TaskforceError + LLMError, ToolError, etc.). Infra tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
+- Tool registry for short-name ↔ type/module mappings lives in `src/taskforce/infrastructure/tools/registry.py` and backs tool config resolution.
 
 # Python Best Practices
 
@@ -65,6 +66,10 @@ This file should be updated automatically when project-specific patterns, conven
 * Für Pipelines/Indexer: **integrierte Smoke-Tests** mit Mini-Fixtures.
 * Coverage-Ziel vereinbaren (z. B. Core ≥ 85 %, Gesamtsuite ≥ 75 %).
 
+### Unit Tests
+
+* Einzelne Testdateien lassen sich mit `PYTHONPATH=src pytest -q -c /dev/null <pfad>` ausführen.
+
 ## 9) Projektstruktur
 
 ```
@@ -119,4 +124,3 @@ root/
 * [ ] Keine Duplikate; Funktionen ≤ 30 Zeilen oder sinnvoll zerlegt.
 * [ ] Public API/Schemas dokumentiert; Migrationshinweise bei Changes.
 * [ ] Nur notwendige Löschungen/Refactorings — **Stabilität first**.
-

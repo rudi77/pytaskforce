@@ -1265,13 +1265,16 @@ class AgentFactory:
             raise ValueError(f"Unknown specialist profile: {specialist}")
     
     def _instantiate_tool(
-        self, tool_spec: dict, llm_provider: LLMProviderProtocol, user_context: Optional[dict[str, Any]] = None
+        self,
+        tool_spec: str | dict[str, Any],
+        llm_provider: LLMProviderProtocol,
+        user_context: Optional[dict[str, Any]] = None,
     ) -> Optional[ToolProtocol]:
         """
         Instantiate a tool from configuration specification.
 
         Args:
-            tool_spec: Tool specification dict with type, module, and params
+            tool_spec: Tool specification dict or short tool name
             llm_provider: LLM provider for tools that need it
             user_context: Optional user context for RAG tools
 
@@ -1279,19 +1282,20 @@ class AgentFactory:
             Tool instance or None if instantiation fails
         """
         import importlib
+        from taskforce.infrastructure.tools.registry import resolve_tool_spec
         
-        tool_type = tool_spec.get("type")
-        tool_module = tool_spec.get("module")
-        tool_params = tool_spec.get("params", {}).copy()  # Copy to avoid modifying original
-        
-        if not tool_type or not tool_module:
+        resolved_spec = resolve_tool_spec(tool_spec)
+        if not resolved_spec:
             self.logger.warning(
                 "invalid_tool_spec",
-                tool_type=tool_type,
-                tool_module=tool_module,
-                hint="Tool spec must include 'type' and 'module'",
+                tool_spec=tool_spec,
+                hint="Tool spec must include 'type' or be a known tool name",
             )
             return None
+
+        tool_type = resolved_spec.get("type")
+        tool_module = resolved_spec.get("module")
+        tool_params = resolved_spec.get("params", {}).copy()
         
         try:
             # Import the module
