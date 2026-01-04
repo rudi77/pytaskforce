@@ -62,6 +62,26 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
             "model_alias": "main",
         },
     },
+    "rag_semantic_search": {
+        "type": "SemanticSearchTool",
+        "module": "taskforce.infrastructure.tools.rag.semantic_search",
+        "params": {},
+    },
+    "rag_list_documents": {
+        "type": "ListDocumentsTool",
+        "module": "taskforce.infrastructure.tools.rag.list_documents",
+        "params": {},
+    },
+    "rag_get_document": {
+        "type": "GetDocumentTool",
+        "module": "taskforce.infrastructure.tools.rag.get_document",
+        "params": {},
+    },
+    "global_document_analysis": {
+        "type": "GlobalDocumentAnalysisTool",
+        "module": "taskforce.infrastructure.tools.rag.global_document_analysis",
+        "params": {},
+    },
 }
 
 

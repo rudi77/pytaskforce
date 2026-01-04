@@ -54,11 +54,15 @@ class Header(Static):
         self.session_id = session_id
         self.profile = profile
         self.user_context = user_context
+        # Create child widgets up-front so reactive watchers can safely update them
+        # even before composition/mounting is complete.
+        self._title_line = Static(self._render_title(), classes="title-line", id="title-line")
+        self._info_line = Static(self._render_info(), classes="info-line", id="info-line")
 
     def compose(self) -> ComposeResult:
         """Compose header layout."""
-        yield Static(self._render_title(), classes="title-line", id="title-line")
-        yield Static(self._render_info(), classes="info-line", id="info-line")
+        yield self._title_line
+        yield self._info_line
 
     def _render_title(self) -> Text:
         """Render title line."""
@@ -130,8 +134,9 @@ class Header(Static):
             new_status: New status value
         """
         # Update info line when status changes
-        info_line = self.query_one("#info-line", Static)
-        info_line.update(self._render_info())
+        if not hasattr(self, "_info_line"):
+            return
+        self._info_line.update(self._render_info())
 
     def watch_token_count(self, new_count: int) -> None:
         """React to token count changes.
@@ -140,8 +145,9 @@ class Header(Static):
             new_count: New token count
         """
         # Update info line when token count changes
-        info_line = self.query_one("#info-line", Static)
-        info_line.update(self._render_info())
+        if not hasattr(self, "_info_line"):
+            return
+        self._info_line.update(self._render_info())
 
     def update_status(self, status: str) -> None:
         """Update the status display.

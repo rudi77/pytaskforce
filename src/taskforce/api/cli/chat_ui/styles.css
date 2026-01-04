@@ -135,31 +135,11 @@ Footer > .footer--key {
 }
 
 /* Scrollbar Styling */
-ChatLog::-webkit-scrollbar {
-    width: 1;
+ChatLog {
+    scrollbar-size: 1 1;
+    scrollbar-color: $primary;
+    scrollbar-background: $surface;
 }
 
-ChatLog::-webkit-scrollbar-track {
-    background: $surface;
-}
-
-ChatLog::-webkit-scrollbar-thumb {
-    background: $primary;
-}
-
-ChatLog::-webkit-scrollbar-thumb:hover {
-    background: $accent;
-}
-
-/* Color Scheme (Dark Mode) */
-:root {
-    --primary: #0178d4;
-    --accent: #00c9ff;
-    --surface: #1e1e1e;
-    --panel: #252526;
-    --text: #cccccc;
-    --text-muted: #858585;
-    --error: #f44747;
-    --warning: #f9a825;
-    --success: #4caf50;
-}
+/* Note: Textual doesn't support `:root` / CSS custom properties here.
+   Colors are provided via Textual's `$primary`, `$accent`, `$surface`, etc. */
