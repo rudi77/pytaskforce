@@ -1,0 +1,165 @@
+/* Taskforce Chat UI Styles */
+
+/* Global App Styles */
+TaskforceChatApp {
+    background: $surface;
+}
+
+/* Main Container */
+#main-container {
+    width: 100%;
+    height: 1fr;
+    background: $surface;
+}
+
+/* Header Styling */
+Header {
+    background: $primary;
+    color: $text;
+    height: 3;
+    dock: top;
+    padding: 1 2;
+}
+
+/* Chat Log Styling */
+ChatLog {
+    width: 100%;
+    height: 1fr;
+    background: $surface;
+    border: solid $primary;
+    padding: 1;
+    scrollbar-gutter: stable;
+}
+
+ChatLog:focus {
+    border: solid $accent;
+}
+
+/* Plan Panel Styling */
+PlanPanel {
+    width: 100%;
+    height: auto;
+    max-height: 15;
+    background: $surface;
+    border: solid $accent;
+    margin: 1 0;
+    padding: 1 2;
+}
+
+PlanPanel.hidden {
+    display: none;
+}
+
+/* Input Bar Styling */
+InputBar {
+    dock: bottom;
+    height: 5;
+    width: 100%;
+    background: $panel;
+    border-top: solid $primary;
+    padding: 1 2;
+}
+
+InputBar Input {
+    border: solid $primary;
+    background: $surface;
+    color: $text;
+    width: 1fr;
+    margin-right: 1;
+}
+
+InputBar Input:focus {
+    border: solid $accent;
+}
+
+InputBar Button {
+    background: $primary;
+    color: $text;
+    min-width: 10;
+}
+
+InputBar Button:hover {
+    background: $accent;
+}
+
+InputBar .hint-text {
+    color: $text-muted;
+    text-style: italic;
+    margin-top: 1;
+}
+
+/* Chat Message Styling */
+ChatMessage {
+    width: 100%;
+    height: auto;
+    margin: 1 0;
+}
+
+ChatMessage.user {
+    align: left top;
+}
+
+ChatMessage.agent {
+    align: left top;
+}
+
+ChatMessage.system {
+    align: center top;
+}
+
+ChatMessage.tool_call {
+    align: left top;
+}
+
+ChatMessage.tool_result {
+    align: left top;
+}
+
+ChatMessage.error {
+    align: left top;
+}
+
+ChatMessage.plan {
+    align: left top;
+}
+
+/* Footer */
+Footer {
+    background: $primary;
+    color: $text;
+}
+
+Footer > .footer--key {
+    background: $accent;
+    color: $text;
+}
+
+/* Scrollbar Styling */
+ChatLog::-webkit-scrollbar {
+    width: 1;
+}
+
+ChatLog::-webkit-scrollbar-track {
+    background: $surface;
+}
+
+ChatLog::-webkit-scrollbar-thumb {
+    background: $primary;
+}
+
+ChatLog::-webkit-scrollbar-thumb:hover {
+    background: $accent;
+}
+
+/* Color Scheme (Dark Mode) */
+:root {
+    --primary: #0178d4;
+    --accent: #00c9ff;
+    --surface: #1e1e1e;
+    --panel: #252526;
+    --text: #cccccc;
+    --text-muted: #858585;
+    --error: #f44747;
+    --warning: #f9a825;
+    --success: #4caf50;
+}

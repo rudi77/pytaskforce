@@ -35,6 +35,7 @@ dependencies = [
     # Arize Phoenix tracing
     "arize-phoenix-otel>=0.6.0",
     "openinference-instrumentation-litellm>=0.1.0",
+    "textual>=7.0.0",
 ]
 
 [project.scripts]
