@@ -1,5 +1,8 @@
 """Events panel widget for displaying execution progress events."""
 
+import json
+from typing import Any
+
 from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Static
@@ -98,35 +101,61 @@ class EventsPanel(VerticalScroll):
 
         if event_type == "started":
             text.append("🚀 Started", style="green")
+            step = details.get("step")
+            if step is not None:
+                text.append(f" (step={step})", style="dim green")
 
         elif event_type == "step_start":
             step = details.get("step", "?")
             text.append(f"🧠 Step {step}", style="blue")
+            if update.message:
+                text.append(f" — {update.message}", style="dim blue")
 
         elif event_type == "tool_call":
             tool_name = details.get("tool", "unknown")
-            params = details.get("params", {})
+            status = details.get("status")
+            args = (
+                details.get("args")
+                or details.get("params")
+                or {}
+            )
+
             text.append(f"🔧 {tool_name}", style="yellow")
-            if params:
-                params_str = str(params)
-                if len(params_str) > 60:
-                    params_str = params_str[:57] + "..."
-                text.append(f" {params_str}", style="dim yellow")
+            if status:
+                text.append(f" [{status}]", style="dim yellow")
+
+            args_str = self._compact_json(args, max_len=160)
+            if args_str:
+                text.append(f" args={args_str}", style="dim yellow")
+            else:
+                text.append(" args={}", style="dim yellow")
 
         elif event_type == "tool_result":
             tool_name = details.get("tool", "unknown")
             success = details.get("success", True)
-            output = str(details.get("output", ""))
+            output = details.get("output", "")
+            args = details.get("args") or {}
             icon = "✅" if success else "❌"
             color = "green" if success else "red"
             text.append(f"{icon} {tool_name}: ", style=color)
-            if len(output) > 80:
-                output = output[:77] + "..."
-            text.append(output, style=color)
+
+            output_str = self._single_line(str(output))
+            if not output_str:
+                output_str = "<empty>"
+            output_str = self._truncate(output_str, 160)
+            text.append(output_str, style=color)
+
+            args_str = self._compact_json(args, max_len=140)
+            if args_str:
+                text.append(f"  args={args_str}", style=f"dim {color}")
 
         elif event_type == "plan_updated":
             action = details.get("action", "updated")
             text.append(f"📋 Plan {action}", style="magenta")
+            step = details.get("step")
+            status = details.get("status")
+            if step is not None and status:
+                text.append(f" (step={step}, status={status})", style="dim magenta")
 
         elif event_type == "token_usage":
             tokens = details.get("total_tokens", 0)
@@ -140,9 +169,41 @@ class EventsPanel(VerticalScroll):
 
         elif event_type == "error":
             msg = details.get("message", update.message or "Error")
+            step = details.get("step")
             text.append(f"❌ {msg}", style="red")
+            if step is not None:
+                text.append(f" (step={step})", style="dim red")
 
         else:
             text.append(f"ℹ️ {update.message or event_type}", style="white")
 
         return text
+
+    @staticmethod
+    def _truncate(value: str, max_len: int) -> str:
+        if len(value) <= max_len:
+            return value
+        return value[: max_len - 3] + "..."
+
+    @staticmethod
+    def _single_line(value: str) -> str:
+        return " ".join(value.split())
+
+    @staticmethod
+    def _compact_json(data: Any, max_len: int) -> str:
+        try:
+            encoded = json.dumps(
+                data,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+        except TypeError:
+            encoded = str(data)
+
+        encoded = " ".join(str(encoded).split())
+        if encoded == "null":
+            return ""
+        if len(encoded) > max_len:
+            return encoded[: max_len - 3] + "..."
+        return encoded

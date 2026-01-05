@@ -296,7 +296,12 @@ class NativeReActStrategy:
 
                         yield StreamEvent(
                             event_type="tool_call",
-                            data={"tool": tool_name, "id": tool_call_id, "status": "completed"},
+                            data={
+                                "tool": tool_name,
+                                "id": tool_call_id,
+                                "status": "executing",
+                                "args": tool_args,
+                            },
                         )
 
                         tool_result = await agent._execute_tool(tool_name, tool_args)
@@ -535,6 +540,16 @@ class NativeReActStrategy:
                             raw_args=tool_call["function"]["arguments"],
                         )
 
+                    yield StreamEvent(
+                        event_type="tool_call",
+                        data={
+                            "tool": tool_name,
+                            "id": tool_call_id,
+                            "status": "executing",
+                            "args": tool_args,
+                        },
+                    )
+
                     tool_result = await agent._execute_tool(tool_name, tool_args)
 
                     yield StreamEvent(
@@ -546,6 +561,7 @@ class NativeReActStrategy:
                             "output": agent._truncate_output(
                                 tool_result.get("output", str(tool_result.get("error", "")))
                             ),
+                            "args": tool_args,
                         },
                     )
 
@@ -771,7 +787,8 @@ class PlanAndExecuteStrategy:
                             data={
                                 "tool": tool_name,
                                 "id": tool_call_id,
-                                "status": "completed",
+                                "status": "executing",
+                                "args": tool_args,
                             },
                         )
 
