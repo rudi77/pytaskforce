@@ -71,6 +71,103 @@ class MessageHistoryManager:
 
         return messages
 
+    def _find_matching_tool_call_assistant_index(
+        self, messages: list[dict[str, Any]], tool_message_index: int
+    ) -> int | None:
+        """
+        Find the assistant message index that contains the tool_call_id for a tool message.
+
+        Azure/OpenAI requires each `role="tool"` message to be a response to a preceding
+        assistant message that includes `tool_calls` with a matching `id`.
+        """
+        if tool_message_index <= 0 or tool_message_index >= len(messages):
+            return None
+
+        tool_msg = messages[tool_message_index]
+        if tool_msg.get("role") != "tool":
+            return None
+
+        tool_call_id = tool_msg.get("tool_call_id")
+        if not tool_call_id:
+            return None
+
+        for idx in range(tool_message_index - 1, -1, -1):
+            msg = messages[idx]
+            if msg.get("role") != "assistant":
+                continue
+            tool_calls = msg.get("tool_calls") or []
+            if any(tc.get("id") == tool_call_id for tc in tool_calls):
+                return idx
+
+        return None
+
+    def _drop_orphan_tool_messages(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Drop tool messages that are not preceded by a matching assistant.tool_calls message.
+
+        This is a safety net to prevent provider errors like:
+        "messages with role 'tool' must be a response to a preceding message with 'tool_calls'".
+        """
+        if not messages:
+            return messages
+
+        sanitized: list[dict[str, Any]] = []
+        for idx, msg in enumerate(messages):
+            if msg.get("role") != "tool":
+                sanitized.append(msg)
+                continue
+
+            assistant_idx = self._find_matching_tool_call_assistant_index(messages, idx)
+            if assistant_idx is None or assistant_idx >= idx:
+                self._logger.warning(
+                    "dropping_orphan_tool_message",
+                    tool_call_id=msg.get("tool_call_id"),
+                    tool_name=msg.get("name"),
+                )
+                continue
+
+            sanitized.append(msg)
+
+        return sanitized
+
+    def _keep_recent_messages_preserving_tool_call_pairs(
+        self, messages: list[dict[str, Any]], keep_last_n: int
+    ) -> list[dict[str, Any]]:
+        """
+        Keep the most recent messages, but never cut a tool-call pair in half.
+
+        If the kept window contains a tool message whose matching assistant.tool_calls
+        lies before the window, the window start is moved back to include that assistant.
+        """
+        if not messages:
+            return messages
+        if keep_last_n <= 0:
+            return [messages[0]] if messages else []
+
+        system_prompt = messages[0]
+        if len(messages) <= 1:
+            return [system_prompt]
+
+        start = max(1, len(messages) - keep_last_n)
+
+        # Expand window start to include the matching assistant.tool_calls for any tool messages.
+        adjusted = True
+        while adjusted:
+            adjusted = False
+            for idx in range(start, len(messages)):
+                if messages[idx].get("role") != "tool":
+                    continue
+                assistant_idx = self._find_matching_tool_call_assistant_index(messages, idx)
+                if assistant_idx is not None and assistant_idx < start:
+                    start = assistant_idx
+                    adjusted = True
+                    break
+
+        trimmed = [system_prompt, *messages[start:]]
+        return self._drop_orphan_tool_messages(trimmed)
+
     async def compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Compress message history using safe LLM-based summarization.
@@ -163,13 +260,29 @@ Keep it factual and concise."""
 
             summary = result.get("content", "")
 
+            # Ensure we don't cut tool-call pairs at the boundary.
+            keep_from = self._summary_threshold
+            if keep_from < len(messages):
+                # Rewind if kept range starts in the middle of a tool call sequence.
+                adjusted = True
+                while adjusted:
+                    adjusted = False
+                    for idx in range(keep_from, len(messages)):
+                        if messages[idx].get("role") != "tool":
+                            continue
+                        assistant_idx = self._find_matching_tool_call_assistant_index(messages, idx)
+                        if assistant_idx is not None and assistant_idx < keep_from:
+                            keep_from = assistant_idx
+                            adjusted = True
+                            break
+
             compressed = [
                 messages[0],
                 {
                     "role": "system",
                     "content": f"[Previous Context Summary]\n{summary}",
                 },
-                *messages[self._summary_threshold :],
+                *messages[keep_from:],
             ]
 
             self._logger.info(
@@ -179,7 +292,7 @@ Keep it factual and concise."""
                 summary_length=len(summary),
             )
 
-            return compressed
+            return self._drop_orphan_tool_messages(compressed)
 
         except Exception as error:
             self._logger.error("compression_exception", error=str(error))
@@ -200,9 +313,11 @@ Keep it factual and concise."""
         )
 
         system_prompt = messages[0] if messages else {"role": "system", "content": ""}
-        recent_messages = messages[-10:] if len(messages) > 10 else messages[1:]
+        # Keep last 10 messages, but preserve tool-call pairs.
+        trimmed = self._keep_recent_messages_preserving_tool_call_pairs(messages, keep_last_n=10)
+        recent_messages = trimmed[1:]  # exclude system prompt (kept separately below)
 
-        dropped_count = len(messages) - len(recent_messages) - 1
+        dropped_count = max(0, len(messages) - len(recent_messages) - 1)
         if dropped_count > 0:
             summary_text = (
                 f"[{dropped_count} earlier messages compressed for token budget. "
@@ -223,7 +338,7 @@ Keep it factual and concise."""
             dropped_count=dropped_count,
         )
 
-        return compressed
+        return self._drop_orphan_tool_messages(compressed)
 
     def build_safe_summary_input(self, messages: list[dict[str, Any]]) -> str:
         """
@@ -304,8 +419,9 @@ Keep it factual and concise."""
                 original_count=len(sanitized),
                 action="keep_recent_only",
             )
-
-            emergency_truncated = [sanitized[0]] + sanitized[-10:]
+            emergency_truncated = self._keep_recent_messages_preserving_tool_call_pairs(
+                sanitized, keep_last_n=10
+            )
 
             self._logger.warning(
                 "emergency_truncation_complete",
@@ -314,4 +430,4 @@ Keep it factual and concise."""
 
             return emergency_truncated
 
-        return sanitized
+        return self._drop_orphan_tool_messages(sanitized)
