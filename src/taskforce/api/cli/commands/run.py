@@ -417,3 +417,160 @@ def _parse_strategy_params(raw_params: str | None) -> dict | None:
     if not isinstance(data, dict):
         raise typer.BadParameter("--planning-strategy-params must be a JSON object")
     return data
+
+
+@app.command("command")
+def run_command(
+    ctx: typer.Context,
+    command: str = typer.Argument(..., help="Command name (without /)"),
+    arguments: list[str] = typer.Argument(None, help="Arguments for the command"),
+    profile: str | None = typer.Option(
+        None, "--profile", "-p", help="Configuration profile"
+    ),
+    debug: bool | None = typer.Option(None, "--debug", help="Enable debug output"),
+    stream: bool = typer.Option(
+        False, "--stream", "-S", help="Enable streaming output"
+    ),
+) -> None:
+    """
+    Execute a custom slash command.
+
+    Custom commands are loaded from:
+    - Project: .taskforce/commands/*.md
+    - User: ~/.taskforce/commands/*.md
+
+    Examples:
+        # Run a prompt command
+        taskforce run command review path/to/file.py
+
+        # Run an agent command
+        taskforce run command refactor src/module.py
+
+        # With streaming
+        taskforce run command analyze data.csv --stream
+    """
+    from taskforce.application.slash_command_registry import SlashCommandRegistry
+    from taskforce.core.interfaces.slash_commands import CommandType
+
+    # Get global options from context, allow local override
+    global_opts = ctx.obj or {}
+    profile = profile or global_opts.get("profile", "dev")
+    debug = debug if debug is not None else global_opts.get("debug", False)
+
+    # Configure logging
+    import logging
+    import structlog
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING, format="%(message)s")
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
+        )
+
+    tf_console = TaskforceConsole(debug=debug)
+    registry = SlashCommandRegistry()
+
+    # Resolve command
+    args_str = " ".join(arguments) if arguments else ""
+    full_command = f"/{command} {args_str}".strip()
+    command_def, args = registry.resolve_command(full_command)
+
+    if not command_def:
+        tf_console.print_error(f"Command not found: /{command}")
+        tf_console.print_system_message(
+            "Use 'taskforce commands list' to see available commands", "info"
+        )
+        raise typer.Exit(1)
+
+    # Print banner and info
+    tf_console.print_banner()
+    tf_console.print_system_message(f"Command: /{command_def.name}", "system")
+    tf_console.print_system_message(f"Type: {command_def.command_type.value}", "info")
+    tf_console.print_system_message(f"Profile: {profile}", "info")
+    if args:
+        tf_console.print_system_message(f"Arguments: {args}", "info")
+    tf_console.print_divider()
+
+    # Prepare mission/prompt
+    mission = registry.prepare_prompt(command_def, args)
+
+    # Execute based on command type
+    if command_def.command_type == CommandType.PROMPT:
+        # Use standard execution with prepared prompt
+        if stream:
+            asyncio.run(
+                _execute_streaming_mission(
+                    mission=mission,
+                    profile=profile,
+                    session_id=None,
+                    lean=True,
+                    planning_strategy=None,
+                    planning_strategy_params=None,
+                    console=tf_console.console,
+                )
+            )
+        else:
+            _execute_standard_mission(
+                mission=mission,
+                profile=profile,
+                session_id=None,
+                lean=True,
+                debug=debug,
+                planning_strategy=None,
+                planning_strategy_params=None,
+                tf_console=tf_console,
+            )
+    elif command_def.command_type == CommandType.AGENT:
+        # Create specialized agent and execute
+        asyncio.run(
+            _execute_agent_command(
+                command_def=command_def,
+                mission=mission,
+                profile=profile,
+                debug=debug,
+                stream=stream,
+                tf_console=tf_console,
+            )
+        )
+
+
+async def _execute_agent_command(
+    command_def,
+    mission: str,
+    profile: str,
+    debug: bool,
+    stream: bool,
+    tf_console: TaskforceConsole,
+) -> None:
+    """Execute an agent-type command."""
+    from taskforce.application.slash_command_registry import SlashCommandRegistry
+
+    registry = SlashCommandRegistry()
+
+    try:
+        agent = await registry.create_agent_for_command(command_def, profile)
+
+        # Execute with the specialized agent
+        result = await agent.execute(mission=mission, session_id=None)
+
+        tf_console.print_divider()
+        if result.status == "completed":
+            tf_console.print_success("Command completed!")
+            tf_console.print_agent_message(result.final_message)
+        else:
+            tf_console.print_error(f"Command {result.status}")
+            tf_console.print_agent_message(result.final_message)
+
+        if result.token_usage:
+            tf_console.print_token_usage(result.token_usage)
+    except Exception as e:
+        tf_console.print_error(f"Failed to execute command: {str(e)}")
+        raise typer.Exit(1)
+    finally:
+        if hasattr(agent, "close"):
+            await agent.close()

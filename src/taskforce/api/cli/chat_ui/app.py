@@ -1,7 +1,7 @@
 """Main Textual application for Taskforce chat UI."""
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
@@ -13,9 +13,9 @@ from taskforce.api.cli.chat_ui.widgets import (
     InputBar,
     PlanPanel,
 )
-from typing import Any
-
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.application.slash_command_registry import SlashCommandRegistry
+from taskforce.core.interfaces.slash_commands import CommandType, SlashCommandDefinition
 
 
 class TaskforceChatApp(App):
@@ -58,6 +58,7 @@ class TaskforceChatApp(App):
         self.stream_mode = stream
         self.user_context = user_context
         self.executor = AgentExecutor()
+        self.command_registry = SlashCommandRegistry()
         self._processing = False
         self._current_agent_message = []
 
@@ -108,41 +109,64 @@ class TaskforceChatApp(App):
         await self._handle_chat_message(content)
 
     async def _handle_command(self, command: str) -> None:
-        """Handle slash commands.
+        """Handle slash commands, including custom commands.
 
         Args:
             command: Command string
         """
         chat_log = self.query_one("#chat-log", ChatLog)
-        cmd_lower = command.lower()
 
-        if cmd_lower in ["/help", "/h"]:
+        # Extract command name for built-in check
+        parts = command.lstrip("/").split(maxsplit=1)
+        cmd_name = parts[0].lower()
+
+        # Check built-in commands first
+        if cmd_name in ["help", "h"]:
             await self._show_help()
-        elif cmd_lower in ["/clear", "/c"]:
+        elif cmd_name in ["clear", "c"]:
             await self._clear_chat()
-        elif cmd_lower in ["/export", "/e"]:
+        elif cmd_name in ["export", "e"]:
             await self._export_chat()
-        elif cmd_lower in ["/exit", "/quit", "/q"]:
+        elif cmd_name in ["exit", "quit", "q"]:
             self.exit()
-        elif cmd_lower == "/debug":
+        elif cmd_name == "debug":
             self._toggle_debug()
-        elif cmd_lower == "/tokens":
+        elif cmd_name == "tokens":
             await self._show_tokens()
+        elif cmd_name == "commands":
+            await self._list_custom_commands()
         else:
-            chat_log.add_error(f"Unknown command: {command}")
-            chat_log.add_system_message("Type /help for available commands")
+            # Try custom command
+            command_def, arguments = self.command_registry.resolve_command(command)
+
+            if command_def:
+                await self._execute_custom_command(command_def, arguments)
+            else:
+                chat_log.add_error(f"Unknown command: {command}")
+                chat_log.add_system_message(
+                    "Type /help for available commands, /commands for custom commands"
+                )
 
     async def _show_help(self) -> None:
         """Show help message."""
         chat_log = self.query_one("#chat-log", ChatLog)
         help_text = """**Available Commands:**
 
+**Built-in:**
 • **/help** or **/h** - Show this help message
 • **/clear** or **/c** - Clear chat history
 • **/export** or **/e** - Export chat to file
 • **/debug** - Toggle debug mode
 • **/tokens** - Show token usage statistics
+• **/commands** - List custom commands
 • **/exit** or **/quit** - Exit the application
+
+**Custom Commands:**
+Custom commands are loaded from:
+• Project: `.taskforce/commands/*.md`
+• User: `~/.taskforce/commands/*.md`
+
+Use **/commands** to see available custom commands.
 
 **Keyboard Shortcuts:**
 • **Enter** - Send message
@@ -178,6 +202,69 @@ class TaskforceChatApp(App):
         chat_log.add_system_message(
             f"Total tokens used: {header.token_count:,}"
         )
+
+    async def _list_custom_commands(self) -> None:
+        """Show available custom commands."""
+        chat_log = self.query_one("#chat-log", ChatLog)
+        commands = self.command_registry.list_commands(include_builtin=False)
+
+        if not commands:
+            chat_log.add_system_message("No custom commands found.")
+            chat_log.add_system_message(
+                "Add .md files to .taskforce/commands/ or ~/.taskforce/commands/"
+            )
+            return
+
+        lines = ["**Custom Commands:**\n"]
+        for cmd in commands:
+            source_tag = f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
+            lines.append(f"  **/{cmd['name']}** - {cmd['description']} {source_tag}")
+
+        chat_log.add_system_message("\n".join(lines))
+
+    async def _execute_custom_command(
+        self,
+        command_def: SlashCommandDefinition,
+        arguments: str,
+    ) -> None:
+        """Execute a custom slash command.
+
+        Args:
+            command_def: Parsed command definition
+            arguments: Arguments for the command
+        """
+        chat_log = self.query_one("#chat-log", ChatLog)
+
+        if command_def.command_type == CommandType.PROMPT:
+            # Simple prompt - prepare and send as chat message
+            prompt = self.command_registry.prepare_prompt(command_def, arguments)
+            chat_log.add_system_message(f"Executing /{command_def.name}...")
+            await self._handle_chat_message(prompt)
+
+        elif command_def.command_type == CommandType.AGENT:
+            # Agent command - create specialized agent and execute
+            chat_log.add_system_message(
+                f"Switching to agent: {command_def.name} (/{command_def.name})"
+            )
+
+            try:
+                # Create agent from command definition
+                agent = await self.command_registry.create_agent_for_command(
+                    command_def, self.profile
+                )
+
+                # Store original agent for potential restoration
+                original_agent = self.agent
+                self.agent = agent
+
+                # Prepare prompt and execute
+                prompt = self.command_registry.prepare_prompt(command_def, arguments)
+                await self._handle_chat_message(prompt)
+
+                # Keep the specialized agent active for this session
+
+            except Exception as e:
+                chat_log.add_error(f"Failed to create agent: {str(e)}")
 
     async def _handle_chat_message(self, content: str) -> None:
         """Handle regular chat message.

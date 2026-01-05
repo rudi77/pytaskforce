@@ -201,6 +201,7 @@ class AgentFactory:
             CODING_SPECIALIST_PROMPT,
             LEAN_KERNEL_PROMPT,
             RAG_SPECIALIST_PROMPT,
+            WIKI_SYSTEM_PROMPT,
         )
 
         # Start with LEAN_KERNEL_PROMPT
@@ -211,6 +212,8 @@ class AgentFactory:
             base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT
         elif specialist == "rag":
             base_prompt += "\n\n" + RAG_SPECIALIST_PROMPT
+        elif specialist == "wiki":
+            base_prompt += "\n\n" + WIKI_SYSTEM_PROMPT
 
         # Format tools description and inject
         tools_description = format_tools_description(tools) if tools else ""
@@ -537,23 +540,13 @@ class AgentFactory:
             # Fallback: check if it's a custom agent
             custom_path = self.config_dir / "custom" / f"{profile}.yaml"
             if custom_path.exists():
-                self.logger.warning(
-                    "profile_fallback_to_custom",
+                self.logger.debug(
+                    "profile_using_custom_agent",
                     profile=profile,
                     custom_path=str(custom_path),
-                    hint=(
-                        "Profile not found in configs/, but custom agent exists. "
-                        "Using 'dev' profile for infrastructure settings."
-                    ),
                 )
-                # Load custom agent but use 'dev' profile for infrastructure
-                # This allows custom agents to be referenced as profiles
-                profile_path = self.config_dir / "dev.yaml"
-                if not profile_path.exists():
-                    raise FileNotFoundError(
-                        "Profile 'dev' not found (required for custom agent "
-                        "infrastructure settings)"
-                    )
+                # Custom agents have complete configuration, use directly
+                profile_path = custom_path
             else:
                 self.logger.error(
                     "profile_not_found",
