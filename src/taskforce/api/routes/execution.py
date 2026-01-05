@@ -39,20 +39,18 @@ router = APIRouter()
 executor = AgentExecutor()
 
 REQUEST_EXAMPLES = {
-    "legacy_react": {
-        "summary": "Legacy Agent (ReAct loop)",
+    "basic": {
+        "summary": "Basic mission execution",
         "value": {
             "mission": "Summarize the top 5 AI news stories this week.",
             "profile": "dev",
-            "lean": False,
         },
     },
-    "lean_plan_and_execute": {
+    "plan_and_execute": {
         "summary": "LeanAgent with plan-and-execute strategy",
         "value": {
             "mission": "Create a 3-step onboarding checklist for new engineers.",
             "profile": "dev",
-            "lean": True,
             "planning_strategy": "plan_and_execute",
             "planning_strategy_params": {"max_plan_steps": 3},
         },
@@ -63,7 +61,6 @@ REQUEST_EXAMPLES = {
             "mission": "Audit dependencies and flag outdated packages.",
             "profile": "dev",
             "agent_id": "web-agent",
-            "lean": True,
         },
     },
 }
@@ -225,8 +222,7 @@ class ExecuteMissionRequest(BaseModel):
         user_id: User identifier for RAG security filtering (optional).
         org_id: Organization identifier for RAG security filtering.
         scope: Access scope for RAG security filtering (optional).
-        lean: If true, uses LeanAgent with native OpenAI tool calling.
-            If false (default), uses legacy Agent with ReAct loop.
+        lean: Deprecated. LeanAgent is now always used.
         planning_strategy: Optional LeanAgent planning strategy override.
         planning_strategy_params: Optional parameters for planning strategy.
 
@@ -235,7 +231,6 @@ class ExecuteMissionRequest(BaseModel):
         {
             "mission": "Search for recent news about AI",
             "profile": "dev",
-            "lean": true,
             "conversation_history": [
                 {"role": "user", "content": "I'm interested in AI"},
                 {"role": "assistant", "content": "What to know?"}
@@ -279,8 +274,8 @@ class ExecuteMissionRequest(BaseModel):
         description="Access scope for RAG security filtering."
     )
     lean: bool = Field(
-        default=False,
-        description="Use LeanAgent (native tool calling) instead of legacy."
+        default=True,
+        description="Deprecated: LeanAgent is now always used. This field is ignored."
     )
     agent_id: Optional[str] = Field(
         default=None,
@@ -431,10 +426,7 @@ async def execute_mission(
     Executes the given mission and returns the final result when complete.
     This endpoint blocks until execution finishes or fails.
 
-    **Agent Types:**
-
-    - `lean: false` (default): Legacy Agent with ReAct loop
-    - `lean: true`: LeanAgent with native OpenAI tool calling
+    Uses LeanAgent with native OpenAI tool calling.
 
     **RAG Mode:**
 
@@ -467,7 +459,6 @@ async def execute_mission(
             session_id=request.session_id,
             conversation_history=request.conversation_history,
             user_context=user_context,
-            use_lean_agent=request.lean,
             agent_id=request.agent_id,
             planning_strategy=request.planning_strategy,
             planning_strategy_params=request.planning_strategy_params,
@@ -795,7 +786,6 @@ async def execute_mission_stream(
                 session_id=request.session_id,
                 conversation_history=request.conversation_history,
                 user_context=user_context,
-                use_lean_agent=request.lean,
                 agent_id=request.agent_id,
                 planning_strategy=request.planning_strategy,
                 planning_strategy_params=request.planning_strategy_params,

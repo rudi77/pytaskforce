@@ -14,10 +14,7 @@ from structlog.testing import LogCapture
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
-from taskforce.core.domain.exceptions import (
-    AgentExecutionError,
-    LeanAgentExecutionError,
-)
+from taskforce.core.domain.exceptions import LeanAgentExecutionError
 from taskforce.core.domain.models import ExecutionResult
 
 
@@ -34,7 +31,8 @@ async def test_execute_mission_basic():
         execution_history=[],
         todolist_id="todo-456",
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     # Execute mission
     executor = AgentExecutor(factory=mock_factory)
@@ -46,7 +44,7 @@ async def test_execute_mission_basic():
     assert result.todolist_id == "todo-456"
 
     # Verify factory and agent were called correctly
-    mock_factory.create_agent.assert_called_once_with(profile="dev")
+    mock_factory.create_lean_agent.assert_called_once()
     mock_agent.execute.assert_called_once()
 
     # Verify execute was called with mission and generated session_id
@@ -66,7 +64,8 @@ async def test_execute_mission_with_session_id():
         status="completed",
         final_message="Success",
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission(
@@ -102,7 +101,8 @@ async def test_execute_mission_with_progress_callback():
             },
         ],
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     # Track progress updates
     updates = []
@@ -135,31 +135,16 @@ async def test_execute_mission_error_handling():
     mock_factory = MagicMock(spec=AgentFactory)
     mock_agent = AsyncMock()
     mock_agent.execute.side_effect = RuntimeError("LLM failure")
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
-    # Verify exception is raised
-    with pytest.raises(AgentExecutionError, match="LLM failure"):
+    # Verify exception is raised (now always LeanAgentExecutionError)
+    with pytest.raises(LeanAgentExecutionError, match="LLM failure"):
         await executor.execute_mission("Test mission")
 
     # Verify agent was called
-    mock_agent.execute.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_execute_mission_error_handling_lean_agent():
-    """Test error handling during LeanAgent execution."""
-    mock_factory = MagicMock(spec=AgentFactory)
-    mock_agent = AsyncMock()
-    mock_agent.execute.side_effect = RuntimeError("LLM failure")
-    mock_factory.create_lean_agent.return_value = mock_agent
-
-    executor = AgentExecutor(factory=mock_factory)
-
-    with pytest.raises(LeanAgentExecutionError, match="LLM failure"):
-        await executor.execute_mission("Test mission", use_lean_agent=True)
-
     mock_agent.execute.assert_called_once()
 
 
@@ -171,21 +156,25 @@ async def test_execute_mission_different_profiles():
     mock_agent.execute.return_value = ExecutionResult(
         session_id="test-123", status="completed", final_message="Success"
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
     # Test dev profile
     await executor.execute_mission("Test mission", profile="dev")
-    mock_factory.create_agent.assert_called_with(profile="dev")
+    call_args = mock_factory.create_lean_agent.call_args
+    assert call_args.kwargs["profile"] == "dev"
 
     # Test staging profile
     await executor.execute_mission("Test mission", profile="staging")
-    mock_factory.create_agent.assert_called_with(profile="staging")
+    call_args = mock_factory.create_lean_agent.call_args
+    assert call_args.kwargs["profile"] == "staging"
 
     # Test prod profile
     await executor.execute_mission("Test mission", profile="prod")
-    mock_factory.create_agent.assert_called_with(profile="prod")
+    call_args = mock_factory.create_lean_agent.call_args
+    assert call_args.kwargs["profile"] == "prod"
 
 
 @pytest.mark.asyncio
@@ -210,7 +199,8 @@ async def test_execute_mission_streaming_basic():
             },
         ],
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -251,7 +241,8 @@ async def test_execute_mission_streaming_with_session_id():
         final_message="Success",
         execution_history=[],
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -276,13 +267,14 @@ async def test_execute_mission_streaming_error_handling():
     mock_factory = MagicMock(spec=AgentFactory)
     mock_agent = AsyncMock()
     mock_agent.execute.side_effect = RuntimeError("Execution failed")
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
     # Collect updates until error
     updates = []
-    with pytest.raises(AgentExecutionError, match="Execution failed"):
+    with pytest.raises(LeanAgentExecutionError, match="Execution failed"):
         async for update in executor.execute_mission_streaming("Test mission"):
             updates.append(update)
 
@@ -307,7 +299,8 @@ async def test_execute_mission_paused_status():
         final_message="Waiting for user input",
         execution_history=[],
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission("Test mission")
@@ -328,7 +321,8 @@ async def test_execute_mission_failed_status():
         final_message="Exceeded maximum iterations",
         execution_history=[],
     )
-    mock_factory.create_agent.return_value = mock_agent
+    mock_agent.close = AsyncMock()
+    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission("Test mission")

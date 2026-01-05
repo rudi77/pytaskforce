@@ -85,7 +85,7 @@ class ProfileAgentResponse(BaseModel):
     source: Literal["profile"] = "profile"
     profile: str
     specialist: Optional[str] = None
-    tools: list[dict[str, Any]]
+    tools: list[str | dict[str, Any]]
     mcp_servers: list[dict[str, Any]]
     llm: dict[str, Any]
     persistence: dict[str, Any]

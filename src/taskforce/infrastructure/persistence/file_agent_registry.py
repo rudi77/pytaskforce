@@ -169,10 +169,16 @@ class FileAgentRegistry:
         if "tools" in data:
             tool_mapper = get_tool_mapper()
             for tool_def in data["tools"]:
-                tool_type = tool_def.get("type")
-                tool_name = tool_mapper.get_tool_name(tool_type)
-                if tool_name:
-                    tool_names.append(tool_name)
+                # Handle both string tool names and dict tool definitions
+                if isinstance(tool_def, str):
+                    # Direct tool name string
+                    tool_names.append(tool_def)
+                elif isinstance(tool_def, dict):
+                    # Dict with type field
+                    tool_type = tool_def.get("type")
+                    tool_name = tool_mapper.get_tool_name(tool_type)
+                    if tool_name:
+                        tool_names.append(tool_name)
 
         if "tool_allowlist" in data:
             tool_names = data["tool_allowlist"]

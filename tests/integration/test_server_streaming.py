@@ -264,54 +264,6 @@ class TestServerSSEStreaming:
                 assert "API timeout" in error_events[0]["details"]["message"]
 
 
-class TestServerSSEWithLeanAgent:
-    """Tests for SSE streaming with LeanAgent flag."""
-
-    @pytest.mark.integration
-    def test_sse_uses_lean_agent_when_flag_set(self):
-        """Test that SSE endpoint uses LeanAgent when lean=true."""
-        mock_updates = [
-            make_progress_update("started", "Starting...", {"session_id": "test", "lean": True}),
-            make_progress_update("complete", "Done", {"status": "completed"}),
-        ]
-
-        with patch.object(AgentExecutor, "execute_mission_streaming") as mock_stream:
-            mock_stream.return_value = mock_streaming_generator(mock_updates)
-
-            with client.stream(
-                "POST",
-                "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev", "lean": True},
-            ) as response:
-                list(response.iter_lines())  # Consume the stream
-
-            mock_stream.assert_called_once()
-            call_kwargs = mock_stream.call_args.kwargs
-            assert call_kwargs["use_lean_agent"] is True
-
-    @pytest.mark.integration
-    def test_sse_uses_legacy_agent_when_flag_not_set(self):
-        """Test that SSE endpoint uses legacy agent when lean=false."""
-        mock_updates = [
-            make_progress_update("started", "Starting...", {"session_id": "test", "lean": False}),
-            make_progress_update("complete", "Done", {"status": "completed"}),
-        ]
-
-        with patch.object(AgentExecutor, "execute_mission_streaming") as mock_stream:
-            mock_stream.return_value = mock_streaming_generator(mock_updates)
-
-            with client.stream(
-                "POST",
-                "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev", "lean": False},
-            ) as response:
-                list(response.iter_lines())
-
-            mock_stream.assert_called_once()
-            call_kwargs = mock_stream.call_args.kwargs
-            assert call_kwargs["use_lean_agent"] is False
-
-
 class TestServerSSEEventFormat:
     """Tests for SSE event format compliance."""
 
