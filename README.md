@@ -145,6 +145,44 @@ uvicorn taskforce.api.server:app --host 0.0.0.0 --port 8000 --reload
 
 ## Development
 
+### Build the CLI
+---
+### Usage
+
+1. Local Installation
+
+#### Developer (editable)
+pip install -e ".[dev]"
+
+#### Normal Installation
+pip install .
+
+#### Then available:
+taskforce --help
+
+2. PyPI Publishing
+
+#### Build
+uv run python -m build
+
+#### Upload zu TestPyPI (zum Testen)
+uv run twine upload --repository testpypi dist/*
+
+#### Upload zu PyPI (Produktion)
+uv run twine upload dist/*
+
+3. Standalone Executable (.exe)
+
+#### Dev-Dependencies installieren
+uv sync --extra dev
+
+#### Executable bauen
+uv run python scripts/build_exe.py
+
+#### Result: dist/taskforce.exe
+
+---
+
 ### Run Tests
 
 ```powershell

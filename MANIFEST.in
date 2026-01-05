@@ -1,0 +1,12 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+recursive-include configs *.yaml
+recursive-include src/taskforce/core/prompts *.py
+recursive-exclude tests *
+recursive-exclude .taskforce *
+recursive-exclude dist *
+recursive-exclude build *
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*

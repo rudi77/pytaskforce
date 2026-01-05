@@ -13,8 +13,31 @@ Key Responsibilities:
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
+
+
+def get_base_path() -> Path:
+    """
+    Get base path for resource files, handling frozen executables.
+
+    When running as a PyInstaller executable, resources are extracted to
+    a temporary directory (sys._MEIPASS). When running as a normal Python
+    script, returns the project root directory.
+
+    Returns:
+        Path to the base directory containing configs and other resources
+    """
+    if getattr(sys, "frozen", False):
+        # Running as PyInstaller executable
+        # Resources are extracted to sys._MEIPASS
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    else:
+        # Running as script - navigate from factory.py to project root
+        # factory.py is at: src/taskforce/application/factory.py
+        # Project root is 4 levels up
+        return Path(__file__).parent.parent.parent.parent
 
 import structlog
 import yaml
@@ -49,14 +72,19 @@ class AgentFactory:
     - Supports specialist profiles (coding, rag) and custom agent definitions
     """
 
-    def __init__(self, config_dir: str = "configs"):
+    def __init__(self, config_dir: str | None = None):
         """
         Initialize AgentFactory with configuration directory.
 
         Args:
-            config_dir: Path to directory containing profile YAML files
+            config_dir: Path to directory containing profile YAML files.
+                       If None, uses 'configs/' relative to project root
+                       (or _MEIPASS for frozen executables).
         """
-        self.config_dir = Path(config_dir)
+        if config_dir is None:
+            self.config_dir = get_base_path() / "configs"
+        else:
+            self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
 
     async def create_lean_agent(
@@ -638,6 +666,11 @@ class AgentFactory:
 
         llm_config = config.get("llm", {})
         config_path = llm_config.get("config_path", "configs/llm_config.yaml")
+
+        # Resolve relative paths against base path (handles frozen executables)
+        config_path_obj = Path(config_path)
+        if not config_path_obj.is_absolute():
+            config_path = str(get_base_path() / config_path)
 
         return OpenAIService(config_path=config_path)
 

@@ -4,39 +4,74 @@ version = "0.1.0"
 description = "Production-grade multi-agent orchestration framework with Clean Architecture"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
-    { name = "Taskforce Team" }
+    { name = "Taskforce Team", email = "taskforce@example.com" }
+]
+keywords = [
+    "agent",
+    "multi-agent",
+    "llm",
+    "ai",
+    "automation",
+    "orchestration",
+    "react-loop",
+    "clean-architecture",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
 ]
 
 dependencies = [
+    # Core LLM
     "litellm>=1.7.7",
+    # CLI
     "typer>=0.9.0",
-    "fastapi>=0.116.1",
-    "structlog>=24.2.0",
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
-    "pytest>=8.4.2",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=4.1",
     "rich>=13.0.0",
+    "textual>=7.0.0",
+    # Web API
+    "fastapi>=0.116.1",
+    "uvicorn>=0.25",
+    # Data validation
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    # Database
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    # Async I/O
     "aiofiles>=23.2.1",
     "aiohttp>=3.9",
-    "asyncpg>=0.29",
-    "uvicorn>=0.25",
+    # Configuration
     "pyyaml>=6.0",
-    "ruff>=0.1.0",
-    "black>=23.0",
-    "mypy>=1.7",
+    # Logging
+    "structlog>=24.2.0",
+    # Azure AI Search (RAG)
     "azure-search-documents>=11.6.0",
+    # MCP integration
     "mcp>=1.0.0",
-    # Arize Phoenix tracing
+    # Tracing (Arize Phoenix)
     "arize-phoenix-otel>=0.6.0",
     "openinference-instrumentation-litellm>=0.1.0",
-    "textual>=7.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourorg/pytaskforce"
+Repository = "https://github.com/yourorg/pytaskforce"
+Documentation = "https://github.com/yourorg/pytaskforce#readme"
+Issues = "https://github.com/yourorg/pytaskforce/issues"
+Changelog = "https://github.com/yourorg/pytaskforce/blob/main/CHANGELOG.md"
 
 [project.scripts]
 taskforce = "taskforce.api.cli.main:app"
@@ -52,6 +87,11 @@ dev = [
     "ruff>=0.1.0",
     "black>=23.0",
     "mypy>=1.7",
+    "pyinstaller>=6.0.0",
+]
+build = [
+    "build>=1.0.0",
+    "twine>=5.0.0",
 ]
 
 [build-system]

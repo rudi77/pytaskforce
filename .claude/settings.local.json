@@ -15,7 +15,11 @@
       "Bash(uv add:*)",
       "Bash(uv pip install:*)",
       "Bash(NUL)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(uv pip:*)",
+      "Bash(uv sync:*)"
     ],
     "deny": [],
     "ask": []

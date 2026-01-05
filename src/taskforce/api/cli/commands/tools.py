@@ -24,7 +24,7 @@ def list_tools(
 
     async def _list_tools():
         factory = AgentFactory()
-        agent = await factory.create_agent(profile=profile)
+        agent = await factory.create_lean_agent(profile=profile)
 
         try:
             table = Table(title="Available Tools")
@@ -55,7 +55,7 @@ def inspect_tool(
 
     async def _inspect_tool():
         factory = AgentFactory()
-        agent = await factory.create_agent(profile=profile)
+        agent = await factory.create_lean_agent(profile=profile)
 
         try:
             # agent.tools is a dict, access by key

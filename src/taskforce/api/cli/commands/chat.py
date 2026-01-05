@@ -106,34 +106,11 @@ def chat(
 
     async def run_chat_ui():
         """Run the chat UI application."""
-        # Create agent
+        # Create agent using LeanAgent (the standard agent implementation)
         factory = AgentFactory()
-        agent = None
-
-        # LeanAgent with optional RAG context
-        if lean:
-            try:
-                agent = await factory.create_lean_agent(
-                    profile=profile, user_context=user_context
-                )
-            except Exception as e:
-                # Fallback to standard agent
-                if debug:
-                    print(f"Could not create LeanAgent: {e}. Falling back to standard agent.")
-
-        # Legacy RAG agent with user context
-        elif user_context:
-            try:
-                agent = await factory.create_rag_agent(
-                    profile=profile, user_context=user_context
-                )
-            except Exception as e:
-                if debug:
-                    print(f"Could not create RAG agent: {e}. Falling back to standard agent.")
-
-        # Standard agent as fallback
-        if not agent:
-            agent = await factory.create_agent(profile=profile)
+        agent = await factory.create_lean_agent(
+            profile=profile, user_context=user_context
+        )
 
         try:
             # Create and run the Textual app
