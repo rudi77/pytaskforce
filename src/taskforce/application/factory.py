@@ -226,6 +226,7 @@ class AgentFactory:
             Assembled system prompt string
         """
         from taskforce.core.prompts.autonomous_prompts import (
+            ACCOUNTING_SPECIALIST_PROMPT,
             CODING_SPECIALIST_PROMPT,
             LEAN_KERNEL_PROMPT,
             RAG_SPECIALIST_PROMPT,
@@ -242,6 +243,8 @@ class AgentFactory:
             base_prompt += "\n\n" + RAG_SPECIALIST_PROMPT
         elif specialist == "wiki":
             base_prompt += "\n\n" + WIKI_SYSTEM_PROMPT
+        elif specialist == "accounting":
+            base_prompt += "\n\n" + ACCOUNTING_SPECIALIST_PROMPT
 
         # Format tools description and inject
         tools_description = format_tools_description(tools) if tools else ""
@@ -1038,6 +1041,45 @@ class AgentFactory:
                 SemanticSearchTool(user_context=user_context),
                 ListDocumentsTool(user_context=user_context),
                 GetDocumentTool(user_context=user_context),
+                AskUserTool(),
+            ]
+
+        elif specialist == "accounting":
+            from taskforce.infrastructure.tools.native.accounting.audit_log_tool import (
+                AuditLogTool,
+            )
+            from taskforce.infrastructure.tools.native.accounting.compliance_checker_tool import (
+                ComplianceCheckerTool,
+            )
+            from taskforce.infrastructure.tools.native.accounting.docling_tool import (
+                DoclingTool,
+            )
+            from taskforce.infrastructure.tools.native.accounting.rule_engine_tool import (
+                RuleEngineTool,
+            )
+            from taskforce.infrastructure.tools.native.accounting.tax_calculator_tool import (
+                TaxCalculatorTool,
+            )
+
+            self.logger.debug(
+                "creating_specialist_tools",
+                specialist="accounting",
+                tools=[
+                    "DoclingTool",
+                    "RuleEngineTool",
+                    "ComplianceCheckerTool",
+                    "TaxCalculatorTool",
+                    "AuditLogTool",
+                    "AskUserTool",
+                ],
+            )
+
+            return [
+                DoclingTool(),
+                RuleEngineTool(rules_path="configs/accounting/rules/"),
+                ComplianceCheckerTool(),
+                TaxCalculatorTool(),
+                AuditLogTool(audit_path=".taskforce_accounting/audit/"),
                 AskUserTool(),
             ]
 

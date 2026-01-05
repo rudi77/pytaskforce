@@ -82,6 +82,36 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.rag.global_document_analysis",
         "params": {},
     },
+    # === Accounting Tools ===
+    "docling_extract": {
+        "type": "DoclingTool",
+        "module": "taskforce.infrastructure.tools.native.accounting.docling_tool",
+        "params": {},
+    },
+    "apply_kontierung_rules": {
+        "type": "RuleEngineTool",
+        "module": "taskforce.infrastructure.tools.native.accounting.rule_engine_tool",
+        "params": {
+            "rules_path": "configs/accounting/rules/",
+        },
+    },
+    "check_compliance": {
+        "type": "ComplianceCheckerTool",
+        "module": "taskforce.infrastructure.tools.native.accounting.compliance_checker_tool",
+        "params": {},
+    },
+    "calculate_tax": {
+        "type": "TaxCalculatorTool",
+        "module": "taskforce.infrastructure.tools.native.accounting.tax_calculator_tool",
+        "params": {},
+    },
+    "audit_log": {
+        "type": "AuditLogTool",
+        "module": "taskforce.infrastructure.tools.native.accounting.audit_log_tool",
+        "params": {
+            "audit_path": ".taskforce_accounting/audit/",
+        },
+    },
 }
 
 

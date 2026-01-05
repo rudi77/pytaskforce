@@ -1,0 +1,59 @@
+# Accounting Agent Configuration
+# German Accounting Assistant for invoice processing and Kontierung
+#
+# Usage:
+#   taskforce run mission "Prüfe die Rechnung invoice.pdf" --profile accounting_agent
+#
+# Or programmatically:
+#   factory = AgentFactory()
+#   agent = await factory.create_agent(profile="accounting_agent")
+
+profile: accounting_agent
+specialist: accounting
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_accounting
+
+# Agent behavior configuration
+agent:
+  max_steps: 50
+  planning_strategy: plan_and_execute
+  planning_strategy_params:
+    max_step_iterations: 4
+    max_plan_steps: 12
+
+# LLM configuration (uses default from llm_config.yaml)
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+
+# Tool configuration
+# Tools are loaded by the factory based on specialist profile
+# The following tools are automatically included for 'accounting' specialist:
+#   - docling_extract: PDF/image to Markdown extraction
+#   - apply_kontierung_rules: YAML-based account assignment
+#   - check_compliance: §14 UStG compliance validation
+#   - calculate_tax: VAT and AfA calculations
+#   - audit_log: GoBD-compliant logging
+#   - ask_user: User interaction
+tools:
+  - docling_extract
+  - apply_kontierung_rules
+  - check_compliance
+  - calculate_tax
+  - audit_log
+  - file_read
+  - ask_user
+
+# Context policy for conversation management
+context_policy:
+  max_items: 50
+  max_chars_per_item: 8000
+  truncation_strategy: "trim_oldest"
+
+# Logging configuration
+logging:
+  level: INFO
+  structured: true

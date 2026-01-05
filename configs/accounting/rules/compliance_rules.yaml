@@ -1,0 +1,198 @@
+# Compliance Rules for German Invoice Validation
+# Based on §14 UStG (Umsatzsteuergesetz) and related regulations
+# Version: 1.0
+
+version: "1.0"
+legal_basis: "§14 Abs. 4 UStG"
+
+# Mandatory fields for regular invoices (Pflichtangaben nach §14 Abs. 4 UStG)
+mandatory_fields:
+  # Nr. 1 - Name und Anschrift des leistenden Unternehmers
+  supplier_name:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständiger Name des leistenden Unternehmers"
+    severity: "error"
+    required: true
+
+  supplier_address:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständige Anschrift des leistenden Unternehmers"
+    severity: "error"
+    required: true
+
+  # Nr. 1 - Name und Anschrift des Leistungsempfängers
+  recipient_name:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständiger Name des Leistungsempfängers"
+    severity: "error"
+    required: true
+
+  recipient_address:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständige Anschrift des Leistungsempfängers"
+    severity: "warning"
+    note: "Bei Kleinbetragsrechnungen nicht erforderlich"
+
+  # Nr. 2 - Steuernummer oder USt-IdNr.
+  vat_id:
+    legal_ref: "§14 Abs. 4 Nr. 2 UStG"
+    description: "Steuernummer oder Umsatzsteuer-Identifikationsnummer"
+    severity: "error"
+    required: true
+    validation:
+      # German VAT ID: DE + 9 digits
+      pattern_vat_id: "^DE[0-9]{9}$"
+      # German tax number: XX/XXX/XXXXX or similar formats
+      pattern_tax_number: "^\\d{2,3}/\\d{3}/\\d{5}$"
+      alternative_pattern: "^\\d{10,13}$"
+
+  # Nr. 3 - Ausstellungsdatum
+  invoice_date:
+    legal_ref: "§14 Abs. 4 Nr. 3 UStG"
+    description: "Ausstellungsdatum der Rechnung"
+    severity: "error"
+    required: true
+    format: "date"
+
+  # Nr. 4 - Fortlaufende Rechnungsnummer
+  invoice_number:
+    legal_ref: "§14 Abs. 4 Nr. 4 UStG"
+    description: "Fortlaufende, einmalige Rechnungsnummer"
+    severity: "error"
+    required: true
+    note: "Muss eindeutig und nachvollziehbar sein"
+
+  # Nr. 5 - Menge und Art der Lieferung
+  quantity_description:
+    legal_ref: "§14 Abs. 4 Nr. 5 UStG"
+    description: "Menge und Art der gelieferten Gegenstände oder Umfang und Art der Leistung"
+    severity: "error"
+    required: true
+    note: "Handelsübliche Bezeichnung erforderlich"
+
+  # Nr. 6 - Zeitpunkt der Lieferung/Leistung
+  delivery_date:
+    legal_ref: "§14 Abs. 4 Nr. 6 UStG"
+    description: "Zeitpunkt der Lieferung oder sonstigen Leistung"
+    severity: "warning"
+    required: true
+    note: "Kann Monat sein; 'Rechnungsdatum = Leistungsdatum' ist zulässig"
+    alternatives:
+      - "delivery_period"
+      - "service_date"
+      - "performance_date"
+
+  # Nr. 7 - Entgelt
+  net_amount:
+    legal_ref: "§14 Abs. 4 Nr. 7 UStG"
+    description: "Nach Steuersätzen aufgeschlüsseltes Entgelt"
+    severity: "error"
+    required: true
+    format: "currency"
+
+  # Nr. 8 - Steuersatz und Steuerbetrag
+  vat_rate:
+    legal_ref: "§14 Abs. 4 Nr. 8 UStG"
+    description: "Anzuwendender Steuersatz"
+    severity: "error"
+    required: true
+    valid_values:
+      - 0.19
+      - 0.07
+      - 0.00
+
+  vat_amount:
+    legal_ref: "§14 Abs. 4 Nr. 8 UStG"
+    description: "Auf das Entgelt entfallender Steuerbetrag"
+    severity: "error"
+    required: true
+    format: "currency"
+    validation:
+      rule: "vat_amount = net_amount * vat_rate"
+      tolerance: 0.01
+
+  gross_amount:
+    legal_ref: "§14 Abs. 4 Nr. 8 UStG"
+    description: "Bruttobetrag (Entgelt + Steuer)"
+    severity: "warning"
+    required: false
+    validation:
+      rule: "gross_amount = net_amount + vat_amount"
+      tolerance: 0.01
+
+# Kleinbetragsrechnung (§33 UStDV)
+small_invoice:
+  threshold: 250.00
+  currency: "EUR"
+  legal_ref: "§33 UStDV"
+  description: "Vereinfachte Anforderungen für Rechnungen bis 250 EUR brutto"
+
+  # Reduced mandatory fields for small invoices
+  required_fields:
+    - supplier_name
+    - invoice_date
+    - quantity_description
+    - gross_amount
+    - vat_rate
+
+  # Fields NOT required for small invoices
+  not_required:
+    - recipient_name
+    - recipient_address
+    - invoice_number
+    - net_amount
+    - vat_amount
+    - delivery_date
+
+# Special cases and exemptions
+special_cases:
+  # Steuerfreie Umsätze
+  tax_exempt:
+    legal_ref: "§4 UStG"
+    note: "Bei steuerfreien Umsätzen muss auf die Steuerbefreiung hingewiesen werden"
+    required_note: true
+    examples:
+      - "§4 Nr. 1a UStG (innergemeinschaftliche Lieferung)"
+      - "§4 Nr. 1b UStG (Ausfuhrlieferung)"
+      - "§4 Nr. 8-28 UStG (diverse Steuerbefreiungen)"
+
+  # Reverse Charge
+  reverse_charge:
+    legal_ref: "§13b UStG"
+    note: "Steuerschuldnerschaft des Leistungsempfängers"
+    required_note: "Steuerschuldnerschaft des Leistungsempfängers"
+    no_vat_shown: true
+
+  # Differenzbesteuerung
+  margin_scheme:
+    legal_ref: "§25a UStG"
+    required_note: "Gebrauchtgegenstände / Sonderregelung"
+
+  # Reiseleistungen
+  travel_services:
+    legal_ref: "§25 UStG"
+    required_note: "Sonderregelung für Reiseleistungen"
+
+# Validation warnings (non-blocking)
+warnings:
+  - field: "payment_terms"
+    message: "Zahlungsbedingungen fehlen (empfohlen, nicht Pflicht)"
+    severity: "info"
+
+  - field: "bank_details"
+    message: "Bankverbindung fehlt (empfohlen für schnelle Zahlung)"
+    severity: "info"
+
+  - field: "order_reference"
+    message: "Auftragsnummer/Bestellnummer fehlt (empfohlen für Zuordnung)"
+    severity: "info"
+
+# Archiving requirements (GoBD)
+archiving:
+  legal_ref: "GoBD"
+  retention_period_years: 10
+  format_requirements:
+    - "Unveränderbar"
+    - "Jederzeit lesbar"
+    - "Maschinell auswertbar"
+  note: "Elektronisch übermittelte Rechnungen müssen elektronisch archiviert werden"

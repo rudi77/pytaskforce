@@ -1,0 +1,306 @@
+# Kontierung Rules for German Accounting (SKR03/SKR04)
+# Version: 1.0
+# These rules are used by RuleEngineTool for deterministic account assignment
+
+version: "1.0"
+chart_of_accounts: SKR03
+
+# Expense categories with keyword matching and account assignments
+expense_categories:
+  # Bürobedarf und Schreibwaren
+  office_supplies:
+    keywords:
+      - "Bürobedarf"
+      - "Schreibwaren"
+      - "Papier"
+      - "Druckerpapier"
+      - "Kugelschreiber"
+      - "Ordner"
+      - "Heftklammern"
+      - "Toner"
+      - "Druckerpatrone"
+      - "Briefumschläge"
+    debit_account: "4930"
+    debit_name: "Bürobedarf"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Fachliteratur und Zeitschriften
+  literature:
+    keywords:
+      - "Fachliteratur"
+      - "Fachbuch"
+      - "Zeitschrift"
+      - "Abonnement"
+      - "Fachzeitschrift"
+    debit_account: "4940"
+    debit_name: "Zeitschriften, Bücher"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Porto und Versand
+  postage:
+    keywords:
+      - "Porto"
+      - "Versand"
+      - "Paketversand"
+      - "Briefmarken"
+      - "DHL"
+      - "Hermes"
+      - "UPS"
+      - "FedEx"
+    debit_account: "4910"
+    debit_name: "Porto"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Telefon und Internet
+  telecommunications:
+    keywords:
+      - "Telefon"
+      - "Telekom"
+      - "Vodafone"
+      - "Internet"
+      - "DSL"
+      - "Mobilfunk"
+      - "Handy"
+      - "SIM-Karte"
+    debit_account: "4920"
+    debit_name: "Telefon"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # EDV/IT Equipment - with GWG threshold
+  it_equipment:
+    keywords:
+      - "Computer"
+      - "Laptop"
+      - "Notebook"
+      - "Monitor"
+      - "Bildschirm"
+      - "Drucker"
+      - "Scanner"
+      - "Tastatur"
+      - "Maus"
+      - "Server"
+      - "PC"
+      - "Desktop"
+      - "Workstation"
+    conditions:
+      - if_amount_below: 800
+        debit_account: "4985"
+        debit_name: "Werkzeuge und Kleingeräte (GWG)"
+        legal_basis: "§6 Abs. 2 EStG"
+      - if_amount_above: 800
+        debit_account: "0420"
+        debit_name: "EDV-Anlagen (Anlagevermögen)"
+        legal_basis: "§7 Abs. 1 EStG"
+        afa_years: 3
+
+  # Software
+  software:
+    keywords:
+      - "Software"
+      - "Lizenz"
+      - "Microsoft"
+      - "Adobe"
+      - "Subscription"
+      - "SaaS"
+      - "Cloud-Service"
+    conditions:
+      - if_amount_below: 800
+        debit_account: "4964"
+        debit_name: "Aufwendungen für Software (GWG)"
+        legal_basis: "§6 Abs. 2 EStG"
+      - if_amount_above: 800
+        debit_account: "0027"
+        debit_name: "EDV-Software (Anlagevermögen)"
+        legal_basis: "§7 Abs. 1 EStG"
+        afa_years: 3
+
+  # Büromöbel
+  office_furniture:
+    keywords:
+      - "Schreibtisch"
+      - "Bürostuhl"
+      - "Stuhl"
+      - "Regal"
+      - "Schrank"
+      - "Aktenschrank"
+      - "Rollcontainer"
+    conditions:
+      - if_amount_below: 800
+        debit_account: "4985"
+        debit_name: "Werkzeuge und Kleingeräte (GWG)"
+        legal_basis: "§6 Abs. 2 EStG"
+      - if_amount_above: 800
+        debit_account: "0410"
+        debit_name: "Geschäftsausstattung (Anlagevermögen)"
+        legal_basis: "§7 Abs. 1 EStG"
+        afa_years: 13
+
+  # Reisekosten
+  travel:
+    keywords:
+      - "Reise"
+      - "Flug"
+      - "Bahn"
+      - "DB"
+      - "Deutsche Bahn"
+      - "Hotel"
+      - "Übernachtung"
+      - "Mietwagen"
+    debit_account: "4660"
+    debit_name: "Reisekosten Arbeitnehmer"
+    legal_basis: "§9 Abs. 1 Nr. 4a EStG"
+
+  # Bewirtung
+  entertainment:
+    keywords:
+      - "Bewirtung"
+      - "Restaurant"
+      - "Geschäftsessen"
+      - "Gaststätte"
+    debit_account: "4650"
+    debit_name: "Bewirtungskosten"
+    legal_basis: "§4 Abs. 5 Nr. 2 EStG"
+    note: "70% abzugsfähig"
+
+  # Fortbildung
+  training:
+    keywords:
+      - "Fortbildung"
+      - "Schulung"
+      - "Seminar"
+      - "Kurs"
+      - "Workshop"
+      - "Weiterbildung"
+      - "Zertifizierung"
+    debit_account: "4945"
+    debit_name: "Fortbildungskosten"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Beratung
+  consulting:
+    keywords:
+      - "Beratung"
+      - "Consulting"
+      - "Steuerberater"
+      - "Rechtsanwalt"
+      - "Notar"
+      - "Wirtschaftsprüfer"
+    debit_account: "4950"
+    debit_name: "Rechts- und Beratungskosten"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Versicherungen
+  insurance:
+    keywords:
+      - "Versicherung"
+      - "Haftpflicht"
+      - "Betriebshaftpflicht"
+      - "Berufshaftpflicht"
+    debit_account: "4360"
+    debit_name: "Versicherungen"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Miete/Leasing
+  rent:
+    keywords:
+      - "Miete"
+      - "Büromiete"
+      - "Leasing"
+      - "Mietkosten"
+    debit_account: "4210"
+    debit_name: "Miete (unbewegliche Wirtschaftsgüter)"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Werbekosten
+  advertising:
+    keywords:
+      - "Werbung"
+      - "Marketing"
+      - "Anzeige"
+      - "Google Ads"
+      - "Facebook Ads"
+      - "Flyer"
+      - "Visitenkarten"
+    debit_account: "4600"
+    debit_name: "Werbekosten"
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Fremdleistungen
+  subcontracting:
+    keywords:
+      - "Fremdleistung"
+      - "Subunternehmer"
+      - "Dienstleistung"
+      - "Freelancer"
+    debit_account: "4909"
+    debit_name: "Fremdleistungen"
+    legal_basis: "§4 Abs. 4 EStG"
+
+# VAT rules
+vat_rules:
+  standard_rate:
+    rate: 0.19
+    input_tax_account: "1576"
+    input_tax_name: "Abziehbare Vorsteuer 19%"
+    legal_basis: "§15 Abs. 1 UStG"
+
+  reduced_rate:
+    rate: 0.07
+    input_tax_account: "1571"
+    input_tax_name: "Abziehbare Vorsteuer 7%"
+    legal_basis: "§15 Abs. 1 UStG"
+    applies_to:
+      - "Bücher"
+      - "Lebensmittel"
+      - "Zeitungen"
+      - "Fahrkarten"
+
+  reverse_charge:
+    applies_when:
+      - supplier_country: "!DE"
+    vat_account: "1787"
+    input_tax_account: "1577"
+    legal_basis: "§13b UStG"
+    note: "Steuerschuldnerschaft des Leistungsempfängers"
+
+  zero_rate:
+    rate: 0.00
+    applies_when:
+      - export: true
+      - innergemeinschaftlich: true
+    legal_basis: "§4 Nr. 1 UStG"
+
+# Credit accounts (Haben-Konten)
+credit_accounts:
+  liabilities:
+    account: "1600"
+    name: "Verbindlichkeiten aus Lieferungen und Leistungen"
+    skr04_account: "3300"
+
+  bank:
+    account: "1200"
+    name: "Bank"
+    skr04_account: "1800"
+
+# SKR04 mapping (for conversion)
+skr04_mapping:
+  "4930": "6815"  # Bürobedarf
+  "4940": "6820"  # Zeitschriften
+  "4910": "6805"  # Porto
+  "4920": "6810"  # Telefon
+  "4985": "6845"  # GWG
+  "0420": "0650"  # EDV-Anlagen
+  "4964": "6835"  # Software-Aufwand
+  "0027": "0135"  # Software-Anlage
+  "0410": "0620"  # Geschäftsausstattung
+  "4660": "6660"  # Reisekosten
+  "4650": "6640"  # Bewirtung
+  "4945": "6825"  # Fortbildung
+  "4950": "6830"  # Beratung
+  "4360": "6400"  # Versicherungen
+  "4210": "6310"  # Miete
+  "4600": "6600"  # Werbekosten
+  "4909": "6300"  # Fremdleistungen
+  "1576": "1406"  # Vorsteuer 19%
+  "1571": "1401"  # Vorsteuer 7%
+  "1600": "3300"  # Verbindlichkeiten

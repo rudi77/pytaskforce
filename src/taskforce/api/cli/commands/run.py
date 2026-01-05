@@ -167,7 +167,6 @@ def _execute_standard_mission(
                 profile=profile,
                 session_id=session_id,
                 progress_callback=progress_callback,
-                use_lean_agent=lean,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=strategy_params,
             )
@@ -286,7 +285,6 @@ async def _execute_streaming_mission(
             mission=mission,
             profile=profile,
             session_id=session_id,
-            use_lean_agent=lean,
             planning_strategy=planning_strategy,
             planning_strategy_params=strategy_params,
         ):
