@@ -12,7 +12,6 @@ class InputBar(Static):
 
     DEFAULT_CSS = """
     InputBar {
-        dock: bottom;
         height: auto;
         width: 100%;
         background: $surface;

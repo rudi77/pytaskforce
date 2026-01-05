@@ -12,6 +12,36 @@ TaskforceChatApp {
     background: $surface;
 }
 
+/* Bottom Container */
+#bottom-container {
+    dock: bottom;
+    width: 100%;
+    height: auto;
+    background: $panel;
+    border-top: solid $primary;
+}
+
+/* Ensure children inside bottom container do NOT dock to the screen */
+#bottom-container EventsPanel {
+    dock: none;
+    height: 6;
+    max-height: 8;
+    border-top: solid $accent;
+    background: $panel;
+    padding: 0 1;
+    scrollbar-gutter: stable;
+}
+
+#bottom-container InputBar {
+    dock: none;
+    height: 5;
+    border-top: none;
+}
+
+#bottom-container Footer {
+    dock: none;
+}
+
 /* Header Styling */
 Header {
     background: $primary;

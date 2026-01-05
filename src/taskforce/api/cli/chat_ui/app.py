@@ -9,13 +9,17 @@ from textual.widgets import Footer
 
 from taskforce.api.cli.chat_ui.widgets import (
     ChatLog,
+    EventsPanel,
     Header,
     InputBar,
     PlanPanel,
 )
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.slash_command_registry import SlashCommandRegistry
-from taskforce.core.interfaces.slash_commands import CommandType, SlashCommandDefinition
+from taskforce.core.interfaces.slash_commands import (
+    CommandType,
+    SlashCommandDefinition,
+)
 
 
 class TaskforceChatApp(App):
@@ -72,16 +76,17 @@ class TaskforceChatApp(App):
         with Container(id="main-container"):
             yield PlanPanel(id="plan-panel")
             yield ChatLog(id="chat-log")
-        yield InputBar(id="input-bar")
-        yield Footer()
+        with Vertical(id="bottom-container"):
+            yield EventsPanel(id="events-panel")
+            yield InputBar(id="input-bar")
+            yield Footer()
 
     async def on_mount(self) -> None:
         """Handle app mount event."""
         # Show welcome message
         chat_log = self.query_one("#chat-log", ChatLog)
-        chat_log.add_system_message(
-            f"Welcome to Taskforce! {'Debug mode enabled.' if self.debug_mode else ''}"
-        )
+        debug_msg = "Debug mode enabled." if self.debug_mode else ""
+        chat_log.add_system_message(f"Welcome to Taskforce! {debug_msg}")
         chat_log.add_system_message(
             "Type your message or use /help for available commands."
         )
@@ -137,14 +142,17 @@ class TaskforceChatApp(App):
             await self._list_custom_commands()
         else:
             # Try custom command
-            command_def, arguments = self.command_registry.resolve_command(command)
+            command_def, arguments = self.command_registry.resolve_command(
+                command
+            )
 
             if command_def:
                 await self._execute_custom_command(command_def, arguments)
             else:
                 chat_log.add_error(f"Unknown command: {command}")
                 chat_log.add_system_message(
-                    "Type /help for available commands, /commands for custom commands"
+                    "Type /help for available commands, "
+                    "/commands for custom commands"
                 )
 
     async def _show_help(self) -> None:
@@ -211,14 +219,18 @@ Use **/commands** to see available custom commands.
         if not commands:
             chat_log.add_system_message("No custom commands found.")
             chat_log.add_system_message(
-                "Add .md files to .taskforce/commands/ or ~/.taskforce/commands/"
+                "Add .md files to .taskforce/commands/ or "
+                "~/.taskforce/commands/"
             )
             return
 
         lines = ["**Custom Commands:**\n"]
         for cmd in commands:
-            source_tag = f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
-            lines.append(f"  **/{cmd['name']}** - {cmd['description']} {source_tag}")
+            source_tag = (
+                f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
+            )
+            line = f"  **/{cmd['name']}** - {cmd['description']} {source_tag}"
+            lines.append(line)
 
         chat_log.add_system_message("\n".join(lines))
 
@@ -237,14 +249,17 @@ Use **/commands** to see available custom commands.
 
         if command_def.command_type == CommandType.PROMPT:
             # Simple prompt - prepare and send as chat message
-            prompt = self.command_registry.prepare_prompt(command_def, arguments)
+            prompt = self.command_registry.prepare_prompt(
+                command_def, arguments
+            )
             chat_log.add_system_message(f"Executing /{command_def.name}...")
             await self._handle_chat_message(prompt)
 
         elif command_def.command_type == CommandType.AGENT:
             # Agent command - create specialized agent and execute
             chat_log.add_system_message(
-                f"Switching to agent: {command_def.name} (/{command_def.name})"
+                f"Switching to agent: {command_def.name} "
+                f"(/{command_def.name})"
             )
 
             try:
@@ -253,12 +268,13 @@ Use **/commands** to see available custom commands.
                     command_def, self.profile
                 )
 
-                # Store original agent for potential restoration
-                original_agent = self.agent
+                # Switch to specialized agent
                 self.agent = agent
 
                 # Prepare prompt and execute
-                prompt = self.command_registry.prepare_prompt(command_def, arguments)
+                prompt = self.command_registry.prepare_prompt(
+                    command_def, arguments
+                )
                 await self._handle_chat_message(prompt)
 
                 # Keep the specialized agent active for this session
@@ -274,7 +290,9 @@ Use **/commands** to see available custom commands.
         """
         if self._processing:
             chat_log = self.query_one("#chat-log", ChatLog)
-            chat_log.add_system_message("Please wait for the current response to complete.")
+            chat_log.add_system_message(
+                "Please wait for the current response to complete."
+            )
             return
 
         # Add user message to chat
@@ -285,6 +303,11 @@ Use **/commands** to see available custom commands.
         input_bar = self.query_one("#input-bar", InputBar)
         input_bar.set_enabled(False)
 
+        # Clear and show events panel for new execution
+        events_panel = self.query_one("#events-panel", EventsPanel)
+        events_panel.clear()
+        events_panel.show()
+
         # Update header status
         header = self.query_one(Header)
         header.update_status("Initializing")
@@ -294,7 +317,10 @@ Use **/commands** to see available custom commands.
 
         try:
             # Load conversation history
-            state = await self.agent.state_manager.load_state(self.session_id) or {}
+            state = (
+                await self.agent.state_manager.load_state(self.session_id)
+                or {}
+            )
             history = state.get("conversation_history", [])
 
             # Add user message to history
@@ -329,11 +355,17 @@ Use **/commands** to see available custom commands.
         header.update_status("Working")
 
         # Execute with agent
-        result = await self.agent.execute(mission=message, session_id=self.session_id)
+        result = await self.agent.execute(
+            mission=message, session_id=self.session_id
+        )
 
         # Add response to chat
         thought = None
-        if self.debug_mode and hasattr(result, 'thoughts') and result.thoughts:
+        if (
+            self.debug_mode
+            and hasattr(result, "thoughts")
+            and result.thoughts
+        ):
             thought = result.thoughts[-1] if result.thoughts else None
 
         chat_log.add_agent_message(result.final_message, thought=thought)
@@ -344,7 +376,10 @@ Use **/commands** to see available custom commands.
             header.add_tokens(total_tokens)
 
         # Save to history
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        state = (
+            await self.agent.state_manager.load_state(self.session_id)
+            or {}
+        )
         history = state.get("conversation_history", [])
         history.append({"role": "assistant", "content": result.final_message})
         state["conversation_history"] = history
@@ -362,9 +397,8 @@ Use **/commands** to see available custom commands.
         chat_log = self.query_one("#chat-log", ChatLog)
         header = self.query_one(Header)
         plan_panel = self.query_one("#plan-panel", PlanPanel)
+        events_panel = self.query_one("#events-panel", EventsPanel)
 
-        current_step = 0
-        current_thought = None
         final_answer_tokens = []
 
         async for update in self.executor.execute_mission_streaming(
@@ -379,12 +413,20 @@ Use **/commands** to see available custom commands.
                 chat_log,
                 header,
                 plan_panel,
+                events_panel,
                 final_answer_tokens,
             )
 
         # Save final response to history
-        final_message = "".join(final_answer_tokens) if final_answer_tokens else "No response"
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        final_message = (
+            "".join(final_answer_tokens)
+            if final_answer_tokens
+            else "No response"
+        )
+        state = (
+            await self.agent.state_manager.load_state(self.session_id)
+            or {}
+        )
         history = state.get("conversation_history", [])
         history.append({"role": "assistant", "content": final_message})
         state["conversation_history"] = history
@@ -396,6 +438,7 @@ Use **/commands** to see available custom commands.
         chat_log: ChatLog,
         header: Header,
         plan_panel: PlanPanel,
+        events_panel: EventsPanel,
         final_answer_tokens: list,
     ) -> None:
         """Handle streaming update event.
@@ -405,9 +448,13 @@ Use **/commands** to see available custom commands.
             chat_log: Chat log widget
             header: Header widget
             plan_panel: Plan panel widget
+            events_panel: Events panel widget
             final_answer_tokens: List to accumulate final answer tokens
         """
         event_type = update.event_type
+
+        # Always log to events panel (except llm_token, handled internally)
+        events_panel.add_event(update)
 
         if event_type == "started":
             header.update_status("Initializing")
@@ -418,7 +465,7 @@ Use **/commands** to see available custom commands.
         elif event_type == "tool_call":
             tool_name = update.details.get("tool", "unknown")
             tool_params = update.details.get("params", {})
-            header.update_status(f"Calling Tool")
+            header.update_status("Calling Tool")
             if self.debug_mode:
                 chat_log.add_tool_call(tool_name, tool_params)
 
