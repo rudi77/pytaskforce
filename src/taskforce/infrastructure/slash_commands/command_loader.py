@@ -2,8 +2,12 @@
 File-Based Slash Command Loader
 
 Loads custom slash commands from:
-- Project: .taskforce/commands/*.md
-- User:    ~/.taskforce/commands/*.md
+- Project: .taskforce/commands/**/*.md
+- User:    ~/.taskforce/commands/**/*.md
+
+Supports hierarchical naming with subdirectories:
+- agents/dev.md → agents:dev
+- tasks/create-doc.md → tasks:create-doc
 """
 
 from pathlib import Path
@@ -82,39 +86,56 @@ class FileSlashCommandLoader:
         return list(commands.values())
 
     def load_command(self, name: str) -> SlashCommandDefinition | None:
-        """Load a specific command by name."""
+        """Load a specific command by name (supports hierarchical: agents:dev)."""
+        # Convert colon-path to filesystem path: agents:dev → agents/dev.md
+        path_parts = name.split(":")
+        if len(path_parts) > 1:
+            relative_path = Path(*path_parts[:-1]) / f"{path_parts[-1]}.md"
+        else:
+            relative_path = Path(f"{name}.md")
+
         # Check project first (higher priority)
-        project_path = self._project_commands_dir / f"{name}.md"
+        project_path = self._project_commands_dir / relative_path
         if project_path.exists():
-            return self._load_from_file(project_path, "project")
+            return self._load_from_file(project_path, "project", name)
 
         # Fall back to user
-        user_path = self._user_commands_dir / f"{name}.md"
+        user_path = self._user_commands_dir / relative_path
         if user_path.exists():
-            return self._load_from_file(user_path, "user")
+            return self._load_from_file(user_path, "user", name)
 
         return None
 
     def _scan_directory(
         self, directory: Path, source: str
     ) -> list[SlashCommandDefinition]:
-        """Scan directory for command files."""
+        """Scan directory recursively for command files."""
         commands = []
-        for md_file in directory.glob("*.md"):
-            cmd = self._load_from_file(md_file, source)
+        for md_file in directory.rglob("*.md"):
+            # Build hierarchical name: agents:dev, tasks:create-doc
+            relative = md_file.relative_to(directory)
+            if len(relative.parts) > 1:
+                # Has subdirectory: agents/dev.md → agents:dev
+                prefix = ":".join(relative.parts[:-1])
+                name = f"{prefix}:{md_file.stem}"
+            else:
+                # Root level: explain.md → explain
+                name = md_file.stem
+
+            cmd = self._load_from_file(md_file, source, name)
             if cmd:
                 commands.append(cmd)
         return commands
 
     def _load_from_file(
-        self, path: Path, source: str
+        self, path: Path, source: str, name: str | None = None
     ) -> SlashCommandDefinition | None:
         """Load and parse a command file."""
         try:
             content = path.read_text(encoding="utf-8")
             return parse_command_markdown(
                 content=content,
-                name=path.stem,
+                name=name or path.stem,
                 source=source,
                 source_path=str(path),
             )
