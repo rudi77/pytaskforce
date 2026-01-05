@@ -380,7 +380,7 @@ class AgentFactory:
             ValueError: If strategy name is invalid or params are malformed
         """
         normalized = (
-            strategy_name or "plan_and_react"
+            strategy_name or "native_react"
         ).strip().lower().replace("-", "_")
         params = params or {}
         if not isinstance(params, dict):
