@@ -1,8 +1,8 @@
 """
-Unit tests for AgentFactory - LeanAgent creation.
+Unit tests for AgentFactory - Agent creation.
 
 Tests verify:
-- LeanAgent creation with dev profile
+- Agent creation with dev profile
 - Planning strategy configuration
 - Specialist profile integration
 - System prompt assembly
@@ -15,37 +15,37 @@ import pytest
 from taskforce.application.factory import AgentFactory
 
 
-class TestLeanAgentFactory:
-    """Tests for LeanAgent factory creation (Story 5: CLI Integration)."""
+class TestAgentFactory:
+    """Tests for Agent factory creation (Story 5: CLI Integration)."""
 
     @pytest.mark.asyncio
     async def test_create_lean_agent_basic(self):
-        """Test creating a basic LeanAgent."""
-        from taskforce.core.domain.lean_agent import LeanAgent
+        """Test creating a basic Agent."""
+        from taskforce.core.domain.agent import Agent
 
         factory = AgentFactory(config_dir="configs")
         agent = await factory.create_lean_agent(profile="dev")
 
-        assert isinstance(agent, LeanAgent)
+        assert isinstance(agent, Agent)
         assert agent.state_manager is not None
         assert agent.llm_provider is not None
         assert len(agent.tools) > 0
 
     @pytest.mark.asyncio
     async def test_lean_agent_has_planner_tool(self):
-        """Test that LeanAgent has PlannerTool injected."""
+        """Test that Agent has PlannerTool injected."""
         from taskforce.core.tools.planner_tool import PlannerTool
 
         factory = AgentFactory(config_dir="configs")
         agent = await factory.create_lean_agent(profile="dev")
 
-        # PlannerTool should be present (injected by LeanAgent if not in tools)
+        # PlannerTool should be present (injected by Agent if not in tools)
         assert "planner" in agent.tools
         assert isinstance(agent.tools["planner"], PlannerTool)
 
     @pytest.mark.asyncio
     async def test_lean_agent_uses_lean_kernel_prompt(self):
-        """Test that LeanAgent uses LEAN_KERNEL_PROMPT."""
+        """Test that Agent uses LEAN_KERNEL_PROMPT."""
         from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 
         factory = AgentFactory(config_dir="configs")
@@ -56,7 +56,7 @@ class TestLeanAgentFactory:
 
     @pytest.mark.asyncio
     async def test_lean_agent_with_specialist(self):
-        """Test creating LeanAgent with specialist profile."""
+        """Test creating Agent with specialist profile."""
         factory = AgentFactory(config_dir="configs")
         agent = await factory.create_lean_agent(profile="dev", specialist="coding")
 
@@ -65,21 +65,21 @@ class TestLeanAgentFactory:
 
     @pytest.mark.asyncio
     async def test_lean_agent_work_dir_override(self):
-        """Test LeanAgent with work_dir override."""
-        from taskforce.core.domain.lean_agent import LeanAgent
+        """Test Agent with work_dir override."""
+        from taskforce.core.domain.agent import Agent
 
         factory = AgentFactory(config_dir="configs")
         agent = await factory.create_lean_agent(
             profile="dev", work_dir=".lean_test_workdir"
         )
 
-        assert isinstance(agent, LeanAgent)
+        assert isinstance(agent, Agent)
         # State manager should use the override work_dir
         assert ".lean_test_workdir" in str(agent.state_manager.work_dir)
 
     @pytest.mark.asyncio
     async def test_lean_agent_planning_strategy_default(self):
-        """Test that LeanAgent defaults to NativeReAct strategy."""
+        """Test that Agent defaults to NativeReAct strategy."""
         from taskforce.core.domain.planning_strategy import NativeReActStrategy
 
         factory = AgentFactory(config_dir="configs")
@@ -89,7 +89,7 @@ class TestLeanAgentFactory:
 
     @pytest.mark.asyncio
     async def test_lean_agent_planning_strategy_override(self):
-        """Test overriding planning strategy for LeanAgent."""
+        """Test overriding planning strategy for Agent."""
         from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
 
         factory = AgentFactory(config_dir="configs")

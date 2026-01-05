@@ -1,4 +1,4 @@
-"""State persistence helpers for LeanAgent."""
+"""State persistence helpers for Agent."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from taskforce.core.tools.planner_tool import PlannerTool
 
 
 class LeanAgentStateStore:
-    """Persist LeanAgent state, including planner state."""
+    """Persist Agent state, including planner state."""
 
     def __init__(
         self,

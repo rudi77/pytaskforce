@@ -33,7 +33,7 @@ def chat(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
     lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use LeanAgent (native tool calling, PlannerTool)"
+        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
     ),
     stream: bool = typer.Option(
         True, "--stream/--no-stream", "-S",
@@ -55,7 +55,7 @@ def chat(
         # Standard chat with new UI
         taskforce chat
 
-        # LeanAgent chat (new simplified architecture)
+        # Agent chat (new simplified architecture)
         taskforce chat --lean
 
         # Streaming chat with real-time output (default)
@@ -106,9 +106,9 @@ def chat(
 
     async def run_chat_ui():
         """Run the chat UI application."""
-        # Create agent using LeanAgent (the standard agent implementation)
+        # Create agent using Agent (the standard agent implementation)
         factory = AgentFactory()
-        agent = await factory.create_lean_agent(
+        agent = await factory.create_agent(
             profile=profile, user_context=user_context
         )
 

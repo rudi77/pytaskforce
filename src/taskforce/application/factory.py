@@ -1,13 +1,13 @@
 """
 Application Layer - Agent Factory
 
-This module provides dependency injection factory for creating LeanAgent instances
+This module provides dependency injection factory for creating Agent instances
 with different infrastructure adapters based on configuration profiles.
 
 Key Responsibilities:
 - Load configuration profiles (dev/staging/prod)
 - Instantiate infrastructure adapters (state managers, LLM providers, tools)
-- Wire dependencies into core domain LeanAgent
+- Wire dependencies into core domain Agent
 - Support specialist profiles (coding, rag) with layered prompts
 - Inject appropriate toolsets based on specialist profile
 """
@@ -43,7 +43,7 @@ import structlog
 import yaml
 
 from taskforce.core.domain.context_policy import ContextPolicy
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
     PlanAndExecuteStrategy,
@@ -60,7 +60,7 @@ from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
 
 class AgentFactory:
     """
-    Factory for creating LeanAgent instances with dependency injection.
+    Factory for creating Agent instances with dependency injection.
 
     Wires core domain objects with infrastructure adapters based on
     configuration profiles (dev/staging/prod).
@@ -68,7 +68,7 @@ class AgentFactory:
     The factory follows Clean Architecture principles:
     - Reads YAML configuration profiles
     - Instantiates appropriate infrastructure adapters
-    - Injects dependencies into LeanAgent
+    - Injects dependencies into Agent
     - Supports specialist profiles (coding, rag) and custom agent definitions
     """
 
@@ -87,7 +87,7 @@ class AgentFactory:
             self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
 
-    async def create_lean_agent(
+    async def create_agent(
         self,
         profile: str = "dev",
         specialist: Optional[str] = None,
@@ -95,16 +95,16 @@ class AgentFactory:
         user_context: Optional[dict[str, Any]] = None,
         planning_strategy: Optional[str] = None,
         planning_strategy_params: Optional[dict[str, Any]] = None,
-    ) -> LeanAgent:
+    ) -> Agent:
         """
-        Create LeanAgent with simplified ReAct loop.
+        Create Agent with simplified ReAct loop.
 
-        Creates a LeanAgent instance using native tool calling and PlannerTool
+        Creates an Agent instance using native tool calling and PlannerTool
         for dynamic plan management. This is the new simplified architecture
         that replaces TodoListManager and custom JSON parsing.
 
         Key differences from create_agent():
-        - Uses LeanAgent instead of legacy Agent
+        - Uses Agent (native tool calling) instead of legacy agent flow
         - No TodoListManager (replaced by PlannerTool)
         - No QueryRouter/fast-path logic
         - Uses LEAN_KERNEL_PROMPT by default
@@ -119,14 +119,14 @@ class AgentFactory:
             planning_strategy_params: Optional planning strategy parameters
 
         Returns:
-            LeanAgent instance with injected dependencies
+            Agent instance with injected dependencies
 
         Raises:
             FileNotFoundError: If profile YAML not found
 
         Example:
             >>> factory = AgentFactory()
-            >>> agent = await factory.create_lean_agent(profile="dev")
+            >>> agent = await factory.create_agent(profile="dev")
             >>> result = await agent.execute("Do something", "session-123")
         """
         config = self._load_profile(profile)
@@ -167,7 +167,7 @@ class AgentFactory:
         # Create ContextPolicy from config (Story 9.2)
         context_policy = self._create_context_policy(config)
 
-        # Get max_steps from config (defaults to LeanAgent.DEFAULT_MAX_STEPS if not specified)
+        # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
         strategy_name = (
@@ -192,7 +192,7 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
             tools=tools,
@@ -212,7 +212,7 @@ class AgentFactory:
         self, specialist: Optional[str], tools: list[ToolProtocol]
     ) -> str:
         """
-        Assemble system prompt for LeanAgent.
+        Assemble system prompt for Agent.
 
         Uses LEAN_KERNEL_PROMPT as base, optionally adding specialist instructions.
         The LEAN_KERNEL_PROMPT includes planning behavior rules that work with
@@ -259,16 +259,16 @@ class AgentFactory:
 
         return system_prompt
 
-    async def create_lean_agent_from_definition(
+    async def create_agent_from_definition(
         self,
         agent_definition: dict[str, Any],
         profile: str = "dev",
         work_dir: Optional[str] = None,
         planning_strategy: Optional[str] = None,
         planning_strategy_params: Optional[dict[str, Any]] = None,
-    ) -> LeanAgent:
+    ) -> Agent:
         """
-        Create LeanAgent from custom agent definition.
+        Create Agent from custom agent definition.
 
         This method is used by Story 8.3 to create agents from stored
         custom agent definitions (loaded from configs/custom/{agent_id}.yaml).
@@ -292,7 +292,7 @@ class AgentFactory:
             planning_strategy_params: Optional planning strategy parameters
 
         Returns:
-            LeanAgent instance configured from definition
+            Agent instance configured from definition
 
         Raises:
             FileNotFoundError: If profile YAML not found
@@ -306,7 +306,7 @@ class AgentFactory:
             ...     "mcp_servers": [],
             ...     "mcp_tool_allowlist": []
             ... }
-            >>> agent = await factory.create_lean_agent_from_definition(
+            >>> agent = await factory.create_agent_from_definition(
             ...     definition, profile="dev"
             ... )
         """
@@ -351,7 +351,7 @@ class AgentFactory:
         # Create ContextPolicy from config (Story 9.2)
         context_policy = self._create_context_policy(config)
 
-        # Get max_steps from config (defaults to LeanAgent.DEFAULT_MAX_STEPS if not specified)
+        # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
         strategy_name = (
@@ -377,7 +377,7 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
             tools=tools,
@@ -398,7 +398,7 @@ class AgentFactory:
         self, strategy_name: str | None, params: dict[str, Any] | None
     ) -> PlanningStrategy:
         """
-        Select and instantiate planning strategy for LeanAgent.
+        Select and instantiate planning strategy for Agent.
 
         Args:
             strategy_name: Strategy name (native_react, plan_and_execute, plan_and_react)
@@ -1113,4 +1113,13 @@ class AgentFactory:
                 error_type=type(e).__name__,
             )
             return None
+
+    # Backwards-compatible aliases (deprecated)
+    async def create_lean_agent(self, *args, **kwargs) -> Agent:
+        """Deprecated: Use create_agent instead."""
+        return await self.create_agent(*args, **kwargs)
+
+    async def create_lean_agent_from_definition(self, *args, **kwargs) -> Agent:
+        """Deprecated: Use create_agent_from_definition instead."""
+        return await self.create_agent_from_definition(*args, **kwargs)
 

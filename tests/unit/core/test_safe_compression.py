@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 
 
@@ -50,7 +50,7 @@ class TestSafeCompression:
         """
         # Setup
         mock_llm = MockLLMProvider()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=mock_llm,
             tools=[],
@@ -102,7 +102,7 @@ class TestSafeCompression:
     def test_compress_messages_uses_safe_summary_input(self):
         """Test that compression uses _build_safe_summary_input."""
         mock_llm = MockLLMProvider()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=mock_llm,
             tools=[],
@@ -149,7 +149,7 @@ class TestSafeCompression:
 
     def test_build_safe_summary_input_sanitizes_content(self):
         """Test _build_safe_summary_input sanitizes large content."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=MockLLMProvider(),
             tools=[],
@@ -178,7 +178,7 @@ class TestSafeCompression:
 
     def test_build_safe_summary_input_handles_tool_calls(self):
         """Test _build_safe_summary_input extracts tool names only."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=MockLLMProvider(),
             tools=[],
@@ -222,7 +222,7 @@ class TestSafeCompression:
 
     def test_build_safe_summary_input_handles_tool_results(self):
         """Test _build_safe_summary_input creates previews for tool results."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=MockLLMProvider(),
             tools=[],
@@ -256,7 +256,7 @@ class TestSafeCompression:
         mock_llm = MockLLMProvider()
 
         # Create agent with low compression trigger
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=mock_llm,
             tools=[],
@@ -282,7 +282,7 @@ class TestSafeCompression:
         """Test compression still respects SUMMARY_THRESHOLD as fallback."""
         mock_llm = MockLLMProvider()
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=mock_llm,
             tools=[],
@@ -310,7 +310,7 @@ class TestSafeCompression:
             async def complete(self, messages, model=None, **kwargs):
                 return {"success": False, "error": "LLM failed"}
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=FailingLLMProvider(),
             tools=[],
@@ -336,7 +336,7 @@ class TestSafeCompression:
         """Test no compression when below both budget and count thresholds."""
         mock_llm = MockLLMProvider()
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=mock_llm,
             tools=[],
@@ -359,7 +359,7 @@ class TestSafeCompression:
 
     def test_safe_summary_input_handles_malformed_tool_content(self):
         """Test _build_safe_summary_input handles non-JSON tool content."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=MockLLMProvider(),
             tools=[],
@@ -382,7 +382,7 @@ class TestSafeCompression:
 
     def test_safe_summary_input_empty_messages(self):
         """Test _build_safe_summary_input handles empty message list."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=MockStateManager(),
             llm_provider=MockLLMProvider(),
             tools=[],

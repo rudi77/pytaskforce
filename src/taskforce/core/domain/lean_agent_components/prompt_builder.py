@@ -1,4 +1,4 @@
-"""Prompt builder for LeanAgent."""
+"""Prompt builder for Agent."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from taskforce.core.tools.planner_tool import PlannerTool
 
 class LeanPromptBuilder:
     """
-    Build LeanAgent system prompts with plan and context sections.
+    Build Agent system prompts with plan and context sections.
 
     Keeps prompt composition logic isolated from the execution loop.
     """

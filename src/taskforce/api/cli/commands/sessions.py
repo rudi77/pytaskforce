@@ -20,7 +20,7 @@ def list_sessions(
 
     async def _list_sessions():
         factory = AgentFactory()
-        agent = await factory.create_lean_agent(profile=profile)
+        agent = await factory.create_agent(profile=profile)
 
         try:
             sessions = await agent.state_manager.list_sessions()
@@ -50,7 +50,7 @@ def show_session(
 
     async def _show_session():
         factory = AgentFactory()
-        agent = await factory.create_lean_agent(profile=profile)
+        agent = await factory.create_agent(profile=profile)
 
         try:
             state = await agent.state_manager.load_state(session_id)

@@ -78,7 +78,7 @@ def test_create_agent_success(client):
         "agent_id": "invoice-extractor",
         "name": "Invoice Extractor",
         "description": "Extracts structured fields from invoice text.",
-        "system_prompt": "You are a LeanAgent specialized in invoice extraction.",
+        "system_prompt": "You are an Agent specialized in invoice extraction.",
         "tool_allowlist": ["file_read", "python"],
         "mcp_servers": [],
         "mcp_tool_allowlist": [],
@@ -91,7 +91,7 @@ def test_create_agent_success(client):
     assert data["agent_id"] == "invoice-extractor"
     assert data["name"] == "Invoice Extractor"
     assert data["description"] == "Extracts structured fields from invoice text."
-    assert data["system_prompt"] == "You are a LeanAgent specialized in invoice extraction."
+    assert data["system_prompt"] == "You are an Agent specialized in invoice extraction."
     assert data["tool_allowlist"] == ["file_read", "python"]
     assert "created_at" in data
     assert "updated_at" in data

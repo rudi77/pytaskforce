@@ -1,4 +1,4 @@
-"""Lifecycle helpers for LeanAgent resources."""
+"""Lifecycle helpers for Agent resources."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import structlog
 
 
 class ResourceCloser:
-    """Close async resources associated with LeanAgent."""
+    """Close async resources associated with Agent."""
 
     def __init__(self, *, logger: structlog.stdlib.BoundLogger) -> None:
         self._logger = logger

@@ -1,4 +1,4 @@
-"""Message history management for LeanAgent."""
+"""Message history management for Agent."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from taskforce.core.interfaces.llm import LLMProviderProtocol
 
 
 class MessageHistoryManager:
-    """Manage LeanAgent message history, compression, and budget enforcement."""
+    """Manage Agent message history, compression, and budget enforcement."""
 
     def __init__(
         self,

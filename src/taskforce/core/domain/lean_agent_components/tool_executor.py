@@ -1,4 +1,4 @@
-"""Tool execution helpers for LeanAgent."""
+"""Tool execution helpers for Agent."""
 
 from __future__ import annotations
 

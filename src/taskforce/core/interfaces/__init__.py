@@ -13,11 +13,11 @@ Available Protocols:
 Usage:
     from taskforce.core.interfaces import StateManagerProtocol, LLMProviderProtocol
 
-    def create_lean_agent(
+    def create_agent(
         state_manager: StateManagerProtocol,
         llm_provider: LLMProviderProtocol
     ):
-        # LeanAgent implementation uses protocols, not concrete classes
+        # Agent implementation uses protocols, not concrete classes
         pass
 """
 

@@ -29,11 +29,8 @@ from taskforce.core.domain.errors import (
     TaskforceError,
     ValidationError,
 )
-from taskforce.core.domain.exceptions import (
-    AgentExecutionError,
-    LeanAgentExecutionError,
-)
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.exceptions import AgentExecutionError
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 logger = structlog.get_logger()
@@ -93,15 +90,15 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> ExecutionResult:
-        """Execute LeanAgent mission with comprehensive orchestration.
+        """Execute Agent mission with comprehensive orchestration.
 
         Main entry point for mission execution. Orchestrates the complete
         workflow from agent creation through execution to result delivery.
 
         Workflow:
-        1. Create LeanAgent using factory based on profile
+        1. Create Agent using factory based on profile
         2. Generate or use provided session ID
-        3. Execute LeanAgent ReAct loop with progress tracking
+        3. Execute Agent ReAct loop with progress tracking
         4. Log execution metrics and status
         5. Return execution result
 
@@ -141,7 +138,7 @@ class AgentExecutor:
 
         agent = None
         try:
-            # Create LeanAgent with appropriate adapters
+            # Create Agent with appropriate adapters
             agent = await self._create_agent(
                 profile,
                 user_context=user_context,
@@ -223,7 +220,7 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
-        """Execute LeanAgent mission with streaming progress updates.
+        """Execute Agent mission with streaming progress updates.
 
         Yields ProgressUpdate objects as execution progresses, enabling
         real-time feedback to consumers (CLI progress bars, API SSE, etc).
@@ -270,7 +267,7 @@ class AgentExecutor:
 
         agent = None
         try:
-            # Create LeanAgent
+            # Create Agent
             agent = await self._create_agent(
                 profile,
                 user_context=user_context,
@@ -347,12 +344,12 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
-    ) -> LeanAgent:
-        """Create LeanAgent using factory.
+    ) -> Agent:
+        """Create Agent using factory.
 
-        Creates LeanAgent instance using native tool calling and PlannerTool:
+        Creates Agent instance using native tool calling and PlannerTool:
         - agent_id provided: Loads custom agent definition from registry
-        - Otherwise: Creates standard LeanAgent with optional user_context for RAG
+        - Otherwise: Creates standard Agent with optional user_context for RAG
 
         Args:
             profile: Configuration profile name
@@ -362,7 +359,7 @@ class AgentExecutor:
             planning_strategy_params: Optional planning strategy parameters
 
         Returns:
-            LeanAgent instance with injected dependencies
+            Agent instance with injected dependencies
 
         Raises:
             FileNotFoundError: If agent_id provided but not found (404)
@@ -414,15 +411,15 @@ class AgentExecutor:
                 tool_count=len(agent_response.tool_allowlist),
             )
 
-            return await self.factory.create_lean_agent_from_definition(
+            return await self.factory.create_agent_from_definition(
                 agent_definition=agent_definition,
                 profile=profile,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
             )
 
-        # Standard LeanAgent creation with optional user_context for RAG tools
-        return await self.factory.create_lean_agent(
+        # Standard Agent creation with optional user_context for RAG tools
+        return await self.factory.create_agent(
             profile=profile,
             user_context=user_context,
             planning_strategy=planning_strategy,
@@ -431,7 +428,7 @@ class AgentExecutor:
 
     async def _execute_with_progress(
         self,
-        agent: LeanAgent,
+        agent: Agent,
         mission: str,
         session_id: str,
         progress_callback: Callable[[ProgressUpdate], None] | None,
@@ -476,7 +473,7 @@ class AgentExecutor:
         return result
 
     async def _execute_streaming(
-        self, agent: LeanAgent, mission: str, session_id: str
+        self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute agent with streaming progress updates.
 
@@ -491,7 +488,7 @@ class AgentExecutor:
         Yields:
             ProgressUpdate objects for execution events
         """
-        # Check if agent supports streaming (LeanAgent has execute_stream)
+        # Check if agent supports streaming (Agent has execute_stream)
         # Also verify it's a real method, not a Mock attribute
         execute_stream_method = getattr(agent, "execute_stream", None)
         is_real_method = (
@@ -549,7 +546,7 @@ class AgentExecutor:
     def _stream_event_to_progress_update(self, event: StreamEvent) -> ProgressUpdate:
         """Convert StreamEvent to ProgressUpdate for API consumers.
 
-        Maps LeanAgent StreamEvent types to human-readable messages
+        Maps Agent StreamEvent types to human-readable messages
         for CLI and API streaming consumers.
 
         Args:
@@ -596,7 +593,6 @@ class AgentExecutor:
         log_payload: dict[str, Any] = {
             "session_id": error_context["session_id"],
             "agent_id": error_context["agent_id"],
-            "lean_agent_id": error_context["lean_agent_id"],
             "tool_name": error_context["tool_name"],
             "error_code": error_context["error_code"],
             "error": str(error),
@@ -617,7 +613,6 @@ class AgentExecutor:
         return {
             "session_id": getattr(error, "session_id", None) or session_id,
             "agent_id": getattr(error, "agent_id", None) or agent_id,
-            "lean_agent_id": getattr(error, "lean_agent_id", None),
             "tool_name": getattr(error, "tool_name", None),
             "error_code": getattr(error, "error_code", None),
         }
@@ -638,7 +633,7 @@ class AgentExecutor:
 
     async def _maybe_store_conversation_history(
         self,
-        agent: LeanAgent,
+        agent: Agent,
         session_id: str,
         conversation_history: list[dict[str, Any]] | None,
     ) -> None:
@@ -658,7 +653,7 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
     ) -> TaskforceError:
-        """Wrap unknown exceptions into LeanAgentExecutionError."""
+        """Wrap unknown exceptions into AgentExecutionError."""
         if isinstance(error, TaskforceError):
             return error
         if isinstance(error, asyncio.CancelledError):
@@ -672,16 +667,15 @@ class AgentExecutor:
         details = {
             "session_id": error_context["session_id"],
             "agent_id": error_context["agent_id"],
-            "lean_agent_id": error_context["lean_agent_id"],
             "tool_name": error_context["tool_name"],
             "error_code": error_context["error_code"],
             "error_type": type(error).__name__,
         }
-        # Always return LeanAgentExecutionError since we only use LeanAgent now
-        return LeanAgentExecutionError(
+        # Always return AgentExecutionError for the Agent flow
+        return AgentExecutionError(
             f"{context}: {str(error)}",
             session_id=error_context["session_id"],
-            lean_agent_id=error_context["lean_agent_id"] or agent_id,
+            agent_id=error_context["agent_id"] or agent_id,
             tool_name=error_context["tool_name"],
             error_code=error_context["error_code"],
             status_code=500,

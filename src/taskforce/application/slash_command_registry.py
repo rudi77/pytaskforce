@@ -10,7 +10,7 @@ from typing import Any
 import structlog
 
 from taskforce.application.factory import AgentFactory
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.interfaces.slash_commands import (
     CommandType,
     SlashCommandDefinition,
@@ -178,16 +178,16 @@ class SlashCommandRegistry:
 
     async def create_agent_for_command(
         self, command_def: SlashCommandDefinition, base_profile: str = "dev"
-    ) -> LeanAgent:
+    ) -> Agent:
         """
-        Create a LeanAgent configured for an agent-type command.
+        Create an Agent configured for an agent-type command.
 
         Args:
             command_def: Agent command definition
             base_profile: Base profile for infrastructure settings
 
         Returns:
-            Configured LeanAgent instance
+            Configured Agent instance
 
         Raises:
             ValueError: If command is not agent type
@@ -215,7 +215,7 @@ class SlashCommandRegistry:
             tools=agent_config.get("tools", []),
         )
 
-        return await self.factory.create_lean_agent_from_definition(
+        return await self.factory.create_agent_from_definition(
             agent_definition=agent_definition,
             profile=profile,
         )

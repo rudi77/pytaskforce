@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.tools.planner_tool import PlannerTool
 
 
@@ -33,7 +33,7 @@ def mock_llm_provider():
 def lean_agent(mock_state_manager, mock_llm_provider):
     """Create LeanAgent with mocked dependencies."""
     planner = PlannerTool()
-    return LeanAgent(
+    return Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[planner],

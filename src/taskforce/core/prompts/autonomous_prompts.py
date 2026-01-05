@@ -2,7 +2,7 @@
 Autonomous Agent Prompts - Kernel and Specialist Profiles
 
 This module provides the layered prompt architecture:
-- LEAN_KERNEL_PROMPT: Streamlined kernel for LeanAgent with native tool calling
+- LEAN_KERNEL_PROMPT: Streamlined kernel for Agent with native tool calling
 - GENERAL_AUTONOMOUS_KERNEL_PROMPT: Core autonomous behavior shared by all agents
 - CODING_SPECIALIST_PROMPT: Specialist instructions for coding/file operations
 - RAG_SPECIALIST_PROMPT: Specialist instructions for RAG/document retrieval
@@ -22,7 +22,7 @@ Usage:
 """
 
 # =============================================================================
-# LEAN KERNEL PROMPT - For LeanAgent with Native Tool Calling
+# LEAN KERNEL PROMPT - For Agent with Native Tool Calling
 # =============================================================================
 
 LEAN_KERNEL_PROMPT = """

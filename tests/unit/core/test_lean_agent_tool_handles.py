@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.interfaces.tool_result_store import ToolResultHandle
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
 
@@ -69,7 +69,7 @@ async def test_agent_uses_handle_for_large_result(
 ):
     """Test that agent stores large tool results as handles."""
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool],
@@ -169,7 +169,7 @@ async def test_agent_uses_standard_message_for_small_result(
         }
     )
 
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[small_tool],
@@ -230,7 +230,7 @@ async def test_agent_without_store_uses_standard_messages(
 ):
     """Test that agent without store uses standard messages even for large results."""
     # Arrange - agent without tool_result_store
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool],
@@ -295,7 +295,7 @@ async def test_handle_includes_metadata(
 ):
     """Test that stored handles include metadata (session_id, step, success)."""
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool],
@@ -361,7 +361,7 @@ async def test_streaming_uses_handles(
 ):
     """Test that streaming execution also uses handles for large results."""
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool],

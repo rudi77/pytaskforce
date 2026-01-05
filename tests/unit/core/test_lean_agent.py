@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import ExecutionResult
 from taskforce.core.tools.planner_tool import PlannerTool
 
@@ -84,7 +84,7 @@ def planner_tool():
 @pytest.fixture
 def lean_agent(mock_state_manager, mock_llm_provider, mock_tool, planner_tool):
     """Create LeanAgent with mocked dependencies."""
-    return LeanAgent(
+    return Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool, planner_tool],
@@ -119,7 +119,7 @@ class TestLeanAgentInitialization:
         self, mock_state_manager, mock_llm_provider
     ):
         """Test that PlannerTool is created if not provided."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[],  # No tools provided
@@ -164,7 +164,7 @@ class TestLeanAgentPromptSections:
         self, mock_state_manager, mock_llm_provider, mock_tool
     ):
         """Context pack section should be empty when no pack exists."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -182,7 +182,7 @@ class TestLeanAgentPromptSections:
         self, mock_state_manager, mock_llm_provider, mock_tool
     ):
         """Context pack section should include formatted pack."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -260,7 +260,7 @@ class TestLeanAgentNativeToolCalling:
         self, mock_state_manager, mock_llm_provider, calculator_tool, planner_tool
     ):
         """Test handling multiple tool calls in a single LLM response."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[calculator_tool, planner_tool],
@@ -583,7 +583,7 @@ class TestLeanAgentStatePersistence:
         ]
 
         planner = PlannerTool()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
@@ -649,7 +649,7 @@ class TestDynamicContextInjection:
         self, mock_state_manager, mock_llm_provider, mock_tool
     ):
         """Test that _build_system_prompt returns base prompt when no plan exists."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -668,7 +668,7 @@ class TestDynamicContextInjection:
         planner = PlannerTool()
         planner._create_plan(tasks=["Step 1: Do A", "Step 2: Do B"])
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
@@ -690,7 +690,7 @@ class TestDynamicContextInjection:
         planner._create_plan(tasks=["Step 1", "Step 2"])
         planner._mark_done(step_index=1)
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
@@ -708,7 +708,7 @@ class TestDynamicContextInjection:
     ):
         """Test that system prompt is updated each loop with latest plan state."""
         planner = PlannerTool()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[planner],
@@ -778,7 +778,7 @@ class TestDynamicContextInjection:
         self, mock_state_manager, mock_llm_provider, mock_tool
     ):
         """Test backward compatibility: system_prompt property returns base."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -793,7 +793,7 @@ class TestDynamicContextInjection:
         """Test that LEAN_KERNEL_PROMPT is used when no prompt is provided."""
         from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],

@@ -51,7 +51,7 @@ from taskforce.core.tools.planner_tool import PlannerTool
 from taskforce.infrastructure.tools.tool_converter import tools_to_openai_format
 
 
-class LeanAgent:
+class Agent:
     """
     Lightweight ReAct agent with native tool calling.
 
@@ -90,7 +90,7 @@ class LeanAgent:
         planning_strategy: PlanningStrategy | None = None,
     ):
         """
-        Initialize LeanAgent with injected dependencies.
+        Initialize Agent with injected dependencies.
 
         Args:
             state_manager: Protocol for session state persistence
@@ -106,14 +106,14 @@ class LeanAgent:
             compression_trigger: Token count to trigger compression (default: 80k)
             max_steps: Maximum execution steps allowed (default: 30 for simple agents,
                       should be higher for RAG/document agents ~50-100)
-            planning_strategy: Optional planning strategy override for LeanAgent.
+            planning_strategy: Optional planning strategy override for Agent.
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
         self._base_system_prompt = system_prompt or LEAN_KERNEL_PROMPT
         self.model_alias = model_alias
         self.tool_result_store = tool_result_store
-        self.logger = structlog.get_logger().bind(component="lean_agent")
+        self.logger = structlog.get_logger().bind(component="agent")
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -359,10 +359,16 @@ class LeanAgent:
         Clean up resources (MCP connections, etc).
 
         Called by CLI/API to gracefully shut down agent.
-        For LeanAgent, this cleans up any MCP client contexts
+        For Agent, this cleans up any MCP client contexts
         stored by the factory.
         """
         # Clean up MCP client contexts if they were attached by factory
         mcp_contexts = getattr(self, "_mcp_contexts", [])
         await self.resource_closer.close_mcp_contexts(mcp_contexts)
         self.logger.debug("agent_closed")
+
+
+# Backwards-compatible alias (deprecated).
+LeanAgent = Agent
+
+__all__ = ["Agent", "LeanAgent"]

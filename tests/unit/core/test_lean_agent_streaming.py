@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import StreamEvent
 from taskforce.core.tools.planner_tool import PlannerTool
 
@@ -94,7 +94,7 @@ class TestLeanAgentStreaming:
             return_value=mock_stream_simple_response("Hello world!")
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -120,7 +120,7 @@ class TestLeanAgentStreaming:
             return_value=mock_stream_simple_response("Hello world!")
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -159,7 +159,7 @@ class TestLeanAgentStreaming:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_with_tool_then_response
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -197,7 +197,7 @@ class TestLeanAgentStreaming:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_with_tool_then_response
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -239,7 +239,7 @@ class TestLeanAgentStreaming:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_with_planner
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool, planner_tool],
@@ -264,7 +264,7 @@ class TestLeanAgentStreaming:
             return_value=mock_stream_simple_response("This is the final answer.")
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -297,7 +297,7 @@ class TestLeanAgentStreaming:
         if hasattr(mock_provider, "complete_stream"):
             delattr(mock_provider, "complete_stream")
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -337,7 +337,7 @@ class TestLeanAgentStreaming:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_with_planner
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool, planner_tool],
@@ -365,7 +365,7 @@ class TestLeanAgentStreaming:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_with_error
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -397,7 +397,7 @@ class TestLeanAgentStreaming:
             )
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -496,7 +496,7 @@ class TestStreamingMultiStep:
         mock_provider = AsyncMock()
         mock_provider.complete_stream = streaming_multi_step
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -531,7 +531,7 @@ class TestTruncateOutput:
             return_value=mock_stream_simple_response("Hello")
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
@@ -550,7 +550,7 @@ class TestTruncateOutput:
             return_value=mock_stream_simple_response("Hello")
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],

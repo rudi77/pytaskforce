@@ -2,7 +2,7 @@
 Unit Tests for AgentExecutor with agent_id parameter (Story 8.3)
 
 Tests the agent_id execution path that loads custom agents from registry
-and creates LeanAgent instances.
+and creates Agent instances.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch

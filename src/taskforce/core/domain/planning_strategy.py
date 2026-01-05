@@ -1,5 +1,5 @@
 """
-Planning Strategy Abstractions for LeanAgent.
+Planning Strategy Abstractions for Agent.
 
 Defines the strategy interface and built-in strategy implementations.
 """
@@ -20,7 +20,7 @@ from taskforce.infrastructure.tools.tool_converter import (
 )
 
 if TYPE_CHECKING:
-    from taskforce.core.domain.lean_agent import LeanAgent
+    from taskforce.core.domain.agent import Agent
 
 
 @dataclass
@@ -33,17 +33,17 @@ class PlanStep:
 
 
 class PlanningStrategy(Protocol):
-    """Protocol for LeanAgent planning strategies."""
+    """Protocol for Agent planning strategies."""
 
     name: str
 
     async def execute(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
         """Execute a mission using the provided agent."""
 
     async def execute_stream(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         """Execute a mission with streaming updates."""
 
@@ -122,7 +122,7 @@ async def _collect_execution_result(
 
 
 async def _generate_plan_steps(
-    agent: "LeanAgent",
+    agent: "Agent",
     mission: str,
     logger: FilteringBoundLogger,
 ) -> list[str]:
@@ -185,7 +185,7 @@ class NativeReActStrategy:
     name = "native_react"
 
     async def execute(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
         agent.logger.info("execute_start", session_id=session_id, mission=mission[:100])
 
@@ -202,7 +202,7 @@ class NativeReActStrategy:
         return result
 
     async def execute_stream(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         agent.logger.info("execute_stream_start", session_id=session_id)
 
@@ -652,7 +652,7 @@ class PlanAndExecuteStrategy:
         self.logger = structlog.get_logger().bind(component="plan_and_execute_strategy")
 
     async def execute(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
         self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
         result = await _collect_execution_result(
@@ -668,7 +668,7 @@ class PlanAndExecuteStrategy:
         return result
 
     async def execute_stream(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         self.logger.info("execute_stream_start", session_id=session_id)
 
@@ -923,7 +923,7 @@ class PlanAndReactStrategy:
         self._react_strategy = NativeReActStrategy()
 
     async def execute(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
         self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
         result = await _collect_execution_result(
@@ -938,7 +938,7 @@ class PlanAndReactStrategy:
         return result
 
     async def execute_stream(
-        self, agent: "LeanAgent", mission: str, session_id: str
+        self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         self.logger.info("execute_stream_start", session_id=session_id)
         state = await agent.state_manager.load_state(session_id) or {}

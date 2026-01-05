@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from taskforce.core.domain.context_policy import ContextPolicy
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ class TestLeanAgentContextInjection:
     ):
         """Test that agent initializes with context policy."""
         policy = ContextPolicy(max_items=5)
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -72,7 +72,7 @@ class TestLeanAgentContextInjection:
         self, mock_state_manager, mock_llm_provider, mock_tool
     ):
         """Test that agent uses conservative default if no policy provided."""
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -87,7 +87,7 @@ class TestLeanAgentContextInjection:
     ):
         """Test that context pack is injected into system prompt."""
         policy = ContextPolicy.conservative_default()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -117,7 +117,7 @@ class TestLeanAgentContextInjection:
     ):
         """Test that context pack includes mission description."""
         policy = ContextPolicy(max_chars_per_item=1000)
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -175,7 +175,7 @@ class TestLeanAgentContextInjection:
         llm_provider.complete = AsyncMock(side_effect=mock_complete)
 
         policy = ContextPolicy.conservative_default()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=llm_provider,
             tools=[large_tool],
@@ -202,7 +202,7 @@ class TestLeanAgentContextInjection:
         policy = ContextPolicy(
             max_items=1, max_chars_per_item=50, max_total_chars=100
         )
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
@@ -259,7 +259,7 @@ class TestLeanAgentContextInjection:
         llm_provider.complete = AsyncMock(side_effect=mock_complete)
 
         policy = ContextPolicy.conservative_default()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=llm_provider,
             tools=[tool],
@@ -330,7 +330,7 @@ class TestLeanAgentContextInjection:
         llm_provider.complete = AsyncMock(side_effect=mock_complete)
 
         policy = ContextPolicy.conservative_default()
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=llm_provider,
             tools=[tool],

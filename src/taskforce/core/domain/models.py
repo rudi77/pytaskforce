@@ -15,7 +15,7 @@ class StreamEvent:
     """
     Event emitted during streaming agent execution.
 
-    StreamEvents enable real-time progress tracking during LeanAgent.execute_stream().
+    StreamEvents enable real-time progress tracking during Agent.execute_stream().
     Each event represents a significant moment in the execution loop.
 
     Event types:

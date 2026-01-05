@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import StreamEvent, ExecutionResult
 from taskforce.core.domain.planning_strategy import _collect_execution_result
 
@@ -69,7 +69,7 @@ class TestTokenUsageTracking:
             return_value=mock_stream_with_token_usage()
         )
 
-        agent = LeanAgent(
+        agent = Agent(
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],

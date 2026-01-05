@@ -11,7 +11,7 @@ Endpoints:
 
 Both endpoints support:
 - Legacy Agent (ReAct loop with TodoList planning)
-- LeanAgent (native tool calling with PlannerTool) via `lean: true`
+- Agent (native tool calling with PlannerTool) via `lean: true`
 - RAG-enabled execution with user context filtering
 """
 
@@ -47,7 +47,7 @@ REQUEST_EXAMPLES = {
         },
     },
     "plan_and_execute": {
-        "summary": "LeanAgent with plan-and-execute strategy",
+        "summary": "Agent with plan-and-execute strategy",
         "value": {
             "mission": "Create a 3-step onboarding checklist for new engineers.",
             "profile": "dev",
@@ -222,8 +222,8 @@ class ExecuteMissionRequest(BaseModel):
         user_id: User identifier for RAG security filtering (optional).
         org_id: Organization identifier for RAG security filtering.
         scope: Access scope for RAG security filtering (optional).
-        lean: Deprecated. LeanAgent is now always used.
-        planning_strategy: Optional LeanAgent planning strategy override.
+        lean: Deprecated. Agent is now always used.
+        planning_strategy: Optional Agent planning strategy override.
         planning_strategy_params: Optional parameters for planning strategy.
 
     Example::
@@ -275,16 +275,16 @@ class ExecuteMissionRequest(BaseModel):
     )
     lean: bool = Field(
         default=True,
-        description="Deprecated: LeanAgent is now always used. This field is ignored."
+        description="Deprecated: Agent is now always used. This field is ignored."
     )
     agent_id: Optional[str] = Field(
         default=None,
-        description="Custom agent ID to use (forces LeanAgent). If provided, loads agent from configs/custom/{agent_id}.yaml"
+        description="Custom agent ID to use (forces Agent). If provided, loads agent from configs/custom/{agent_id}.yaml"
     )
     planning_strategy: Optional[str] = Field(
         default=None,
         description=(
-            "LeanAgent planning strategy override "
+            "Agent planning strategy override "
             "(native_react, plan_and_execute, or plan_and_react)."
         ),
     )
@@ -426,7 +426,7 @@ async def execute_mission(
     Executes the given mission and returns the final result when complete.
     This endpoint blocks until execution finishes or fails.
 
-    Uses LeanAgent with native OpenAI tool calling.
+    Uses Agent with native OpenAI tool calling.
 
     **RAG Mode:**
 
@@ -565,7 +565,7 @@ async def execute_mission_stream(
 
     **3. llm_token**
 
-    Real-time token from LLM response (LeanAgent streaming only).
+    Real-time token from LLM response (Agent streaming only).
     Accumulate `details.content` to build the full response::
 
         {
@@ -617,7 +617,7 @@ async def execute_mission_stream(
 
     **6. plan_updated**
 
-    PlannerTool modified the execution plan (LeanAgent only).
+    PlannerTool modified the execution plan (Agent only).
     Possible actions: add_step, mark_complete, mark_failed, skip_step::
 
         {
@@ -693,7 +693,7 @@ async def execute_mission_stream(
 
     **Event Sequence Examples:**
 
-    Successful LeanAgent execution::
+    Successful Agent execution::
 
         started -> step_start -> tool_call -> tool_result
                 -> step_start -> llm_token* -> final_answer -> complete

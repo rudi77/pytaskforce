@@ -1,7 +1,7 @@
 """
 Integration test for large tool output handling.
 
-This test verifies that the complete system (LeanAgent + ToolResultStore)
+This test verifies that the complete system (Agent + ToolResultStore)
 correctly handles very large tool outputs without exploding message history.
 
 Test Scenario:
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.agent import Agent
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
 from taskforce.infrastructure.llm.openai_service import OpenAIService
 from taskforce.infrastructure.persistence.file_state import FileStateManager
@@ -58,7 +58,7 @@ async def test_large_tool_output_stays_small_in_messages(integration_setup):
     This is the key "stop the bleeding" test case from the story.
     """
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
@@ -152,7 +152,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
     Expected: Message history stays small, all results in store.
     """
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
@@ -246,7 +246,7 @@ async def test_session_cleanup_removes_tool_results(integration_setup):
     Test that cleaning up a session also removes associated tool results.
     """
     # Arrange
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
@@ -300,7 +300,7 @@ async def test_backward_compatibility_without_store(integration_setup):
     When no store is provided, agent should fall back to standard truncation.
     """
     # Arrange - agent WITHOUT store
-    agent = LeanAgent(
+    agent = Agent(
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],

@@ -40,7 +40,7 @@ class TaskforceExecutionError(TaskforceError):
 
 
 class AgentExecutionError(TaskforceExecutionError):
-    """Execution error tied to the legacy Agent flow."""
+    """Execution error tied to the Agent flow."""
 
     def __init__(
         self,
@@ -65,33 +65,7 @@ class AgentExecutionError(TaskforceExecutionError):
             details=error_details,
         )
         self.agent_id = agent_id
-        self.lean_agent_id = None
 
 
-class LeanAgentExecutionError(TaskforceExecutionError):
-    """Execution error tied to the LeanAgent flow."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        session_id: str | None = None,
-        lean_agent_id: str | None = None,
-        tool_name: str | None = None,
-        error_code: str | None = None,
-        status_code: int | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        error_details = dict(details or {})
-        if lean_agent_id:
-            error_details.setdefault("lean_agent_id", lean_agent_id)
-        super().__init__(
-            message,
-            session_id=session_id,
-            tool_name=tool_name,
-            error_code=error_code,
-            status_code=status_code,
-            details=error_details,
-        )
-        self.agent_id = None
-        self.lean_agent_id = lean_agent_id
+# Backwards-compatible alias (deprecated)
+LeanAgentExecutionError = AgentExecutionError

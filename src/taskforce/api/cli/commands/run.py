@@ -28,12 +28,12 @@ def run_mission(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
     lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use LeanAgent (native tool calling, PlannerTool)"
+        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
     ),
     planning_strategy: str | None = typer.Option(
         None,
         "--planning-strategy",
-        help="LeanAgent planning strategy (native_react or plan_and_execute).",
+        help="Agent planning strategy (native_react or plan_and_execute).",
     ),
     planning_strategy_params: str | None = typer.Option(
         None,
@@ -51,7 +51,7 @@ def run_mission(
         # Execute a simple mission
         taskforce run mission "Analyze data.csv"
 
-        # Use LeanAgent (new simplified architecture)
+        # Use Agent (new simplified architecture)
         taskforce run mission "Plan and execute" --lean
 
         # Use streaming output for real-time progress
@@ -97,10 +97,10 @@ def run_mission(
     if planning_strategy and not lean:
         lean = True
         tf_console.print_system_message(
-            "Planning strategy override requested; enabling LeanAgent.", "info"
+            "Planning strategy override requested; enabling Agent.", "info"
         )
     if lean:
-        tf_console.print_system_message("Using LeanAgent (native tool calling)", "info")
+        tf_console.print_system_message("Using Agent (native tool calling)", "info")
     if planning_strategy:
         tf_console.print_system_message(
             f"Planning strategy: {planning_strategy}", "info"
