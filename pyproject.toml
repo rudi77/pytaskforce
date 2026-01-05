@@ -94,6 +94,17 @@ build = [
     "twine>=5.0.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.1.0",
+    "black>=23.0",
+    "mypy>=1.7",
+    "pyinstaller>=6.0.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

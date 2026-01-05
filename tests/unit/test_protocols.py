@@ -14,10 +14,6 @@ from taskforce.core.interfaces import (
     ApprovalRiskLevel,
     LLMProviderProtocol,
     StateManagerProtocol,
-    TaskStatus,
-    TodoItem,
-    TodoList,
-    TodoListManagerProtocol,
     ToolProtocol,
 )
 
@@ -37,25 +33,12 @@ class TestProtocolImports:
         """Test ToolProtocol can be imported."""
         assert ToolProtocol is not None
 
-    def test_import_todolist_manager_protocol(self):
-        """Test TodoListManagerProtocol can be imported."""
-        assert TodoListManagerProtocol is not None
-
     def test_import_approval_risk_level(self):
         """Test ApprovalRiskLevel enum can be imported."""
         assert ApprovalRiskLevel is not None
         assert ApprovalRiskLevel.LOW == "low"
         assert ApprovalRiskLevel.MEDIUM == "medium"
         assert ApprovalRiskLevel.HIGH == "high"
-
-    def test_import_task_status(self):
-        """Test TaskStatus enum can be imported."""
-        assert TaskStatus is not None
-        assert TaskStatus.PENDING == "PENDING"
-        assert TaskStatus.IN_PROGRESS == "IN_PROGRESS"
-        assert TaskStatus.COMPLETED == "COMPLETED"
-        assert TaskStatus.FAILED == "FAILED"
-        assert TaskStatus.SKIPPED == "SKIPPED"
 
 
 class TestMockImplementations:
@@ -163,155 +146,6 @@ class TestMockImplementations:
         assert mock.name == "mock_tool"
         assert mock.requires_approval is False
 
-    def test_mock_todolist_manager(self):
-        """Test creating a mock TodoListManager implementation."""
-
-        class MockTodoListManager:
-            async def extract_clarification_questions(
-                self, mission: str, tools_desc: str, model: str = "main"
-            ) -> list[dict[str, Any]]:
-                return []
-
-            async def create_todolist(
-                self,
-                mission: str,
-                tools_desc: str,
-                answers: dict[str, Any] | None = None,
-                model: str = "fast",
-                memory_manager: Any | None = None,
-            ) -> TodoList:
-                return TodoList(
-                    todolist_id="test-123",
-                    items=[],
-                    open_questions=[],
-                    notes="Test notes",
-                )
-
-            async def load_todolist(self, todolist_id: str) -> TodoList:
-                return TodoList(
-                    todolist_id=todolist_id,
-                    items=[],
-                    open_questions=[],
-                    notes="",
-                )
-
-            async def update_todolist(self, todolist: TodoList) -> TodoList:
-                return todolist
-
-            async def get_todolist(self, todolist_id: str) -> TodoList:
-                return TodoList(
-                    todolist_id=todolist_id,
-                    items=[],
-                    open_questions=[],
-                    notes="",
-                )
-
-            async def delete_todolist(self, todolist_id: str) -> bool:
-                return True
-
-            async def modify_step(
-                self,
-                todolist_id: str,
-                step_position: int,
-                modifications: dict[str, Any],
-            ) -> tuple[bool, str | None]:
-                return True, None
-
-            async def decompose_step(
-                self,
-                todolist_id: str,
-                step_position: int,
-                subtasks: list[dict[str, Any]],
-            ) -> tuple[bool, list[int]]:
-                return True, [1, 2]
-
-            async def replace_step(
-                self,
-                todolist_id: str,
-                step_position: int,
-                new_step_data: dict[str, Any],
-            ) -> tuple[bool, int | None]:
-                return True, 1
-
-        mock: TodoListManagerProtocol = MockTodoListManager()
-        assert mock is not None
-
-
-class TestDataclasses:
-    """Test TodoItem and TodoList dataclasses."""
-
-    def test_todo_item_creation(self):
-        """Test creating a TodoItem."""
-        item = TodoItem(
-            position=1,
-            description="Test task",
-            acceptance_criteria="Task is complete",
-            dependencies=[],
-            status=TaskStatus.PENDING,
-        )
-        assert item.position == 1
-        assert item.description == "Test task"
-        assert item.status == TaskStatus.PENDING
-        assert item.chosen_tool is None
-        assert item.attempts == 0
-
-    def test_todo_item_with_execution_data(self):
-        """Test TodoItem with execution data."""
-        item = TodoItem(
-            position=1,
-            description="Test task",
-            acceptance_criteria="Task is complete",
-            dependencies=[],
-            status=TaskStatus.COMPLETED,
-            chosen_tool="test_tool",
-            tool_input={"param": "value"},
-            execution_result={"success": True},
-            attempts=1,
-        )
-        assert item.chosen_tool == "test_tool"
-        assert item.tool_input == {"param": "value"}
-        assert item.execution_result == {"success": True}
-        assert item.attempts == 1
-
-    def test_todolist_creation(self):
-        """Test creating a TodoList."""
-        items = [
-            TodoItem(
-                position=1,
-                description="Task 1",
-                acceptance_criteria="Done",
-                dependencies=[],
-                status=TaskStatus.PENDING,
-            ),
-            TodoItem(
-                position=2,
-                description="Task 2",
-                acceptance_criteria="Done",
-                dependencies=[1],
-                status=TaskStatus.PENDING,
-            ),
-        ]
-        todolist = TodoList(
-            todolist_id="test-123",
-            items=items,
-            open_questions=["Question 1"],
-            notes="Test notes",
-        )
-        assert todolist.todolist_id == "test-123"
-        assert len(todolist.items) == 2
-        assert len(todolist.open_questions) == 1
-        assert todolist.notes == "Test notes"
-
-    def test_todolist_empty(self):
-        """Test creating an empty TodoList."""
-        todolist = TodoList(
-            todolist_id="empty-123", items=[], open_questions=[], notes=""
-        )
-        assert todolist.todolist_id == "empty-123"
-        assert len(todolist.items) == 0
-        assert len(todolist.open_questions) == 0
-        assert todolist.notes == ""
-
 
 class TestProtocolContracts:
     """Test that protocol contracts are properly defined."""
@@ -328,9 +162,5 @@ class TestProtocolContracts:
         def accepts_tool(tool: ToolProtocol) -> None:
             pass
 
-        def accepts_todolist_manager(tm: TodoListManagerProtocol) -> None:
-            pass
-
         # If we get here without import errors, protocols are properly defined
         assert True
-

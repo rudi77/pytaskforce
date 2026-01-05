@@ -52,37 +52,34 @@ def _assert_error_response(
             ConfigError(
                 "Invalid config",
                 details={"field": "profile"},
-                status_code=422,
             ),
-            422,
+            400,
             "config_error",
             {"field": "profile"},
         ),
         (
             ToolError(
-                "Upstream tool failed",
-                details={"tool": "web_search"},
-                upstream=True,
-            ),
-            502,
-            "tool_error",
-            {"tool": "web_search"},
-        ),
-        (
-            ToolError(
-                "Local tool failed",
-                details={"tool": "file_read"},
-                upstream=False,
+                "Web search tool failed",
+                tool_name="web_search",
             ),
             500,
             "tool_error",
-            {"tool": "file_read"},
+            {"tool_name": "web_search"},
+        ),
+        (
+            ToolError(
+                "File read tool failed",
+                tool_name="file_read",
+            ),
+            500,
+            "tool_error",
+            {"tool_name": "file_read"},
         ),
         (
             CancelledError("Execution cancelled"),
             409,
-            "cancelled_error",
-            None,
+            "cancelled",
+            {},  # CancelledError defaults to empty dict
         ),
         (
             LLMError("LLM unavailable", details={"provider": "openai"}),

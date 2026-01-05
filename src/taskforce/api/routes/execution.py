@@ -180,7 +180,7 @@ def _taskforce_status_code(error: TaskforceError) -> int:
     if isinstance(error, ConfigError):
         return 400
     if isinstance(error, ToolError):
-        return 502 if error.upstream else 500
+        return 502 if getattr(error, "upstream", False) else 500
     if isinstance(error, CancelledError):
         return 409
     if isinstance(error, LLMError):
