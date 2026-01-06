@@ -90,6 +90,10 @@ class ListDocumentsTool(ToolProtocol):
         """Low risk - read-only operation."""
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         """Generate approval preview (not used for read-only tool)."""
         limit = kwargs.get("limit", 20)

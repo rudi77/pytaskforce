@@ -8,6 +8,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Tool registry for short-name ↔ type/module mappings lives in `src/taskforce/infrastructure/tools/registry.py` and backs tool config resolution.
 - Profile YAML tool lists now use short tool names (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs.
 - LeanAgent support services live in `src/taskforce/core/domain/lean_agent_components/` (prompt builder, message history manager, tool execution helpers, state store, resource closer).
+- Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
 
 # Python Best Practices
 

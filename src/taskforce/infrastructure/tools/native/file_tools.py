@@ -53,6 +53,10 @@ class FileReadTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         path = kwargs.get("path", "")
         return f"Tool: {self.name}\nOperation: Read file\nPath: {path}"
@@ -152,6 +156,10 @@ class FileWriteTool(ToolProtocol):
     @property
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.MEDIUM
+
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
 
     def get_approval_preview(self, **kwargs: Any) -> str:
         path = kwargs.get("path", "")

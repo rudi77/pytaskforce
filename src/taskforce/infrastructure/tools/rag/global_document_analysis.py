@@ -99,6 +99,10 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
         """Low risk - read-only operation."""
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         """Generate approval preview (not used for read-only tool)."""
         document_id = kwargs.get("document_id", "")

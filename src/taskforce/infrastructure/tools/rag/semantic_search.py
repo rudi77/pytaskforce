@@ -91,6 +91,10 @@ class SemanticSearchTool:
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         query = kwargs.get("query", "")
         return f"Tool: {self.name}\nOperation: Hybrid Search\nQuery: {query}"

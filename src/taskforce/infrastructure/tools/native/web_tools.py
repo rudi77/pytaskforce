@@ -51,6 +51,10 @@ class WebSearchTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         query = kwargs.get("query", "")
         num_results = kwargs.get("num_results", 5)
@@ -175,6 +179,10 @@ class WebFetchTool(ToolProtocol):
     @property
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
+
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
 
     def get_approval_preview(self, **kwargs: Any) -> str:
         url = kwargs.get("url", "")
