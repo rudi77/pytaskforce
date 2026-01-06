@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from taskforce.infrastructure.persistence.file_state import FileStateManager
+from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
 
 
 @pytest.mark.asyncio

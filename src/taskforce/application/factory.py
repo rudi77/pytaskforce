@@ -636,7 +636,7 @@ class AgentFactory:
         persistence_type = persistence_config.get("type", "file")
 
         if persistence_type == "file":
-            from taskforce.infrastructure.persistence.file_state import FileStateManager
+            from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
 
             work_dir = persistence_config.get("work_dir", ".taskforce")
             return FileStateManager(work_dir=work_dir)
@@ -1020,11 +1020,11 @@ class AgentFactory:
             ]
 
         elif specialist == "rag":
-            from taskforce.infrastructure.tools.rag.get_document import GetDocumentTool
-            from taskforce.infrastructure.tools.rag.list_documents import (
+            from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
+            from taskforce.infrastructure.tools.rag.list_documents_tool import (
                 ListDocumentsTool,
             )
-            from taskforce.infrastructure.tools.rag.semantic_search import (
+            from taskforce.infrastructure.tools.rag.semantic_search_tool import (
                 SemanticSearchTool,
             )
 

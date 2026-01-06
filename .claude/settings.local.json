@@ -19,7 +19,17 @@
       "Bash(tree:*)",
       "Bash(cat:*)",
       "Bash(uv pip:*)",
-      "Bash(uv sync:*)"
+      "Bash(uv sync:*)",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "Bash(del \"src\\taskforce\\infrastructure\\tools\\tool_converter.py\")",
+      "Bash(del \"tests\\unit\\infrastructure\\tools\\test_tool_converter.py\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/core/tools/test_tool_converter.py -v)",
+      "Bash(git mv:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/core/tools/test_tool_converter.py tests/unit/infrastructure/test_file_state.py -v --tb=short)",
+      "Bash(.venv/Scripts/python.exe -m mypy:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/infrastructure/persistence/test_file_agent_registry.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

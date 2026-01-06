@@ -1,7 +1,7 @@
 # Source Tree Structure
 
-**Version:** 1.0  
-**Last Updated:** 2025-11-22  
+**Version:** 1.1
+**Last Updated:** 2026-01-06
 **Purpose:** Developer reference for Taskforce project directory structure and file organization
 
 ---
@@ -44,6 +44,7 @@ src/taskforce/
 │   ├── domain/                     # Business entities and logic
 │   │   ├── __init__.py
 │   │   ├── agent.py                # Agent: ReAct loop orchestration
+│   │   ├── agent_models.py         # Domain models: CustomAgentDefinition, ProfileAgentDefinition
 │   │   ├── plan.py                 # PlanGenerator: TodoList creation/management
 │   │   ├── events.py               # Domain Events: Thought, Action, Observation
 │   │   └── models.py               # Core data models: TodoItem, ExecutionResult
@@ -53,7 +54,12 @@ src/taskforce/
 │   │   ├── state.py                # StateManagerProtocol
 │   │   ├── llm.py                  # LLMProviderProtocol
 │   │   ├── tools.py                # ToolProtocol
+│   │   ├── tool_mapping.py         # ToolMapperProtocol
 │   │   └── memory.py               # MemoryProtocol (optional)
+│   │
+│   ├── tools/                      # Pure tool utilities (no external deps)
+│   │   ├── __init__.py
+│   │   └── tool_converter.py       # OpenAI format conversion utilities
 │   │
 │   └── prompts/                    # LLM prompt templates
 │       ├── __init__.py
@@ -66,7 +72,8 @@ src/taskforce/
 │   │
 │   ├── persistence/                # State persistence implementations
 │   │   ├── __init__.py
-│   │   ├── file_state.py           # FileStateManager: JSON file storage (dev)
+│   │   ├── file_state_manager.py   # FileStateManager: JSON file storage (dev)
+│   │   ├── file_agent_registry.py  # FileAgentRegistry: Custom agent definitions
 │   │   ├── db_state.py             # DbStateManager: PostgreSQL storage (prod)
 │   │   └── models.py               # SQLAlchemy ORM models
 │   │
@@ -92,9 +99,11 @@ src/taskforce/
 │   │   │
 │   │   └── rag/                    # RAG-specific tools
 │   │       ├── __init__.py
-│   │       ├── semantic_search.py  # SemanticSearchTool: Azure AI Search
-│   │       ├── list_documents.py   # ListDocumentsTool
-│   │       └── get_document.py     # GetDocumentTool
+│   │       ├── azure_search_base.py        # Base class for Azure AI Search
+│   │       ├── semantic_search_tool.py     # SemanticSearchTool: Azure AI Search
+│   │       ├── list_documents_tool.py      # ListDocumentsTool
+│   │       ├── get_document_tool.py        # GetDocumentTool
+│   │       └── global_document_analysis_tool.py  # GlobalDocumentAnalysisTool
 │   │
 │   └── memory/                     # Memory implementations (optional)
 │       ├── __init__.py
@@ -106,6 +115,9 @@ src/taskforce/
 │   ├── factory.py                  # AgentFactory: Dependency injection
 │   ├── executor.py                 # AgentExecutor: Execution orchestration
 │   ├── profiles.py                 # ProfileLoader: YAML config management
+│   ├── tool_mapper.py              # ToolMapper: Tool name resolution
+│   ├── tracing_facade.py           # Facade for infrastructure tracing
+│   ├── command_loader_service.py   # Facade for slash command loading
 │   └── config/                     # Configuration profiles
 │       ├── dev.yaml                # Development profile (file-based state)
 │       ├── staging.yaml            # Staging profile (database state)
@@ -315,23 +327,29 @@ taskforce/
 | File | Purpose | Key Classes/Functions |
 |------|---------|----------------------|
 | `core/domain/agent.py` | ReAct loop orchestration | `Agent`, `execute()`, `_generate_thought()`, `_decide_action()` |
+| `core/domain/agent_models.py` | Agent domain models | `CustomAgentDefinition`, `ProfileAgentDefinition`, `CustomAgentInput` |
 | `core/domain/plan.py` | TodoList planning logic | `PlanGenerator`, `generate_plan()`, `validate_dependencies()` |
 | `core/domain/events.py` | Domain events | `Thought`, `Action`, `Observation` (dataclasses) |
 | `core/domain/models.py` | Core data models | `TodoItem`, `TodoList`, `ExecutionResult`, `TaskStatus` |
 | `core/interfaces/state.py` | State persistence protocol | `StateManagerProtocol` (abstract interface) |
 | `core/interfaces/llm.py` | LLM provider protocol | `LLMProviderProtocol` (abstract interface) |
 | `core/interfaces/tools.py` | Tool execution protocol | `ToolProtocol` (abstract interface) |
+| `core/interfaces/tool_mapping.py` | Tool mapping protocol | `ToolMapperProtocol` (abstract interface) |
+| `core/tools/tool_converter.py` | OpenAI format conversion | `tools_to_openai_format()`, `tool_result_to_message()` |
 
 ### Infrastructure Layer Files
 
 | File | Purpose | Key Classes/Functions |
 |------|---------|----------------------|
-| `infrastructure/persistence/file_state.py` | File-based state storage | `FileStateManager` (implements `StateManagerProtocol`) |
+| `infrastructure/persistence/file_state_manager.py` | File-based state storage | `FileStateManager` (implements `StateManagerProtocol`) |
+| `infrastructure/persistence/file_agent_registry.py` | Custom agent definitions | `FileAgentRegistry` (YAML-based agent storage) |
 | `infrastructure/persistence/db_state.py` | PostgreSQL state storage | `DbStateManager` (implements `StateManagerProtocol`) |
 | `infrastructure/llm/openai_service.py` | LLM service wrapper | `OpenAIService` (implements `LLMProviderProtocol`) |
 | `infrastructure/tools/native/python_tool.py` | Python code execution | `PythonTool` (implements `ToolProtocol`) |
 | `infrastructure/tools/native/file_tool.py` | File operations | `FileReadTool`, `FileWriteTool` |
-| `infrastructure/tools/rag/semantic_search.py` | Azure AI Search integration | `SemanticSearchTool` |
+| `infrastructure/tools/rag/semantic_search_tool.py` | Azure AI Search integration | `SemanticSearchTool` |
+| `infrastructure/tools/rag/get_document_tool.py` | Document retrieval | `GetDocumentTool` |
+| `infrastructure/tools/rag/list_documents_tool.py` | Document listing | `ListDocumentsTool` |
 
 ### Application Layer Files
 
@@ -340,6 +358,9 @@ taskforce/
 | `application/factory.py` | Dependency injection | `AgentFactory`, `create_agent()`, `create_rag_agent()` |
 | `application/executor.py` | Execution orchestration | `AgentExecutor`, `execute_mission()`, `execute_mission_streaming()` |
 | `application/profiles.py` | Configuration management | `ProfileLoader`, `load_profile()`, `validate_profile()` |
+| `application/tool_mapper.py` | Tool name resolution | `ToolMapper`, `get_tool_mapper()` |
+| `application/tracing_facade.py` | Tracing facade | `init_tracing()`, `shutdown_tracing()`, `get_tracer()` |
+| `application/command_loader_service.py` | Command loading facade | `CommandLoaderService`, `get_command_loader_service()` |
 
 ### API Layer Files
 
@@ -420,10 +441,12 @@ from taskforce.infrastructure.persistence.file_state import FileStateManager
 
 | Pattern | Purpose | Example |
 |---------|---------|---------|
-| `{name}_tool.py` | Tool implementations | `python_tool.py`, `git_tool.py` |
-| `{name}_service.py` | Service implementations | `openai_service.py` |
-| `{name}_manager.py` | Manager/coordinator classes | `file_state.py` (FileStateManager) |
-| `test_{name}.py` | Unit tests | `test_agent.py`, `test_file_state.py` |
+| `{name}_tool.py` | Tool implementations | `python_tool.py`, `semantic_search_tool.py` |
+| `{name}_service.py` | Service implementations | `openai_service.py`, `command_loader_service.py` |
+| `{name}_manager.py` | Manager/coordinator classes | `file_state_manager.py` (FileStateManager) |
+| `{name}_facade.py` | Application layer facades | `tracing_facade.py` |
+| `{name}_registry.py` | Registry implementations | `file_agent_registry.py` |
+| `test_{name}.py` | Unit tests | `test_agent.py`, `test_file_state_manager.py` |
 | `{name}.yaml` | Configuration files | `dev.yaml`, `llm_config.yaml` |
 | `{version}_{description}.py` | Migration scripts | `001_initial_schema.py` |
 

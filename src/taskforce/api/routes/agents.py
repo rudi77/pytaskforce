@@ -12,6 +12,11 @@ Endpoints:
 - DELETE /api/v1/agents/{agent_id} - Delete custom agent
 
 Story: 8.1 - Custom Agent Registry (CRUD + YAML Persistence)
+
+Clean Architecture Notes:
+- Uses Domain Models from core/domain/agent_models.py
+- Converts between API schemas and Domain models
+- Injects ToolMapper into FileAgentRegistry
 """
 
 from fastapi import APIRouter, HTTPException, status
@@ -25,14 +30,19 @@ from taskforce.api.schemas.agent_schemas import (
     ProfileAgentResponse,
 )
 from taskforce.application.tool_catalog import get_tool_catalog
+from taskforce.application.tool_mapper import get_tool_mapper
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    ProfileAgentDefinition,
+)
 from taskforce.infrastructure.persistence.file_agent_registry import (
     FileAgentRegistry,
 )
 
 router = APIRouter()
 
-# Singleton registry instance
-_registry = FileAgentRegistry()
+# Singleton registry instance with injected tool mapper
+_registry = FileAgentRegistry(tool_mapper=get_tool_mapper())
 
 
 def _validate_tool_allowlists(
@@ -79,6 +89,16 @@ def _validate_tool_allowlists(
         pass
 
 
+def _domain_to_response(
+    domain: CustomAgentDefinition | ProfileAgentDefinition,
+) -> CustomAgentResponse | ProfileAgentResponse:
+    """Convert a domain model to an API response schema."""
+    if isinstance(domain, CustomAgentDefinition):
+        return CustomAgentResponse.from_domain(domain)
+    else:
+        return ProfileAgentResponse.from_domain(domain)
+
+
 @router.post(
     "/agents",
     response_model=CustomAgentResponse,
@@ -108,7 +128,12 @@ def create_agent(agent_def: CustomAgentCreate) -> CustomAgentResponse:
     )
 
     try:
-        return _registry.create_agent(agent_def)
+        # Convert API schema to domain input
+        domain_input = agent_def.to_domain()
+        # Create via registry (returns domain model)
+        domain_result = _registry.create_agent(domain_input)
+        # Convert domain model to API response
+        return CustomAgentResponse.from_domain(domain_result)
     except FileExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -140,8 +165,10 @@ def list_agents() -> AgentListResponse:
     Returns:
         List of all agent definitions with discriminator field 'source'
     """
-    agents = _registry.list_agents()
-    return AgentListResponse(agents=agents)
+    domain_agents = _registry.list_agents()
+    # Convert domain models to API responses
+    api_agents = [_domain_to_response(agent) for agent in domain_agents]
+    return AgentListResponse(agents=api_agents)
 
 
 @router.get(
@@ -167,13 +194,13 @@ def get_agent(
     Raises:
         HTTPException 404: If agent not found
     """
-    agent = _registry.get_agent(agent_id)
-    if not agent:
+    domain_agent = _registry.get_agent(agent_id)
+    if not domain_agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agent '{agent_id}' not found",
         )
-    return agent
+    return _domain_to_response(domain_agent)
 
 
 @router.put(
@@ -207,7 +234,12 @@ def update_agent(
     )
 
     try:
-        return _registry.update_agent(agent_id, agent_def)
+        # Convert API schema to domain input
+        domain_input = agent_def.to_domain()
+        # Update via registry (returns domain model)
+        domain_result = _registry.update_agent(agent_id, domain_input)
+        # Convert domain model to API response
+        return CustomAgentResponse.from_domain(domain_result)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -247,4 +279,3 @@ def delete_agent(agent_id: str) -> Response:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
-

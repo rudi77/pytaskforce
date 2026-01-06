@@ -6,12 +6,23 @@ Pydantic models for Custom Agent Registry API (Story 8.1).
 
 Defines request/response schemas for CRUD operations on custom agents
 and profile agents.
+
+Clean Architecture Notes:
+- These schemas wrap core domain models for API validation
+- Provides to_domain() and from_domain() conversion methods
 """
 
-from datetime import datetime
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+
 import re
+from pydantic import BaseModel, Field, field_validator
+
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    CustomAgentInput,
+    CustomAgentUpdateInput,
+    ProfileAgentDefinition,
+)
 
 
 class CustomAgentCreate(BaseModel):
@@ -46,6 +57,18 @@ class CustomAgentCreate(BaseModel):
             )
         return v
 
+    def to_domain(self) -> CustomAgentInput:
+        """Convert to domain input model."""
+        return CustomAgentInput(
+            agent_id=self.agent_id,
+            name=self.name,
+            description=self.description,
+            system_prompt=self.system_prompt,
+            tool_allowlist=self.tool_allowlist,
+            mcp_servers=self.mcp_servers,
+            mcp_tool_allowlist=self.mcp_tool_allowlist,
+        )
+
 
 class CustomAgentUpdate(BaseModel):
     """Request schema for updating a custom agent."""
@@ -63,6 +86,17 @@ class CustomAgentUpdate(BaseModel):
         default_factory=list, description="List of allowed MCP tool names"
     )
 
+    def to_domain(self) -> CustomAgentUpdateInput:
+        """Convert to domain update input model."""
+        return CustomAgentUpdateInput(
+            name=self.name,
+            description=self.description,
+            system_prompt=self.system_prompt,
+            tool_allowlist=self.tool_allowlist,
+            mcp_servers=self.mcp_servers,
+            mcp_tool_allowlist=self.mcp_tool_allowlist,
+        )
+
 
 class CustomAgentResponse(BaseModel):
     """Response schema for custom agent (with timestamps)."""
@@ -78,6 +112,21 @@ class CustomAgentResponse(BaseModel):
     created_at: str
     updated_at: str
 
+    @classmethod
+    def from_domain(cls, domain: CustomAgentDefinition) -> "CustomAgentResponse":
+        """Create response from domain model."""
+        return cls(
+            agent_id=domain.agent_id,
+            name=domain.name,
+            description=domain.description,
+            system_prompt=domain.system_prompt,
+            tool_allowlist=domain.tool_allowlist,
+            mcp_servers=domain.mcp_servers,
+            mcp_tool_allowlist=domain.mcp_tool_allowlist,
+            created_at=domain.created_at,
+            updated_at=domain.updated_at,
+        )
+
 
 class ProfileAgentResponse(BaseModel):
     """Response schema for profile agent (from YAML config)."""
@@ -90,9 +139,20 @@ class ProfileAgentResponse(BaseModel):
     llm: dict[str, Any]
     persistence: dict[str, Any]
 
+    @classmethod
+    def from_domain(cls, domain: ProfileAgentDefinition) -> "ProfileAgentResponse":
+        """Create response from domain model."""
+        return cls(
+            profile=domain.profile,
+            specialist=domain.specialist,
+            tools=domain.tools,
+            mcp_servers=domain.mcp_servers,
+            llm=domain.llm,
+            persistence=domain.persistence,
+        )
+
 
 class AgentListResponse(BaseModel):
     """Response schema for listing all agents."""
 
     agents: list[CustomAgentResponse | ProfileAgentResponse]
-

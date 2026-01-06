@@ -11,6 +11,11 @@ Responsibilities:
 - Graceful handling of corrupt YAML files
 
 Story: 8.1 - Custom Agent Registry (CRUD + YAML Persistence)
+
+Clean Architecture Notes:
+- Uses Domain Models from core/domain/agent_models.py
+- Accepts ToolMapperProtocol via dependency injection
+- No direct imports from API or Application layers
 """
 
 import os
@@ -22,13 +27,13 @@ from typing import Any, Optional
 import structlog
 import yaml
 
-from taskforce.api.schemas.agent_schemas import (
-    CustomAgentCreate,
-    CustomAgentResponse,
-    CustomAgentUpdate,
-    ProfileAgentResponse,
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    CustomAgentInput,
+    CustomAgentUpdateInput,
+    ProfileAgentDefinition,
 )
-from taskforce.application.tool_mapper import get_tool_mapper
+from taskforce.core.interfaces.tool_mapping import ToolMapperProtocol
 
 logger = structlog.get_logger()
 
@@ -47,8 +52,9 @@ class FileAgentRegistry:
         Not thread-safe. Use appropriate locking if concurrent access needed.
 
     Example:
-        >>> registry = FileAgentRegistry()
-        >>> agent = CustomAgentCreate(
+        >>> from taskforce.application.tool_mapper import get_tool_mapper
+        >>> registry = FileAgentRegistry(tool_mapper=get_tool_mapper())
+        >>> agent = CustomAgentInput(
         ...     agent_id="test-agent",
         ...     name="Test Agent",
         ...     description="Test",
@@ -59,17 +65,24 @@ class FileAgentRegistry:
         >>> assert created.agent_id == "test-agent"
     """
 
-    def __init__(self, configs_dir: str = "configs"):
+    def __init__(
+        self,
+        configs_dir: str = "configs",
+        tool_mapper: Optional[ToolMapperProtocol] = None,
+    ):
         """
         Initialize the agent registry.
 
         Args:
             configs_dir: Root directory for configuration files.
                         Defaults to "configs" relative to current directory.
+            tool_mapper: Optional tool mapper for tool name resolution.
+                        If not provided, tool mapping features are disabled.
         """
         self.configs_dir = Path(configs_dir)
         self.custom_dir = self.configs_dir / "custom"
         self.custom_dir.mkdir(parents=True, exist_ok=True)
+        self._tool_mapper = tool_mapper
         self.logger = logger.bind(component="file_agent_registry")
 
     def _get_agent_path(self, agent_id: str) -> Path:
@@ -123,7 +136,7 @@ class FileAgentRegistry:
                 Path(temp_path).unlink()
             raise
 
-    def _load_custom_agent(self, agent_id: str) -> Optional[CustomAgentResponse]:
+    def _load_custom_agent(self, agent_id: str) -> Optional[CustomAgentDefinition]:
         """
         Load a custom agent from YAML file.
 
@@ -131,7 +144,7 @@ class FileAgentRegistry:
             agent_id: Agent identifier
 
         Returns:
-            CustomAgentResponse if found and valid, None otherwise
+            CustomAgentDefinition if found and valid, None otherwise
         """
         path = self._get_agent_path(agent_id)
         if not path.exists():
@@ -154,36 +167,36 @@ class FileAgentRegistry:
 
     def _parse_custom_agent_yaml(
         self, data: dict[str, Any], agent_id: str
-    ) -> CustomAgentResponse:
+    ) -> CustomAgentDefinition:
         """
-        Parse a custom agent YAML payload into a response object.
+        Parse a custom agent YAML payload into a domain object.
 
         Args:
             data: YAML payload dictionary
             agent_id: Agent identifier fallback
 
         Returns:
-            Parsed CustomAgentResponse
+            Parsed CustomAgentDefinition
         """
         tool_names: list[str] = []
         if "tools" in data:
-            tool_mapper = get_tool_mapper()
             for tool_def in data["tools"]:
                 # Handle both string tool names and dict tool definitions
                 if isinstance(tool_def, str):
                     # Direct tool name string
                     tool_names.append(tool_def)
-                elif isinstance(tool_def, dict):
+                elif isinstance(tool_def, dict) and self._tool_mapper:
                     # Dict with type field
                     tool_type = tool_def.get("type")
-                    tool_name = tool_mapper.get_tool_name(tool_type)
-                    if tool_name:
-                        tool_names.append(tool_name)
+                    if tool_type is not None:
+                        tool_name = self._tool_mapper.get_tool_name(tool_type)
+                        if tool_name:
+                            tool_names.append(tool_name)
 
         if "tool_allowlist" in data:
             tool_names = data["tool_allowlist"]
 
-        return CustomAgentResponse(
+        return CustomAgentDefinition(
             agent_id=data.get("agent_id", agent_id),
             name=data.get("name", agent_id),
             description=data.get("description", ""),
@@ -195,7 +208,7 @@ class FileAgentRegistry:
             updated_at=data.get("updated_at", ""),
         )
 
-    def _load_profile_agent(self, profile_path: Path) -> Optional[ProfileAgentResponse]:
+    def _load_profile_agent(self, profile_path: Path) -> Optional[ProfileAgentDefinition]:
         """
         Load a profile agent from YAML config file.
 
@@ -203,7 +216,7 @@ class FileAgentRegistry:
             profile_path: Path to profile YAML file
 
         Returns:
-            ProfileAgentResponse if valid, None if corrupt
+            ProfileAgentDefinition if valid, None if corrupt
         """
         try:
             with open(profile_path, "r", encoding="utf-8") as f:
@@ -212,7 +225,7 @@ class FileAgentRegistry:
             # Extract profile name from filename (without .yaml)
             profile_name = profile_path.stem
 
-            return ProfileAgentResponse(
+            return ProfileAgentDefinition(
                 profile=profile_name,
                 specialist=data.get("specialist"),
                 tools=data.get("tools", []),
@@ -230,33 +243,33 @@ class FileAgentRegistry:
             )
             return None
 
-    def create_agent(self, agent_def: CustomAgentCreate) -> CustomAgentResponse:
+    def create_agent(self, agent_input: CustomAgentInput) -> CustomAgentDefinition:
         """
         Create a new custom agent.
 
         Args:
-            agent_def: Agent definition to create
+            agent_input: Agent definition input to create
 
         Returns:
-            CustomAgentResponse with timestamps
+            CustomAgentDefinition with timestamps
 
         Raises:
             FileExistsError: If agent_id already exists
         """
-        path = self._get_agent_path(agent_def.agent_id)
+        path = self._get_agent_path(agent_input.agent_id)
 
         if path.exists():
-            raise FileExistsError(f"Agent '{agent_def.agent_id}' already exists")
+            raise FileExistsError(f"Agent '{agent_input.agent_id}' already exists")
 
         # Add timestamps
         now = datetime.now(timezone.utc).isoformat()
         data = self._build_agent_yaml(
-            agent_id=agent_def.agent_id,
-            name=agent_def.name,
-            description=agent_def.description,
-            system_prompt=agent_def.system_prompt,
-            tool_allowlist=agent_def.tool_allowlist,
-            mcp_servers=agent_def.mcp_servers,
+            agent_id=agent_input.agent_id,
+            name=agent_input.name,
+            description=agent_input.description,
+            system_prompt=agent_input.system_prompt,
+            tool_allowlist=agent_input.tool_allowlist,
+            mcp_servers=agent_input.mcp_servers,
             created_at=now,
             updated_at=now,
         )
@@ -264,25 +277,25 @@ class FileAgentRegistry:
         self._atomic_write_yaml(path, data)
 
         self.logger.info(
-            "agent.created", agent_id=agent_def.agent_id, path=str(path)
+            "agent.created", agent_id=agent_input.agent_id, path=str(path)
         )
 
-        # Return API response format
-        return CustomAgentResponse(
-            agent_id=agent_def.agent_id,
-            name=agent_def.name,
-            description=agent_def.description,
-            system_prompt=agent_def.system_prompt,
-            tool_allowlist=agent_def.tool_allowlist,
-            mcp_servers=agent_def.mcp_servers,
-            mcp_tool_allowlist=agent_def.mcp_tool_allowlist,
+        # Return domain model
+        return CustomAgentDefinition(
+            agent_id=agent_input.agent_id,
+            name=agent_input.name,
+            description=agent_input.description,
+            system_prompt=agent_input.system_prompt,
+            tool_allowlist=agent_input.tool_allowlist,
+            mcp_servers=agent_input.mcp_servers,
+            mcp_tool_allowlist=agent_input.mcp_tool_allowlist,
             created_at=now,
             updated_at=now,
         )
 
     def get_agent(
         self, agent_id: str
-    ) -> Optional[CustomAgentResponse | ProfileAgentResponse]:
+    ) -> Optional[CustomAgentDefinition | ProfileAgentDefinition]:
         """
         Get an agent by ID.
 
@@ -308,7 +321,7 @@ class FileAgentRegistry:
 
     def list_agents(
         self,
-    ) -> list[CustomAgentResponse | ProfileAgentResponse]:
+    ) -> list[CustomAgentDefinition | ProfileAgentDefinition]:
         """
         List all agents (custom + profile).
 
@@ -321,7 +334,7 @@ class FileAgentRegistry:
         Returns:
             List of all valid agent definitions
         """
-        agents: list[CustomAgentResponse | ProfileAgentResponse] = []
+        agents: list[CustomAgentDefinition | ProfileAgentDefinition] = []
 
         # Load custom agents
         if self.custom_dir.exists():
@@ -348,17 +361,17 @@ class FileAgentRegistry:
         return agents
 
     def update_agent(
-        self, agent_id: str, agent_def: CustomAgentUpdate
-    ) -> CustomAgentResponse:
+        self, agent_id: str, update_input: CustomAgentUpdateInput
+    ) -> CustomAgentDefinition:
         """
         Update an existing custom agent.
 
         Args:
             agent_id: Agent identifier to update
-            agent_def: New agent definition
+            update_input: New agent definition values
 
         Returns:
-            Updated CustomAgentResponse
+            Updated CustomAgentDefinition
 
         Raises:
             FileNotFoundError: If agent doesn't exist
@@ -377,11 +390,11 @@ class FileAgentRegistry:
         now = datetime.now(timezone.utc).isoformat()
         data = self._build_agent_yaml(
             agent_id=agent_id,
-            name=agent_def.name,
-            description=agent_def.description,
-            system_prompt=agent_def.system_prompt,
-            tool_allowlist=agent_def.tool_allowlist,
-            mcp_servers=agent_def.mcp_servers,
+            name=update_input.name,
+            description=update_input.description,
+            system_prompt=update_input.system_prompt,
+            tool_allowlist=update_input.tool_allowlist,
+            mcp_servers=update_input.mcp_servers,
             created_at=existing.created_at,
             updated_at=now,
         )
@@ -392,15 +405,15 @@ class FileAgentRegistry:
             "agent.updated", agent_id=agent_id, path=str(path)
         )
 
-        # Return API response format
-        return CustomAgentResponse(
+        # Return domain model
+        return CustomAgentDefinition(
             agent_id=agent_id,
-            name=agent_def.name,
-            description=agent_def.description,
-            system_prompt=agent_def.system_prompt,
-            tool_allowlist=agent_def.tool_allowlist,
-            mcp_servers=agent_def.mcp_servers,
-            mcp_tool_allowlist=agent_def.mcp_tool_allowlist,
+            name=update_input.name,
+            description=update_input.description,
+            system_prompt=update_input.system_prompt,
+            tool_allowlist=update_input.tool_allowlist,
+            mcp_servers=update_input.mcp_servers,
+            mcp_tool_allowlist=update_input.mcp_tool_allowlist,
             created_at=existing.created_at,
             updated_at=now,
         )
@@ -439,8 +452,9 @@ class FileAgentRegistry:
         updated_at: str,
     ) -> dict[str, Any]:
         """Build YAML payload for a custom agent definition."""
-        tool_mapper = get_tool_mapper()
-        tools = tool_mapper.map_tools(tool_allowlist)
+        tools: list[dict[str, Any]] = []
+        if self._tool_mapper:
+            tools = self._tool_mapper.map_tools(tool_allowlist)
 
         return {
             "agent_id": agent_id,

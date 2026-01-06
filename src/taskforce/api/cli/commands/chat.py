@@ -9,7 +9,7 @@ import typer
 
 from taskforce.api.cli.chat_ui import TaskforceChatApp
 from taskforce.application.factory import AgentFactory
-from taskforce.infrastructure.tracing import init_tracing, shutdown_tracing
+from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
 
 app = typer.Typer(help="Interactive chat mode")
 

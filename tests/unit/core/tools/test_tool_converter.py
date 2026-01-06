@@ -6,7 +6,7 @@ Tests the tool converter utilities including output truncation.
 
 import json
 
-from taskforce.infrastructure.tools.tool_converter import (
+from taskforce.core.tools.tool_converter import (
     _truncate_tool_result,
     assistant_tool_calls_to_message,
     tool_result_to_message,
@@ -149,4 +149,3 @@ def test_truncation_shows_overflow_size():
 
     # Should show overflow amount
     assert "15000 more chars" in content["output"]
-

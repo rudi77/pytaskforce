@@ -4,9 +4,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any, Dict, List
 
-from taskforce.infrastructure.tools.rag.global_document_analysis import GlobalDocumentAnalysisTool
+from taskforce.infrastructure.tools.rag.global_document_analysis_tool import GlobalDocumentAnalysisTool
 from taskforce.infrastructure.tools.rag.azure_search_base import Document, Chunk
-from taskforce.infrastructure.tools.rag.get_document import GetDocumentTool
+from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 

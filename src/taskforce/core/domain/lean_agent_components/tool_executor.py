@@ -9,7 +9,7 @@ import structlog
 
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
-from taskforce.infrastructure.tools.tool_converter import (
+from taskforce.core.tools.tool_converter import (
     create_tool_result_preview,
     tool_result_preview_to_message,
     tool_result_to_message,

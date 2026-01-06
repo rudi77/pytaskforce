@@ -19,7 +19,7 @@ import pytest
 from taskforce.core.domain.agent import Agent
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
 from taskforce.infrastructure.llm.openai_service import OpenAIService
-from taskforce.infrastructure.persistence.file_state import FileStateManager
+from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
 from taskforce.infrastructure.tools.native.python_tool import PythonTool
 
 

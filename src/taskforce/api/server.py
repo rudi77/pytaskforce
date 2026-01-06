@@ -7,7 +7,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from taskforce.api.routes import agents, execution, health, sessions, tools
-from taskforce.infrastructure.tracing import init_tracing, shutdown_tracing
+from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
 
 # Configure logging based on LOGLEVEL environment variable
 loglevel = os.getenv("LOGLEVEL", "INFO").upper()

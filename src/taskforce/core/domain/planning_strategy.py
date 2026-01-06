@@ -16,7 +16,7 @@ import structlog
 from structlog.typing import FilteringBoundLogger
 
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
-from taskforce.infrastructure.tools.tool_converter import (
+from taskforce.core.tools.tool_converter import (
     assistant_tool_calls_to_message,
 )
 

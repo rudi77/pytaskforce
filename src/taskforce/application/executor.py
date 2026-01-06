@@ -31,6 +31,7 @@ from taskforce.core.domain.errors import (
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
 from taskforce.core.domain.agent import Agent
+from taskforce.core.domain.agent_models import CustomAgentDefinition
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 logger = structlog.get_logger()
@@ -389,7 +390,7 @@ class AgentExecutor:
                 )
 
             # Only custom agents can be used for execution (not profile agents)
-            if agent_response.source != "custom":
+            if not isinstance(agent_response, CustomAgentDefinition):
                 raise ValidationError(
                     f"Agent '{agent_id}' is a profile agent, not a custom agent. "
                     "Use 'profile' parameter for profile agents.",

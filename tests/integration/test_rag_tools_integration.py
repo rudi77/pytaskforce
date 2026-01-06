@@ -7,9 +7,9 @@ They are skipped if credentials are not available.
 import os
 import pytest
 
-from taskforce.infrastructure.tools.rag.semantic_search import SemanticSearchTool
-from taskforce.infrastructure.tools.rag.list_documents import ListDocumentsTool
-from taskforce.infrastructure.tools.rag.get_document import GetDocumentTool
+from taskforce.infrastructure.tools.rag.semantic_search_tool import SemanticSearchTool
+from taskforce.infrastructure.tools.rag.list_documents_tool import ListDocumentsTool
+from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
 
 
 # Skip all tests in this module if Azure credentials are not available

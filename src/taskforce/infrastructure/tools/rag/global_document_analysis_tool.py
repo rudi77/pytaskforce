@@ -7,7 +7,7 @@ from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase, Document
-from taskforce.infrastructure.tools.rag.get_document import GetDocumentTool
+from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
 
 class GlobalDocumentAnalysisTool(ToolProtocol):
     """

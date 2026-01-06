@@ -48,7 +48,7 @@ from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 from taskforce.core.tools.planner_tool import PlannerTool
-from taskforce.infrastructure.tools.tool_converter import tools_to_openai_format
+from taskforce.core.tools.tool_converter import tools_to_openai_format
 
 
 class Agent:

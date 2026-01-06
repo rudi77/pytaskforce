@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from taskforce.application.slash_command_registry import SlashCommandRegistry
-from taskforce.infrastructure.slash_commands.command_loader import FileSlashCommandLoader
+from taskforce.application.command_loader_service import get_command_loader_service
 
 app = typer.Typer(help="Manage custom slash commands")
 console = Console()
@@ -81,8 +81,8 @@ def show_command(
 @app.command("paths")
 def show_paths() -> None:
     """Show directories searched for commands."""
-    loader = FileSlashCommandLoader()
-    paths = loader.get_search_paths()
+    service = get_command_loader_service()
+    paths = service.get_search_paths()
 
     console.print("[bold]Command Search Paths (in priority order):[/bold]")
     for i, path in enumerate(reversed(paths), 1):
