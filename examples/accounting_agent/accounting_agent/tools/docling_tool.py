@@ -9,7 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 
 class DoclingTool:

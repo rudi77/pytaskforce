@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 
 class RuleEngineTool:

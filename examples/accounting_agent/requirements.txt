@@ -1,0 +1,17 @@
+# Accounting Agent Example Requirements
+#
+# These are the dependencies specific to the accounting agent example.
+# Install with: pip install -r requirements.txt
+#
+# Note: This example can be used standalone or integrated with Taskforce.
+# For Taskforce integration, also install the main taskforce package.
+
+# Document extraction - converts PDF/images to Markdown
+docling>=2.0.0
+
+# YAML parsing for rule engine
+pyyaml>=6.0
+
+# Optional: For integration with Taskforce framework
+# Uncomment if you want to use this as a Taskforce agent profile
+# taskforce>=0.1.0
