@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 
 class AuditLogTool:

@@ -11,7 +11,7 @@ This tool performs deterministic tax calculations for:
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 
 class TaxCalculatorTool:

@@ -4,7 +4,7 @@ Accounting Domain Models
 This module provides domain models for German accounting (Buchhaltung) operations.
 """
 
-from taskforce.core.domain.accounting.models import (
+from accounting_agent.domain.models import (
     BookingProposal,
     ComplianceFields,
     ComplianceResult,
@@ -13,7 +13,7 @@ from taskforce.core.domain.accounting.models import (
     Invoice,
     LineItem,
 )
-from taskforce.core.domain.accounting.errors import (
+from accounting_agent.domain.errors import (
     AccountingError,
     ComplianceValidationError,
     InvoiceParseError,
