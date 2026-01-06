@@ -33,6 +33,7 @@ class MCPToolWrapper(ToolProtocol):
         tool_definition: dict[str, Any],
         requires_approval: bool = False,
         risk_level: ApprovalRiskLevel = ApprovalRiskLevel.LOW,
+        supports_parallelism: bool = False,
     ):
         """
         Initialize MCP tool wrapper.
@@ -48,6 +49,7 @@ class MCPToolWrapper(ToolProtocol):
         self._tool_definition = tool_definition
         self._requires_approval = requires_approval
         self._risk_level = risk_level
+        self._supports_parallelism = supports_parallelism
 
         # Extract tool metadata
         self._name = tool_definition.get("name", "unknown_mcp_tool")
@@ -107,6 +109,11 @@ class MCPToolWrapper(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         """Return the risk level for approval prompts."""
         return self._risk_level
+
+    @property
+    def supports_parallelism(self) -> bool:
+        """Return whether this tool can run in parallel."""
+        return self._supports_parallelism
 
     def get_approval_preview(self, **kwargs: Any) -> str:
         """

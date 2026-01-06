@@ -207,6 +207,25 @@ class ToolProtocol(Protocol):
         """
         ...
 
+    @property
+    def supports_parallelism(self) -> bool:
+        """
+        Whether this tool can safely run in parallel with other tool calls.
+
+        Set to True only for tools that are:
+        - Read-only
+        - Free of side effects
+        - Independent from other tool calls in the same turn
+
+        Returns:
+            True if the tool is safe to run in parallel, False otherwise.
+
+        Example:
+            >>> file_read_tool.supports_parallelism
+            True
+        """
+        ...
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         """
         Generate human-readable preview of operation for approval prompt.

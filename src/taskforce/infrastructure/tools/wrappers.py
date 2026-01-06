@@ -43,6 +43,10 @@ class OutputFilteringTool:
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return self._original.approval_risk_level
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return getattr(self._original, "supports_parallelism", False)
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         return self._original.get_approval_preview(**kwargs)
 

@@ -170,6 +170,7 @@ class AgentFactory:
         # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
+        max_parallel_tools = agent_config.get("max_parallel_tools")
         strategy_name = (
             planning_strategy
             if planning_strategy is not None
@@ -189,6 +190,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy_max_items=context_policy.max_items,
             max_steps=max_steps or "default",
+            max_parallel_tools=max_parallel_tools or "default",
             planning_strategy=selected_strategy.name,
         )
 
@@ -200,6 +202,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy=context_policy,
             max_steps=max_steps,
+            max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
         )
 
@@ -357,6 +360,7 @@ class AgentFactory:
         # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
         max_steps = agent_config.get("max_steps")  # None means use agent default
+        max_parallel_tools = agent_config.get("max_parallel_tools")
         strategy_name = (
             planning_strategy
             if planning_strategy is not None
@@ -377,6 +381,7 @@ class AgentFactory:
             prompt_length=len(system_prompt),
             context_policy_max_items=context_policy.max_items,
             max_steps=max_steps or "default",
+            max_parallel_tools=max_parallel_tools or "default",
             planning_strategy=selected_strategy.name,
         )
 
@@ -388,6 +393,7 @@ class AgentFactory:
             model_alias=model_alias,
             context_policy=context_policy,
             max_steps=max_steps,
+            max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
         )
 
@@ -1164,4 +1170,3 @@ class AgentFactory:
     async def create_lean_agent_from_definition(self, *args, **kwargs) -> Agent:
         """Deprecated: Use create_agent_from_definition instead."""
         return await self.create_agent_from_definition(*args, **kwargs)
-

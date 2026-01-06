@@ -61,6 +61,7 @@ class ToolCatalog:
                 "parameters_schema": tool.parameters_schema,
                 "requires_approval": tool.requires_approval,
                 "approval_risk_level": tool.approval_risk_level.value,
+                "supports_parallelism": getattr(tool, "supports_parallelism", False),
                 "origin": "native",
             })
         return tools

@@ -7,6 +7,7 @@ Defines the strategy interface and built-in strategy implementations.
 from __future__ import annotations
 
 import json
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol, TYPE_CHECKING
@@ -30,6 +31,15 @@ class PlanStep:
     index: int
     description: str
     status: str = "PENDING"
+
+
+@dataclass(frozen=True)
+class ToolCallRequest:
+    """Parsed tool call request for execution."""
+
+    tool_call_id: str
+    tool_name: str
+    tool_args: dict[str, Any]
 
 
 class PlanningStrategy(Protocol):
@@ -67,6 +77,82 @@ def _build_plan_update(
     if plan:
         data["plan"] = plan
     return data
+
+
+def _parse_tool_args(
+    tool_call: dict[str, Any],
+    logger: FilteringBoundLogger,
+) -> dict[str, Any]:
+    """Parse tool arguments from a tool call payload."""
+    raw_args = tool_call["function"]["arguments"]
+    try:
+        return json.loads(raw_args)
+    except json.JSONDecodeError:
+        logger.warning(
+            "tool_args_parse_failed",
+            tool=tool_call["function"]["name"],
+            raw_args=raw_args,
+        )
+        return {}
+
+
+def _tool_supports_parallelism(agent: "Agent", tool_name: str) -> bool:
+    """Return whether a tool is safe to execute in parallel."""
+    tool = agent.tools.get(tool_name)
+    if not tool:
+        return False
+    return (
+        bool(getattr(tool, "supports_parallelism", False))
+        and not tool.requires_approval
+    )
+
+
+async def _execute_with_limit(
+    agent: "Agent",
+    tool_name: str,
+    tool_args: dict[str, Any],
+    semaphore: asyncio.Semaphore,
+) -> dict[str, Any]:
+    """Execute a tool with concurrency limits applied."""
+    async with semaphore:
+        return await agent._execute_tool(tool_name, tool_args)
+
+
+async def _execute_tool_calls(
+    agent: "Agent",
+    requests: list[ToolCallRequest],
+) -> list[tuple[ToolCallRequest, dict[str, Any]]]:
+    """Execute tool calls with optional parallelism and ordering."""
+    if not requests:
+        return []
+
+    max_parallel = max(1, agent.max_parallel_tools)
+    semaphore = asyncio.Semaphore(max_parallel)
+    results: dict[str, dict[str, Any]] = {}
+    parallel_tasks: list[tuple[ToolCallRequest, asyncio.Task[dict[str, Any]]]] = []
+
+    for request in requests:
+        if _tool_supports_parallelism(agent, request.tool_name) and max_parallel > 1:
+            task = asyncio.create_task(
+                _execute_with_limit(
+                    agent,
+                    request.tool_name,
+                    request.tool_args,
+                    semaphore,
+                )
+            )
+            parallel_tasks.append((request, task))
+        else:
+            results[request.tool_call_id] = await agent._execute_tool(
+                request.tool_name, request.tool_args
+            )
+
+    if parallel_tasks:
+        gathered = await asyncio.gather(*(task for _, task in parallel_tasks))
+        for (request, _), tool_result in zip(parallel_tasks, gathered):
+            results[request.tool_call_id] = tool_result
+
+    return [(request, results[request.tool_call_id]) for request in requests]
 
 
 async def _collect_execution_result(
@@ -280,19 +366,11 @@ class NativeReActStrategy:
 
                     messages.append(assistant_tool_calls_to_message(tool_calls))
 
+                    requests: list[ToolCallRequest] = []
                     for tool_call in tool_calls:
                         tool_name = tool_call["function"]["name"]
                         tool_call_id = tool_call["id"]
-
-                        try:
-                            tool_args = json.loads(tool_call["function"]["arguments"])
-                        except json.JSONDecodeError:
-                            tool_args = {}
-                            agent.logger.warning(
-                                "tool_args_parse_failed",
-                                tool=tool_name,
-                                raw_args=tool_call["function"]["arguments"],
-                            )
+                        tool_args = _parse_tool_args(tool_call, agent.logger)
 
                         yield StreamEvent(
                             event_type="tool_call",
@@ -304,38 +382,52 @@ class NativeReActStrategy:
                             },
                         )
 
-                        tool_result = await agent._execute_tool(tool_name, tool_args)
+                        requests.append(
+                            ToolCallRequest(
+                                tool_call_id=tool_call_id,
+                                tool_name=tool_name,
+                                tool_args=tool_args,
+                            )
+                        )
+
+                    tool_results = await _execute_tool_calls(agent, requests)
+                    for request, tool_result in tool_results:
                         yield StreamEvent(
                             event_type="tool_result",
                             data={
-                                "tool": tool_name,
-                                "id": tool_call_id,
+                                "tool": request.tool_name,
+                                "id": request.tool_call_id,
                                 "success": tool_result.get("success", False),
                                 "output": agent._truncate_output(
                                     tool_result.get(
                                         "output", str(tool_result.get("error", ""))
                                     )
                                 ),
-                                "args": tool_args,
+                                "args": request.tool_args,
                             },
                         )
 
-                        if tool_name in ("planner", "manage_plan") and tool_result.get(
-                            "success"
-                        ):
+                        if request.tool_name in (
+                            "planner",
+                            "manage_plan",
+                        ) and tool_result.get("success"):
                             plan_output = tool_result.get("output")
                             if not plan_output and agent._planner:
                                 plan_output = agent._planner.get_plan_summary()
                             yield StreamEvent(
                                 event_type="plan_updated",
                                 data=_build_plan_update(
-                                    action=tool_args.get("action", "unknown"),
+                                    action=request.tool_args.get("action", "unknown"),
                                     plan=plan_output,
                                 ),
                             )
 
                         tool_message = await agent._create_tool_message(
-                            tool_call_id, tool_name, tool_result, session_id, step
+                            request.tool_call_id,
+                            request.tool_name,
+                            tool_result,
+                            session_id,
+                            step,
                         )
                         messages.append(tool_message)
 
@@ -768,19 +860,11 @@ class PlanAndExecuteStrategy:
                     progress_steps += 1
                     messages.append(assistant_tool_calls_to_message(tool_calls))
 
+                    requests: list[ToolCallRequest] = []
                     for tool_call in tool_calls:
                         tool_name = tool_call["function"]["name"]
                         tool_call_id = tool_call["id"]
-
-                        try:
-                            tool_args = json.loads(tool_call["function"]["arguments"])
-                        except json.JSONDecodeError:
-                            tool_args = {}
-                            self.logger.warning(
-                                "tool_args_parse_failed",
-                                tool=tool_name,
-                                raw_args=tool_call["function"]["arguments"],
-                            )
+                        tool_args = _parse_tool_args(tool_call, self.logger)
 
                         yield StreamEvent(
                             event_type="tool_call",
@@ -792,38 +876,52 @@ class PlanAndExecuteStrategy:
                             },
                         )
 
-                        tool_result = await agent._execute_tool(tool_name, tool_args)
+                        requests.append(
+                            ToolCallRequest(
+                                tool_call_id=tool_call_id,
+                                tool_name=tool_name,
+                                tool_args=tool_args,
+                            )
+                        )
+
+                    tool_results = await _execute_tool_calls(agent, requests)
+                    for request, tool_result in tool_results:
                         yield StreamEvent(
                             event_type="tool_result",
                             data={
-                                "tool": tool_name,
-                                "id": tool_call_id,
+                                "tool": request.tool_name,
+                                "id": request.tool_call_id,
                                 "success": tool_result.get("success", False),
                                 "output": agent._truncate_output(
                                     tool_result.get(
                                         "output", str(tool_result.get("error", ""))
                                     )
                                 ),
-                                "args": tool_args,
+                                "args": request.tool_args,
                             },
                         )
 
-                        if tool_name in ("planner", "manage_plan") and tool_result.get(
-                            "success"
-                        ):
+                        if request.tool_name in (
+                            "planner",
+                            "manage_plan",
+                        ) and tool_result.get("success"):
                             plan_output = tool_result.get("output")
                             if not plan_output and agent._planner:
                                 plan_output = agent._planner.get_plan_summary()
                             yield StreamEvent(
                                 event_type="plan_updated",
                                 data=_build_plan_update(
-                                    action=tool_args.get("action", "unknown"),
+                                    action=request.tool_args.get("action", "unknown"),
                                     plan=plan_output,
                                 ),
                             )
 
                         tool_message = await agent._create_tool_message(
-                            tool_call_id, tool_name, tool_result, session_id, progress_steps
+                            request.tool_call_id,
+                            request.tool_name,
+                            tool_result,
+                            session_id,
+                            progress_steps,
                         )
                         messages.append(tool_message)
                     continue

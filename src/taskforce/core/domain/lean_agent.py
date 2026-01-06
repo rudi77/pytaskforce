@@ -71,6 +71,7 @@ class Agent:
     SUMMARY_THRESHOLD = 20  # Compress when exceeding this message count (legacy fallback)
     # Tool result storage thresholds
     TOOL_RESULT_STORE_THRESHOLD = 5000  # Store results larger than 5000 chars
+    DEFAULT_MAX_PARALLEL_TOOLS = 4  # Conservative parallelism limit for tool execution
     # Token budget defaults
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
     DEFAULT_COMPRESSION_TRIGGER = 80000  # Trigger compression at 80% of max
@@ -87,6 +88,7 @@ class Agent:
         max_input_tokens: int | None = None,
         compression_trigger: int | None = None,
         max_steps: int | None = None,
+        max_parallel_tools: int | None = None,
         planning_strategy: PlanningStrategy | None = None,
     ):
         """
@@ -106,6 +108,8 @@ class Agent:
             compression_trigger: Token count to trigger compression (default: 80k)
             max_steps: Maximum execution steps allowed (default: 30 for simple agents,
                       should be higher for RAG/document agents ~50-100)
+            max_parallel_tools: Maximum number of tool calls to run concurrently
+                      (default: 4)
             planning_strategy: Optional planning strategy override for Agent.
         """
         self.state_manager = state_manager
@@ -117,6 +121,7 @@ class Agent:
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
+        self.max_parallel_tools = max_parallel_tools or self.DEFAULT_MAX_PARALLEL_TOOLS
         self.planning_strategy = planning_strategy or NativeReActStrategy()
 
         # Context pack configuration (Story 9.2)
