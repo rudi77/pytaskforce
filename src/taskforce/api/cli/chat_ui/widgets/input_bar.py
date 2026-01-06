@@ -124,3 +124,13 @@ class InputBar(Static):
 
         if enabled:
             input_widget.focus()
+
+    def insert_text(self, text: str) -> None:
+        """Insert text at cursor position in the input field.
+
+        Args:
+            text: Text to insert
+        """
+        input_widget = self.query_one("#message-input", Input)
+        input_widget.insert_text_at_cursor(text)
+        input_widget.focus()

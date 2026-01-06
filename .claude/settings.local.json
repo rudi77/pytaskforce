@@ -29,7 +29,8 @@
       "Bash(.venv/Scripts/python.exe -m mypy:*)",
       "Bash(.venv/Scripts/python.exe -m pytest tests/unit/infrastructure/persistence/test_file_agent_registry.py -v)",
       "Bash(.venv/Scripts/python.exe -m pytest:*)",
-      "Bash(.venv/Scripts/python.exe:*)"
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []

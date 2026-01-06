@@ -1,13 +1,16 @@
 """Main Textual application for Taskforce chat UI."""
 
 import asyncio
-from typing import Any, Optional
+import time
+from pathlib import Path
+from typing import Any
 
 import pyperclip
+from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Footer, Input
+from textual.widgets import DirectoryTree, Footer, Input
 
 from taskforce.api.cli.chat_ui.widgets import (
     ChatLog,
@@ -15,6 +18,7 @@ from taskforce.api.cli.chat_ui.widgets import (
     Header,
     InputBar,
     PlanPanel,
+    Sidebar,
 )
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.slash_command_registry import SlashCommandRegistry
@@ -35,6 +39,7 @@ class TaskforceChatApp(App):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "clear", "Clear Chat"),
+        ("ctrl+b", "toggle_sidebar", "Toggle Sidebar"),
         ("f1", "help", "Help"),
         ("c", "toggle_copy_mode", "Copy Mode"),
         ("y", "copy_to_clipboard", "Copy Chat"),
@@ -47,7 +52,7 @@ class TaskforceChatApp(App):
         agent: Any,
         debug: bool = False,
         stream: bool = False,
-        user_context: Optional[dict] = None,
+        user_context: dict | None = None,
         **kwargs,
     ):
         """Initialize the chat application.
@@ -71,6 +76,9 @@ class TaskforceChatApp(App):
         self.command_registry = SlashCommandRegistry()
         self._processing = False
         self._current_agent_message = []
+        # Double-click tracking for sidebar
+        self._last_tree_click_path: Path | None = None
+        self._last_tree_click_time: float = 0.0
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -79,9 +87,11 @@ class TaskforceChatApp(App):
             profile=self.profile,
             user_context=self.user_context,
         )
-        with Container(id="main-container"):
-            yield PlanPanel(id="plan-panel")
-            yield ChatLog(id="chat-log")
+        with Horizontal(id="content-container"):
+            yield Sidebar(id="sidebar")
+            with Vertical(id="main-container"):
+                yield PlanPanel(id="plan-panel")
+                yield ChatLog(id="chat-log")
         with Vertical(id="bottom-container"):
             yield EventsPanel(id="events-panel")
             yield InputBar(id="input-bar")
@@ -93,17 +103,13 @@ class TaskforceChatApp(App):
         chat_log = self.query_one("#chat-log", ChatLog)
         debug_msg = "Debug mode enabled." if self.debug_mode else ""
         chat_log.add_system_message(f"Welcome to Taskforce! {debug_msg}")
-        chat_log.add_system_message(
-            "Type your message or use /help for available commands."
-        )
+        chat_log.add_system_message("Type your message or use /help for available commands.")
 
         # Focus input
         input_bar = self.query_one("#input-bar", InputBar)
         input_bar.focus_input()
 
-    async def on_input_bar_message_submitted(
-        self, message: InputBar.MessageSubmitted
-    ) -> None:
+    async def on_input_bar_message_submitted(self, message: InputBar.MessageSubmitted) -> None:
         """Handle message submission from input bar.
 
         Args:
@@ -148,17 +154,14 @@ class TaskforceChatApp(App):
             await self._list_custom_commands()
         else:
             # Try custom command
-            command_def, arguments = self.command_registry.resolve_command(
-                command
-            )
+            command_def, arguments = self.command_registry.resolve_command(command)
 
             if command_def:
                 await self._execute_custom_command(command_def, arguments)
             else:
                 chat_log.add_error(f"Unknown command: {command}")
                 chat_log.add_system_message(
-                    "Type /help for available commands, "
-                    "/commands for custom commands"
+                    "Type /help for available commands, " "/commands for custom commands"
                 )
 
     async def _show_help(self) -> None:
@@ -207,17 +210,13 @@ Use **/commands** to see available custom commands.
         """Toggle debug mode."""
         self.debug_mode = not self.debug_mode
         chat_log = self.query_one("#chat-log", ChatLog)
-        chat_log.add_system_message(
-            f"Debug mode {'enabled' if self.debug_mode else 'disabled'}"
-        )
+        chat_log.add_system_message(f"Debug mode {'enabled' if self.debug_mode else 'disabled'}")
 
     async def _show_tokens(self) -> None:
         """Show token usage statistics."""
         header = self.query_one(Header)
         chat_log = self.query_one("#chat-log", ChatLog)
-        chat_log.add_system_message(
-            f"Total tokens used: {header.token_count:,}"
-        )
+        chat_log.add_system_message(f"Total tokens used: {header.token_count:,}")
 
     async def _list_custom_commands(self) -> None:
         """Show available custom commands."""
@@ -227,16 +226,13 @@ Use **/commands** to see available custom commands.
         if not commands:
             chat_log.add_system_message("No custom commands found.")
             chat_log.add_system_message(
-                "Add .md files to .taskforce/commands/ or "
-                "~/.taskforce/commands/"
+                "Add .md files to .taskforce/commands/ or " "~/.taskforce/commands/"
             )
             return
 
         lines = ["**Custom Commands:**\n"]
         for cmd in commands:
-            source_tag = (
-                f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
-            )
+            source_tag = f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
             line = f"  **/{cmd['name']}** - {cmd['description']} {source_tag}"
             lines.append(line)
 
@@ -257,17 +253,14 @@ Use **/commands** to see available custom commands.
 
         if command_def.command_type == CommandType.PROMPT:
             # Simple prompt - prepare and send as chat message
-            prompt = self.command_registry.prepare_prompt(
-                command_def, arguments
-            )
+            prompt = self.command_registry.prepare_prompt(command_def, arguments)
             chat_log.add_system_message(f"Executing /{command_def.name}...")
             await self._handle_chat_message(prompt)
 
         elif command_def.command_type == CommandType.AGENT:
             # Agent command - create specialized agent and execute
             chat_log.add_system_message(
-                f"Switching to agent: {command_def.name} "
-                f"(/{command_def.name})"
+                f"Switching to agent: {command_def.name} " f"(/{command_def.name})"
             )
 
             try:
@@ -280,9 +273,7 @@ Use **/commands** to see available custom commands.
                 self.agent = agent
 
                 # Prepare prompt and execute
-                prompt = self.command_registry.prepare_prompt(
-                    command_def, arguments
-                )
+                prompt = self.command_registry.prepare_prompt(command_def, arguments)
                 await self._handle_chat_message(prompt)
 
                 # Keep the specialized agent active for this session
@@ -298,9 +289,7 @@ Use **/commands** to see available custom commands.
         """
         if self._processing:
             chat_log = self.query_one("#chat-log", ChatLog)
-            chat_log.add_system_message(
-                "Please wait for the current response to complete."
-            )
+            chat_log.add_system_message("Please wait for the current response to complete.")
             return
 
         # Add user message to chat
@@ -325,10 +314,7 @@ Use **/commands** to see available custom commands.
 
         try:
             # Load conversation history
-            state = (
-                await self.agent.state_manager.load_state(self.session_id)
-                or {}
-            )
+            state = await self.agent.state_manager.load_state(self.session_id) or {}
             history = state.get("conversation_history", [])
 
             # Add user message to history
@@ -363,17 +349,11 @@ Use **/commands** to see available custom commands.
         header.update_status("Working")
 
         # Execute with agent
-        result = await self.agent.execute(
-            mission=message, session_id=self.session_id
-        )
+        result = await self.agent.execute(mission=message, session_id=self.session_id)
 
         # Add response to chat
         thought = None
-        if (
-            self.debug_mode
-            and hasattr(result, "thoughts")
-            and result.thoughts
-        ):
+        if self.debug_mode and hasattr(result, "thoughts") and result.thoughts:
             thought = result.thoughts[-1] if result.thoughts else None
 
         chat_log.add_agent_message(result.final_message, thought=thought)
@@ -384,10 +364,7 @@ Use **/commands** to see available custom commands.
             header.add_tokens(total_tokens)
 
         # Save to history
-        state = (
-            await self.agent.state_manager.load_state(self.session_id)
-            or {}
-        )
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
         history = state.get("conversation_history", [])
         history.append({"role": "assistant", "content": result.final_message})
         state["conversation_history"] = history
@@ -426,15 +403,8 @@ Use **/commands** to see available custom commands.
             )
 
         # Save final response to history
-        final_message = (
-            "".join(final_answer_tokens)
-            if final_answer_tokens
-            else "No response"
-        )
-        state = (
-            await self.agent.state_manager.load_state(self.session_id)
-            or {}
-        )
+        final_message = "".join(final_answer_tokens) if final_answer_tokens else "No response"
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
         history = state.get("conversation_history", [])
         history.append({"role": "assistant", "content": final_message})
         state["conversation_history"] = history
@@ -555,13 +525,9 @@ Use **/commands** to see available custom commands.
         # Show feedback
         chat_log = self.query_one("#chat-log", ChatLog)
         if self.copy_mode:
-            chat_log.add_system_message(
-                "Copy mode enabled - plain text view for easy selection."
-            )
+            chat_log.add_system_message("Copy mode enabled - plain text view for easy selection.")
         else:
-            chat_log.add_system_message(
-                "Copy mode disabled - Rich formatting restored."
-            )
+            chat_log.add_system_message("Copy mode disabled - Rich formatting restored.")
 
     def action_copy_to_clipboard(self) -> None:
         """Copy chat to clipboard (key 'y').
@@ -585,14 +551,10 @@ Use **/commands** to see available custom commands.
                 return
 
             pyperclip.copy(plain_text)
-            chat_log.add_system_message(
-                f"Chat copied to clipboard ({len(plain_text)} characters)."
-            )
+            chat_log.add_system_message(f"Chat copied to clipboard ({len(plain_text)} characters).")
         except pyperclip.PyperclipException as e:
             chat_log = self.query_one("#chat-log", ChatLog)
-            chat_log.add_error(
-                f"Clipboard error: {e}. Use copy mode (c) to select manually."
-            )
+            chat_log.add_error(f"Clipboard error: {e}. Use copy mode (c) to select manually.")
 
     def watch_copy_mode(self, new_mode: bool) -> None:
         """React to copy mode changes.
@@ -607,3 +569,66 @@ Use **/commands** to see available custom commands.
             chat_log.copy_mode = new_mode
         except Exception:
             pass  # Widget may not be mounted yet
+
+    def action_toggle_sidebar(self) -> None:
+        """Toggle sidebar visibility (Ctrl+B)."""
+        try:
+            sidebar = self.query_one("#sidebar", Sidebar)
+            sidebar.toggle_visibility()
+        except Exception:
+            pass  # Widget may not be mounted yet
+
+    @on(DirectoryTree.FileSelected)
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        """Handle file double-click - insert relative path into input."""
+        self._handle_tree_selection(event.path)
+
+    @on(DirectoryTree.DirectorySelected)
+    def on_directory_tree_directory_selected(self, event: DirectoryTree.DirectorySelected) -> None:
+        """Handle directory double-click - insert relative path into input."""
+        self._handle_tree_selection(event.path)
+
+    def _handle_tree_selection(self, path: Path) -> None:
+        """Handle tree selection with double-click detection.
+
+        Args:
+            path: Selected path
+        """
+        current_time = time.time()
+        double_click_threshold = 0.4  # 400ms
+
+        # Check for double-click (same path within threshold)
+        is_double_click = (
+            self._last_tree_click_path == path
+            and (current_time - self._last_tree_click_time) < double_click_threshold
+        )
+
+        # Update tracking
+        self._last_tree_click_path = path
+        self._last_tree_click_time = current_time
+
+        # Only insert on double-click
+        if is_double_click:
+            self._insert_path_from_tree(path)
+
+    def _insert_path_from_tree(self, path: Path) -> None:
+        """Insert file/directory path into input bar.
+
+        Args:
+            path: Path to insert (will be converted to relative)
+        """
+        try:
+            # Convert to relative path
+            relative_path = path.relative_to(Path.cwd())
+            path_str = f"./{relative_path}"
+        except ValueError:
+            # Path not relative to cwd, use absolute
+            path_str = str(path)
+
+        # Quote if contains spaces
+        if " " in path_str:
+            path_str = f'"{path_str}"'
+
+        # Insert into input bar with trailing space
+        input_bar = self.query_one("#input-bar", InputBar)
+        input_bar.insert_text(path_str + " ")

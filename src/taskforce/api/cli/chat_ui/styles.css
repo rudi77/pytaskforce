@@ -5,11 +5,49 @@ TaskforceChatApp {
     background: $surface;
 }
 
-/* Main Container */
-#main-container {
+/* Content Container - Horizontal layout for sidebar + main */
+#content-container {
     width: 100%;
     height: 1fr;
     background: $surface;
+}
+
+/* Main Container */
+#main-container {
+    width: 1fr;
+    height: 100%;
+    background: $surface;
+}
+
+/* Sidebar Styling */
+Sidebar {
+    width: 30%;
+    height: 100%;
+    background: $panel;
+    border-right: solid $primary;
+    padding: 1;
+}
+
+Sidebar.hidden {
+    display: none;
+}
+
+Sidebar .sidebar-title {
+    width: 100%;
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+Sidebar DirectoryTree {
+    width: 100%;
+    height: 1fr;
+    background: $panel;
+    scrollbar-gutter: stable;
+}
+
+Sidebar DirectoryTree:focus {
+    border: solid $accent;
 }
 
 /* Bottom Container */
