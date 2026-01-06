@@ -3,9 +3,11 @@
 import asyncio
 from typing import Any, Optional
 
+import pyperclip
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
-from textual.widgets import Footer
+from textual.reactive import reactive
+from textual.widgets import Footer, Input
 
 from taskforce.api.cli.chat_ui.widgets import (
     ChatLog,
@@ -28,10 +30,14 @@ class TaskforceChatApp(App):
     TITLE = "Taskforce - ReAct Agent Framework"
     CSS_PATH = "styles.css"
 
+    copy_mode = reactive(False)
+
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "clear", "Clear Chat"),
         ("f1", "help", "Help"),
+        ("c", "toggle_copy_mode", "Copy Mode"),
+        ("y", "copy_to_clipboard", "Copy Chat"),
     ]
 
     def __init__(
@@ -180,7 +186,9 @@ Use **/commands** to see available custom commands.
 • **Enter** - Send message
 • **Ctrl+C** - Quit application
 • **Ctrl+L** - Clear chat
-• **F1** - Show help"""
+• **F1** - Show help
+• **c** - Toggle copy mode (plain text view)
+• **y** - Copy chat to clipboard"""
         chat_log.add_system_message(help_text)
 
     async def _clear_chat(self) -> None:
@@ -528,3 +536,74 @@ Use **/commands** to see available custom commands.
     def action_help(self) -> None:
         """Action to show help (F1)."""
         asyncio.create_task(self._show_help())
+
+    def action_toggle_copy_mode(self) -> None:
+        """Toggle copy mode (key 'c').
+
+        Switches between graphical (Rich panels) and plain text display.
+        """
+        # Don't toggle if input has focus (user is typing 'c')
+        try:
+            input_widget = self.query_one("#message-input", Input)
+            if input_widget.has_focus:
+                return
+        except Exception:
+            pass
+
+        self.copy_mode = not self.copy_mode
+
+        # Show feedback
+        chat_log = self.query_one("#chat-log", ChatLog)
+        if self.copy_mode:
+            chat_log.add_system_message(
+                "Copy mode enabled - plain text view for easy selection."
+            )
+        else:
+            chat_log.add_system_message(
+                "Copy mode disabled - Rich formatting restored."
+            )
+
+    def action_copy_to_clipboard(self) -> None:
+        """Copy chat to clipboard (key 'y').
+
+        Copies all chat messages as plain text to system clipboard.
+        """
+        # Don't copy if input has focus (user is typing 'y')
+        try:
+            input_widget = self.query_one("#message-input", Input)
+            if input_widget.has_focus:
+                return
+        except Exception:
+            pass
+
+        try:
+            chat_log = self.query_one("#chat-log", ChatLog)
+            plain_text = chat_log.get_plain_text()
+
+            if not plain_text.strip():
+                chat_log.add_system_message("No messages to copy.")
+                return
+
+            pyperclip.copy(plain_text)
+            chat_log.add_system_message(
+                f"Chat copied to clipboard ({len(plain_text)} characters)."
+            )
+        except pyperclip.PyperclipException as e:
+            chat_log = self.query_one("#chat-log", ChatLog)
+            chat_log.add_error(
+                f"Clipboard error: {e}. Use copy mode (c) to select manually."
+            )
+
+    def watch_copy_mode(self, new_mode: bool) -> None:
+        """React to copy mode changes.
+
+        Propagates copy mode to the chat log widget.
+
+        Args:
+            new_mode: New copy mode state.
+        """
+        try:
+            chat_log = self.query_one("#chat-log", ChatLog)
+            chat_log.copy_mode = new_mode
+        except Exception:
+            pass  # Widget may not be mounted yet

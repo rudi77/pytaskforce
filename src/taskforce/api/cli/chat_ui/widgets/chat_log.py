@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from textual.containers import VerticalScroll
+from textual.reactive import reactive
 from textual.widgets import Static
 
 from taskforce.api.cli.chat_ui.widgets.message import ChatMessage, MessageType
@@ -11,6 +12,8 @@ from taskforce.api.cli.chat_ui.widgets.message import ChatMessage, MessageType
 
 class ChatLog(VerticalScroll):
     """Scrollable container for chat messages."""
+
+    copy_mode = reactive(False)
 
     DEFAULT_CSS = """
     ChatLog {
@@ -45,6 +48,7 @@ class ChatLog(VerticalScroll):
             content=content,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -69,6 +73,7 @@ class ChatLog(VerticalScroll):
             timestamp=timestamp,
             thought=thought,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -86,6 +91,7 @@ class ChatLog(VerticalScroll):
             content=content,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -111,6 +117,7 @@ class ChatLog(VerticalScroll):
             tool_params=tool_params,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -138,6 +145,7 @@ class ChatLog(VerticalScroll):
             success=success,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -155,6 +163,7 @@ class ChatLog(VerticalScroll):
             content=content,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -172,6 +181,7 @@ class ChatLog(VerticalScroll):
             content=content,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -189,6 +199,7 @@ class ChatLog(VerticalScroll):
             content=content,
             timestamp=timestamp,
         )
+        message.copy_mode = self.copy_mode
         self.mount(message)
         self.message_count += 1
         if self.auto_scroll:
@@ -209,3 +220,27 @@ class ChatLog(VerticalScroll):
         """
         self.auto_scroll = not self.auto_scroll
         return self.auto_scroll
+
+    def get_plain_text(self) -> str:
+        """Get plain text representation of all messages.
+
+        Returns:
+            String containing all messages in plain text format.
+        """
+        lines = []
+        for child in self.children:
+            if isinstance(child, ChatMessage):
+                lines.append(child.to_plain_text())
+        return "\n\n".join(lines)
+
+    def watch_copy_mode(self, new_mode: bool) -> None:
+        """React to copy mode changes.
+
+        Propagates the copy mode state to all child ChatMessage widgets.
+
+        Args:
+            new_mode: New copy mode state.
+        """
+        for child in self.children:
+            if isinstance(child, ChatMessage):
+                child.copy_mode = new_mode

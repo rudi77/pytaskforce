@@ -8,6 +8,7 @@ from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
+from textual.reactive import reactive
 from textual.widgets import Static
 
 
@@ -26,6 +27,8 @@ class MessageType(Enum):
 
 class ChatMessage(Static):
     """A single chat message with styling based on type."""
+
+    copy_mode = reactive(False)
 
     DEFAULT_CSS = """
     ChatMessage {
@@ -96,6 +99,10 @@ class ChatMessage(Static):
 
     def render(self) -> RenderableType:
         """Render the message based on its type."""
+        # Check if copy mode is active
+        if self.copy_mode:
+            return self._render_plain_text()
+
         # Format timestamp
         time_str = self.timestamp.strftime("%H:%M:%S")
 
@@ -248,3 +255,50 @@ class ChatMessage(Static):
             border_style="dim white",
             padding=(0, 1),
         )
+
+    def to_plain_text(self) -> str:
+        """Generate plain text representation of this message.
+
+        Returns:
+            Plain text string without Rich formatting.
+        """
+        time_str = self.timestamp.strftime("%H:%M:%S")
+
+        if self.message_type == MessageType.USER:
+            return f"[{time_str}] You: {self.content}"
+        elif self.message_type == MessageType.AGENT:
+            if self.thought:
+                return f"[{time_str}] Agent (thought: {self.thought}): {self.content}"
+            return f"[{time_str}] Agent: {self.content}"
+        elif self.message_type == MessageType.SYSTEM:
+            return f"[{time_str}] System: {self.content}"
+        elif self.message_type == MessageType.TOOL_CALL:
+            params_str = str(self.tool_params) if self.tool_params else ""
+            return f"[{time_str}] Tool Call: {self.tool_name} {params_str}"
+        elif self.message_type == MessageType.TOOL_RESULT:
+            status = "SUCCESS" if self.success else "FAILED"
+            return f"[{time_str}] Tool Result ({status}): {self.tool_name} - {self.content}"
+        elif self.message_type == MessageType.ERROR:
+            return f"[{time_str}] ERROR: {self.content}"
+        elif self.message_type == MessageType.PLAN:
+            return f"[{time_str}] Plan: {self.content}"
+        elif self.message_type == MessageType.DEBUG:
+            return f"[{time_str}] Debug: {self.content}"
+        else:
+            return f"[{time_str}] {self.content}"
+
+    def _render_plain_text(self) -> RenderableType:
+        """Render message as plain text without Rich formatting.
+
+        Returns:
+            Text object with minimal styling for copy mode.
+        """
+        return Text(self.to_plain_text())
+
+    def watch_copy_mode(self, new_mode: bool) -> None:
+        """React to copy mode changes.
+
+        Args:
+            new_mode: New copy mode state.
+        """
+        self.refresh()
