@@ -32,7 +32,7 @@ taskforce run mission "Describe the current weather in Vienna"
 
 # API Mode
 uvicorn taskforce.api.server:app --reload
-# Documentation: http://localhost:8000/docs
+# Documentation: `http://localhost:8000/docs`
 ```
 
 ---
