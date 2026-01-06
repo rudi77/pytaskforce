@@ -220,6 +220,7 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        agent: Agent | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
@@ -236,6 +237,8 @@ class AgentExecutor:
                      definition from configs/custom/{agent_id}.yaml
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional params for planning strategy
+            agent: Optional pre-created Agent instance. If provided, skips
+                  agent creation and uses this agent directly.
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -245,6 +248,9 @@ class AgentExecutor:
         """
         session_id = self._resolve_session_id(session_id)
 
+        # Track if we own the agent (created it) or if it was passed in
+        owns_agent = agent is None
+
         self.logger.info(
             "mission.streaming.started",
             mission=mission[:100],
@@ -252,6 +258,7 @@ class AgentExecutor:
             session_id=session_id,
             has_user_context=user_context is not None,
             agent_id=agent_id,
+            using_provided_agent=not owns_agent,
         )
 
         # Yield initial started event
@@ -266,16 +273,16 @@ class AgentExecutor:
             },
         )
 
-        agent = None
         try:
-            # Create Agent
-            agent = await self._create_agent(
-                profile,
-                user_context=user_context,
-                agent_id=agent_id,
-                planning_strategy=planning_strategy,
-                planning_strategy_params=planning_strategy_params,
-            )
+            # Use provided agent or create new one
+            if agent is None:
+                agent = await self._create_agent(
+                    profile,
+                    user_context=user_context,
+                    agent_id=agent_id,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                )
 
             await self._maybe_store_conversation_history(
                 agent=agent,
@@ -335,7 +342,8 @@ class AgentExecutor:
 
         finally:
             # Clean up MCP connections to avoid cancel scope errors
-            if agent:
+            # Only close agent if we created it (not if it was passed in)
+            if agent and owns_agent:
                 await agent.close()
 
     async def _create_agent(

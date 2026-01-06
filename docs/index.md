@@ -8,6 +8,7 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Setup & Installation](setup.md)**: How to get Taskforce running on your machine.
 - **[CLI Guide](cli.md)**: Comprehensive guide to the `taskforce` command-line tool.
 - **[Slash Commands](slash-commands.md)**: Extending the chat interface with custom commands.
+- **[Plugin Development](plugins.md)**: Creating and loading custom agent plugins.
 - **[REST API Guide](api.md)**: Integrating Taskforce via FastAPI and OpenAPI.
 
 ### 🏗 Architecture & Design

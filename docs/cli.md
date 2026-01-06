@@ -17,6 +17,18 @@ taskforce chat
 ```
 Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own.
 
+### Loading Plugins
+Load external agent plugins with custom tools:
+```powershell
+taskforce chat --plugin examples/accounting_agent
+```
+
+The `--plugin` option accepts a path to a plugin directory containing:
+- A Python package with tools in `{package}/tools/__init__.py`
+- Optional config at `configs/{package}.yaml`
+
+See **[Plugin Development Guide](plugins.md)** for creating your own plugins.
+
 ### Profile Selection
 By default, Taskforce uses the `dev` profile. You can override this:
 ```powershell

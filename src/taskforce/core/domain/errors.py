@@ -80,6 +80,23 @@ class ValidationError(TaskforceError):
         super().__init__(message=message, code="validation_error", details=details)
 
 
+class PluginError(TaskforceError):
+    """Error raised for plugin loading failures."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        plugin_path: str | None = None,
+        details: Dict[str, Any] | None = None,
+    ) -> None:
+        details = dict(details or {})
+        if plugin_path:
+            details.setdefault("plugin_path", plugin_path)
+        self.plugin_path = plugin_path
+        super().__init__(message=message, code="plugin_error", details=details)
+
+
 def tool_error_payload(
     error: ToolError, extra: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:

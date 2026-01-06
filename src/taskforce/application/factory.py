@@ -56,6 +56,7 @@ from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts import build_system_prompt, format_tools_description
 from taskforce.infrastructure.tools.filters import simplify_wiki_list_output
 from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
+from taskforce.application.plugin_loader import PluginLoader, PluginManifest
 
 
 class AgentFactory:
@@ -400,6 +401,242 @@ class AgentFactory:
 
         return agent
 
+    async def create_agent_with_plugin(
+        self,
+        plugin_path: str,
+        profile: str = "dev",
+        user_context: Optional[dict[str, Any]] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
+    ) -> Agent:
+        """
+        Create Agent with external plugin tools.
+
+        Loads tools from an external plugin directory and creates an agent
+        with those tools. The plugin must follow the expected structure:
+
+            {plugin_path}/
+            ├── {package_name}/
+            │   ├── __init__.py
+            │   └── tools/
+            │       └── __init__.py    # Exports tools via __all__
+            ├── configs/
+            │   └── {package_name}.yaml
+            └── requirements.txt
+
+        The base profile provides infrastructure settings (LLM, persistence),
+        while the plugin config provides agent-specific settings (tools, specialist).
+
+        Args:
+            plugin_path: Path to plugin directory (relative or absolute)
+            profile: Base profile for infrastructure settings (dev/staging/prod)
+            user_context: Optional user context for RAG tools
+            planning_strategy: Optional planning strategy override
+            planning_strategy_params: Optional planning strategy parameters
+
+        Returns:
+            Agent instance with plugin tools loaded
+
+        Raises:
+            FileNotFoundError: If plugin path doesn't exist
+            PluginError: If plugin structure is invalid or tools fail validation
+
+        Example:
+            >>> factory = AgentFactory()
+            >>> agent = await factory.create_agent_with_plugin(
+            ...     plugin_path="examples/accounting_agent",
+            ...     profile="dev"
+            ... )
+            >>> result = await agent.execute("Prüfe diese Rechnung", "session-123")
+        """
+        # Load plugin manifest
+        plugin_loader = PluginLoader()
+        manifest = plugin_loader.discover_plugin(plugin_path)
+
+        # Load base profile for infrastructure settings (with fallback to defaults)
+        try:
+            base_config = self._load_profile(profile)
+        except FileNotFoundError:
+            self.logger.debug(
+                "base_profile_not_found_using_defaults",
+                profile=profile,
+                hint="Using minimal defaults for infrastructure settings",
+            )
+            # Minimal defaults when no base profile exists
+            base_config = {
+                "persistence": {"type": "file", "work_dir": ".taskforce"},
+                "llm": {"config_path": "configs/llm_config.yaml", "default_model": "main"},
+                "logging": {"level": "WARNING"},
+            }
+
+        # Load plugin config and merge
+        plugin_config = plugin_loader.load_config(manifest)
+        merged_config = self._merge_plugin_config(base_config, plugin_config)
+
+        self.logger.info(
+            "creating_agent_with_plugin",
+            plugin=manifest.name,
+            plugin_path=str(manifest.path),
+            profile=profile,
+            tool_classes=manifest.tool_classes,
+            has_plugin_config=bool(plugin_config),
+        )
+
+        # Instantiate infrastructure adapters from base config
+        state_manager = self._create_state_manager(merged_config)
+        llm_provider = self._create_llm_provider(merged_config)
+
+        # Load plugin tools
+        plugin_tools = plugin_loader.load_tools(manifest)
+
+        # Optionally add native tools if specified in plugin config
+        native_tool_names = plugin_config.get("tools", [])
+        native_tools = []
+        if native_tool_names:
+            available_native = self._get_all_native_tools(llm_provider)
+            for tool in available_native:
+                if tool.name in native_tool_names:
+                    native_tools.append(tool)
+                    self.logger.debug(
+                        "native_tool_added_for_plugin",
+                        tool_name=tool.name,
+                    )
+
+        # Combine plugin tools with native tools
+        all_tools = plugin_tools + native_tools
+
+        # Optionally add MCP tools
+        mcp_tools, mcp_contexts = await self._create_mcp_tools(merged_config)
+        all_tools.extend(mcp_tools)
+
+        # Build system prompt - check if plugin provides custom prompt
+        custom_prompt = plugin_config.get("system_prompt")
+        if custom_prompt:
+            # LEAN_KERNEL + Plugin-Prompt (ergänzen, nicht ersetzen)
+            from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
+
+            base_prompt = LEAN_KERNEL_PROMPT + "\n\n" + custom_prompt
+            tools_description = format_tools_description(all_tools) if all_tools else ""
+            system_prompt = build_system_prompt(
+                base_prompt=base_prompt,
+                tools_description=tools_description,
+            )
+            self.logger.debug(
+                "plugin_custom_prompt_assembled",
+                plugin=manifest.name,
+                prompt_length=len(system_prompt),
+            )
+        else:
+            # Fallback to specialist-based prompt
+            specialist = plugin_config.get("specialist")
+            system_prompt = self._assemble_lean_system_prompt(specialist, all_tools)
+
+        # Get model alias
+        llm_config = merged_config.get("llm", {})
+        model_alias = llm_config.get("default_model", "main")
+
+        # Create context policy
+        context_policy = self._create_context_policy(merged_config)
+
+        # Get agent settings
+        agent_config = merged_config.get("agent", {})
+        max_steps = agent_config.get("max_steps")
+        max_parallel_tools = agent_config.get("max_parallel_tools")
+        strategy_name = (
+            planning_strategy
+            if planning_strategy is not None
+            else agent_config.get("planning_strategy")
+        )
+        strategy_params = (
+            planning_strategy_params
+            if planning_strategy_params is not None
+            else agent_config.get("planning_strategy_params")
+        )
+        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
+
+        self.logger.debug(
+            "plugin_agent_created",
+            plugin=manifest.name,
+            tools_count=len(all_tools),
+            plugin_tools=[t.name for t in plugin_tools],
+            native_tools=[t.name for t in native_tools],
+            mcp_tools=[t.name for t in mcp_tools],
+            model_alias=model_alias,
+            planning_strategy=selected_strategy.name,
+        )
+
+        agent = Agent(
+            state_manager=state_manager,
+            llm_provider=llm_provider,
+            tools=all_tools,
+            system_prompt=system_prompt,
+            model_alias=model_alias,
+            context_policy=context_policy,
+            max_steps=max_steps,
+            max_parallel_tools=max_parallel_tools,
+            planning_strategy=selected_strategy,
+        )
+
+        # Store MCP contexts and plugin manifest for lifecycle management
+        agent._mcp_contexts = mcp_contexts
+        agent._plugin_manifest = manifest
+
+        return agent
+
+    def _merge_plugin_config(
+        self, base_config: dict[str, Any], plugin_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Merge plugin config with base profile config.
+
+        Priority (highest to lowest):
+        1. Plugin config values (for agent settings)
+        2. Base profile values (for infrastructure)
+
+        Infrastructure settings (LLM, persistence type) always come from base
+        for security reasons. Plugin can override:
+        - agent settings (max_steps, planning_strategy)
+        - context_policy
+        - persistence work_dir
+        - specialist
+
+        Args:
+            base_config: Base profile configuration
+            plugin_config: Plugin-specific configuration
+
+        Returns:
+            Merged configuration dictionary
+        """
+        import copy
+
+        merged = copy.deepcopy(base_config)
+
+        # Agent settings from plugin
+        if "agent" in plugin_config:
+            merged.setdefault("agent", {}).update(plugin_config["agent"])
+
+        # Context policy from plugin
+        if "context_policy" in plugin_config:
+            merged["context_policy"] = plugin_config["context_policy"]
+
+        # Specialist from plugin
+        if "specialist" in plugin_config:
+            merged["specialist"] = plugin_config["specialist"]
+
+        # Work dir from plugin (allows plugin-specific workspace)
+        if plugin_config.get("persistence", {}).get("work_dir"):
+            merged.setdefault("persistence", {})["work_dir"] = plugin_config[
+                "persistence"
+            ]["work_dir"]
+
+        # MCP servers from plugin (additive)
+        if "mcp_servers" in plugin_config:
+            base_mcp = merged.get("mcp_servers", [])
+            plugin_mcp = plugin_config["mcp_servers"]
+            merged["mcp_servers"] = base_mcp + plugin_mcp
+
+        return merged
+
     def _select_planning_strategy(
         self, strategy_name: str | None, params: dict[str, Any] | None
     ) -> PlanningStrategy:
@@ -582,13 +819,8 @@ class AgentFactory:
                 # Custom agents have complete configuration, use directly
                 profile_path = custom_path
             else:
-                self.logger.error(
-                    "profile_not_found",
-                    profile=profile,
-                    standard_path=str(profile_path),
-                    custom_path=str(custom_path),
-                    hint="Ensure profile YAML exists in configs/ or configs/custom/",
-                )
+                # Don't log error here - let caller decide how to handle
+                # (e.g., create_agent_with_plugin uses defaults as fallback)
                 raise FileNotFoundError(
                     f"Profile not found: {profile_path} or {custom_path}"
                 )

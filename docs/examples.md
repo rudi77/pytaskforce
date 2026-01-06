@@ -6,8 +6,19 @@ Taskforce includes several example agents to help you get started with different
 
 You can find complete, runnable examples in the `examples/` directory:
 
-- **[Accounting Agent](https://github.com/rudi77/pytaskforce/tree/main/examples/accounting_agent)**: Demonstrates complex tool usage for financial tasks.
+- **[Accounting Agent](https://github.com/rudi77/pytaskforce/tree/main/examples/accounting_agent)**: German accounting agent with invoice validation, compliance checking (§14 UStG), and booking proposals.
 - **[Customer Support Agent](https://github.com/rudi77/pytaskforce/tree/main/examples/customer_support_agent)**: An example of an interactive support bot.
+
+### Loading Example Plugins
+
+Example agents can be loaded directly as plugins:
+
+```powershell
+# Load the accounting agent as a plugin
+taskforce chat --plugin examples/accounting_agent
+```
+
+This dynamically loads all tools from the plugin and makes them available to the agent. See the **[Plugin Development Guide](plugins.md)** for creating your own plugins.
 
 ## 🎓 Tutorials
 

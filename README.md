@@ -35,6 +35,12 @@ uvicorn taskforce.api.server:app --reload
 # Documentation: `http://localhost:8000/docs`
 ```
 
+### 4. Load a Plugin (Optional)
+```powershell
+# Run with the AccountingAgent plugin
+taskforce chat --plugin examples/accounting_agent
+```
+
 ---
 
 ## 📦 Features
@@ -43,6 +49,7 @@ uvicorn taskforce.api.server:app --reload
 - **Dual Interfaces**: Full-featured CLI (Typer) and REST API (FastAPI).
 - **Swappable Persistence**: File-based for dev, PostgreSQL for production.
 - **LLM Agnostic**: Support for OpenAI, Azure OpenAI, and more via LiteLLM.
+- **Plugin System**: Load custom agent plugins with specialized tools.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
 
 ## 🧠 Architecture Overview

@@ -383,6 +383,7 @@ Use **/commands** to see available custom commands.
             session_id=self.session_id,
             conversation_history=history,
             user_context=self.user_context,
+            agent=self.agent,
         ):
             await self._handle_stream_update(
                 update,

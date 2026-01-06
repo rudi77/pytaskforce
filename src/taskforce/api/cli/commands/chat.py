@@ -20,6 +20,9 @@ def chat(
     profile: str | None = typer.Option(
         None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
+    plugin: str | None = typer.Option(
+        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+    ),
     user_id: str | None = typer.Option(
         None, "--user-id", help="User ID for RAG context"
     ),
@@ -57,6 +60,9 @@ def chat(
 
         # Agent chat (new simplified architecture)
         taskforce chat --lean
+
+        # Load external plugin with custom tools
+        taskforce chat --plugin examples/accounting_agent
 
         # Streaming chat with real-time output (default)
         taskforce chat --lean --stream
@@ -108,15 +114,31 @@ def chat(
         """Run the chat UI application."""
         # Create agent using Agent (the standard agent implementation)
         factory = AgentFactory()
-        agent = await factory.create_agent(
-            profile=profile, user_context=user_context
-        )
+
+        # Determine display name for the profile/plugin
+        display_profile = profile
+
+        if plugin:
+            # Load agent with plugin tools
+            agent = await factory.create_agent_with_plugin(
+                plugin_path=plugin,
+                profile=profile,
+                user_context=user_context,
+            )
+            # Use plugin name for display
+            if hasattr(agent, '_plugin_manifest') and agent._plugin_manifest:
+                display_profile = f"plugin:{agent._plugin_manifest.name}"
+        else:
+            # Standard agent creation
+            agent = await factory.create_agent(
+                profile=profile, user_context=user_context
+            )
 
         try:
             # Create and run the Textual app
             chat_app = TaskforceChatApp(
                 session_id=session_id,
-                profile=profile,
+                profile=display_profile,
                 agent=agent,
                 debug=debug,
                 stream=stream,
