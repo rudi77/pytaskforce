@@ -11,20 +11,20 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
-# Custom theme for Taskforce CLI
+# Custom theme for Taskforce CLI - Cursor Dark Modern style
 TASKFORCE_THEME = Theme(
     {
-        "agent": "bold cyan",
-        "user": "bold green",
-        "system": "bold blue",
-        "error": "bold red",
-        "warning": "bold yellow",
-        "success": "bold green",
+        "agent": "cyan",  # Reduced from bold cyan
+        "user": "bright_white",  # Changed from bold green for better contrast
+        "system": "dim white",  # Changed from bold blue to subtle
+        "error": "red",  # Reduced from bold red
+        "warning": "yellow",  # Reduced from bold yellow
+        "success": "green",  # Reduced from bold green
         "debug": "dim white",
         "info": "white",
-        "thought": "italic magenta",
-        "action": "bold yellow",
-        "observation": "cyan",
+        "thought": "dim magenta",  # Reduced from italic magenta
+        "action": "yellow",  # Reduced from bold yellow
+        "observation": "dim cyan",  # Reduced from cyan
     }
 )
 
@@ -44,13 +44,14 @@ class TaskforceConsole:
     def print_banner(self):
         """Print Taskforce startup banner."""
         banner = Text()
-        banner.append("=" * 60 + "\n", style="bold blue")
-        banner.append("                                                            \n", style="bold blue")
-        banner.append("        ", style="bold blue")
-        banner.append("TASKFORCE", style="bold cyan")
-        banner.append(" - ReAct Agent Framework        \n", style="bold blue")
-        banner.append("                                                            \n", style="bold blue")
-        banner.append("=" * 60, style="bold blue")
+        banner.append("\n")
+        banner.append("  ╔══════════════════════════════════════════════════════╗\n", style="cyan")
+        banner.append("  ║                                                      ║\n", style="cyan")
+        banner.append("  ║     ", style="cyan")
+        banner.append("TASKFORCE", style="bold bright_white")
+        banner.append(" - ReAct Agent Framework       ║\n", style="cyan")
+        banner.append("  ║                                                      ║\n", style="cyan")
+        banner.append("  ╚══════════════════════════════════════════════════════╝\n", style="cyan")
         self.console.print(banner)
         self.console.print()
 
@@ -77,7 +78,7 @@ class TaskforceConsole:
             message,
             title="[Agent]",
             title_align="left",
-            border_style="cyan",
+            border_style="dim cyan",  # More subtle border
             padding=(0, 1),
         )
         self.console.print(agent_panel)
@@ -93,7 +94,7 @@ class TaskforceConsole:
             message,
             title="[You]",
             title_align="left",
-            border_style="green",
+            border_style="dim bright_white",  # Changed from green to neutral
             padding=(0, 1),
         )
         self.console.print(user_panel)
@@ -223,7 +224,7 @@ class TaskforceConsole:
             info_text,
             title="[Session Info]",
             title_align="left",
-            border_style="blue",
+            border_style="dim",  # Changed from blue to neutral
             padding=(0, 1),
         )
         self.console.print(info_panel)
@@ -236,7 +237,7 @@ class TaskforceConsole:
             text: Optional text to display in divider
         """
         if text:
-            self.console.print(f"\n[bold blue]{'=' * 20} {text} {'=' * 20}[/bold blue]\n")
+            self.console.print(f"\n[dim]{'=' * 20}[/dim] [bright_white]{text}[/bright_white] [dim]{'=' * 20}[/dim]\n")
         else:
             self.console.print(f"[dim]{'-' * 60}[/dim]")
 
@@ -273,7 +274,7 @@ class TaskforceConsole:
             token_info,
             title="[🎯 Token Usage]",
             title_align="left",
-            border_style="cyan",
+            border_style="dim cyan",  # More subtle border
             padding=(0, 1),
         )
         self.console.print(token_panel)

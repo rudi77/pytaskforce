@@ -14,11 +14,12 @@ class Header(Static):
     DEFAULT_CSS = """
     Header {
         dock: top;
-        height: 3;
+        height: 4;
         width: 100%;
-        background: $primary;
+        background: $panel;
         color: $text;
-        padding: 1 2;
+        padding: 0 2;
+        border-bottom: solid $primary;
     }
 
     Header .title-line {
@@ -67,23 +68,23 @@ class Header(Static):
     def _render_title(self) -> Text:
         """Render title line."""
         title = Text()
-        title.append("TASKFORCE", style="bold cyan")
-        title.append(" - ReAct Agent Framework", style="bold blue")
+        title.append("TASKFORCE", style="bold bright_white")
+        title.append(" - ReAct Agent Framework", style="dim")
         return title
 
     def _render_info(self) -> Text:
         """Render info line with session, profile, status, and tokens."""
         info = Text()
         info.append(f"Session: ", style="dim")
-        info.append(f"{self.session_id[:8]}...", style="cyan")
+        info.append(f"{self.session_id[:8]}...", style="dim cyan")
         info.append(f"  │  ", style="dim")
         info.append(f"Profile: ", style="dim")
-        info.append(f"{self.profile}", style="yellow")
+        info.append(f"{self.profile}", style="bright_white")
 
         if self.user_context:
             info.append(f"  │  ", style="dim")
             info.append(f"RAG: ", style="dim")
-            info.append("enabled", style="magenta")
+            info.append("enabled", style="dim magenta")
 
         info.append(f"  │  ", style="dim")
         info.append(f"Status: ", style="dim")
@@ -92,7 +93,7 @@ class Header(Static):
         if self.token_count > 0:
             info.append(f"  │  ", style="dim")
             info.append(f"🎯 Tokens: ", style="dim")
-            info.append(f"{self.token_count:,}", style="cyan")
+            info.append(f"{self.token_count:,}", style="dim cyan")
 
         return info
 
@@ -115,17 +116,17 @@ class Header(Static):
     def _get_status_color(self) -> str:
         """Get color for current status."""
         status_colors = {
-            "Idle": "white",
+            "Idle": "dim white",
             "Initializing": "yellow",
-            "Thinking": "blue",
+            "Thinking": "dim cyan",
             "Working": "cyan",
             "Calling Tool": "yellow",
-            "Processing": "magenta",
+            "Processing": "dim magenta",
             "Responding": "green",
             "Complete": "green",
             "Error": "red",
         }
-        return status_colors.get(self.status, "white")
+        return status_colors.get(self.status, "dim white")
 
     def watch_status(self, new_status: str) -> None:
         """React to status changes.

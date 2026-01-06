@@ -34,12 +34,12 @@ class ChatMessage(Static):
     ChatMessage {
         width: 100%;
         height: auto;
-        margin: 0 1;
+        margin: 1 0;
         padding: 0;
     }
 
     ChatMessage.user {
-        align: right top;
+        align: left top;
     }
 
     ChatMessage.agent {
@@ -47,7 +47,7 @@ class ChatMessage(Static):
     }
 
     ChatMessage.system {
-        align: center top;
+        align: left top;
     }
 
     ChatMessage.tool_call {
@@ -132,7 +132,7 @@ class ChatMessage(Static):
             self.content,
             title=title,
             title_align="left",
-            border_style="green",
+            border_style="dim bright_white",  # Changed from green to neutral
             padding=(0, 1),
         )
 
@@ -167,18 +167,18 @@ class ChatMessage(Static):
             final_content,
             title=title,
             title_align="left",
-            border_style="cyan",
+            border_style="dim cyan",  # More subtle border
             padding=(0, 1),
         )
 
     def _render_system_message(self, time_str: str) -> Panel:
         """Render system message."""
-        title = f"ℹ️  System                                     {time_str}"
+        title = f"ℹ️ System                                              {time_str}"
         return Panel(
-            Text(self.content, style="blue"),
+            self.content,  # Changed from blue to subtle
             title=title,
             title_align="left",
-            border_style="blue",
+            border_style="yellow",  # Changed from blue to neutral
             padding=(0, 1),
         )
 
