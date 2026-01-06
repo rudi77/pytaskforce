@@ -23,6 +23,36 @@
 
 ---
 
+## Documentation Structure
+
+Documentation is maintained **as Markdown in-repo**. Canonical entry points:
+
+| Location | Purpose |
+|----------|---------|
+| `README.md` | Main user entry point (Quick Start, CLI + API, links into `docs/`) |
+| `docs/index.md` | Docs navigation hub |
+| `docs/architecture.md` | Stable architecture entry-point (links into `docs/architecture/`) |
+| `docs/adr/` | Architecture Decision Records (index: `docs/adr/index.md`) |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR template with Clean Architecture compliance checklist |
+| `.github/ISSUE_TEMPLATE/bug_report.yml` | Bug report template |
+| `.github/ISSUE_TEMPLATE/feature_request.yml` | Feature request template (includes layer impact) |
+| `.env.example` | Environment variable template (copy to `.env` for local setup) |
+
+### Documentation Upkeep Rule (MANDATORY)
+
+When code changes affect CLI/API/config behavior, **update the relevant docs pages in the same session**:
+
+| Change Type | Update These Files |
+|-------------|-------------------|
+| CLI behavior | `README.md` and `docs/cli.md` |
+| API routes/schemas/errors | `README.md` and `docs/api.md` |
+| Config/profile changes | `docs/profiles.md` (and update example snippets) |
+| Architecture changes | `docs/architecture.md` and/or `docs/architecture/` sharded pages |
+| Cross-cutting decisions | Add/update an ADR in `docs/adr/` |
+| Developer workflow (uv/pytest/ruff/black/mypy) | `README.md` and `docs/testing.md` |
+
+---
+
 ## Clean Architecture: Four-Layer Structure
 
 Taskforce enforces strict architectural boundaries through four distinct layers:
@@ -747,7 +777,13 @@ See `docs/architecture/section-10-deployment.md` for:
 
 ## Additional Resources
 
-- **Architecture:** `docs/architecture/index.md`
+- **Docs Hub:** `docs/index.md`
+- **Architecture:** `docs/architecture.md` (entry) → `docs/architecture/` (sharded pages)
+- **CLI Guide:** `docs/cli.md`
+- **API Guide:** `docs/api.md`
+- **Profiles & Config:** `docs/profiles.md`
+- **Testing:** `docs/testing.md`
+- **ADRs:** `docs/adr/index.md`
 - **PRD:** `docs/prd.md`
 - **Stories:** `docs/stories/`
 - **Coding Standards:** `docs/architecture/coding-standards.md`
@@ -767,6 +803,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - Keep functions ≤30 lines
 - Log with structured context
 - Make everything async for I/O
+- **Update docs when changing CLI/API/config** (see Documentation Upkeep Rule above)
 
 ### ❌ DON'T
 
@@ -782,5 +819,5 @@ See `docs/architecture/section-10-deployment.md` for:
 
 ---
 
-**Last Updated:** 2026-01-03
+**Last Updated:** 2026-01-06
 **For Questions:** See `docs/` or create an issue in the repository

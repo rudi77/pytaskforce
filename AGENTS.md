@@ -1,6 +1,22 @@
 # Self-Maintaining Documentation
 This file should be updated automatically when project-specific patterns, conventions, or important information are discovered during work sessions. Add relevant details here to help future interactions understand the codebase better. Anything that is very general knowledge about this project and that should be remembered always should be added here.
 
+- Documentation is maintained **as Markdown in-repo**. Canonical entry points:
+  - `README.md` is the main user entry point (Quick Start, CLI + API, links into `docs/`).
+  - `docs/index.md` is the docs navigation hub.
+  - `docs/architecture.md` is the stable architecture entry-point and links into the sharded architecture docs under `docs/architecture/`.
+  - ADRs live under `docs/adr/` (index: `docs/adr/index.md`).
+  - GitHub contribution templates live under `.github/` (`PULL_REQUEST_TEMPLATE.md`, issue templates in `.github/ISSUE_TEMPLATE/`).
+  - Environment variable template is provided via `.env.example` (copy to `.env` for local setup).
+
+- **Docs upkeep rule (always)**: when code changes affect CLI/API/config behavior, update the relevant docs pages in the same session:
+  - CLI behavior → `README.md` and `docs/cli.md`
+  - API routes/schemas/errors → `README.md` and `docs/api.md`
+  - Config/profile changes → `docs/profiles.md` (and update example snippets)
+  - Architecture changes → `docs/architecture.md` (entry) and/or `docs/architecture/` sharded pages
+  - Cross-cutting decisions → add/update an ADR in `docs/adr/`
+  - Developer workflow (uv/pytest/ruff/black/mypy) → `README.md` and `docs/testing.md`
+
 - LeanAgent planning strategy selection lives under `agent.planning_strategy` and optional `agent.planning_strategy_params` in profile YAML; supported values are `native_react`, `plan_and_execute`, and `plan_and_react` (default).
 
 - Execution API errors now use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header and handled in `taskforce.api.server.taskforce_http_exception_handler`.

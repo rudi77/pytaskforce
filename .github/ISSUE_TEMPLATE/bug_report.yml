@@ -1,0 +1,36 @@
+name: 🐛 Bug Report
+description: Report a bug to help us improve Taskforce
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us what you expected to happen.
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Taskforce Version
+      description: What version are you running? (e.g. 1.0.0 or commit hash)
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Please provide a minimal reproduction if possible.
+      placeholder: |
+        1. Run `taskforce run mission "..."`
+        2. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Please paste any relevant log output or stack traces.
+      render: shell
+

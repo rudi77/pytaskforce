@@ -1,0 +1,22 @@
+name: 🚀 Feature Request
+description: Suggest an idea for Taskforce
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the feature is.
+    validations:
+      required: true
+  - type: textarea
+    id: logic
+    attributes:
+      label: Proposed Implementation
+      description: How should this work? Which layer (Core, Infrastructure, etc.) is affected?
+  - type: textarea
+    id: context
+    attributes:
+      label: Use Case / Context
+      description: Why is this feature needed? What problem does it solve?
+
