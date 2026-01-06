@@ -1,16 +1,13 @@
 """Main Textual application for Taskforce chat UI."""
 
 import asyncio
-import time
-from pathlib import Path
 from typing import Any
 
 import pyperclip
-from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import DirectoryTree, Footer, Input
+from textual.widgets import Footer, Input
 
 from taskforce.api.cli.chat_ui.widgets import (
     ChatLog,
@@ -18,7 +15,6 @@ from taskforce.api.cli.chat_ui.widgets import (
     Header,
     InputBar,
     PlanPanel,
-    Sidebar,
 )
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.slash_command_registry import SlashCommandRegistry
@@ -39,7 +35,6 @@ class TaskforceChatApp(App):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "clear", "Clear Chat"),
-        ("ctrl+b", "toggle_sidebar", "Toggle Sidebar"),
         ("f1", "help", "Help"),
         ("c", "toggle_copy_mode", "Copy Mode"),
         ("y", "copy_to_clipboard", "Copy Chat"),
@@ -76,9 +71,6 @@ class TaskforceChatApp(App):
         self.command_registry = SlashCommandRegistry()
         self._processing = False
         self._current_agent_message = []
-        # Double-click tracking for sidebar
-        self._last_tree_click_path: Path | None = None
-        self._last_tree_click_time: float = 0.0
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -88,7 +80,6 @@ class TaskforceChatApp(App):
             user_context=self.user_context,
         )
         with Horizontal(id="content-container"):
-            yield Sidebar(id="sidebar")
             with Vertical(id="main-container"):
                 yield PlanPanel(id="plan-panel")
                 yield ChatLog(id="chat-log")
@@ -569,66 +560,3 @@ Use **/commands** to see available custom commands.
             chat_log.copy_mode = new_mode
         except Exception:
             pass  # Widget may not be mounted yet
-
-    def action_toggle_sidebar(self) -> None:
-        """Toggle sidebar visibility (Ctrl+B)."""
-        try:
-            sidebar = self.query_one("#sidebar", Sidebar)
-            sidebar.toggle_visibility()
-        except Exception:
-            pass  # Widget may not be mounted yet
-
-    @on(DirectoryTree.FileSelected)
-    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        """Handle file double-click - insert relative path into input."""
-        self._handle_tree_selection(event.path)
-
-    @on(DirectoryTree.DirectorySelected)
-    def on_directory_tree_directory_selected(self, event: DirectoryTree.DirectorySelected) -> None:
-        """Handle directory double-click - insert relative path into input."""
-        self._handle_tree_selection(event.path)
-
-    def _handle_tree_selection(self, path: Path) -> None:
-        """Handle tree selection with double-click detection.
-
-        Args:
-            path: Selected path
-        """
-        current_time = time.time()
-        double_click_threshold = 0.4  # 400ms
-
-        # Check for double-click (same path within threshold)
-        is_double_click = (
-            self._last_tree_click_path == path
-            and (current_time - self._last_tree_click_time) < double_click_threshold
-        )
-
-        # Update tracking
-        self._last_tree_click_path = path
-        self._last_tree_click_time = current_time
-
-        # Only insert on double-click
-        if is_double_click:
-            self._insert_path_from_tree(path)
-
-    def _insert_path_from_tree(self, path: Path) -> None:
-        """Insert file/directory path into input bar.
-
-        Args:
-            path: Path to insert (will be converted to relative)
-        """
-        try:
-            # Convert to relative path
-            relative_path = path.relative_to(Path.cwd())
-            path_str = f"./{relative_path}"
-        except ValueError:
-            # Path not relative to cwd, use absolute
-            path_str = str(path)
-
-        # Quote if contains spaces
-        if " " in path_str:
-            path_str = f'"{path_str}"'
-
-        # Insert into input bar with trailing space
-        input_bar = self.query_one("#input-bar", InputBar)
-        input_bar.insert_text(path_str + " ")
