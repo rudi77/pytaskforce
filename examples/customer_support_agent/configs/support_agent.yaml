@@ -1,0 +1,58 @@
+# Customer Support Agent Configuration
+# Example configuration for a specialized customer support agent
+
+profile: support_agent
+specialist: null  # No specialist - custom system prompt instead
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_support
+
+# Agent configuration
+agent:
+  enable_fast_path: true
+  max_steps: 40  # Support agents may need more steps for complex issues
+  planning_strategy: plan_and_react  # Plan upfront, then react to findings
+  planning_strategy_params:
+    max_plan_steps: 10
+  router:
+    use_llm_classification: true
+    max_follow_up_length: 100
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main  # Use main model (gpt-4o or similar)
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 12  # Allow more context for customer history
+  max_chars_per_item: 600
+  max_total_chars: 4000
+  include_latest_tool_previews_n: 6
+  allow_tools: null  # All tools allowed
+  allow_selectors:
+    - first_chars
+
+# Tools for customer support operations
+# NOTE: ticket_manager is a custom tool - see examples/customer_support_agent/tools/ticket_tool.py
+tools:
+  # Standard tools
+  - web_search      # Search for product documentation or solutions
+  - web_fetch       # Fetch specific documentation pages
+  - python          # Analyze data, generate reports
+  - file_read       # Read customer data files
+  - file_write      # Generate reports or export data
+  - ask_user        # Ask clarifying questions to customer
+
+  # Custom ticket management tool (not yet registered in main app)
+  # For this example, you would need to:
+  # 1. Add the ticket_tool to the tool registry
+  # 2. Or use create_lean_agent_from_definition() with custom tool instances
+  # - ticket_manager
