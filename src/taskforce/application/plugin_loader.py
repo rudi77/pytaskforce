@@ -145,12 +145,26 @@ class PluginLoader:
             tool_classes=tool_classes,
         )
 
-    def load_tools(self, manifest: PluginManifest) -> list[ToolProtocol]:
+    def load_tools(
+        self,
+        manifest: PluginManifest,
+        tool_configs: list[str | dict[str, Any]] | None = None,
+        llm_provider: Any | None = None,
+    ) -> list[ToolProtocol]:
         """
         Load and instantiate tools from a plugin.
 
         Args:
             manifest: Plugin manifest from discover_plugin()
+            tool_configs: Optional tool configurations from plugin config.
+                Can be a list of strings (tool names) or dicts with 'name' and 'params'.
+                Example:
+                    [
+                        "simple_tool",  # No params
+                        {"name": "complex_tool", "params": {"path": "${PLUGIN_PATH}/data"}}
+                    ]
+            llm_provider: Optional LLM provider to inject into tools that require it.
+                Tools with 'llm_provider' in their __init__ signature will receive this.
 
         Returns:
             List of instantiated tool objects
@@ -187,6 +201,11 @@ class PluginLoader:
                     plugin_path=str(manifest.path),
                 ) from e
 
+            # Build tool name to class name mapping by instantiating temporarily
+            tool_name_to_class = self._build_tool_name_mapping(
+                tools_module, manifest.tool_classes
+            )
+
             # Instantiate each tool class
             for class_name in manifest.tool_classes:
                 tool_class = getattr(tools_module, class_name, None)
@@ -199,8 +218,35 @@ class PluginLoader:
                     continue
 
                 try:
-                    # Instantiate the tool
-                    tool = tool_class()
+                    # Get tool params from config if available
+                    tool_params = self._get_tool_params(
+                        class_name, tool_name_to_class, tool_configs, manifest
+                    )
+
+                    # Initialize params dict if None
+                    if tool_params is None:
+                        tool_params = {}
+
+                    # Check if tool requires llm_provider and inject it
+                    if llm_provider is not None:
+                        sig = inspect.signature(tool_class.__init__)
+                        if "llm_provider" in sig.parameters:
+                            tool_params["llm_provider"] = llm_provider
+                            logger.debug(
+                                "plugin.tool_llm_provider_injected",
+                                class_name=class_name,
+                            )
+
+                    # Instantiate the tool with or without params
+                    if tool_params:
+                        tool = tool_class(**tool_params)
+                        logger.debug(
+                            "plugin.tool_instantiated_with_params",
+                            class_name=class_name,
+                            params=list(tool_params.keys()),
+                        )
+                    else:
+                        tool = tool_class()
 
                     # Validate it implements ToolProtocol
                     is_valid, error = self.validate_tool(tool)
@@ -247,6 +293,147 @@ class PluginLoader:
         )
 
         return tools
+
+    def _build_tool_name_mapping(
+        self, tools_module: Any, tool_classes: list[str]
+    ) -> dict[str, str]:
+        """
+        Build a mapping from tool.name to class name.
+
+        This is needed because tool configs reference tools by their runtime name
+        (e.g., 'apply_kontierung_rules') but we need to find the class name
+        (e.g., 'RuleEngineTool').
+
+        Args:
+            tools_module: The imported tools module
+            tool_classes: List of tool class names
+
+        Returns:
+            Dict mapping tool name to class name
+        """
+        mapping: dict[str, str] = {}
+
+        for class_name in tool_classes:
+            tool_class = getattr(tools_module, class_name, None)
+            if tool_class is None:
+                continue
+
+            # Try to get the tool name from the class
+            # First check if it's a property or attribute
+            try:
+                # Try instantiating to get the name property
+                # This is safe since we're just reading the name
+                if hasattr(tool_class, "name"):
+                    # Check if name is a property (descriptor)
+                    name_attr = getattr(type(tool_class), "name", None)
+                    if isinstance(name_attr, property):
+                        # Need to instantiate to get property value
+                        try:
+                            temp_tool = tool_class()
+                            mapping[temp_tool.name] = class_name
+                        except TypeError:
+                            # Can't instantiate without args, skip mapping
+                            pass
+                    else:
+                        # It's a class attribute
+                        mapping[tool_class.name] = class_name
+            except Exception:
+                # Skip if we can't determine the name
+                pass
+
+        return mapping
+
+    def _get_tool_params(
+        self,
+        class_name: str,
+        tool_name_to_class: dict[str, str],
+        tool_configs: list[str | dict[str, Any]] | None,
+        manifest: PluginManifest,
+    ) -> dict[str, Any] | None:
+        """
+        Get parameters for a tool from the tool configs.
+
+        Args:
+            class_name: The tool class name (e.g., 'RuleEngineTool')
+            tool_name_to_class: Mapping from tool.name to class name
+            tool_configs: List of tool configurations
+            manifest: Plugin manifest for path resolution
+
+        Returns:
+            Dict of parameters or None if no config found
+        """
+        if not tool_configs:
+            return None
+
+        # Find the tool name that maps to this class
+        tool_name = None
+        for name, cls_name in tool_name_to_class.items():
+            if cls_name == class_name:
+                tool_name = name
+                break
+
+        if not tool_name:
+            return None
+
+        # Search for config matching this tool
+        for config in tool_configs:
+            if isinstance(config, str):
+                # Simple string config, no params
+                continue
+
+            if isinstance(config, dict):
+                config_name = config.get("name")
+                if config_name == tool_name:
+                    params = config.get("params", {})
+                    if params:
+                        # Resolve path variables in params
+                        return self._resolve_params(params, manifest)
+
+        return None
+
+    def _resolve_params(
+        self, params: dict[str, Any], manifest: PluginManifest
+    ) -> dict[str, Any]:
+        """
+        Resolve variables in parameter values.
+
+        Supports:
+            ${PLUGIN_PATH} - Replaced with absolute path to plugin directory
+
+        Args:
+            params: Parameter dictionary
+            manifest: Plugin manifest for path resolution
+
+        Returns:
+            Resolved parameters
+        """
+        resolved = {}
+        for key, value in params.items():
+            if isinstance(value, str):
+                resolved[key] = self._resolve_path_variables(value, manifest)
+            elif isinstance(value, dict):
+                resolved[key] = self._resolve_params(value, manifest)
+            elif isinstance(value, list):
+                resolved[key] = [
+                    self._resolve_path_variables(v, manifest) if isinstance(v, str) else v
+                    for v in value
+                ]
+            else:
+                resolved[key] = value
+        return resolved
+
+    def _resolve_path_variables(self, value: str, manifest: PluginManifest) -> str:
+        """
+        Replace path variables in a string value.
+
+        Args:
+            value: String that may contain variables
+            manifest: Plugin manifest for path resolution
+
+        Returns:
+            String with variables resolved
+        """
+        return value.replace("${PLUGIN_PATH}", str(manifest.path))
 
     def load_config(self, manifest: PluginManifest) -> dict[str, Any]:
         """

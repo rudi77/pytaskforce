@@ -486,11 +486,22 @@ class AgentFactory:
         state_manager = self._create_state_manager(merged_config)
         llm_provider = self._create_llm_provider(merged_config)
 
-        # Load plugin tools
-        plugin_tools = plugin_loader.load_tools(manifest)
+        # Get tool configurations from plugin config
+        # Can be list of strings or dicts with 'name' and 'params'
+        tool_configs = plugin_config.get("tools", [])
+
+        # Load plugin tools with config (supports params and ${PLUGIN_PATH})
+        plugin_tools = plugin_loader.load_tools(manifest, tool_configs=tool_configs)
 
         # Optionally add native tools if specified in plugin config
-        native_tool_names = plugin_config.get("tools", [])
+        # Extract tool names from both simple strings and dict configs
+        native_tool_names: list[str] = []
+        for tool_cfg in tool_configs:
+            if isinstance(tool_cfg, str):
+                native_tool_names.append(tool_cfg)
+            elif isinstance(tool_cfg, dict) and "name" in tool_cfg:
+                native_tool_names.append(tool_cfg["name"])
+
         native_tools = []
         if native_tool_names:
             available_native = self._get_all_native_tools(llm_provider)

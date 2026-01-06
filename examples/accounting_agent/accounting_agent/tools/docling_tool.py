@@ -7,6 +7,7 @@ from PDF and image documents, returning the content as Markdown.
 
 import asyncio
 from pathlib import Path
+import re
 from typing import Any
 
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
@@ -164,6 +165,10 @@ class DoclingTool:
 
             if md_path.exists():
                 markdown_content = md_path.read_text(encoding="utf-8")
+
+                # this markdown may contain images. these image be removed before returning the markdown
+                markdown_content = re.sub(r'!\[.*?\]\(.*?\)', '', markdown_content)
+                
                 return {
                     "success": True,
                     "markdown": markdown_content,

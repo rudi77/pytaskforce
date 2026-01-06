@@ -30,7 +30,10 @@
       "Bash(.venv/Scripts/python.exe -m pytest tests/unit/infrastructure/persistence/test_file_agent_registry.py -v)",
       "Bash(.venv/Scripts/python.exe -m pytest:*)",
       "Bash(.venv/Scripts/python.exe:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(PYTHONPATH=\"D:/home/Source/pytaskforce/examples/accounting_agent\" .venv/Scripts/python.exe:*)",
+      "Bash(set PYTHONPATH=D:/home/Source/pytaskforce/examples/accounting_agent:*)",
+      "Bash(D:/home/Source/pytaskforce/.venv/Scripts/python.exe -c:*)"
     ],
     "deny": [],
     "ask": []

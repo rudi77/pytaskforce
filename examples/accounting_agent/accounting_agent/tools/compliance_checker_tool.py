@@ -3,10 +3,15 @@ Compliance validation tool for German invoice requirements.
 
 This tool validates invoices against §14 UStG (Umsatzsteuergesetz)
 requirements for mandatory fields (Pflichtangaben).
+
+Rules can be loaded from YAML configuration files for flexibility.
 """
 
 import re
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
@@ -20,10 +25,13 @@ class ComplianceCheckerTool:
 
     Also checks for Kleinbetragsrechnung (§33 UStDV) reduced requirements
     for invoices under 250 EUR.
+
+    Rules can be loaded from a YAML file via the rules_path parameter,
+    or use built-in defaults if no path is provided.
     """
 
-    # §14 Abs. 4 UStG mandatory fields with legal references
-    MANDATORY_FIELDS = {
+    # Default §14 Abs. 4 UStG mandatory fields (used if no YAML provided)
+    DEFAULT_MANDATORY_FIELDS = {
         "supplier_name": {
             "legal_ref": "§14 Abs. 4 Nr. 1 UStG",
             "description": "Name und Anschrift des leistenden Unternehmers",
@@ -43,7 +51,7 @@ class ComplianceCheckerTool:
             "legal_ref": "§14 Abs. 4 Nr. 2 UStG",
             "description": "Steuernummer oder USt-IdNr. des Lieferanten",
             "severity": "error",
-            "validation_pattern": r"^DE[0-9]{9}$"
+            "validation": {"pattern_vat_id": r"^DE[0-9]{9}$"}
         },
         "invoice_date": {
             "legal_ref": "§14 Abs. 4 Nr. 3 UStG",
@@ -91,6 +99,53 @@ class ComplianceCheckerTool:
         "gross_amount",
         "vat_rate"
     }
+
+    def __init__(self, rules_path: str | None = None):
+        """
+        Initialize ComplianceCheckerTool.
+
+        Args:
+            rules_path: Optional path to compliance_rules.yaml file.
+                If provided, rules are loaded from the YAML file.
+                If None, built-in default rules are used.
+        """
+        self._rules_path = rules_path
+        self._rules: dict[str, Any] = {}
+        self._mandatory_fields: dict[str, Any] = {}
+
+        if rules_path:
+            self._load_rules()
+        else:
+            # Use default rules
+            self._mandatory_fields = self.DEFAULT_MANDATORY_FIELDS.copy()
+
+    def _load_rules(self) -> None:
+        """Load compliance rules from YAML file."""
+        rules_file = Path(self._rules_path)
+        if not rules_file.exists():
+            # Fall back to defaults if file not found
+            self._mandatory_fields = self.DEFAULT_MANDATORY_FIELDS.copy()
+            return
+
+        try:
+            with open(rules_file, encoding="utf-8") as f:
+                self._rules = yaml.safe_load(f) or {}
+
+            # Extract mandatory fields from loaded rules
+            loaded_fields = self._rules.get("mandatory_fields", {})
+            if loaded_fields:
+                self._mandatory_fields = loaded_fields
+            else:
+                self._mandatory_fields = self.DEFAULT_MANDATORY_FIELDS.copy()
+
+        except yaml.YAMLError:
+            # Fall back to defaults on parse error
+            self._mandatory_fields = self.DEFAULT_MANDATORY_FIELDS.copy()
+
+    @property
+    def MANDATORY_FIELDS(self) -> dict[str, Any]:
+        """Return the active mandatory fields (from YAML or defaults)."""
+        return self._mandatory_fields
 
     @property
     def name(self) -> str:
@@ -224,16 +279,27 @@ class ComplianceCheckerTool:
 
                 # Additional validation for specific fields
                 elif field == "vat_id" and value:
-                    pattern = field_config.get("validation_pattern")
-                    if pattern and not re.match(pattern, str(value)):
-                        # Also accept tax numbers (Steuernummer)
-                        tax_number_pattern = r"^\d{2,3}/\d{3}/\d{5}$"
-                        if not re.match(tax_number_pattern, str(value)):
+                    # Get validation patterns (support both old and new YAML formats)
+                    validation = field_config.get("validation", {})
+                    vat_pattern = (
+                        validation.get("pattern_vat_id")
+                        or field_config.get("validation_pattern")  # Legacy format
+                    )
+                    tax_pattern = (
+                        validation.get("pattern_tax_number")
+                        or r"^\d{2,3}/\d{3}/\d{5}$"  # Default fallback
+                    )
+
+                    if vat_pattern:
+                        vat_match = re.match(vat_pattern, str(value))
+                        tax_match = re.match(tax_pattern, str(value))
+
+                        if not vat_match and not tax_match:
                             warnings.append({
                                 "field": field,
                                 "message": f"USt-IdNr. Format ungültig: {value}",
                                 "legal_reference": legal_ref,
-                                "hint": "Erwartet: DE + 9 Ziffern oder Steuernummer XX/XXX/XXXXX"
+                                "hint": "Erwartet: EU USt-IdNr. oder Steuernummer"
                             })
 
             # Check for VAT consistency

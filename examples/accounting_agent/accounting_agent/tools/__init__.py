@@ -3,6 +3,7 @@ Accounting Tools Package
 
 This package provides specialized tools for German accounting operations:
 - DoclingTool: PDF/image to Markdown extraction via Docling CLI
+- InvoiceExtractionTool: LLM-based invoice data extraction from markdown
 - RuleEngineTool: YAML-based deterministic Kontierung rules
 - ComplianceCheckerTool: §14 UStG compliance validation
 - TaxCalculatorTool: VAT and depreciation calculations
@@ -14,6 +15,7 @@ These tools can be integrated with Taskforce agents or used standalone.
 from accounting_agent.tools.audit_log_tool import AuditLogTool
 from accounting_agent.tools.compliance_checker_tool import ComplianceCheckerTool
 from accounting_agent.tools.docling_tool import DoclingTool
+from accounting_agent.tools.invoice_extraction_tool import InvoiceExtractionTool
 from accounting_agent.tools.rule_engine_tool import RuleEngineTool
 from accounting_agent.tools.tax_calculator_tool import TaxCalculatorTool
 
@@ -21,6 +23,7 @@ __all__ = [
     "AuditLogTool",
     "ComplianceCheckerTool",
     "DoclingTool",
+    "InvoiceExtractionTool",
     "RuleEngineTool",
     "TaxCalculatorTool",
 ]
