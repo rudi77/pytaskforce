@@ -26,6 +26,15 @@ This file should be updated automatically when project-specific patterns, conven
 - LeanAgent support services live in `src/taskforce/core/domain/lean_agent_components/` (prompt builder, message history manager, tool execution helpers, state store, resource closer).
 - Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
 
+- **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
+  - **Storage**: Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level commands override user-level commands.
+  - **Naming**: Hierarchical based on folder structure (e.g., `agents/reviewer.md` becomes `/agents:reviewer`).
+  - **Types**:
+    - `prompt`: Simple prompt templates where `$ARGUMENTS` is replaced by user input.
+    - `agent`: Defines a specialized agent with its own `profile`, `tools`, and `system_prompt` (from the file body).
+  - **Behavior**: An `agent`-type command **temporarily overrides** the current agent's configuration (system prompt, tools, profile) for that single execution. The original context is restored immediately after.
+  - **Variables**: Use `$ARGUMENTS` in the Markdown body to inject user input from the command.
+
 # Python Best Practices
 
 ## 1) Code Style & Benennung

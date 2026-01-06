@@ -98,14 +98,16 @@ The UI supports different message types with distinct styling:
 
 ### Commands
 
-Type these commands in the chat input:
+The Chat UI supports built-in and **[Custom Slash Commands](slash-commands.md)**. Type these commands in the chat input:
 
-- `/help` or `/h` - Show available commands
+- `/help` or `/h` - Show all available commands (including custom ones)
 - `/clear` or `/c` - Clear chat history
 - `/export` or `/e` - Export chat to file (coming soon)
 - `/debug` - Toggle debug mode
 - `/tokens` - Show token usage statistics
 - `/exit` or `/quit` - Exit the application
+
+Custom commands can be added by placing Markdown files in `.taskforce/commands/`.
 
 ### Keyboard Shortcuts
 
