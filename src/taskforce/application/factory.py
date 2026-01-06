@@ -491,7 +491,10 @@ class AgentFactory:
         tool_configs = plugin_config.get("tools", [])
 
         # Load plugin tools with config (supports params and ${PLUGIN_PATH})
-        plugin_tools = plugin_loader.load_tools(manifest, tool_configs=tool_configs)
+        # Pass llm_provider for tools that require it (e.g., InvoiceExtractionTool)
+        plugin_tools = plugin_loader.load_tools(
+            manifest, tool_configs=tool_configs, llm_provider=llm_provider
+        )
 
         # Optionally add native tools if specified in plugin config
         # Extract tool names from both simple strings and dict configs

@@ -65,6 +65,25 @@ mandatory_fields:
     severity: "error"
     required: true
 
+  # Getränke und Verpflegung (Betrieblich)
+  office_refreshments:
+    keywords:
+      - "Mineralwasser"
+      - "Wasser"
+      - "Kaffee"
+      - "Tee"
+      - "Milch"
+      - "Zucker"
+      - "Getränke"
+      - "Cola"
+      - "Limonade"
+      - "Bier"      # Achtung: Alkohol oft kritisch, aber buchbar
+      - "Kasten"
+      - "Pfand"
+    debit_account: "4980"  # SKR03: Betriebsbedarf
+    debit_name: "Betriebsbedarf (Getränke)"
+    legal_basis: "§4 Abs. 4 EStG (Betriebliche Übung)"
+
 # Kontext-Logik für Auslandsrechnungen
 context_logic:
   foreign_supplier:

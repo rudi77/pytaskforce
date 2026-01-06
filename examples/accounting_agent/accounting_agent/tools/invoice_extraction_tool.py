@@ -162,6 +162,10 @@ class InvoiceExtractionTool:
             generated_text = result.get("generated_text") or result.get("content", "")
             invoice_data = self._parse_extraction_response(generated_text)
 
+            # write the generated text to a file
+            with open("generated_text.txt", "w") as f:
+                f.write(generated_text)
+
             if invoice_data is None:
                 return {
                     "success": False,
