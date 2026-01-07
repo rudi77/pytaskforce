@@ -64,22 +64,22 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
     },
     "rag_semantic_search": {
         "type": "SemanticSearchTool",
-        "module": "taskforce.infrastructure.tools.rag.semantic_search",
+        "module": "taskforce.infrastructure.tools.rag.semantic_search_tool",
         "params": {},
     },
     "rag_list_documents": {
         "type": "ListDocumentsTool",
-        "module": "taskforce.infrastructure.tools.rag.list_documents",
+        "module": "taskforce.infrastructure.tools.rag.list_documents_tool",
         "params": {},
     },
     "rag_get_document": {
         "type": "GetDocumentTool",
-        "module": "taskforce.infrastructure.tools.rag.get_document",
+        "module": "taskforce.infrastructure.tools.rag.get_document_tool",
         "params": {},
     },
     "global_document_analysis": {
         "type": "GlobalDocumentAnalysisTool",
-        "module": "taskforce.infrastructure.tools.rag.global_document_analysis",
+        "module": "taskforce.infrastructure.tools.rag.global_document_analysis_tool",
         "params": {},
     },
 }
