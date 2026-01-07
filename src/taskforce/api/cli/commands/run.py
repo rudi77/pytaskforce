@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 
 import typer
 from rich.console import Console, Group
@@ -11,7 +12,16 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 
 from taskforce.api.cli.output_formatter import TaskforceConsole
+from taskforce.api.cli.long_running_harness import (
+    build_longrun_mission,
+    ensure_harness_files,
+    load_metadata,
+    resolve_longrun_paths,
+    validate_auto_runs,
+    save_metadata,
+)
 from taskforce.application.executor import AgentExecutor
+from taskforce.core.domain.models import ExecutionResult
 
 app = typer.Typer(help="Execute agent missions")
 
@@ -133,6 +143,146 @@ def run_mission(
         )
 
 
+@app.command("longrun")
+def run_longrun(
+    ctx: typer.Context,
+    mission: str = typer.Argument(..., help="High-level mission description"),
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile"),
+    session_id: str | None = typer.Option(None, "--session", "-s", help="Resume existing session"),
+    debug: bool | None = typer.Option(None, "--debug", help="Enable debug output"),
+    stream: bool = typer.Option(False, "--stream", "-S", help="Enable streaming output"),
+    init: bool = typer.Option(False, "--init", help="Run initializer session"),
+    auto: bool = typer.Option(False, "--auto", help="Auto-continue sessions until limit"),
+    max_runs: int = typer.Option(1, "--max-runs", help="Max auto runs before stopping"),
+    pause_seconds: float = typer.Option(0.0, "--pause-seconds", help="Delay between runs"),
+    harness_dir: str = typer.Option(".taskforce", "--harness-dir", help="Harness base directory"),
+    features_path: str | None = typer.Option(None, "--features-path", help="Feature list JSON path"),
+    progress_path: str | None = typer.Option(None, "--progress-path", help="Progress log path"),
+    init_script_path: str | None = typer.Option(None, "--init-script", help="Init script path"),
+    prompt_path: str | None = typer.Option(
+        None, "--prompt-path", help="Mission/spec file path"
+    ),
+    metadata_path: str | None = typer.Option(None, "--metadata-path", help="Harness metadata path"),
+):
+    """Run long-running agent sessions with harness artifacts."""
+    paths = resolve_longrun_paths(
+        harness_dir=Path(harness_dir),
+        features_path=features_path,
+        progress_path=progress_path,
+        init_script_path=init_script_path,
+        metadata_path=metadata_path,
+    )
+    metadata = load_metadata(paths.metadata)
+    if session_id is None and metadata and metadata.session_id:
+        session_id = metadata.session_id
+    if init:
+        ensure_harness_files(paths)
+    elif not (paths.features.exists() and paths.progress.exists() and paths.init_script.exists()):
+        TaskforceConsole(debug=bool(debug)).print_error(
+            "Harness files missing. Run with --init to create them."
+        )
+        raise typer.Exit(1)
+    try:
+        validate_auto_runs(auto, max_runs)
+    except ValueError as exc:
+        TaskforceConsole(debug=bool(debug)).print_error(str(exc))
+        raise typer.Exit(1) from exc
+
+    runs = max_runs if auto else 1
+    for index in range(runs):
+        if index > 0:
+            init = False
+        resolved_prompt_path = Path(prompt_path).resolve() if prompt_path else None
+        mission_text = build_longrun_mission(
+            mission,
+            paths,
+            init_mode=init,
+            mission_path=resolved_prompt_path,
+        )
+        result = _execute_longrun(
+            ctx=ctx,
+            mission=mission_text,
+            profile=profile,
+            session_id=session_id,
+            debug=debug,
+            stream=stream,
+        )
+        session_id = result.session_id if result else session_id
+        save_metadata(
+            path=paths.metadata,
+            mission=mission,
+            session_id=session_id,
+        )
+        if not auto or index == runs - 1:
+            break
+        if pause_seconds > 0:
+            import time
+
+            time.sleep(pause_seconds)
+
+
+def _execute_longrun(
+    *,
+    ctx: typer.Context,
+    mission: str,
+    profile: str | None,
+    session_id: str | None,
+    debug: bool | None,
+    stream: bool,
+) -> ExecutionResult | None:
+    """Execute a long-running mission while capturing session metadata."""
+    global_opts = ctx.obj or {}
+    profile = profile or global_opts.get("profile", "dev")
+    debug = debug if debug is not None else global_opts.get("debug", False)
+
+    # Configure logging
+    import logging
+    import structlog
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING, format="%(message)s")
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
+        )
+
+    tf_console = TaskforceConsole(debug=debug)
+    tf_console.print_banner()
+    tf_console.print_system_message(f"Mission: {mission}", "system")
+    if session_id:
+        tf_console.print_system_message(f"Resuming session: {session_id}", "info")
+    tf_console.print_system_message(f"Profile: {profile}", "info")
+    tf_console.print_system_message("Using Agent (native tool calling)", "info")
+    if stream:
+        tf_console.print_system_message("Streaming mode enabled", "info")
+    tf_console.print_divider()
+
+    if stream:
+        return asyncio.run(_execute_streaming_mission(
+            mission=mission,
+            profile=profile,
+            session_id=session_id,
+            lean=True,
+            planning_strategy=None,
+            planning_strategy_params=None,
+            console=tf_console.console,
+        ))
+    return _execute_standard_mission(
+        mission=mission,
+        profile=profile,
+        session_id=session_id,
+        lean=True,
+        debug=debug,
+        planning_strategy=None,
+        planning_strategy_params=None,
+        tf_console=tf_console,
+    )
+
+
 def _execute_standard_mission(
     mission: str,
     profile: str,
@@ -142,7 +292,7 @@ def _execute_standard_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     tf_console: TaskforceConsole,
-) -> None:
+) -> ExecutionResult:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
 
@@ -188,6 +338,8 @@ def _execute_standard_mission(
     if result.token_usage and result.token_usage.get("total_tokens", 0) > 0:
         tf_console.print_token_usage(result.token_usage)
 
+    return result
+
 
 async def _execute_streaming_mission(
     mission: str,
@@ -197,7 +349,7 @@ async def _execute_streaming_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     console: Console,
-) -> None:
+) -> ExecutionResult:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
 
@@ -216,6 +368,9 @@ async def _execute_streaming_mission(
         "completion_tokens": 0,
         "total_tokens": 0,
     }
+    session_id_result: str | None = None
+    final_message = ""
+    final_status = "completed"
 
     def format_plan() -> str | None:
         """Format current plan for display."""
@@ -289,6 +444,8 @@ async def _execute_streaming_mission(
             planning_strategy_params=strategy_params,
         ):
             event_type = update.event_type
+            if event_type == "started":
+                session_id_result = update.details.get("session_id")
             should_update = False  # Only update display on meaningful changes
 
             if event_type == "started":
@@ -360,6 +517,7 @@ async def _execute_streaming_mission(
                     if content:
                         final_answer_tokens.append(content)
                 status_message = "Complete!"
+                final_message = update.details.get("content", "")
                 should_update = True
 
             elif event_type == "complete":
@@ -367,10 +525,12 @@ async def _execute_streaming_mission(
                 # If no final answer yet, use the message
                 if not final_answer_tokens and update.message:
                     final_answer_tokens.append(update.message)
+                    final_message = update.message
                 should_update = True
 
             elif event_type == "error":
                 status_message = f"Error: {update.message}"
+                final_status = "failed"
                 console.print(f"[red]Error: {update.message}[/red]")
                 should_update = True
 
@@ -400,6 +560,13 @@ async def _execute_streaming_mission(
             title="🎯 Token Usage",
             border_style="cyan",
         ))
+
+    return ExecutionResult(
+        session_id=session_id_result or session_id or "",
+        status=final_status,
+        final_message=final_message,
+        token_usage=total_token_usage,
+    )
 
 
 

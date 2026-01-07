@@ -30,6 +30,9 @@ Copy-Item .env.example .env
 # CLI Mode
 taskforce run mission "Describe the current weather in Vienna"
 
+# Long-running CLI harness (initializer + incremental sessions)
+taskforce run longrun --init "Build a billing dashboard"
+
 # API Mode
 uvicorn taskforce.api.server:app --reload
 # Documentation: `http://localhost:8000/docs`

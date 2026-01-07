@@ -10,6 +10,27 @@ The `run mission` command starts a new agent task.
 taskforce run mission "Summarize the latest trends in AI"
 ```
 
+### Long-Running Harness Sessions
+Run long-running coding tasks with a persistent harness (feature list, progress log, init script):
+```powershell
+# Initialize harness artifacts and first session
+taskforce run longrun --init "Build a billing dashboard"
+
+# Continue the same mission (resume with session id)
+taskforce run longrun --session <session-id> "Continue billing dashboard"
+
+# Auto-continue for multiple runs (e.g., 5 iterations)
+taskforce run longrun --auto --max-runs 5 "Continue billing dashboard"
+```
+
+By default, Taskforce stores harness files under `.taskforce/longrun/`:
+- `feature_list.json`
+- `progress.md`
+- `init.sh`
+- `harness.json` (last mission + session id)
+
+You can override paths using `--features-path`, `--progress-path`, `--init-script`, `--prompt-path` (mission/spec file), or `--metadata-path`.
+
 ### Interactive Chat
 Open a continuous conversation with an agent.
 ```powershell
@@ -59,4 +80,3 @@ taskforce config show
 
 ---
 *For full command details, run `taskforce --help`.*
-
