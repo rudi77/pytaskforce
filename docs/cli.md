@@ -21,6 +21,9 @@ taskforce run longrun --session <session-id> "Continue billing dashboard"
 
 # Auto-continue for multiple runs (e.g., 5 iterations)
 taskforce run longrun --auto --max-runs 5 "Continue billing dashboard"
+
+# Use a mission/spec file (MISSION becomes optional)
+taskforce run longrun --init --prompt-path ".\\spec.md"
 ```
 
 By default, Taskforce stores harness files under `.taskforce/longrun/`:

@@ -10,6 +10,7 @@ from taskforce.api.cli.long_running_harness import (
     resolve_longrun_paths,
     save_metadata,
     validate_auto_runs,
+    validate_mission_input,
 )
 
 
@@ -74,6 +75,13 @@ def test_auto_runs_validation() -> None:
         validate_auto_runs(auto=True, max_runs=0)
     except ValueError as exc:
         assert "--max-runs must be >= 1" in str(exc)
+
+
+def test_longrun_requires_mission_without_prompt_path() -> None:
+    try:
+        validate_mission_input(None, None)
+    except ValueError as exc:
+        assert "MISSION is required" in str(exc)
 
 
 def test_build_longrun_mission_includes_paths(tmp_path: Path) -> None:

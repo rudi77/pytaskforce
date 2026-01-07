@@ -18,6 +18,7 @@ from taskforce.api.cli.long_running_harness import (
     load_metadata,
     resolve_longrun_paths,
     validate_auto_runs,
+    validate_mission_input,
     save_metadata,
 )
 from taskforce.application.executor import AgentExecutor
@@ -146,7 +147,7 @@ def run_mission(
 @app.command("longrun")
 def run_longrun(
     ctx: typer.Context,
-    mission: str = typer.Argument(..., help="High-level mission description"),
+    mission: str | None = typer.Argument(None, help="High-level mission description"),
     profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile"),
     session_id: str | None = typer.Option(None, "--session", "-s", help="Resume existing session"),
     debug: bool | None = typer.Option(None, "--debug", help="Enable debug output"),
@@ -165,6 +166,14 @@ def run_longrun(
     metadata_path: str | None = typer.Option(None, "--metadata-path", help="Harness metadata path"),
 ):
     """Run long-running agent sessions with harness artifacts."""
+    try:
+        validate_mission_input(
+            mission,
+            Path(prompt_path).resolve() if prompt_path else None,
+        )
+    except ValueError as exc:
+        TaskforceConsole(debug=bool(debug)).print_error(str(exc))
+        raise typer.Exit(1) from exc
     paths = resolve_longrun_paths(
         harness_dir=Path(harness_dir),
         features_path=features_path,
@@ -194,7 +203,7 @@ def run_longrun(
             init = False
         resolved_prompt_path = Path(prompt_path).resolve() if prompt_path else None
         mission_text = build_longrun_mission(
-            mission,
+            mission or "",
             paths,
             init_mode=init,
             mission_path=resolved_prompt_path,

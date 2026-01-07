@@ -198,3 +198,9 @@ def validate_auto_runs(auto: bool, max_runs: int) -> None:
     """Validate auto-run parameters."""
     if auto and max_runs < 1:
         raise ValueError("--max-runs must be >= 1 when using --auto.")
+
+
+def validate_mission_input(mission: str | None, mission_path: Path | None) -> None:
+    """Validate mission input requirements."""
+    if mission is None and mission_path is None:
+        raise ValueError("MISSION is required unless --prompt-path is provided.")
