@@ -223,6 +223,33 @@ class ZaiService(LLMProviderProtocol):
         allowed = ["temperature", "max_tokens", "top_p"]
         return {k: v for k, v in defaults.items() if k in allowed}
 
+    def _sanitize_messages_for_zai(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Sanitize messages for ZAI API compatibility.
+
+        ZAI API has stricter message format requirements than OpenAI:
+        - Assistant messages with tool_calls must have content as string (not None)
+        - Empty content should be "" not None
+
+        Args:
+            messages: List of message dicts
+
+        Returns:
+            Sanitized messages compatible with ZAI API
+        """
+        sanitized = []
+        for msg in messages:
+            msg_copy = msg.copy()
+            # ZAI doesn't accept content: None for assistant messages
+            if msg_copy.get("role") == "assistant":
+                if msg_copy.get("content") is None:
+                    # Set to empty string instead of None
+                    msg_copy["content"] = ""
+            sanitized.append(msg_copy)
+        return sanitized
+
     async def complete(
         self,
         messages: list[dict[str, Any]],
@@ -258,10 +285,13 @@ class ZaiService(LLMProviderProtocol):
         # Merge with provided kwargs (kwargs override base_params)
         merged_params = {**base_params, **kwargs}
 
+        # Sanitize messages for ZAI API compatibility
+        sanitized_messages = self._sanitize_messages_for_zai(messages)
+
         # Build API call kwargs
         api_kwargs: dict[str, Any] = {
             "model": actual_model,
-            "messages": messages,
+            "messages": sanitized_messages,
         }
 
         # Add supported parameters
@@ -475,10 +505,13 @@ Task: {prompt}
         base_params = self._get_model_parameters(actual_model)
         merged_params = {**base_params, **kwargs}
 
+        # Sanitize messages for ZAI API compatibility
+        sanitized_messages = self._sanitize_messages_for_zai(messages)
+
         # Build API call kwargs
         api_kwargs: dict[str, Any] = {
             "model": actual_model,
-            "messages": messages,
+            "messages": sanitized_messages,
             "stream": True,
         }
 
@@ -502,7 +535,7 @@ Task: {prompt}
         self.logger.debug(
             "zai_stream_started",
             model=actual_model,
-            message_count=len(messages),
+            message_count=len(sanitized_messages),
             tools_count=len(tools) if tools else 0,
         )
 

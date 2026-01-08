@@ -7,6 +7,7 @@ Migrated from Agent V2 with full preservation of functionality.
 
 import json
 import os
+import shlex
 import subprocess
 import time
 import urllib.error
@@ -158,6 +159,8 @@ class GitTool(ToolProtocol):
                 cmd = ["git", "add"] + files
             elif operation == "commit":
                 message = kwargs.get("message", "Commit via Taskforce Agent")
+                # Convert escape sequences to actual newlines (LLM sends "\n" as literal)
+                message = message.replace("\\n", "\n")
                 cmd = ["git", "commit", "-m", message]
             elif operation == "push":
                 remote = kwargs.get("remote", "origin")
@@ -203,11 +206,13 @@ class GitTool(ToolProtocol):
                 timeout=30,
             )
 
+            # Build display command with proper quoting for logging
+            display_cmd = " ".join(shlex.quote(arg) for arg in cmd)
             payload = {
                 "success": result.returncode == 0,
                 "output": result.stdout,
                 "error": result.stderr if result.returncode != 0 else None,
-                "command": " ".join(cmd),
+                "command": display_cmd,
             }
             if payload["success"]:
                 logger.info("git_execute_success", command=payload["command"])

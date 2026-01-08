@@ -38,7 +38,8 @@
       "Bash(.venvScriptspyinstaller.exe taskforce.spec --clean)",
       "Bash(.venv/Scripts/pyinstaller.exe:*)",
       "Bash(/c/Users/rudi/source/pytaskforce/dist/taskforce.exe tools list:*)",
-      "Bash(powershell -Command \"Get-ChildItem dist\\\\taskforce.exe | Select-Object Name, Length, LastWriteTime\")"
+      "Bash(powershell -Command \"Get-ChildItem dist\\\\taskforce.exe | Select-Object Name, Length, LastWriteTime\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\rudi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-rudi-source-pytaskforce\\\\tasks\\\\bf82baa.output\" -Tail 80)"
     ],
     "deny": [],
     "ask": []
