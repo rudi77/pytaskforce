@@ -23,7 +23,8 @@ agent:
 # LLM configuration
 llm:
   config_path: configs/llm_config.yaml
-  default_model: main  # Use main model (gpt-4o or similar)
+  provider_type: zai  # Use Zai LLM provider (glm-4.7)
+  default_model: main
 
 # Logging configuration
 logging:

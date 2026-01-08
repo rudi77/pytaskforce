@@ -20,7 +20,8 @@ agent:
 # LLM configuration
 llm:
   config_path: configs/llm_config.yaml
-  default_model: powerful-1
+  provider_type: zai  # Use Zai LLM provider (glm-4.7)
+  default_model: main
 
 # Logging configuration
 logging:

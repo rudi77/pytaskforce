@@ -155,6 +155,34 @@ providers:
     #   - Keep specialized models on OpenAI
     # -------------------------------------------------------------------------
 
+  # ============================================================================
+  # Zai Provider Configuration
+  # ============================================================================
+  # Enable this provider by setting provider_type: zai in your profile config.
+  #
+  # SETUP STEPS:
+  # 1. Register at Z.AI Open Platform (https://api.z.ai/)
+  # 2. Create an API Key in the API Keys management page
+  # 3. Set environment variable: export ZAI_API_KEY=your-api-key
+  # 4. Update your profile config with: provider_type: zai
+  # ============================================================================
+
+  zai:
+    # API key environment variable
+    api_key_env: "ZAI_API_KEY"
+
+    # Base URL (optional, defaults to official endpoint)
+    base_url: "https://api.z.ai/api/paas/v4/"
+
+    # Model mapping for Zai
+    # Maps model aliases (main, fast, powerful) to actual Zai model names
+    model_mapping:
+      main: "glm-4.7"
+      fast: "glm-4.7-flash"
+      powerful: "glm-4.9"
+      powerful-1: "glm-4.7"
+      legacy: "glm-4"
+
 logging:
   log_prompts: false
   log_completions: false

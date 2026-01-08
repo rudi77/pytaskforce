@@ -913,14 +913,16 @@ class AgentFactory:
         """
         Create LLM provider based on configuration.
 
+        Supports:
+        - openai: OpenAI/Azure via LiteLLM (default)
+        - zai: Zai API via zai-sdk
+
         Args:
             config: Configuration dictionary
 
         Returns:
-            LLM provider implementation (OpenAI)
+            LLM provider implementation
         """
-        from taskforce.infrastructure.llm.openai_service import OpenAIService
-
         llm_config = config.get("llm", {})
         config_path = llm_config.get("config_path", "configs/llm_config.yaml")
 
@@ -929,7 +931,19 @@ class AgentFactory:
         if not config_path_obj.is_absolute():
             config_path = str(get_base_path() / config_path)
 
-        return OpenAIService(config_path=config_path)
+        # Determine provider type
+        provider_type = llm_config.get("provider_type", "openai")
+
+        if provider_type == "zai":
+            from taskforce.infrastructure.llm.zai_service import ZaiService
+
+            self.logger.info("llm_provider_selected", provider="zai")
+            return ZaiService(config_path=config_path)
+        else:
+            from taskforce.infrastructure.llm.openai_service import OpenAIService
+
+            self.logger.info("llm_provider_selected", provider="openai")
+            return OpenAIService(config_path=config_path)
 
     def _create_native_tools(
         self, config: dict, llm_provider: LLMProviderProtocol, user_context: Optional[dict[str, Any]] = None

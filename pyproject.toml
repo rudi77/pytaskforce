@@ -66,6 +66,8 @@ dependencies = [
     # Tracing (Arize Phoenix)
     "arize-phoenix-otel>=0.6.0",
     "openinference-instrumentation-litellm>=0.1.0",
+    # Zai LLM Provider
+    "zai-sdk>=0.1.0",
 ]
 
 [project.urls]
@@ -172,6 +174,8 @@ module = [
     "litellm.*",
     "aiofiles.*",
     "azure.*",
+    "zai.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
 

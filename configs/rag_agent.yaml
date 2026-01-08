@@ -12,7 +12,8 @@ persistence:
 # LLM configuration
 llm:
   config_path: configs/llm_config.yaml  # Path to LLM config
-  default_model: powerful-1  # Use gpt-4.1 (powerful-1/gpt-5-1 deployment not available)
+  provider_type: zai  # Use Zai LLM provider (glm-4.7)
+  default_model: main
 
 # RAG configuration
 # RAG tools read directly from environment variables (see AzureSearchBase)
