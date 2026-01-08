@@ -89,7 +89,7 @@ async def test_compression_with_llm_summary(lean_agent, mock_llm_provider):
     # Verify compressed structure
     assert len(result) < len(messages)
     assert result[0]["role"] == "system"  # System prompt preserved
-    assert result[1]["role"] == "system"  # Summary added
+    assert result[1]["role"] == "assistant"  # Summary added as assistant message
     assert "[Previous Context Summary]" in result[1]["content"]
     assert "Summary: User asked 25 questions" in result[1]["content"]
 
@@ -245,8 +245,10 @@ async def test_compression_uses_correct_model(lean_agent, mock_llm_provider):
         "content": "Summary",
     }
 
-    # Set custom model alias
+    # Set custom model alias on both agent and message_history_manager
+    # (MessageHistoryManager captures the alias at init time)
     lean_agent.model_alias = "custom-model"
+    lean_agent.message_history_manager._model_alias = "custom-model"
 
     await lean_agent._compress_messages(messages)
 

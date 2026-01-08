@@ -269,6 +269,10 @@ class ZaiService(LLMProviderProtocol):
             if param in merged_params:
                 api_kwargs[param] = merged_params[param]
 
+        # Zai API doesn't accept top_p >= 1.0
+        if "top_p" in api_kwargs and api_kwargs["top_p"] >= 1.0:
+            api_kwargs["top_p"] = 0.99
+
         # Add tools if provided
         if tools:
             api_kwargs["tools"] = tools
@@ -441,6 +445,7 @@ Task: {prompt}
         Stream Zai completion with real-time token delivery.
 
         Yields normalized events as chunks arrive from the Zai API.
+        Uses asyncio.Queue to stream tokens live from the synchronous SDK.
         Errors are yielded as events, NOT raised as exceptions.
 
         Args:
@@ -482,6 +487,10 @@ Task: {prompt}
             if param in merged_params:
                 api_kwargs[param] = merged_params[param]
 
+        # Zai API doesn't accept top_p >= 1.0
+        if "top_p" in api_kwargs and api_kwargs["top_p"] >= 1.0:
+            api_kwargs["top_p"] = 0.99
+
         # Add tools if provided
         if tools:
             api_kwargs["tools"] = tools
@@ -497,121 +506,192 @@ Task: {prompt}
             tools_count=len(tools) if tools else 0,
         )
 
+        # Use queue for live streaming from sync SDK to async generator
+        chunk_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        stream_error: list[Exception] = []  # Mutable container for error from thread
+
+        # Get event loop reference before starting thread
+        loop = asyncio.get_running_loop()
+
+        def stream_worker() -> None:
+            """
+            Worker function that runs in a thread.
+            Iterates the synchronous stream and puts chunks on the queue.
+            """
+            try:
+                # Create streaming response
+                response = self.client.chat.completions.create(**api_kwargs)
+
+                # Iterate and put each chunk on queue
+                for chunk in response:
+                    # Use call_soon_threadsafe to put on queue from thread
+                    loop.call_soon_threadsafe(
+                        chunk_queue.put_nowait, {"chunk": chunk}
+                    )
+
+                # Signal completion
+                loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
+
+            except Exception as e:
+                stream_error.append(e)
+                # Signal error completion
+                loop.call_soon_threadsafe(chunk_queue.put_nowait, None)
+
         try:
             start_time = time.time()
 
-            # Get streaming response (synchronous)
-            # We need to run the initial call in a thread, then iterate
-            response = await asyncio.to_thread(
-                self.client.chat.completions.create,
-                **api_kwargs,
-            )
+            # Start stream worker in thread pool
+            stream_future = loop.run_in_executor(None, stream_worker)
 
             # Track tool calls across chunks
             current_tool_calls: dict[int, dict[str, Any]] = {}
 
-            # Process chunks - collect all chunks in thread then yield
-            def iterate_chunks():
-                """Iterate through synchronous stream in thread."""
-                chunks = []
-                for chunk in response:
-                    chunks.append(chunk)
-                return chunks
+            # Per-chunk timeout (60 seconds between chunks should be plenty)
+            chunk_timeout = 60.0
 
-            chunks = await asyncio.to_thread(iterate_chunks)
-
-            for chunk in chunks:
-                # Safety check for valid chunk structure
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-                finish_reason = chunk.choices[0].finish_reason
-
-                # Handle content tokens
-                if hasattr(delta, "content") and delta.content:
-                    self.logger.debug(
-                        "zai_stream_token",
-                        content_length=len(delta.content),
+            # Process chunks as they arrive
+            while True:
+                try:
+                    # Wait for next chunk with timeout
+                    item = await asyncio.wait_for(
+                        chunk_queue.get(), timeout=chunk_timeout
                     )
-                    yield {"type": "token", "content": delta.content}
 
-                # Handle tool calls
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
+                    # None signals end of stream
+                    if item is None:
+                        break
 
-                        # New tool call starting
-                        if idx not in current_tool_calls:
-                            tool_id = getattr(tc, "id", "") or ""
-                            tool_name = ""
-                            if hasattr(tc, "function") and tc.function:
-                                tool_name = getattr(tc.function, "name", "") or ""
+                    chunk = item["chunk"]
 
-                            current_tool_calls[idx] = {
-                                "id": tool_id,
-                                "name": tool_name,
-                                "arguments": "",
-                            }
+                    # Safety check for valid chunk structure
+                    if not chunk.choices:
+                        continue
 
-                            # Only emit start if we have meaningful data
-                            if tool_id or tool_name:
-                                self.logger.debug(
-                                    "zai_stream_tool_call_start",
-                                    tool_id=tool_id,
-                                    tool_name=tool_name,
-                                    index=idx,
-                                )
-                                yield {
-                                    "type": "tool_call_start",
+                    delta = chunk.choices[0].delta
+                    finish_reason = chunk.choices[0].finish_reason
+
+                    # Handle content tokens
+                    if hasattr(delta, "content") and delta.content:
+                        self.logger.debug(
+                            "zai_stream_token",
+                            content_length=len(delta.content),
+                        )
+                        yield {"type": "token", "content": delta.content}
+
+                    # Handle tool calls
+                    if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+
+                            # New tool call starting
+                            if idx not in current_tool_calls:
+                                tool_id = getattr(tc, "id", "") or ""
+                                tool_name = ""
+                                if hasattr(tc, "function") and tc.function:
+                                    tool_name = getattr(tc.function, "name", "") or ""
+
+                                current_tool_calls[idx] = {
                                     "id": tool_id,
                                     "name": tool_name,
-                                    "index": idx,
+                                    "arguments": "",
                                 }
 
-                        # Update tool call id/name if provided in later chunks
-                        if hasattr(tc, "id") and tc.id:
-                            current_tool_calls[idx]["id"] = tc.id
-                        if hasattr(tc, "function") and tc.function:
-                            if hasattr(tc.function, "name") and tc.function.name:
-                                current_tool_calls[idx]["name"] = tc.function.name
+                                # Only emit start if we have meaningful data
+                                if tool_id or tool_name:
+                                    self.logger.debug(
+                                        "zai_stream_tool_call_start",
+                                        tool_id=tool_id,
+                                        tool_name=tool_name,
+                                        index=idx,
+                                    )
+                                    yield {
+                                        "type": "tool_call_start",
+                                        "id": tool_id,
+                                        "name": tool_name,
+                                        "index": idx,
+                                    }
 
-                        # Argument delta
-                        if hasattr(tc, "function") and tc.function:
-                            args_delta = getattr(tc.function, "arguments", None)
-                            if args_delta:
-                                current_tool_calls[idx]["arguments"] += args_delta
-                                self.logger.debug(
-                                    "zai_stream_tool_call_delta",
-                                    tool_id=current_tool_calls[idx]["id"],
-                                    delta_length=len(args_delta),
-                                    index=idx,
-                                )
-                                yield {
-                                    "type": "tool_call_delta",
-                                    "id": current_tool_calls[idx]["id"],
-                                    "arguments_delta": args_delta,
-                                    "index": idx,
-                                }
+                            # Update tool call id/name if provided in later chunks
+                            if hasattr(tc, "id") and tc.id:
+                                current_tool_calls[idx]["id"] = tc.id
+                            if hasattr(tc, "function") and tc.function:
+                                if hasattr(tc.function, "name") and tc.function.name:
+                                    current_tool_calls[idx]["name"] = tc.function.name
 
-                # Check for finish
-                if finish_reason:
-                    # Emit tool_call_end for all accumulated tool calls
-                    for idx, tc_data in current_tool_calls.items():
-                        self.logger.debug(
-                            "zai_stream_tool_call_end",
-                            tool_id=tc_data["id"],
-                            tool_name=tc_data["name"],
-                            arguments_length=len(tc_data["arguments"]),
-                            index=idx,
-                        )
-                        yield {
-                            "type": "tool_call_end",
-                            "id": tc_data["id"],
-                            "name": tc_data["name"],
-                            "arguments": tc_data["arguments"],
-                            "index": idx,
-                        }
+                            # Argument delta
+                            if hasattr(tc, "function") and tc.function:
+                                args_delta = getattr(tc.function, "arguments", None)
+                                if args_delta:
+                                    current_tool_calls[idx]["arguments"] += args_delta
+                                    self.logger.debug(
+                                        "zai_stream_tool_call_delta",
+                                        tool_id=current_tool_calls[idx]["id"],
+                                        delta_length=len(args_delta),
+                                        index=idx,
+                                    )
+                                    yield {
+                                        "type": "tool_call_delta",
+                                        "id": current_tool_calls[idx]["id"],
+                                        "arguments_delta": args_delta,
+                                        "index": idx,
+                                    }
+
+                    # Check for finish
+                    if finish_reason:
+                        # Emit tool_call_end for all accumulated tool calls
+                        for idx, tc_data in current_tool_calls.items():
+                            self.logger.debug(
+                                "zai_stream_tool_call_end",
+                                tool_id=tc_data["id"],
+                                tool_name=tc_data["name"],
+                                arguments_length=len(tc_data["arguments"]),
+                                index=idx,
+                            )
+                            yield {
+                                "type": "tool_call_end",
+                                "id": tc_data["id"],
+                                "name": tc_data["name"],
+                                "arguments": tc_data["arguments"],
+                                "index": idx,
+                            }
+
+                except asyncio.TimeoutError:
+                    self.logger.error(
+                        "zai_stream_chunk_timeout",
+                        model=actual_model,
+                        timeout_seconds=chunk_timeout,
+                    )
+                    yield {
+                        "type": "error",
+                        "message": f"Stream timeout: no data received for {chunk_timeout}s",
+                    }
+                    # Cancel the stream worker
+                    stream_future.cancel()
+                    return
+
+            # Wait for worker to complete (should be immediate since we got None)
+            try:
+                await asyncio.wait_for(stream_future, timeout=5.0)
+            except asyncio.TimeoutError:
+                self.logger.warning("zai_stream_worker_timeout")
+            except asyncio.CancelledError:
+                pass
+
+            # Check if there was an error in the stream worker
+            if stream_error:
+                error = stream_error[0]
+                error_msg = str(error)
+                error_type = type(error).__name__
+
+                self.logger.error(
+                    "zai_stream_failed",
+                    model=actual_model,
+                    error_type=error_type,
+                    error=error_msg[:200],
+                )
+
+                yield {"type": "error", "message": error_msg}
+                return
 
             # Final done event
             latency_ms = int((time.time() - start_time) * 1000)

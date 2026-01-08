@@ -279,7 +279,7 @@ Keep it factual and concise."""
             compressed = [
                 messages[0],
                 {
-                    "role": "system",
+                    "role": "assistant",
                     "content": f"[Previous Context Summary]\n{summary}",
                 },
                 *messages[keep_from:],
@@ -325,7 +325,7 @@ Keep it factual and concise."""
             )
             compressed = [
                 system_prompt,
-                {"role": "system", "content": summary_text},
+                {"role": "assistant", "content": summary_text},
                 *recent_messages,
             ]
         else:

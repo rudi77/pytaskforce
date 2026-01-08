@@ -90,6 +90,8 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        llm_model_override: str | None = None,
+        llm_provider_override: str | None = None,
     ) -> ExecutionResult:
         """Execute Agent mission with comprehensive orchestration.
 
@@ -116,6 +118,8 @@ class AgentExecutor:
             planning_strategy: Optional planning strategy override
                               (native_react, plan_and_execute, plan_and_react)
             planning_strategy_params: Optional params for planning strategy
+            llm_model_override: Optional LLM model override (alias or model name)
+            llm_provider_override: Optional LLM provider override (openai, azure, zai)
 
         Returns:
             ExecutionResult with completion status and history
@@ -146,6 +150,8 @@ class AgentExecutor:
                 agent_id=agent_id,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
+                llm_model_override=llm_model_override,
+                llm_provider_override=llm_provider_override,
             )
 
             await self._maybe_store_conversation_history(
@@ -221,6 +227,8 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         agent: Agent | None = None,
+        llm_model_override: str | None = None,
+        llm_provider_override: str | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
@@ -239,6 +247,8 @@ class AgentExecutor:
             planning_strategy_params: Optional params for planning strategy
             agent: Optional pre-created Agent instance. If provided, skips
                   agent creation and uses this agent directly.
+            llm_model_override: Optional LLM model override (alias or model name)
+            llm_provider_override: Optional LLM provider override (openai, azure, zai)
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -282,6 +292,8 @@ class AgentExecutor:
                     agent_id=agent_id,
                     planning_strategy=planning_strategy,
                     planning_strategy_params=planning_strategy_params,
+                    llm_model_override=llm_model_override,
+                    llm_provider_override=llm_provider_override,
                 )
 
             await self._maybe_store_conversation_history(
@@ -353,6 +365,8 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        llm_model_override: str | None = None,
+        llm_provider_override: str | None = None,
     ) -> Agent:
         """Create Agent using factory.
 
@@ -366,6 +380,8 @@ class AgentExecutor:
             agent_id: Optional custom agent ID to load from registry
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional planning strategy parameters
+            llm_model_override: Optional LLM model override (alias or model name)
+            llm_provider_override: Optional LLM provider override (openai, azure, zai)
 
         Returns:
             Agent instance with injected dependencies
@@ -425,6 +441,8 @@ class AgentExecutor:
                 profile=profile,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
+                llm_model_override=llm_model_override,
+                llm_provider_override=llm_provider_override,
             )
 
         # Standard Agent creation with optional user_context for RAG tools
@@ -433,6 +451,8 @@ class AgentExecutor:
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
+            llm_model_override=llm_model_override,
+            llm_provider_override=llm_provider_override,
         )
 
     async def _execute_with_progress(

@@ -96,6 +96,8 @@ class AgentFactory:
         user_context: Optional[dict[str, Any]] = None,
         planning_strategy: Optional[str] = None,
         planning_strategy_params: Optional[dict[str, Any]] = None,
+        llm_model_override: Optional[str] = None,
+        llm_provider_override: Optional[str] = None,
     ) -> Agent:
         """
         Create Agent with simplified ReAct loop.
@@ -118,6 +120,8 @@ class AgentFactory:
             user_context: Optional user context for RAG tools (user_id, org_id, scope)
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional planning strategy parameters
+            llm_model_override: Optional LLM model override (alias or model name)
+            llm_provider_override: Optional LLM provider override (openai, azure, zai)
 
         Returns:
             Agent instance with injected dependencies
@@ -149,7 +153,7 @@ class AgentFactory:
 
         # Instantiate infrastructure adapters (reuse existing methods)
         state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
+        llm_provider = self._create_llm_provider(config, provider_override=llm_provider_override)
 
         tools, mcp_contexts = await self._build_tools(
             config=config,
@@ -161,9 +165,9 @@ class AgentFactory:
         # Build system prompt - use LEAN_KERNEL_PROMPT or specialist variant
         system_prompt = self._assemble_lean_system_prompt(effective_specialist, tools)
 
-        # Get model_alias from config
+        # Get model_alias from config or override
         llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
+        model_alias = llm_model_override or llm_config.get("default_model", "main")
 
         # Create ContextPolicy from config (Story 9.2)
         context_policy = self._create_context_policy(config)
@@ -275,6 +279,8 @@ class AgentFactory:
         work_dir: Optional[str] = None,
         planning_strategy: Optional[str] = None,
         planning_strategy_params: Optional[dict[str, Any]] = None,
+        llm_model_override: Optional[str] = None,
+        llm_provider_override: Optional[str] = None,
     ) -> Agent:
         """
         Create Agent from custom agent definition.
@@ -299,6 +305,8 @@ class AgentFactory:
             work_dir: Optional override for work directory
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional planning strategy parameters
+            llm_model_override: Optional LLM model override (alias or model name)
+            llm_provider_override: Optional LLM provider override (openai, azure, zai)
 
         Returns:
             Agent instance configured from definition
@@ -338,7 +346,7 @@ class AgentFactory:
 
         # Instantiate infrastructure adapters
         state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
+        llm_provider = self._create_llm_provider(config, provider_override=llm_provider_override)
 
         # Create tools filtered by allowlist
         tools = await self._create_tools_from_allowlist(
@@ -353,9 +361,9 @@ class AgentFactory:
         if not system_prompt:
             raise ValueError("agent_definition must include 'system_prompt'")
 
-        # Get model_alias from config
+        # Get model_alias from config or override
         llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
+        model_alias = llm_model_override or llm_config.get("default_model", "main")
 
         # Create ContextPolicy from config (Story 9.2)
         context_policy = self._create_context_policy(config)
@@ -909,7 +917,9 @@ class AgentFactory:
         else:
             raise ValueError(f"Unknown persistence type: {persistence_type}")
 
-    def _create_llm_provider(self, config: dict) -> LLMProviderProtocol:
+    def _create_llm_provider(
+        self, config: dict, provider_override: Optional[str] = None
+    ) -> LLMProviderProtocol:
         """
         Create LLM provider based on configuration.
 
@@ -919,6 +929,7 @@ class AgentFactory:
 
         Args:
             config: Configuration dictionary
+            provider_override: Optional provider type override (openai, azure, zai)
 
         Returns:
             LLM provider implementation
@@ -931,18 +942,18 @@ class AgentFactory:
         if not config_path_obj.is_absolute():
             config_path = str(get_base_path() / config_path)
 
-        # Determine provider type
-        provider_type = llm_config.get("provider_type", "openai")
+        # Determine provider type (override takes precedence)
+        provider_type = provider_override or llm_config.get("provider_type", "openai")
 
         if provider_type == "zai":
             from taskforce.infrastructure.llm.zai_service import ZaiService
 
-            self.logger.info("llm_provider_selected", provider="zai")
+            self.logger.info("llm_provider_selected", provider="zai", is_override=bool(provider_override))
             return ZaiService(config_path=config_path)
         else:
             from taskforce.infrastructure.llm.openai_service import OpenAIService
 
-            self.logger.info("llm_provider_selected", provider="openai")
+            self.logger.info("llm_provider_selected", provider="openai", is_override=bool(provider_override))
             return OpenAIService(config_path=config_path)
 
     def _create_native_tools(

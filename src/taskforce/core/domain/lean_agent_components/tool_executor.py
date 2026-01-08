@@ -35,6 +35,18 @@ class ToolExecutor:
             return {"success": False, "error": f"Tool not found: {tool_name}"}
 
         try:
+            # Validate parameters before execution
+            if hasattr(tool, "validate_params"):
+                is_valid, error_msg = tool.validate_params(**tool_args)
+                if not is_valid:
+                    self._logger.warning(
+                        "tool_validation_failed",
+                        tool=tool_name,
+                        error=error_msg,
+                        args_keys=list(tool_args.keys()),
+                    )
+                    return {"success": False, "error": f"Parameter validation failed: {error_msg}"}
+
             self._logger.info("tool_execute", tool=tool_name, args_keys=list(tool_args.keys()))
             result = await tool.execute(**tool_args)
             self._logger.info("tool_complete", tool=tool_name, success=result.get("success"))

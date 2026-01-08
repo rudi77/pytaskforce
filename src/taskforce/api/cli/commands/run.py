@@ -12,6 +12,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 
 from taskforce.api.cli.output_formatter import TaskforceConsole
+from taskforce.application.tracing_facade import (
+    init_tracing,
+    shutdown_tracing,
+    init_file_tracing,
+    shutdown_file_tracing,
+    get_file_tracer,
+)
 from taskforce.api.cli.long_running_harness import (
     build_longrun_mission,
     ensure_harness_files,
@@ -54,6 +61,14 @@ def run_mission(
     stream: bool = typer.Option(
         False, "--stream", "-S",
         help="Enable real-time streaming output. Shows tool calls, results, and answer as they happen.",
+    ),
+    model: str | None = typer.Option(
+        None, "--model", "-m",
+        help="Override LLM model (alias: main/fast/powerful or actual model name)",
+    ),
+    provider: str | None = typer.Option(
+        None, "--provider",
+        help="Override LLM provider (openai, azure, zai)",
     ),
 ):
     """Execute an agent mission.
@@ -118,6 +133,10 @@ def run_mission(
         )
     if stream:
         tf_console.print_system_message("Streaming mode enabled", "info")
+    if model:
+        tf_console.print_system_message(f"Model override: {model}", "info")
+    if provider:
+        tf_console.print_system_message(f"Provider override: {provider}", "info")
     tf_console.print_divider()
 
     # Use streaming or standard execution
@@ -130,6 +149,8 @@ def run_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             console=tf_console.console,
+            llm_model_override=model,
+            llm_provider_override=provider,
         ))
     else:
         _execute_standard_mission(
@@ -141,6 +162,8 @@ def run_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             tf_console=tf_console,
+            llm_model_override=model,
+            llm_provider_override=provider,
         )
 
 
@@ -164,6 +187,17 @@ def run_longrun(
         None, "--prompt-path", help="Mission/spec file path"
     ),
     metadata_path: str | None = typer.Option(None, "--metadata-path", help="Harness metadata path"),
+    trace_file: str | None = typer.Option(
+        None, "--trace-file", "-t", help="Path to trace file (JSONL). Default: <harness-dir>/longrun/traces.jsonl"
+    ),
+    model: str | None = typer.Option(
+        None, "--model", "-m",
+        help="Override LLM model (alias: main/fast/powerful or actual model name)",
+    ),
+    provider: str | None = typer.Option(
+        None, "--provider",
+        help="Override LLM provider (openai, azure, zai)",
+    ),
 ):
     """Run long-running agent sessions with harness artifacts."""
     try:
@@ -197,6 +231,13 @@ def run_longrun(
         TaskforceConsole(debug=bool(debug)).print_error(str(exc))
         raise typer.Exit(1) from exc
 
+    # Resolve trace file path (default to harness-dir/longrun/traces.jsonl)
+    trace_file_path = (
+        Path(trace_file).resolve()
+        if trace_file
+        else Path(harness_dir).resolve() / "longrun" / "traces.jsonl"
+    )
+
     runs = max_runs if auto else 1
     for index in range(runs):
         if index > 0:
@@ -215,6 +256,9 @@ def run_longrun(
             session_id=session_id,
             debug=debug,
             stream=stream,
+            trace_file_path=trace_file_path,
+            llm_model_override=model,
+            llm_provider_override=provider,
         )
         session_id = result.session_id if result else session_id
         save_metadata(
@@ -238,6 +282,9 @@ def _execute_longrun(
     session_id: str | None,
     debug: bool | None,
     stream: bool,
+    trace_file_path: Path | None = None,
+    llm_model_override: str | None = None,
+    llm_provider_override: str | None = None,
 ) -> ExecutionResult | None:
     """Execute a long-running mission while capturing session metadata."""
     global_opts = ctx.obj or {}
@@ -264,37 +311,74 @@ def _execute_longrun(
             wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
         )
 
+    # Initialize tracing (sends to Phoenix collector if available)
+    init_tracing()
+
+    # Initialize file-based tracing (writes to local JSONL file)
+    if trace_file_path:
+        init_file_tracing(path=trace_file_path, session_id=session_id)
+
     tf_console = TaskforceConsole(debug=debug)
     tf_console.print_banner()
-    tf_console.print_system_message(f"Mission: {mission}", "system")
+    tf_console.print_system_message(f"Mission: {mission[:200]}...", "system")
     if session_id:
         tf_console.print_system_message(f"Resuming session: {session_id}", "info")
     tf_console.print_system_message(f"Profile: {profile}", "info")
     tf_console.print_system_message("Using Agent (native tool calling)", "info")
     if stream:
         tf_console.print_system_message("Streaming mode enabled", "info")
+    if trace_file_path:
+        tf_console.print_system_message(f"Trace file: {trace_file_path}", "info")
+    if llm_model_override:
+        tf_console.print_system_message(f"Model override: {llm_model_override}", "info")
+    if llm_provider_override:
+        tf_console.print_system_message(f"Provider override: {llm_provider_override}", "info")
     tf_console.print_divider()
 
-    if stream:
-        return asyncio.run(_execute_streaming_mission(
-            mission=mission,
-            profile=profile,
-            session_id=session_id,
-            lean=True,
-            planning_strategy=None,
-            planning_strategy_params=None,
-            console=tf_console.console,
-        ))
-    return _execute_standard_mission(
-        mission=mission,
-        profile=profile,
-        session_id=session_id,
-        lean=True,
-        debug=debug,
-        planning_strategy=None,
-        planning_strategy_params=None,
-        tf_console=tf_console,
-    )
+    # Log mission start to file tracer
+    file_tracer = get_file_tracer()
+    if file_tracer:
+        file_tracer.log_mission_start(mission, profile=profile, session_id=session_id)
+
+    try:
+        if stream:
+            result = asyncio.run(_execute_streaming_mission(
+                mission=mission,
+                profile=profile,
+                session_id=session_id,
+                lean=True,
+                planning_strategy=None,
+                planning_strategy_params=None,
+                console=tf_console.console,
+                llm_model_override=llm_model_override,
+                llm_provider_override=llm_provider_override,
+            ))
+        else:
+            result = _execute_standard_mission(
+                mission=mission,
+                profile=profile,
+                session_id=session_id,
+                lean=True,
+                debug=debug,
+                planning_strategy=None,
+                planning_strategy_params=None,
+                tf_console=tf_console,
+                llm_model_override=llm_model_override,
+                llm_provider_override=llm_provider_override,
+            )
+
+        # Log mission end to file tracer
+        if file_tracer and result:
+            file_tracer.log_mission_end(
+                status=result.status,
+                final_message=result.final_message,
+                total_tokens=result.token_usage,
+            )
+
+        return result
+    finally:
+        shutdown_file_tracing()
+        shutdown_tracing()
 
 
 def _execute_standard_mission(
@@ -306,6 +390,8 @@ def _execute_standard_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     tf_console: TaskforceConsole,
+    llm_model_override: str | None = None,
+    llm_provider_override: str | None = None,
 ) -> ExecutionResult:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
@@ -333,6 +419,8 @@ def _execute_standard_mission(
                 progress_callback=progress_callback,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=strategy_params,
+                llm_model_override=llm_model_override,
+                llm_provider_override=llm_provider_override,
             )
         )
 
@@ -363,9 +451,14 @@ async def _execute_streaming_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     console: Console,
+    llm_model_override: str | None = None,
+    llm_provider_override: str | None = None,
 ) -> ExecutionResult:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
+
+    # Get file tracer for logging (may be None)
+    file_tracer = get_file_tracer()
 
     strategy_params = _parse_strategy_params(planning_strategy_params)
 
@@ -456,6 +549,8 @@ async def _execute_streaming_mission(
             session_id=session_id,
             planning_strategy=planning_strategy,
             planning_strategy_params=strategy_params,
+            llm_model_override=llm_model_override,
+            llm_provider_override=llm_provider_override,
         ):
             event_type = update.event_type
             if event_type == "started":
@@ -476,6 +571,13 @@ async def _execute_streaming_mission(
                 current_tool = update.details.get("tool", "unknown")
                 status_message = f"Calling {current_tool}..."
                 should_update = True
+                # Log to file tracer
+                if file_tracer:
+                    file_tracer.log_tool_call(
+                        tool_name=current_tool,
+                        tool_call_id=update.details.get("id", ""),
+                        args=update.details.get("args", {}),
+                    )
 
             elif event_type == "tool_result":
                 tool = update.details.get("tool", "unknown")
@@ -485,6 +587,14 @@ async def _execute_streaming_mission(
                 current_tool = None
                 status_message = "Processing result..."
                 should_update = True
+                # Log to file tracer
+                if file_tracer:
+                    file_tracer.log_tool_result(
+                        tool_name=tool,
+                        tool_call_id=update.details.get("id", ""),
+                        success=update.details.get("success", False),
+                        result_preview=output,
+                    )
 
             elif event_type == "llm_token":
                 # Tokens are accumulated but we let Rich Live auto-refresh
@@ -547,6 +657,9 @@ async def _execute_streaming_mission(
                 final_status = "failed"
                 console.print(f"[red]Error: {update.message}[/red]")
                 should_update = True
+                # Log to file tracer
+                if file_tracer:
+                    file_tracer.log_error(update.message or "Unknown error")
 
             # Only force update on meaningful state changes
             # For llm_token, Rich Live auto-refreshes at 4fps
