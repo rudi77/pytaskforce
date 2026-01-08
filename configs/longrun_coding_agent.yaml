@@ -1,0 +1,51 @@
+# Long-Running Coding Agent Configuration
+# Specialized agent for autonomous, non-interactive coding sessions
+# Key differences from coding_agent:
+# - NO ask_user tool (non-interactive mode)
+# - Uses "longrun" specialist prompt with autonomous behavior rules
+# - Includes record_question tool for logging open questions
+
+profile: longrun_coding_agent
+specialist: longrun  # Uses LONGRUN_SPECIALIST_PROMPT (autonomous coding)
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_longrun
+
+# Agent configuration
+agent:
+  enable_fast_path: false  # Disable fast-path for autonomous work
+  max_steps: 50  # Allow more steps for complex multi-feature work
+  planning_strategy: native_react
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: powerful-1
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 15                      # More context for long sessions
+  max_chars_per_item: 800            # Allow more detail per item
+  max_total_chars: 5000              # Higher total for complex codebases
+  include_latest_tool_previews_n: 8  # More tool history
+  allow_tools: null
+  allow_selectors:
+    - first_chars
+
+# Tool configuration for long-running agent
+# CRITICAL: NO ask_user tool - agent must work autonomously
+tools:
+  - file_read
+  - file_write
+  - powershell
+  - git
+  - python
+  # ask_user is intentionally EXCLUDED for autonomous operation
+  # Use progress.md and questions.md for tracking uncertainties

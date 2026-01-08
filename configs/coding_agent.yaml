@@ -20,7 +20,7 @@ agent:
 # LLM configuration
 llm:
   config_path: configs/llm_config.yaml
-  default_model: main
+  default_model: powerful-1
 
 # Logging configuration
 logging:

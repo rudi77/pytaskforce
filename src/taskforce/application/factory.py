@@ -223,7 +223,7 @@ class AgentFactory:
         the PlannerTool for dynamic context injection.
 
         Args:
-            specialist: Optional specialist profile ("coding", "rag", None)
+            specialist: Optional specialist profile ("coding", "rag", "longrun", None)
             tools: List of available tools
 
         Returns:
@@ -232,6 +232,7 @@ class AgentFactory:
         from taskforce.core.prompts.autonomous_prompts import (
             CODING_SPECIALIST_PROMPT,
             LEAN_KERNEL_PROMPT,
+            LONGRUN_SPECIALIST_PROMPT,
             RAG_SPECIALIST_PROMPT,
             WIKI_SYSTEM_PROMPT,
         )
@@ -242,6 +243,10 @@ class AgentFactory:
         # Optionally add specialist instructions
         if specialist == "coding":
             base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT
+        elif specialist == "longrun":
+            # Long-running autonomous agent: combines coding skills with autonomous behavior
+            base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT
+            base_prompt += "\n\n" + LONGRUN_SPECIALIST_PROMPT
         elif specialist == "rag":
             base_prompt += "\n\n" + RAG_SPECIALIST_PROMPT
         elif specialist == "wiki":

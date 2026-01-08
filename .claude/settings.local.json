@@ -34,7 +34,11 @@
       "Bash(PYTHONPATH=\"D:/home/Source/pytaskforce/examples/accounting_agent\" .venv/Scripts/python.exe:*)",
       "Bash(set PYTHONPATH=D:/home/Source/pytaskforce/examples/accounting_agent:*)",
       "Bash(D:/home/Source/pytaskforce/.venv/Scripts/python.exe -c:*)",
-      "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)"
+      "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)",
+      "Bash(.venvScriptspyinstaller.exe taskforce.spec --clean)",
+      "Bash(.venv/Scripts/pyinstaller.exe:*)",
+      "Bash(/c/Users/rudi/source/pytaskforce/dist/taskforce.exe tools list:*)",
+      "Bash(powershell -Command \"Get-ChildItem dist\\\\taskforce.exe | Select-Object Name, Length, LastWriteTime\")"
     ],
     "deny": [],
     "ask": []

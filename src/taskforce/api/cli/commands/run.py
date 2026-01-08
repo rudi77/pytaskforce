@@ -241,7 +241,12 @@ def _execute_longrun(
 ) -> ExecutionResult | None:
     """Execute a long-running mission while capturing session metadata."""
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    # IMPORTANT: For longrun mode, default to longrun_coding_agent profile
+    # This profile excludes ask_user tool and uses longrun specialist prompt
+    # Only use the profile if explicitly passed via --profile on the longrun command
+    # Do NOT inherit the global --profile default ("dev") as it includes ask_user
+    if profile is None:
+        profile = "longrun_coding_agent"
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging

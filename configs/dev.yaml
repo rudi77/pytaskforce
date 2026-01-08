@@ -1,0 +1,41 @@
+# Development Profile Configuration
+# Default profile for local development
+
+profile: dev
+specialist: generic  # Uses generic agent without specialized system prompts
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce
+
+# Agent configuration
+agent:
+  enable_fast_path: true
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 10
+  max_chars_per_item: 500
+  max_total_chars: 3000
+  include_latest_tool_previews_n: 5
+  allow_tools: null
+  allow_selectors:
+    - first_chars
+
+# Tool configuration
+tools:
+  - file_read
+  - file_write
+  - powershell
+  - ask_user

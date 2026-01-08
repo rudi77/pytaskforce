@@ -24,7 +24,7 @@ def test_resolve_longrun_paths_defaults(tmp_path: Path) -> None:
 
     assert paths.features == (tmp_path / "longrun" / "feature_list.json").resolve()
     assert paths.progress == (tmp_path / "longrun" / "progress.md").resolve()
-    assert paths.init_script == (tmp_path / "longrun" / "init.sh").resolve()
+    assert paths.init_script == (tmp_path / "longrun" / "init.py").resolve()
 
 
 def test_ensure_harness_files_creates_defaults(tmp_path: Path) -> None:
@@ -43,7 +43,10 @@ def test_ensure_harness_files_creates_defaults(tmp_path: Path) -> None:
     assert paths.init_script.exists()
     progress_text = paths.progress.read_text(encoding="utf-8")
     assert "2024-01-02T03:04:05" in progress_text
-    assert paths.init_script.stat().st_mode & 0o111
+    # Verify init script is a Python script (cross-platform, no executable bit check)
+    init_text = paths.init_script.read_text(encoding="utf-8")
+    assert "#!/usr/bin/env python3" in init_text
+    assert "def main()" in init_text
 
 
 def test_save_and_load_metadata(tmp_path: Path) -> None:

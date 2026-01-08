@@ -16,7 +16,7 @@ from taskforce.core.prompts.autonomous_prompts import (
 DEFAULT_HARNESS_SUBDIR: Final[str] = "longrun"
 DEFAULT_FEATURES_FILENAME: Final[str] = "feature_list.json"
 DEFAULT_PROGRESS_FILENAME: Final[str] = "progress.md"
-DEFAULT_INIT_SCRIPT_FILENAME: Final[str] = "init.sh"
+DEFAULT_INIT_SCRIPT_FILENAME: Final[str] = "init.py"  # Cross-platform Python script
 DEFAULT_METADATA_FILENAME: Final[str] = "harness.json"
 
 
@@ -103,15 +103,59 @@ def _write_progress_log_if_missing(path: Path, now: datetime | None = None) -> N
 def _write_init_script_if_missing(path: Path) -> None:
     if path.exists():
         return
-    content = (
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n\n"
-        "echo \"[taskforce] Start your dev server here\"\n"
-        "# Example:\n"
-        "# uvicorn taskforce.api.server:app --reload\n"
-    )
+    # Cross-platform Python script instead of bash
+    content = '''#!/usr/bin/env python3
+"""
+Long-running harness initialization script.
+Cross-platform (Windows/Linux/macOS).
+Run with: python init.py
+"""
+import subprocess
+import sys
+
+
+def run_command(cmd: list[str], description: str) -> bool:
+    """Run a command and report result."""
+    print(f"[INIT] {description}...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            print(f"[OK] {description}")
+            return True
+        else:
+            print(f"[WARN] {description} returned code {result.returncode}")
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:200]}")
+            return False
+    except FileNotFoundError:
+        print(f"[SKIP] {description} - command not found")
+        return False
+    except Exception as e:
+        print(f"[ERROR] {description}: {e}")
+        return False
+
+
+def main() -> int:
+    print("=" * 60)
+    print("Long-Running Harness Initialization")
+    print("=" * 60)
+
+    # TODO: Customize these commands for your project
+    # Examples:
+    # run_command(["uv", "sync"], "Installing dependencies (uv)")
+    # run_command(["npm", "install"], "Installing dependencies (npm)")
+    # run_command(["python", "-m", "pytest", "--collect-only"], "Verifying tests")
+    # run_command(["python", "-c", "import main"], "Verifying imports")
+
+    print("\\n[INIT] Initialization complete.")
+    print("[INIT] Customize this script for your project's setup.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
     path.write_text(content, encoding="utf-8")
-    path.chmod(0o755)
 
 
 def load_metadata(path: Path) -> LongRunMetadata | None:
