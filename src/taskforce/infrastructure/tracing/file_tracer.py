@@ -109,18 +109,20 @@ class FileTracer:
         model: str,
         messages_count: int,
         tools_count: int = 0,
+        messages: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Log an LLM API call start."""
-        self.log_event(
-            "llm_call_start",
-            {
-                "model": model,
-                "messages_count": messages_count,
-                "tools_count": tools_count,
-                **kwargs,
-            },
-        )
+        """Log an LLM API call start with optional full message content."""
+        data = {
+            "model": model,
+            "messages_count": messages_count,
+            "tools_count": tools_count,
+            **kwargs,
+        }
+        # Include full messages if provided
+        if messages is not None:
+            data["messages"] = messages
+        self.log_event("llm_call_start", data)
 
     def log_llm_response(
         self,
@@ -132,9 +134,11 @@ class FileTracer:
         tokens: dict[str, int] | None = None,
         latency_ms: int = 0,
         error: str | None = None,
+        content: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Log an LLM API response."""
+        """Log an LLM API response with optional full content."""
         data = {
             "model": model,
             "success": success,
@@ -147,6 +151,11 @@ class FileTracer:
             data["tokens"] = tokens
         if error:
             data["error"] = error
+        # Include full content if provided
+        if content is not None:
+            data["content"] = content
+        if tool_calls is not None:
+            data["tool_calls"] = tool_calls
 
         self.log_event("llm_call_end", data)
 

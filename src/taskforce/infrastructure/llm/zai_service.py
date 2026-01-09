@@ -26,6 +26,7 @@ import structlog
 import yaml
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.infrastructure.tracing.file_tracer import get_file_tracer
 
 
 @dataclass
@@ -324,6 +325,16 @@ class ZaiService(LLMProviderProtocol):
                     tools_count=len(tools) if tools else 0,
                 )
 
+                # Log LLM call start to global file tracer (for longrun mode)
+                file_tracer = get_file_tracer()
+                if file_tracer:
+                    file_tracer.log_llm_call(
+                        model=actual_model,
+                        messages_count=len(messages),
+                        tools_count=len(tools) if tools else 0,
+                        messages=sanitized_messages,
+                    )
+
                 # zai-sdk is synchronous - run in thread pool
                 response = await asyncio.to_thread(
                     self.client.chat.completions.create,
@@ -370,6 +381,19 @@ class ZaiService(LLMProviderProtocol):
                         tool_calls_count=len(tool_calls) if tool_calls else 0,
                     )
 
+                # Log LLM response to global file tracer (for longrun mode)
+                if file_tracer:
+                    file_tracer.log_llm_response(
+                        model=actual_model,
+                        success=True,
+                        content_length=len(content) if content else 0,
+                        tool_calls_count=len(tool_calls) if tool_calls else 0,
+                        tokens=token_stats,
+                        latency_ms=latency_ms,
+                        content=content,
+                        tool_calls=tool_calls,
+                    )
+
                 return {
                     "success": True,
                     "content": content,
@@ -408,6 +432,16 @@ class ZaiService(LLMProviderProtocol):
                         error=error_msg[:200],
                         attempts=attempt + 1,
                     )
+
+                    # Log failed LLM response to global file tracer
+                    file_tracer = get_file_tracer()
+                    if file_tracer:
+                        file_tracer.log_llm_response(
+                            model=actual_model,
+                            success=False,
+                            error=error_msg,
+                            latency_ms=int((time.time() - start_time) * 1000),
+                        )
 
                     return {
                         "success": False,
@@ -539,6 +573,16 @@ Task: {prompt}
             tools_count=len(tools) if tools else 0,
         )
 
+        # Log LLM call start to global file tracer (for longrun mode)
+        file_tracer = get_file_tracer()
+        if file_tracer:
+            file_tracer.log_llm_call(
+                model=actual_model,
+                messages_count=len(sanitized_messages),
+                tools_count=len(tools) if tools else 0,
+                messages=sanitized_messages,
+            )
+
         # Use queue for live streaming from sync SDK to async generator
         chunk_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         stream_error: list[Exception] = []  # Mutable container for error from thread
@@ -576,8 +620,9 @@ Task: {prompt}
             # Start stream worker in thread pool
             stream_future = loop.run_in_executor(None, stream_worker)
 
-            # Track tool calls across chunks
+            # Track tool calls and content across chunks
             current_tool_calls: dict[int, dict[str, Any]] = {}
+            content_accumulated = ""  # Accumulate content for tracing
 
             # Per-chunk timeout (60 seconds between chunks should be plenty)
             chunk_timeout = 60.0
@@ -605,6 +650,7 @@ Task: {prompt}
 
                     # Handle content tokens
                     if hasattr(delta, "content") and delta.content:
+                        content_accumulated += delta.content  # Accumulate for tracing
                         self.logger.debug(
                             "zai_stream_token",
                             content_length=len(delta.content),
@@ -723,6 +769,15 @@ Task: {prompt}
                     error=error_msg[:200],
                 )
 
+                # Log failed LLM response to global file tracer
+                if file_tracer:
+                    file_tracer.log_llm_response(
+                        model=actual_model,
+                        success=False,
+                        error=error_msg,
+                        latency_ms=int((time.time() - start_time) * 1000),
+                    )
+
                 yield {"type": "error", "message": error_msg}
                 return
 
@@ -739,6 +794,28 @@ Task: {prompt}
                 tool_calls_count=len(current_tool_calls),
             )
 
+            # Log LLM response to global file tracer
+            if file_tracer:
+                # Convert current_tool_calls dict to list format
+                tool_calls_list = [
+                    {
+                        "id": tc_data["id"],
+                        "function": {
+                            "name": tc_data["name"],
+                            "arguments": tc_data["arguments"],
+                        },
+                    }
+                    for tc_data in current_tool_calls.values()
+                ] if current_tool_calls else None
+                file_tracer.log_llm_response(
+                    model=actual_model,
+                    success=True,
+                    tool_calls_count=len(current_tool_calls),
+                    latency_ms=latency_ms,
+                    content=content_accumulated if content_accumulated else None,
+                    tool_calls=tool_calls_list,
+                )
+
             yield {"type": "done", "usage": usage}
 
         except Exception as e:
@@ -751,5 +828,14 @@ Task: {prompt}
                 error_type=error_type,
                 error=error_msg[:200],
             )
+
+            # Log failed LLM response to global file tracer
+            if file_tracer:
+                file_tracer.log_llm_response(
+                    model=actual_model,
+                    success=False,
+                    error=error_msg,
+                    latency_ms=0,
+                )
 
             yield {"type": "error", "message": error_msg}

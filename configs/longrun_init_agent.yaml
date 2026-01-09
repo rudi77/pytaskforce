@@ -1,0 +1,51 @@
+# Long-Running Init Agent Configuration
+# Specialized agent for initializing long-running coding sessions
+# Key differences from longrun_coding_agent:
+# - May use different LLM (e.g., cheaper model for planning)
+# - May have different tools (e.g., more exploratory, less execution)
+# - Uses "longrun_init" specialist prompt focused on project analysis
+
+profile: longrun_init_agent
+specialist: longrun_init  # Uses LONGRUN_INIT_SPECIALIST_PROMPT (project analysis)
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_longrun
+
+# Agent configuration
+agent:
+  enable_fast_path: false  # Disable fast-path for thorough analysis
+  max_steps: 30  # Init typically needs fewer steps than coding
+  planning_strategy: native_react
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  provider_type: zai  # Can be changed to cheaper provider for init
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 15
+  max_chars_per_item: 800
+  max_total_chars: 5000
+  include_latest_tool_previews_n: 8
+  allow_tools: null
+  allow_selectors:
+    - first_chars
+
+# Tool configuration for init agent
+# Focus on exploration and setup, less on execution
+# CRITICAL: NO ask_user tool - agent must work autonomously
+tools:
+  - file_read
+  - file_write
+  - powershell
+  # python is excluded - init phase focuses on analysis, not code execution
+  # ask_user is intentionally EXCLUDED for autonomous operation

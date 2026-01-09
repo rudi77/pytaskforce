@@ -52,6 +52,9 @@ litellm.suppress_debug_info = True
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol  # noqa: E402
 
+# Import file tracer for global tracing integration
+from taskforce.infrastructure.tracing.file_tracer import get_file_tracer  # noqa: E402
+
 
 @dataclass
 class RetryPolicy:
@@ -733,6 +736,8 @@ class OpenAIService(LLMProviderProtocol):
         latency_ms: int,
         success: bool,
         error: str | None = None,
+        tool_calls_count: int = 0,
+        tool_calls: list[dict[str, Any]] | None = None,
     ) -> None:
         """
         Trace LLM interaction to configured destinations.
@@ -745,7 +750,24 @@ class OpenAIService(LLMProviderProtocol):
             latency_ms: Request latency in milliseconds
             success: Whether the request was successful
             error: Error message if failed
+            tool_calls_count: Number of tool calls in response
+            tool_calls: Full tool calls data
         """
+        # Always try to log to global file tracer if available (for longrun mode)
+        file_tracer = get_file_tracer()
+        if file_tracer:
+            file_tracer.log_llm_response(
+                model=model,
+                success=success,
+                content_length=len(response_content) if response_content else 0,
+                tool_calls_count=tool_calls_count,
+                tokens=token_stats if token_stats else None,
+                latency_ms=latency_ms,
+                error=error,
+                content=response_content,
+                tool_calls=tool_calls,
+            )
+
         if not self.tracing_config.get("enabled", False):
             return
 
@@ -903,6 +925,16 @@ class OpenAIService(LLMProviderProtocol):
                     tools_count=len(tools) if tools else 0,
                 )
 
+                # Log LLM call start to global file tracer (for longrun mode)
+                file_tracer = get_file_tracer()
+                if file_tracer:
+                    file_tracer.log_llm_call(
+                        model=actual_model,
+                        messages_count=len(messages),
+                        tools_count=len(tools) if tools else 0,
+                        messages=messages,
+                    )
+
                 # Call LiteLLM
                 response = await litellm.acompletion(**litellm_kwargs)
 
@@ -978,6 +1010,8 @@ class OpenAIService(LLMProviderProtocol):
                         token_stats=token_stats,
                         latency_ms=latency_ms,
                         success=True,
+                        tool_calls_count=len(tool_calls) if tool_calls else 0,
+                        tool_calls=tool_calls,
                     )
                 )
 
@@ -1206,6 +1240,16 @@ Task: {prompt}
             tools_count=len(tools) if tools else 0,
         )
 
+        # Log LLM call start to global file tracer (for longrun mode)
+        file_tracer = get_file_tracer()
+        if file_tracer:
+            file_tracer.log_llm_call(
+                model=actual_model,
+                messages_count=len(messages),
+                tools_count=len(tools) if tools else 0,
+                messages=messages,
+            )
+
         try:
             # Call LiteLLM with streaming
             response = await litellm.acompletion(**litellm_kwargs)
@@ -1337,6 +1381,17 @@ Task: {prompt}
             )
 
             # Trace interaction (same as non-streaming complete)
+            # Convert current_tool_calls dict to list format for tracing
+            tool_calls_list = [
+                {
+                    "id": tc_data["id"],
+                    "function": {
+                        "name": tc_data["name"],
+                        "arguments": tc_data["arguments"],
+                    },
+                }
+                for tc_data in current_tool_calls.values()
+            ] if current_tool_calls else None
             asyncio.create_task(
                 self._trace_interaction(
                     messages=messages,
@@ -1345,6 +1400,8 @@ Task: {prompt}
                     token_stats=usage,
                     latency_ms=latency_ms,
                     success=True,
+                    tool_calls_count=len(current_tool_calls),
+                    tool_calls=tool_calls_list,
                 )
             )
 
@@ -1382,6 +1439,7 @@ Task: {prompt}
                     latency_ms=0,
                     success=False,
                     error=error_msg,
+                    tool_calls_count=0,
                 )
             )
 

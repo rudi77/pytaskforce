@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import structlog
@@ -14,6 +15,7 @@ from taskforce.core.tools.tool_converter import (
     tool_result_preview_to_message,
     tool_result_to_message,
 )
+from taskforce.infrastructure.tracing.file_tracer import get_file_tracer
 
 
 class ToolExecutor:
@@ -28,11 +30,19 @@ class ToolExecutor:
         self._tools = tools
         self._logger = logger
 
-    async def execute(self, tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+    async def execute(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        tool_call_id: str = "",
+    ) -> dict[str, Any]:
         """Execute a tool by name with given arguments."""
         tool = self._tools.get(tool_name)
         if not tool:
             return {"success": False, "error": f"Tool not found: {tool_name}"}
+
+        # Get file tracer for logging (may be None)
+        file_tracer = get_file_tracer()
 
         try:
             # Validate parameters before execution
@@ -48,11 +58,45 @@ class ToolExecutor:
                     return {"success": False, "error": f"Parameter validation failed: {error_msg}"}
 
             self._logger.info("tool_execute", tool=tool_name, args_keys=list(tool_args.keys()))
+
+            # Log tool call start to file tracer
+            if file_tracer:
+                file_tracer.log_tool_call(
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    args=tool_args,
+                )
+
+            start_time = time.time()
             result = await tool.execute(**tool_args)
+            latency_ms = int((time.time() - start_time) * 1000)
+
             self._logger.info("tool_complete", tool=tool_name, success=result.get("success"))
+
+            # Log tool result to file tracer
+            if file_tracer:
+                result_preview = str(result.get("output", result.get("content", "")))[:500]
+                file_tracer.log_tool_result(
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    success=result.get("success", False),
+                    result_preview=result_preview,
+                    latency_ms=latency_ms,
+                )
+
             return result
         except Exception as error:
             self._logger.error("tool_exception", tool=tool_name, error=str(error))
+
+            # Log tool error to file tracer
+            if file_tracer:
+                file_tracer.log_tool_result(
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    success=False,
+                    error=str(error),
+                )
+
             return {"success": False, "error": str(error)}
 
 

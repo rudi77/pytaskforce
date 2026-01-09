@@ -115,7 +115,7 @@ async def _execute_with_limit(
 ) -> dict[str, Any]:
     """Execute a tool with concurrency limits applied."""
     async with semaphore:
-        return await agent._execute_tool(tool_name, tool_args)
+        return await agent._execute_tool(tool_name, tool_args, tool_call_id)
 
 
 async def _execute_tool_calls(
@@ -144,7 +144,7 @@ async def _execute_tool_calls(
             parallel_tasks.append((request, task))
         else:
             results[request.tool_call_id] = await agent._execute_tool(
-                request.tool_name, request.tool_args
+                request.tool_name, request.tool_args, request.tool_call_id
             )
 
     if parallel_tasks:
@@ -642,7 +642,7 @@ class NativeReActStrategy:
                         },
                     )
 
-                    tool_result = await agent._execute_tool(tool_name, tool_args)
+                    tool_result = await agent._execute_tool(tool_name, tool_args, tool_call_id)
 
                     yield StreamEvent(
                         event_type="tool_result",

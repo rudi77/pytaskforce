@@ -25,6 +25,7 @@ TASKFORCE_THEME = Theme(
         "thought": "dim magenta",  # Reduced from italic magenta
         "action": "yellow",  # Reduced from bold yellow
         "observation": "dim cyan",  # Reduced from cyan
+        "highlight": "bold bright_cyan",  # For prominent status like phase name
     }
 )
 

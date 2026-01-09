@@ -46,7 +46,6 @@ tools:
   - file_read
   - file_write
   - powershell
-  - git
   - python
   # ask_user is intentionally EXCLUDED for autonomous operation
   # Use progress.md and questions.md for tracking uncertainties

@@ -102,6 +102,14 @@ def init_tracing(config: Optional[TracingConfig] = None) -> None:
     """
     global _tracer_provider, _tracer
 
+    # Guard against re-initialization - TracerProvider can only be set once globally
+    if _tracer_provider is not None:
+        logger.debug(
+            "tracing_already_initialized",
+            hint="TracerProvider already set, skipping re-initialization",
+        )
+        return
+
     if config is None:
         config = TracingConfig.from_env()
 

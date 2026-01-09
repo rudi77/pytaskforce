@@ -198,6 +198,14 @@ def run_longrun(
         None, "--provider",
         help="Override LLM provider (openai, azure, zai)",
     ),
+    init_profile: str | None = typer.Option(
+        None, "--init-profile",
+        help="Profile for init phase (default: longrun_init_agent)",
+    ),
+    coding_profile: str | None = typer.Option(
+        None, "--coding-profile",
+        help="Profile for coding phase (default: longrun_coding_agent)",
+    ),
 ):
     """Run long-running agent sessions with harness artifacts."""
     try:
@@ -242,6 +250,15 @@ def run_longrun(
     for index in range(runs):
         if index > 0:
             init = False
+
+        # Select profile based on phase (init vs coding)
+        if init:
+            current_profile = init_profile or "longrun_init_agent"
+            phase_name = "INIT"
+        else:
+            current_profile = coding_profile or profile or "longrun_coding_agent"
+            phase_name = "CODING"
+
         resolved_prompt_path = Path(prompt_path).resolve() if prompt_path else None
         mission_text = build_longrun_mission(
             mission or "",
@@ -252,7 +269,8 @@ def run_longrun(
         result = _execute_longrun(
             ctx=ctx,
             mission=mission_text,
-            profile=profile,
+            profile=current_profile,
+            phase_name=phase_name,
             session_id=session_id,
             debug=debug,
             stream=stream,
@@ -266,6 +284,14 @@ def run_longrun(
             mission=mission,
             session_id=session_id,
         )
+
+        # Check if mission is accomplished - stop the loop early
+        if result and "MISSION_ACCOMPLISHED" in (result.final_message or "").upper():
+            TaskforceConsole(debug=bool(debug)).print_system_message(
+                "Mission accomplished - stopping longrun loop", "success"
+            )
+            break
+
         if not auto or index == runs - 1:
             break
         if pause_seconds > 0:
@@ -279,6 +305,7 @@ def _execute_longrun(
     ctx: typer.Context,
     mission: str,
     profile: str | None,
+    phase_name: str = "CODING",
     session_id: str | None,
     debug: bool | None,
     stream: bool,
@@ -286,12 +313,14 @@ def _execute_longrun(
     llm_model_override: str | None = None,
     llm_provider_override: str | None = None,
 ) -> ExecutionResult | None:
-    """Execute a long-running mission while capturing session metadata."""
+    """Execute a long-running mission while capturing session metadata.
+
+    Args:
+        phase_name: Current phase name for display ("INIT" or "CODING")
+    """
     global_opts = ctx.obj or {}
-    # IMPORTANT: For longrun mode, default to longrun_coding_agent profile
-    # This profile excludes ask_user tool and uses longrun specialist prompt
-    # Only use the profile if explicitly passed via --profile on the longrun command
-    # Do NOT inherit the global --profile default ("dev") as it includes ask_user
+    # Profile is selected by caller based on phase (init vs coding)
+    # Fallback to longrun_coding_agent if not provided
     if profile is None:
         profile = "longrun_coding_agent"
     debug = debug if debug is not None else global_opts.get("debug", False)
@@ -320,6 +349,7 @@ def _execute_longrun(
 
     tf_console = TaskforceConsole(debug=debug)
     tf_console.print_banner()
+    tf_console.print_system_message(f"Phase: {phase_name}", "highlight")
     tf_console.print_system_message(f"Mission: {mission[:200]}...", "system")
     if session_id:
         tf_console.print_system_message(f"Resuming session: {session_id}", "info")

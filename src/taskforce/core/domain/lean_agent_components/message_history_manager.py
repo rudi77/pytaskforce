@@ -277,10 +277,14 @@ Keep it factual and concise."""
                             break
 
             compressed = [
-                messages[0],
+                messages[0],  # system prompt
+                {
+                    "role": "user",
+                    "content": f"[Context from earlier conversation]\n{summary}",
+                },
                 {
                     "role": "assistant",
-                    "content": f"[Previous Context Summary]\n{summary}",
+                    "content": "Understood. Continuing from this context.",
                 },
                 *messages[keep_from:],
             ]
@@ -325,7 +329,8 @@ Keep it factual and concise."""
             )
             compressed = [
                 system_prompt,
-                {"role": "assistant", "content": summary_text},
+                {"role": "user", "content": summary_text},
+                {"role": "assistant", "content": "Understood. Continuing from this context."},
                 *recent_messages,
             ]
         else:

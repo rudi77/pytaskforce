@@ -86,16 +86,18 @@ async def test_compression_with_llm_summary(lean_agent, mock_llm_provider):
         "content"
     ]
 
-    # Verify compressed structure
+    # Verify compressed structure: system + user(summary) + assistant(ack) + recent
     assert len(result) < len(messages)
     assert result[0]["role"] == "system"  # System prompt preserved
-    assert result[1]["role"] == "assistant"  # Summary added as assistant message
-    assert "[Previous Context Summary]" in result[1]["content"]
+    assert result[1]["role"] == "user"  # Summary added as user message
+    assert "[Context from earlier conversation]" in result[1]["content"]
     assert "Summary: User asked 25 questions" in result[1]["content"]
+    assert result[2]["role"] == "assistant"  # Acknowledgment message
+    assert "Understood" in result[2]["content"]
 
     # Verify recent messages preserved (after threshold)
-    # Should have: system + summary + messages after threshold
-    expected_count = 1 + 1 + (len(messages) - lean_agent.SUMMARY_THRESHOLD)
+    # Should have: system + user(summary) + assistant(ack) + messages after threshold
+    expected_count = 1 + 2 + (len(messages) - lean_agent.SUMMARY_THRESHOLD)
     assert len(result) == expected_count
 
 
@@ -123,9 +125,9 @@ async def test_compression_fallback_on_llm_failure(
     assert len(result) < len(messages)
     assert result[0]["role"] == "system"  # System prompt preserved
 
-    # Deterministic compression keeps: system + summary message + last 10 messages
+    # Deterministic compression keeps: system + user(summary) + assistant(ack) + last 10 messages
     # (changed from old behavior which kept SUMMARY_THRESHOLD=20)
-    assert len(result) <= 12  # system + summary + 10 recent messages
+    assert len(result) <= 13  # system + user + assistant + 10 recent messages
     assert len(result) > 10  # At least some messages kept
 
 
@@ -148,8 +150,8 @@ async def test_compression_fallback_on_exception(lean_agent, mock_llm_provider):
     assert len(result) < len(messages)
     assert result[0]["role"] == "system"
 
-    # Deterministic compression keeps: system + summary message + last 10 messages
-    assert len(result) <= 12  # system + summary + 10 recent messages
+    # Deterministic compression keeps: system + user(summary) + assistant(ack) + last 10 messages
+    assert len(result) <= 13  # system + user + assistant + 10 recent messages
     assert len(result) > 10  # At least some messages kept
 
 
@@ -165,12 +167,16 @@ async def test_fallback_compression_directly(lean_agent):
     result = lean_agent._fallback_compression(messages)
 
     # Now redirects to deterministic compression
-    # Keeps: system + summary message + last 10 messages
-    assert len(result) <= 12  # system + summary + 10 recent messages
+    # Keeps: system + user(summary) + assistant(ack) + last 10 messages
+    assert len(result) <= 13  # system + user + assistant + 10 recent messages
     assert len(result) > 10  # At least some messages kept
     assert result[0] == messages[0]  # System prompt
-    # Second message should be the summary
+    # Second message should be the summary (now as user role)
+    assert result[1]["role"] == "user"
     assert "compressed for token budget" in result[1]["content"]
+    # Third message should be the acknowledgment
+    assert result[2]["role"] == "assistant"
+    assert "Understood" in result[2]["content"]
     # Rest should be recent messages
     assert result[-1] == messages[-1]  # Last message preserved
 

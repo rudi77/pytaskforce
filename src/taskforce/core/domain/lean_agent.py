@@ -326,9 +326,10 @@ class Agent:
         self,
         tool_name: str,
         tool_args: dict[str, Any],
+        tool_call_id: str = "",
     ) -> dict[str, Any]:
         """Execute a tool by name with given arguments."""
-        return await self.tool_executor.execute(tool_name, tool_args)
+        return await self.tool_executor.execute(tool_name, tool_args, tool_call_id)
 
     async def _create_tool_message(
         self,
