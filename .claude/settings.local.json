@@ -34,7 +34,10 @@
       "Bash(PYTHONPATH=\"D:/home/Source/pytaskforce/examples/accounting_agent\" .venv/Scripts/python.exe:*)",
       "Bash(set PYTHONPATH=D:/home/Source/pytaskforce/examples/accounting_agent:*)",
       "Bash(D:/home/Source/pytaskforce/.venv/Scripts/python.exe -c:*)",
-      "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)"
+      "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)",
+      "Bash(powershell -Command \"Get-Module -ListAvailable -Name ps2exe | Select-Object -Property Name, Version\")",
+      "Bash(powershell -Command \"Install-Module -Name ps2exe -Scope CurrentUser -Force\")",
+      "Bash(powershell -Command \"Import-Module PowerShellGet -Force; Install-Module -Name ps2exe -Scope CurrentUser -Force -AllowClobber\")"
     ],
     "deny": [],
     "ask": []
