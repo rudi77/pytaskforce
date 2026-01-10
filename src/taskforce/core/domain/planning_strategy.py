@@ -232,34 +232,56 @@ async def _generate_plan_steps(
         return []
 
     content = result.get("content", "") or ""
-    return _parse_plan_steps(content)
+    return _parse_plan_steps(content, logger)
 
 
-def _parse_plan_steps(content: str) -> list[str]:
-    """Parse plan steps from an LLM response."""
+def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
+    """Parse plan steps from LLM response with specific error handling."""
     text = content.strip()
+    
+    # Try JSON parsing first (with or without code blocks)
     if "```" in text:
-        parts = text.split("```")
-        if len(parts) >= 2:
-            text = parts[1].strip()
-
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            steps = [str(item).strip() for item in data if str(item).strip()]
-            return steps
-    except Exception:
-        pass
-
+        try:
+            parts = text.split("```")
+            if len(parts) >= 2:
+                json_text = parts[1].strip()
+                # Remove language identifier if present (e.g., "json\n[...]" -> "[...]")
+                if "\n" in json_text:
+                    lines = json_text.split("\n", 1)
+                    if len(lines) > 1 and not lines[0].strip().startswith("["):
+                        json_text = lines[1].strip()
+                data = json.loads(json_text)
+                if isinstance(data, list):
+                    steps = [str(item).strip() for item in data if str(item).strip()]
+                    return steps
+        except json.JSONDecodeError as e:
+            logger.debug("json_parse_failed", error=str(e), content_preview=text[:100])
+        except (TypeError, ValueError) as e:
+            logger.debug("plan_steps_parse_error", error=str(e))
+    else:
+        # Try parsing as JSON directly if no code block
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                steps = [str(item).strip() for item in data if str(item).strip()]
+                return steps
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    
+    # Fallback to line-based parsing
     steps: list[str] = []
     for line in text.splitlines():
         candidate = line.strip().lstrip("-").strip()
         if not candidate:
             continue
+        # Skip code block markers
+        if candidate.startswith("```"):
+            continue
         if candidate[0].isdigit() and "." in candidate:
             candidate = candidate.split(".", 1)[1].strip()
         if candidate:
             steps.append(candidate)
+    
     return steps
 
 
@@ -704,6 +726,339 @@ class PlanAndExecuteStrategy:
         self.max_plan_steps = max_plan_steps
         self.logger = logger
 
+    async def _initialize_plan(
+        self,
+        agent: "Agent",
+        mission: str,
+        logger: LoggerProtocol,
+    ) -> list[str]:
+        """Generate plan steps using LLM or fallback to default steps."""
+        plan_steps = await _generate_plan_steps(agent, mission, logger)
+        if not plan_steps:
+            plan_steps = [
+                "Analyze the mission and identify required actions.",
+                "Execute the required actions using available tools.",
+                "Summarize the results and provide the final response.",
+            ]
+
+        plan_steps = plan_steps[: self.max_plan_steps]
+        return plan_steps
+
+    async def _emit_tool_result_events(
+        self,
+        request: ToolCallRequest,
+        tool_result: dict[str, Any],
+        agent: "Agent",
+    ) -> AsyncIterator[StreamEvent]:
+        """Emit tool result and plan update events."""
+        yield StreamEvent(
+            event_type="tool_result",
+            data={
+                "tool": request.tool_name,
+                "id": request.tool_call_id,
+                "success": tool_result.get("success", False),
+                "output": agent._truncate_output(
+                    tool_result.get(
+                        "output", str(tool_result.get("error", ""))
+                    )
+                ),
+                "args": request.tool_args,
+            },
+        )
+
+        if request.tool_name in ("planner", "manage_plan") and tool_result.get("success"):
+            plan_output = tool_result.get("output")
+            if not plan_output and agent._planner:
+                plan_output = agent._planner.get_plan_summary()
+            yield StreamEvent(
+                event_type="plan_updated",
+                data=_build_plan_update(
+                    action=request.tool_args.get("action", "unknown"),
+                    plan=plan_output,
+                ),
+            )
+
+    async def _build_tool_requests(
+        self,
+        tool_calls: list[dict[str, Any]],
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[tuple[ToolCallRequest, StreamEvent]]:
+        """Build tool requests and emit tool call events."""
+        for tool_call in tool_calls:
+            tool_name = tool_call["function"]["name"]
+            tool_call_id = tool_call["id"]
+            tool_args = _parse_tool_args(tool_call, logger)
+
+            yield (ToolCallRequest(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                tool_args=tool_args,
+            ), StreamEvent(
+                event_type="tool_call",
+                data={
+                    "tool": tool_name,
+                    "id": tool_call_id,
+                    "status": "executing",
+                    "args": tool_args,
+                },
+            ))
+
+    async def _process_step_tool_calls(
+        self,
+        tool_calls: list[dict[str, Any]],
+        agent: "Agent",
+        session_id: str,
+        step_index: int,
+        messages: list[dict[str, Any]],
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[StreamEvent]:
+        """Process tool calls for a plan step."""
+        messages.append(assistant_tool_calls_to_message(tool_calls))
+
+        requests: list[ToolCallRequest] = []
+        async for request, event in self._build_tool_requests(tool_calls, logger):
+            requests.append(request)
+            yield event
+
+        tool_results = await _execute_tool_calls(agent, requests)
+        for request, tool_result in tool_results:
+            async for event in self._emit_tool_result_events(request, tool_result, agent):
+                yield event
+
+            tool_message = await agent._create_tool_message(
+                request.tool_call_id,
+                request.tool_name,
+                tool_result,
+                session_id,
+                step_index,
+            )
+            messages.append(tool_message)
+
+    async def _check_step_completion(
+        self,
+        content: str,
+        agent: "Agent",
+        step_index: int,
+        messages: list[dict[str, Any]],
+    ) -> tuple[bool, StreamEvent | None]:
+        """Determine if a plan step is complete based on content."""
+        if not content:
+            return (False, None)
+
+        messages.append({"role": "assistant", "content": content})
+        plan_event = None
+        if agent._planner:
+            await agent._planner.execute(action="mark_done", step_index=step_index)
+            plan_event = StreamEvent(
+                event_type="plan_updated",
+                data=_build_plan_update(
+                    action="mark_done",
+                    step=step_index,
+                    status="completed",
+                    plan=agent._planner.get_plan_summary(),
+                ),
+            )
+        return (True, plan_event)
+
+    def _prepare_step_iteration(
+        self,
+        agent: "Agent",
+        step_index: int,
+        step_description: str,
+        mission: str,
+        state: dict[str, Any],
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Prepare messages for a step iteration."""
+        current_system_prompt = agent._build_system_prompt(
+            mission=mission, state=state, messages=messages
+        )
+        messages[0] = {"role": "system", "content": current_system_prompt}
+
+        step_instruction = (
+            f"Execute plan step {step_index}: {step_description}\n"
+            "Call tools when needed. When the step is complete, respond with "
+            "a short completion note."
+        )
+        messages.append({"role": "user", "content": step_instruction})
+
+    def _handle_llm_error(
+        self,
+        result: dict[str, Any],
+        step_index: int,
+        step_iterations: int,
+        messages: list[dict[str, Any]],
+        logger: LoggerProtocol,
+    ) -> None:
+        """Handle LLM call error."""
+        logger.error(
+            "llm_call_failed",
+            error=result.get("error"),
+            iteration=step_iterations,
+            plan_step=step_index,
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"[System Error: {result.get('error')}. Please try again.]"
+                ),
+            }
+        )
+
+    async def _handle_step_content(
+        self,
+        content: str,
+        agent: "Agent",
+        step_index: int,
+        progress_steps: int,
+        messages: list[dict[str, Any]],
+    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
+        """Handle step content completion."""
+        if not content:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "[System: Your response was empty. Please provide an answer "
+                        "or use a tool.]"
+                    ),
+                }
+            )
+            return
+
+        is_complete, plan_event = await self._check_step_completion(
+            content, agent, step_index, messages
+        )
+        if is_complete and plan_event:
+            yield (plan_event, progress_steps + 1, True)
+
+    async def _handle_step_llm_result(
+        self,
+        result: dict[str, Any],
+        agent: "Agent",
+        step_index: int,
+        step_iterations: int,
+        progress_steps: int,
+        session_id: str,
+        messages: list[dict[str, Any]],
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
+        """Handle LLM result for a step iteration."""
+        if result.get("usage"):
+            yield (StreamEvent(
+                event_type="token_usage",
+                data=result["usage"],
+            ), progress_steps, False)
+
+        if not result.get("success"):
+            self._handle_llm_error(result, step_index, step_iterations, messages, logger)
+            return
+
+        tool_calls = result.get("tool_calls")
+        if tool_calls:
+            async for event in self._process_step_tool_calls(
+                tool_calls, agent, session_id, progress_steps + 1, messages, logger
+            ):
+                yield (event, progress_steps + 1, False)
+            return
+
+        content = result.get("content", "")
+        async for event, new_progress, is_complete in self._handle_step_content(
+            content, agent, step_index, progress_steps, messages
+        ):
+            yield (event, new_progress, is_complete)
+
+    async def _execute_step_iteration(
+        self,
+        agent: "Agent",
+        step_index: int,
+        step_description: str,
+        mission: str,
+        state: dict[str, Any],
+        messages: list[dict[str, Any]],
+        progress_steps: int,
+        step_iterations: int,
+        session_id: str,
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
+        """Execute a single iteration of a plan step."""
+        self._prepare_step_iteration(
+            agent, step_index, step_description, mission, state, messages
+        )
+
+        result = await agent.llm_provider.complete(
+            messages=messages,
+            model=agent.model_alias,
+            tools=agent._openai_tools,
+            tool_choice="auto",
+            temperature=0.2,
+        )
+
+        async for event, new_progress, is_complete in self._handle_step_llm_result(
+            result, agent, step_index, step_iterations, progress_steps,
+            session_id, messages, logger
+        ):
+            yield (event, new_progress, is_complete)
+
+    async def _execute_plan_step(
+        self,
+        agent: "Agent",
+        step_index: int,
+        step_description: str,
+        messages: list[dict[str, Any]],
+        session_id: str,
+        mission: str,
+        state: dict[str, Any],
+        current_progress: int,
+        max_iterations: int,
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[tuple[StreamEvent, int, int, bool]]:
+        """Execute a single plan step with iteration limits."""
+        step_complete = False
+        step_iterations = 0
+        progress_steps = current_progress
+
+        while not step_complete and step_iterations < max_iterations:
+            if progress_steps >= agent.max_steps:
+                break
+
+            step_iterations += 1
+            async for event, new_progress, is_complete in self._execute_step_iteration(
+                agent, step_index, step_description, mission, state, messages,
+                progress_steps, step_iterations, session_id, logger
+            ):
+                progress_steps = max(progress_steps, new_progress)
+                if is_complete:
+                    step_complete = True
+                yield (event, progress_steps, step_iterations, is_complete)
+
+    async def _generate_final_response(
+        self,
+        agent: "Agent",
+        messages: list[dict[str, Any]],
+    ) -> str:
+        """Generate final response after all plan steps complete."""
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "All planned steps are complete. Provide the final response "
+                    "to the mission."
+                ),
+            }
+        )
+        result = await agent.llm_provider.complete(
+            messages=messages,
+            model=agent.model_alias,
+            tools=None,
+            tool_choice="none",
+            temperature=0.2,
+        )
+        if result.get("success"):
+            return result.get("content", "") or ""
+        return ""
+
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
@@ -736,15 +1091,7 @@ class PlanAndExecuteStrategy:
 
         messages = agent._build_initial_messages(mission, state)
 
-        plan_steps = await _generate_plan_steps(agent, mission, logger)
-        if not plan_steps:
-            plan_steps = [
-                "Analyze the mission and identify required actions.",
-                "Execute the required actions using available tools.",
-                "Summarize the results and provide the final response.",
-            ]
-
-        plan_steps = plan_steps[: self.max_plan_steps]
+        plan_steps = await self._initialize_plan(agent, mission, logger)
 
         if agent._planner:
             await agent._planner.execute(action="create_plan", tasks=plan_steps)
@@ -766,181 +1113,30 @@ class PlanAndExecuteStrategy:
                 break
 
             step_complete = False
-            step_iterations = 0
-
-            while not step_complete and step_iterations < self.max_step_iterations:
-                if progress_steps >= agent.max_steps:
-                    break
-
-                step_iterations += 1
-                loop_iterations += 1
-
-                current_system_prompt = agent._build_system_prompt(
-                    mission=mission, state=state, messages=messages
-                )
-                messages[0] = {"role": "system", "content": current_system_prompt}
-
-                step_instruction = (
-                    f"Execute plan step {index}: {description}\n"
-                    "Call tools when needed. When the step is complete, respond with "
-                    "a short completion note."
-                )
-                messages.append({"role": "user", "content": step_instruction})
-
-                result = await agent.llm_provider.complete(
-                    messages=messages,
-                    model=agent.model_alias,
-                    tools=agent._openai_tools,
-                    tool_choice="auto",
-                    temperature=0.2,
-                )
-
-                # Emit token usage event if available
-                if result.get("usage"):
-                    yield StreamEvent(
-                        event_type="token_usage",
-                        data=result["usage"],
-                    )
-
-                if not result.get("success"):
-                    logger.error(
-                        "llm_call_failed",
-                        error=result.get("error"),
-                        iteration=loop_iterations,
-                        step=progress_steps,
-                        plan_step=index,
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                f"[System Error: {result.get('error')}. Please try again.]"
-                            ),
-                        }
-                    )
-                    continue
-
-                tool_calls = result.get("tool_calls")
-                if tool_calls:
-                    progress_steps += 1
-                    messages.append(assistant_tool_calls_to_message(tool_calls))
-
-                    requests: list[ToolCallRequest] = []
-                    for tool_call in tool_calls:
-                        tool_name = tool_call["function"]["name"]
-                        tool_call_id = tool_call["id"]
-                        tool_args = _parse_tool_args(tool_call, logger)
-
-                        yield StreamEvent(
-                            event_type="tool_call",
-                            data={
-                                "tool": tool_name,
-                                "id": tool_call_id,
-                                "status": "executing",
-                                "args": tool_args,
-                            },
-                        )
-
-                        requests.append(
-                            ToolCallRequest(
-                                tool_call_id=tool_call_id,
-                                tool_name=tool_name,
-                                tool_args=tool_args,
-                            )
-                        )
-
-                    tool_results = await _execute_tool_calls(agent, requests)
-                    for request, tool_result in tool_results:
-                        yield StreamEvent(
-                            event_type="tool_result",
-                            data={
-                                "tool": request.tool_name,
-                                "id": request.tool_call_id,
-                                "success": tool_result.get("success", False),
-                                "output": agent._truncate_output(
-                                    tool_result.get(
-                                        "output", str(tool_result.get("error", ""))
-                                    )
-                                ),
-                                "args": request.tool_args,
-                            },
-                        )
-
-                        if request.tool_name in (
-                            "planner",
-                            "manage_plan",
-                        ) and tool_result.get("success"):
-                            plan_output = tool_result.get("output")
-                            if not plan_output and agent._planner:
-                                plan_output = agent._planner.get_plan_summary()
-                            yield StreamEvent(
-                                event_type="plan_updated",
-                                data=_build_plan_update(
-                                    action=request.tool_args.get("action", "unknown"),
-                                    plan=plan_output,
-                                ),
-                            )
-
-                        tool_message = await agent._create_tool_message(
-                            request.tool_call_id,
-                            request.tool_name,
-                            tool_result,
-                            session_id,
-                            progress_steps,
-                        )
-                        messages.append(tool_message)
-                    continue
-
-                content = result.get("content", "")
-                if content:
-                    progress_steps += 1
-                    messages.append({"role": "assistant", "content": content})
-                    if agent._planner:
-                        await agent._planner.execute(action="mark_done", step_index=index)
-                    yield StreamEvent(
-                        event_type="plan_updated",
-                        data=_build_plan_update(
-                            action="mark_done",
-                            step=index,
-                            status="completed",
-                            plan=(
-                                agent._planner.get_plan_summary()
-                                if agent._planner
-                                else None
-                            ),
-                        ),
-                    )
+            async for event, step_progress, step_iters, is_complete in self._execute_plan_step(
+                agent=agent,
+                step_index=index,
+                step_description=description,
+                messages=messages,
+                session_id=session_id,
+                mission=mission,
+                state=state,
+                current_progress=progress_steps,
+                max_iterations=self.max_step_iterations,
+                logger=logger,
+            ):
+                if progress_steps < agent.max_steps:
+                    progress_steps = max(progress_steps, step_progress)
+                loop_iterations = max(loop_iterations, step_iters)
+                yield event
+                if is_complete:
                     step_complete = True
-                else:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "[System: Your response was empty. Please provide an answer "
-                                "or use a tool.]"
-                            ),
-                        }
-                    )
+
+            if progress_steps >= agent.max_steps:
+                break
 
         if progress_steps < agent.max_steps:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "All planned steps are complete. Provide the final response "
-                        "to the mission."
-                    ),
-                }
-            )
-            result = await agent.llm_provider.complete(
-                messages=messages,
-                model=agent.model_alias,
-                tools=None,
-                tool_choice="none",
-                temperature=0.2,
-            )
-            if result.get("success"):
-                final_message = result.get("content", "") or ""
+            final_message = await self._generate_final_response(agent, messages)
 
         if progress_steps >= agent.max_steps and not final_message:
             final_message = f"Exceeded maximum steps ({agent.max_steps})"
