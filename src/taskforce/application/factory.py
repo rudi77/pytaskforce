@@ -239,6 +239,7 @@ class AgentFactory:
             CODING_SPECIALIST_PROMPT,
             LEAN_KERNEL_PROMPT,
             LONGRUN_CODING_PROMPT,
+            LONGRUN_INITIALIZER_PROMPT,
             RAG_SPECIALIST_PROMPT,
             WIKI_SYSTEM_PROMPT,
         )
@@ -251,8 +252,8 @@ class AgentFactory:
             base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT
         elif specialist == "longrun_init":
             # Long-running init agent: focuses on project analysis and setup
-            # Uses autonomous behavior rules but NOT coding skills (init doesn't write code
-            base_prompt += "\n\n" + LONGRUN_CODING_PROMPT
+            # Uses LONGRUN_INITIALIZER_PROMPT for project analysis, NOT coding
+            base_prompt += "\n\n" + LONGRUN_INITIALIZER_PROMPT
         elif specialist == "longrun":
             # Long-running coding agent: combines coding skills with autonomous behavior
             base_prompt += "\n\n" + CODING_SPECIALIST_PROMPT

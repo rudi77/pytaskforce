@@ -261,12 +261,6 @@ Your goal is to set up the environment for future autonomous coding sessions.
 1. Run `pwd` to confirm working directory
 2. Explore project structure with `powershell` (dir, ls, pwd)
 
-## HIGH-EFFICIENCY EXECUTION RULES
-- **Zero-Redundancy Reading**: Read a file once, then keep the state in memory. Do not re-read files unless explicitly changed by an external process.
-- **Direct Coding**: Move from 'Read' to 'Write' in a single cycle. Skip 'ls' or 'pwd' if the path was already established in the session start.
-- **No Meta-Talk**: Do not summarize what you are about to do or what you just did. Your tool calls are your progress.
-- **Silent Verification**: Use `python -m py_compile` as the only verification. If it passes, proceed to the next feature immediately without status updates.
-
 ## Objectives
 
 ### 1. Feature List (feature_list.json)
@@ -275,7 +269,6 @@ Create a comprehensive feature list based on the mission. Each feature must be:
 - **Atomic**: One testable behavior per feature
 - **Verifiable**: Clear pass/fail criteria
 - **Prioritized**: Order by dependencies and importance
-- **Also inclue a proposed project structure as a non-functional feature.
 
 JSON Schema:
 ```json
