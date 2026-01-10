@@ -1,5 +1,6 @@
 """Integration tests for CLI commands."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -219,4 +220,229 @@ def test_chat_with_rag_context():
     assert "--org-id" in result.output
     assert "--scope" in result.output
     assert "RAG context" in result.output
+
+
+def test_run_mission_json_output(mock_executor):
+    """Test run mission with JSON output format."""
+    # Mock token usage
+    async def mock_execute_with_tokens(*args, **kwargs):
+        return ExecutionResult(
+            status="completed",
+            session_id="test-session-123",
+            todolist_id="test-todolist-123",
+            final_message="Mission completed successfully!",
+            execution_history=[],
+            token_usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            },
+        )
+
+    mock_executor.execute_mission = AsyncMock(side_effect=mock_execute_with_tokens)
+
+    result = runner.invoke(
+        app, ["run", "mission", "Test mission", "--output-format", "json"]
+    )
+
+    assert result.exit_code == 0
+    # Should output valid JSON
+    output_json = json.loads(result.output)
+    assert output_json["status"] == "completed"
+    assert output_json["session_id"] == "test-session-123"
+    assert output_json["final_message"] == "Mission completed successfully!"
+    assert output_json["token_usage"]["total_tokens"] == 150
+    # Should NOT contain Rich UI elements
+    assert "TASKFORCE" not in result.output
+    assert "Mission:" not in result.output
+
+
+def test_run_mission_json_output_failed(mock_executor):
+    """Test run mission JSON output with failed status."""
+    async def mock_execute_failed(*args, **kwargs):
+        return ExecutionResult(
+            status="failed",
+            session_id="test-session-456",
+            final_message="Mission failed: Test error",
+            execution_history=[],
+            token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        )
+
+    mock_executor.execute_mission = AsyncMock(side_effect=mock_execute_failed)
+
+    result = runner.invoke(
+        app, ["run", "mission", "Test mission", "-f", "json"]
+    )
+
+    assert result.exit_code == 0
+    output_json = json.loads(result.output)
+    assert output_json["status"] == "failed"
+    assert output_json["final_message"] == "Mission failed: Test error"
+
+
+def test_run_mission_json_output_invalid_format():
+    """Test run mission with invalid output format."""
+    result = runner.invoke(
+        app, ["run", "mission", "Test mission", "--output-format", "invalid"]
+    )
+
+    assert result.exit_code != 0
+    assert "Invalid output format" in result.output
+
+
+def test_run_mission_text_output_default(mock_executor):
+    """Test run mission with default text output (backward compatibility)."""
+    result = runner.invoke(app, ["run", "mission", "Test mission"])
+
+    assert result.exit_code == 0
+    # Should contain Rich UI elements
+    assert "TASKFORCE" in result.output or "Mission:" in result.output
+    # Should NOT be JSON
+    try:
+        json.loads(result.output)
+        assert False, "Output should not be valid JSON"
+    except json.JSONDecodeError:
+        pass  # Expected
+
+
+def test_run_mission_json_output_error_handling(mock_executor):
+    """Test JSON output when execution raises an error."""
+    async def mock_execute_error(*args, **kwargs):
+        raise ValueError("Test execution error")
+
+    mock_executor.execute_mission = AsyncMock(side_effect=mock_execute_error)
+
+    result = runner.invoke(
+        app, ["run", "mission", "Test mission", "--output-format", "json"]
+    )
+
+    # Should exit with error code but output JSON
+    assert result.exit_code == 1
+    output_json = json.loads(result.output)
+    assert output_json["status"] == "failed"
+    assert "Test execution error" in output_json["final_message"]
+
+
+def test_run_mission_json_output_streaming(mock_executor):
+    """Test JSON output with streaming mode."""
+    from datetime import datetime
+    from collections.abc import AsyncIterator
+    from taskforce.application.executor import ProgressUpdate
+
+    # Create async generator for streaming events
+    async def mock_streaming_events(*args, **kwargs) -> AsyncIterator[ProgressUpdate]:
+        yield ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="started",
+            message="Starting mission",
+            details={"session_id": "stream-session-123"},
+        )
+        yield ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="tool_call",
+            message="Calling tool",
+            details={"tool": "test_tool", "args": {}},
+        )
+        yield ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="tool_result",
+            message="Tool completed",
+            details={"tool": "test_tool", "success": True, "output": "Result"},
+        )
+        yield ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="final_answer",
+            message="Mission complete",
+            details={"content": "Streaming test completed successfully"},
+        )
+        yield ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="token_usage",
+            message="Token usage",
+            details={"prompt_tokens": 50, "completion_tokens": 25, "total_tokens": 75},
+        )
+
+    # Mock execute_mission_streaming to return our async generator
+    mock_executor.execute_mission_streaming = mock_streaming_events
+
+    result = runner.invoke(
+        app, ["run", "mission", "Test streaming", "--stream", "--output-format", "json"]
+    )
+
+    assert result.exit_code == 0
+    output_json = json.loads(result.output)
+    assert output_json["status"] == "completed"
+    assert output_json["session_id"] == "stream-session-123"
+    assert output_json["final_message"] == "Streaming test completed successfully"
+    assert output_json["token_usage"]["total_tokens"] == 75
+    assert len(output_json["execution_history"]) > 0
+    # Should NOT contain Rich UI elements
+    assert "TASKFORCE" not in result.output
+
+
+def test_run_command_json_output(mock_executor):
+    """Test run command with JSON output format."""
+    from taskforce.core.interfaces.slash_commands import CommandType, SlashCommandDefinition
+
+    # Mock SlashCommandRegistry - patch where it's imported inside the function
+    with patch("taskforce.application.slash_command_registry.SlashCommandRegistry") as mock_registry_class:
+        mock_registry = MagicMock()
+        mock_registry_class.return_value = mock_registry
+
+        # Create a mock command definition
+        mock_command_def = SlashCommandDefinition(
+            name="test",
+            source="project",
+            source_path="/fake/path/test.md",
+            command_type=CommandType.PROMPT,
+            description="Test command",
+            prompt_template="Test prompt: $ARGUMENTS",
+        )
+
+        # Mock resolve_command to return our mock command
+        mock_registry.resolve_command.return_value = (mock_command_def, "test args")
+        mock_registry.prepare_prompt.return_value = "Test prompt: test args"
+
+        # Mock execute_mission to return a successful result
+        async def mock_execute(*args, **kwargs):
+            return ExecutionResult(
+                status="completed",
+                session_id="command-session-456",
+                final_message="Command executed successfully!",
+                execution_history=[],
+                token_usage={
+                    "prompt_tokens": 80,
+                    "completion_tokens": 40,
+                    "total_tokens": 120,
+                },
+            )
+
+        mock_executor.execute_mission = AsyncMock(side_effect=mock_execute)
+
+        result = runner.invoke(
+            app, ["run", "command", "test", "test args", "--output-format", "json"]
+        )
+
+        assert result.exit_code == 0
+        output_json = json.loads(result.output)
+        assert output_json["status"] == "completed"
+        assert output_json["session_id"] == "command-session-456"
+        assert output_json["final_message"] == "Command executed successfully!"
+        assert output_json["token_usage"]["total_tokens"] == 120
+        # Should NOT contain Rich UI elements
+        assert "TASKFORCE" not in result.output
+        assert "Command:" not in result.output
+
+
+def test_run_command_json_output_not_found():
+    """Test run command JSON output when command is not found."""
+    result = runner.invoke(
+        app, ["run", "command", "nonexistent", "--output-format", "json"]
+    )
+
+    assert result.exit_code == 1
+    output_json = json.loads(result.output)
+    assert output_json["status"] == "failed"
+    assert "Command not found" in output_json["final_message"]
+    assert "nonexistent" in output_json["final_message"]
 

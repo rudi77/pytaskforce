@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+from dataclasses import asdict
+from typing import Any
 
 import typer
 from rich.console import Console, Group
@@ -12,18 +14,33 @@ from rich.text import Text
 
 from taskforce.api.cli.output_formatter import TaskforceConsole
 from taskforce.application.executor import AgentExecutor
+from taskforce.core.domain.models import ExecutionResult
 
 app = typer.Typer(help="Execute agent missions")
+
+
+def _serialize_result_to_json(result: ExecutionResult) -> str:
+    """
+    Serialize ExecutionResult to JSON string for machine parsing.
+
+    Args:
+        result: ExecutionResult to serialize
+
+    Returns:
+        JSON string representation
+    """
+    result_dict = asdict(result)
+    return json.dumps(result_dict, indent=None, ensure_ascii=False)
 
 
 @app.command("mission")
 def run_mission(
     ctx: typer.Context,
     mission: str = typer.Argument(..., help="Mission description"),
-    profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile (overrides global --profile)"),
-    session_id: str | None = typer.Option(
-        None, "--session", "-s", help="Resume existing session"
+    profile: str | None = typer.Option(
+        None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
+    session_id: str | None = typer.Option(None, "--session", "-s", help="Resume existing session"),
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
@@ -41,8 +58,16 @@ def run_mission(
         help="JSON string for planning strategy params.",
     ),
     stream: bool = typer.Option(
-        False, "--stream", "-S",
+        False,
+        "--stream",
+        "-S",
         help="Enable real-time streaming output. Shows tool calls, results, and answer as they happen.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--output-format",
+        "-f",
+        help="Output format: 'text' (default, human-readable) or 'json' (machine-parseable)",
     ),
 ):
     """Execute an agent mission.
@@ -63,6 +88,12 @@ def run_mission(
         # Debug mode to see agent internals
         taskforce --debug run mission "Debug this task"
     """
+    # Validate output_format
+    if output_format not in ("text", "json"):
+        raise typer.BadParameter(
+            f"Invalid output format: {output_format}. Must be 'text' or 'json'"
+        )
+
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
@@ -72,6 +103,7 @@ def run_mission(
     import logging
 
     import structlog
+
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         structlog.configure(
@@ -83,54 +115,89 @@ def run_mission(
             wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
         )
 
-    # Initialize fancy console
-    tf_console = TaskforceConsole(debug=debug)
+    # Initialize fancy console (only used for text output)
+    tf_console = TaskforceConsole(debug=debug) if output_format == "text" else None
 
-    # Print banner
-    tf_console.print_banner()
+    # Suppress UI for JSON output
+    if output_format == "text":
+        # Print banner
+        tf_console.print_banner()
 
-    # Show mission info
-    tf_console.print_system_message(f"Mission: {mission}", "system")
-    if session_id:
-        tf_console.print_system_message(f"Resuming session: {session_id}", "info")
-    tf_console.print_system_message(f"Profile: {profile}", "info")
-    if planning_strategy and not lean:
-        lean = True
-        tf_console.print_system_message(
-            "Planning strategy override requested; enabling Agent.", "info"
-        )
-    if lean:
-        tf_console.print_system_message("Using Agent (native tool calling)", "info")
-    if planning_strategy:
-        tf_console.print_system_message(
-            f"Planning strategy: {planning_strategy}", "info"
-        )
-    if stream:
-        tf_console.print_system_message("Streaming mode enabled", "info")
-    tf_console.print_divider()
+        # Show mission info
+        tf_console.print_system_message(f"Mission: {mission}", "system")
+        if session_id:
+            tf_console.print_system_message(f"Resuming session: {session_id}", "info")
+        tf_console.print_system_message(f"Profile: {profile}", "info")
+        if planning_strategy and not lean:
+            lean = True
+            tf_console.print_system_message(
+                "Planning strategy override requested; enabling Agent.", "info"
+            )
+        if lean:
+            tf_console.print_system_message("Using Agent (native tool calling)", "info")
+        if planning_strategy:
+            tf_console.print_system_message(f"Planning strategy: {planning_strategy}", "info")
+        if stream:
+            tf_console.print_system_message("Streaming mode enabled", "info")
+        tf_console.print_divider()
 
     # Use streaming or standard execution
-    if stream:
-        asyncio.run(_execute_streaming_mission(
-            mission=mission,
-            profile=profile,
-            session_id=session_id,
-            lean=lean,
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-            console=tf_console.console,
-        ))
-    else:
-        _execute_standard_mission(
-            mission=mission,
-            profile=profile,
-            session_id=session_id,
-            lean=lean,
-            debug=debug,
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-            tf_console=tf_console,
-        )
+    try:
+        if stream:
+            result = asyncio.run(
+                _execute_streaming_mission(
+                    mission=mission,
+                    profile=profile,
+                    session_id=session_id,
+                    lean=lean,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                    console=tf_console.console if output_format == "text" else None,
+                    output_format=output_format,
+                )
+            )
+        else:
+            result = _execute_standard_mission(
+                mission=mission,
+                profile=profile,
+                session_id=session_id,
+                lean=lean,
+                debug=debug,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+                tf_console=tf_console,
+                output_format=output_format,
+            )
+
+        # Output JSON if requested
+        if output_format == "json":
+            if result is None:
+                # Fallback: create empty result (should not happen in JSON mode)
+                result = ExecutionResult(
+                    session_id=session_id or "unknown",
+                    status="failed",
+                    final_message="No result returned from execution",
+                    token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                )
+            print(_serialize_result_to_json(result))
+        elif result is None:
+            # Text mode already printed output
+            pass
+
+    except Exception as e:
+        # Handle errors in JSON format if requested
+        if output_format == "json":
+            error_result = ExecutionResult(
+                session_id=session_id or "unknown",
+                status="failed",
+                final_message=f"Execution failed: {str(e)}",
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
+            print(_serialize_result_to_json(error_result))
+            raise typer.Exit(1) from e
+        else:
+            # Re-raise for normal error handling
+            raise
 
 
 def _execute_standard_mission(
@@ -141,15 +208,33 @@ def _execute_standard_mission(
     debug: bool,
     planning_strategy: str | None,
     planning_strategy_params: str | None,
-    tf_console: TaskforceConsole,
-) -> None:
+    tf_console: TaskforceConsole | None,
+    output_format: str = "text",
+) -> ExecutionResult | None:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
 
+    # Suppress progress bar for JSON output
+    if output_format == "json":
+        # Execute without progress UI
+        strategy_params = _parse_strategy_params(planning_strategy_params)
+        result = asyncio.run(
+            executor.execute_mission(
+                mission=mission,
+                profile=profile,
+                session_id=session_id,
+                progress_callback=None,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=strategy_params,
+            )
+        )
+        return result
+
+    # Standard text output with progress bar
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        console=tf_console.console
+        console=tf_console.console,
     ) as progress:
         task = progress.add_task("[>] Executing mission...", total=None)
 
@@ -188,6 +273,8 @@ def _execute_standard_mission(
     if result.token_usage and result.token_usage.get("total_tokens", 0) > 0:
         tf_console.print_token_usage(result.token_usage)
 
+    return None  # Text mode already printed output
+
 
 async def _execute_streaming_mission(
     mission: str,
@@ -196,13 +283,74 @@ async def _execute_streaming_mission(
     lean: bool,
     planning_strategy: str | None,
     planning_strategy_params: str | None,
-    console: Console,
-) -> None:
+    console: Console | None,
+    output_format: str = "text",
+) -> ExecutionResult:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
 
     strategy_params = _parse_strategy_params(planning_strategy_params)
 
+    # For JSON output, collect result without UI
+    if output_format == "json":
+        # Collect all events and build ExecutionResult
+        execution_history: list[dict[str, Any]] = []
+        final_message = ""
+        status = "completed"
+        resolved_session_id = session_id or "unknown"
+        total_token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+        async for update in executor.execute_mission_streaming(
+            mission=mission,
+            profile=profile,
+            session_id=session_id,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=strategy_params,
+        ):
+            event_type = update.event_type
+
+            # Extract session_id from "started" event if available
+            if event_type == "started" and update.details:
+                resolved_session_id = update.details.get("session_id", resolved_session_id)
+
+            # Collect relevant events in execution_history
+            if event_type in ("tool_call", "tool_result", "plan_updated", "final_answer", "error"):
+                execution_history.append(
+                    {
+                        "type": event_type,
+                        **update.details,
+                    }
+                )
+
+            # Update final message and status
+            if event_type == "final_answer":
+                final_message = update.details.get("content", "")
+            elif event_type == "complete":
+                # Use complete event message if no final_answer was received
+                if not final_message and update.message:
+                    final_message = update.message
+            elif event_type == "error":
+                final_message = update.message
+                status = "failed"
+            elif event_type == "token_usage":
+                usage = update.details
+                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+        return ExecutionResult(
+            session_id=resolved_session_id,
+            status=status,
+            final_message=final_message or "No answer generated",
+            execution_history=execution_history,
+            token_usage=total_token_usage,
+        )
+
+    # Standard text output with Rich Live display
     # State for live display
     current_step = 0
     current_tool: str | None = None
@@ -246,39 +394,51 @@ async def _execute_streaming_mission(
 
         # Current tool (if any)
         if current_tool:
-            elements.append(Panel(
-                Text(f"🔧 {current_tool}", style="yellow"),
-                title="Current Tool",
-                border_style="yellow",
-            ))
+            elements.append(
+                Panel(
+                    Text(f"🔧 {current_tool}", style="yellow"),
+                    title="Current Tool",
+                    border_style="yellow",
+                )
+            )
 
         # Recent tool results (last 5)
         if tool_results:
             results_text = "\n".join(tool_results[-5:])
-            elements.append(Panel(
-                Text(results_text),
-                title="Tool Results",
-                border_style="green",
-            ))
+            elements.append(
+                Panel(
+                    Text(results_text),
+                    title="Tool Results",
+                    border_style="green",
+                )
+            )
 
         plan_display = format_plan()
         if plan_display:
-            elements.append(Panel(
-                Text(plan_display),
-                title="🧭 Plan",
-                border_style="magenta",
-            ))
+            elements.append(
+                Panel(
+                    Text(plan_display),
+                    title="🧭 Plan",
+                    border_style="magenta",
+                )
+            )
 
         # Streaming final answer
         if final_answer_tokens:
             answer_text = "".join(final_answer_tokens)
-            elements.append(Panel(
-                Text(answer_text, style="white"),
-                title="💬 Answer",
-                border_style="blue",
-            ))
+            elements.append(
+                Panel(
+                    Text(answer_text, style="white"),
+                    title="💬 Answer",
+                    border_style="blue",
+                )
+            )
 
         return Group(*elements)
+
+    # Ensure console is available for text mode
+    if not console:
+        raise ValueError("Console must be provided for text output mode")
 
     with Live(build_display(), console=console, refresh_per_second=4) as live:
         async for update in executor.execute_mission_streaming(
@@ -339,9 +499,7 @@ async def _execute_streaming_mission(
                 if update.details.get("step") and update.details.get("status"):
                     step_index = update.details.get("step") - 1
                     if 0 <= step_index < len(plan_steps):
-                        plan_steps[step_index]["status"] = update.details.get(
-                            "status", "PENDING"
-                        )
+                        plan_steps[step_index]["status"] = update.details.get("status", "PENDING")
                 status_message = f"Plan {action}"
                 should_update = True
 
@@ -371,7 +529,8 @@ async def _execute_streaming_mission(
 
             elif event_type == "error":
                 status_message = f"Error: {update.message}"
-                console.print(f"[red]Error: {update.message}[/red]")
+                if console:
+                    console.print(f"[red]Error: {update.message}[/red]")
                 should_update = True
 
             # Only force update on meaningful state changes
@@ -382,11 +541,13 @@ async def _execute_streaming_mission(
     # Final summary
     console.print()
     final_text = "".join(final_answer_tokens) if final_answer_tokens else "No answer generated"
-    console.print(Panel(
-        final_text,
-        title="✅ Final Answer",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            final_text,
+            title="✅ Final Answer",
+            border_style="green",
+        )
+    )
 
     # Display token usage summary
     if total_token_usage["total_tokens"] > 0:
@@ -395,12 +556,16 @@ async def _execute_streaming_mission(
             f"Completion Tokens: {total_token_usage['completion_tokens']:,}  |  "
             f"Total: {total_token_usage['total_tokens']:,}"
         )
-        console.print(Panel(
-            token_info,
-            title="🎯 Token Usage",
-            border_style="cyan",
-        ))
+        console.print(
+            Panel(
+                token_info,
+                title="🎯 Token Usage",
+                border_style="cyan",
+            )
+        )
 
+    # Return None for text mode (already printed)
+    return None
 
 
 def _parse_strategy_params(raw_params: str | None) -> dict | None:
@@ -409,9 +574,7 @@ def _parse_strategy_params(raw_params: str | None) -> dict | None:
     try:
         data = json.loads(raw_params)
     except json.JSONDecodeError as exc:
-        raise typer.BadParameter(
-            f"Invalid JSON for --planning-strategy-params: {exc}"
-        ) from exc
+        raise typer.BadParameter(f"Invalid JSON for --planning-strategy-params: {exc}") from exc
     if not isinstance(data, dict):
         raise typer.BadParameter("--planning-strategy-params must be a JSON object")
     return data
@@ -422,12 +585,14 @@ def run_command(
     ctx: typer.Context,
     command: str = typer.Argument(..., help="Command name (without /)"),
     arguments: list[str] = typer.Argument(None, help="Arguments for the command"),
-    profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Configuration profile"
-    ),
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile"),
     debug: bool | None = typer.Option(None, "--debug", help="Enable debug output"),
-    stream: bool = typer.Option(
-        False, "--stream", "-S", help="Enable streaming output"
+    stream: bool = typer.Option(False, "--stream", "-S", help="Enable streaming output"),
+    output_format: str = typer.Option(
+        "text",
+        "--output-format",
+        "-f",
+        help="Output format: 'text' (default, human-readable) or 'json' (machine-parseable)",
     ),
 ) -> None:
     """
@@ -450,6 +615,12 @@ def run_command(
     from taskforce.application.slash_command_registry import SlashCommandRegistry
     from taskforce.core.interfaces.slash_commands import CommandType
 
+    # Validate output_format
+    if output_format not in ("text", "json"):
+        raise typer.BadParameter(
+            f"Invalid output format: {output_format}. Must be 'text' or 'json'"
+        )
+
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
@@ -457,6 +628,7 @@ def run_command(
 
     # Configure logging
     import logging
+
     import structlog
 
     if debug:
@@ -470,7 +642,7 @@ def run_command(
             wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
         )
 
-    tf_console = TaskforceConsole(debug=debug)
+    tf_console = TaskforceConsole(debug=debug) if output_format == "text" else None
     registry = SlashCommandRegistry()
 
     # Resolve command
@@ -479,62 +651,102 @@ def run_command(
     command_def, args = registry.resolve_command(full_command)
 
     if not command_def:
-        tf_console.print_error(f"Command not found: /{command}")
-        tf_console.print_system_message(
-            "Use 'taskforce commands list' to see available commands", "info"
-        )
-        raise typer.Exit(1)
+        if output_format == "json":
+            error_result = ExecutionResult(
+                session_id="unknown",
+                status="failed",
+                final_message=f"Command not found: /{command}",
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
+            print(_serialize_result_to_json(error_result))
+            raise typer.Exit(1)
+        else:
+            tf_console.print_error(f"Command not found: /{command}")
+            tf_console.print_system_message(
+                "Use 'taskforce commands list' to see available commands", "info"
+            )
+            raise typer.Exit(1)
 
-    # Print banner and info
-    tf_console.print_banner()
-    tf_console.print_system_message(f"Command: /{command_def.name}", "system")
-    tf_console.print_system_message(f"Type: {command_def.command_type.value}", "info")
-    tf_console.print_system_message(f"Profile: {profile}", "info")
-    if args:
-        tf_console.print_system_message(f"Arguments: {args}", "info")
-    tf_console.print_divider()
+    # Suppress UI for JSON output
+    if output_format == "text":
+        # Print banner and info
+        tf_console.print_banner()
+        tf_console.print_system_message(f"Command: /{command_def.name}", "system")
+        tf_console.print_system_message(f"Type: {command_def.command_type.value}", "info")
+        tf_console.print_system_message(f"Profile: {profile}", "info")
+        if args:
+            tf_console.print_system_message(f"Arguments: {args}", "info")
+        tf_console.print_divider()
 
     # Prepare mission/prompt
     mission = registry.prepare_prompt(command_def, args)
 
     # Execute based on command type
-    if command_def.command_type == CommandType.PROMPT:
-        # Use standard execution with prepared prompt
-        if stream:
-            asyncio.run(
-                _execute_streaming_mission(
+    try:
+        if command_def.command_type == CommandType.PROMPT:
+            # Use standard execution with prepared prompt
+            if stream:
+                result = asyncio.run(
+                    _execute_streaming_mission(
+                        mission=mission,
+                        profile=profile,
+                        session_id=None,
+                        lean=True,
+                        planning_strategy=None,
+                        planning_strategy_params=None,
+                        console=tf_console.console if output_format == "text" else None,
+                        output_format=output_format,
+                    )
+                )
+            else:
+                result = _execute_standard_mission(
                     mission=mission,
                     profile=profile,
                     session_id=None,
                     lean=True,
+                    debug=debug,
                     planning_strategy=None,
                     planning_strategy_params=None,
-                    console=tf_console.console,
+                    tf_console=tf_console,
+                    output_format=output_format,
+                )
+
+            # Output JSON if requested
+            if output_format == "json" and result is not None:
+                print(_serialize_result_to_json(result))
+
+        elif command_def.command_type == CommandType.AGENT:
+            # Create specialized agent and execute
+            result = asyncio.run(
+                _execute_agent_command(
+                    command_def=command_def,
+                    mission=mission,
+                    profile=profile,
+                    debug=debug,
+                    stream=stream,
+                    tf_console=tf_console,
+                    output_format=output_format,
                 )
             )
+
+            # Output JSON if requested
+            if output_format == "json" and result is not None:
+                print(_serialize_result_to_json(result))
+
+    except Exception as e:
+        # Handle errors in JSON format if requested
+        if output_format == "json":
+            error_result = ExecutionResult(
+                session_id="unknown",
+                status="failed",
+                final_message=f"Execution failed: {str(e)}",
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
+            print(_serialize_result_to_json(error_result))
+            raise typer.Exit(1) from e
         else:
-            _execute_standard_mission(
-                mission=mission,
-                profile=profile,
-                session_id=None,
-                lean=True,
-                debug=debug,
-                planning_strategy=None,
-                planning_strategy_params=None,
-                tf_console=tf_console,
-            )
-    elif command_def.command_type == CommandType.AGENT:
-        # Create specialized agent and execute
-        asyncio.run(
-            _execute_agent_command(
-                command_def=command_def,
-                mission=mission,
-                profile=profile,
-                debug=debug,
-                stream=stream,
-                tf_console=tf_console,
-            )
-        )
+            # Re-raise for normal error handling
+            raise
 
 
 async def _execute_agent_command(
@@ -543,8 +755,9 @@ async def _execute_agent_command(
     profile: str,
     debug: bool,
     stream: bool,
-    tf_console: TaskforceConsole,
-) -> None:
+    tf_console: TaskforceConsole | None,
+    output_format: str = "text",
+) -> ExecutionResult | None:
     """Execute an agent-type command."""
     from taskforce.application.slash_command_registry import SlashCommandRegistry
 
@@ -556,19 +769,26 @@ async def _execute_agent_command(
         # Execute with the specialized agent
         result = await agent.execute(mission=mission, session_id=None)
 
-        tf_console.print_divider()
-        if result.status == "completed":
-            tf_console.print_success("Command completed!")
-            tf_console.print_agent_message(result.final_message)
-        else:
-            tf_console.print_error(f"Command {result.status}")
-            tf_console.print_agent_message(result.final_message)
+        # Suppress UI for JSON output
+        if output_format == "text":
+            tf_console.print_divider()
+            if result.status == "completed":
+                tf_console.print_success("Command completed!")
+                tf_console.print_agent_message(result.final_message)
+            else:
+                tf_console.print_error(f"Command {result.status}")
+                tf_console.print_agent_message(result.final_message)
 
-        if result.token_usage:
-            tf_console.print_token_usage(result.token_usage)
+            if result.token_usage:
+                tf_console.print_token_usage(result.token_usage)
+            return None  # Text mode already printed output
+        else:
+            return result  # Return result for JSON serialization
+
     except Exception as e:
-        tf_console.print_error(f"Failed to execute command: {str(e)}")
-        raise typer.Exit(1)
+        if output_format == "text":
+            tf_console.print_error(f"Failed to execute command: {str(e)}")
+        raise typer.Exit(1) from e
     finally:
         if hasattr(agent, "close"):
             await agent.close()
