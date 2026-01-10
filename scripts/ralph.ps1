@@ -35,13 +35,30 @@ function Write-Log {
 }
 
 function Test-Environment {
-    # Check if taskforce is in PATH
-    $taskforceCmd = Get-Command taskforce -ErrorAction SilentlyContinue
-    if (-not $taskforceCmd) {
-        Write-Log "ERROR: 'taskforce' command not found in PATH. Please ensure taskforce is installed and available." "ERROR"
-        return $false
+    # Check if taskforce is available (multiple locations)
+    $script:taskforceExe = $null
+
+    # Option 1: Check for built executable relative to script location
+    $scriptDir = Split-Path -Parent $PSScriptRoot
+    $builtExe = Join-Path $scriptDir "dist\taskforce.exe"
+    if (Test-Path $builtExe) {
+        $script:taskforceExe = $builtExe
+        Write-Log "Found taskforce at: $builtExe" "SUCCESS"
     }
-    Write-Log "Found taskforce at: $($taskforceCmd.Source)" "SUCCESS"
+    else {
+        # Option 2: Check if taskforce is in PATH
+        $taskforceCmd = Get-Command taskforce -ErrorAction SilentlyContinue
+        if ($taskforceCmd) {
+            $script:taskforceExe = $taskforceCmd.Source
+            Write-Log "Found taskforce in PATH: $($taskforceCmd.Source)" "SUCCESS"
+        }
+        else {
+            Write-Log "ERROR: 'taskforce' not found." "ERROR"
+            Write-Log "Either build it: uv run python scripts/build_exe.py" "ERROR"
+            Write-Log "Or add taskforce to PATH" "ERROR"
+            return $false
+        }
+    }
 
     # Check if git is initialized
     git rev-parse --git-dir 2>&1 | Out-Null
@@ -69,10 +86,10 @@ function Invoke-TaskforceCommand {
         $cmdArgs += "--profile", $taskforceProfile
     }
 
-    Write-Log "Executing: taskforce $($cmdArgs -join ' ')" "INFO"
+    Write-Log "Executing: $script:taskforceExe $($cmdArgs -join ' ')" "INFO"
 
     try {
-        $output = & taskforce $cmdArgs 2>&1
+        $output = & $script:taskforceExe $cmdArgs 2>&1
         $exitCode = $LASTEXITCODE
 
         # For JSON output, try to parse it first - even if exit code is non-zero

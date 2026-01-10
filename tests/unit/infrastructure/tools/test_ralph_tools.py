@@ -18,7 +18,11 @@ ralph_plugin_dir = project_root / "examples" / "ralph_plugin"
 if str(ralph_plugin_dir) not in sys.path:
     sys.path.insert(0, str(ralph_plugin_dir))
 
-from ralph_plugin.tools.learnings_tool import RalphLearningsTool  # noqa: E402
+from ralph_plugin.tools.learnings_tool import (  # noqa: E402
+    MAX_GUARDRAILS,
+    MAX_PROGRESS_ENTRIES,
+    RalphLearningsTool,
+)
 from ralph_plugin.tools.prd_tool import RalphPRDTool  # noqa: E402
 
 
@@ -45,8 +49,16 @@ class TestRalphPRDTool:
         assert schema["type"] == "object"
         assert "action" in schema["properties"]
         assert "story_id" in schema["properties"]
+        assert "files" in schema["properties"]  # V3
+        assert "test_path" in schema["properties"]  # V3
         assert "action" in schema["required"]
-        assert schema["properties"]["action"]["enum"] == ["get_next", "mark_complete"]
+        # V3: includes new actions
+        assert schema["properties"]["action"]["enum"] == [
+            "get_next",
+            "mark_complete",
+            "get_current_context",
+            "verify_and_complete",
+        ]
 
     def test_validate_params_get_next(self, tool):
         """Test parameter validation for get_next action."""
@@ -204,6 +216,192 @@ class TestRalphPRDTool:
         assert result["success"] is False
         assert "error" in result
 
+    # ==========================================================================
+    # V3 Tests: get_current_context
+    # ==========================================================================
+
+    @pytest.mark.asyncio
+    async def test_get_current_context_returns_minimal_data(self, tool, tmp_path):
+        """Test that get_current_context returns minimal context."""
+        prd_data = {
+            "stories": [
+                {"id": 1, "title": "Story 1", "passes": True, "success_criteria": []},
+                {"id": 2, "title": "Story 2", "passes": True, "success_criteria": []},
+                {"id": 3, "title": "Story 3", "passes": False, "success_criteria": ["Criterion A"]},
+                {"id": 4, "title": "Story 4", "passes": False, "success_criteria": []},
+            ]
+        }
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        result = await tool.execute(action="get_current_context")
+
+        assert result["success"] is True
+        assert result["current_story"]["id"] == 3  # First with passes=False
+        assert result["progress"] == "2/4"
+        assert result["completed_count"] == 2
+        assert result["remaining_count"] == 2
+        # Only last 3 completed titles
+        assert len(result["recent_completed"]) <= 3
+        assert "Story 1" in result["recent_completed"] or "Story 2" in result["recent_completed"]
+
+    @pytest.mark.asyncio
+    async def test_get_current_context_all_complete(self, tool, tmp_path):
+        """Test get_current_context when all stories are complete."""
+        prd_data = {
+            "stories": [
+                {"id": 1, "title": "Story 1", "passes": True, "success_criteria": []},
+                {"id": 2, "title": "Story 2", "passes": True, "success_criteria": []},
+            ]
+        }
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        result = await tool.execute(action="get_current_context")
+
+        assert result["success"] is True
+        assert result["current_story"] is None
+        assert result["progress"] == "2/2"
+        assert "All complete" in result["output"]
+
+    @pytest.mark.asyncio
+    async def test_get_current_context_empty_prd(self, tool):
+        """Test get_current_context with no PRD file."""
+        result = await tool.execute(action="get_current_context")
+
+        assert result["success"] is True
+        assert result["current_story"] is None
+        assert result["progress"] == "0/0"
+
+    # ==========================================================================
+    # V3 Tests: verify_and_complete
+    # ==========================================================================
+
+    @pytest.mark.asyncio
+    async def test_verify_and_complete_success(self, tool, tmp_path):
+        """Test verify_and_complete marks story when verification passes."""
+        # Create PRD
+        prd_data = {
+            "stories": [
+                {"id": 1, "title": "Story 1", "passes": False, "success_criteria": []},
+            ]
+        }
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        # Create valid Python file
+        code_file = tmp_path / "app.py"
+        code_file.write_text("x = 1\n")
+
+        result = await tool.execute(
+            action="verify_and_complete",
+            story_id=1,
+            files=[str(code_file)],
+        )
+
+        assert result["success"] is True
+        assert "Verification passed" in result["output"]
+        assert result["story_id"] == 1
+
+        # Verify PRD was updated
+        updated_data = json.loads(prd_path.read_text(encoding="utf-8"))
+        assert updated_data["stories"][0]["passes"] is True
+
+    @pytest.mark.asyncio
+    async def test_verify_and_complete_blocks_on_syntax_error(self, tool, tmp_path):
+        """Test verify_and_complete blocks when syntax verification fails."""
+        # Create PRD
+        prd_data = {
+            "stories": [
+                {"id": 1, "title": "Story 1", "passes": False, "success_criteria": []},
+            ]
+        }
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        # Create invalid Python file
+        code_file = tmp_path / "app.py"
+        code_file.write_text("def broken(:\n    pass\n")  # Syntax error
+
+        result = await tool.execute(
+            action="verify_and_complete",
+            story_id=1,
+            files=[str(code_file)],
+        )
+
+        assert result["success"] is False
+        assert result["stage"] == "syntax"
+        assert "Fix syntax errors" in result["output"]
+
+        # Verify PRD was NOT updated
+        updated_data = json.loads(prd_path.read_text(encoding="utf-8"))
+        assert updated_data["stories"][0]["passes"] is False
+
+    @pytest.mark.asyncio
+    async def test_verify_and_complete_blocks_on_test_failure(self, tool, tmp_path):
+        """Test verify_and_complete blocks when test verification fails."""
+        # Update tool with correct project root for pytest
+        tool = RalphPRDTool(
+            prd_path=str(tmp_path / "prd.json"),
+            project_root=str(tmp_path),
+        )
+
+        # Create PRD
+        prd_data = {
+            "stories": [
+                {"id": 1, "title": "Story 1", "passes": False, "success_criteria": []},
+            ]
+        }
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        # Create valid Python file
+        code_file = tmp_path / "app.py"
+        code_file.write_text("x = 1\n")
+
+        # Create failing test
+        test_file = tmp_path / "test_app.py"
+        test_file.write_text("def test_fail():\n    assert False\n")
+
+        result = await tool.execute(
+            action="verify_and_complete",
+            story_id=1,
+            files=[str(code_file)],
+            test_path=str(test_file),
+        )
+
+        assert result["success"] is False
+        assert result["stage"] == "tests"
+        assert "Fix failing tests" in result["output"]
+
+        # Verify PRD was NOT updated
+        updated_data = json.loads(prd_path.read_text(encoding="utf-8"))
+        assert updated_data["stories"][0]["passes"] is False
+
+    @pytest.mark.asyncio
+    async def test_verify_and_complete_story_not_found(self, tool, tmp_path):
+        """Test verify_and_complete with non-existent story."""
+        prd_data = {"stories": [{"id": 1, "title": "Story 1", "passes": False}]}
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        result = await tool.execute(action="verify_and_complete", story_id=999)
+
+        assert result["success"] is False
+        assert "not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_verify_and_complete_no_files(self, tool, tmp_path):
+        """Test verify_and_complete with no files to verify (skip syntax check)."""
+        prd_data = {"stories": [{"id": 1, "title": "Story 1", "passes": False}]}
+        prd_path = Path(tool.prd_path)
+        prd_path.write_text(json.dumps(prd_data, indent=2), encoding="utf-8")
+
+        result = await tool.execute(action="verify_and_complete", story_id=1)
+
+        assert result["success"] is True
+        assert result["syntax_files_checked"] == 0
+
 
 class TestRalphLearningsTool:
     """Test suite for RalphLearningsTool."""
@@ -213,9 +411,11 @@ class TestRalphLearningsTool:
         """Create a RalphLearningsTool instance with temporary paths."""
         progress_path = tmp_path / "progress.txt"
         agents_path = tmp_path / "AGENTS.md"
+        archive_path = tmp_path / "AGENTS_ARCHIVE.md"
         return RalphLearningsTool(
             progress_path=str(progress_path),
             agents_path=str(agents_path),
+            archive_path=str(archive_path),
         )
 
     def test_tool_metadata(self, tool):
@@ -374,3 +574,92 @@ class TestRalphLearningsTool:
 
         timestamp_pattern = r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"
         assert re.search(timestamp_pattern, content) is not None
+
+    # ==========================================================================
+    # V3 Tests: Rolling Log and Guardrail Limits
+    # ==========================================================================
+
+    @pytest.mark.asyncio
+    async def test_rolling_log_keeps_max_entries(self, tmp_path):
+        """Test that progress.txt keeps only max entries (rolling log)."""
+        tool = RalphLearningsTool(
+            progress_path=str(tmp_path / "progress.txt"),
+            agents_path=str(tmp_path / "AGENTS.md"),
+            max_progress_entries=5,  # Small limit for testing
+        )
+
+        # Add more than max entries
+        for i in range(10):
+            await tool.execute(lesson=f"Lesson {i}")
+
+        progress_path = Path(tool.progress_path)
+        content = progress_path.read_text(encoding="utf-8")
+
+        # Should only have last 5 entries
+        assert "Lesson 9" in content
+        assert "Lesson 8" in content
+        assert "Lesson 5" in content
+        # Older entries should be gone
+        assert "Lesson 0" not in content
+        assert "Lesson 1" not in content
+        assert "Lesson 2" not in content
+        assert "Lesson 3" not in content
+        assert "Lesson 4" not in content
+
+    @pytest.mark.asyncio
+    async def test_guardrail_limit_archives_old(self, tmp_path):
+        """Test that guardrails exceeding limit are archived."""
+        tool = RalphLearningsTool(
+            progress_path=str(tmp_path / "progress.txt"),
+            agents_path=str(tmp_path / "AGENTS.md"),
+            archive_path=str(tmp_path / "AGENTS_ARCHIVE.md"),
+            max_guardrails=3,  # Small limit for testing
+        )
+
+        # Add more than max guardrails
+        for i in range(5):
+            await tool.execute(lesson=f"Lesson {i}", guardrail=f"Guardrail {i}")
+
+        # Check AGENTS.md - should have max 3 guardrails (most recent)
+        agents_path = Path(tool.agents_path)
+        content = agents_path.read_text(encoding="utf-8")
+        assert "Guardrail 4" in content
+        assert "Guardrail 3" in content
+        assert "Guardrail 2" in content
+        # Older guardrails should NOT be in main file
+        assert "Guardrail 0" not in content
+        assert "Guardrail 1" not in content
+
+        # Check archive file - should have older guardrails
+        archive_path = Path(tool.archive_path)
+        assert archive_path.exists()
+        archive_content = archive_path.read_text(encoding="utf-8")
+        assert "Guardrail 0" in archive_content or "Guardrail 1" in archive_content
+
+    @pytest.mark.asyncio
+    async def test_default_limits(self, tmp_path):
+        """Test that default limits are applied."""
+        tool = RalphLearningsTool(
+            progress_path=str(tmp_path / "progress.txt"),
+            agents_path=str(tmp_path / "AGENTS.md"),
+        )
+
+        assert tool.max_progress_entries == MAX_PROGRESS_ENTRIES
+        assert tool.max_guardrails == MAX_GUARDRAILS
+
+    @pytest.mark.asyncio
+    async def test_archive_path_configurable(self, tmp_path):
+        """Test that archive path is configurable."""
+        custom_archive = tmp_path / "custom_archive.md"
+        tool = RalphLearningsTool(
+            progress_path=str(tmp_path / "progress.txt"),
+            agents_path=str(tmp_path / "AGENTS.md"),
+            archive_path=str(custom_archive),
+            max_guardrails=2,
+        )
+
+        # Add guardrails to trigger archiving
+        for i in range(4):
+            await tool.execute(lesson=f"Lesson {i}", guardrail=f"Guardrail {i}")
+
+        assert custom_archive.exists()
