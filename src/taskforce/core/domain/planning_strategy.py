@@ -566,12 +566,13 @@ class NativeReActStrategy:
     ) -> AsyncIterator[StreamEvent]:
         agent.logger.info("execute_stream_start", session_id=session_id)
 
+        state = await agent.state_manager.load_state(session_id) or {}
+
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
+
         if not hasattr(agent.llm_provider, "complete_stream"):
             agent.logger.warning("llm_provider_no_streaming", fallback="execute")
-            state = await agent.state_manager.load_state(session_id) or {}
-
-            if agent._planner and state.get("planner_state"):
-                agent._planner.set_state(state["planner_state"])
 
             messages = agent._build_initial_messages(mission, state)
             async for event in self._execute_non_streaming_loop(
