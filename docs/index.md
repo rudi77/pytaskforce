@@ -11,6 +11,9 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Plugin Development](plugins.md)**: Creating and loading custom agent plugins.
 - **[REST API Guide](api.md)**: Integrating Taskforce via FastAPI and OpenAPI.
 
+### 🔄 Advanced Patterns
+- **[Ralph Loop](ralph.md)**: Autonomous multi-iteration development pattern with context rotation.
+
 ### 🏗 Architecture & Design
 - **[Architecture Overview](architecture.md)**: The core design principles and layer structure.
 - **[Configuration Profiles](profiles.md)**: Managing dev, staging, and production settings.

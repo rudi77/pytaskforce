@@ -1,0 +1,59 @@
+{
+  "stories": [
+    {
+      "id": 1,
+      "title": "Implement basic arithmetic operations (add, subtract, multiply, divide)",
+      "passes": false,
+      "success_criteria": [
+        "Add function correctly adds two numbers",
+        "Subtract function correctly subtracts two numbers",
+        "Multiply function correctly multiplies two numbers",
+        "Divide function correctly divides two numbers",
+        "All functions have type hints",
+        "All functions have docstrings"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Add error handling for division by zero",
+      "passes": false,
+      "success_criteria": [
+        "Division by zero raises appropriate exception",
+        "Error message is clear and helpful",
+        "Error handling is tested"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Create command-line interface",
+      "passes": false,
+      "success_criteria": [
+        "CLI accepts numbers and operation as arguments",
+        "CLI displays results clearly",
+        "CLI handles errors gracefully",
+        "CLI is user-friendly"
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Write unit tests for all operations",
+      "passes": false,
+      "success_criteria": [
+        "Tests exist for all arithmetic operations",
+        "Tests cover error cases (division by zero)",
+        "Tests use pytest framework",
+        "All tests pass"
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Add input validation",
+      "passes": false,
+      "success_criteria": [
+        "Invalid input types are detected",
+        "Clear error messages for invalid input",
+        "Validation is tested"
+      ]
+    }
+  ]
+}
