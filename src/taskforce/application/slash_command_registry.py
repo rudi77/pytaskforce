@@ -5,7 +5,6 @@ Central registry for resolving and executing slash commands.
 Integrates with AgentFactory for agent-type commands.
 """
 
-from typing import Any
 
 import structlog
 
@@ -196,17 +195,67 @@ class SlashCommandRegistry:
             raise ValueError(f"Command '{command_def.name}' is not an agent type")
 
         agent_config = command_def.agent_config or {}
+        metadata = command_def.metadata or {}
 
-        # Build agent definition
+        # Check if plugin path is specified in metadata
+        plugin_path = metadata.get("plugin")
+
+        # Use command's profile if specified, otherwise base_profile
+        profile = agent_config.get("profile", base_profile)
+
+        # If plugin is specified, use create_agent_with_plugin
+        if plugin_path:
+            tool_allowlist = agent_config.get("tools", [])
+            self.logger.info(
+                "creating_agent_with_plugin_from_command",
+                command=command_def.name,
+                plugin_path=plugin_path,
+                profile=profile,
+                tools=tool_allowlist,
+            )
+
+            # Create agent with plugin - plugin config will be merged with base profile
+            agent = await self.factory.create_agent_with_plugin(
+                plugin_path=plugin_path,
+                profile=profile,
+            )
+
+            # Filter tools by allowlist if specified in command
+            if tool_allowlist:
+                original_tool_count = len(agent.tools)
+                filtered_tools = {
+                    name: tool
+                    for name, tool in agent.tools.items()
+                    if name in tool_allowlist
+                }
+                # Rebuild tools dict and OpenAI format
+                agent.tools = filtered_tools
+                from taskforce.core.tools.tool_converter import tools_to_openai_format
+
+                agent._openai_tools = tools_to_openai_format(agent.tools)
+                self.logger.debug(
+                    "tools_filtered_for_command",
+                    command=command_def.name,
+                    original_count=original_tool_count,
+                    filtered_count=len(filtered_tools),
+                    allowed_tools=tool_allowlist,
+                )
+
+            # Override system prompt from command (command prompt takes precedence over plugin config)
+            if command_def.prompt_template:
+                agent._base_system_prompt = command_def.prompt_template
+                # Also update the prompt builder to use the new prompt
+                agent.prompt_builder._base_system_prompt = command_def.prompt_template
+
+            return agent
+
+        # Standard agent creation without plugin
         agent_definition = {
             "system_prompt": command_def.prompt_template,
             "tool_allowlist": agent_config.get("tools", []),
             "mcp_servers": agent_config.get("mcp_servers", []),
             "mcp_tool_allowlist": [],
         }
-
-        # Use command's profile if specified, otherwise base_profile
-        profile = agent_config.get("profile", base_profile)
 
         self.logger.info(
             "creating_agent_from_command",

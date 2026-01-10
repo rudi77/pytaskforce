@@ -1,0 +1,8 @@
+# Ralph Plugin Requirements
+#
+# These are the dependencies specific to the ralph plugin.
+# Install with: uv sync or pip install -r requirements.txt
+#
+# Note: This plugin requires the main taskforce package to be installed.
+
+# No additional dependencies required - uses only standard library and taskforce core
