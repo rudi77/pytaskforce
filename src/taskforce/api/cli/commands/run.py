@@ -790,5 +790,5 @@ async def _execute_agent_command(
             tf_console.print_error(f"Failed to execute command: {str(e)}")
         raise typer.Exit(1) from e
     finally:
-        if hasattr(agent, "close"):
+        if "agent" in locals() and hasattr(agent, "close"):
             await agent.close()

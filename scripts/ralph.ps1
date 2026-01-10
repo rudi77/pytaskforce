@@ -75,16 +75,8 @@ function Invoke-TaskforceCommand {
         $output = & taskforce $cmdArgs 2>&1
         $exitCode = $LASTEXITCODE
 
-        if ($exitCode -ne 0) {
-            Write-Log "Taskforce command failed with exit code $exitCode" "ERROR"
-            Write-Log "Output: $output" "ERROR"
-            return @{
-                Success = $false
-                ExitCode = $exitCode
-                Output = $output
-            }
-        }
-
+        # For JSON output, try to parse it first - even if exit code is non-zero
+        # The JSON status is more reliable than exit codes (Windows can have exit code issues)
         if ($JsonOutput) {
             try {
                 # Try to extract JSON from output (might have other text before/after)
@@ -99,22 +91,71 @@ function Invoke-TaskforceCommand {
                 }
                 
                 $jsonResult = $jsonText | ConvertFrom-Json
-                return @{
-                    Success = $true
-                    ExitCode = 0
-                    Output = $output
-                    Json = $jsonResult
+                
+                # Check JSON status - if completed, treat as success even with non-zero exit code
+                if ($jsonResult.status -eq "completed") {
+                    Write-Log "Command completed successfully (status: completed)" "SUCCESS"
+                    return @{
+                        Success = $true
+                        ExitCode = $exitCode
+                        Output = $output
+                        Json = $jsonResult
+                    }
+                }
+                elseif ($jsonResult.status -eq "failed") {
+                    Write-Log "Command failed (status: failed)" "ERROR"
+                    Write-Log "Message: $($jsonResult.final_message)" "ERROR"
+                    return @{
+                        Success = $false
+                        ExitCode = $exitCode
+                        Output = $output
+                        Json = $jsonResult
+                    }
+                }
+                else {
+                    # Unknown status, but JSON parsed successfully
+                    Write-Log "Command returned status: $($jsonResult.status)" "INFO"
+                    return @{
+                        Success = $true
+                        ExitCode = $exitCode
+                        Output = $output
+                        Json = $jsonResult
+                    }
                 }
             }
             catch {
-                Write-Log "Failed to parse JSON output: $_" "ERROR"
-                Write-Log "Raw output: $output" "ERROR"
-                return @{
-                    Success = $false
-                    ExitCode = 0
-                    Output = $output
-                    ParseError = $_.Exception.Message
+                # JSON parsing failed - fall back to exit code check
+                Write-Log "Failed to parse JSON output: $_" "WARN"
+                Write-Log "Falling back to exit code check" "WARN"
+                
+                if ($exitCode -ne 0) {
+                    Write-Log "Taskforce command failed with exit code $exitCode" "ERROR"
+                    Write-Log "Raw output: $output" "ERROR"
+                    return @{
+                        Success = $false
+                        ExitCode = $exitCode
+                        Output = $output
+                        ParseError = $_.Exception.Message
+                    }
                 }
+                else {
+                    return @{
+                        Success = $true
+                        ExitCode = $exitCode
+                        Output = $output
+                    }
+                }
+            }
+        }
+        
+        # Non-JSON output - use exit code
+        if ($exitCode -ne 0) {
+            Write-Log "Taskforce command failed with exit code $exitCode" "ERROR"
+            Write-Log "Output: $output" "ERROR"
+            return @{
+                Success = $false
+                ExitCode = $exitCode
+                Output = $output
             }
         }
         else {
@@ -336,7 +377,17 @@ while ($iteration -lt $max_iterations) {
     }
 
     $status = $stepResult.Json.status
+    $finalMessage = $stepResult.Json.final_message
+    
     Write-Log "Execution status: $status" "INFO"
+    if ($finalMessage) {
+        # Show first line of final message as summary
+        $summaryLine = ($finalMessage -split "`n")[0]
+        if ($summaryLine.Length -gt 100) {
+            $summaryLine = $summaryLine.Substring(0, 97) + "..."
+        }
+        Write-Log "Summary: $summaryLine" "INFO"
+    }
 
     if ($status -eq "completed") {
         Write-Log "Iteration completed successfully" "SUCCESS"
@@ -365,7 +416,16 @@ while ($iteration -lt $max_iterations) {
         }
     }
     elseif ($status -eq "failed") {
+        $errorMessage = $stepResult.Json.final_message
         Write-Log "Iteration failed with status: failed" "ERROR"
+        if ($errorMessage) {
+            $errorSummary = ($errorMessage -split "`n")[0]
+            if ($errorSummary.Length -gt 150) {
+                $errorSummary = $errorSummary.Substring(0, 147) + "..."
+            }
+            Write-Log "Error: $errorSummary" "ERROR"
+        }
+        
         # Track same-task failures for status "failed"
         if ($currentTask -eq $lastFailedTask) {
             $sameTaskFailureCount++
@@ -375,7 +435,7 @@ while ($iteration -lt $max_iterations) {
             $lastFailedTask = $currentTask
         }
 
-        Write-Log "Step execution failed (same task failures: $sameTaskFailureCount for task: $currentTask)" "ERROR"
+        Write-Log "Same task failures: $sameTaskFailureCount for task: $currentTask" "ERROR"
 
         # Exit if same task failed 3 times consecutively
         if ($sameTaskFailureCount -ge 3) {
