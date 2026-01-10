@@ -10,6 +10,29 @@ The `run mission` command starts a new agent task.
 taskforce run mission "Summarize the latest trends in AI"
 ```
 
+### Running Slash Commands
+Execute custom slash commands from `.taskforce/commands/`:
+```powershell
+# Run with inline arguments
+taskforce run command review path/to/file.py
+
+# Run with arguments from a file (useful for complex multi-line specs)
+taskforce run command ralph:init --spec-file spec.md
+taskforce run command ralph:init -F spec.md
+
+# With streaming output
+taskforce run command analyze data.csv --stream
+
+# With JSON output format
+taskforce run command review -F spec.md -f json
+```
+
+**Options:**
+- `--spec-file`, `-F`: Path to a file containing command arguments. Mutually exclusive with positional arguments. The file content is used verbatim, preserving formatting (newlines, markdown, etc.).
+- `--profile`, `-p`: Configuration profile to use
+- `--stream`, `-S`: Enable streaming output
+- `--output-format`, `-f`: Output format (`text` or `json`)
+
 ### Interactive Chat
 Open a continuous conversation with an agent.
 ```powershell

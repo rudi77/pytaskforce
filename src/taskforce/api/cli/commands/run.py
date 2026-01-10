@@ -3,6 +3,7 @@
 import asyncio
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -594,6 +595,12 @@ def run_command(
         "-f",
         help="Output format: 'text' (default, human-readable) or 'json' (machine-parseable)",
     ),
+    spec_file: Path | None = typer.Option(
+        None,
+        "--spec-file",
+        "-F",
+        help="Path to file containing command arguments (mutually exclusive with positional args)",
+    ),
 ) -> None:
     """
     Execute a custom slash command.
@@ -605,6 +612,10 @@ def run_command(
     Examples:
         # Run a prompt command
         taskforce run command review path/to/file.py
+
+        # Run with spec from file
+        taskforce run command ralph:init --spec-file spec.md
+        taskforce run command ralph:init -F spec.md
 
         # Run an agent command
         taskforce run command refactor src/module.py
@@ -620,6 +631,47 @@ def run_command(
         raise typer.BadParameter(
             f"Invalid output format: {output_format}. Must be 'text' or 'json'"
         )
+
+    # Validate mutual exclusivity: --spec-file vs positional arguments
+    if spec_file is not None and arguments:
+        raise typer.BadParameter(
+            "Cannot use both --spec-file and positional arguments. Use one or the other."
+        )
+
+    # Read spec file content if provided
+    spec_content: str | None = None
+    if spec_file is not None:
+        if not spec_file.exists():
+            if output_format == "json":
+                error_result = ExecutionResult(
+                    session_id="unknown",
+                    status="failed",
+                    final_message=f"Spec file not found: {spec_file}",
+                    token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                )
+                print(_serialize_result_to_json(error_result))
+                raise typer.Exit(1)
+            else:
+                console = Console()
+                console.print(f"[red]Spec file not found: {spec_file}[/red]")
+                raise typer.Exit(1)
+
+        try:
+            spec_content = spec_file.read_text(encoding="utf-8")
+        except OSError as e:
+            if output_format == "json":
+                error_result = ExecutionResult(
+                    session_id="unknown",
+                    status="failed",
+                    final_message=f"Failed to read spec file: {e}",
+                    token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                )
+                print(_serialize_result_to_json(error_result))
+                raise typer.Exit(1) from e
+            else:
+                console = Console()
+                console.print(f"[red]Failed to read spec file: {e}[/red]")
+                raise typer.Exit(1) from e
 
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
@@ -646,7 +698,11 @@ def run_command(
     registry = SlashCommandRegistry()
 
     # Resolve command
-    args_str = " ".join(arguments) if arguments else ""
+    # Use spec file content if provided, otherwise join positional arguments
+    if spec_content is not None:
+        args_str = spec_content
+    else:
+        args_str = " ".join(arguments) if arguments else ""
     full_command = f"/{command} {args_str}".strip()
     command_def, args = registry.resolve_command(full_command)
 
