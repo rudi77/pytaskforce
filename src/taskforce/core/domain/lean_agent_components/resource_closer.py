@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-import structlog
+from taskforce.core.interfaces.logging import LoggerProtocol
 
 
 class ResourceCloser:
     """Close async resources associated with Agent."""
 
-    def __init__(self, *, logger: structlog.stdlib.BoundLogger) -> None:
+    def __init__(self, *, logger: LoggerProtocol) -> None:
         self._logger = logger
 
     async def close_mcp_contexts(self, contexts: Iterable[Any]) -> None:

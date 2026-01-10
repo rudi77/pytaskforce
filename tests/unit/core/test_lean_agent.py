@@ -9,6 +9,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import structlog
 
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import ExecutionResult
@@ -82,13 +83,20 @@ def planner_tool():
 
 
 @pytest.fixture
-def lean_agent(mock_state_manager, mock_llm_provider, mock_tool, planner_tool):
+def mock_logger():
+    """Mock logger for testing."""
+    return structlog.get_logger().bind(component="test")
+
+
+@pytest.fixture
+def lean_agent(mock_state_manager, mock_llm_provider, mock_tool, planner_tool, mock_logger):
     """Create LeanAgent with mocked dependencies."""
     return Agent(
         state_manager=mock_state_manager,
         llm_provider=mock_llm_provider,
         tools=[mock_tool, planner_tool],
         system_prompt="You are a helpful assistant.",
+        logger=mock_logger,
     )
 
 
@@ -116,7 +124,7 @@ class TestLeanAgentInitialization:
         assert lean_agent.system_prompt == "You are a helpful assistant."
 
     def test_creates_planner_if_not_provided(
-        self, mock_state_manager, mock_llm_provider
+        self, mock_state_manager, mock_llm_provider, mock_logger
     ):
         """Test that PlannerTool is created if not provided."""
         agent = Agent(
@@ -124,6 +132,7 @@ class TestLeanAgentInitialization:
             llm_provider=mock_llm_provider,
             tools=[],  # No tools provided
             system_prompt="Test prompt",
+            logger=mock_logger,
         )
         assert "planner" in agent.tools
         assert isinstance(agent._planner, PlannerTool)
@@ -161,7 +170,7 @@ class TestLeanAgentPromptSections:
         assert "[ ] 1. Step 1" in plan_section
 
     def test_build_context_pack_section_empty(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Context pack section should be empty when no pack exists."""
         agent = Agent(
@@ -169,6 +178,7 @@ class TestLeanAgentPromptSections:
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
             system_prompt="Test",
+            logger=mock_logger,
         )
         agent.context_builder.build_context_pack = MagicMock(return_value="")
 
@@ -179,7 +189,7 @@ class TestLeanAgentPromptSections:
         assert context_section == ""
 
     def test_build_context_pack_section_with_pack(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Context pack section should include formatted pack."""
         agent = Agent(
@@ -187,6 +197,7 @@ class TestLeanAgentPromptSections:
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
             system_prompt="Test",
+            logger=mock_logger,
         )
         agent.context_builder.build_context_pack = MagicMock(return_value="CTX")
 
@@ -257,7 +268,7 @@ class TestLeanAgentNativeToolCalling:
 
     @pytest.mark.asyncio
     async def test_execute_multiple_tool_calls_in_one_response(
-        self, mock_state_manager, mock_llm_provider, calculator_tool, planner_tool
+        self, mock_state_manager, mock_llm_provider, calculator_tool, planner_tool, mock_logger
     ):
         """Test handling multiple tool calls in a single LLM response."""
         agent = Agent(
@@ -265,6 +276,7 @@ class TestLeanAgentNativeToolCalling:
             llm_provider=mock_llm_provider,
             tools=[calculator_tool, planner_tool],
             system_prompt="Test",
+            logger=mock_logger,
         )
 
         # Setup: LLM calls two tools at once, then responds
@@ -553,7 +565,7 @@ class TestLeanAgentStatePersistence:
 
     @pytest.mark.asyncio
     async def test_planner_state_restored(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test that PlannerTool state is restored from session state."""
         # Setup: State with existing planner state
@@ -588,6 +600,7 @@ class TestLeanAgentStatePersistence:
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
             system_prompt="Test",
+            logger=mock_logger,
         )
 
         await agent.execute(mission="Check plan", session_id="test-session")
@@ -646,7 +659,7 @@ class TestDynamicContextInjection:
     """Tests for Story 4: Dynamic Context Injection."""
 
     def test_build_system_prompt_without_plan(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test that _build_system_prompt returns base prompt when no plan exists."""
         agent = Agent(
@@ -654,6 +667,7 @@ class TestDynamicContextInjection:
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
             system_prompt="Base prompt here.",
+            logger=mock_logger,
         )
 
         prompt = agent._build_system_prompt()
@@ -662,7 +676,7 @@ class TestDynamicContextInjection:
         assert "CURRENT PLAN STATUS" not in prompt
 
     def test_build_system_prompt_with_active_plan(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test that _build_system_prompt injects plan when one exists."""
         planner = PlannerTool()
@@ -673,6 +687,7 @@ class TestDynamicContextInjection:
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
             system_prompt="Base prompt.",
+            logger=mock_logger,
         )
 
         prompt = agent._build_system_prompt()
@@ -683,7 +698,7 @@ class TestDynamicContextInjection:
         assert "[ ] 2. Step 2: Do B" in prompt
 
     def test_build_system_prompt_reflects_completed_steps(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test that plan injection shows completed steps with [x]."""
         planner = PlannerTool()
@@ -695,6 +710,7 @@ class TestDynamicContextInjection:
             llm_provider=mock_llm_provider,
             tools=[mock_tool, planner],
             system_prompt="Test",
+            logger=mock_logger,
         )
 
         prompt = agent._build_system_prompt()
@@ -704,7 +720,7 @@ class TestDynamicContextInjection:
 
     @pytest.mark.asyncio
     async def test_plan_updates_in_system_prompt_during_loop(
-        self, mock_state_manager, mock_llm_provider
+        self, mock_state_manager, mock_llm_provider, mock_logger
     ):
         """Test that system prompt is updated each loop with latest plan state."""
         planner = PlannerTool()
@@ -712,6 +728,7 @@ class TestDynamicContextInjection:
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[planner],
+            logger=mock_logger,
             system_prompt="Base",
         )
 
@@ -775,7 +792,7 @@ class TestDynamicContextInjection:
         assert "[x] 1. Task A" in captured_prompts[2]
 
     def test_system_prompt_property_returns_base_prompt(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test backward compatibility: system_prompt property returns base."""
         agent = Agent(
@@ -783,12 +800,13 @@ class TestDynamicContextInjection:
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
             system_prompt="My custom prompt",
+            logger=mock_logger,
         )
 
         assert agent.system_prompt == "My custom prompt"
 
     def test_uses_lean_kernel_prompt_by_default(
-        self, mock_state_manager, mock_llm_provider, mock_tool
+        self, mock_state_manager, mock_llm_provider, mock_tool, mock_logger
     ):
         """Test that LEAN_KERNEL_PROMPT is used when no prompt is provided."""
         from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
@@ -797,6 +815,7 @@ class TestDynamicContextInjection:
             state_manager=mock_state_manager,
             llm_provider=mock_llm_provider,
             tools=[mock_tool],
+            logger=mock_logger,
             # No system_prompt provided
         )
 

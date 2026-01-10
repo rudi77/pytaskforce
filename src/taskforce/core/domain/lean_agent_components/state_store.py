@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import structlog
-
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.tools.planner_tool import PlannerTool
 
@@ -17,7 +16,7 @@ class LeanAgentStateStore:
         self,
         *,
         state_manager: StateManagerProtocol,
-        logger: structlog.stdlib.BoundLogger,
+        logger: LoggerProtocol,
     ) -> None:
         self._state_manager = state_manager
         self._logger = logger

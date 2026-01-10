@@ -14,7 +14,7 @@ Key features:
 import json
 from typing import Any
 
-import structlog
+from taskforce.core.interfaces.logging import LoggerProtocol
 
 
 class TokenBudgeter:
@@ -46,6 +46,7 @@ class TokenBudgeter:
 
     def __init__(
         self,
+        logger: LoggerProtocol,
         max_input_tokens: int | None = None,
         compression_trigger: int | None = None,
     ):
@@ -53,12 +54,13 @@ class TokenBudgeter:
         Initialize TokenBudgeter with budget limits.
 
         Args:
+            logger: Logger instance (created in factory and always required).
             max_input_tokens: Maximum input tokens allowed (default: 100k)
             compression_trigger: Token count to trigger compression (default: 80k)
         """
         self.max_input_tokens = max_input_tokens or self.DEFAULT_MAX_INPUT_TOKENS
         self.compression_trigger = compression_trigger or self.DEFAULT_COMPRESSION_TRIGGER
-        self.logger = structlog.get_logger().bind(component="token_budgeter")
+        self.logger = logger
 
     def estimate_tokens(
         self,

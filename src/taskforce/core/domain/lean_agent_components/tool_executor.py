@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import structlog
-
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.tools.tool_converter import (
@@ -23,7 +22,7 @@ class ToolExecutor:
         self,
         *,
         tools: dict[str, ToolProtocol],
-        logger: structlog.stdlib.BoundLogger,
+        logger: LoggerProtocol,
     ) -> None:
         self._tools = tools
         self._logger = logger

@@ -12,10 +12,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol, TYPE_CHECKING
 
-import structlog
-from structlog.typing import FilteringBoundLogger
-
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.tools.tool_converter import (
     assistant_tool_calls_to_message,
 )
@@ -81,7 +79,7 @@ def _build_plan_update(
 
 def _parse_tool_args(
     tool_call: dict[str, Any],
-    logger: FilteringBoundLogger,
+    logger: LoggerProtocol,
 ) -> dict[str, Any]:
     """Parse tool arguments from a tool call payload."""
     raw_args = tool_call["function"]["arguments"]
@@ -210,7 +208,7 @@ async def _collect_execution_result(
 async def _generate_plan_steps(
     agent: "Agent",
     mission: str,
-    logger: FilteringBoundLogger,
+    logger: LoggerProtocol,
 ) -> list[str]:
     """Generate plan steps using the LLM and parse the response."""
     prompt = (
@@ -738,21 +736,24 @@ class PlanAndExecuteStrategy:
         self,
         max_step_iterations: int = 4,
         max_plan_steps: int = 12,
+        logger: LoggerProtocol | None = None,
     ) -> None:
         self.max_step_iterations = max_step_iterations
         self.max_plan_steps = max_plan_steps
-        self.logger = structlog.get_logger().bind(component="plan_and_execute_strategy")
+        self.logger = logger
 
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
-        self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
+        # Use strategy logger or fallback to agent logger
+        logger = self.logger or agent.logger
+        logger.info("execute_start", session_id=session_id, mission=mission[:100])
         result = await _collect_execution_result(
             session_id,
             self.execute_stream(agent, mission, session_id),
         )
 
-        self.logger.info(
+        logger.info(
             "execute_complete",
             session_id=session_id,
             status=result.status,
@@ -762,7 +763,9 @@ class PlanAndExecuteStrategy:
     async def execute_stream(
         self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
-        self.logger.info("execute_stream_start", session_id=session_id)
+        # Use strategy logger or fallback to agent logger
+        logger = self.logger or agent.logger
+        logger.info("execute_stream_start", session_id=session_id)
 
         state = await agent.state_manager.load_state(session_id) or {}
 
@@ -771,7 +774,7 @@ class PlanAndExecuteStrategy:
 
         messages = agent._build_initial_messages(mission, state)
 
-        plan_steps = await _generate_plan_steps(agent, mission, self.logger)
+        plan_steps = await _generate_plan_steps(agent, mission, logger)
         if not plan_steps:
             plan_steps = [
                 "Analyze the mission and identify required actions.",
@@ -838,7 +841,7 @@ class PlanAndExecuteStrategy:
                     )
 
                 if not result.get("success"):
-                    self.logger.error(
+                    logger.error(
                         "llm_call_failed",
                         error=result.get("error"),
                         iteration=loop_iterations,
@@ -864,7 +867,7 @@ class PlanAndExecuteStrategy:
                     for tool_call in tool_calls:
                         tool_name = tool_call["function"]["name"]
                         tool_call_id = tool_call["id"]
-                        tool_args = _parse_tool_args(tool_call, self.logger)
+                        tool_args = _parse_tool_args(tool_call, logger)
 
                         yield StreamEvent(
                             event_type="tool_call",
@@ -1002,7 +1005,7 @@ class PlanAndExecuteStrategy:
             planner=agent.planner,
         )
 
-        self.logger.info(
+        logger.info(
             "execute_stream_complete",
             session_id=session_id,
             progress_steps=progress_steps,
@@ -1015,20 +1018,22 @@ class PlanAndReactStrategy:
 
     name = "plan_and_react"
 
-    def __init__(self, max_plan_steps: int = 12) -> None:
+    def __init__(self, max_plan_steps: int = 12, logger: LoggerProtocol | None = None) -> None:
         self.max_plan_steps = max_plan_steps
-        self.logger = structlog.get_logger().bind(component="plan_and_react_strategy")
+        self.logger = logger
         self._react_strategy = NativeReActStrategy()
 
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
-        self.logger.info("execute_start", session_id=session_id, mission=mission[:100])
+        # Use strategy logger or fallback to agent logger
+        logger = self.logger or agent.logger
+        logger.info("execute_start", session_id=session_id, mission=mission[:100])
         result = await _collect_execution_result(
             session_id,
             self.execute_stream(agent, mission, session_id),
         )
-        self.logger.info(
+        logger.info(
             "execute_complete",
             session_id=session_id,
             status=result.status,
@@ -1038,13 +1043,15 @@ class PlanAndReactStrategy:
     async def execute_stream(
         self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
-        self.logger.info("execute_stream_start", session_id=session_id)
+        # Use strategy logger or fallback to agent logger
+        logger = self.logger or agent.logger
+        logger.info("execute_stream_start", session_id=session_id)
         state = await agent.state_manager.load_state(session_id) or {}
 
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
-        plan_steps = await _generate_plan_steps(agent, mission, self.logger)
+        plan_steps = await _generate_plan_steps(agent, mission, logger)
         if not plan_steps:
             plan_steps = [
                 "Analyze the mission and identify required actions.",

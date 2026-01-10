@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import structlog
-
 from taskforce.core.domain.context_builder import ContextBuilder
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.tools.planner_tool import PlannerTool
 
@@ -25,7 +24,7 @@ class LeanPromptBuilder:
         planner: PlannerTool | None,
         context_builder: ContextBuilder,
         context_policy: ContextPolicy,
-        logger: structlog.stdlib.BoundLogger,
+        logger: LoggerProtocol,
     ) -> None:
         self._base_system_prompt = base_system_prompt
         self._planner = planner

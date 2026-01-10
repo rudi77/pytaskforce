@@ -195,10 +195,14 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
+        # Create logger for agent
+        agent_logger = structlog.get_logger().bind(component="agent")
+
         agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
             tools=tools,
+            logger=agent_logger,
             system_prompt=system_prompt,
             model_alias=model_alias,
             context_policy=context_policy,
@@ -383,10 +387,14 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
+        # Create logger for agent
+        agent_logger = structlog.get_logger().bind(component="agent")
+
         agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
             tools=tools,
+            logger=agent_logger,
             system_prompt=system_prompt,
             model_alias=model_alias,
             context_policy=context_policy,
@@ -579,6 +587,9 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
+        # Create logger for agent
+        agent_logger = structlog.get_logger().bind(component="agent")
+
         agent = Agent(
             state_manager=state_manager,
             llm_provider=llm_provider,
@@ -589,6 +600,7 @@ class AgentFactory:
             max_steps=max_steps,
             max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
+            logger=agent_logger,
         )
 
         # Store MCP contexts and plugin manifest for lifecycle management
@@ -674,6 +686,9 @@ class AgentFactory:
         if not isinstance(params, dict):
             raise ValueError("planning_strategy_params must be a dictionary")
 
+        # Create logger for strategy injection
+        logger = structlog.get_logger().bind(component=f"{normalized}_strategy")
+
         if normalized == "native_react":
             return NativeReActStrategy()
         if normalized == "plan_and_execute":
@@ -688,13 +703,15 @@ class AgentFactory:
                 max_plan_steps=(
                     int(max_plan_steps_value) if max_plan_steps_value is not None else 12
                 ),
+                logger=logger,
             )
         if normalized == "plan_and_react":
             max_plan_steps_value = params.get("max_plan_steps")
             return PlanAndReactStrategy(
                 max_plan_steps=(
                     int(max_plan_steps_value) if max_plan_steps_value is not None else 12
-                )
+                ),
+                logger=logger,
             )
 
         raise ValueError(

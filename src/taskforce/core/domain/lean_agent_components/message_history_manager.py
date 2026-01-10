@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import structlog
-
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.logging import LoggerProtocol
 
 
 class MessageHistoryManager:
@@ -22,7 +21,7 @@ class MessageHistoryManager:
         llm_provider: LLMProviderProtocol,
         model_alias: str,
         summary_threshold: int,
-        logger: structlog.stdlib.BoundLogger,
+        logger: LoggerProtocol,
     ) -> None:
         self._token_budgeter = token_budgeter
         self._openai_tools = openai_tools

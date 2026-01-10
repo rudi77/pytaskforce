@@ -14,6 +14,7 @@ class _DummyLLM:
 def _make_manager() -> MessageHistoryManager:
     return MessageHistoryManager(
         token_budgeter=TokenBudgeter(
+            logger=structlog.get_logger(__name__),
             max_input_tokens=10_000,
             compression_trigger=9_000,
         ),

@@ -22,8 +22,6 @@ Key differences from legacy Agent:
 from collections.abc import AsyncIterator
 from typing import Any
 
-import structlog
-
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
@@ -43,6 +41,7 @@ from taskforce.core.domain.planning_strategy import (
 )
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
@@ -81,6 +80,7 @@ class Agent:
         state_manager: StateManagerProtocol,
         llm_provider: LLMProviderProtocol,
         tools: list[ToolProtocol],
+        logger: LoggerProtocol,
         system_prompt: str | None = None,
         model_alias: str = "main",
         tool_result_store: ToolResultStoreProtocol | None = None,
@@ -111,13 +111,14 @@ class Agent:
             max_parallel_tools: Maximum number of tool calls to run concurrently
                       (default: 4)
             planning_strategy: Optional planning strategy override for Agent.
+            logger: Logger instance (created in factory and always required).
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
         self._base_system_prompt = system_prompt or LEAN_KERNEL_PROMPT
         self.model_alias = model_alias
         self.tool_result_store = tool_result_store
-        self.logger = structlog.get_logger().bind(component="agent")
+        self.logger = logger
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -130,6 +131,7 @@ class Agent:
 
         # Token budget configuration (Story 9.3)
         self.token_budgeter = TokenBudgeter(
+            logger=logger,
             max_input_tokens=max_input_tokens or self.DEFAULT_MAX_INPUT_TOKENS,
             compression_trigger=compression_trigger or self.DEFAULT_COMPRESSION_TRIGGER,
         )
