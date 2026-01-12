@@ -58,7 +58,7 @@ agent:
 # LLM configuration (uses default from llm_config.yaml)
 llm:
   config_path: configs/llm_config.yaml
-  default_model: main
+  default_model: powerful
 
 # Tool configuration - V3 includes ralph_verify
 tools:

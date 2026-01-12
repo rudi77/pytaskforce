@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 
+from taskforce.api.cli.event_formatter import EventFormatter
 from taskforce.api.cli.output_formatter import TaskforceConsole
 from taskforce.application.executor import AgentExecutor
 from taskforce.core.domain.models import ExecutionResult
@@ -69,6 +70,14 @@ def run_mission(
         "--output-format",
         "-f",
         help="Output format: 'text' (default, human-readable) or 'json' (machine-parseable)",
+    ),
+    verbose_events: bool = typer.Option(
+        False,
+        "--verbose-events",
+        "--show-events",
+        "--events",
+        "-V",
+        help="Show agent events on stderr (works with --output-format json)",
     ),
 ):
     """Execute an agent mission.
@@ -155,6 +164,7 @@ def run_mission(
                     planning_strategy_params=planning_strategy_params,
                     console=tf_console.console if output_format == "text" else None,
                     output_format=output_format,
+                    verbose_events=verbose_events,
                 )
             )
         else:
@@ -168,6 +178,7 @@ def run_mission(
                 planning_strategy_params=planning_strategy_params,
                 tf_console=tf_console,
                 output_format=output_format,
+                verbose_events=verbose_events,
             )
 
         # Output JSON if requested
@@ -201,6 +212,78 @@ def run_mission(
             raise
 
 
+async def _execute_with_verbose_events(
+    executor: AgentExecutor,
+    mission: str,
+    profile: str,
+    session_id: str | None,
+    planning_strategy: str | None,
+    planning_strategy_params: dict | None,
+    event_formatter: EventFormatter,
+) -> ExecutionResult:
+    """Execute mission with verbose event output to stderr.
+
+    Streams events to stderr while collecting result for JSON output.
+    """
+    execution_history: list[dict[str, Any]] = []
+    final_message = ""
+    status = "completed"
+    resolved_session_id = session_id or "unknown"
+    total_token_usage = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+
+    async for update in executor.execute_mission_streaming(
+        mission=mission,
+        profile=profile,
+        session_id=session_id,
+        planning_strategy=planning_strategy,
+        planning_strategy_params=planning_strategy_params,
+    ):
+        # Print event to stderr
+        event_formatter.print_event(update)
+
+        event_type = update.event_type
+
+        # Extract session_id from "started" event if available
+        if event_type == "started" and update.details:
+            resolved_session_id = update.details.get("session_id", resolved_session_id)
+
+        # Collect relevant events in execution_history
+        if event_type in ("tool_call", "tool_result", "plan_updated", "final_answer", "error"):
+            execution_history.append(
+                {
+                    "type": event_type,
+                    **update.details,
+                }
+            )
+
+        # Update final message and status
+        if event_type == "final_answer":
+            final_message = update.details.get("content", "")
+        elif event_type == "complete":
+            if not final_message and update.message:
+                final_message = update.message
+        elif event_type == "error":
+            final_message = update.message
+            status = "failed"
+        elif event_type == "token_usage":
+            usage = update.details
+            total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+            total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+            total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+    return ExecutionResult(
+        session_id=resolved_session_id,
+        status=status,
+        final_message=final_message or "No answer generated",
+        execution_history=execution_history,
+        token_usage=total_token_usage,
+    )
+
+
 def _execute_standard_mission(
     mission: str,
     profile: str,
@@ -211,24 +294,41 @@ def _execute_standard_mission(
     planning_strategy_params: str | None,
     tf_console: TaskforceConsole | None,
     output_format: str = "text",
+    verbose_events: bool = False,
 ) -> ExecutionResult | None:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
 
     # Suppress progress bar for JSON output
     if output_format == "json":
-        # Execute without progress UI
         strategy_params = _parse_strategy_params(planning_strategy_params)
-        result = asyncio.run(
-            executor.execute_mission(
-                mission=mission,
-                profile=profile,
-                session_id=session_id,
-                progress_callback=None,
-                planning_strategy=planning_strategy,
-                planning_strategy_params=strategy_params,
+
+        # Use streaming internally when verbose_events is enabled
+        if verbose_events:
+            event_formatter = EventFormatter()
+            result = asyncio.run(
+                _execute_with_verbose_events(
+                    executor=executor,
+                    mission=mission,
+                    profile=profile,
+                    session_id=session_id,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=strategy_params,
+                    event_formatter=event_formatter,
+                )
             )
-        )
+        else:
+            # Execute without progress UI
+            result = asyncio.run(
+                executor.execute_mission(
+                    mission=mission,
+                    profile=profile,
+                    session_id=session_id,
+                    progress_callback=None,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=strategy_params,
+                )
+            )
         return result
 
     # Standard text output with progress bar
@@ -286,6 +386,7 @@ async def _execute_streaming_mission(
     planning_strategy_params: str | None,
     console: Console | None,
     output_format: str = "text",
+    verbose_events: bool = False,
 ) -> ExecutionResult:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
@@ -294,6 +395,9 @@ async def _execute_streaming_mission(
 
     # For JSON output, collect result without UI
     if output_format == "json":
+        # Create event formatter for verbose output to stderr
+        event_formatter = EventFormatter() if verbose_events else None
+
         # Collect all events and build ExecutionResult
         execution_history: list[dict[str, Any]] = []
         final_message = ""
@@ -312,6 +416,10 @@ async def _execute_streaming_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=strategy_params,
         ):
+            # Print event to stderr if verbose_events enabled
+            if event_formatter:
+                event_formatter.print_event(update)
+
             event_type = update.event_type
 
             # Extract session_id from "started" event if available
@@ -595,6 +703,14 @@ def run_command(
         "-f",
         help="Output format: 'text' (default, human-readable) or 'json' (machine-parseable)",
     ),
+    verbose_events: bool = typer.Option(
+        False,
+        "--verbose-events",
+        "--show-events",
+        "--events",
+        "-V",
+        help="Show agent events on stderr (works with --output-format json)",
+    ),
     spec_file: Path | None = typer.Option(
         None,
         "--spec-file",
@@ -752,6 +868,7 @@ def run_command(
                         planning_strategy_params=None,
                         console=tf_console.console if output_format == "text" else None,
                         output_format=output_format,
+                        verbose_events=verbose_events,
                     )
                 )
             else:
@@ -765,6 +882,7 @@ def run_command(
                     planning_strategy_params=None,
                     tf_console=tf_console,
                     output_format=output_format,
+                    verbose_events=verbose_events,
                 )
 
             # Output JSON if requested
@@ -782,6 +900,7 @@ def run_command(
                     stream=stream,
                     tf_console=tf_console,
                     output_format=output_format,
+                    verbose_events=verbose_events,
                 )
             )
 
@@ -813,16 +932,69 @@ async def _execute_agent_command(
     stream: bool,
     tf_console: TaskforceConsole | None,
     output_format: str = "text",
+    verbose_events: bool = False,
 ) -> ExecutionResult | None:
     """Execute an agent-type command."""
     from taskforce.application.slash_command_registry import SlashCommandRegistry
+    from taskforce.application.executor import ProgressUpdate
+    from taskforce.core.domain.models import ExecutionResult as DomainExecutionResult
 
     registry = SlashCommandRegistry()
 
     try:
         agent = await registry.create_agent_for_command(command_def, profile)
 
-        # Execute with the specialized agent
+        # Use streaming with verbose events for JSON output
+        if output_format == "json" and verbose_events:
+            event_formatter = EventFormatter()
+            execution_history: list[dict[str, Any]] = []
+            final_message = ""
+            status = "completed"
+            session_id = None
+            total_token_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+
+            async for event in agent.execute_stream(mission=mission, session_id=session_id):
+                # Convert StreamEvent to ProgressUpdate for EventFormatter
+                update = ProgressUpdate(
+                    timestamp=event.timestamp,
+                    event_type=event.event_type,
+                    message=event.data.get("message", ""),
+                    details=event.data,
+                )
+                event_formatter.print_event(update)
+
+                # Collect execution history
+                if event.event_type in ("tool_call", "tool_result", "plan_updated", "final_answer", "error"):
+                    execution_history.append({
+                        "type": event.event_type,
+                        **event.data,
+                    })
+
+                # Update final message and status
+                if event.event_type == "final_answer":
+                    final_message = event.data.get("content", "")
+                elif event.event_type == "error":
+                    final_message = event.data.get("message", str(event.data))
+                    status = "failed"
+                elif event.event_type == "token_usage":
+                    usage = event.data
+                    total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                    total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                    total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+            return ExecutionResult(
+                session_id=session_id or "unknown",
+                status=status,
+                final_message=final_message or "No answer generated",
+                execution_history=execution_history,
+                token_usage=total_token_usage,
+            )
+
+        # Execute with the specialized agent (non-streaming)
         result = await agent.execute(mission=mission, session_id=None)
 
         # Suppress UI for JSON output
