@@ -55,7 +55,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev"},
+                json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
@@ -64,7 +64,7 @@ class TestServerSSEStreaming:
     def test_sse_yields_started_event(self):
         """Test that SSE endpoint yields started event."""
         mock_updates = [
-            make_progress_update("started", "Starting mission", {"session_id": "test-123", "profile": "dev"}),
+            make_progress_update("started", "Starting mission", {"session_id": "test-123", "profile": "coding_agent"}),
             make_progress_update("complete", "Done", {"status": "completed"}),
         ]
 
@@ -74,7 +74,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test mission", "profile": "dev"},
+                json={"mission": "Test mission", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -102,7 +102,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev", "lean": True},
+                json={"mission": "Test", "profile": "coding_agent", "lean": True},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -135,7 +135,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Search for data", "profile": "dev", "lean": True},
+                json={"mission": "Search for data", "profile": "coding_agent", "lean": True},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -171,7 +171,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Say hello", "profile": "dev", "lean": True},
+                json={"mission": "Say hello", "profile": "coding_agent", "lean": True},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -201,7 +201,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Answer question", "profile": "dev", "lean": True},
+                json={"mission": "Answer question", "profile": "coding_agent", "lean": True},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -226,7 +226,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev"},
+                json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -252,7 +252,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test error", "profile": "dev"},
+                json={"mission": "Test error", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -282,7 +282,7 @@ class TestServerSSEEventFormat:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev"},
+                json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -308,7 +308,7 @@ class TestServerSSEEventFormat:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "dev"},
+                json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
                 # Collect all lines from streaming response
                 lines = list(response.iter_lines())
@@ -336,7 +336,7 @@ class TestServerSSEBackwardCompatibility:
         # If no LLM key is configured, it may return 500, which is acceptable
         response = client.post(
             "/api/v1/execute",
-            json={"mission": "Test", "profile": "dev"},
+            json={"mission": "Test", "profile": "coding_agent"},
         )
 
         # Accept either success or error due to environment

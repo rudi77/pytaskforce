@@ -14,13 +14,22 @@ console = Console()
 
 @app.command("list")
 def list_sessions(
-    profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile")
+    profile: str = typer.Option(
+        ...,
+        "--profile",
+        "-p",
+        help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
+    )
 ):
     """List all agent sessions."""
 
     async def _list_sessions():
         factory = AgentFactory()
-        agent = await factory.create_agent(profile=profile)
+        try:
+            agent = await factory.create_agent(profile=profile)
+        except FileNotFoundError:
+            console.print(f"[red]Profile not found: {profile}[/red]")
+            raise typer.Exit(1)
 
         try:
             sessions = await agent.state_manager.list_sessions()
@@ -44,13 +53,22 @@ def list_sessions(
 @app.command("show")
 def show_session(
     session_id: str = typer.Argument(..., help="Session ID"),
-    profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
+    profile: str = typer.Option(
+        ...,
+        "--profile",
+        "-p",
+        help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
+    ),
 ):
     """Show session details."""
 
     async def _show_session():
         factory = AgentFactory()
-        agent = await factory.create_agent(profile=profile)
+        try:
+            agent = await factory.create_agent(profile=profile)
+        except FileNotFoundError:
+            console.print(f"[red]Profile not found: {profile}[/red]")
+            raise typer.Exit(1)
 
         try:
             state = await agent.state_manager.load_state(session_id)

@@ -101,7 +101,7 @@ def test_execute_returns_standard_error_schema(
 
         response = client.post(
             "/api/v1/execute",
-            json={"mission": "Test", "profile": "dev"},
+            json={"mission": "Test", "profile": "coding_agent"},
         )
 
     _assert_error_response(
@@ -123,7 +123,7 @@ def test_execute_unknown_error_preserves_detail(client, lean):
 
         response = client.post(
             "/api/v1/execute",
-            json={"mission": "Test", "profile": "dev", "lean": lean},
+            json={"mission": "Test", "profile": "coding_agent", "lean": lean},
         )
 
     _assert_error_response(

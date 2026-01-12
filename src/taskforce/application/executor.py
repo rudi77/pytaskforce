@@ -384,6 +384,15 @@ class AgentExecutor:
 
         # agent_id takes highest priority - load custom agent definition
         if agent_id:
+            # Validate agent_id format: reject slashes
+            if "/" in agent_id:
+                raise ValidationError(
+                    f"Invalid agent_id format: '{agent_id}'. "
+                    f"Agent IDs cannot contain slashes. "
+                    f"Use 'profile' parameter instead (e.g., profile='{agent_id.split('/')[0]}').",
+                    details={"agent_id": agent_id},
+                )
+
             from taskforce.infrastructure.persistence.file_agent_registry import (
                 FileAgentRegistry,
             )
@@ -572,6 +581,7 @@ class AgentExecutor:
                 f"{'✅' if d.get('success') else '❌'} "
                 f"{d.get('tool', 'unknown')}: {str(d.get('output', ''))[:50]}"
             ),
+            "ask_user": lambda d: f"❓ {d.get('question', 'User input required')}",
             "plan_updated": lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
             "token_usage": lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
             "final_answer": lambda d: d.get("content", ""),

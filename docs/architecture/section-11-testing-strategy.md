@@ -504,7 +504,7 @@ async def test_execute_mission_endpoint(auth_headers):
     async with AsyncClient(app=app, base_url="http://test") as client:
         payload = {
             "mission": "Create hello world",
-            "profile": "dev"
+            "profile": "coding_agent"
         }
         
         # Act
@@ -526,7 +526,7 @@ async def test_execute_mission_requires_authentication():
     """Test endpoint rejects requests without API key."""
     # Arrange
     async with AsyncClient(app=app, base_url="http://test") as client:
-        payload = {"mission": "Test", "profile": "dev"}
+        payload = {"mission": "Test", "profile": "coding_agent"}
         
         # Act
         with patch.dict("os.environ", {"TASKFORCE_API_KEY": "secret-key"}):
@@ -575,7 +575,7 @@ async def test_streaming_execution_endpoint(auth_headers):
     """Test POST /api/v1/execute/stream with SSE."""
     # Arrange
     async with AsyncClient(app=app, base_url="http://test") as client:
-        payload = {"mission": "Simple task", "profile": "dev"}
+        payload = {"mission": "Simple task", "profile": "coding_agent"}
         
         # Act
         with patch.dict("os.environ", {"TASKFORCE_API_KEY": "test-api-key-123"}):
@@ -765,7 +765,7 @@ async def test_complete_mission_execution_workflow():
             "/api/v1/execute",
             json={
                 "mission": "Create a hello world Python script",
-                "profile": "dev"
+                "profile": "coding_agent"
             },
             headers=headers
         )
@@ -860,7 +860,7 @@ class TaskforceUser(HttpUser):
             "/api/v1/execute",
             json={
                 "mission": random.choice(missions),
-                "profile": "dev"
+                "profile": "coding_agent"
             },
             headers=self.headers,
             timeout=60
@@ -1199,4 +1199,4 @@ locust -f tests/performance/locustfile.py --users 100 --spawn-rate 10 --run-time
 - Mocked LLM responses representative (needs validation: actual API may behave differently)
 
 ---
-
+

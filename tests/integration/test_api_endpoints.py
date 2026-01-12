@@ -21,7 +21,7 @@ def test_execute_mission_endpoint():
         "/api/v1/execute",
         json={
             "mission": "Say hello",
-            "profile": "dev"
+            "profile": "coding_agent"
         }
     )
     

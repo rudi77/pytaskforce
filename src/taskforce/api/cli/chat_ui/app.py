@@ -376,6 +376,7 @@ Use **/commands** to see available custom commands.
         events_panel = self.query_one("#events-panel", EventsPanel)
 
         final_answer_tokens = []
+        paused_question: dict | None = None
 
         async for update in self.executor.execute_mission_streaming(
             mission=message,
@@ -393,6 +394,20 @@ Use **/commands** to see available custom commands.
                 events_panel,
                 final_answer_tokens,
             )
+            if update.event_type == "ask_user":
+                paused_question = update.details
+
+        if paused_question is not None:
+            # Agent paused: we only save the question (already shown in UI),
+            # and do NOT save a fake "No response" assistant message.
+            question_text = str(paused_question.get("question", "")).strip()
+            if question_text:
+                state = await self.agent.state_manager.load_state(self.session_id) or {}
+                history = state.get("conversation_history", [])
+                history.append({"role": "assistant", "content": question_text})
+                state["conversation_history"] = history
+                await self.agent.state_manager.save_state(self.session_id, state)
+            return
 
         # Save final response to history
         final_message = "".join(final_answer_tokens) if final_answer_tokens else "No response"
@@ -469,6 +484,17 @@ Use **/commands** to see available custom commands.
             usage = update.details
             tokens = usage.get("total_tokens", 0)
             header.add_tokens(tokens)
+
+        elif event_type == "ask_user":
+            question = update.details.get("question", "")
+            missing = update.details.get("missing", [])
+            header.update_status("Waiting for you")
+            if missing:
+                chat_log.add_system_message(
+                    f"Agent needs input: {question}\nMissing: {', '.join(map(str, missing))}"
+                )
+            else:
+                chat_log.add_system_message(f"Agent needs input: {question}")
 
         elif event_type == "final_answer":
             if not final_answer_tokens:

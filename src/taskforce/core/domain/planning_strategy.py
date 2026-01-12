@@ -161,6 +161,7 @@ async def _collect_execution_result(
     execution_history: list[dict[str, Any]] = []
     final_message = ""
     last_error = ""
+    pending_question: dict[str, Any] | None = None
     total_token_usage = {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -169,6 +170,7 @@ async def _collect_execution_result(
     history_event_types = {
         "tool_call",
         "tool_result",
+        "ask_user",
         "plan_updated",
         "final_answer",
         "error",
@@ -180,6 +182,12 @@ async def _collect_execution_result(
             execution_history.append({"type": event_type, **event.data})
         if event_type == "final_answer":
             final_message = event.data.get("content", "")
+        elif event_type == "ask_user":
+            # Execution pauses until a human provides input.
+            pending_question = dict(event.data)
+            # Provide a meaningful message for synchronous /execute consumers.
+            if not final_message:
+                final_message = str(event.data.get("question", "")).strip() or "Waiting for user input"
         elif event_type == "error":
             last_error = event.data.get("message", "")
         elif event_type == "token_usage":
@@ -193,7 +201,9 @@ async def _collect_execution_result(
         final_message = last_error
 
     status = "completed"
-    if last_error or not final_message:
+    if pending_question:
+        status = "paused"
+    elif last_error or not final_message:
         status = "failed"
 
     return ExecutionResult(
@@ -201,6 +211,7 @@ async def _collect_execution_result(
         status=status,
         final_message=final_message,
         execution_history=execution_history,
+        pending_question=pending_question,
         token_usage=total_token_usage,
     )
 
@@ -547,7 +558,37 @@ class NativeReActStrategy:
                 continue
 
             tool_calls = result.get("tool_calls")
+
             if tool_calls:
+                # Special case: ask_user is a control-flow pause, not a normal tool.
+                for tool_call in tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    if tool_name == "ask_user":
+                        tool_args = _parse_tool_args(tool_call, agent.logger)
+                        question = str(tool_args.get("question", "")).strip()
+                        missing = tool_args.get("missing") or []
+
+                        state["pending_question"] = {
+                            "question": question,
+                            "missing": missing,
+                        }
+                        await agent.state_store.save(
+                            session_id=session_id,
+                            state=state,
+                            planner=agent.planner,
+                        )
+
+                        yield StreamEvent(
+                            event_type="ask_user",
+                            data={"question": question, "missing": missing},
+                        )
+                        agent.logger.info(
+                            "execute_stream_paused_for_user_input",
+                            session_id=session_id,
+                            question=question[:200],
+                        )
+                        return
+
                 step += 1
                 agent.logger.info(
                     "tool_calls_received",
@@ -556,11 +597,74 @@ class NativeReActStrategy:
                     count=len(tool_calls),
                     tools=[tc["function"]["name"] for tc in tool_calls],
                 )
+
                 messages.append(assistant_tool_calls_to_message(tool_calls))
-                async for event in self._emit_tool_events(
-                    agent, tool_calls, session_id, step, messages
-                ):
-                    yield event
+
+                requests: list[ToolCallRequest] = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    tool_call_id = tool_call["id"]
+                    tool_args = _parse_tool_args(tool_call, agent.logger)
+
+                    yield StreamEvent(
+                        event_type="tool_call",
+                        data={
+                            "tool": tool_name,
+                            "id": tool_call_id,
+                            "status": "executing",
+                            "args": tool_args,
+                        },
+                    )
+
+                    requests.append(
+                        ToolCallRequest(
+                            tool_call_id=tool_call_id,
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                        )
+                    )
+
+                tool_results = await _execute_tool_calls(agent, requests)
+                for request, tool_result in tool_results:
+                    yield StreamEvent(
+                        event_type="tool_result",
+                        data={
+                            "tool": request.tool_name,
+                            "id": request.tool_call_id,
+                            "success": tool_result.get("success", False),
+                            "output": agent._truncate_output(
+                                tool_result.get(
+                                    "output", str(tool_result.get("error", ""))
+                                )
+                            ),
+                            "args": request.tool_args,
+                        },
+                    )
+
+                    if request.tool_name in (
+                        "planner",
+                        "manage_plan",
+                    ) and tool_result.get("success"):
+                        plan_output = tool_result.get("output")
+                        if not plan_output and agent._planner:
+                            plan_output = agent._planner.get_plan_summary()
+                        yield StreamEvent(
+                            event_type="plan_updated",
+                            data=_build_plan_update(
+                                action=request.tool_args.get("action", "unknown"),
+                                plan=plan_output,
+                            ),
+                        )
+
+                    tool_message = await agent._create_tool_message(
+                        request.tool_call_id,
+                        request.tool_name,
+                        tool_result,
+                        session_id,
+                        step,
+                    )
+                    messages.append(tool_message)
+
                 continue
 
             content = result.get("content", "")
@@ -678,10 +782,88 @@ class NativeReActStrategy:
                 )
 
                 messages.append(assistant_tool_calls_to_message(tool_calls_list))
-                async for event in self._emit_tool_events(
-                    agent, tool_calls_list, session_id, step, messages
-                ):
-                    yield event
+
+                for tool_call in tool_calls_list:
+                    tool_name = tool_call["function"]["name"]
+                    tool_call_id = tool_call["id"]
+
+                    try:
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                        agent.logger.warning(
+                            "stream_tool_args_parse_failed",
+                            tool=tool_name,
+                            raw_args=tool_call["function"]["arguments"],
+                        )
+
+                    yield StreamEvent(
+                        event_type="tool_call",
+                        data={
+                            "tool": tool_name,
+                            "id": tool_call_id,
+                            "status": "executing",
+                            "args": tool_args,
+                        },
+                    )
+
+                    # Special case: ask_user is a control-flow pause, not a normal tool.
+                    if tool_name == "ask_user":
+                        question = str(tool_args.get("question", "")).strip()
+                        missing = tool_args.get("missing") or []
+
+                        state["pending_question"] = {
+                            "question": question,
+                            "missing": missing,
+                        }
+                        await agent.state_store.save(
+                            session_id=session_id,
+                            state=state,
+                            planner=agent.planner,
+                        )
+
+                        yield StreamEvent(
+                            event_type="ask_user",
+                            data={"question": question, "missing": missing},
+                        )
+                        agent.logger.info(
+                            "execute_stream_paused_for_user_input",
+                            session_id=session_id,
+                            question=question[:200],
+                        )
+                        return
+
+                    tool_result = await agent._execute_tool(tool_name, tool_args)
+
+                    yield StreamEvent(
+                        event_type="tool_result",
+                        data={
+                            "tool": tool_name,
+                            "id": tool_call_id,
+                            "success": tool_result.get("success", False),
+                            "output": agent._truncate_output(
+                                tool_result.get("output", str(tool_result.get("error", "")))
+                            ),
+                            "args": tool_args,
+                        },
+                    )
+
+                    if tool_name in ("planner", "manage_plan") and tool_result.get("success"):
+                        plan_output = tool_result.get("output")
+                        if not plan_output and agent._planner:
+                            plan_output = agent._planner.get_plan_summary()
+                        yield StreamEvent(
+                            event_type="plan_updated",
+                            data=_build_plan_update(
+                                action=tool_args.get("action", "unknown"),
+                                plan=plan_output,
+                            ),
+                        )
+
+                    tool_message = await agent._create_tool_message(
+                        tool_call_id, tool_name, tool_result, session_id, step
+                    )
+                    messages.append(tool_message)
 
             elif content_accumulated[0]:
                 step += 1

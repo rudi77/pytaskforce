@@ -197,7 +197,7 @@ from typing import Optional
 class ExecuteRequest(BaseModel):
     """Mission execution request."""
     mission: str = Field(..., min_length=1, max_length=10000)
-    profile: str = Field(default="dev", regex="^(dev|staging|prod)$")
+    profile: str = Field(..., regex="^(coding_agent|devops_agent|rag_agent)$")
     session_id: Optional[str] = Field(default=None, regex="^[a-f0-9-]{36}$")
     
     @validator("mission")
@@ -504,4 +504,4 @@ async def execute_mission(request: Request, data: ExecuteRequest):
 🏗️ **Proceeding to Performance & Scalability...**
 
 ---
-
+

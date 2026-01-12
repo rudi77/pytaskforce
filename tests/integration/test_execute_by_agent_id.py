@@ -68,7 +68,7 @@ def test_execute_sync_with_agent_id_success(client, mock_custom_agent):
             "/api/agent/execute",
             json={
                 "mission": "Extract invoice fields from invoice.pdf",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "invoice-extractor",
             },
         )
@@ -102,7 +102,7 @@ def test_execute_sync_agent_id_not_found(client):
             "/api/agent/execute",
             json={
                 "mission": "Test mission",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "nonexistent",
             },
         )
@@ -126,7 +126,7 @@ def test_execute_sync_agent_id_invalid_definition(client):
             "/api/agent/execute",
             json={
                 "mission": "Test mission",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "corrupt-agent",
             },
         )
@@ -153,7 +153,7 @@ def test_execute_sync_backward_compatibility_without_agent_id(client):
             "/api/agent/execute",
             json={
                 "mission": "Test mission",
-                "profile": "dev",
+                "profile": "coding_agent",
                 # No agent_id - uses legacy path
                 "lean": False,
             },
@@ -203,7 +203,7 @@ def test_execute_stream_with_agent_id_success(client, mock_custom_agent):
             "/api/agent/execute/stream",
             json={
                 "mission": "Extract invoice",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "invoice-extractor",
             },
         )
@@ -243,7 +243,7 @@ def test_execute_stream_agent_id_not_found(client):
             "/api/agent/execute/stream",
             json={
                 "mission": "Test",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "nonexistent",
             },
         )
@@ -289,7 +289,7 @@ def test_execute_with_agent_id_ignores_lean_flag(client, mock_custom_agent):
             "/api/agent/execute",
             json={
                 "mission": "Test",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "invoice-extractor",
                 "lean": False,  # Should be ignored
             },
@@ -327,7 +327,7 @@ def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
             "/api/agent/execute",
             json={
                 "mission": "Search documents",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "agent_id": "invoice-extractor",
                 "user_id": "user123",
                 "org_id": "org456",

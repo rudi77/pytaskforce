@@ -136,6 +136,85 @@ class TestLeanAgentStreaming:
         assert all("content" in e.data for e in token_events)
 
     @pytest.mark.asyncio
+    async def test_execute_stream_pauses_on_ask_user_streaming(
+        self, mock_state_manager, mock_tool
+    ):
+        """ask_user must pause execution and emit an ask_user event (no final answer)."""
+
+        async def streaming_ask_user(*args, **kwargs):
+            async for chunk in mock_stream_tool_call(
+                "ask_user",
+                "call_ask_user",
+                {"question": "Which org?", "missing": ["organization"]},
+            ):
+                yield chunk
+
+        mock_provider = AsyncMock()
+        mock_provider.complete_stream = streaming_ask_user
+
+        agent = Agent(
+            state_manager=mock_state_manager,
+            llm_provider=mock_provider,
+            tools=[mock_tool],
+            system_prompt="Test prompt",
+        )
+
+        events = []
+        async for event in agent.execute_stream("Need org", "test-session"):
+            events.append(event)
+
+        ask_user_events = [e for e in events if e.event_type == "ask_user"]
+        assert len(ask_user_events) == 1
+        assert ask_user_events[0].data["question"] == "Which org?"
+        assert ask_user_events[0].data["missing"] == ["organization"]
+        assert [e for e in events if e.event_type == "final_answer"] == []
+
+        mock_state_manager.save_state.assert_called()
+        saved_state = mock_state_manager.save_state.call_args[0][1]
+        assert saved_state.get("pending_question", {}).get("question") == "Which org?"
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_pauses_on_ask_user_non_streaming_provider(
+        self, mock_state_manager, mock_tool
+    ):
+        """ask_user must pause execution even when provider doesn't support streaming."""
+        mock_provider = AsyncMock()
+        mock_provider.complete.return_value = {
+            "success": True,
+            "content": "",
+            "tool_calls": [
+                make_tool_call(
+                    "ask_user",
+                    {"question": "Which project?", "missing": ["project"]},
+                    call_id="call_ask_user_2",
+                )
+            ],
+        }
+        if hasattr(mock_provider, "complete_stream"):
+            delattr(mock_provider, "complete_stream")
+
+        agent = Agent(
+            state_manager=mock_state_manager,
+            llm_provider=mock_provider,
+            tools=[mock_tool],
+            system_prompt="Test prompt",
+        )
+
+        events = []
+        async for event in agent.execute_stream("Need project", "test-session-2"):
+            events.append(event)
+
+        ask_user_events = [e for e in events if e.event_type == "ask_user"]
+        assert len(ask_user_events) == 1
+        assert ask_user_events[0].data["question"] == "Which project?"
+        assert ask_user_events[0].data["missing"] == ["project"]
+        assert [e for e in events if e.event_type == "final_answer"] == []
+
+        mock_state_manager.save_state.assert_called()
+        saved_state = mock_state_manager.save_state.call_args[0][1]
+        assert saved_state.get("pending_question", {}).get("question") == "Which project?"
+
+    @pytest.mark.asyncio
     async def test_execute_stream_yields_tool_call_events(
         self, mock_state_manager, mock_tool
     ):

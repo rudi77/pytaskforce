@@ -23,6 +23,7 @@ class StreamEvent:
     - llm_token: Token chunk from LLM response (real-time content)
     - tool_call: Tool invocation starting (before execution)
     - tool_result: Tool execution completed (after execution)
+    - ask_user: Agent requires human input to proceed (execution pauses)
     - plan_updated: PlannerTool modified the plan
     - token_usage: LLM token consumption metrics (prompt_tokens, completion_tokens, total_tokens)
     - final_answer: Agent completed with final response
@@ -39,6 +40,7 @@ class StreamEvent:
         "llm_token",
         "tool_call",
         "tool_result",
+        "ask_user",
         "plan_updated",
         "token_usage",
         "final_answer",

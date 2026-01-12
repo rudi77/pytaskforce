@@ -268,7 +268,7 @@ mcp_tools:
     },
     {
       "source": "profile",
-      "profile": "dev",
+      "profile": "coding_agent",
       "specialist": "generic",
       "tools_config": [
         {"type": "WebSearchTool", "module": "taskforce.infrastructure.tools.native.web_tools", "params": {}}

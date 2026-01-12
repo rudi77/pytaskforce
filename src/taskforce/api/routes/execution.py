@@ -43,14 +43,14 @@ REQUEST_EXAMPLES = {
         "summary": "Basic mission execution",
         "value": {
             "mission": "Summarize the top 5 AI news stories this week.",
-            "profile": "dev",
+            "profile": "coding_agent",
         },
     },
     "plan_and_execute": {
         "summary": "Agent with plan-and-execute strategy",
         "value": {
-            "mission": "Create a 3-step onboarding checklist for new engineers.",
-            "profile": "dev",
+            "mission": "Create a 3-step onboarding checklist.",
+            "profile": "coding_agent",
             "planning_strategy": "plan_and_execute",
             "planning_strategy_params": {"max_plan_steps": 3},
         },
@@ -58,8 +58,8 @@ REQUEST_EXAMPLES = {
     "custom_agent": {
         "summary": "Custom agent by ID",
         "value": {
-            "mission": "Audit dependencies and flag outdated packages.",
-            "profile": "dev",
+            "mission": "Audit dependencies and flag outdated.",
+            "profile": "coding_agent",
             "agent_id": "web-agent",
         },
     },
@@ -134,9 +134,9 @@ STREAM_RESPONSE_EXAMPLES = {
         "summary": "Started event",
         "value": (
             "data: {\"timestamp\":\"2025-01-02T12:00:00.123456\","
-            "\"event_type\":\"started\",\"message\":\"Starting mission\","
-            "\"details\":{\"session_id\":\"550e8400-e29b-41d4-a716-446655440000\","
-            "\"profile\":\"dev\",\"lean\":true}}\n\n"
+            "\"event_type\":\"started\",\"message\":\"Starting\","
+            "\"details\":{\"session_id\":\"550e8400-...\","
+            "\"profile\":\"coding_agent\",\"lean\":true}}\n\n"
         ),
     },
     "final_answer": {
@@ -151,8 +151,9 @@ STREAM_RESPONSE_EXAMPLES = {
         "summary": "Error event",
         "value": (
             "data: {\"timestamp\":\"2025-01-02T12:00:05.123456\","
-            "\"event_type\":\"error\",\"message\":\"Execution failed\","
-            "\"details\":{\"error\":\"Rate limit exceeded\",\"status_code\":502}}\n\n"
+            "\"event_type\":\"error\",\"message\":\"Failed\","
+            "\"details\":{\"error\":\"Rate limit\","
+            "\"status_code\":502}}\n\n"
         ),
     },
 }
@@ -244,9 +245,12 @@ class ExecuteMissionRequest(BaseModel):
         examples=["Search for recent news about AI and summarize findings"]
     )
     profile: str = Field(
-        default="dev",
-        description="Configuration profile (dev/staging/prod).",
-        examples=["dev", "staging", "prod"]
+        ...,
+        description=(
+            "Configuration profile name "
+            "(e.g., coding_agent, devops_agent, rag_agent)."
+        ),
+        examples=["coding_agent", "devops_agent", "rag_agent"],
     )
     session_id: Optional[str] = Field(
         default=None,
@@ -275,11 +279,16 @@ class ExecuteMissionRequest(BaseModel):
     )
     lean: bool = Field(
         default=True,
-        description="Deprecated: Agent is now always used. This field is ignored."
+        description=(
+            "Deprecated: Agent is now always used. This field is ignored."
+        ),
     )
     agent_id: Optional[str] = Field(
         default=None,
-        description="Custom agent ID to use (forces Agent). If provided, loads agent from configs/custom/{agent_id}.yaml"
+        description=(
+            "Custom agent ID to use (forces Agent). "
+            "If provided, loads agent from configs/custom/{agent_id}.yaml"
+        ),
     )
     planning_strategy: Optional[str] = Field(
         default=None,
@@ -477,11 +486,19 @@ async def execute_mission(
             details=e.details,
         )
     except FileNotFoundError as e:
+        msg = str(e)
+        # Distinguish profile not found from agent not found
+        if msg.startswith("Profile not found:"):
+            raise _http_exception(
+                status_code=404,
+                code="profile_not_found",
+                message=msg,
+            )
         # agent_id not found -> 404
         raise _http_exception(
             status_code=404,
             code="not_found",
-            message=str(e),
+            message=msg,
         )
     except ValueError as e:
         # Invalid agent definition -> 400
@@ -503,8 +520,10 @@ async def execute_mission(
     "/execute/stream",
     responses={
         200: {
-            "description": "Server-Sent Events stream of progress updates.",
-            "content": {"text/event-stream": {"examples": STREAM_RESPONSE_EXAMPLES}},
+            "description": "Server-Sent Events stream of updates.",
+            "content": {
+                "text/event-stream": {"examples": STREAM_RESPONSE_EXAMPLES}
+            },
         },
     },
 )
@@ -548,7 +567,7 @@ async def execute_mission_stream(
             "message": "Starting mission: Search for...",
             "details": {
                 "session_id": "550e8400-...",
-                "profile": "dev",
+                "profile": "coding_agent",
                 "lean": true
             }
         }
@@ -630,7 +649,25 @@ async def execute_mission_stream(
             }
         }
 
-    **7. thought**
+    **7. ask_user**
+
+    Agent requires human input to proceed (execution pauses).
+    The stream ends after emitting this event.
+    Resume by calling the endpoint again
+    with the same
+    `session_id` and the user's answer in `mission` (or included in
+    `conversation_history`)::
+
+        {
+            "event_type": "ask_user",
+            "message": "❓ Which org?",
+            "details": {
+                "question": "Which org?",
+                "missing": ["organization"]
+            }
+        }
+
+    **8. thought**
 
     Agent's reasoning (legacy Agent, post-hoc streaming)::
 
@@ -644,7 +681,7 @@ async def execute_mission_stream(
             }
         }
 
-    **8. observation**
+    **9. observation**
 
     Action result (legacy Agent, post-hoc streaming)::
 
@@ -654,7 +691,7 @@ async def execute_mission_stream(
             "details": {"success": true, "data": {...}}
         }
 
-    **9. final_answer**
+    **10. final_answer**
 
     Agent completed with final response::
 
@@ -664,7 +701,7 @@ async def execute_mission_stream(
             "details": {"content": "Based on my research..."}
         }
 
-    **10. complete**
+    **11. complete**
 
     Execution finished (final event)::
 
@@ -678,7 +715,7 @@ async def execute_mission_stream(
             }
         }
 
-    **11. error**
+    **12. error**
 
     Error occurred during execution::
 
@@ -794,31 +831,66 @@ async def execute_mission_stream(
                 data = json.dumps(asdict(update), default=str)
                 yield f"data: {data}\n\n"
         except FileNotFoundError as e:
-            # agent_id not found -> send error event
-            error_data = json.dumps({
-                "timestamp": datetime.now().isoformat(),
-                "event_type": "error",
-                "message": f"Agent not found: {str(e)}",
-                "details": {"error": str(e), "error_type": "FileNotFoundError", "status_code": 404}
-            })
+            msg = str(e)
+            # Distinguish profile not found from agent not found
+            if msg.startswith("Profile not found:"):
+                error_data = json.dumps(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "event_type": "error",
+                        "message": f"Profile not found: {msg}",
+                        "details": {
+                            "error": msg,
+                            "error_type": "FileNotFoundError",
+                            "error_code": "profile_not_found",
+                            "status_code": 404,
+                        },
+                    }
+                )
+            else:
+                # agent_id not found -> send error event
+                error_data = json.dumps(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "event_type": "error",
+                        "message": f"Agent not found: {msg}",
+                        "details": {
+                            "error": msg,
+                            "error_type": "FileNotFoundError",
+                            "status_code": 404,
+                        },
+                    }
+                )
             yield f"data: {error_data}\n\n"
         except ValueError as e:
             # Invalid agent definition -> send error event
-            error_data = json.dumps({
-                "timestamp": datetime.now().isoformat(),
-                "event_type": "error",
-                "message": f"Invalid agent definition: {str(e)}",
-                "details": {"error": str(e), "error_type": "ValueError", "status_code": 400}
-            })
+            error_data = json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "event_type": "error",
+                    "message": f"Invalid agent definition: {str(e)}",
+                    "details": {
+                        "error": str(e),
+                        "error_type": "ValueError",
+                        "status_code": 400,
+                    },
+                }
+            )
             yield f"data: {error_data}\n\n"
         except Exception as e:
             # Other errors -> send error event
-            error_data = json.dumps({
-                "timestamp": datetime.now().isoformat(),
-                "event_type": "error",
-                "message": f"Execution failed: {str(e)}",
-                "details": {"error": str(e), "error_type": type(e).__name__, "status_code": 500}
-            })
+            error_data = json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "event_type": "error",
+                    "message": f"Execution failed: {str(e)}",
+                    "details": {
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "status_code": 500,
+                    },
+                }
+            )
             yield f"data: {error_data}\n\n"
 
     return StreamingResponse(
