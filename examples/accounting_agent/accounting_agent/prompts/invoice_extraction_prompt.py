@@ -26,6 +26,8 @@ Recognize and validate these formats:
 - **Austrian (AT)**: UID ATU12345678 (ATU + 8 chars)
 - **Swiss (CH)**: CHE-123.456.789 MWST (or TVA/IVA for French/Italian regions)
 
+Do not provide values if not available in the document. Leave fields null if missing!
+
 ## Required Output Schema
 
 Return ONLY a JSON object with the following structure:

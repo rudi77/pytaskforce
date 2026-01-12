@@ -16,6 +16,38 @@ import yaml
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 
+def _normalize_vat_id(raw: str | None) -> str | None:
+    """
+    Normalize VAT ID by removing prefixes and whitespace.
+
+    Examples:
+        "USt-IDNr. DE 99999999" -> "DE99999999"
+        "UID ATU12345678" -> "ATU12345678"
+        "12/345/67890" -> "12/345/67890" (German tax number)
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+
+    # Remove common prefixes (USt-ID, USt-IdNr., VAT ID, UID, etc.)
+    s = re.sub(r"(?i)\b(ust[-\s]?id(nr)?\.?|vat\s?id\.?|uid)\b[:\s]*", "", s).strip()
+
+    # Remove all whitespace
+    s = re.sub(r"\s+", "", s)
+
+    # Extract EU VAT-ID candidate (e.g., DE99999999, ATU12345678)
+    m = re.search(r"\b[A-Z]{2}[0-9A-Za-z\+\*\.]{2,12}\b", s)
+    if m:
+        return m.group(0)
+
+    # German tax number fallback (e.g., 12/345/67890)
+    m = re.search(r"\b\d{2,3}/\d{3}/\d{5}\b", s)
+    if m:
+        return m.group(0)
+
+    return s  # Return cleaned string as fallback
+
+
 class ComplianceCheckerTool:
     """
     Validate invoice compliance with §14 UStG requirements.
@@ -239,8 +271,11 @@ class ComplianceCheckerTool:
             if "vat_id" not in data:
                 # Bevorzuge Lieferanten-ID
                 data["vat_id"] = data.get("supplier_vat_id")
-            
-            if "supplier_name" not in data and "sender_name" in data: # Fallback
+
+            # Normalize VAT ID (remove prefixes like "USt-IDNr." and whitespace)
+            data["vat_id"] = _normalize_vat_id(data.get("vat_id"))
+
+            if "supplier_name" not in data and "sender_name" in data:  # Fallback
                 data["supplier_name"] = data.get("sender_name")
 
             # 3. Mapping von Mengen/Beschreibungen
@@ -251,6 +286,19 @@ class ComplianceCheckerTool:
                     # Wir generieren einen Platzhalter-Text für die Prüfung
                     item_desc = ", ".join([str(i.get("description", "")) for i in line_items[:3]])
                     data["quantity_description"] = f"Positionen vorhanden: {item_desc}..."
+
+            # 4. Mapping von vat_rate aus vat_breakdown (für Mehrfachsteuersätze)
+            if "vat_rate" not in data or not data.get("vat_rate"):
+                vb = data.get("vat_breakdown") or []
+                if isinstance(vb, list) and len(vb) > 0:
+                    rates = []
+                    for item in vb:
+                        r = item.get("rate")
+                        if r is not None:
+                            rates.append(float(r))
+                    # Store as comma-separated string to satisfy mandatory field check
+                    if rates:
+                        data["vat_rate"] = ",".join(str(r) for r in sorted(set(rates)))
 
             # --- ENDE MAPPING ---
 
@@ -284,7 +332,7 @@ class ComplianceCheckerTool:
                     # Kontext-Logik: Bei Auslandsrechnungen (wenn vat_id da ist aber nicht DE)
                     # sind wir nachsichtiger, hier vereinfacht dargestellt:
                     missing_fields.append(field)
-                    
+
                     issue = {
                         "field": field,
                         "message": f"Pflichtangabe fehlt: {description}",
@@ -303,32 +351,57 @@ class ComplianceCheckerTool:
                     pattern = r"^([A-Z]{2})[0-9A-Za-z\+\*\.]{2,12}$"
                     if not re.match(pattern, str(value)):
                         # Check Tax Number fallback...
-                        pass 
+                        pass
 
-            # ... (Rest der Logik für Calculations bleibt gleich, nutze 'data' statt 'invoice_data') ...
-            
             # Check for VAT consistency
             if not is_small_invoice:
                 net = float(data.get("net_amount", 0) or 0)
                 vat = float(data.get("vat_amount", 0) or 0)
-                # Rate muss ggf. aus vat_breakdown geholt werden, falls top-level fehlt
-                rate = float(data.get("vat_rate", 0) or 0)
-                
-                # Fallback: Versuche Rate aus line_items zu erraten wenn 0
-                if rate == 0 and data.get("line_items"):
-                    try:
-                        rate = float(data["line_items"][0].get("vat_rate", 0))
-                    except:
-                        pass
 
-                if net > 0 and rate > 0:
-                    expected_vat = net * rate
-                    if abs(expected_vat - vat) > 0.05: # Toleranz etwas erhöhen für Rundungsdifferenzen
+                vb = data.get("vat_breakdown") or []
+
+                # Multi-rate calculation via vat_breakdown
+                if isinstance(vb, list) and len(vb) > 0:
+                    expected_vat = 0.0
+                    for item in vb:
+                        item_net = float(item.get("net_amount", 0) or 0)
+                        item_rate = float(item.get("rate", 0) or 0)
+                        expected_vat += item_net * item_rate
+
+                    if abs(expected_vat - vat) > 0.05:
                         warnings.append({
                             "field": "vat_calculation",
-                            "message": f"MwSt-Check: {vat:.2f} (Ist) vs {expected_vat:.2f} (Soll)",
+                            "message": f"MwSt-Check (multi-rate): {vat:.2f} (Ist) vs {expected_vat:.2f} (Soll)",
                             "legal_reference": "§14 Abs. 4 Nr. 8 UStG"
                         })
+                else:
+                    # Single-rate fallback
+                    rate = 0.0
+
+                    # Try to extract rate from vat_rate field
+                    rate_str = str(data.get("vat_rate", "") or "")
+                    if rate_str and "," not in rate_str:
+                        # Single rate value
+                        try:
+                            rate = float(rate_str)
+                        except ValueError:
+                            pass
+
+                    # Fallback: Try rate from line_items
+                    if rate == 0 and data.get("line_items"):
+                        try:
+                            rate = float(data["line_items"][0].get("vat_rate", 0))
+                        except (KeyError, IndexError, TypeError, ValueError):
+                            pass
+
+                    if net > 0 and rate > 0:
+                        expected_vat = net * rate
+                        if abs(expected_vat - vat) > 0.05:
+                            warnings.append({
+                                "field": "vat_calculation",
+                                "message": f"MwSt-Check: {vat:.2f} (Ist) vs {expected_vat:.2f} (Soll)",
+                                "legal_reference": "§14 Abs. 4 Nr. 8 UStG"
+                            })
 
             is_compliant = len(errors) == 0
 
