@@ -1,0 +1,54 @@
+# Orchestrator Agent Configuration
+#
+# This profile enables multi-agent orchestration via the AgentTool.
+# The orchestrator can delegate missions to specialist sub-agents
+# (coding, rag, wiki) or custom agents defined in configs/custom/.
+
+agent:
+  type: generic
+  specialist: null  # Orchestrator has no specialist (uses AgentTool instead)
+  planning_strategy: native_react  # Best for orchestration tasks
+  max_steps: 50  # Higher limit for complex orchestration workflows
+  max_parallel_tools: 4  # Allow parallel sub-agent execution
+
+# Multi-Agent Orchestration (Feature Flag - disabled by default)
+orchestration:
+  enabled: true  # REQUIRED: Enable AgentTool for sub-agent delegation
+
+  # Sub-Agent Configuration
+  sub_agent_profile: dev  # Profile used for all sub-agents (dev/staging/prod)
+  sub_agent_max_steps: 30  # Step limit for sub-agents (lower than orchestrator)
+  sub_agent_work_dir: null  # Optional: separate work directory for sub-agents
+
+  # Result Handling
+  summarize_results: false  # Summarize long sub-agent outputs (experimental)
+  summary_max_length: 2000  # Max chars before summarization
+
+# Tools available to orchestrator
+# Note: call_agent is added automatically when orchestration.enabled=true
+tools:
+  - web_search  # Research capabilities
+  - web_fetch   # Fetch web content
+  - file_read   # Read files
+  - file_write  # Write files
+  - ask_user    # Interact with user
+
+# LLM Configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main  # Use main model for orchestrator
+
+# State Persistence
+persistence:
+  type: file
+  work_dir: .taskforce
+
+# Logging
+logging:
+  level: INFO
+  format: console
+
+# Context Policy
+context_policy:
+  max_items: 20  # Higher for orchestration context
+  max_chars_per_item: 4000
