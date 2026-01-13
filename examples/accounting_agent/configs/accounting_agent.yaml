@@ -227,3 +227,15 @@ context_policy:
 logging:
   level: INFO
   structured: true
+
+# Long-term Memory Configuration (via MCP)
+# Enables persistent memory for accounting knowledge
+mcp_servers:
+  - type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-memory"
+    env:
+      MEMORY_FILE_PATH: ".taskforce_accounting/.memory/knowledge_graph.jsonl"
+    description: "Accounting knowledge: suppliers, rules, projects, user preferences"
