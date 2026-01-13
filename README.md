@@ -46,6 +46,7 @@ taskforce chat --plugin examples/accounting_agent
 ## 📦 Features
 
 - **Clean Architecture**: Strict layer separation (Core → Application → Infrastructure → API).
+- **Multi-Agent Orchestration**: Delegate complex tasks to specialist sub-agents working in parallel.
 - **Dual Interfaces**: Full-featured CLI (Typer) and REST API (FastAPI).
 - **Swappable Persistence**: File-based for dev, PostgreSQL for production.
 - **LLM Agnostic**: Support for OpenAI, Azure OpenAI, and more via LiteLLM.
@@ -65,6 +66,73 @@ taskforce/
 │   └── api/               # LAYER 4: Entrypoints (CLI, REST Routes)
 ```
 
+## 🤝 Multi-Agent Orchestration
+
+Taskforce supports **multi-agent orchestration**, allowing you to delegate complex missions to specialist sub-agents. Each sub-agent runs in isolation with its own tools and context.
+
+### Quick Example
+
+```powershell
+# Run with orchestrator profile
+taskforce run mission "Research Python FastAPI and React, create comparison docs" \
+  --profile orchestrator
+```
+
+The orchestrator agent will:
+1. Analyze the mission and break it down
+2. Spawn specialist sub-agents in parallel:
+   - **Coding Agent**: Research FastAPI best practices
+   - **Coding Agent**: Research React patterns
+   - **Doc Writer Agent**: Create comparison documentation
+3. Combine results into final deliverable
+
+### Available Specialist Agents
+
+- **`coding`**: File operations, shell commands, Git operations
+- **`rag`**: Semantic search, document retrieval
+- **`wiki`**: Wikipedia research
+- **Custom agents**: Create your own in `configs/custom/`
+
+### Custom Agent Example
+
+Create `configs/custom/code_reviewer.yaml`:
+
+```yaml
+system_prompt: |
+  You are a code review expert. Check for:
+  - Security vulnerabilities
+  - Performance issues
+  - Code quality
+
+tool_allowlist:
+  - file_read
+  - python
+  - git_tool
+```
+
+Then use it:
+
+```powershell
+# Use directly
+taskforce run mission "Review code quality" --profile code_reviewer
+
+# Or via orchestrator
+taskforce run mission "Get expert code review for src/" --profile orchestrator
+# Orchestrator will automatically call code_reviewer specialist
+```
+
+### How It Works
+
+Orchestrator agents have access to the `call_agent` tool, which:
+- Creates isolated sub-agents with their own session IDs
+- Supports parallel execution of multiple sub-agents
+- Handles context isolation (no cross-contamination)
+- Returns aggregated results to the orchestrator
+
+See [docs/architecture/multi-agent-orchestration-plan.md](docs/architecture/multi-agent-orchestration-plan.md) for implementation details.
+
+---
+
 ## 📚 Documentation & Next Steps
 
 Detailed guides are available in the [docs/](docs/) directory:
@@ -74,6 +142,7 @@ Detailed guides are available in the [docs/](docs/) directory:
 - **[CLI Guide](docs/cli.md)**: Master the `taskforce` command.
 - **[REST API Guide](docs/api.md)**: Integrating Taskforce into your apps.
 - **[Profiles & Config](docs/profiles.md)**: Managing dev/prod environments.
+- **[Multi-Agent Orchestration](docs/architecture/multi-agent-orchestration-plan.md)**: Deep dive into orchestration.
 
 ---
 
