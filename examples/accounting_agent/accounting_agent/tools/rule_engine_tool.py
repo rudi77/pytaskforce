@@ -225,6 +225,8 @@ class RuleEngineTool:
         """
         description = str(line_item.get("description", "")).lower()
         net_amount = float(line_item.get("net_amount", 0))
+        # For GWG threshold: use unit_price if available, otherwise net_amount
+        unit_price = float(line_item.get("unit_price", net_amount))
         vat_rate = float(line_item.get("vat_rate", 0.19))
 
         # Load kontierung rules
@@ -242,15 +244,15 @@ class RuleEngineTool:
                     conditions = category_config.get("conditions", [])
 
                     if conditions:
-                        # Check amount-based conditions
+                        # Check amount-based conditions (use unit_price for GWG threshold)
                         for condition in conditions:
                             if "if_amount_below" in condition:
-                                if net_amount < condition["if_amount_below"]:
+                                if unit_price < condition["if_amount_below"]:
                                     return self._create_proposal(
                                         condition, category_name, line_item, chart, vat_rate
                                     )
                             elif "if_amount_above" in condition:
-                                if net_amount >= condition["if_amount_above"]:
+                                if unit_price >= condition["if_amount_above"]:
                                     return self._create_proposal(
                                         condition, category_name, line_item, chart, vat_rate
                                     )

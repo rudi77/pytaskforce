@@ -236,6 +236,51 @@ expense_categories:
     debit_name: "Fremdleistungen"
     legal_basis: "§4 Abs. 4 EStG"
 
+  # Werkzeuge und Maschinen
+  tools_machinery:
+    keywords:
+      - "Bohrmaschine"
+      - "Werkzeug"
+      - "Maschine"
+      - "Akkuschrauber"
+      - "Schleifmaschine"
+      - "Säge"
+      - "Kreissäge"
+      - "Stichsäge"
+      - "Winkelschleifer"
+      - "Schweißgerät"
+      - "Kompressor"
+      - "Handwerkzeug"
+    conditions:
+      - if_amount_below: 800
+        debit_account: "4985"
+        debit_name: "Werkzeuge und Kleingeräte (GWG)"
+        legal_basis: "§6 Abs. 2 EStG"
+      - if_amount_above: 800
+        debit_account: "0210"
+        debit_name: "Maschinen (Anlagevermögen)"
+        legal_basis: "§7 Abs. 1 EStG"
+        afa_years: 10
+
+  # Heizmaterial und Brennstoffe
+  heating_fuel:
+    keywords:
+      - "Briketts"
+      - "Kohle"
+      - "Heizöl"
+      - "Brennstoff"
+      - "Pellets"
+      - "Holzpellets"
+      - "Brennholz"
+      - "Kaminholz"
+      - "Gas"
+      - "Erdgas"
+      - "Propangas"
+    debit_account: "4230"
+    debit_name: "Heizung"
+    legal_basis: "§4 Abs. 4 EStG"
+    note: "Oft ermäßigter Steuersatz 7%"
+
 # VAT rules
 vat_rules:
   standard_rate:
@@ -293,6 +338,8 @@ skr04_mapping:
   "4964": "6835"  # Software-Aufwand
   "0027": "0135"  # Software-Anlage
   "0410": "0620"  # Geschäftsausstattung
+  "0210": "0440"  # Maschinen
+  "4230": "6320"  # Heizung
   "4660": "6660"  # Reisekosten
   "4650": "6640"  # Bewirtung
   "4945": "6825"  # Fortbildung
