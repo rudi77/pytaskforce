@@ -20,7 +20,7 @@ Key differences from legacy Agent:
 """
 
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Optional
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
@@ -328,8 +328,23 @@ class Agent:
         self,
         tool_name: str,
         tool_args: dict[str, Any],
+        session_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Execute a tool by name with given arguments."""
+        """
+        Execute a tool by name with given arguments.
+
+        Args:
+            tool_name: Name of the tool to execute
+            tool_args: Arguments to pass to the tool
+            session_id: Optional session ID (injected for call_agent orchestration)
+
+        Returns:
+            Tool execution result dictionary
+        """
+        # Inject parent session ID for AgentTool (multi-agent orchestration)
+        if tool_name == "call_agent" and session_id:
+            tool_args = {**tool_args, "_parent_session_id": session_id}
+
         return await self.tool_executor.execute(tool_name, tool_args)
 
     async def _create_tool_message(
