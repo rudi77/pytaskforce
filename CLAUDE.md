@@ -510,6 +510,78 @@ logging:
 
 ## Common Patterns and Recipes
 
+### Enabling Long-Term Memory
+
+**Goal:** Add session-persistent memory to an agent profile
+
+**Prerequisites:**
+- Node.js v18+ and NPM v9+ installed
+
+**Steps:**
+
+1. **Add MCP Memory Server to profile config:**
+
+```yaml
+# configs/your_agent.yaml
+
+profile: your_agent
+specialist: coding  # or rag, or custom
+
+persistence:
+  type: file
+  work_dir: .taskforce_your_agent
+
+# Add this section
+mcp_servers:
+  - type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-memory"
+    env:
+      MEMORY_FILE_PATH: ".taskforce_your_agent/.memory/knowledge_graph.jsonl"
+    description: "Long-term knowledge graph memory"
+```
+
+2. **The agent automatically gains 9 memory tools:**
+- `create_entities` - Store new entities (User, Project, Pattern, etc.)
+- `create_relations` - Link entities (e.g., "Alice works_on ProjectX")
+- `add_observations` - Add facts to entities
+- `read_graph` - Retrieve entire knowledge graph
+- `search_nodes` - Search for specific entities
+- `open_nodes` - Open specific entities by name
+- `delete_entities`, `delete_observations`, `delete_relations` - Cleanup
+
+3. **System prompt automatically includes memory guidance:**
+- Agent checks memory at conversation start
+- Agent monitors for memorable information during execution
+- Agent updates memory when learning new facts
+
+**Example Memory Usage:**
+
+```python
+# Agent stores user preference
+create_entities([{
+  "name": "User_Alice",
+  "entityType": "User",
+  "observations": ["Prefers type hints", "Senior Engineer"]
+}])
+
+# Agent links user to project
+create_relations([{
+  "from": "User_Alice",
+  "to": "TaskforceProject",
+  "relationType": "contributes_to"
+}])
+
+# Later session - agent recalls preference
+search_nodes("Alice")  # Finds previous observations
+```
+
+**See:** [Long-Term Memory Documentation](docs/features/longterm-memory.md)
+
+---
+
 ### Adding a New Tool
 
 1. **Create tool in infrastructure layer:**

@@ -1027,14 +1027,26 @@ class AgentFactory:
         
         for server_config in mcp_servers_config:
             server_type = server_config.get("type")
-            
+
             try:
                 if server_type == "stdio":
                     # Local stdio server
                     command = server_config.get("command")
                     args = server_config.get("args", [])
                     env = server_config.get("env")
-                    
+
+                    # Ensure memory directory exists if MEMORY_FILE_PATH is configured
+                    if env and "MEMORY_FILE_PATH" in env:
+                        memory_path = Path(env["MEMORY_FILE_PATH"])
+                        memory_dir = memory_path.parent
+                        if not memory_dir.exists():
+                            memory_dir.mkdir(parents=True, exist_ok=True)
+                            self.logger.info(
+                                "memory_directory_created",
+                                memory_dir=str(memory_dir),
+                                memory_file=str(memory_path),
+                            )
+
                     if not command:
                         self.logger.warning(
                             "mcp_server_missing_command",

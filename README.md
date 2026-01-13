@@ -51,6 +51,7 @@ taskforce chat --plugin examples/accounting_agent
 - **LLM Agnostic**: Support for OpenAI, Azure OpenAI, and more via LiteLLM.
 - **Plugin System**: Load custom agent plugins with specialized tools.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
+- **Long-Term Memory**: Session-persistent knowledge graphs via MCP Memory Server.
 
 ## 🧠 Architecture Overview
 
@@ -74,6 +75,7 @@ Detailed guides are available in the [docs/](docs/) directory:
 - **[CLI Guide](docs/cli.md)**: Master the `taskforce` command.
 - **[REST API Guide](docs/api.md)**: Integrating Taskforce into your apps.
 - **[Profiles & Config](docs/profiles.md)**: Managing dev/prod environments.
+- **[Long-Term Memory](docs/features/longterm-memory.md)**: Session-persistent knowledge graphs.
 
 ---
 
