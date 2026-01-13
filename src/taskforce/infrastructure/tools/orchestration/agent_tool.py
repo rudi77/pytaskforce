@@ -13,7 +13,6 @@ from typing import Any, Optional
 
 import structlog
 
-from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -259,15 +258,18 @@ class AgentTool:
             # Cleanup sub-agent resources (MCP connections, etc.)
             await sub_agent.cleanup()
 
+            # Determine success based on status
+            success = result.status in ("completed", "paused")
+
             self.logger.info(
                 "sub_agent_completed",
                 sub_session_id=sub_session_id,
-                success=result.success,
-                steps_taken=result.steps_taken,
+                status=result.status,
+                success=success,
             )
 
             # Prepare result for parent agent
-            result_text = result.final_answer or result.error or "No result"
+            result_text = result.final_message or "No result"
 
             # Optionally summarize long results
             if (
@@ -288,11 +290,11 @@ class AgentTool:
 
             # Return result to parent agent
             return {
-                "success": result.success,
+                "success": success,
                 "result": result_text,
                 "session_id": sub_session_id,
-                "steps_taken": result.steps_taken,
-                "error": result.error if not result.success else None,
+                "status": result.status,
+                "error": result.final_message if not success else None,
             }
 
         except Exception as e:
@@ -303,11 +305,12 @@ class AgentTool:
                 error_type=type(e).__name__,
             )
 
-            return tool_error_payload(
-                tool_name=self.name,
-                error=f"Sub-agent execution failed: {str(e)}",
-                error_type=type(e).__name__,
-            )
+            return {
+                "success": False,
+                "error": f"Sub-agent execution failed: {str(e)}",
+                "error_type": type(e).__name__,
+                "session_id": sub_session_id,
+            }
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
