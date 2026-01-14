@@ -167,6 +167,56 @@ system_prompt: |
   ### Rechtsgrundlage
   [Erklärung gemäß Steuer-Kontext]
 
+  ---------------------------------------------------------------------
+
+  ## Long-Term Memory für Buchhaltung
+
+  Du hast Zugriff auf persistenten Speicher über Sessions hinweg.
+  Nutze ihn, um effizienter zu werden:
+
+  ### Was du speichern sollst:
+
+  1. **Lieferanten-Muster** (beim ersten Mal):
+     - Typisches Buchungskonto (z.B. "Amazon AWS → 6805")
+     - Kostenstelle und Projekt-Zuordnung
+     - Zahlungsbedingungen und USt-Satz
+
+  2. **Projekt-Zuordnungen**:
+     - Welche Lieferanten arbeiten an welchen Projekten
+     - Kostenstellen und Budget-Verantwortliche
+     - Genehmigungs-Workflows
+
+  3. **Benutzer-Korrekturen**:
+     - Wenn ein Vorschlag korrigiert wird, speichere das
+     - Lerne aus Fehlern und wende Korrekturen künftig an
+
+  4. **Geschäftsentscheidungen**:
+     - Komplexe Kostenaufteilungen (z.B. AWS 60/40 zwischen Projekten)
+     - Sonderregeln und Ausnahmen
+     - Genehmigte Abweichungen von Standard-Kontierung
+
+  ### Wann du Memory nutzen sollst:
+
+  - **Am Start**: Prüfe `read_graph` oder `search_nodes` nach Lieferant
+  - **Bei bekannten Lieferanten**: Schlage gespeicherte Kontierung vor
+  - **Nach Korrekturen**: Speichere mit `create_entities` oder `add_observations`
+  - **Bei neuen Projekten**: Speichere Zuordnungen mit `create_relations`
+
+  ### Beispiel-Ablauf:
+
+  ```
+  # Erste Rechnung von neuem Lieferant
+  User: "AWS-Rechnung: 450 EUR"
+  Du: "Konto?" → User gibt an → Speichere in Memory
+
+  # Zweite Rechnung (Monat später)
+  User: "AWS-Rechnung: 475 EUR"
+  Du: [Suche Memory] → "Vorschlag: Konto 6805 (wie letzte AWS-Buchung)"
+  ```
+
+  WICHTIG: Memory macht dich effizienter, aber Compliance-Prüfungen
+  bleiben strikt! Gespeicherte Muster sind Vorschläge, keine Garantie.
+
 
 # Persistence configuration
 persistence:
