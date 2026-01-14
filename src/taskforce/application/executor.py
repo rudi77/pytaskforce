@@ -90,6 +90,7 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        plugin_path: str | None = None,
     ) -> ExecutionResult:
         """Execute Agent mission with comprehensive orchestration.
 
@@ -116,6 +117,8 @@ class AgentExecutor:
             planning_strategy: Optional planning strategy override
                               (native_react, plan_and_execute, plan_and_react)
             planning_strategy_params: Optional params for planning strategy
+            plugin_path: Optional path to external plugin directory
+                        (e.g., examples/accounting_agent)
 
         Returns:
             ExecutionResult with completion status and history
@@ -135,6 +138,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
+            plugin_path=plugin_path,
         )
 
         agent = None
@@ -146,6 +150,7 @@ class AgentExecutor:
                 agent_id=agent_id,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
+                plugin_path=plugin_path,
             )
 
             await self._maybe_store_conversation_history(
@@ -170,6 +175,7 @@ class AgentExecutor:
                 status=result.status,
                 duration_seconds=duration,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             return result
@@ -183,6 +189,7 @@ class AgentExecutor:
                 error=str(e),
                 duration_seconds=duration,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
             raise CancelledError(
                 f"Mission execution cancelled: {str(e)}",
@@ -197,6 +204,7 @@ class AgentExecutor:
                 session_id=session_id,
                 agent_id=agent_id,
                 duration_seconds=duration,
+                plugin_path=plugin_path,
             )
             raise self._wrap_exception(
                 e,
@@ -221,6 +229,7 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         agent: Agent | None = None,
+        plugin_path: str | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
@@ -239,6 +248,8 @@ class AgentExecutor:
             planning_strategy_params: Optional params for planning strategy
             agent: Optional pre-created Agent instance. If provided, skips
                   agent creation and uses this agent directly.
+            plugin_path: Optional path to external plugin directory
+                        (e.g., examples/accounting_agent)
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -259,6 +270,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             using_provided_agent=not owns_agent,
+            plugin_path=plugin_path,
         )
 
         # Yield initial started event
@@ -270,6 +282,7 @@ class AgentExecutor:
                 "session_id": session_id,
                 "profile": profile,
                 "agent_id": agent_id,
+                "plugin_path": plugin_path,
             },
         )
 
@@ -282,6 +295,7 @@ class AgentExecutor:
                     agent_id=agent_id,
                     planning_strategy=planning_strategy,
                     planning_strategy_params=planning_strategy_params,
+                    plugin_path=plugin_path,
                 )
 
             await self._maybe_store_conversation_history(
@@ -295,7 +309,10 @@ class AgentExecutor:
                 yield update
 
             self.logger.info(
-                "mission.streaming.completed", session_id=session_id, agent_id=agent_id
+                "mission.streaming.completed",
+                session_id=session_id,
+                agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
         except asyncio.CancelledError as e:
@@ -304,6 +321,7 @@ class AgentExecutor:
                 session_id=session_id,
                 error=str(e),
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             yield ProgressUpdate(
@@ -323,6 +341,7 @@ class AgentExecutor:
                 error=e,
                 session_id=session_id,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             # Yield error event
@@ -353,10 +372,12 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        plugin_path: str | None = None,
     ) -> Agent:
         """Create Agent using factory.
 
         Creates Agent instance using native tool calling and PlannerTool:
+        - plugin_path provided: Creates agent with plugin tools
         - agent_id provided: Loads custom agent definition from registry
         - Otherwise: Creates standard Agent with optional user_context for RAG
 
@@ -366,6 +387,7 @@ class AgentExecutor:
             agent_id: Optional custom agent ID to load from registry
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional planning strategy parameters
+            plugin_path: Optional path to external plugin directory
 
         Returns:
             Agent instance with injected dependencies
@@ -380,9 +402,25 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
+            plugin_path=plugin_path,
         )
 
-        # agent_id takes highest priority - load custom agent definition
+        # plugin_path takes highest priority - create agent with plugin
+        if plugin_path:
+            self.logger.info(
+                "creating_agent_with_plugin",
+                plugin_path=plugin_path,
+                profile=profile,
+            )
+            return await self.factory.create_agent_with_plugin(
+                plugin_path=plugin_path,
+                profile=profile,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+            )
+
+        # agent_id takes second priority - load custom agent definition
         if agent_id:
             # Validate agent_id format: reject slashes
             if "/" in agent_id:
@@ -604,6 +642,7 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
         duration_seconds: float | None = None,
+        plugin_path: str | None = None,
     ) -> None:
         error_context = self._extract_error_context(
             error=error, session_id=session_id, agent_id=agent_id
@@ -620,6 +659,8 @@ class AgentExecutor:
 
         if duration_seconds is not None:
             log_payload["duration_seconds"] = duration_seconds
+        if plugin_path is not None:
+            log_payload["plugin_path"] = plugin_path
 
         self.logger.exception(event_name, **log_payload)
 

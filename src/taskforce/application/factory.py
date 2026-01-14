@@ -1038,6 +1038,9 @@ class AgentFactory:
                     # Ensure memory directory exists if MEMORY_FILE_PATH is configured
                     if env and "MEMORY_FILE_PATH" in env:
                         memory_path = Path(env["MEMORY_FILE_PATH"])
+                        # Resolve to absolute path to avoid issues with relative paths
+                        if not memory_path.is_absolute():
+                            memory_path = memory_path.resolve()
                         memory_dir = memory_path.parent
                         if not memory_dir.exists():
                             memory_dir.mkdir(parents=True, exist_ok=True)
@@ -1046,6 +1049,9 @@ class AgentFactory:
                                 memory_dir=str(memory_dir),
                                 memory_file=str(memory_path),
                             )
+                        # Update env with absolute path for MCP server
+                        env = env.copy()
+                        env["MEMORY_FILE_PATH"] = str(memory_path)
 
                     if not command:
                         self.logger.warning(
