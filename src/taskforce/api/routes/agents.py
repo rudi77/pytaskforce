@@ -27,22 +27,28 @@ from taskforce.api.schemas.agent_schemas import (
     CustomAgentCreate,
     CustomAgentResponse,
     CustomAgentUpdate,
+    PluginAgentResponse,
     ProfileAgentResponse,
 )
 from taskforce.application.tool_catalog import get_tool_catalog
 from taskforce.application.tool_mapper import get_tool_mapper
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
+    PluginAgentDefinition,
     ProfileAgentDefinition,
 )
 from taskforce.infrastructure.persistence.file_agent_registry import (
     FileAgentRegistry,
 )
+from taskforce.application.factory import get_base_path
 
 router = APIRouter()
 
-# Singleton registry instance with injected tool mapper
-_registry = FileAgentRegistry(tool_mapper=get_tool_mapper())
+# Singleton registry instance with injected tool mapper and base path
+_registry = FileAgentRegistry(
+    tool_mapper=get_tool_mapper(),
+    base_path=get_base_path(),
+)
 
 
 def _validate_tool_allowlists(
@@ -90,11 +96,13 @@ def _validate_tool_allowlists(
 
 
 def _domain_to_response(
-    domain: CustomAgentDefinition | ProfileAgentDefinition,
-) -> CustomAgentResponse | ProfileAgentResponse:
+    domain: CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition,
+) -> CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse:
     """Convert a domain model to an API response schema."""
     if isinstance(domain, CustomAgentDefinition):
         return CustomAgentResponse.from_domain(domain)
+    elif isinstance(domain, PluginAgentDefinition):
+        return PluginAgentResponse.from_domain(domain)
     else:
         return ProfileAgentResponse.from_domain(domain)
 
@@ -173,13 +181,13 @@ def list_agents() -> AgentListResponse:
 
 @router.get(
     "/agents/{agent_id}",
-    response_model=CustomAgentResponse | ProfileAgentResponse,
+    response_model=CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse,
     summary="Get agent by ID",
     description="Retrieve a specific agent definition by ID",
 )
 def get_agent(
     agent_id: str,
-) -> CustomAgentResponse | ProfileAgentResponse:
+) -> CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse:
     """
     Get an agent by ID.
 

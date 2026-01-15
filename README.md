@@ -37,8 +37,12 @@ uvicorn taskforce.api.server:app --reload
 
 ### 4. Load a Plugin (Optional)
 ```powershell
-# Run with the AccountingAgent plugin
+# CLI: Load plugin directly
 taskforce chat --plugin examples/accounting_agent
+
+# API: Plugins are automatically discovered and available via agent_id
+# GET /api/v1/agents lists all agents including plugins
+# POST /api/v1/execution/execute with agent_id: "accounting_agent"
 ```
 
 ---
@@ -73,7 +77,8 @@ Detailed guides are available in the [docs/](docs/) directory:
 - **[Quickstart & Setup](docs/setup.md)**: Detailed environment setup.
 - **[Architecture Deep Dive](docs/index.md)**: Understanding the layers.
 - **[CLI Guide](docs/cli.md)**: Master the `taskforce` command.
-- **[REST API Guide](docs/api.md)**: Integrating Taskforce into your apps.
+- **[REST API Guide](docs/api.md)**: Integrating Taskforce into your apps (includes plugin support).
+- **[Plugin Development](docs/plugins.md)**: Creating and using custom agent plugins.
 - **[Profiles & Config](docs/profiles.md)**: Managing dev/prod environments.
 - **[Long-Term Memory](docs/features/longterm-memory.md)**: Session-persistent knowledge graphs.
 

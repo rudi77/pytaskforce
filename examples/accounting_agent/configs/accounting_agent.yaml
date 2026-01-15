@@ -139,7 +139,7 @@ system_prompt: |
   4. Compliance – check_compliance
      - DE → DE: streng
      - Sonst: Warnungen statt Fehler
-  5. Kontierung – apply_kontierung_rules
+  5. Kontierung – apply_kontierung_rules und im Memory nachschauen ob dort bereits Buchungsvorschläge für diesen Lieferanten existiert
   6. Dokumentation – audit_log
 
   ---------------------------------------------------------------------

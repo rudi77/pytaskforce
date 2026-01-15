@@ -31,6 +31,7 @@ from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     CustomAgentInput,
     CustomAgentUpdateInput,
+    PluginAgentDefinition,
     ProfileAgentDefinition,
 )
 from taskforce.core.interfaces.tool_mapping import ToolMapperProtocol
@@ -69,6 +70,7 @@ class FileAgentRegistry:
         self,
         configs_dir: str = "configs",
         tool_mapper: Optional[ToolMapperProtocol] = None,
+        base_path: Optional[Path] = None,
     ):
         """
         Initialize the agent registry.
@@ -78,11 +80,14 @@ class FileAgentRegistry:
                         Defaults to "configs" relative to current directory.
             tool_mapper: Optional tool mapper for tool name resolution.
                         If not provided, tool mapping features are disabled.
+            base_path: Optional base path for plugin discovery.
+                      If not provided, uses configs_dir parent as base.
         """
         self.configs_dir = Path(configs_dir)
         self.custom_dir = self.configs_dir / "custom"
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self._tool_mapper = tool_mapper
+        self.base_path = base_path or self.configs_dir.parent
         self.logger = logger.bind(component="file_agent_registry")
 
     def _get_agent_path(self, agent_id: str) -> Path:
@@ -136,7 +141,9 @@ class FileAgentRegistry:
                 Path(temp_path).unlink()
             raise
 
-    def _load_custom_agent(self, agent_id: str) -> Optional[CustomAgentDefinition]:
+    def _load_custom_agent(
+        self, agent_id: str
+    ) -> Optional[CustomAgentDefinition]:
         """
         Load a custom agent from YAML file.
 
@@ -208,7 +215,9 @@ class FileAgentRegistry:
             updated_at=data.get("updated_at", ""),
         )
 
-    def _load_profile_agent(self, profile_path: Path) -> Optional[ProfileAgentDefinition]:
+    def _load_profile_agent(
+        self, profile_path: Path
+    ) -> Optional[ProfileAgentDefinition]:
         """
         Load a profile agent from YAML config file.
 
@@ -243,7 +252,9 @@ class FileAgentRegistry:
             )
             return None
 
-    def create_agent(self, agent_input: CustomAgentInput) -> CustomAgentDefinition:
+    def create_agent(
+        self, agent_input: CustomAgentInput
+    ) -> CustomAgentDefinition:
         """
         Create a new custom agent.
 
@@ -259,7 +270,9 @@ class FileAgentRegistry:
         path = self._get_agent_path(agent_input.agent_id)
 
         if path.exists():
-            raise FileExistsError(f"Agent '{agent_input.agent_id}' already exists")
+            raise FileExistsError(
+                f"Agent '{agent_input.agent_id}' already exists"
+            )
 
         # Add timestamps
         now = datetime.now(timezone.utc).isoformat()
@@ -295,11 +308,13 @@ class FileAgentRegistry:
 
     def get_agent(
         self, agent_id: str
-    ) -> Optional[CustomAgentDefinition | ProfileAgentDefinition]:
+    ) -> Optional[
+        CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition
+    ]:
         """
         Get an agent by ID.
 
-        Searches custom agents first, then profile agents.
+        Searches custom agents first, then profile agents, then plugin agents.
 
         Args:
             agent_id: Agent identifier
@@ -317,24 +332,36 @@ class FileAgentRegistry:
         if profile_path.exists() and agent_id != "llm_config":
             return self._load_profile_agent(profile_path)
 
+        # Try plugin agents
+        plugin = self._find_plugin_agent(agent_id)
+        if plugin:
+            return plugin
+
         return None
 
     def list_agents(
         self,
-    ) -> list[CustomAgentDefinition | ProfileAgentDefinition]:
+    ) -> list[
+        CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition
+    ]:
         """
-        List all agents (custom + profile).
+        List all agents (custom + profile + plugin).
 
         Scans:
         - configs/custom/*.yaml (custom agents)
         - configs/*.yaml (profile agents, excluding llm_config.yaml)
+        - examples/*/ and plugins/*/ (plugin agents)
 
         Corrupt YAML files are skipped with warning logged.
 
         Returns:
             List of all valid agent definitions
         """
-        agents: list[CustomAgentDefinition | ProfileAgentDefinition] = []
+        agents: list[
+            CustomAgentDefinition
+            | ProfileAgentDefinition
+            | PluginAgentDefinition
+        ] = []
 
         # Load custom agents
         if self.custom_dir.exists():
@@ -356,6 +383,10 @@ class FileAgentRegistry:
                 profile = self._load_profile_agent(yaml_file)
                 if profile:
                     agents.append(profile)
+
+        # Load plugin agents
+        plugin_agents = self._discover_plugin_agents()
+        agents.extend(plugin_agents)
 
         self.logger.debug("agents.listed", count=len(agents))
         return agents
@@ -439,6 +470,159 @@ class FileAgentRegistry:
             "agent.deleted", agent_id=agent_id, path=str(path)
         )
 
+    def _discover_plugin_agents(self) -> list[PluginAgentDefinition]:
+        """
+        Discover plugin agents from examples/ and plugins/ directories.
+
+        Returns:
+            List of PluginAgentDefinition objects for valid plugins
+        """
+        plugins: list[PluginAgentDefinition] = []
+
+        # Scan examples/ and plugins/ directories
+        plugin_dirs = [
+            self.base_path / "examples",
+            self.base_path / "plugins",
+        ]
+
+        for plugin_base_dir in plugin_dirs:
+            if not plugin_base_dir.exists():
+                continue
+
+            for plugin_dir in plugin_base_dir.iterdir():
+                if not plugin_dir.is_dir():
+                    continue
+
+                # Skip hidden directories and common non-plugin dirs
+                if (
+                    plugin_dir.name.startswith(".")
+                    or plugin_dir.name.startswith("__")
+                ):
+                    continue
+
+                try:
+                    plugin_agent = self._load_plugin_agent(
+                        plugin_dir, plugin_base_dir
+                    )
+                    if plugin_agent:
+                        plugins.append(plugin_agent)
+                except Exception as e:
+                    self.logger.debug(
+                        "plugin.discovery.skipped",
+                        plugin_dir=str(plugin_dir),
+                        error=str(e),
+                    )
+
+        return plugins
+
+    def _load_plugin_agent(
+        self, plugin_dir: Path, plugin_base_dir: Path
+    ) -> Optional[PluginAgentDefinition]:
+        """
+        Load a plugin agent from a plugin directory.
+
+        Args:
+            plugin_dir: Path to plugin directory
+            plugin_base_dir: Base directory containing plugins
+
+        Returns:
+            PluginAgentDefinition if valid plugin found, None otherwise
+        """
+        try:
+            from taskforce.application.plugin_loader import PluginLoader
+            from taskforce.core.domain.errors import PluginError
+
+            loader = PluginLoader()
+            manifest = loader.discover_plugin(str(plugin_dir))
+
+            # Load plugin config for description and specialist
+            plugin_config = loader.load_config(manifest)
+
+            # Derive agent_id from plugin directory name
+            agent_id = plugin_dir.name
+
+            # Get relative path from base_path
+            try:
+                plugin_path = plugin_dir.relative_to(self.base_path)
+            except ValueError:
+                # Plugin is not under base_path, use absolute path
+                # This shouldn't happen in normal operation but handle gracefully
+                self.logger.warning(
+                    "plugin.path.not_relative",
+                    plugin_dir=str(plugin_dir),
+                    base_path=str(self.base_path),
+                )
+                plugin_path = plugin_dir
+
+            # Extract description from config or use default
+            description = plugin_config.get(
+                "description", f"Plugin agent: {manifest.name}"
+            )
+
+            # Extract specialist from config
+            specialist = plugin_config.get("specialist")
+
+            # Extract MCP servers from config
+            mcp_servers = plugin_config.get("mcp_servers", [])
+
+            return PluginAgentDefinition(
+                agent_id=agent_id,
+                name=manifest.name.replace("_", " ").title(),
+                description=description,
+                plugin_path=str(plugin_path).replace(
+                    "\\", "/"
+                ),  # Normalize path separators
+                tool_classes=manifest.tool_classes,
+                specialist=specialist,
+                mcp_servers=mcp_servers,
+            )
+
+        except (FileNotFoundError, PluginError) as e:
+            # Expected errors: plugin not found or invalid structure
+            self.logger.debug(
+                "plugin.load.failed",
+                plugin_dir=str(plugin_dir),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return None
+        except Exception as e:
+            # Unexpected errors: log as warning but don't fail discovery
+            self.logger.warning(
+                "plugin.load.unexpected_error",
+                plugin_dir=str(plugin_dir),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return None
+
+    def _find_plugin_agent(
+        self, agent_id: str
+    ) -> Optional[PluginAgentDefinition]:
+        """
+        Find a plugin agent by agent_id.
+
+        Args:
+            agent_id: Agent identifier (matches plugin directory name)
+
+        Returns:
+            PluginAgentDefinition if found, None otherwise
+        """
+        plugin_dirs = [
+            self.base_path / "examples",
+            self.base_path / "plugins",
+        ]
+
+        for plugin_base_dir in plugin_dirs:
+            if not plugin_base_dir.exists():
+                continue
+
+            plugin_dir = plugin_base_dir / agent_id
+            if plugin_dir.exists() and plugin_dir.is_dir():
+                return self._load_plugin_agent(plugin_dir, plugin_base_dir)
+
+        return None
+
     def _build_agent_yaml(
         self,
         *,
@@ -466,10 +650,19 @@ class FileAgentRegistry:
             "specialist": "generic",
             "agent": {
                 "enable_fast_path": True,
-                "router": {"use_llm_classification": True, "max_follow_up_length": 100},
+                "router": {
+                    "use_llm_classification": True,
+                    "max_follow_up_length": 100,
+                },
             },
-            "persistence": {"type": "file", "work_dir": f".taskforce_{agent_id}"},
-            "llm": {"config_path": "configs/llm_config.yaml", "default_model": "main"},
+            "persistence": {
+                "type": "file",
+                "work_dir": f".taskforce_{agent_id}",
+            },
+            "llm": {
+                "config_path": "configs/llm_config.yaml",
+                "default_model": "main",
+            },
             "logging": {"level": "DEBUG", "format": "console"},
             "tools": tools,
             "mcp_servers": mcp_servers,

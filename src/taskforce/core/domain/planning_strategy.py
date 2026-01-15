@@ -1215,12 +1215,16 @@ class PlanAndExecuteStrategy:
                     step_complete = True
                 yield (event, progress_steps, step_iterations, is_complete)
 
-    async def _generate_final_response(
+    async def _generate_final_response_stream(
         self,
         agent: "Agent",
         messages: list[dict[str, Any]],
-    ) -> str:
-        """Generate final response after all plan steps complete."""
+    ) -> AsyncIterator[StreamEvent]:
+        """Generate and stream final response after all plan steps complete.
+        
+        Streams the final response as llm_token events, then yields final_answer event.
+        This ensures compatibility with clients that expect streaming tokens.
+        """
         messages.append(
             {
                 "role": "user",
@@ -1230,16 +1234,36 @@ class PlanAndExecuteStrategy:
                 ),
             }
         )
-        result = await agent.llm_provider.complete(
+        
+        content_accumulated = ""
+        async for chunk in agent.llm_provider.complete_stream(
             messages=messages,
             model=agent.model_alias,
             tools=None,
             tool_choice="none",
             temperature=0.2,
-        )
-        if result.get("success"):
-            return result.get("content", "") or ""
-        return ""
+        ):
+            chunk_type = chunk.get("type", "")
+            if chunk_type == "token":
+                token_content = chunk.get("content", "")
+                if token_content:
+                    yield StreamEvent(event_type="llm_token", data={"content": token_content})
+                    content_accumulated += token_content
+            elif chunk_type == "usage":
+                yield StreamEvent(event_type="token_usage", data=chunk.get("usage", {}))
+            elif chunk_type == "error":
+                yield StreamEvent(
+                    event_type="error",
+                    data={"message": chunk.get("message", "LLM error"), "error_type": "LLMError"},
+                )
+                return
+        
+        # Yield final_answer event with accumulated content
+        if content_accumulated:
+            yield StreamEvent(
+                event_type="final_answer",
+                data={"content": content_accumulated},
+            )
 
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
@@ -1318,7 +1342,20 @@ class PlanAndExecuteStrategy:
                 break
 
         if progress_steps < agent.max_steps:
-            final_message = await self._generate_final_response(agent, messages)
+            # Stream final response as llm_token events, then final_answer
+            final_message = ""
+            async for event in self._generate_final_response_stream(agent, messages):
+                yield event
+                # Extract final message from final_answer event
+                if event.event_type == "final_answer":
+                    final_message = event.data.get("content", "")
+            
+            logger.debug(
+                "_generate_final_response_result",
+                session_id=session_id,
+                has_message=bool(final_message),
+                message_length=len(final_message) if final_message else 0,
+            )
 
         if progress_steps >= agent.max_steps and not final_message:
             final_message = f"Exceeded maximum steps ({agent.max_steps})"
@@ -1327,22 +1364,54 @@ class PlanAndExecuteStrategy:
                 data={"message": final_message, "step": progress_steps},
             )
         elif not final_message:
-            final_message = "Plan execution did not produce a final response."
-            yield StreamEvent(
-                event_type="error",
-                data={"message": final_message, "step": progress_steps},
-            )
+            # Try to extract final message from last assistant message if available
+            for msg in reversed(messages):
+                if msg.get("role") == "assistant" and msg.get("content"):
+                    final_message = msg.get("content", "").strip()
+                    if final_message:
+                        logger.debug(
+                            "extracted_final_message_from_messages",
+                            session_id=session_id,
+                            message_length=len(final_message),
+                        )
+                        break
+            
+            if not final_message:
+                final_message = "Plan execution did not produce a final response."
+                yield StreamEvent(
+                    event_type="error",
+                    data={"message": final_message, "step": progress_steps},
+                )
 
-        if final_message:
+        # final_answer event is already sent by _generate_final_response_stream
+        # Only send it here if we didn't stream the final response (e.g., max steps exceeded)
+        if progress_steps >= agent.max_steps or (progress_steps < agent.max_steps and not final_message):
+            logger.info(
+                "sending_final_answer_event_fallback",
+                session_id=session_id,
+                has_message=bool(final_message),
+                message_length=len(final_message) if final_message else 0,
+            )
             yield StreamEvent(
                 event_type="final_answer",
-                data={"content": final_message},
+                data={"content": final_message or "Execution completed."},
             )
 
         await agent.state_store.save(
             session_id=session_id,
             state=state,
             planner=agent.planner,
+        )
+
+        # Send complete event to signal end of execution
+        yield StreamEvent(
+            event_type="complete",
+            data={
+                "status": "completed",
+                "session_id": session_id,
+                "progress_steps": progress_steps,
+                "total_iterations": loop_iterations,
+            },
         )
 
         logger.info(
