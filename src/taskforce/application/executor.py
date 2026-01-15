@@ -31,7 +31,10 @@ from taskforce.core.domain.errors import (
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
 from taskforce.core.domain.agent import Agent
-from taskforce.core.domain.agent_models import CustomAgentDefinition
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    PluginAgentDefinition,
+)
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 logger = structlog.get_logger()
@@ -420,7 +423,7 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
             )
 
-        # agent_id takes second priority - load custom agent definition
+        # agent_id takes second priority - load agent definition from registry
         if agent_id:
             # Validate agent_id format: reject slashes
             if "/" in agent_id:
@@ -434,8 +437,9 @@ class AgentExecutor:
             from taskforce.infrastructure.persistence.file_agent_registry import (
                 FileAgentRegistry,
             )
+            from taskforce.application.factory import get_base_path
 
-            registry = FileAgentRegistry()
+            registry = FileAgentRegistry(base_path=get_base_path())
             agent_response = registry.get_agent(agent_id)
 
             if not agent_response:
@@ -444,32 +448,88 @@ class AgentExecutor:
                     details={"agent_id": agent_id},
                 )
 
-            # Only custom agents can be used for execution (not profile agents)
-            if not isinstance(agent_response, CustomAgentDefinition):
-                raise ValidationError(
-                    f"Agent '{agent_id}' is a profile agent, not a custom agent. "
-                    "Use 'profile' parameter for profile agents.",
-                    details={"agent_id": agent_id, "source": agent_response.source},
+            # Handle plugin agents
+            if isinstance(agent_response, PluginAgentDefinition):
+                # Resolve relative plugin_path to absolute path
+                base_path = get_base_path()
+                plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
+
+                self.logger.info(
+                    "loading_plugin_agent",
+                    agent_id=agent_id,
+                    plugin_path=str(plugin_path_abs),
                 )
 
-            # Convert response to definition dict
-            agent_definition = {
-                "system_prompt": agent_response.system_prompt,
-                "tool_allowlist": agent_response.tool_allowlist,
-                "mcp_servers": agent_response.mcp_servers,
-                "mcp_tool_allowlist": agent_response.mcp_tool_allowlist,
-            }
+                return await self.factory.create_agent_with_plugin(
+                    plugin_path=str(plugin_path_abs),
+                    profile=profile,
+                    user_context=user_context,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                )
 
-            self.logger.info(
-                "loading_custom_agent",
-                agent_id=agent_id,
-                agent_name=agent_response.name,
-                tool_count=len(agent_response.tool_allowlist),
+            # Handle custom agents
+            if isinstance(agent_response, CustomAgentDefinition):
+                # Convert response to definition dict
+                agent_definition = {
+                    "system_prompt": agent_response.system_prompt,
+                    "tool_allowlist": agent_response.tool_allowlist,
+                    "mcp_servers": agent_response.mcp_servers,
+                    "mcp_tool_allowlist": agent_response.mcp_tool_allowlist,
+                }
+
+                self.logger.info(
+                    "loading_custom_agent",
+                    agent_id=agent_id,
+                    agent_name=agent_response.name,
+                    tool_count=len(agent_response.tool_allowlist),
+                )
+
+                return await self.factory.create_agent_from_definition(
+                    agent_definition=agent_definition,
+                    profile=profile,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                )
+
+            # Profile agents should use profile parameter
+            raise ValidationError(
+                f"Agent '{agent_id}' is a profile agent, not a custom or plugin agent. "
+                "Use 'profile' parameter for profile agents.",
+                details={"agent_id": agent_id, "source": agent_response.source},
             )
 
-            return await self.factory.create_agent_from_definition(
-                agent_definition=agent_definition,
+        # Standard Agent creation - but first check if profile name matches a plugin agent
+        # This allows using profile="accounting_agent" instead of agent_id="accounting_agent"
+        from taskforce.infrastructure.persistence.file_agent_registry import (
+            FileAgentRegistry,
+        )
+        from taskforce.application.factory import get_base_path
+
+        registry = FileAgentRegistry(base_path=get_base_path())
+        agent_response = registry.get_agent(profile)
+
+        # If profile name matches a plugin agent, use it as plugin
+        if isinstance(agent_response, PluginAgentDefinition):
+            base_path = get_base_path()
+            plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
+
+            self.logger.info(
+                "profile_matches_plugin_agent",
                 profile=profile,
+                plugin_path=str(plugin_path_abs),
+                hint=(
+                    "Using profile name as plugin agent. "
+                    "Consider using agent_id parameter instead."
+                ),
+            )
+
+            # Use "dev" as infrastructure profile since the plugin name
+            # doesn't correspond to a real profile
+            return await self.factory.create_agent_with_plugin(
+                plugin_path=str(plugin_path_abs),
+                profile="dev",  # Use default profile for infrastructure
+                user_context=user_context,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
             )
@@ -623,6 +683,9 @@ class AgentExecutor:
             "plan_updated": lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
             "token_usage": lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
             "final_answer": lambda d: d.get("content", ""),
+            "complete": lambda d: (
+                f"✅ Execution completed. Status: {d.get('status', 'unknown')}"
+            ),
             "error": lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
         }
 

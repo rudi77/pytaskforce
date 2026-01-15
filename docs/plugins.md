@@ -12,6 +12,8 @@ Plugins are Python packages that contain tool implementations compatible with `T
 
 ## Using Plugins
 
+### CLI Usage
+
 Load a plugin with the `--plugin` option:
 
 ```powershell
@@ -20,9 +22,44 @@ taskforce chat --plugin examples/accounting_agent
 
 # Combine with a profile for infrastructure settings
 taskforce chat --plugin examples/accounting_agent --profile prod
+
+# Run a mission with a plugin
+taskforce run mission "Prüfe Rechnung" --plugin examples/accounting_agent
 ```
 
 The plugin's tools become available to the agent alongside any native tools specified in the plugin config.
+
+### API Usage
+
+Plugin agents are **automatically discovered** from the `examples/` and `plugins/` directories. You can use them via the API without specifying the plugin path:
+
+```python
+import requests
+
+# List all agents (including discovered plugins)
+response = requests.get("http://localhost:8000/api/v1/agents")
+agents = response.json()["agents"]
+
+# Plugin agents have source: "plugin"
+plugin_agents = [a for a in agents if a["source"] == "plugin"]
+
+# Execute with a plugin agent (plugin_path is automatically resolved)
+response = requests.post(
+    "http://localhost:8000/api/v1/execution/execute",
+    json={
+        "mission": "Prüfe die Rechnung invoice.pdf",
+        "agent_id": "accounting_agent"  # Plugin automatically loaded
+    }
+)
+```
+
+**Plugin Discovery:**
+- Plugins in `examples/` and `plugins/` directories are automatically scanned
+- Each plugin directory becomes an agent with `agent_id` matching the directory name
+- Plugin agents appear in `/api/v1/agents` with `source: "plugin"`
+- When executing with `agent_id` matching a plugin, the plugin is automatically loaded
+
+**Note:** The CLI `--plugin` argument still works as before and loads plugins directly. The API discovery is an additional convenience feature.
 
 ## Plugin Structure
 
