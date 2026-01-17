@@ -44,6 +44,9 @@ def run_mission(
         False, "--stream", "-S",
         help="Enable real-time streaming output. Shows tool calls, results, and answer as they happen.",
     ),
+    plugin: str | None = typer.Option(
+        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+    ),
 ):
     """Execute an agent mission.
 
@@ -59,6 +62,9 @@ def run_mission(
 
         # Resume a previous session
         taskforce run mission "Continue analysis" --session abc-123
+
+        # Use plugin with custom tools
+        taskforce run mission "Prüfe diese Rechnung" --plugin examples/accounting_agent
 
         # Debug mode to see agent internals
         taskforce --debug run mission "Debug this task"
@@ -107,6 +113,8 @@ def run_mission(
         )
     if stream:
         tf_console.print_system_message("Streaming mode enabled", "info")
+    if plugin:
+        tf_console.print_system_message(f"Plugin: {plugin}", "info")
     tf_console.print_divider()
 
     # Use streaming or standard execution
@@ -119,6 +127,7 @@ def run_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             console=tf_console.console,
+            plugin=plugin,
         ))
     else:
         _execute_standard_mission(
@@ -130,6 +139,7 @@ def run_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             tf_console=tf_console,
+            plugin=plugin,
         )
 
 
@@ -142,6 +152,7 @@ def _execute_standard_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     tf_console: TaskforceConsole,
+    plugin: str | None = None,
 ) -> None:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
@@ -169,6 +180,7 @@ def _execute_standard_mission(
                 progress_callback=progress_callback,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=strategy_params,
+                plugin_path=plugin,
             )
         )
 
@@ -197,6 +209,7 @@ async def _execute_streaming_mission(
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     console: Console,
+    plugin: str | None = None,
 ) -> None:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
@@ -287,6 +300,7 @@ async def _execute_streaming_mission(
             session_id=session_id,
             planning_strategy=planning_strategy,
             planning_strategy_params=strategy_params,
+            plugin_path=plugin,
         ):
             event_type = update.event_type
             should_update = False  # Only update display on meaningful changes

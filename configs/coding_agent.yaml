@@ -49,5 +49,17 @@ tools:
 
   # Optional: Add more tools as needed
   - git
-  
+
   - python
+
+# Long-term Memory Configuration (via MCP)
+# Enables persistent memory across sessions for this agent profile
+mcp_servers:
+  - type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-memory"
+    env:
+      MEMORY_FILE_PATH: ".taskforce_coding/.memory/knowledge_graph.jsonl"
+    description: "Long-term knowledge graph memory for persistent context across sessions"

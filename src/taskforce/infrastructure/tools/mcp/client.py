@@ -19,6 +19,47 @@ except ImportError as e:
     raise ImportError("MCP library not installed. Install with: uv add mcp") from e
 
 
+def _patch_mcp_validation():
+    """
+    Monkey-patch MCP ClientSession to be more lenient with tool result validation.
+    
+    Some MCP servers (like @modelcontextprotocol/server-memory) return structured
+    content that violates their own self-declared outputSchema (e.g., including 
+    additional properties like 'type' when 'additionalProperties: false' is set).
+    
+    This patch catches these validation errors and allows the tool execution
+    to proceed, since the raw result is still available and useful.
+    """
+    original_validate = getattr(ClientSession, "_validate_tool_result", None)
+    if not original_validate:
+        return
+
+    async def lenient_validate(self, name, result):
+        try:
+            await original_validate(self, name, result)
+        except RuntimeError as e:
+            # Check if this is a validation error we want to suppress
+            error_msg = str(e)
+            if "Invalid structured content returned by tool" in error_msg:
+                # We log this at debug level to avoid noise, but keep the result
+                import structlog
+                logger = structlog.get_logger("taskforce.mcp")
+                logger.debug(
+                    "mcp_validation_error_suppressed",
+                    tool_name=name,
+                    error=error_msg,
+                    hint="Server returned content violating its own schema; suppressing for compatibility"
+                )
+            else:
+                raise
+
+    ClientSession._validate_tool_result = lenient_validate
+
+
+# Apply the patch on import
+_patch_mcp_validation()
+
+
 class MCPClient:
     """
     Client for connecting to MCP servers (local stdio or remote SSE).

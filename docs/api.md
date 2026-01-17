@@ -31,6 +31,46 @@ If the agent needs missing information, it emits an SSE event with `event_type: 
 
 To resume, call the same endpoint again with the same `session_id` and include the user's answer in `mission` (or in `conversation_history`).
 
+### Agents
+- `GET /api/v1/agents`: List all available agents (custom, profile, and plugin agents).
+- `GET /api/v1/agents/{agent_id}`: Get a specific agent definition.
+- `POST /api/v1/agents`: Create a new custom agent.
+- `PUT /api/v1/agents/{agent_id}`: Update an existing custom agent.
+- `DELETE /api/v1/agents/{agent_id}`: Delete a custom agent.
+
+#### Plugin Agent Discovery
+
+The API automatically discovers plugin agents from the `examples/` and `plugins/` directories. Plugin agents are listed alongside custom and profile agents with `source: "plugin"`.
+
+**Example: List all agents**
+```python
+import requests
+
+response = requests.get("http://localhost:8000/api/v1/agents")
+agents = response.json()["agents"]
+
+# Filter plugin agents
+plugin_agents = [a for a in agents if a["source"] == "plugin"]
+for agent in plugin_agents:
+    print(f"{agent['agent_id']}: {agent['name']}")
+    print(f"  Path: {agent['plugin_path']}")
+    print(f"  Tools: {agent['tool_classes']}")
+```
+
+**Example: Execute with plugin agent**
+```python
+import requests
+
+# Use plugin agent by agent_id (plugin path is automatically resolved)
+response = requests.post(
+    "http://localhost:8000/api/v1/execution/execute",
+    json={
+        "mission": "Prüfe die Rechnung invoice.pdf",
+        "agent_id": "accounting_agent"  # Plugin is automatically loaded
+    }
+)
+```
+
 ### Sessions
 - `GET /api/v1/sessions`: List all active sessions.
 - `GET /api/v1/sessions/{session_id}`: Retrieve full state for a specific session.
@@ -38,7 +78,9 @@ To resume, call the same endpoint again with the same `session_id` and include t
 ### System
 - `GET /health`: Basic liveness check.
 
-## 🔧 Integration Example
+## 🔧 Integration Examples
+
+### Basic Mission Execution
 
 ```python
 import requests
@@ -50,6 +92,64 @@ response = requests.post(
         "profile": "coding_agent"
     }
 )
-print(response.json()["result"])
+print(response.json()["message"])
+```
+
+### Using Plugin Agents
+
+Plugin agents are automatically discovered and can be used by their `agent_id`:
+
+```python
+import requests
+
+# List all available agents (including plugins)
+agents_response = requests.get("http://localhost:8000/api/v1/agents")
+all_agents = agents_response.json()["agents"]
+
+# Find plugin agents
+plugin_agents = [a for a in all_agents if a["source"] == "plugin"]
+print("Available plugin agents:")
+for agent in plugin_agents:
+    print(f"  - {agent['agent_id']}: {agent['name']}")
+
+# Execute with a plugin agent
+response = requests.post(
+    "http://localhost:8000/api/v1/execution/execute",
+    json={
+        "mission": "Prüfe die Rechnung invoice.pdf auf Vollständigkeit",
+        "agent_id": "accounting_agent"  # Plugin is automatically loaded
+    }
+)
+result = response.json()
+print(f"Status: {result['status']}")
+print(f"Message: {result['message']}")
+```
+
+### Custom Agent Management
+
+```python
+import requests
+
+# Create a custom agent
+create_response = requests.post(
+    "http://localhost:8000/api/v1/agents",
+    json={
+        "agent_id": "web-scraper",
+        "name": "Web Scraper Agent",
+        "description": "Specialized agent for web scraping tasks",
+        "system_prompt": "You are a web scraping expert...",
+        "tool_allowlist": ["web_search", "web_fetch", "python"]
+    }
+)
+print(f"Created agent: {create_response.json()['agent_id']}")
+
+# Use the custom agent
+execute_response = requests.post(
+    "http://localhost:8000/api/v1/execution/execute",
+    json={
+        "mission": "Scrape product prices from example.com",
+        "agent_id": "web-scraper"
+    }
+)
 ```
 

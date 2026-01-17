@@ -31,7 +31,10 @@ from taskforce.core.domain.errors import (
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
 from taskforce.core.domain.agent import Agent
-from taskforce.core.domain.agent_models import CustomAgentDefinition
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    PluginAgentDefinition,
+)
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 logger = structlog.get_logger()
@@ -90,6 +93,7 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        plugin_path: str | None = None,
     ) -> ExecutionResult:
         """Execute Agent mission with comprehensive orchestration.
 
@@ -116,6 +120,8 @@ class AgentExecutor:
             planning_strategy: Optional planning strategy override
                               (native_react, plan_and_execute, plan_and_react)
             planning_strategy_params: Optional params for planning strategy
+            plugin_path: Optional path to external plugin directory
+                        (e.g., examples/accounting_agent)
 
         Returns:
             ExecutionResult with completion status and history
@@ -135,6 +141,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
+            plugin_path=plugin_path,
         )
 
         agent = None
@@ -146,6 +153,7 @@ class AgentExecutor:
                 agent_id=agent_id,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
+                plugin_path=plugin_path,
             )
 
             await self._maybe_store_conversation_history(
@@ -170,6 +178,7 @@ class AgentExecutor:
                 status=result.status,
                 duration_seconds=duration,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             return result
@@ -183,6 +192,7 @@ class AgentExecutor:
                 error=str(e),
                 duration_seconds=duration,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
             raise CancelledError(
                 f"Mission execution cancelled: {str(e)}",
@@ -197,6 +207,7 @@ class AgentExecutor:
                 session_id=session_id,
                 agent_id=agent_id,
                 duration_seconds=duration,
+                plugin_path=plugin_path,
             )
             raise self._wrap_exception(
                 e,
@@ -221,6 +232,7 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         agent: Agent | None = None,
+        plugin_path: str | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
@@ -239,6 +251,8 @@ class AgentExecutor:
             planning_strategy_params: Optional params for planning strategy
             agent: Optional pre-created Agent instance. If provided, skips
                   agent creation and uses this agent directly.
+            plugin_path: Optional path to external plugin directory
+                        (e.g., examples/accounting_agent)
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -259,6 +273,7 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             using_provided_agent=not owns_agent,
+            plugin_path=plugin_path,
         )
 
         # Yield initial started event
@@ -270,6 +285,7 @@ class AgentExecutor:
                 "session_id": session_id,
                 "profile": profile,
                 "agent_id": agent_id,
+                "plugin_path": plugin_path,
             },
         )
 
@@ -282,6 +298,7 @@ class AgentExecutor:
                     agent_id=agent_id,
                     planning_strategy=planning_strategy,
                     planning_strategy_params=planning_strategy_params,
+                    plugin_path=plugin_path,
                 )
 
             await self._maybe_store_conversation_history(
@@ -295,7 +312,10 @@ class AgentExecutor:
                 yield update
 
             self.logger.info(
-                "mission.streaming.completed", session_id=session_id, agent_id=agent_id
+                "mission.streaming.completed",
+                session_id=session_id,
+                agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
         except asyncio.CancelledError as e:
@@ -304,6 +324,7 @@ class AgentExecutor:
                 session_id=session_id,
                 error=str(e),
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             yield ProgressUpdate(
@@ -323,6 +344,7 @@ class AgentExecutor:
                 error=e,
                 session_id=session_id,
                 agent_id=agent_id,
+                plugin_path=plugin_path,
             )
 
             # Yield error event
@@ -353,10 +375,12 @@ class AgentExecutor:
         agent_id: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
+        plugin_path: str | None = None,
     ) -> Agent:
         """Create Agent using factory.
 
         Creates Agent instance using native tool calling and PlannerTool:
+        - plugin_path provided: Creates agent with plugin tools
         - agent_id provided: Loads custom agent definition from registry
         - Otherwise: Creates standard Agent with optional user_context for RAG
 
@@ -366,6 +390,7 @@ class AgentExecutor:
             agent_id: Optional custom agent ID to load from registry
             planning_strategy: Optional planning strategy override
             planning_strategy_params: Optional planning strategy parameters
+            plugin_path: Optional path to external plugin directory
 
         Returns:
             Agent instance with injected dependencies
@@ -380,9 +405,25 @@ class AgentExecutor:
             has_user_context=user_context is not None,
             agent_id=agent_id,
             planning_strategy=planning_strategy,
+            plugin_path=plugin_path,
         )
 
-        # agent_id takes highest priority - load custom agent definition
+        # plugin_path takes highest priority - create agent with plugin
+        if plugin_path:
+            self.logger.info(
+                "creating_agent_with_plugin",
+                plugin_path=plugin_path,
+                profile=profile,
+            )
+            return await self.factory.create_agent_with_plugin(
+                plugin_path=plugin_path,
+                profile=profile,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+            )
+
+        # agent_id takes second priority - load agent definition from registry
         if agent_id:
             # Validate agent_id format: reject slashes
             if "/" in agent_id:
@@ -396,8 +437,9 @@ class AgentExecutor:
             from taskforce.infrastructure.persistence.file_agent_registry import (
                 FileAgentRegistry,
             )
+            from taskforce.application.factory import get_base_path
 
-            registry = FileAgentRegistry()
+            registry = FileAgentRegistry(base_path=get_base_path())
             agent_response = registry.get_agent(agent_id)
 
             if not agent_response:
@@ -406,32 +448,88 @@ class AgentExecutor:
                     details={"agent_id": agent_id},
                 )
 
-            # Only custom agents can be used for execution (not profile agents)
-            if not isinstance(agent_response, CustomAgentDefinition):
-                raise ValidationError(
-                    f"Agent '{agent_id}' is a profile agent, not a custom agent. "
-                    "Use 'profile' parameter for profile agents.",
-                    details={"agent_id": agent_id, "source": agent_response.source},
+            # Handle plugin agents
+            if isinstance(agent_response, PluginAgentDefinition):
+                # Resolve relative plugin_path to absolute path
+                base_path = get_base_path()
+                plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
+
+                self.logger.info(
+                    "loading_plugin_agent",
+                    agent_id=agent_id,
+                    plugin_path=str(plugin_path_abs),
                 )
 
-            # Convert response to definition dict
-            agent_definition = {
-                "system_prompt": agent_response.system_prompt,
-                "tool_allowlist": agent_response.tool_allowlist,
-                "mcp_servers": agent_response.mcp_servers,
-                "mcp_tool_allowlist": agent_response.mcp_tool_allowlist,
-            }
+                return await self.factory.create_agent_with_plugin(
+                    plugin_path=str(plugin_path_abs),
+                    profile=profile,
+                    user_context=user_context,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                )
 
-            self.logger.info(
-                "loading_custom_agent",
-                agent_id=agent_id,
-                agent_name=agent_response.name,
-                tool_count=len(agent_response.tool_allowlist),
+            # Handle custom agents
+            if isinstance(agent_response, CustomAgentDefinition):
+                # Convert response to definition dict
+                agent_definition = {
+                    "system_prompt": agent_response.system_prompt,
+                    "tool_allowlist": agent_response.tool_allowlist,
+                    "mcp_servers": agent_response.mcp_servers,
+                    "mcp_tool_allowlist": agent_response.mcp_tool_allowlist,
+                }
+
+                self.logger.info(
+                    "loading_custom_agent",
+                    agent_id=agent_id,
+                    agent_name=agent_response.name,
+                    tool_count=len(agent_response.tool_allowlist),
+                )
+
+                return await self.factory.create_agent_from_definition(
+                    agent_definition=agent_definition,
+                    profile=profile,
+                    planning_strategy=planning_strategy,
+                    planning_strategy_params=planning_strategy_params,
+                )
+
+            # Profile agents should use profile parameter
+            raise ValidationError(
+                f"Agent '{agent_id}' is a profile agent, not a custom or plugin agent. "
+                "Use 'profile' parameter for profile agents.",
+                details={"agent_id": agent_id, "source": agent_response.source},
             )
 
-            return await self.factory.create_agent_from_definition(
-                agent_definition=agent_definition,
+        # Standard Agent creation - but first check if profile name matches a plugin agent
+        # This allows using profile="accounting_agent" instead of agent_id="accounting_agent"
+        from taskforce.infrastructure.persistence.file_agent_registry import (
+            FileAgentRegistry,
+        )
+        from taskforce.application.factory import get_base_path
+
+        registry = FileAgentRegistry(base_path=get_base_path())
+        agent_response = registry.get_agent(profile)
+
+        # If profile name matches a plugin agent, use it as plugin
+        if isinstance(agent_response, PluginAgentDefinition):
+            base_path = get_base_path()
+            plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
+
+            self.logger.info(
+                "profile_matches_plugin_agent",
                 profile=profile,
+                plugin_path=str(plugin_path_abs),
+                hint=(
+                    "Using profile name as plugin agent. "
+                    "Consider using agent_id parameter instead."
+                ),
+            )
+
+            # Use "dev" as infrastructure profile since the plugin name
+            # doesn't correspond to a real profile
+            return await self.factory.create_agent_with_plugin(
+                plugin_path=str(plugin_path_abs),
+                profile="dev",  # Use default profile for infrastructure
+                user_context=user_context,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
             )
@@ -585,6 +683,9 @@ class AgentExecutor:
             "plan_updated": lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
             "token_usage": lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
             "final_answer": lambda d: d.get("content", ""),
+            "complete": lambda d: (
+                f"✅ Execution completed. Status: {d.get('status', 'unknown')}"
+            ),
             "error": lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
         }
 
@@ -604,6 +705,7 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
         duration_seconds: float | None = None,
+        plugin_path: str | None = None,
     ) -> None:
         error_context = self._extract_error_context(
             error=error, session_id=session_id, agent_id=agent_id
@@ -620,6 +722,8 @@ class AgentExecutor:
 
         if duration_seconds is not None:
             log_payload["duration_seconds"] = duration_seconds
+        if plugin_path is not None:
+            log_payload["plugin_path"] = plugin_path
 
         self.logger.exception(event_name, **log_payload)
 

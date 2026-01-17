@@ -21,6 +21,7 @@ from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     CustomAgentInput,
     CustomAgentUpdateInput,
+    PluginAgentDefinition,
     ProfileAgentDefinition,
 )
 
@@ -32,11 +33,20 @@ class CustomAgentCreate(BaseModel):
         ...,
         min_length=3,
         max_length=64,
-        description="Unique identifier (lowercase alphanumeric, hyphens, underscores)",
+        description=(
+            "Unique identifier (lowercase alphanumeric, "
+            "hyphens, underscores)"
+        ),
     )
-    name: str = Field(..., min_length=1, description="Human-readable agent name")
-    description: str = Field(..., min_length=1, description="Agent purpose/capabilities")
-    system_prompt: str = Field(..., min_length=1, description="LLM system prompt")
+    name: str = Field(
+        ..., min_length=1, description="Human-readable agent name"
+    )
+    description: str = Field(
+        ..., min_length=1, description="Agent purpose/capabilities"
+    )
+    system_prompt: str = Field(
+        ..., min_length=1, description="LLM system prompt"
+    )
     tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed tool names"
     )
@@ -53,7 +63,8 @@ class CustomAgentCreate(BaseModel):
         """Validate agent_id matches filename rules."""
         if not re.match(r"^[a-z0-9_-]{3,64}$", v):
             raise ValueError(
-                "agent_id must be lowercase alphanumeric with hyphens/underscores, 3-64 chars"
+                "agent_id must be lowercase alphanumeric with "
+                "hyphens/underscores, 3-64 chars"
             )
         return v
 
@@ -73,9 +84,15 @@ class CustomAgentCreate(BaseModel):
 class CustomAgentUpdate(BaseModel):
     """Request schema for updating a custom agent."""
 
-    name: str = Field(..., min_length=1, description="Human-readable agent name")
-    description: str = Field(..., min_length=1, description="Agent purpose/capabilities")
-    system_prompt: str = Field(..., min_length=1, description="LLM system prompt")
+    name: str = Field(
+        ..., min_length=1, description="Human-readable agent name"
+    )
+    description: str = Field(
+        ..., min_length=1, description="Agent purpose/capabilities"
+    )
+    system_prompt: str = Field(
+        ..., min_length=1, description="LLM system prompt"
+    )
     tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed tool names"
     )
@@ -113,7 +130,9 @@ class CustomAgentResponse(BaseModel):
     updated_at: str
 
     @classmethod
-    def from_domain(cls, domain: CustomAgentDefinition) -> "CustomAgentResponse":
+    def from_domain(
+        cls, domain: CustomAgentDefinition
+    ) -> "CustomAgentResponse":
         """Create response from domain model."""
         return cls(
             agent_id=domain.agent_id,
@@ -140,7 +159,9 @@ class ProfileAgentResponse(BaseModel):
     persistence: dict[str, Any]
 
     @classmethod
-    def from_domain(cls, domain: ProfileAgentDefinition) -> "ProfileAgentResponse":
+    def from_domain(
+        cls, domain: ProfileAgentDefinition
+    ) -> "ProfileAgentResponse":
         """Create response from domain model."""
         return cls(
             profile=domain.profile,
@@ -152,7 +173,37 @@ class ProfileAgentResponse(BaseModel):
         )
 
 
+class PluginAgentResponse(BaseModel):
+    """Response schema for plugin agent (from external plugin dir)."""
+
+    source: Literal["plugin"] = "plugin"
+    agent_id: str
+    name: str
+    description: str
+    plugin_path: str
+    tool_classes: list[str]
+    specialist: Optional[str] = None
+    mcp_servers: list[dict[str, Any]]
+
+    @classmethod
+    def from_domain(
+        cls, domain: PluginAgentDefinition
+    ) -> "PluginAgentResponse":
+        """Create response from domain model."""
+        return cls(
+            agent_id=domain.agent_id,
+            name=domain.name,
+            description=domain.description,
+            plugin_path=domain.plugin_path,
+            tool_classes=domain.tool_classes,
+            specialist=domain.specialist,
+            mcp_servers=domain.mcp_servers,
+        )
+
+
 class AgentListResponse(BaseModel):
     """Response schema for listing all agents."""
 
-    agents: list[CustomAgentResponse | ProfileAgentResponse]
+    agents: list[
+        CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse
+    ]

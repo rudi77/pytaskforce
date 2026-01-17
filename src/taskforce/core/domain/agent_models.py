@@ -18,8 +18,9 @@ class CustomAgentDefinition:
     """
     Domain model for a custom agent definition.
 
-    Represents a user-created agent with custom system prompt and tool allowlist.
-    This is the core entity stored and retrieved by the registry.
+    Represents a user-created agent with custom system prompt and
+    tool allowlist. This is the core entity stored and retrieved by
+    the registry.
     """
 
     agent_id: str
@@ -50,6 +51,40 @@ class ProfileAgentDefinition:
     llm: dict[str, Any] = field(default_factory=dict)
     persistence: dict[str, Any] = field(default_factory=dict)
     source: str = "profile"
+
+
+@dataclass
+class PluginAgentDefinition:
+    """
+    Domain model for a plugin-based agent.
+
+    Represents an agent defined by an external plugin directory
+    (e.g., examples/accounting_agent). These are read-only agents
+    discovered from plugin directories.
+    """
+
+    agent_id: str
+    """Agent identifier derived from plugin path or name."""
+
+    name: str
+    """Human-readable agent name (from plugin manifest or config)."""
+
+    description: str
+    """Agent description (from plugin config if available)."""
+
+    plugin_path: str
+    """Relative path to plugin directory."""
+
+    tool_classes: list[str] = field(default_factory=list)
+    """List of tool class names exported by the plugin."""
+
+    specialist: str | None = None
+    """Specialist type from plugin config (if available)."""
+
+    mcp_servers: list[dict[str, Any]] = field(default_factory=list)
+    """MCP server configurations from plugin config."""
+
+    source: str = "plugin"
 
 
 @dataclass

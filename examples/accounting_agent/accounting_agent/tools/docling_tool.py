@@ -135,7 +135,7 @@ class DoclingTool:
 
         try:
             # Build command
-            cmd = ["docling", str(path)]
+            cmd = ["docling", "--image-export-mode", "placeholder", str(path)]
             if output_dir:
                 cmd.extend(["--output", output_dir])
 

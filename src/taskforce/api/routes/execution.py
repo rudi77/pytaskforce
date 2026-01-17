@@ -63,6 +63,14 @@ REQUEST_EXAMPLES = {
             "agent_id": "web-agent",
         },
     },
+    "plugin_agent": {
+        "summary": "Plugin agent (automatically discovered)",
+        "value": {
+            "mission": "Prüfe die Rechnung invoice.pdf",
+            "profile": "dev",
+            "agent_id": "accounting_agent",
+        },
+    },
 }
 
 ERROR_RESPONSE_HEADERS = {
@@ -245,10 +253,12 @@ class ExecuteMissionRequest(BaseModel):
         examples=["Search for recent news about AI and summarize findings"]
     )
     profile: str = Field(
-        ...,
+        default="dev",
         description=(
-            "Configuration profile name "
-            "(e.g., coding_agent, devops_agent, rag_agent)."
+            "Configuration profile name for infrastructure settings "
+            "(e.g., coding_agent, devops_agent, rag_agent). "
+            "Defaults to 'dev' if not provided. "
+            "When using agent_id, this profile provides LLM and persistence settings."
         ),
         examples=["coding_agent", "devops_agent", "rag_agent"],
     )
@@ -286,9 +296,13 @@ class ExecuteMissionRequest(BaseModel):
     agent_id: Optional[str] = Field(
         default=None,
         description=(
-            "Custom agent ID to use (forces Agent). "
-            "If provided, loads agent from configs/custom/{agent_id}.yaml"
+            "Agent ID to use. Can be: "
+            "- Custom agent ID (loads from configs/custom/{agent_id}.yaml), "
+            "- Plugin agent ID (automatically loads plugin from examples/ or plugins/). "
+            "If provided, the agent definition overrides profile agent settings, "
+            "but profile still provides infrastructure settings (LLM, persistence)."
         ),
+        examples=["web-agent", "accounting_agent"],
     )
     planning_strategy: Optional[str] = Field(
         default=None,
@@ -462,6 +476,8 @@ async def execute_mission(
                 "scope": request.scope,
             }
 
+        # Note: plugin_path resolution is now handled in AgentExecutor._create_agent
+        # when agent_id is provided. We pass agent_id and let the executor handle it.
         result = await executor.execute_mission(
             mission=request.mission,
             profile=request.profile,
@@ -471,6 +487,7 @@ async def execute_mission(
             agent_id=request.agent_id,
             planning_strategy=request.planning_strategy,
             planning_strategy_params=request.planning_strategy_params,
+            plugin_path=None,  # Plugin resolution handled in executor via agent_id
         )
 
         return ExecuteMissionResponse(
@@ -815,6 +832,8 @@ async def execute_mission_stream(
             "scope": request.scope,
         }
 
+    # Note: plugin_path resolution is now handled in AgentExecutor._create_agent
+    # when agent_id is provided. We pass agent_id and let the executor handle it.
     async def event_generator():
         try:
             async for update in executor.execute_mission_streaming(
@@ -826,8 +845,19 @@ async def execute_mission_stream(
                 agent_id=request.agent_id,
                 planning_strategy=request.planning_strategy,
                 planning_strategy_params=request.planning_strategy_params,
+                plugin_path=None,  # Plugin resolution handled in executor via agent_id
             ):
                 # Serialize dataclass to JSON, handling datetime
+                # Log final_answer events for debugging
+                if update.event_type == "final_answer":
+                    import structlog
+                    logger = structlog.get_logger()
+                    logger.info(
+                        "api.final_answer_event",
+                        event_type=update.event_type,
+                        message=update.message,
+                        details=update.details,
+                    )
                 data = json.dumps(asdict(update), default=str)
                 yield f"data: {data}\n\n"
         except FileNotFoundError as e:

@@ -69,14 +69,27 @@ tools:
   
   - ask_user
 
-# mcp_servers:
-#   - type: stdio
-#     command: npx
-#     args:
-#       - "-y"
-#       - "azure-devops-wiki-mcp"
-#     env:
-#       AZURE_DEVOPS_URL: "https://dev.azure.com/blumatix"
-#       AZURE_DEVOPS_PROJECT: "Rechnungserkennung"
-#       AZURE_DEVOPS_PAT: ""
-#       AZURE_DEVOPS_ORGANIZATION: "blumatix"
+# Long-term Memory Configuration (via MCP)
+# Enables persistent memory across sessions for this agent profile
+mcp_servers:
+  - type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-memory"
+    env:
+      MEMORY_FILE_PATH: ".taskforce_rag/.memory/knowledge_graph.jsonl"
+    description: "Long-term knowledge graph memory for persistent context across sessions"
+
+# Example: Azure DevOps Wiki MCP Server (commented out)
+#  - type: stdio
+#    command: npx
+#    args:
+#      - "-y"
+#      - "azure-devops-wiki-mcp"
+#    env:
+#      AZURE_DEVOPS_URL: "https://dev.azure.com/blumatix"
+#      AZURE_DEVOPS_PROJECT: "Rechnungserkennung"
+#      AZURE_DEVOPS_PAT: ""
+#      AZURE_DEVOPS_ORGANIZATION: "blumatix"
+#    description: "Azure DevOps Wiki integration"
