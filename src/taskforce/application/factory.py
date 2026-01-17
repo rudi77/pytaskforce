@@ -973,7 +973,29 @@ class AgentFactory:
             tool = self._instantiate_tool(tool_spec, llm_provider, user_context=user_context)
             if tool:
                 tools.append(tool)
-        
+
+        # Add AgentTool if orchestration is enabled (Feature: Multi-Agent Orchestration)
+        orchestration_config = config.get("orchestration", {})
+        if orchestration_config.get("enabled", False):
+            from taskforce.infrastructure.tools.orchestration import AgentTool
+
+            agent_tool = AgentTool(
+                agent_factory=self,
+                profile=orchestration_config.get("sub_agent_profile", "dev"),
+                work_dir=orchestration_config.get("sub_agent_work_dir"),
+                max_steps=orchestration_config.get("sub_agent_max_steps"),
+                summarize_results=orchestration_config.get("summarize_results", False),
+                summary_max_length=orchestration_config.get("summary_max_length", 2000),
+            )
+            tools.append(agent_tool)
+
+            self.logger.info(
+                "orchestration_enabled",
+                agent_tool_added=True,
+                sub_agent_profile=orchestration_config.get("sub_agent_profile", "dev"),
+                sub_agent_max_steps=orchestration_config.get("sub_agent_max_steps"),
+            )
+
         # Filter out LLMTool unless explicitly enabled in config
         include_llm_generate = config.get("agent", {}).get("include_llm_generate", False)
         if not include_llm_generate:

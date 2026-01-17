@@ -35,6 +35,37 @@ By default, Taskforce uses the `dev` profile. You can override this:
 taskforce run mission "..." --profile prod
 ```
 
+### Multi-Agent Orchestration
+Use the `orchestrator` profile to enable multi-agent coordination:
+```powershell
+taskforce run mission "Research Python FastAPI and React, create comparison" \
+  --profile orchestrator
+```
+
+The orchestrator agent can delegate subtasks to specialist sub-agents:
+- **coding**: File operations, shell, Git
+- **rag**: Semantic search, document retrieval
+- **wiki**: Wikipedia research
+- **Custom agents**: Your own specialists from `configs/custom/`
+
+**Example with custom agent:**
+```powershell
+# First, create configs/custom/security_auditor.yaml with custom prompt and tools
+
+# Then use the orchestrator
+taskforce run mission "Perform security audit on codebase" --profile orchestrator
+
+# The orchestrator will automatically spawn the security_auditor specialist
+```
+
+**Direct specialist usage:**
+```powershell
+# Use specialist directly (without orchestrator)
+taskforce run mission "Review code quality in src/" --profile code_reviewer
+```
+
+See [Multi-Agent Orchestration Plan](architecture/multi-agent-orchestration-plan.md) for details.
+
 ## 🔍 Inspection & Management
 
 ### Tools

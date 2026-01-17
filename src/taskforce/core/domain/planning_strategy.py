@@ -110,15 +110,17 @@ async def _execute_with_limit(
     tool_name: str,
     tool_args: dict[str, Any],
     semaphore: asyncio.Semaphore,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute a tool with concurrency limits applied."""
     async with semaphore:
-        return await agent._execute_tool(tool_name, tool_args)
+        return await agent._execute_tool(tool_name, tool_args, session_id=session_id)
 
 
 async def _execute_tool_calls(
     agent: "Agent",
     requests: list[ToolCallRequest],
+    session_id: str | None = None,
 ) -> list[tuple[ToolCallRequest, dict[str, Any]]]:
     """Execute tool calls with optional parallelism and ordering."""
     if not requests:
@@ -137,12 +139,13 @@ async def _execute_tool_calls(
                     request.tool_name,
                     request.tool_args,
                     semaphore,
+                    session_id=session_id,
                 )
             )
             parallel_tasks.append((request, task))
         else:
             results[request.tool_call_id] = await agent._execute_tool(
-                request.tool_name, request.tool_args
+                request.tool_name, request.tool_args, session_id=session_id
             )
 
     if parallel_tasks:
@@ -381,7 +384,7 @@ class NativeReActStrategy:
             data={"tool": tool_name, "id": tool_call_id, "status": "executing", "args": tool_args},
         )
 
-        tool_result = await agent._execute_tool(tool_name, tool_args)
+        tool_result = await agent._execute_tool(tool_name, tool_args, session_id=session_id)
 
         yield StreamEvent(
             event_type="tool_result",
@@ -624,7 +627,7 @@ class NativeReActStrategy:
                         )
                     )
 
-                tool_results = await _execute_tool_calls(agent, requests)
+                tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
                 for request, tool_result in tool_results:
                     yield StreamEvent(
                         event_type="tool_result",
@@ -833,7 +836,7 @@ class NativeReActStrategy:
                         )
                         return
 
-                    tool_result = await agent._execute_tool(tool_name, tool_args)
+                    tool_result = await agent._execute_tool(tool_name, tool_args, session_id=session_id)
 
                     yield StreamEvent(
                         event_type="tool_result",
@@ -1002,7 +1005,7 @@ class PlanAndExecuteStrategy:
             requests.append(request)
             yield event
 
-        tool_results = await _execute_tool_calls(agent, requests)
+        tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
         for request, tool_result in tool_results:
             async for event in self._emit_tool_result_events(request, tool_result, agent):
                 yield event
