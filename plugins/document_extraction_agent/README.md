@@ -1,7 +1,7 @@
 # Document Extraction Agent Plugin
 
-This plugin provides tool stubs for the document extraction multi-agent workflow
-(OCR → reading order → layout detection → VLM analysis → synthesis).
+This plugin provides tool stubs and agent profiles for a document extraction
+multi-agent workflow (OCR → reading order → layout detection → VLM analysis → synthesis).
 
 ## Included Tools
 
@@ -14,23 +14,11 @@ This plugin provides tool stubs for the document extraction multi-agent workflow
 
 ## Configuration
 
-The plugin ships with a default config:
+Configs and prompts are colocated with the plugin:
 
-```
-plugins/document_extraction_agent/configs/document_extraction_agent.yaml
-```
-
-Specialist agent profiles for the multi-agent workflow live in:
-
-```
-plugins/document_extraction_agent/configs/agents/
-```
-
-Prompt and tool sketches live alongside the plugin:
-
-```
-plugins/document_extraction_agent/docs/templates/document_extraction/
-```
+- `plugins/document_extraction_agent/configs/document_extraction_agent.yaml`
+- `plugins/document_extraction_agent/configs/agents/`
+- `plugins/document_extraction_agent/docs/templates/document_extraction/`
 
 ## Notes
 
