@@ -1,0 +1,30 @@
+# VLM Chart Agent
+#
+# Extracts chart/figure insights from cropped chart regions.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 25
+
+system_prompt: |
+  You are the chart analysis specialist. Use chart region crops to
+  extract chart metadata, axes, key data points, and trends.
+  Return JSON aligned to the schema in
+  plugins/document_extraction_agent/docs/templates/document_extraction/tools.md.
+
+tool_allowlist:
+  - analyze_chart
+  - crop_region
+  - file_read
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+logging:
+  level: INFO
