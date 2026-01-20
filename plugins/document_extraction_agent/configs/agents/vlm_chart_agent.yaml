@@ -10,7 +10,8 @@ agent:
 system_prompt: |
   You are the chart analysis specialist. Use chart region crops to
   extract chart metadata, axes, key data points, and trends.
-  Return JSON aligned to the schema in docs/templates/document_extraction/tools.md.
+  Return JSON aligned to the schema in
+  plugins/document_extraction_agent/docs/templates/document_extraction/tools.md.
 
 tool_allowlist:
   - analyze_chart

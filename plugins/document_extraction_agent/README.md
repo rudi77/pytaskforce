@@ -26,6 +26,12 @@ Specialist agent profiles for the multi-agent workflow live in:
 plugins/document_extraction_agent/configs/agents/
 ```
 
+Prompt and tool sketches live alongside the plugin:
+
+```
+plugins/document_extraction_agent/docs/templates/document_extraction/
+```
+
 ## Notes
 
 The tool implementations are placeholders that return standardized

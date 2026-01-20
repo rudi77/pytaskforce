@@ -21,18 +21,17 @@ plugins/document_extraction_agent/
   document_extraction_agent/
     tools/
       document_extraction_tools.py
-
-docs/templates/document_extraction/
-  README.md
-  tools.md
-  prompts/
-    orchestrator.md
-    ocr_agent.md
-    layout_agent.md
-    reading_order_agent.md
-    vlm_table_agent.md
-    vlm_chart_agent.md
-    synthesis_agent.md
+  docs/templates/document_extraction/
+    README.md
+    tools.md
+    prompts/
+      orchestrator.md
+      ocr_agent.md
+      layout_agent.md
+      reading_order_agent.md
+      vlm_table_agent.md
+      vlm_chart_agent.md
+      synthesis_agent.md
 ```
 
 ## Usage (CLI)
@@ -51,5 +50,5 @@ TASKFORCE_PROFILE=plugins/document_extraction_agent/configs/agents/orchestrator 
   Taskforce tools (see `tools.md` for schema sketches).
 - Prompt templates under `prompts/` can be copied into the YAML
   `system_prompt` fields or used as canonical references.
-- Tool stubs and agent configs live in the plugin at
-  `plugins/document_extraction_agent/` for wiring in OCR, layout, and VLM logic.
+- Tool stubs and agent configs live in the plugin for wiring in OCR, layout,
+  and VLM logic.

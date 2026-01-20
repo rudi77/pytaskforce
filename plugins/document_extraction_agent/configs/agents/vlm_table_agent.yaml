@@ -10,7 +10,8 @@ agent:
 system_prompt: |
   You are the table extraction specialist. Use table region crops to
   extract structured tabular data with headers, rows, and notes.
-  Return JSON aligned to the schema in docs/templates/document_extraction/tools.md.
+  Return JSON aligned to the schema in
+  plugins/document_extraction_agent/docs/templates/document_extraction/tools.md.
 
 tool_allowlist:
   - analyze_table
