@@ -1,0 +1,43 @@
+# Development Profile (Default)
+#
+# Standard development profile used as base for sub-agents
+# and general development tasks.
+
+profile: dev
+specialist: null  # No specialist, uses standard tools
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce
+
+# Agent configuration
+agent:
+  planning_strategy: native_react
+  max_steps: 30
+
+# LLM configuration
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+# Default tools for development
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - python
+  - powershell
+  - ask_user
