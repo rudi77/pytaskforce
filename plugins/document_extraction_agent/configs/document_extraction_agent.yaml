@@ -1,0 +1,21 @@
+# Document Extraction Agent Plugin
+#
+# Provides OCR/layout/reading-order/VLM tools for multi-agent workflows.
+
+specialist: document_extraction
+
+agent:
+  max_steps: 50
+  planning_strategy: plan_and_execute
+
+tools:
+  - ocr_extract
+  - reading_order
+  - layout_detect
+  - crop_region
+  - analyze_table
+  - analyze_chart
+
+persistence:
+  type: file
+  work_dir: .taskforce

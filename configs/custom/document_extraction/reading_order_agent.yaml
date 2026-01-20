@@ -1,0 +1,28 @@
+# Reading Order Agent
+#
+# Orders OCR regions using LayoutReader (LayoutLMv3-based).
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 25
+
+system_prompt: |
+  You are the reading-order specialist. Given OCR regions and bounding boxes,
+  determine the reading order and return a sorted list of regions with
+  position indices for downstream use.
+
+tool_allowlist:
+  - reading_order
+  - file_read
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+logging:
+  level: INFO
