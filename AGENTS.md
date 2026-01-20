@@ -154,3 +154,8 @@ root/
 * [ ] Keine Duplikate; Funktionen ≤ 30 Zeilen oder sinnvoll zerlegt.
 * [ ] Public API/Schemas dokumentiert; Migrationshinweise bei Changes.
 * [ ] Nur notwendige Löschungen/Refactorings — **Stabilität first**.
+
+## Project Notes
+
+- Document extraction agent templates, tool stubs, and prompt/tool sketches live in
+  `plugins/document_extraction_agent/`.
