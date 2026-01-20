@@ -35,7 +35,9 @@
       "Bash(set PYTHONPATH=D:/home/Source/pytaskforce/examples/accounting_agent:*)",
       "Bash(D:/home/Source/pytaskforce/.venv/Scripts/python.exe -c:*)",
       "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)",
-      "Bash(docling:*)"
+      "Bash(docling:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

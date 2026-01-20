@@ -1,6 +1,7 @@
 # Document Extraction Agent Plugin
 #
-# Provides OCR/layout/reading-order/VLM tools for multi-agent workflows.
+# Provides OCR/layout/reading-order/VLM tools via MCP server.
+# The MCP server has its own isolated environment with heavy ML dependencies.
 
 specialist: document_extraction
 
@@ -8,14 +9,32 @@ agent:
   max_steps: 50
   planning_strategy: plan_and_execute
 
-tools:
-  - ocr_extract
-  - reading_order
-  - layout_detect
-  - crop_region
-  - analyze_table
-  - analyze_chart
+# MCP Server provides all document extraction tools
+mcp_servers:
+  - type: stdio
+    command: uv
+    args:
+      - "--directory"
+      - "servers/document-extraction-mcp"
+      - "run"
+      - "python"
+      - "-m"
+      - "document_extraction_mcp.server"
+    env:
+      # Pass through API key for VLM tools
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      # Optional: Override VLM model (default: gpt-4o-mini)
+      # VLM_MODEL: "gpt-4o"
+    description: "Document extraction tools (OCR, Layout, Reading Order, VLM Analysis)"
+
+# Tools are provided by the MCP server:
+# - ocr_extract: Extract text with bounding boxes (PaddleOCR)
+# - layout_detect: Detect document regions (PaddleOCR LayoutDetection)
+# - reading_order: Sort text into reading sequence (LayoutLMv3)
+# - crop_region: Crop region, return base64 image (Pillow)
+# - analyze_table: Extract table structure (VLM)
+# - analyze_chart: Extract chart data (VLM)
 
 persistence:
   type: file
-  work_dir: .taskforce
+  work_dir: .taskforce_document_extraction
