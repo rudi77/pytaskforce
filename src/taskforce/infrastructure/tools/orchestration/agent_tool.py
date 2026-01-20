@@ -9,6 +9,7 @@ allowing parallel execution of sub-agents and hierarchical session management.
 """
 
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 import structlog
@@ -152,6 +153,56 @@ class AgentTool:
             f"Risk: Sub-agent will have access to its specialist toolset"
         )
 
+    def _find_agent_config(self, specialist: str) -> Path | None:
+        """
+        Find agent config file by specialist name.
+
+        Search order:
+        1. configs/custom/{specialist}.yaml - Single file custom agent
+        2. configs/custom/{specialist}/ - Directory-based custom agent
+        3. plugins/*/configs/agents/{specialist}.yaml - Plugin agents
+
+        Args:
+            specialist: The specialist/agent name to search for
+
+        Returns:
+            Path to config file if found, None otherwise.
+        """
+        config_dir = self._factory.config_dir
+
+        # 1. Check configs/custom/{specialist}.yaml
+        custom_path = config_dir / "custom" / f"{specialist}.yaml"
+        if custom_path.exists():
+            return custom_path
+
+        # 2. Check configs/custom/{specialist}/ directory
+        custom_dir = config_dir / "custom" / specialist
+        if custom_dir.is_dir():
+            # Look for {specialist}.yaml in the directory
+            custom_dir_path = custom_dir / f"{specialist}.yaml"
+            if custom_dir_path.exists():
+                return custom_dir_path
+            # Fallback: return first .yaml file found
+            for yaml_file in custom_dir.glob("*.yaml"):
+                return yaml_file
+
+        # 3. Check plugins/*/configs/agents/{specialist}.yaml
+        plugins_dir = config_dir.parent / "plugins"
+        if plugins_dir.exists():
+            for plugin_dir in plugins_dir.iterdir():
+                if plugin_dir.is_dir():
+                    agent_config = plugin_dir / "configs" / "agents" / f"{specialist}.yaml"
+                    if agent_config.exists():
+                        self.logger.debug(
+                            "found_plugin_agent_config",
+                            specialist=specialist,
+                            plugin=plugin_dir.name,
+                            config_path=str(agent_config),
+                        )
+                        return agent_config
+
+        return None
+
     async def execute(
         self,
         mission: str,
@@ -198,13 +249,11 @@ class AgentTool:
 
             # Create sub-agent based on specialist or custom profile
             if specialist:
-                # Check if it's a custom agent (configs/custom/{specialist}.yaml exists)
-                custom_agent_path = (
-                    self._factory.config_dir / "custom" / f"{specialist}.yaml"
-                )
+                # Search for custom agent config in multiple locations
+                custom_agent_path = self._find_agent_config(specialist)
 
-                if custom_agent_path.exists():
-                    # Load custom agent definition
+                if custom_agent_path:
+                    # Load custom agent definition from found config
                     import yaml
 
                     self.logger.debug(
@@ -224,7 +273,7 @@ class AgentTool:
                         planning_strategy=planning_strategy,
                     )
                 else:
-                    # Standard specialist agent
+                    # Standard specialist agent (coding/rag/wiki)
                     sub_agent = await self._factory.create_agent(
                         profile=self._profile,
                         specialist=specialist,

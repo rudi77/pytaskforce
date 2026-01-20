@@ -295,3 +295,109 @@ class TestAgentTool:
         # Verify result was truncated
         assert len(result["result"]) <= 200  # Truncated + message
         assert "Result truncated" in result["result"]
+
+    def test_find_agent_config_in_custom_file(self, tmp_path):
+        """Test _find_agent_config finds agent in configs/custom/{specialist}.yaml."""
+        # Setup directory structure
+        configs_dir = tmp_path / "configs"
+        custom_dir = configs_dir / "custom"
+        custom_dir.mkdir(parents=True)
+
+        # Create custom agent config
+        (custom_dir / "my_agent.yaml").write_text("agent:\n  type: custom")
+
+        mock_factory = MagicMock()
+        mock_factory.config_dir = configs_dir
+
+        tool = AgentTool(agent_factory=mock_factory)
+
+        config_path = tool._find_agent_config("my_agent")
+
+        assert config_path is not None
+        assert config_path.name == "my_agent.yaml"
+        assert "custom" in str(config_path)
+
+    def test_find_agent_config_in_custom_directory(self, tmp_path):
+        """Test _find_agent_config finds agent in configs/custom/{specialist}/ directory."""
+        # Setup directory structure
+        configs_dir = tmp_path / "configs"
+        custom_agent_dir = configs_dir / "custom" / "my_agent_dir"
+        custom_agent_dir.mkdir(parents=True)
+
+        # Create custom agent config in subdirectory
+        (custom_agent_dir / "my_agent_dir.yaml").write_text("agent:\n  type: custom")
+
+        mock_factory = MagicMock()
+        mock_factory.config_dir = configs_dir
+
+        tool = AgentTool(agent_factory=mock_factory)
+
+        config_path = tool._find_agent_config("my_agent_dir")
+
+        assert config_path is not None
+        assert config_path.name == "my_agent_dir.yaml"
+
+    def test_find_agent_config_in_plugin_directory(self, tmp_path):
+        """Test _find_agent_config finds agent in plugins/*/configs/agents/."""
+        # Setup directory structure
+        configs_dir = tmp_path / "configs"
+        (configs_dir / "custom").mkdir(parents=True)
+
+        # Setup plugin directory
+        plugin_dir = tmp_path / "plugins" / "test_plugin" / "configs" / "agents"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "plugin_agent.yaml").write_text("agent:\n  type: custom")
+
+        mock_factory = MagicMock()
+        mock_factory.config_dir = configs_dir
+
+        tool = AgentTool(agent_factory=mock_factory)
+
+        config_path = tool._find_agent_config("plugin_agent")
+
+        assert config_path is not None
+        assert config_path.name == "plugin_agent.yaml"
+        assert "test_plugin" in str(config_path)
+        assert "plugins" in str(config_path)
+
+    def test_find_agent_config_priority_custom_over_plugin(self, tmp_path):
+        """Test that configs/custom/ has priority over plugins/."""
+        # Setup directory structure
+        configs_dir = tmp_path / "configs"
+        custom_dir = configs_dir / "custom"
+        custom_dir.mkdir(parents=True)
+
+        # Create agent in custom dir
+        (custom_dir / "same_agent.yaml").write_text("source: custom")
+
+        # Also create same agent in plugin dir
+        plugin_dir = tmp_path / "plugins" / "test_plugin" / "configs" / "agents"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "same_agent.yaml").write_text("source: plugin")
+
+        mock_factory = MagicMock()
+        mock_factory.config_dir = configs_dir
+
+        tool = AgentTool(agent_factory=mock_factory)
+
+        config_path = tool._find_agent_config("same_agent")
+
+        assert config_path is not None
+        # Should find the custom one (has priority)
+        assert "custom" in str(config_path)
+        assert "plugins" not in str(config_path)
+
+    def test_find_agent_config_not_found(self, tmp_path):
+        """Test _find_agent_config returns None when agent not found."""
+        # Setup empty directory structure
+        configs_dir = tmp_path / "configs"
+        (configs_dir / "custom").mkdir(parents=True)
+
+        mock_factory = MagicMock()
+        mock_factory.config_dir = configs_dir
+
+        tool = AgentTool(agent_factory=mock_factory)
+
+        config_path = tool._find_agent_config("nonexistent_agent")
+
+        assert config_path is None
