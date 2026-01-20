@@ -34,8 +34,7 @@ This file should be updated automatically when project-specific patterns, conven
     - `agent`: Defines a specialized agent with its own `profile`, `tools`, and `system_prompt` (from the file body).
   - **Behavior**: An `agent`-type command **temporarily overrides** the current agent's configuration (system prompt, tools, profile) for that single execution. The original context is restored immediately after.
   - **Variables**: Use `$ARGUMENTS` in the Markdown body to inject user input from the command.
-- Multi-agent document extraction templates live in `configs/custom/document_extraction/` with supporting prompt/tool sketches in `docs/templates/document_extraction/`.
-- Document extraction tool stubs live in `plugins/document_extraction_agent/` for plugin-based workflows.
+- Document extraction agent templates, tool stubs, and prompt/tool sketches live in `plugins/document_extraction_agent/`.
 
 # Python Best Practices
 

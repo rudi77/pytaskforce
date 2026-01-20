@@ -47,3 +47,14 @@ TASKFORCE_PROFILE=custom/document_extraction/orchestrator \
   `system_prompt` fields or used as canonical references.
 - Tool stubs are provided in the plugin at
   `plugins/document_extraction_agent/` for wiring in OCR, layout, and VLM logic.
+
+# Document Extraction Templates (Moved)
+
+The document extraction multi-agent templates have moved to:
+
+```
+plugins/document_extraction_agent/docs/templates/document_extraction/
+```
+
+This stub remains to avoid broken references; the canonical source lives in the
+plugin folder.
