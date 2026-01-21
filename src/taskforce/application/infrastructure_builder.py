@@ -1,0 +1,434 @@
+"""
+Infrastructure Builder
+
+Extracts infrastructure building logic from AgentFactory into a dedicated
+service. Handles creation of:
+- State managers (file or database)
+- LLM providers
+- MCP tools and connections
+- Context policies
+
+Part of Phase 4 refactoring: Simplified AgentFactory.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+import structlog
+import yaml
+
+from taskforce.core.domain.context_policy import ContextPolicy
+from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.state import StateManagerProtocol
+from taskforce.core.interfaces.tools import ToolProtocol
+
+if TYPE_CHECKING:
+    from taskforce.core.domain.agent_definition import AgentDefinition, MCPServerConfig
+
+
+logger = structlog.get_logger(__name__)
+
+
+def get_base_path() -> Path:
+    """
+    Get base path for resource files, handling frozen executables.
+
+    When running as a PyInstaller executable, resources are extracted to
+    a temporary directory (sys._MEIPASS). When running as a normal Python
+    script, returns the project root directory.
+
+    Returns:
+        Path to the base directory containing configs and other resources
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    else:
+        # Navigate from this file to project root
+        # infrastructure_builder.py is at: src/taskforce/application/infrastructure_builder.py
+        # Project root is 4 levels up
+        return Path(__file__).parent.parent.parent.parent
+
+
+class InfrastructureBuilder:
+    """
+    Builder for infrastructure components.
+
+    Responsible for creating infrastructure adapters based on configuration:
+    - StateManager (file or database persistence)
+    - LLMProvider (OpenAI/Azure via LiteLLM)
+    - MCP tools (stdio or SSE connections)
+    - ContextPolicy (conversation context management)
+    """
+
+    def __init__(self, config_dir: Path | str | None = None) -> None:
+        """
+        Initialize the infrastructure builder.
+
+        Args:
+            config_dir: Path to configuration directory. If None, uses
+                       'configs/' relative to project root.
+        """
+        if config_dir is None:
+            self.config_dir = get_base_path() / "configs"
+        else:
+            self.config_dir = Path(config_dir)
+
+        self._logger = logger.bind(component="InfrastructureBuilder")
+
+    # -------------------------------------------------------------------------
+    # Profile Loading
+    # -------------------------------------------------------------------------
+
+    def load_profile(self, profile_name: str) -> dict[str, Any]:
+        """
+        Load a configuration profile from YAML file.
+
+        Searches in:
+        1. configs/{profile}.yaml (standard profiles)
+        2. configs/custom/{profile}.yaml (custom agents as fallback)
+
+        Args:
+            profile_name: Profile name (e.g., "dev", "prod", "my-custom-agent")
+
+        Returns:
+            Configuration dictionary
+
+        Raises:
+            FileNotFoundError: If profile YAML not found in either location
+        """
+        # First try standard profile location
+        profile_path = self.config_dir / f"{profile_name}.yaml"
+
+        if not profile_path.exists():
+            # Fallback: check if it's a custom agent
+            custom_path = self.config_dir / "custom" / f"{profile_name}.yaml"
+            if custom_path.exists():
+                self._logger.debug(
+                    "profile_using_custom_agent",
+                    profile=profile_name,
+                    custom_path=str(custom_path),
+                )
+                profile_path = custom_path
+            else:
+                raise FileNotFoundError(
+                    f"Profile not found: {profile_path} or {custom_path}"
+                )
+
+        with open(profile_path) as f:
+            config = yaml.safe_load(f)
+
+        self._logger.debug(
+            "profile_loaded",
+            profile=profile_name,
+            config_keys=list(config.keys()) if config else [],
+        )
+        return config or {}
+
+    def load_profile_safe(self, profile_name: str) -> dict[str, Any]:
+        """
+        Load a configuration profile, returning empty dict if not found.
+
+        Args:
+            profile_name: Profile name
+
+        Returns:
+            Configuration dictionary or empty dict if not found
+        """
+        try:
+            return self.load_profile(profile_name)
+        except FileNotFoundError:
+            self._logger.debug("profile_not_found_using_defaults", profile=profile_name)
+            return {}
+
+    # -------------------------------------------------------------------------
+    # State Manager
+    # -------------------------------------------------------------------------
+
+    def build_state_manager(
+        self,
+        config: dict[str, Any],
+        work_dir_override: Optional[str] = None,
+    ) -> StateManagerProtocol:
+        """
+        Build state manager based on configuration.
+
+        Args:
+            config: Profile configuration dictionary
+            work_dir_override: Optional override for work directory
+
+        Returns:
+            StateManager implementation (file-based or database)
+
+        Raises:
+            ValueError: If persistence type is unknown or database URL not found
+        """
+        persistence_config = config.get("persistence", {})
+        persistence_type = persistence_config.get("type", "file")
+
+        if persistence_type == "file":
+            from taskforce.infrastructure.persistence.file_state_manager import (
+                FileStateManager,
+            )
+
+            work_dir = work_dir_override or persistence_config.get("work_dir", ".taskforce")
+            return FileStateManager(work_dir=work_dir)
+
+        elif persistence_type == "database":
+            from taskforce.infrastructure.persistence.db_state import DbStateManager
+
+            db_url_env = persistence_config.get("db_url_env", "DATABASE_URL")
+            db_url = os.getenv(db_url_env)
+
+            if not db_url:
+                raise ValueError(
+                    f"Database URL not found in environment variable: {db_url_env}"
+                )
+
+            return DbStateManager(db_url=db_url)
+
+        else:
+            raise ValueError(f"Unknown persistence type: {persistence_type}")
+
+    # -------------------------------------------------------------------------
+    # LLM Provider
+    # -------------------------------------------------------------------------
+
+    def build_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
+        """
+        Build LLM provider based on configuration.
+
+        Args:
+            config: Profile configuration dictionary
+
+        Returns:
+            LLM provider implementation (OpenAI via LiteLLM)
+        """
+        from taskforce.infrastructure.llm.openai_service import OpenAIService
+
+        llm_config = config.get("llm", {})
+        config_path = llm_config.get("config_path", "configs/llm_config.yaml")
+
+        # Resolve relative paths against base path (handles frozen executables)
+        config_path_obj = Path(config_path)
+        if not config_path_obj.is_absolute():
+            config_path = str(get_base_path() / config_path)
+
+        return OpenAIService(config_path=config_path)
+
+    # -------------------------------------------------------------------------
+    # MCP Tools
+    # -------------------------------------------------------------------------
+
+    async def build_mcp_tools(
+        self,
+        mcp_servers: list[MCPServerConfig],
+        tool_filter: list[str] | None = None,
+    ) -> tuple[list[ToolProtocol], list[Any]]:
+        """
+        Build MCP tools from server configurations.
+
+        Connects to configured MCP servers (stdio or SSE), fetches available
+        tools, and wraps them in MCPToolWrapper.
+
+        Args:
+            mcp_servers: List of MCP server configurations
+            tool_filter: Optional list of allowed MCP tool names (None = all)
+
+        Returns:
+            Tuple of (tools, contexts) where contexts are the connection
+            contexts that must be kept alive for the tools to work
+        """
+        if not mcp_servers:
+            return [], []
+
+        from taskforce.infrastructure.tools.filters import simplify_wiki_list_output
+        from taskforce.infrastructure.tools.mcp.client import MCPClient
+        from taskforce.infrastructure.tools.mcp.wrapper import MCPToolWrapper
+        from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
+
+        tools: list[ToolProtocol] = []
+        contexts: list[Any] = []
+
+        for server_config in mcp_servers:
+            try:
+                mcp_tools, ctx = await self._connect_mcp_server(server_config)
+
+                # Filter tools if allowlist provided
+                if tool_filter:
+                    mcp_tools = [t for t in mcp_tools if t.name in tool_filter]
+
+                # Apply output filtering for specific tools
+                filtered_tools: list[ToolProtocol] = []
+                for tool in mcp_tools:
+                    if tool.name == "list_wiki":
+                        # Apply wiki output filter
+                        filtered_tools.append(
+                            OutputFilteringTool(tool, simplify_wiki_list_output)
+                        )
+                    else:
+                        filtered_tools.append(tool)
+
+                tools.extend(filtered_tools)
+                contexts.append(ctx)
+
+                self._logger.info(
+                    "mcp_server_connected",
+                    server_type=server_config.type,
+                    command=server_config.command,
+                    tools_count=len(mcp_tools),
+                    tool_names=[t.name for t in mcp_tools],
+                )
+
+            except Exception as e:
+                self._logger.warning(
+                    "mcp_server_connection_failed",
+                    server_type=server_config.type,
+                    command=server_config.command,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                # Continue with other servers
+
+        return tools, contexts
+
+    async def _connect_mcp_server(
+        self, server_config: MCPServerConfig
+    ) -> tuple[list[ToolProtocol], Any]:
+        """
+        Connect to a single MCP server and get its tools.
+
+        Uses the existing MCPClient class for connection management.
+
+        Args:
+            server_config: MCP server configuration
+
+        Returns:
+            Tuple of (tools, context_manager)
+        """
+        from taskforce.infrastructure.tools.mcp.client import MCPClient
+        from taskforce.infrastructure.tools.mcp.wrapper import MCPToolWrapper
+
+        if server_config.type == "stdio":
+            # Ensure memory directory exists if MEMORY_FILE_PATH is configured
+            env = dict(server_config.env)  # Make a copy
+            if "MEMORY_FILE_PATH" in env:
+                memory_path = Path(env["MEMORY_FILE_PATH"])
+                # Convert relative paths to absolute
+                if not memory_path.is_absolute():
+                    memory_path = memory_path.resolve()
+                memory_dir = memory_path.parent
+                if not memory_dir.exists():
+                    memory_dir.mkdir(parents=True, exist_ok=True)
+                    self._logger.debug("mcp_memory_dir_created", path=str(memory_dir))
+                # Update env with absolute path
+                env["MEMORY_FILE_PATH"] = str(memory_path)
+
+            if not server_config.command:
+                raise ValueError("stdio server requires 'command' field")
+
+            # Create context manager and enter it
+            ctx = MCPClient.create_stdio(
+                command=server_config.command,
+                args=server_config.args,
+                env=env if env else None,
+            )
+            client = await ctx.__aenter__()
+
+            # Get tools
+            tools_list = await client.list_tools()
+            tools = [MCPToolWrapper(client, tool_def) for tool_def in tools_list]
+
+            return tools, ctx
+
+        elif server_config.type == "sse":
+            if not server_config.url:
+                raise ValueError("SSE server requires 'url' field")
+
+            # Create context manager and enter it
+            ctx = MCPClient.create_sse(server_config.url)
+            client = await ctx.__aenter__()
+
+            # Get tools
+            tools_list = await client.list_tools()
+            tools = [MCPToolWrapper(client, tool_def) for tool_def in tools_list]
+
+            return tools, ctx
+
+        else:
+            raise ValueError(f"Unknown MCP server type: {server_config.type}")
+
+    # -------------------------------------------------------------------------
+    # Context Policy
+    # -------------------------------------------------------------------------
+
+    def build_context_policy(self, config: dict[str, Any]) -> ContextPolicy:
+        """
+        Build context policy from configuration.
+
+        Args:
+            config: Profile configuration dictionary
+
+        Returns:
+            ContextPolicy instance
+        """
+        context_config = config.get("context_policy")
+
+        if context_config:
+            self._logger.debug(
+                "creating_context_policy_from_config",
+                config=context_config,
+            )
+            return ContextPolicy.from_dict(context_config)
+        else:
+            self._logger.debug("using_conservative_default_context_policy")
+            return ContextPolicy.conservative_default()
+
+    # -------------------------------------------------------------------------
+    # Combined Infrastructure
+    # -------------------------------------------------------------------------
+
+    async def build_for_definition(
+        self,
+        definition: AgentDefinition,
+    ) -> tuple[
+        StateManagerProtocol,
+        LLMProviderProtocol,
+        list[ToolProtocol],
+        list[Any],
+        ContextPolicy,
+    ]:
+        """
+        Build all infrastructure components for an agent definition.
+
+        Args:
+            definition: Agent definition containing configuration
+
+        Returns:
+            Tuple of (state_manager, llm_provider, mcp_tools, mcp_contexts, context_policy)
+        """
+        # Load base profile configuration
+        base_config = self.load_profile_safe(definition.base_profile)
+
+        # Build state manager
+        state_manager = self.build_state_manager(
+            base_config,
+            work_dir_override=definition.work_dir,
+        )
+
+        # Build LLM provider
+        llm_provider = self.build_llm_provider(base_config)
+
+        # Build MCP tools
+        mcp_tools, mcp_contexts = await self.build_mcp_tools(
+            definition.mcp_servers,
+            tool_filter=definition.mcp_tool_filter,
+        )
+
+        # Build context policy
+        context_policy = self.build_context_policy(base_config)
+
+        return state_manager, llm_provider, mcp_tools, mcp_contexts, context_policy
