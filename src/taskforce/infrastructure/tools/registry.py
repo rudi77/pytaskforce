@@ -10,6 +10,7 @@ from typing import Any, Optional
 ToolSpec = dict[str, Any]
 
 _TOOL_REGISTRY: dict[str, ToolSpec] = {
+    # Native tools - Web
     "web_search": {
         "type": "WebSearchTool",
         "module": "taskforce.infrastructure.tools.native.web_tools",
@@ -20,11 +21,13 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.web_tools",
         "params": {},
     },
+    # Native tools - Code execution
     "python": {
         "type": "PythonTool",
         "module": "taskforce.infrastructure.tools.native.python_tool",
         "params": {},
     },
+    # Native tools - File operations
     "file_read": {
         "type": "FileReadTool",
         "module": "taskforce.infrastructure.tools.native.file_tools",
@@ -35,6 +38,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.file_tools",
         "params": {},
     },
+    # Native tools - Git/GitHub
     "git": {
         "type": "GitTool",
         "module": "taskforce.infrastructure.tools.native.git_tools",
@@ -45,16 +49,24 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.git_tools",
         "params": {},
     },
+    # Native tools - Shell (platform-agnostic and Windows-specific)
+    "shell": {
+        "type": "ShellTool",
+        "module": "taskforce.infrastructure.tools.native.shell_tool",
+        "params": {},
+    },
     "powershell": {
         "type": "PowerShellTool",
         "module": "taskforce.infrastructure.tools.native.shell_tool",
         "params": {},
     },
+    # Native tools - User interaction
     "ask_user": {
         "type": "AskUserTool",
         "module": "taskforce.infrastructure.tools.native.ask_user_tool",
         "params": {},
     },
+    # Native tools - LLM generation
     "llm": {
         "type": "LLMTool",
         "module": "taskforce.infrastructure.tools.native.llm_tool",
@@ -62,6 +74,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
             "model_alias": "main",
         },
     },
+    # RAG tools - Semantic search and document retrieval
     "rag_semantic_search": {
         "type": "SemanticSearchTool",
         "module": "taskforce.infrastructure.tools.rag.semantic_search_tool",
@@ -164,3 +177,82 @@ def _merge_params(
         merged.update(defaults.get("params", {}))
     merged.update(overrides)
     return merged
+
+
+def get_all_tool_names() -> list[str]:
+    """
+    Get all registered tool names.
+
+    Returns:
+        List of all tool names in the registry.
+    """
+    return list(_TOOL_REGISTRY.keys())
+
+
+def get_all_tool_definitions() -> dict[str, ToolSpec]:
+    """
+    Get all tool definitions.
+
+    Returns:
+        Deep copy of the entire registry.
+    """
+    return copy.deepcopy(_TOOL_REGISTRY)
+
+
+def register_tool(
+    name: str,
+    tool_type: str,
+    module: str,
+    params: dict[str, Any] | None = None,
+) -> None:
+    """
+    Register a new tool in the registry.
+
+    This is used for dynamically registering plugin tools.
+
+    Args:
+        name: Short name for the tool (used in configs)
+        tool_type: Class name of the tool
+        module: Full module path to the tool class
+        params: Default parameters for the tool
+
+    Raises:
+        ValueError: If tool name already exists in registry
+    """
+    if name in _TOOL_REGISTRY:
+        raise ValueError(f"Tool '{name}' already registered in registry")
+
+    _TOOL_REGISTRY[name] = {
+        "type": tool_type,
+        "module": module,
+        "params": params or {},
+    }
+
+
+def unregister_tool(name: str) -> bool:
+    """
+    Remove a tool from the registry.
+
+    Args:
+        name: Tool name to remove
+
+    Returns:
+        True if tool was removed, False if not found
+    """
+    if name in _TOOL_REGISTRY:
+        del _TOOL_REGISTRY[name]
+        return True
+    return False
+
+
+def is_registered(name: str) -> bool:
+    """
+    Check if a tool name is registered.
+
+    Args:
+        name: Tool name to check
+
+    Returns:
+        True if tool is registered
+    """
+    return name in _TOOL_REGISTRY

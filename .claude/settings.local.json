@@ -37,7 +37,8 @@
       "Bash(Get-Content \"D:\\home\\Source\\pytaskforce\\traces\\llm_traces.jsonl\" -Tail 5)",
       "Bash(docling:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []

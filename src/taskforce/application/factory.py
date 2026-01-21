@@ -88,6 +88,190 @@ class AgentFactory:
             self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
 
+    # -------------------------------------------------------------------------
+    # New Unified API (Phase 4 Refactoring)
+    # -------------------------------------------------------------------------
+
+    async def create(
+        self,
+        definition: "AgentDefinition",
+        user_context: Optional[dict[str, Any]] = None,
+    ) -> Agent:
+        """
+        Create an Agent from a unified AgentDefinition.
+
+        This is the new unified factory method that replaces:
+        - create_agent() - for profile-based agents
+        - create_agent_from_definition() - for custom agents
+        - create_agent_with_plugin() - for plugin agents
+        - create_agent_for_command() - for slash command agents
+
+        The AgentDefinition provides all configuration in a unified format.
+
+        Args:
+            definition: Unified agent definition containing all configuration
+            user_context: Optional user context for RAG tools (user_id, org_id, scope)
+
+        Returns:
+            Agent instance with injected dependencies
+
+        Example:
+            >>> from taskforce.core.domain.agent_definition import AgentDefinition
+            >>> factory = AgentFactory()
+            >>> definition = AgentDefinition(
+            ...     agent_id="my-agent",
+            ...     name="My Agent",
+            ...     tools=["web_search", "python"],
+            ...     base_profile="dev",
+            ... )
+            >>> agent = await factory.create(definition)
+            >>> result = await agent.execute("Do something", "session-123")
+        """
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
+        from taskforce.application.tool_resolver import ToolResolver
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+        self.logger.info(
+            "creating_agent_from_definition",
+            agent_id=definition.agent_id,
+            source=definition.source.value,
+            base_profile=definition.base_profile,
+            specialist=definition.specialist,
+            tools=definition.tools,
+            has_mcp_servers=definition.has_mcp_servers,
+            has_custom_prompt=definition.has_custom_prompt,
+        )
+
+        # Build infrastructure
+        infra_builder = InfrastructureBuilder(self.config_dir)
+        base_config = infra_builder.load_profile_safe(definition.base_profile)
+
+        state_manager = infra_builder.build_state_manager(
+            base_config, work_dir_override=definition.work_dir
+        )
+        llm_provider = infra_builder.build_llm_provider(base_config)
+
+        # Build MCP tools
+        mcp_tools, mcp_contexts = await infra_builder.build_mcp_tools(
+            definition.mcp_servers,
+            tool_filter=definition.mcp_tool_filter,
+        )
+
+        # Resolve native tools
+        tool_resolver = ToolResolver(
+            llm_provider=llm_provider,
+            user_context=user_context,
+        )
+        native_tools = tool_resolver.resolve(definition.tools)
+
+        # Handle plugin tools if this is a plugin agent
+        plugin_tools: list[ToolProtocol] = []
+        if definition.source == AgentSource.PLUGIN and definition.plugin_path:
+            plugin_tools = await self._load_plugin_tools_for_definition(
+                definition, llm_provider
+            )
+
+        # Combine all tools
+        all_tools = plugin_tools + native_tools + mcp_tools
+
+        # Build system prompt
+        system_prompt = self._build_system_prompt_for_definition(definition, all_tools)
+
+        # Get model alias from config
+        llm_config = base_config.get("llm", {})
+        model_alias = llm_config.get("default_model", "main")
+
+        # Build context policy
+        context_policy = infra_builder.build_context_policy(base_config)
+
+        # Get agent settings
+        agent_config = base_config.get("agent", {})
+        max_steps = definition.max_steps or agent_config.get("max_steps")
+        max_parallel_tools = agent_config.get("max_parallel_tools")
+        strategy_name = definition.planning_strategy or agent_config.get("planning_strategy")
+        strategy_params = definition.planning_strategy_params or agent_config.get("planning_strategy_params")
+        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
+
+        self.logger.debug(
+            "agent_created",
+            agent_id=definition.agent_id,
+            tools_count=len(all_tools),
+            tool_names=[t.name for t in all_tools],
+            model_alias=model_alias,
+            planning_strategy=selected_strategy.name,
+        )
+
+        # Create agent
+        agent_logger = structlog.get_logger().bind(component="agent")
+        agent = Agent(
+            state_manager=state_manager,
+            llm_provider=llm_provider,
+            tools=all_tools,
+            logger=agent_logger,
+            system_prompt=system_prompt,
+            model_alias=model_alias,
+            context_policy=context_policy,
+            max_steps=max_steps,
+            max_parallel_tools=max_parallel_tools,
+            planning_strategy=selected_strategy,
+        )
+
+        # Store MCP contexts for lifecycle management
+        agent._mcp_contexts = mcp_contexts
+
+        return agent
+
+    async def _load_plugin_tools_for_definition(
+        self,
+        definition: "AgentDefinition",
+        llm_provider: LLMProviderProtocol,
+    ) -> list[ToolProtocol]:
+        """Load plugin tools for a plugin-source agent definition."""
+        if not definition.plugin_path:
+            return []
+
+        plugin_loader = PluginLoader()
+        manifest = plugin_loader.discover_plugin(definition.plugin_path)
+
+        # Load plugin tools
+        plugin_tools = plugin_loader.load_tools(
+            manifest, tool_configs=[], llm_provider=llm_provider
+        )
+
+        self.logger.debug(
+            "plugin_tools_loaded",
+            plugin_path=definition.plugin_path,
+            tools=[t.name for t in plugin_tools],
+        )
+
+        return plugin_tools
+
+    def _build_system_prompt_for_definition(
+        self,
+        definition: "AgentDefinition",
+        tools: list[ToolProtocol],
+    ) -> str:
+        """Build system prompt for an agent definition."""
+        from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
+
+        # If definition has custom prompt, use it
+        if definition.has_custom_prompt:
+            base_prompt = LEAN_KERNEL_PROMPT + "\n\n" + definition.system_prompt
+        else:
+            # Use specialist-based prompt
+            return self._assemble_lean_system_prompt(definition.specialist, tools)
+
+        # Format tools and build final prompt
+        tools_description = format_tools_description(tools) if tools else ""
+        return build_system_prompt(
+            base_prompt=base_prompt,
+            tools_description=tools_description,
+        )
+
+    # -------------------------------------------------------------------------
+    # Legacy API (maintained for backwards compatibility)
+    # -------------------------------------------------------------------------
+
     async def create_agent(
         self,
         profile: str = "dev",

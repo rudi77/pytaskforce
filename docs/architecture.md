@@ -11,6 +11,79 @@ The system is organized into four distinct layers:
 3.  **[Application Layer](architecture/section-5-components.md)**: Orchestration and Dependency Injection (Agent Factory, Executor).
 4.  **[API Layer](architecture/section-5-components.md)**: Entrypoints (Typer CLI, FastAPI REST routes).
 
+## 🔄 Unified Agent Architecture (2026-01 Refactoring)
+
+The agent definition system has been unified to provide a single, consistent model for all agent types:
+
+### Key Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| **AgentDefinition** | `core/domain/agent_definition.py` | Unified model for all agent types (custom, profile, plugin, command) |
+| **AgentRegistry** | `application/agent_registry.py` | Aggregates agents from all sources with unified CRUD API |
+| **ToolResolver** | `application/tool_resolver.py` | Resolves tool names to instances with dependency injection |
+| **InfrastructureBuilder** | `application/infrastructure_builder.py` | Builds state managers, LLM providers, and MCP tools |
+| **ConfigSchema** | `core/domain/config_schema.py` | Pydantic validation for agent and profile configs |
+
+### Agent Sources
+
+```
+AgentSource (Enum)
+├── CUSTOM   → configs/custom/*.yaml (mutable, user-created)
+├── PROFILE  → configs/*.yaml (read-only, project config)
+├── PLUGIN   → examples/, plugins/ (read-only, external)
+└── COMMAND  → .taskforce/commands/**/*.md (read-only, slash commands)
+```
+
+### Tool Configuration
+
+Tools are now configured as **string lists only** (no dict format):
+
+```yaml
+# ✅ New unified format
+tools:
+  - python
+  - file_read
+  - web_search
+
+# ❌ Legacy dict format (deprecated)
+tools:
+  - type: PythonTool
+    module: taskforce.infrastructure.tools.native.python_tool
+```
+
+### Factory API
+
+The `AgentFactory` now provides a unified `create()` method:
+
+```python
+from taskforce.core.domain.agent_definition import AgentDefinition
+from taskforce.application.factory import AgentFactory
+
+definition = AgentDefinition.from_custom(
+    agent_id="my-agent",
+    name="My Agent",
+    tools=["python", "file_read"],
+)
+
+factory = AgentFactory()
+agent = await factory.create(definition)
+```
+
+## 📊 Architecture Diagrams
+
+For visual representations of the architecture, see **[Architecture Diagrams](architecture/architecture-diagrams.md)** which includes:
+- High-Level Layer Architecture (Clean Architecture)
+- Component Dependency Diagram
+- ReAct Loop Execution Flow (Sequence Diagram)
+- Tool Ecosystem Overview
+- State Management & Persistence
+- Configuration System (including Unified Agent Model)
+- MCP Server Integration
+- API Layer Architecture
+- Complete System Overview
+- Import Rules & Layer Dependencies
+
 ## 📄 Detailed Documentation
 
 The architecture documentation is sharded into specialized sections:
