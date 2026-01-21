@@ -1,10 +1,12 @@
-"""Document extraction tools."""
+"""Document extraction tools.
 
-from document_extraction_mcp.tools.crop import crop_region
-from document_extraction_mcp.tools.layout import layout_detect
-from document_extraction_mcp.tools.ocr import ocr_extract
-from document_extraction_mcp.tools.reading_order import reading_order
-from document_extraction_mcp.tools.vlm import analyze_chart, analyze_table
+Important: Do NOT import tool modules at package import time.
+
+This package is imported as part of submodule imports like
+`document_extraction_mcp.tools.ocr`. Eager imports here would load heavy ML
+dependencies (PaddleOCR/torch/transformers/litellm) during MCP server operation
+and can cause long stalls or deadlocks.
+"""
 
 __all__ = [
     "ocr_extract",

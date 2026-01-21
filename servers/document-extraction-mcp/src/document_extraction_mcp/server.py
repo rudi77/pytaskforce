@@ -12,7 +12,10 @@ Provides tools for document understanding:
 import asyncio
 import json
 import logging
+import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -41,54 +44,95 @@ logger = structlog.get_logger(__name__)
 # Create MCP server
 server = Server("document-extraction-mcp")
 
-# Lazy-loaded engines (initialized on first use)
-_ocr_engine = None
-_layout_engine = None
-_layout_model = None
+# Debug log file for diagnosing MCP tool hangs (safe: file I/O only).
+_DEBUG_LOG_PATH = Path(__file__).with_name("mcp_tool_debug.log")
 
 
-def get_ocr_engine():
-    """Get or initialize PaddleOCR engine."""
-    global _ocr_engine
-    if _ocr_engine is None:
-        logger.info("initializing_paddleocr")
-        from paddleocr import PaddleOCR
-
-        _ocr_engine = PaddleOCR(lang="en", show_log=False)
-        logger.info("paddleocr_initialized")
-    return _ocr_engine
+def _debug_log(message: str) -> None:
+    try:
+        _DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8", errors="ignore") as f:
+            f.write(message + "\n")
+    except Exception:
+        # Never let debugging interfere with tool execution
+        pass
 
 
-def get_layout_engine():
-    """Get or initialize PaddleOCR LayoutDetection engine."""
-    global _layout_engine
-    if _layout_engine is None:
-        logger.info("initializing_layout_detection")
-        from paddleocr import LayoutDetection
+def _run_tool_subprocess(
+    tool_module: str,
+    tool_func: str,
+    args: list[str],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Run a tool function in a fresh subprocess.
 
-        _layout_engine = LayoutDetection()
-        logger.info("layout_detection_initialized")
-    return _layout_engine
+    This avoids rare but real deadlocks when initializing heavy ML stacks inside
+    a long-running stdio MCP server process on Windows.
+    """
+    code = (
+        "import json, sys\n"
+        f"from {tool_module} import {tool_func}\n"
+        f"result = {tool_func}(*sys.argv[1:])\n"
+        "print(json.dumps(result))\n"
+    )
+    env = os.environ.copy()
+    # Reduce noisy progress output and avoid network checks where possible.
+    env.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    env.setdefault("TQDM_DISABLE", "1")
+    env.setdefault("DISABLE_MODEL_SOURCE_CHECK", "True")
 
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", code, *args],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            env=env,
+            timeout=timeout_seconds,
+            close_fds=True,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "error": (
+                "Tool subprocess timed out after "
+                f"{timeout_seconds:.0f}s"
+            )
+        }
 
-def get_layout_model():
-    """Get or initialize LayoutReader model for reading order."""
-    global _layout_model
-    if _layout_model is None:
-        logger.info("initializing_layoutreader")
-        from transformers import LayoutLMv3ForTokenClassification
+    stdout = (proc.stdout or "").strip()
+    stderr = ""
 
-        model_slug = "hantian/layoutreader"
-        _layout_model = LayoutLMv3ForTokenClassification.from_pretrained(model_slug)
-        logger.info("layoutreader_initialized")
-    return _layout_model
+    if proc.returncode != 0:
+        return {
+            "error": "Tool subprocess failed",
+            "returncode": proc.returncode,
+            "stderr": stderr[:2000],
+            "stdout": stdout[:2000],
+        }
+
+    try:
+        return json.loads(stdout)
+    except Exception:
+        return {
+            "error": "Tool subprocess returned non-JSON output",
+            "stdout": stdout[:2000],
+            "stderr": stderr[:2000],
+        }
+
+# Note: We intentionally avoid caching heavy ML engines in-process here.
+# Tools are executed in fresh subprocesses via `_run_tool_subprocess` to avoid
+# Windows deadlocks and stderr backpressure issues in long-lived stdio servers.
 
 
 # Tool definitions
 TOOLS = [
     Tool(
         name="ocr_extract",
-        description="Extract text from a document image using OCR. Returns text regions with bounding boxes and confidence scores.",
+        description=(
+            "Extract text from a document image using OCR. Returns text regions "
+            "with bounding boxes and confidence scores."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -102,7 +146,10 @@ TOOLS = [
     ),
     Tool(
         name="layout_detect",
-        description="Detect document layout regions (text, table, chart, figure, title). Returns region types with bounding boxes.",
+        description=(
+            "Detect document layout regions (text, table, chart, figure, title). "
+            "Returns region types with bounding boxes."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -248,30 +295,76 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
 
 async def handle_ocr_extract(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle ocr_extract tool call."""
-    from document_extraction_mcp.tools.ocr import ocr_extract
-
     image_path = arguments.get("image_path")
     if not image_path:
         return {"error": "Missing required parameter: image_path"}
 
-    return await asyncio.to_thread(ocr_extract, image_path)
+    start_time = time.time()
+    logger.info("tool_started", tool="ocr_extract", image_path=image_path)
+    _debug_log(f"{time.time():.3f} ocr_extract START path={image_path}")
+    
+    try:
+        # Run OCR in a fresh subprocess to avoid Windows deadlocks in long-lived
+        # stdio MCP server processes.
+        result = _run_tool_subprocess(
+            tool_module="document_extraction_mcp.tools.ocr",
+            tool_func="ocr_extract",
+            args=[image_path],
+            timeout_seconds=300.0,
+        )
+        duration = time.time() - start_time
+        logger.info(
+            "tool_finished",
+            tool="ocr_extract",
+            duration_seconds=duration,
+            success="error" not in result,
+        )
+        _debug_log(
+            f"{time.time():.3f} ocr_extract DONE duration={duration:.3f}"
+        )
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.exception(
+            "tool_error",
+            tool="ocr_extract",
+            duration_seconds=duration,
+            error=str(e),
+        )
+        _debug_log(
+            f"{time.time():.3f} ocr_extract ERROR duration={duration:.3f}"
+        )
+        return {"error": f"OCR extraction failed: {str(e)}"}
 
 
 async def handle_layout_detect(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle layout_detect tool call."""
-    from document_extraction_mcp.tools.layout import layout_detect
-
     image_path = arguments.get("image_path")
     if not image_path:
         return {"error": "Missing required parameter: image_path"}
 
-    return await asyncio.to_thread(layout_detect, image_path)
+    start_time = time.time()
+    logger.info("tool_started", tool="layout_detect", image_path=image_path)
+    
+    try:
+        # Same approach as OCR: run in subprocess to avoid deadlocks.
+        result = _run_tool_subprocess(
+            tool_module="document_extraction_mcp.tools.layout",
+            tool_func="layout_detect",
+            args=[image_path],
+            timeout_seconds=300.0,
+        )
+        duration = time.time() - start_time
+        logger.info("tool_finished", tool="layout_detect", duration_seconds=duration, success="error" not in result)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.exception("tool_error", tool="layout_detect", duration_seconds=duration, error=str(e))
+        return {"error": f"Layout detection failed: {str(e)}"}
 
 
 async def handle_reading_order(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle reading_order tool call."""
-    from document_extraction_mcp.tools.reading_order import reading_order
-
     regions = arguments.get("regions")
     if not regions:
         return {"error": "Missing required parameter: regions"}
@@ -279,7 +372,29 @@ async def handle_reading_order(arguments: dict[str, Any]) -> dict[str, Any]:
     image_width = arguments.get("image_width")
     image_height = arguments.get("image_height")
 
-    return await asyncio.to_thread(reading_order, regions, image_width, image_height)
+    start_time = time.time()
+    logger.info("tool_started", tool="reading_order", region_count=len(regions) if regions else 0)
+    
+    try:
+        # Run reading_order in subprocess to avoid torch/transformers deadlocks
+        # and avoid large stderr output blocking the MCP client.
+        result = _run_tool_subprocess(
+            tool_module="document_extraction_mcp.tools.reading_order",
+            tool_func="reading_order_from_json",
+            args=[
+                json.dumps(regions),
+                json.dumps(image_width),
+                json.dumps(image_height),
+            ],
+            timeout_seconds=600.0,
+        )
+        duration = time.time() - start_time
+        logger.info("tool_finished", tool="reading_order", duration_seconds=duration, success="error" not in result)
+        return result
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.exception("tool_error", tool="reading_order", duration_seconds=duration, error=str(e))
+        return {"error": f"Reading order detection failed: {str(e)}"}
 
 
 async def handle_crop_region(arguments: dict[str, Any]) -> dict[str, Any]:

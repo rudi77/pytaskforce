@@ -25,6 +25,10 @@ mcp_servers:
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       # Optional: Override VLM model (default: gpt-4o-mini)
       # VLM_MODEL: "gpt-4o"
+      # Suppress progress bars and download messages to prevent MCP protocol corruption
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TQDM_DISABLE: "1"
+      DISABLE_MODEL_SOURCE_CHECK: "True"
     description: "Document extraction tools (OCR, Layout, Reading Order, VLM Analysis)"
 
 # Tools are provided by the MCP server:

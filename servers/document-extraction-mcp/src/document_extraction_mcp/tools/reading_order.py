@@ -1,6 +1,81 @@
-"""Reading order tool using LayoutReader (LayoutLMv3)."""
+"""Reading order tool using LayoutReader (LayoutLMv3).
 
+Helper functions adapted from: https://github.com/ppaanngggg/layoutreader
+"""
+
+import json
 from typing import Any
+
+import torch
+
+from document_extraction_mcp.tools._stdio_silence import suppress_stdout
+
+
+def boxes2inputs(boxes: list[list[int]]) -> dict[str, Any]:
+    """Convert bounding boxes to model input format.
+
+    Args:
+        boxes: List of bounding boxes in [left, top, right, bottom] format (0-1000 normalized)
+
+    Returns:
+        Dict with bbox tensor for model input
+    """
+    return {"bbox": torch.tensor(boxes).unsqueeze(0)}
+
+
+def prepare_inputs(inputs: dict[str, Any], model: Any) -> dict[str, Any]:
+    """Prepare inputs for the LayoutLMv3 model.
+
+    Args:
+        inputs: Dict with bbox tensor
+        model: The LayoutLMv3ForTokenClassification model
+
+    Returns:
+        Dict with prepared tensors for model inference
+    """
+    bbox = inputs["bbox"]
+    batch_size, seq_len, _ = bbox.shape
+
+    # Create input_ids (all zeros, as we don't use text tokens)
+    input_ids = torch.zeros(batch_size, seq_len, dtype=torch.long)
+
+    # Create attention mask (all ones)
+    attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "bbox": bbox,
+    }
+
+
+def parse_logits(logits: torch.Tensor, num_boxes: int) -> list[int]:
+    """Parse model logits to reading order positions.
+
+    The model predicts a position for each bounding box.
+    We use argmax to get the most likely position for each box.
+
+    Args:
+        logits: Model output logits [seq_len, num_classes]
+        num_boxes: Number of bounding boxes
+
+    Returns:
+        List of reading order positions (0-indexed)
+    """
+    # Get predictions for each box
+    predictions = logits[:num_boxes].argmax(dim=-1).tolist()
+
+    # Handle duplicate positions by creating a unique ordering
+    # Sort boxes by their predicted position, breaking ties by original index
+    indexed_preds = [(pred, i) for i, pred in enumerate(predictions)]
+    indexed_preds.sort(key=lambda x: (x[0], x[1]))
+
+    # Assign sequential positions
+    reading_order = [0] * num_boxes
+    for position, (_, original_idx) in enumerate(indexed_preds):
+        reading_order[original_idx] = position
+
+    return reading_order
 
 
 def reading_order(
@@ -22,8 +97,6 @@ def reading_order(
         return {"error": "No regions provided"}
 
     try:
-        # Lazy imports
-        from layoutreader.v3.helpers import boxes2inputs, parse_logits, prepare_inputs
         from transformers import LayoutLMv3ForTokenClassification
 
         # Estimate image dimensions from bounding boxes if not provided
@@ -51,20 +124,30 @@ def reading_order(
                 top = int((y1 / image_height) * 1000)
                 right = int((x2 / image_width) * 1000)
                 bottom = int((y2 / image_height) * 1000)
+                # Clamp to valid range
+                left = max(0, min(1000, left))
+                top = max(0, min(1000, top))
+                right = max(0, min(1000, right))
+                bottom = max(0, min(1000, bottom))
                 boxes.append([left, top, right, bottom])
             else:
                 boxes.append([0, 0, 0, 0])
 
-        # Load LayoutReader model
+        # Load LayoutReader model from Hugging Face
+        # Suppress stdout during model download/loading to prevent MCP protocol corruption
         model_slug = "hantian/layoutreader"
-        layout_model = LayoutLMv3ForTokenClassification.from_pretrained(model_slug)
+        with suppress_stdout():
+            layout_model = LayoutLMv3ForTokenClassification.from_pretrained(model_slug)
+        layout_model.eval()
 
         # Prepare inputs for the model
         inputs = boxes2inputs(boxes)
         inputs = prepare_inputs(inputs, layout_model)
 
         # Run inference
-        logits = layout_model(**inputs).logits.cpu().squeeze(0)
+        with torch.no_grad():
+            outputs = layout_model(**inputs)
+            logits = outputs.logits.squeeze(0)
 
         # Parse the model's outputs to get reading order
         reading_positions = parse_logits(logits, len(boxes))
@@ -99,13 +182,33 @@ def reading_order(
 
     except ImportError as e:
         missing = str(e)
-        if "layoutreader" in missing.lower():
-            return {
-                "error": "LayoutReader not installed. Run: pip install git+https://github.com/ppaanngggg/layoutreader.git"
-            }
-        elif "transformers" in missing.lower():
+        if "transformers" in missing.lower():
             return {"error": "Transformers not installed. Run: pip install transformers torch"}
         else:
             return {"error": f"Missing dependency: {missing}"}
     except Exception as e:
         return {"error": f"Reading order detection failed: {str(e)}"}
+
+
+def reading_order_from_json(
+    regions_json: str,
+    image_width_json: str | None = None,
+    image_height_json: str | None = None,
+) -> dict[str, Any]:
+    """Subprocess-friendly wrapper for `reading_order`.
+
+    Accepts JSON-encoded inputs, so the MCP server can run this function in a
+    fresh subprocess without worrying about complex argument marshaling.
+    """
+    try:
+        regions = json.loads(regions_json)
+        image_width = (
+            json.loads(image_width_json) if image_width_json is not None else None
+        )
+        image_height = (
+            json.loads(image_height_json) if image_height_json is not None else None
+        )
+    except Exception as e:
+        return {"error": f"Invalid JSON inputs: {str(e)}"}
+
+    return reading_order(regions, image_width=image_width, image_height=image_height)

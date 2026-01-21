@@ -1,11 +1,14 @@
 """Image cropping tool."""
 
 import base64
+import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
+
+from document_extraction_mcp.tools.pdf_utils import ensure_image
 
 
 def crop_region(
@@ -13,10 +16,10 @@ def crop_region(
     bbox: list[float],
     padding: int = 10,
 ) -> dict[str, Any]:
-    """Crop a region from an image and return as base64.
+    """Crop a region from an image or PDF and return as base64.
 
     Args:
-        image_path: Path to the input image file
+        image_path: Path to the input image or PDF file
         bbox: Bounding box as [x1, y1, x2, y2]
         padding: Padding around the region in pixels
 
@@ -25,10 +28,16 @@ def crop_region(
     """
     path = Path(image_path)
     if not path.exists():
-        return {"error": f"Image file not found: {image_path}"}
+        return {"error": f"File not found: {image_path}"}
 
+    temp_image = None
     try:
-        image = Image.open(path)
+        # Convert PDF to image if necessary
+        actual_path, is_temp = ensure_image(image_path)
+        if is_temp:
+            temp_image = actual_path
+
+        image = Image.open(actual_path)
 
         # Unpack bounding box
         x1, y1, x2, y2 = bbox
@@ -58,3 +67,10 @@ def crop_region(
 
     except Exception as e:
         return {"error": f"Failed to crop image: {str(e)}"}
+    finally:
+        # Clean up temporary file (with retry for Windows file locking)
+        if temp_image and os.path.exists(temp_image):
+            try:
+                os.unlink(temp_image)
+            except PermissionError:
+                pass  # File still in use, will be cleaned up by OS later

@@ -1,44 +1,80 @@
 """Layout detection tool using PaddleOCR LayoutDetection."""
 
+import os
 from pathlib import Path
 from typing import Any
+
+from document_extraction_mcp.tools._stdio_silence import suppress_stdout
+from document_extraction_mcp.tools.pdf_utils import ensure_image
+
+# Cached layout engine (initialized on first use)
+_layout_engine = None
+
+
+def _get_layout_engine():
+    """Get or initialize cached PPStructure engine."""
+    global _layout_engine
+    if _layout_engine is None:
+        # Suppress stdout during initialization to prevent MCP protocol corruption
+        with suppress_stdout():
+            from paddleocr import PPStructure
+
+            _layout_engine = PPStructure(show_log=False, image_orientation=False)
+    return _layout_engine
 
 
 def layout_detect(image_path: str) -> dict[str, Any]:
     """Detect document layout regions using PaddleOCR LayoutDetection.
 
     Args:
-        image_path: Path to the input image file
+        image_path: Path to the input image or PDF file
 
     Returns:
         Dict with layout regions containing type, bounding box, and confidence
     """
     path = Path(image_path)
     if not path.exists():
-        return {"error": f"Image file not found: {image_path}"}
+        return {"error": f"File not found: {image_path}"}
 
+    temp_image = None
     try:
-        # Lazy import to avoid loading PaddleOCR until needed
-        from paddleocr import LayoutDetection
+        # Convert PDF to image if necessary
+        actual_path, is_temp = ensure_image(image_path)
+        if is_temp:
+            temp_image = actual_path
 
-        # Initialize layout detection engine
-        layout_engine = LayoutDetection()
+        # Get cached layout engine (initialized once)
+        layout_engine = _get_layout_engine()
 
-        # Run layout detection
-        result = layout_engine.predict(str(path))
+        # Run layout detection with stdout suppressed to prevent MCP protocol corruption
+        # result is a list of elements, one list per page. Since we pass one image, result[0] is NOT the page,
+        # PPStructure returns a list of regions directly for the image.
+        with suppress_stdout():
+            result = layout_engine(actual_path)
 
         # Extract regions from result
-        layout_data = result[0]
-        boxes = layout_data.get("boxes", [])
-
+        # result structure: [{'type': 'Text', 'bbox': [x1, y1, x2, y2], 'res': ...}, ...]
         regions = []
-        for i, box in enumerate(boxes):
+        for i, item in enumerate(result):
+            bbox = item.get("bbox", [0, 0, 0, 0])
+            # Ensure bbox is flat [x1, y1, x2, y2]
+            if len(bbox) == 4:
+                bbox_list = [int(x) for x in bbox]
+            else:
+                bbox_list = [0, 0, 0, 0]
+
             region = {
                 "region_id": i,
-                "region_type": box.get("label", "unknown"),
-                "confidence": float(box.get("score", 0.0)),
-                "bbox": [int(x) for x in box.get("coordinate", [0, 0, 0, 0])],
+                "region_type": item.get("type", "unknown"),
+                "confidence": float(item.get("score", 0.0)) if "score" in item else 0.0,
+                "bbox": bbox_list,
             }
+            # PPStructure usually returns score in 'res' for OCR, but for layout detection itself,
+            # the 'score' might be on the item or implicit.
+            # If 'score' is missing, we default to 0.0 or check 'res'.
+            if "score" in item:
+                 region["confidence"] = float(item["score"])
+            
             regions.append(region)
 
         # Sort by confidence (highest first)
@@ -57,7 +93,14 @@ def layout_detect(image_path: str) -> dict[str, Any]:
             "regions": regions,
         }
 
-    except ImportError:
-        return {"error": "PaddleOCR not installed. Run: pip install paddleocr paddlepaddle"}
+    except ImportError as e:
+        return {"error": f"PaddleOCR import failed: {str(e)}. Run: pip install paddleocr paddlepaddle"}
     except Exception as e:
         return {"error": f"Layout detection failed: {str(e)}"}
+    finally:
+        # Clean up temporary file (with retry for Windows file locking)
+        if temp_image and os.path.exists(temp_image):
+            try:
+                os.unlink(temp_image)
+            except PermissionError:
+                pass  # File still in use, will be cleaned up by OS later

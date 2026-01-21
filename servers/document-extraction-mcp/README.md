@@ -16,19 +16,23 @@ A standalone MCP (Model Context Protocol) server providing document extraction t
 ## Installation
 
 This server has its own isolated virtual environment with heavy ML dependencies (~4GB total).
+**Requires CUDA 12.1** for GPU acceleration.
 
 ```bash
-# Navigate to server directory
 cd servers/document-extraction-mcp
 
-# Install dependencies (uses uv)
+# Step 1: Install base dependencies (includes paddlepaddle-gpu)
 uv sync
 
-# This installs:
-# - PaddleOCR + PaddlePaddle (~1.2GB)
-# - PyTorch + Transformers (~2GB)
-# - Pillow, OpenCV, NumPy
-# - LiteLLM for VLM calls
+# Step 2: Install PyTorch with CUDA 12.1
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+### Verify GPU Support
+
+```bash
+uv run python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+uv run python -c "import paddle; print(f'PaddlePaddle GPU: {paddle.device.is_compiled_with_cuda()}')"
 ```
 
 ### First Run (Model Download)
