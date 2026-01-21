@@ -86,12 +86,59 @@ def layout_detect(image_path: str) -> dict[str, Any]:
             rtype = r["region_type"]
             type_counts[rtype] = type_counts.get(rtype, 0) + 1
 
-        return {
+        # Save visualization artifact
+        # Use original image_path for artifacts dir, but actual_path for loading image
+        visualization_path = None
+        visualization_error = None
+        try:
+            from document_extraction_mcp.tools.visualization import (
+                draw_bboxes_on_image,
+                get_artifacts_dir,
+            )
+            
+            artifacts_dir = get_artifacts_dir(image_path)
+            image_name = Path(image_path).stem
+            output_path = str(artifacts_dir / f"{image_name}_layout.png")
+            
+            # Color mapping for different region types
+            type_colors = {
+                "Text": (0, 255, 0),      # Green
+                "Table": (255, 0, 0),     # Red
+                "Figure": (0, 0, 255),    # Blue
+                "Chart": (255, 165, 0),   # Orange
+                "Title": (255, 0, 255),   # Magenta
+                "List": (0, 255, 255),    # Cyan
+            }
+            
+            visualization_path = draw_bboxes_on_image(
+                image_path=actual_path,
+                regions=regions,
+                output_path=output_path,
+                bbox_key="bbox",
+                label_key="region_type",
+                colors=type_colors,
+                default_color=(128, 128, 128),
+            )
+        except Exception as e:
+            # Store error to include in response
+            visualization_error = str(e)
+
+        result = {
             "success": True,
             "region_count": len(regions),
+            "image_path": image_path,  # Include original path for downstream tools
             "type_summary": type_counts,
             "regions": regions,
         }
+        
+        if visualization_path:
+            from document_extraction_mcp.tools.visualization import get_artifacts_dir
+            result["visualization_path"] = visualization_path
+            result["artifacts_dir"] = str(get_artifacts_dir(image_path))
+        elif visualization_error:
+            result["visualization_error"] = visualization_error
+
+        return result
 
     except ImportError as e:
         return {"error": f"PaddleOCR import failed: {str(e)}. Run: pip install paddleocr paddlepaddle"}

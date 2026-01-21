@@ -163,7 +163,12 @@ TOOLS = [
     ),
     Tool(
         name="reading_order",
-        description="Determine the reading order of OCR regions using LayoutLMv3. Input is OCR regions with bounding boxes.",
+        description=(
+            "Determine the reading order of OCR regions using LayoutLMv3. "
+            "Input is OCR regions with bounding boxes. "
+            "IMPORTANT: Always pass the image_path parameter (same path used for ocr_extract) "
+            "to enable visualization artifact generation."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -183,13 +188,17 @@ TOOLS = [
                         "required": ["text", "bbox"],
                     },
                 },
+                "image_path": {
+                    "type": "string",
+                    "description": "Path to the source image/PDF (same as used for ocr_extract). Required for visualization artifacts.",
+                },
                 "image_width": {
                     "type": "number",
-                    "description": "Width of the source image in pixels",
+                    "description": "Width of the source image in pixels (from ocr_extract result)",
                 },
                 "image_height": {
                     "type": "number",
-                    "description": "Height of the source image in pixels",
+                    "description": "Height of the source image in pixels (from ocr_extract result)",
                 },
             },
             "required": ["regions"],
@@ -369,6 +378,7 @@ async def handle_reading_order(arguments: dict[str, Any]) -> dict[str, Any]:
     if not regions:
         return {"error": "Missing required parameter: regions"}
 
+    image_path = arguments.get("image_path")
     image_width = arguments.get("image_width")
     image_height = arguments.get("image_height")
 
@@ -383,6 +393,7 @@ async def handle_reading_order(arguments: dict[str, Any]) -> dict[str, Any]:
             tool_func="reading_order_from_json",
             args=[
                 json.dumps(regions),
+                json.dumps(image_path),
                 json.dumps(image_width),
                 json.dumps(image_height),
             ],

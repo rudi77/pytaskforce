@@ -4,11 +4,13 @@ Helper functions adapted from: https://github.com/ppaanngggg/layoutreader
 """
 
 import json
+from pathlib import Path
 from typing import Any
 
 import torch
 
 from document_extraction_mcp.tools._stdio_silence import suppress_stdout
+from document_extraction_mcp.tools.visualization import visualize_reading_order
 
 
 def boxes2inputs(boxes: list[list[int]]) -> dict[str, Any]:
@@ -80,6 +82,7 @@ def parse_logits(logits: torch.Tensor, num_boxes: int) -> list[int]:
 
 def reading_order(
     regions: list[dict[str, Any]],
+    image_path: str | None = None,
     image_width: float | None = None,
     image_height: float | None = None,
 ) -> dict[str, Any]:
@@ -172,13 +175,50 @@ def reading_order(
         # Extract ordered text
         ordered_text = [r["text"] for r in ordered_regions]
 
-        return {
+        result = {
             "success": True,
             "region_count": len(regions),
             "reading_order": reading_positions,
             "ordered_regions": ordered_regions,
             "ordered_text": ordered_text,
         }
+        
+        # Save visualization artifact if image path is provided
+        if image_path and Path(image_path).exists():
+            try:
+                from document_extraction_mcp.tools.visualization import (
+                    draw_bboxes_on_image,
+                    get_artifacts_dir,
+                )
+                
+                artifacts_dir = get_artifacts_dir(image_path)
+                image_name = Path(image_path).stem
+                output_path = str(artifacts_dir / f"{image_name}_reading_order.png")
+                
+                # Create regions with reading position as label
+                regions_with_labels = []
+                for region in ordered_regions:
+                    reading_pos = region.get("reading_position", 0)
+                    regions_with_labels.append({
+                        **region,
+                        "_label": f"#{reading_pos}",
+                    })
+                
+                visualization_path = draw_bboxes_on_image(
+                    image_path=image_path,
+                    regions=regions_with_labels,
+                    output_path=output_path,
+                    bbox_key="bbox",
+                    label_key="_label",
+                    default_color=(0, 0, 255),  # Blue
+                )
+                result["visualization_path"] = visualization_path
+                result["artifacts_dir"] = str(artifacts_dir)
+            except Exception as e:
+                # Store error to include in response
+                result["visualization_error"] = str(e)
+
+        return result
 
     except ImportError as e:
         missing = str(e)
@@ -192,6 +232,7 @@ def reading_order(
 
 def reading_order_from_json(
     regions_json: str,
+    image_path_json: str | None = None,
     image_width_json: str | None = None,
     image_height_json: str | None = None,
 ) -> dict[str, Any]:
@@ -202,6 +243,9 @@ def reading_order_from_json(
     """
     try:
         regions = json.loads(regions_json)
+        image_path = (
+            json.loads(image_path_json) if image_path_json is not None else None
+        )
         image_width = (
             json.loads(image_width_json) if image_width_json is not None else None
         )
@@ -211,4 +255,9 @@ def reading_order_from_json(
     except Exception as e:
         return {"error": f"Invalid JSON inputs: {str(e)}"}
 
-    return reading_order(regions, image_width=image_width, image_height=image_height)
+    return reading_order(
+        regions,
+        image_path=image_path,
+        image_width=image_width,
+        image_height=image_height,
+    )

@@ -8,6 +8,7 @@ import numpy as np
 
 from document_extraction_mcp.tools._stdio_silence import suppress_stdout
 from document_extraction_mcp.tools.pdf_utils import ensure_image
+from document_extraction_mcp.tools.visualization import visualize_ocr_regions
 
 # Debug log file used to pinpoint hangs in MCP context.
 _DEBUG_LOG_PATH = Path(__file__).with_name("mcp_tool_debug.log")
@@ -137,13 +138,61 @@ def ocr_extract(image_path: str) -> dict[str, Any]:
                 }
             )
 
-        return {
+        # Save visualization artifact
+        # Use original image_path for artifacts dir, but actual_path for loading image
+        visualization_path = None
+        visualization_error = None
+        try:
+            from document_extraction_mcp.tools.visualization import (
+                draw_bboxes_on_image,
+                get_artifacts_dir,
+            )
+            
+            artifacts_dir = get_artifacts_dir(image_path)
+            image_name = Path(image_path).stem
+            output_path = str(artifacts_dir / f"{image_name}_ocr.png")
+            
+            # Create regions with text snippets as labels (truncated)
+            regions_with_labels = []
+            for i, region in enumerate(regions):
+                text = region.get("text", "")
+                # Truncate long text for display
+                if len(text) > 30:
+                    text = text[:27] + "..."
+                regions_with_labels.append({
+                    **region,
+                    "_label": f"{i}: {text}" if text else str(i),
+                })
+            
+            visualization_path = draw_bboxes_on_image(
+                image_path=actual_path,
+                regions=regions_with_labels,
+                output_path=output_path,
+                bbox_key="bbox",
+                label_key="_label",
+                default_color=(0, 255, 0),  # Green
+            )
+        except Exception as e:
+            # Store error to include in response
+            visualization_error = str(e)
+
+        result = {
             "success": True,
             "region_count": len(regions),
+            "image_path": image_path,  # Include original path for downstream tools
             "image_width": image_width,
             "image_height": image_height,
             "regions": regions,
         }
+        
+        if visualization_path:
+            from document_extraction_mcp.tools.visualization import get_artifacts_dir
+            result["visualization_path"] = visualization_path
+            result["artifacts_dir"] = str(get_artifacts_dir(image_path))
+        elif visualization_error:
+            result["visualization_error"] = visualization_error
+
+        return result
 
     except ImportError:
         return {
