@@ -13,10 +13,14 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 
 ### 🏗 Architecture & Design
 - **[Architecture Overview](architecture.md)**: The core design principles and layer structure.
+- **[Plugin System](architecture/plugin-system.md)**: Entry-Point-basiertes Erweiterungssystem.
 - **[Configuration Profiles](profiles.md)**: Managing dev, staging, and production settings.
 - **[ADRs (Architecture Decision Records)](adr/index.md)**: Why we made certain technical choices.
 
-### 🏢 Enterprise Features
+### 🏢 Enterprise Features (Optional)
+> Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
+> Installation: `pip install taskforce-enterprise` - Features werden automatisch aktiviert.
+
 - **[Enterprise Features](features/enterprise.md)**: Multi-tenant identity, RBAC, compliance, and governance.
 - **[Long-Term Memory](features/longterm-memory.md)**: Persistent knowledge graph memory for agents.
 

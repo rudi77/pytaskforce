@@ -1,6 +1,32 @@
 # Enterprise Features
 
-This document describes the enterprise-ready capabilities added to PyTaskforce for multi-tenant deployments, compliance, and governance.
+This document describes the enterprise-ready capabilities for PyTaskforce for multi-tenant deployments, compliance, and governance.
+
+> **Wichtig**: Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
+
+## Installation
+
+```bash
+# Base-Framework (Open Source, MIT License)
+pip install taskforce
+
+# Enterprise-Features (Commercial License)
+pip install taskforce-enterprise
+```
+
+Nach Installation von `taskforce-enterprise` werden alle Enterprise-Features **automatisch aktiviert** via Entry-Point-basiertem Plugin-System. Keine Code-Änderungen erforderlich.
+
+### Prüfen ob Enterprise aktiv ist
+
+```python
+from taskforce.application.plugin_discovery import is_enterprise_available
+
+if is_enterprise_available():
+    print("Enterprise-Features verfügbar")
+    # Admin-API unter /api/v1/admin/*
+    # Auth-Middleware aktiv
+    # Policy Engine verfügbar
+```
 
 ## Overview
 
@@ -21,23 +47,26 @@ PyTaskforce Enterprise provides:
 Every request carries tenant and user context:
 
 ```python
-from taskforce.core.domain.identity import TenantContext, UserContext
+# Import aus taskforce-enterprise Paket
+from taskforce_enterprise.core.interfaces.identity import TenantContext, UserContext
 
 # Tenant context
 tenant = TenantContext(
     tenant_id="acme-corp",
     name="Acme Corporation",
-    tier="enterprise",
-    settings={"max_agents": 100}
+    settings={"max_agents": 100, "features": ["enterprise"]}
 )
 
-# User context
+# User context (mit Permission Enum)
+from taskforce_enterprise.core.interfaces.identity import Permission, get_permissions_for_roles
+
 user = UserContext(
     user_id="user-123",
     tenant_id="acme-corp",
+    username="alice",
     email="alice@acme.com",
     roles={"admin", "agent_designer"},
-    permissions={"agent:read", "agent:write", "tenant:manage"}
+    permissions=get_permissions_for_roles({"admin", "agent_designer"})
 )
 ```
 
@@ -48,7 +77,8 @@ Two authentication methods are supported:
 #### JWT/OAuth2 Authentication
 
 ```python
-from taskforce.infrastructure.auth import JWTProvider
+# JWT Authentication (taskforce-enterprise)
+from taskforce_enterprise.infrastructure.auth.jwt_provider import JWTProvider
 
 provider = JWTProvider(
     secret_key="your-secret",
@@ -66,7 +96,8 @@ user = provider.verify_token(token)
 #### API Key Authentication
 
 ```python
-from taskforce.infrastructure.auth import APIKeyProvider
+# API Key Authentication (taskforce-enterprise)
+from taskforce_enterprise.infrastructure.auth.api_key_provider import APIKeyProvider
 
 provider = APIKeyProvider()
 
@@ -86,17 +117,25 @@ context = provider.verify_key(api_key)
 The policy engine enforces role-based access control:
 
 ```python
-from taskforce.application.policy import PolicyEngine, Permission
+# RBAC Policy Engine (taskforce-enterprise)
+from taskforce_enterprise.application.policy import PolicyEngine, PolicyConfig
+from taskforce_enterprise.core.interfaces.identity import Permission, ResourceType
 
-engine = PolicyEngine()
+engine = PolicyEngine(PolicyConfig(enabled=True))
 
-# Check permission
-if engine.check_permission(user_context, Permission.AGENT_EXECUTE):
+# Evaluate permission
+decision = await engine.evaluate(
+    user=user_context,
+    action=Permission.AGENT_EXECUTE,
+    resource_type=ResourceType.AGENT,
+)
+
+if decision.allowed:
     # User can execute agents
     pass
 
-# Use decorator for automatic enforcement
-from taskforce.application.policy.decorators import require_permission
+# Use decorator for automatic enforcement (in FastAPI routes)
+from taskforce_enterprise.api.middleware.auth import require_permission
 
 @require_permission(Permission.AGENT_WRITE)
 async def create_agent(request, user: UserContext):

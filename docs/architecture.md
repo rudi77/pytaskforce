@@ -84,19 +84,43 @@ For visual representations of the architecture, see **[Architecture Diagrams](ar
 - Complete System Overview
 - Import Rules & Layer Dependencies
 
-## Enterprise Capabilities (2026-01)
+## Plugin System (2026-01)
 
-PyTaskforce includes enterprise-ready features for multi-tenant deployments:
+Taskforce verwendet ein Entry-Point-basiertes Plugin-System für Erweiterbarkeit:
 
-| Capability | Components | Documentation |
-|------------|------------|---------------|
-| **Identity & RBAC** | TenantContext, UserContext, PolicyEngine | [Enterprise Features](features/enterprise.md#1-identity-tenancy--rbac) |
-| **Evidence Tracking** | Evidence, RAGCitations | [Enterprise Features](features/enterprise.md#2-evidence--source-tracking) |
-| **Memory Governance** | Encryption, MemoryACL | [Enterprise Features](features/enterprise.md#3-secure-memory-governance) |
-| **Operations** | Metrics, Usage, Cost, Compliance | [Enterprise Features](features/enterprise.md#4-enterprise-operations) |
-| **Productization** | AgentCatalog, ApprovalWorkflows | [Enterprise Features](features/enterprise.md#6-agent-catalog--versioning) |
+```
+taskforce (Base)              taskforce-enterprise (Optional)
+      │                                │
+      │  ◄──── Entry Points ────────  │
+      │                                │
+      ▼                                ▼
+┌─────────────────┐          ┌─────────────────┐
+│ Plugin Discovery│  ◄────── │ EnterprisePlugin│
+│ Plugin Registry │          │ Auth Middleware │
+│ Factory Extens. │          │ Admin Routes    │
+└─────────────────┘          └─────────────────┘
+```
 
-See **[ADR-003: Enterprise Transformation](adr/adr-003-enterprise-transformation.md)** for architectural decisions.
+Siehe **[Plugin System Architecture](architecture/plugin-system.md)** für Details.
+
+## Enterprise Capabilities (Optional)
+
+> **Hinweis**: Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
+> Nach Installation werden Features automatisch via Plugin-Discovery aktiviert.
+
+```bash
+pip install taskforce-enterprise
+```
+
+| Capability | Components | Paket |
+|------------|------------|-------|
+| **Identity & RBAC** | TenantContext, UserContext, PolicyEngine | `taskforce-enterprise` |
+| **Admin API** | /api/v1/admin/users, roles, tenants | `taskforce-enterprise` |
+| **Evidence Tracking** | Evidence, RAGCitations | `taskforce-enterprise` |
+| **Memory Governance** | Encryption, MemoryACL | `taskforce-enterprise` |
+| **Operations** | Metrics, Usage, Cost, Compliance | `taskforce-enterprise` |
+
+Siehe **[Enterprise Features](features/enterprise.md)** und **[ADR-003](adr/adr-003-enterprise-transformation.md)** für Details.
 
 ## 📄 Detailed Documentation
 

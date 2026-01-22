@@ -59,6 +59,40 @@ from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
 from taskforce.application.plugin_loader import PluginLoader, PluginManifest
 
 
+# Type for factory extension callbacks
+FactoryExtensionCallback = Any  # Callable[[AgentFactory, dict, Agent], Agent]
+
+# Global registry for factory extensions from plugins
+_factory_extensions: list[FactoryExtensionCallback] = []
+
+
+def register_factory_extension(extension: FactoryExtensionCallback) -> None:
+    """Register a factory extension callback.
+
+    Extensions are called after agent creation to allow plugins to
+    modify or enhance agents.
+
+    Args:
+        extension: Callback function(factory, config, agent) -> agent
+    """
+    _factory_extensions.append(extension)
+
+
+def unregister_factory_extension(extension: FactoryExtensionCallback) -> None:
+    """Unregister a factory extension callback.
+
+    Args:
+        extension: The extension callback to remove
+    """
+    if extension in _factory_extensions:
+        _factory_extensions.remove(extension)
+
+
+def clear_factory_extensions() -> None:
+    """Clear all registered factory extensions."""
+    _factory_extensions.clear()
+
+
 class AgentFactory:
     """
     Factory for creating Agent instances with dependency injection.
@@ -98,6 +132,36 @@ class AgentFactory:
         else:
             self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
+
+    def _apply_extensions(self, config: dict, agent: Agent) -> Agent:
+        """Apply registered factory extensions to the agent.
+
+        Extensions from plugins can modify or enhance agents after creation.
+
+        Args:
+            config: The configuration used to create the agent
+            agent: The created agent instance
+
+        Returns:
+            The potentially modified agent
+        """
+        for extension in _factory_extensions:
+            try:
+                result = extension(self, config, agent)
+                if result is not None:
+                    agent = result
+                self.logger.debug(
+                    "factory_extension_applied",
+                    extension=str(extension),
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "factory_extension_failed",
+                    extension=str(extension),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+        return agent
 
     # -------------------------------------------------------------------------
     # New Unified API (Phase 4 Refactoring)
@@ -229,6 +293,9 @@ class AgentFactory:
 
         # Store MCP contexts for lifecycle management
         agent._mcp_contexts = mcp_contexts
+
+        # Apply plugin extensions
+        agent = self._apply_extensions(base_config, agent)
 
         return agent
 
@@ -408,6 +475,9 @@ class AgentFactory:
 
         # Store MCP contexts on agent for lifecycle management
         agent._mcp_contexts = mcp_contexts
+
+        # Apply plugin extensions
+        agent = self._apply_extensions(config, agent)
 
         return agent
 
@@ -601,6 +671,9 @@ class AgentFactory:
         # Store MCP contexts on agent for lifecycle management
         # (contexts are stored in tools list, no separate tracking needed)
         agent._mcp_contexts = []
+
+        # Apply plugin extensions
+        agent = self._apply_extensions(config, agent)
 
         return agent
 
@@ -801,6 +874,9 @@ class AgentFactory:
         # Store MCP contexts and plugin manifest for lifecycle management
         agent._mcp_contexts = mcp_contexts
         agent._plugin_manifest = manifest
+
+        # Apply plugin extensions
+        agent = self._apply_extensions(merged_config, agent)
 
         return agent
 

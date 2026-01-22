@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any, Optional
 import structlog
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -8,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from taskforce.api.routes import agents, execution, health, sessions, tools
 from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
+from taskforce.application.plugin_discovery import (
+    load_all_plugins,
+    shutdown_plugins,
+    get_plugin_registry,
+    is_enterprise_available,
+)
 
 # Configure logging based on LOGLEVEL environment variable
 loglevel = os.getenv("LOGLEVEL", "INFO").upper()
@@ -51,21 +58,54 @@ async def lifespan(app: FastAPI):
     # Initialize tracing first (before any LLM calls)
     init_tracing()
 
+    # Load plugins (enterprise, custom, etc.)
+    plugin_config = _load_plugin_config()
+    load_all_plugins(plugin_config)
+
+    enterprise_status = "available" if is_enterprise_available() else "not installed"
     await logger.ainfo(
-        "fastapi.startup", message="Taskforce API starting..."
+        "fastapi.startup",
+        message="Taskforce API starting...",
+        enterprise=enterprise_status,
     )
     yield
     await logger.ainfo(
         "fastapi.shutdown", message="Taskforce API shutting down..."
     )
 
+    # Shutdown plugins
+    shutdown_plugins()
+
     # Shutdown tracing last (flush all pending spans)
     shutdown_tracing()
 
 
-def create_app() -> FastAPI:
-    """Create and configure FastAPI application."""
+def _load_plugin_config() -> dict[str, Any]:
+    """Load plugin configuration from environment or config file.
 
+    Returns:
+        Plugin configuration dictionary
+    """
+    # Check for plugin config file path in environment
+    config_path = os.getenv("TASKFORCE_PLUGIN_CONFIG")
+    if config_path and os.path.exists(config_path):
+        import yaml
+        with open(config_path) as f:
+            return yaml.safe_load(f) or {}
+
+    # Return empty config - plugins can use their own defaults
+    return {}
+
+
+def create_app(plugin_config: Optional[dict[str, Any]] = None) -> FastAPI:
+    """Create and configure FastAPI application.
+
+    Args:
+        plugin_config: Optional configuration for plugins
+
+    Returns:
+        Configured FastAPI application
+    """
     app = FastAPI(
         title="Taskforce Agent API",
         description=(
@@ -89,7 +129,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Include routers
+    # Include core routers
     app.include_router(
         execution.router, prefix="/api/v1", tags=["execution"]
     )
@@ -104,7 +144,65 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router, tags=["health"])
 
+    # Register plugin components
+    _register_plugins(app)
+
     return app
+
+
+def _register_plugins(app: FastAPI) -> None:
+    """Register middleware and routers from loaded plugins.
+
+    Plugins are discovered via entry points and loaded during app lifespan.
+    This function registers their components with the FastAPI app.
+
+    Args:
+        app: The FastAPI application
+    """
+    registry = get_plugin_registry()
+
+    # Register middleware from plugins
+    # Note: Middleware is added in reverse order (last added = first executed)
+    for middleware in registry.middleware:
+        try:
+            if callable(middleware):
+                # Check if it's a class (needs instantiation) or instance
+                if isinstance(middleware, type):
+                    # It's a class - will be instantiated by add_middleware
+                    app.add_middleware(middleware)
+                else:
+                    # It's already an instance or a middleware factory
+                    app.add_middleware(type(middleware), dispatch=middleware)
+            logger.debug(
+                "plugin.middleware.added",
+                middleware=str(middleware),
+            )
+        except Exception as e:
+            logger.warning(
+                "plugin.middleware.add_failed",
+                middleware=str(middleware),
+                error=str(e),
+            )
+
+    # Register routers from plugins
+    for router in registry.routers:
+        try:
+            # Get router prefix and tags from plugin if available
+            prefix = getattr(router, "prefix", "/api/v1")
+            tags = getattr(router, "tags", ["plugin"])
+
+            app.include_router(router, prefix=prefix, tags=tags)
+            logger.debug(
+                "plugin.router.added",
+                prefix=prefix,
+                tags=tags,
+            )
+        except Exception as e:
+            logger.warning(
+                "plugin.router.add_failed",
+                router=str(router),
+                error=str(e),
+            )
 
 
 app = create_app()
