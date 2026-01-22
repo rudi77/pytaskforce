@@ -78,6 +78,20 @@ Changelog = "https://github.com/yourorg/pytaskforce/blob/main/CHANGELOG.md"
 [project.scripts]
 taskforce = "taskforce.api.cli.main:app"
 
+# Entry points for plugin system
+# These are populated by optional packages like taskforce-enterprise
+[project.entry-points."taskforce.plugins"]
+# enterprise = "taskforce_enterprise.integration.plugin:EnterprisePlugin"
+
+[project.entry-points."taskforce.middleware"]
+# auth = "taskforce_enterprise.api.middleware.auth:AuthMiddleware"
+
+[project.entry-points."taskforce.routers"]
+# admin = "taskforce_enterprise.api.routes.admin:router"
+
+[project.entry-points."taskforce.factory_extensions"]
+# enterprise = "taskforce_enterprise.integration.factory_extensions:extend_factory"
+
 [project.optional-dependencies]
 rag = [
     "azure-search-documents>=11.4.0",

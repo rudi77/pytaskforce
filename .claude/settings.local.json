@@ -39,7 +39,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(xargs:*)",
-      "Bash(ls -la \"D:\\\\home\\\\Source\\\\pytaskforce\\\\src\\\\taskforce\"\" 2>/dev/null || echo \"Not found, let me try the root \")"
+      "Bash(ls -la \"D:\\\\home\\\\Source\\\\pytaskforce\\\\src\\\\taskforce\"\" 2>/dev/null || echo \"Not found, let me try the root \")",
+      "Bash(cd:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

@@ -60,6 +60,30 @@ taskforce chat --plugin examples/accounting_agent
 - **Plugin System**: Load custom agent plugins with specialized tools.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
 - **Long-Term Memory**: Session-persistent knowledge graphs via MCP Memory Server.
+- **Enterprise Ready**: Optional `taskforce-enterprise` Add-on for RBAC, multi-tenancy, and compliance.
+
+## 🏢 Enterprise Features (Optional)
+
+Enterprise-Features sind als separates Paket verfügbar:
+
+```powershell
+# Installation mit Enterprise-Features
+pip install taskforce-enterprise
+# oder
+uv pip install taskforce-enterprise
+```
+
+Nach der Installation werden Enterprise-Features **automatisch aktiviert** (Entry-Point-basiertes Plugin-System):
+
+| Feature | Beschreibung |
+|---------|--------------|
+| **Multi-Tenant RBAC** | JWT/API-Key Auth, Rollen, Berechtigungen |
+| **Admin API** | User-, Rollen-, Tenant-Management unter `/api/v1/admin/*` |
+| **Policy Engine** | Feingranulare Zugriffskontrolle |
+| **Audit Logging** | Compliance-konforme Protokollierung |
+| **Evidence Tracking** | Zitationen und Audit-Trails für RAG |
+
+Siehe [docs/features/enterprise.md](docs/features/enterprise.md) für Details.
 
 ## 🧠 Architecture Overview
 

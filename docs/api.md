@@ -78,9 +78,38 @@ response = requests.post(
 ### System
 - `GET /health`: Basic liveness check.
 
-### Admin APIs (Enterprise)
+### Admin APIs (Enterprise - Optional)
 
-The Admin APIs provide multi-tenant management capabilities for enterprise deployments.
+> **Hinweis**: Diese Endpoints sind nur verfügbar wenn `taskforce-enterprise` installiert ist.
+>
+> ```bash
+> pip install taskforce-enterprise
+> ```
+>
+> Nach Installation werden die Admin-Endpoints automatisch registriert via Plugin-System.
+
+Die Admin APIs bieten Multi-Tenant-Management für Enterprise-Deployments.
+
+#### Authentifizierung
+
+Alle Admin-Endpoints erfordern Authentifizierung via:
+- **JWT Bearer Token**: `Authorization: Bearer <token>`
+- **API Key**: `X-API-Key: <key>`
+
+```python
+import requests
+
+# Mit JWT Token
+headers = {"Authorization": "Bearer eyJ..."}
+
+# Mit API Key
+headers = {"X-API-Key": "tk_..."}
+
+response = requests.get(
+    "http://localhost:8000/api/v1/admin/users",
+    headers=headers
+)
+```
 
 #### Tenant Management
 - `GET /api/v1/admin/tenants`: List all tenants (requires `TENANT_MANAGE` permission).
@@ -95,7 +124,6 @@ The Admin APIs provide multi-tenant management capabilities for enterprise deplo
 - `GET /api/v1/admin/users/{user_id}`: Get user details.
 - `PUT /api/v1/admin/users/{user_id}`: Update user profile.
 - `DELETE /api/v1/admin/users/{user_id}`: Deactivate a user.
-- `PUT /api/v1/admin/users/{user_id}/roles`: Update user roles.
 
 #### Role Management
 - `GET /api/v1/admin/roles`: List all roles (system and custom).
@@ -104,7 +132,17 @@ The Admin APIs provide multi-tenant management capabilities for enterprise deplo
 - `PUT /api/v1/admin/roles/{role_id}`: Update role permissions.
 - `DELETE /api/v1/admin/roles/{role_id}`: Delete a custom role.
 
-> **Note:** All Admin APIs require authentication and appropriate RBAC permissions. See [Enterprise Features](features/enterprise.md) for details on the RBAC system.
+#### System Roles (vordefiniert)
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | Alle Berechtigungen |
+| `agent_designer` | Agent CRUD, Tool Read |
+| `operator` | Agent Execute, Session CRUD |
+| `auditor` | Read-only, Audit Read |
+| `viewer` | Basis Read-only |
+
+> **Siehe auch:** [Enterprise Features](features/enterprise.md) für Details zum RBAC-System und [Plugin System](architecture/plugin-system.md) für die Architektur.
 
 ## 🔧 Integration Examples
 
