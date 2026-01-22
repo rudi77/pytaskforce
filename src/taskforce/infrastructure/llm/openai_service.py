@@ -72,12 +72,12 @@ class OpenAIService(LLMProviderProtocol):
     Implements LLMProviderProtocol for dependency injection.
     """
 
-    def __init__(self, config_path: str = "configs/llm_config.yaml"):
+    def __init__(self, config_path: str = "src/taskforce_extensions/configs/llm_config.yaml"):
         """
         Initialize OpenAIService with configuration.
 
         Args:
-            config_path: Path to YAML configuration file
+            config_path: Path to YAML configuration file (relative to project root or absolute)
 
         Raises:
             FileNotFoundError: If config file doesn't exist
@@ -98,12 +98,30 @@ class OpenAIService(LLMProviderProtocol):
         Load and validate configuration from YAML file.
 
         Args:
-            config_path: Path to YAML configuration file
+            config_path: Path to YAML configuration file (absolute or relative)
 
         Raises:
             FileNotFoundError: If config file doesn't exist
         """
         config_file = Path(config_path)
+        
+        # Backward compatibility: if old path doesn't exist, try new location
+        if not config_file.exists() and not config_file.is_absolute() and "configs/" in str(config_path):
+            # Try new location: src/taskforce_extensions/configs/...
+            # Find project root by going up from this file
+            current_file = Path(__file__)
+            # openai_service.py is at: src/taskforce/infrastructure/llm/openai_service.py
+            # Project root is 5 levels up
+            project_root = current_file.parent.parent.parent.parent.parent
+            new_path = project_root / "src" / "taskforce_extensions" / config_path
+            if new_path.exists():
+                config_file = new_path
+                self.logger.debug(
+                    "llm_config_path_migrated",
+                    old_path=config_path,
+                    new_path=str(new_path),
+                )
+        
         if not config_file.exists():
             raise FileNotFoundError(f"LLM config not found: {config_path}")
 

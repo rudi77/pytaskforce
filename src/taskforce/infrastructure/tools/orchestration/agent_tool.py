@@ -187,19 +187,41 @@ class AgentTool:
                 return yaml_file
 
         # 3. Check plugins/*/configs/agents/{specialist}.yaml
-        plugins_dir = config_dir.parent / "plugins"
-        if plugins_dir.exists():
-            for plugin_dir in plugins_dir.iterdir():
-                if plugin_dir.is_dir():
-                    agent_config = plugin_dir / "configs" / "agents" / f"{specialist}.yaml"
-                    if agent_config.exists():
-                        self.logger.debug(
-                            "found_plugin_agent_config",
-                            specialist=specialist,
-                            plugin=plugin_dir.name,
-                            config_path=str(agent_config),
-                        )
-                        return agent_config
+        # Try new location first: src/taskforce_extensions/plugins
+        # Then old location: plugins/ (for backward compatibility)
+        plugins_dirs = []
+        
+        # New location: if config_dir is src/taskforce_extensions/configs, plugins is sibling
+        if config_dir.name == "configs" and config_dir.parent.name == "taskforce_extensions":
+            plugins_dirs.append(config_dir.parent / "plugins")
+        
+        # Old location: plugins/ at project root (sibling of configs)
+        plugins_dirs.append(config_dir.parent / "plugins")
+        
+        # Also check project root plugins if config_dir is nested
+        project_root_plugins = config_dir
+        # Navigate up to find project root (where plugins/ might be)
+        for _ in range(5):  # Max depth check
+            if (project_root_plugins / "plugins").exists():
+                plugins_dirs.append(project_root_plugins / "plugins")
+                break
+            if project_root_plugins.parent == project_root_plugins:  # Reached filesystem root
+                break
+            project_root_plugins = project_root_plugins.parent
+        
+        for plugins_dir in plugins_dirs:
+            if plugins_dir.exists():
+                for plugin_dir in plugins_dir.iterdir():
+                    if plugin_dir.is_dir():
+                        agent_config = plugin_dir / "configs" / "agents" / f"{specialist}.yaml"
+                        if agent_config.exists():
+                            self.logger.debug(
+                                "found_plugin_agent_config",
+                                specialist=specialist,
+                                plugin=plugin_dir.name,
+                                config_path=str(agent_config),
+                            )
+                            return agent_config
 
         return None
 

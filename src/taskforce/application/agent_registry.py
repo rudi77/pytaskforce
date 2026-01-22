@@ -65,7 +65,7 @@ class AgentRegistry:
 
     def __init__(
         self,
-        config_dir: Path | str = "configs",
+        config_dir: Path | str | None = None,
         command_loader: Optional[SlashCommandLoaderProtocol] = None,
         base_path: Optional[Path] = None,
     ) -> None:
@@ -73,11 +73,39 @@ class AgentRegistry:
         Initialize the unified agent registry.
 
         Args:
-            config_dir: Root directory for configuration files
+            config_dir: Root directory for configuration files. If None, uses
+                       'src/taskforce_extensions/configs/' relative to project root.
+                       Falls back to 'configs/' for backward compatibility.
             command_loader: Loader for slash commands (optional)
             base_path: Base path for plugin discovery (defaults to config_dir parent)
         """
-        self.config_dir = Path(config_dir)
+        if config_dir is None:
+            # Use same logic as AgentFactory to find config directory
+            import sys
+            
+            def get_base_path() -> Path:
+                """Get base path for resource files, handling frozen executables."""
+                if getattr(sys, "frozen", False):
+                    return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+                else:
+                    # Navigate from agent_registry.py to project root
+                    # agent_registry.py is at: src/taskforce/application/agent_registry.py
+                    # Project root is 4 levels up
+                    return Path(__file__).parent.parent.parent.parent
+            
+            base_path_obj = get_base_path()
+            # Try new location first, then fall back to old location for compatibility
+            new_config_dir = base_path_obj / "src" / "taskforce_extensions" / "configs"
+            old_config_dir = base_path_obj / "configs"
+            if new_config_dir.exists():
+                self.config_dir = new_config_dir
+            elif old_config_dir.exists():
+                self.config_dir = old_config_dir
+            else:
+                # Default to new location even if it doesn't exist yet
+                self.config_dir = new_config_dir
+        else:
+            self.config_dir = Path(config_dir)
         self.custom_dir = self.config_dir / "custom"
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self.base_path = base_path or self.config_dir.parent
@@ -369,10 +397,11 @@ class AgentRegistry:
                 )
 
     def _load_plugin_agents(self) -> None:
-        """Load plugin agents from examples/ and plugins/."""
+        """Load plugin agents from examples/ and plugins/ (check new location first)."""
         plugin_dirs = [
+            self.base_path / "src" / "taskforce_extensions" / "plugins",
             self.base_path / "examples",
-            self.base_path / "plugins",
+            self.base_path / "plugins",  # Old location for backward compatibility
         ]
 
         for plugin_base_dir in plugin_dirs:

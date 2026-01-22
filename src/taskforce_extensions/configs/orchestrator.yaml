@@ -35,7 +35,7 @@ tools:
 
 # LLM Configuration
 llm:
-  config_path: configs/llm_config.yaml
+  config_path: src/taskforce_extensions/configs/llm_config.yaml
   default_model: main  # Use main model for orchestrator
 
 # State Persistence

@@ -479,10 +479,11 @@ class FileAgentRegistry:
         """
         plugins: list[PluginAgentDefinition] = []
 
-        # Scan examples/ and plugins/ directories
+        # Scan examples/ and plugins/ directories (check new location first, then old for compatibility)
         plugin_dirs = [
+            self.base_path / "src" / "taskforce_extensions" / "plugins",
             self.base_path / "examples",
-            self.base_path / "plugins",
+            self.base_path / "plugins",  # Old location for backward compatibility
         ]
 
         for plugin_base_dir in plugin_dirs:
@@ -660,7 +661,7 @@ class FileAgentRegistry:
                 "work_dir": f".taskforce_{agent_id}",
             },
             "llm": {
-                "config_path": "configs/llm_config.yaml",
+                "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
                 "default_model": "main",
             },
             "logging": {"level": "DEBUG", "format": "console"},
