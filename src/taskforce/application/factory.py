@@ -79,11 +79,22 @@ class AgentFactory:
 
         Args:
             config_dir: Path to directory containing profile YAML files.
-                       If None, uses 'configs/' relative to project root
+                       If None, uses 'src/taskforce_extensions/configs/' relative to project root
                        (or _MEIPASS for frozen executables).
+                       Falls back to 'configs/' for backward compatibility.
         """
         if config_dir is None:
-            self.config_dir = get_base_path() / "configs"
+            base_path = get_base_path()
+            # Try new location first, then fall back to old location for compatibility
+            new_config_dir = base_path / "src" / "taskforce_extensions" / "configs"
+            old_config_dir = base_path / "configs"
+            if new_config_dir.exists():
+                self.config_dir = new_config_dir
+            elif old_config_dir.exists():
+                self.config_dir = old_config_dir
+            else:
+                # Default to new location even if it doesn't exist yet
+                self.config_dir = new_config_dir
         else:
             self.config_dir = Path(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
@@ -657,7 +668,7 @@ class AgentFactory:
             # Minimal defaults when no base profile exists
             base_config = {
                 "persistence": {"type": "file", "work_dir": ".taskforce"},
-                "llm": {"config_path": "configs/llm_config.yaml", "default_model": "main"},
+                "llm": {"config_path": "src/taskforce_extensions/configs/llm_config.yaml", "default_model": "main"},
                 "logging": {"level": "WARNING"},
             }
 
@@ -1118,12 +1129,26 @@ class AgentFactory:
         from taskforce.infrastructure.llm.openai_service import OpenAIService
 
         llm_config = config.get("llm", {})
-        config_path = llm_config.get("config_path", "configs/llm_config.yaml")
+        config_path = llm_config.get("config_path", "src/taskforce_extensions/configs/llm_config.yaml")
 
         # Resolve relative paths against base path (handles frozen executables)
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
-            config_path = str(get_base_path() / config_path)
+            resolved_path = get_base_path() / config_path
+            
+            # Backward compatibility: if old path doesn't exist, try new location
+            if not resolved_path.exists() and config_path.startswith("configs/"):
+                # Try new location: src/taskforce_extensions/configs/...
+                new_path = get_base_path() / "src" / "taskforce_extensions" / config_path
+                if new_path.exists():
+                    resolved_path = new_path
+                    self.logger.debug(
+                        "llm_config_path_migrated",
+                        old_path=config_path,
+                        new_path=str(new_path),
+                    )
+            
+            config_path = str(resolved_path)
 
         return OpenAIService(config_path=config_path)
 

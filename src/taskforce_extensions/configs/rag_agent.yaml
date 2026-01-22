@@ -11,7 +11,7 @@ persistence:
 
 # LLM configuration
 llm:
-  config_path: configs/llm_config.yaml  # Path to LLM config
+  config_path: src/taskforce_extensions/configs/llm_config.yaml  # Path to LLM config
   default_model: powerful-1  # Use gpt-4.1 (powerful-1/gpt-5-1 deployment not available)
 
 # RAG configuration

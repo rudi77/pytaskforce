@@ -23,7 +23,7 @@ class TestAgentFactory:
         """Test creating a basic Agent."""
         from taskforce.core.domain.agent import Agent
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(profile="dev")
 
         assert isinstance(agent, Agent)
@@ -36,7 +36,7 @@ class TestAgentFactory:
         """Test that Agent has PlannerTool injected."""
         from taskforce.core.tools.planner_tool import PlannerTool
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(profile="dev")
 
         # PlannerTool should be present (injected by Agent if not in tools)
@@ -48,7 +48,7 @@ class TestAgentFactory:
         """Test that Agent uses LEAN_KERNEL_PROMPT."""
         from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(profile="dev")
 
         # The system prompt should contain LEAN_KERNEL_PROMPT content
@@ -57,7 +57,7 @@ class TestAgentFactory:
     @pytest.mark.asyncio
     async def test_lean_agent_with_specialist(self):
         """Test creating Agent with specialist profile."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(profile="dev", specialist="coding")
 
         # Should have coding specialist content appended
@@ -68,7 +68,7 @@ class TestAgentFactory:
         """Test Agent with work_dir override."""
         from taskforce.core.domain.agent import Agent
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(
             profile="dev", work_dir=".lean_test_workdir"
         )
@@ -82,7 +82,7 @@ class TestAgentFactory:
         """Test that Agent defaults to NativeReAct strategy."""
         from taskforce.core.domain.planning_strategy import NativeReActStrategy
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(profile="dev")
 
         assert isinstance(agent.planning_strategy, NativeReActStrategy)
@@ -92,7 +92,7 @@ class TestAgentFactory:
         """Test overriding planning strategy for Agent."""
         from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
 
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         agent = await factory.create_lean_agent(
             profile="dev",
             planning_strategy="plan_and_execute",
@@ -106,7 +106,7 @@ class TestAgentFactory:
     @pytest.mark.asyncio
     async def test_lean_agent_invalid_planning_strategy(self):
         """Test invalid planning strategy raises ValueError."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         with pytest.raises(ValueError):
             await factory.create_lean_agent(profile="dev", planning_strategy="invalid")
@@ -114,7 +114,7 @@ class TestAgentFactory:
     @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_no_specialist(self):
         """Test lean system prompt assembly without specialist."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         prompt = factory._assemble_lean_system_prompt(None, [])
 
@@ -126,7 +126,7 @@ class TestAgentFactory:
     @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_with_coding(self):
         """Test lean system prompt assembly with coding specialist."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         prompt = factory._assemble_lean_system_prompt("coding", [])
 
@@ -137,7 +137,7 @@ class TestAgentFactory:
     @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_with_rag(self):
         """Test lean system prompt assembly with rag specialist."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         prompt = factory._assemble_lean_system_prompt("rag", [])
 

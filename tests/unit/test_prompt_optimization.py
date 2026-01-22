@@ -54,7 +54,7 @@ class TestDefaultToolsExcludeLlmGenerate:
 
     def test_default_tools_exclude_llm_generate(self):
         """Verify _create_default_tools() does not include llm_generate."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         tools = factory._create_default_tools(mock_llm)
@@ -66,7 +66,7 @@ class TestDefaultToolsExcludeLlmGenerate:
 
     def test_default_tools_count_is_nine(self):
         """Verify default tools has 9 tools (not 10)."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         tools = factory._create_default_tools(mock_llm)
@@ -77,7 +77,7 @@ class TestDefaultToolsExcludeLlmGenerate:
 
     def test_default_tools_contains_expected_tools(self):
         """Verify default tools contains all expected tools (except llm_generate)."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         tools = factory._create_default_tools(mock_llm)
@@ -104,7 +104,7 @@ class TestLlmGenerateConfigFiltering:
 
     def test_native_tools_filter_llm_generate_by_default(self):
         """Verify _create_native_tools() filters llm_generate when not explicitly enabled."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         # Config with llm_generate in tools but NO include_llm_generate flag
@@ -127,7 +127,7 @@ class TestLlmGenerateConfigFiltering:
 
     def test_native_tools_include_llm_generate_when_enabled(self):
         """Verify _create_native_tools() includes llm_generate when explicitly enabled."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         # Config with include_llm_generate: true
@@ -148,7 +148,7 @@ class TestLlmGenerateConfigFiltering:
 
     def test_native_tools_explicit_false_filters_llm_generate(self):
         """Verify _create_native_tools() filters llm_generate when explicitly set to False."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
         mock_llm = MagicMock()
 
         # Config with include_llm_generate: false explicitly
@@ -172,7 +172,7 @@ class TestAgentCreationWithOptimization:
     @pytest.mark.asyncio
     async def test_standard_agent_has_no_llm_generate(self):
         """Verify standard agent created via factory excludes llm_generate."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         agent = await factory.create_agent(profile="dev")
 
@@ -184,7 +184,7 @@ class TestAgentCreationWithOptimization:
     @pytest.mark.asyncio
     async def test_agent_system_prompt_has_performance_rules(self):
         """Verify agent's system prompt contains the performance rules."""
-        factory = AgentFactory(config_dir="configs")
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         agent = await factory.create_agent(profile="dev")
 

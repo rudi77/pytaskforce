@@ -80,7 +80,9 @@ class PluginLoader:
         Discover plugin structure and validate it.
 
         Args:
-            plugin_path: Path to the plugin directory (relative or absolute)
+            plugin_path: Path to the plugin directory (relative or absolute).
+                        Supports backward compatibility: if path starts with "plugins/",
+                        also checks "src/taskforce_extensions/plugins/".
 
         Returns:
             PluginManifest with plugin metadata
@@ -91,6 +93,18 @@ class PluginLoader:
         """
         # Resolve to absolute path
         path = Path(plugin_path).resolve()
+
+        # Backward compatibility: if old plugins/ path doesn't exist, try new location
+        if not path.exists() and plugin_path.startswith("plugins/"):
+            # Try new location: src/taskforce_extensions/plugins/...
+            new_path = Path("src/taskforce_extensions") / plugin_path
+            if new_path.exists():
+                path = new_path.resolve()
+                logger.debug(
+                    "plugin_path_migrated",
+                    old_path=plugin_path,
+                    new_path=str(new_path),
+                )
 
         if not path.exists():
             raise FileNotFoundError(f"Plugin not found: {plugin_path}")

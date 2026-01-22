@@ -31,7 +31,7 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
         if self._llm_provider is None:
             # Use the same approach as AgentFactory._create_llm_provider
             from taskforce.infrastructure.llm.openai_service import OpenAIService
-            self._llm_provider = OpenAIService(config_path="configs/llm_config.yaml")
+            self._llm_provider = OpenAIService(config_path="src/taskforce_extensions/configs/llm_config.yaml")
         return self._llm_provider
 
     @property
