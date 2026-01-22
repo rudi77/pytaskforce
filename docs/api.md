@@ -78,6 +78,34 @@ response = requests.post(
 ### System
 - `GET /health`: Basic liveness check.
 
+### Admin APIs (Enterprise)
+
+The Admin APIs provide multi-tenant management capabilities for enterprise deployments.
+
+#### Tenant Management
+- `GET /api/v1/admin/tenants`: List all tenants (requires `TENANT_MANAGE` permission).
+- `POST /api/v1/admin/tenants`: Create a new tenant.
+- `GET /api/v1/admin/tenants/{tenant_id}`: Get tenant details.
+- `PUT /api/v1/admin/tenants/{tenant_id}`: Update tenant settings.
+- `DELETE /api/v1/admin/tenants/{tenant_id}`: Delete a tenant.
+
+#### User Management
+- `GET /api/v1/admin/users`: List users for a tenant.
+- `POST /api/v1/admin/users`: Create a new user.
+- `GET /api/v1/admin/users/{user_id}`: Get user details.
+- `PUT /api/v1/admin/users/{user_id}`: Update user profile.
+- `DELETE /api/v1/admin/users/{user_id}`: Deactivate a user.
+- `PUT /api/v1/admin/users/{user_id}/roles`: Update user roles.
+
+#### Role Management
+- `GET /api/v1/admin/roles`: List all roles (system and custom).
+- `POST /api/v1/admin/roles`: Create a custom role.
+- `GET /api/v1/admin/roles/{role_id}`: Get role details with permissions.
+- `PUT /api/v1/admin/roles/{role_id}`: Update role permissions.
+- `DELETE /api/v1/admin/roles/{role_id}`: Delete a custom role.
+
+> **Note:** All Admin APIs require authentication and appropriate RBAC permissions. See [Enterprise Features](features/enterprise.md) for details on the RBAC system.
+
 ## 🔧 Integration Examples
 
 ### Basic Mission Execution

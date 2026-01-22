@@ -14,6 +14,9 @@ graph TB
         CLI[Typer CLI<br/>main.py]
         REST[FastAPI REST<br/>server.py]
         ChatCLI[Simple CLI Chat<br/>simple_chat.py]
+        TUI[Textual TUI<br/>chat_ui/app.py]
+        AuthMW[AuthMiddleware<br/>JWT/API-Key Auth]
+        AdminAPI[Admin Routes<br/>Users, Roles, Tenants]
     end
 
     subgraph "Application Layer (Orchestration)"
@@ -24,6 +27,13 @@ graph TB
         InfraBld[InfrastructureBuilder<br/>Adapter Building]
         ToolCatalog[ToolCatalog<br/>Tool Validation]
         PluginLoader[PluginLoader<br/>Plugin Discovery]
+
+        subgraph "Enterprise Services"
+            PolicyEngine[PolicyEngine<br/>RBAC Evaluation]
+            Reporting[ReportGenerator<br/>Usage & Cost]
+            Workflows[WorkflowManager<br/>Approval Flows]
+            Retention[RetentionService<br/>GDPR Compliance]
+        end
     end
 
     subgraph "Infrastructure Layer (Adapters)"
@@ -31,6 +41,17 @@ graph TB
         State[FileStateManager<br/>JSON Persistence]
         ResultStore[FileToolResultStore<br/>Result Caching]
         ToolReg[ToolRegistry<br/>Tool Definitions]
+
+        subgraph "Security"
+            JWTProvider[JWTIdentityProvider<br/>Token Validation]
+            APIKeyProvider[APIKeyProvider<br/>API Key Auth]
+            Encryption[DataEncryptor<br/>AES-256/Fernet]
+        end
+
+        subgraph "Observability"
+            Metrics[MetricsCollector<br/>Prometheus Export]
+            Tracing[PhoenixTracer<br/>Distributed Tracing]
+        end
 
         subgraph "Tools"
             Native[Native Tools<br/>Python, File, Git, Shell, Web]
@@ -45,10 +66,18 @@ graph TB
         AgentDef[AgentDefinition<br/>Unified Model]
         ConfigSchema[ConfigSchema<br/>Pydantic Validation]
 
+        subgraph "Enterprise Domain"
+            Identity[Identity Models<br/>Tenant, User, Session]
+            Evidence[Evidence & Citations<br/>Audit Trail]
+            MemoryACL[Memory ACL<br/>Access Control]
+        end
+
         subgraph "Protocols"
             LLMProtocol[LLMProviderProtocol]
             StateProtocol[StateManagerProtocol]
             ToolProtocol[ToolProtocol]
+            IdentityProtocol[IdentityProviderProtocol]
+            PolicyProtocol[PolicyEngineProtocol]
         end
 
         Models[Domain Models<br/>ExecutionResult, StreamEvent]
@@ -57,8 +86,10 @@ graph TB
 
     %% Layer connections (dependency direction: inward)
     CLI --> Executor
-    REST --> Executor
+    REST --> AuthMW
+    AuthMW --> Executor
     TUI --> Executor
+    AdminAPI --> PolicyEngine
 
     Executor --> Factory
     Executor --> Registry
@@ -76,6 +107,11 @@ graph TB
     ToolReg --> Native
     ToolReg --> RAG
 
+    AuthMW --> JWTProvider
+    AuthMW --> APIKeyProvider
+    PolicyEngine --> IdentityProtocol
+    State --> Encryption
+
     Agent --> LLMProtocol
     Agent --> StateProtocol
     Agent --> ToolProtocol
@@ -88,18 +124,22 @@ graph TB
     Native -.->|implements| ToolProtocol
     RAG -.->|implements| ToolProtocol
     MCP -.->|implements| ToolProtocol
+    JWTProvider -.->|implements| IdentityProtocol
+    PolicyEngine -.->|implements| PolicyProtocol
 
     classDef core fill:#e1f5fe,stroke:#01579b
     classDef infra fill:#fff3e0,stroke:#e65100
     classDef app fill:#f3e5f5,stroke:#7b1fa2
     classDef api fill:#e8f5e9,stroke:#2e7d32
     classDef new fill:#c8e6c9,stroke:#2e7d32
+    classDef enterprise fill:#fff9c4,stroke:#f9a825
 
     class Agent,Planner,LLMProtocol,StateProtocol,ToolProtocol,Models,Prompts core
     class LLM,State,ResultStore,ToolReg,Native,RAG,MCP infra
     class Factory,Executor,ToolCatalog,PluginLoader app
     class CLI,REST,TUI api
     class Registry,Resolver,InfraBld,AgentDef,ConfigSchema new
+    class AuthMW,AdminAPI,PolicyEngine,Reporting,Workflows,Retention,JWTProvider,APIKeyProvider,Encryption,Metrics,Tracing,Identity,Evidence,MemoryACL,IdentityProtocol,PolicyProtocol enterprise
 ```
 
 ---
@@ -120,10 +160,17 @@ flowchart LR
         AD[AgentDefinition]
         CS[ConfigSchema]
 
+        subgraph EntDomain["Enterprise Domain"]
+            IDENT[Identity Models]
+            EVID[Evidence Chain]
+            MACL[Memory ACL]
+        end
+
         LA --> PT
         LA --> PS
         LA --> CB
         LA --> TB
+        LA --> EVID
     end
 
     subgraph Protocols["Core Interfaces"]
@@ -132,6 +179,8 @@ flowchart LR
         SMP[StateManagerProtocol]
         TP[ToolProtocol]
         TRSP[ToolResultStoreProtocol]
+        IDP[IdentityProviderProtocol]
+        PEP[PolicyEngineProtocol]
     end
 
     subgraph Infra["Infrastructure"]
@@ -139,6 +188,17 @@ flowchart LR
         OAI[OpenAIService]
         FSM[FileStateManager]
         FTRS[FileToolResultStore]
+
+        subgraph Security["Security"]
+            JWTP[JWTProvider]
+            APIKP[APIKeyProvider]
+            ENCR[DataEncryptor]
+        end
+
+        subgraph Observ["Observability"]
+            METR[MetricsCollector]
+            TRAC[PhoenixTracer]
+        end
 
         subgraph Tools["Tool Registry"]
             PY[PythonTool]
@@ -161,6 +221,7 @@ flowchart LR
             SS[SemanticSearchTool]
             LD[ListDocumentsTool]
             GD[GetDocumentTool]
+            CIT[Citations]
         end
     end
 
@@ -173,6 +234,13 @@ flowchart LR
         IB[InfrastructureBuilder]
         TC[ToolCatalog]
         PL[PluginLoader]
+
+        subgraph EntApp["Enterprise Services"]
+            POLENG[PolicyEngine]
+            REPGEN[ReportGenerator]
+            WFMGR[WorkflowManager]
+            RETNSVC[RetentionService]
+        end
     end
 
     %% Protocol implementations
@@ -183,11 +251,20 @@ flowchart LR
     FR -.->|implements| TP
     MW -.->|implements| TP
     SS -.->|implements| TP
+    JWTP -.->|implements| IDP
+    APIKP -.->|implements| IDP
+    POLENG -.->|implements| PEP
 
     %% Core uses protocols
     LA -->|uses| LLMP
     LA -->|uses| SMP
     LA -->|uses| TP
+
+    %% Enterprise integrations
+    FSM -->|uses| ENCR
+    SS -->|uses| CIT
+    POLENG -->|uses| IDENT
+    REPGEN -->|uses| METR
 
     %% New unified flow
     AR -->|loads| AD
@@ -211,12 +288,14 @@ flowchart LR
     classDef adapter fill:#fff3e0,stroke:#e65100
     classDef service fill:#f3e5f5,stroke:#7b1fa2
     classDef new fill:#c8e6c9,stroke:#2e7d32
+    classDef enterprise fill:#fff9c4,stroke:#f9a825
 
-    class LLMP,SMP,TP,TRSP protocol
+    class LLMP,SMP,TP,TRSP,IDP,PEP protocol
     class LA,PT,PS,CB,TB domain
-    class OAI,FSM,FTRS,PY,FR,FW,GT,PS2,SH,WS,WF,AU,MC,MW,SS,LD,GD adapter
+    class OAI,FSM,FTRS,PY,FR,FW,GT,PS2,SH,WS,WF,AU,MC,MW,SS,LD,GD,CIT adapter
     class AF,AE,TC,PL service
     class AR,TR,IB,AD,CS new
+    class IDENT,EVID,MACL,JWTP,APIKP,ENCR,METR,TRAC,POLENG,REPGEN,WFMGR,RETNSVC enterprise
 ```
 
 ---
@@ -751,13 +830,15 @@ sequenceDiagram
 
 ## 8. API Layer Architecture
 
-REST und CLI Entrypoints:
+REST und CLI Entrypoints mit Enterprise Security:
 
 ```mermaid
 flowchart TB
     subgraph External["External"]
         U1[User Terminal]
         U2[HTTP Client]
+        U3[Admin Client]
+        OIDC[OAuth2/OIDC]
     end
 
     subgraph CLI["CLI Layer (Typer)"]
@@ -784,6 +865,10 @@ flowchart TB
         direction TB
         SRV[server.py<br/>FastAPI App]
 
+        subgraph Middleware["Middleware"]
+            AUTH[AuthMiddleware<br/>JWT/API-Key]
+        end
+
         subgraph Routes["Routes"]
             EX["/execute"]
             EXS["/execute/stream"]
@@ -793,15 +878,31 @@ flowchart TB
             HE["/health"]
         end
 
+        subgraph Admin["Admin Routes"]
+            USERS["/admin/users"]
+            ROLES["/admin/roles"]
+            TENANTS["/admin/tenants"]
+        end
+
+        subgraph Dependencies["Security Dependencies"]
+            RP[require_permission]
+            RR[require_role]
+            RA[require_admin]
+            RT[require_tenant_access]
+        end
+
         SCH[Pydantic Schemas]
     end
 
     subgraph App["Application Layer"]
         AE[AgentExecutor]
+        PE[PolicyEngine]
     end
 
     U1 --> CLI
     U2 --> REST
+    U3 --> Admin
+    OIDC -->|JWT| AUTH
 
     MAIN --> Commands
     Commands --> OF
@@ -810,39 +911,50 @@ flowchart TB
     RUN --> AE
     CHAT --> AE
 
-    SRV --> Routes
+    SRV --> AUTH
+    AUTH --> Routes
+    AUTH --> Admin
     Routes --> SCH
-    EX --> AE
+    EX --> RP
+    RP --> AE
     EXS --> AE
+
+    Admin --> RA
+    RA --> PE
 
     classDef external fill:#ffcdd2,stroke:#c62828
     classDef cli fill:#c8e6c9,stroke:#2e7d32
     classDef tui fill:#bbdefb,stroke:#1565c0
     classDef rest fill:#ffe0b2,stroke:#ef6c00
+    classDef enterprise fill:#fff9c4,stroke:#f9a825
 
-    class U1,U2 external
+    class U1,U2,U3,OIDC external
     class MAIN,RUN,CHAT,TOOLS,SESS,CFG,OF cli
     class APP,CL,EP,PP,IB tui
     class SRV,EX,EXS,AG,SE,TL,HE,SCH rest
+    class AUTH,USERS,ROLES,TENANTS,RP,RR,RA,RT,PE enterprise
 ```
 
 ---
 
 ## 9. Complete System Overview
 
-Vollständige Systemübersicht mit allen Komponenten:
+Vollständige Systemübersicht mit allen Komponenten (inkl. Enterprise Features):
 
 ```mermaid
 graph TB
     subgraph Users["Users"]
         DEV[Developer]
         SVC[Service/API Client]
+        ADMIN[Administrator]
     end
 
     subgraph Entrypoints["API Layer"]
         CLI[CLI<br/>taskforce run/chat]
         REST[REST API<br/>POST /execute]
         TUI[Chat TUI<br/>Interactive]
+        AuthMW[Auth Middleware<br/>JWT/API-Key]
+        AdminRoutes[Admin API<br/>Users, Roles, Tenants]
     end
 
     subgraph Application["Application Layer"]
@@ -853,6 +965,13 @@ graph TB
         IBLD[InfrastructureBuilder]
         CAT[ToolCatalog]
         PLUG[PluginLoader]
+
+        subgraph Enterprise["Enterprise Services"]
+            POLICY[PolicyEngine<br/>RBAC]
+            REPORT[ReportGenerator<br/>Usage & Cost]
+            WORKFLOW[WorkflowManager<br/>Approvals]
+            RETAIN[RetentionService<br/>GDPR]
+        end
     end
 
     subgraph Domain["Core Domain Layer"]
@@ -864,11 +983,19 @@ graph TB
         ADEF[AgentDefinition<br/>Unified Model]
         CSCH[ConfigSchema<br/>Validation]
 
+        subgraph EnterpriseDomain["Enterprise Domain"]
+            IDENT[Identity Models<br/>Tenant, User]
+            EVID[Evidence Chain<br/>Citations]
+            MACL[Memory ACL]
+        end
+
         subgraph Protocols["Interfaces"]
             P1[LLMProviderProtocol]
             P2[StateManagerProtocol]
             P3[ToolProtocol]
             P4[ToolResultStoreProtocol]
+            P5[IdentityProviderProtocol]
+            P6[PolicyEngineProtocol]
         end
     end
 
@@ -880,12 +1007,23 @@ graph TB
         subgraph Persistence["Persistence"]
             FSM[FileStateManager]
             FTR[FileToolResultStore]
+            ENCR[DataEncryptor<br/>AES-256]
+        end
+
+        subgraph Security["Security"]
+            JWT[JWTProvider]
+            APIK[APIKeyProvider]
+        end
+
+        subgraph Observability["Observability"]
+            METR[MetricsCollector<br/>Prometheus]
+            TRAC[PhoenixTracer]
         end
 
         subgraph ToolsInfra["Tools"]
             TREG[ToolRegistry]
             NT[Native Tools<br/>11 tools]
-            RT[RAG Tools<br/>4 tools]
+            RT[RAG Tools<br/>4 tools + Citations]
             MT[MCP Tools<br/>dynamic]
             OT[Orchestration<br/>AgentTool]
         end
@@ -897,17 +1035,27 @@ graph TB
         MCPS[MCP Servers]
         FS[File System]
         GH[GitHub API]
+        OIDC[OAuth2/OIDC]
     end
 
     %% User connections
     DEV --> CLI
     DEV --> TUI
     SVC --> REST
+    ADMIN --> AdminRoutes
 
     %% API to Application
     CLI --> EXEC
-    REST --> EXEC
+    REST --> AuthMW
+    AuthMW --> EXEC
     TUI --> EXEC
+    AdminRoutes --> POLICY
+
+    %% Auth flow
+    AuthMW --> JWT
+    AuthMW --> APIK
+    JWT --> P5
+    APIK --> P5
 
     %% Application wiring (new unified flow)
     EXEC --> FACT
@@ -925,6 +1073,13 @@ graph TB
     PLUG --> REG
     CSCH --> ADEF
 
+    %% Enterprise flows
+    POLICY --> IDENT
+    POLICY -.->|impl| P6
+    REPORT --> METR
+    WORKFLOW --> POLICY
+    FSM --> ENCR
+
     %% Domain dependencies
     AGENT --> PLAN
     AGENT --> STRAT
@@ -933,6 +1088,7 @@ graph TB
     AGENT --> P1
     AGENT --> P2
     AGENT --> P3
+    AGENT --> EVID
 
     %% Protocol implementations
     OAI -.->|impl| P1
@@ -954,6 +1110,7 @@ graph TB
     FTR --> FS
     NT --> GH
     NT --> FS
+    JWT --> OIDC
 
     classDef user fill:#ffcdd2,stroke:#c62828
     classDef api fill:#e8f5e9,stroke:#2e7d32
@@ -962,14 +1119,16 @@ graph TB
     classDef infra fill:#fff3e0,stroke:#e65100
     classDef external fill:#f5f5f5,stroke:#616161
     classDef new fill:#c8e6c9,stroke:#2e7d32
+    classDef enterprise fill:#fff9c4,stroke:#f9a825
 
-    class DEV,SVC user
+    class DEV,SVC,ADMIN user
     class CLI,REST,TUI api
     class EXEC,FACT,CAT,PLUG app
     class AGENT,PLAN,STRAT,CTX,TOK,P1,P2,P3,P4 domain
     class OAI,FSM,FTR,TREG,NT,RT,MT,OT infra
-    class OPENAI,AZURE,MCPS,FS,GH external
+    class OPENAI,AZURE,MCPS,FS,GH,OIDC external
     class REG,TRES,IBLD,ADEF,CSCH new
+    class AuthMW,AdminRoutes,POLICY,REPORT,WORKFLOW,RETAIN,IDENT,EVID,MACL,P5,P6,JWT,APIK,ENCR,METR,TRAC enterprise
 ```
 
 ---
@@ -1011,6 +1170,646 @@ flowchart TB
 
 ---
 
+## 11. Enterprise Security Architecture
+
+Multi-Tenant-Sicherheitsarchitektur mit RBAC und Identity Management:
+
+```mermaid
+flowchart TB
+    subgraph External["External Identity"]
+        OIDC[OAuth2/OIDC Provider]
+        APIClient[API Clients]
+    end
+
+    subgraph APILayer["API Layer"]
+        AuthMW[AuthMiddleware<br/>Request Processing]
+
+        subgraph Security["Security Schemes"]
+            Bearer[Bearer Token<br/>JWT Validation]
+            APIKey[X-API-Key<br/>API Key Auth]
+        end
+
+        subgraph Dependencies["FastAPI Dependencies"]
+            ReqUser[require_permission]
+            ReqRole[require_role]
+            ReqAdmin[require_admin]
+            ReqTenant[require_tenant_access]
+        end
+    end
+
+    subgraph Application["Application Layer"]
+        PolicyEngine[PolicyEngine<br/>RBAC Evaluation]
+
+        subgraph Rules["Policy Rules"]
+            SysRoles[System Roles<br/>admin, operator, viewer...]
+            CustomRules[Custom Policy Rules<br/>YAML Config]
+        end
+    end
+
+    subgraph Infrastructure["Infrastructure Layer"]
+        subgraph Providers["Identity Providers"]
+            JWTProvider[JWTIdentityProvider<br/>Token Decode & Validate]
+            APIKeyProvider[APIKeyProvider<br/>Key Lookup]
+        end
+    end
+
+    subgraph Core["Core Domain"]
+        subgraph Identity["Identity Models"]
+            TenantCtx[TenantContext<br/>Org Settings & Features]
+            UserCtx[UserContext<br/>Roles & Permissions]
+            Permission[Permission Enum<br/>agent:read, session:create...]
+        end
+
+        subgraph Protocols["Protocols"]
+            IDP[IdentityProviderProtocol]
+            PEP[PolicyEngineProtocol]
+        end
+    end
+
+    %% Request flow
+    OIDC -->|JWT| Bearer
+    APIClient -->|API Key| APIKey
+
+    AuthMW --> Bearer
+    AuthMW --> APIKey
+    Bearer --> JWTProvider
+    APIKey --> APIKeyProvider
+
+    JWTProvider --> TenantCtx
+    JWTProvider --> UserCtx
+    JWTProvider -.->|implements| IDP
+
+    AuthMW -->|sets context| UserCtx
+    AuthMW -->|sets context| TenantCtx
+
+    ReqUser --> PolicyEngine
+    ReqRole --> PolicyEngine
+    ReqAdmin --> PolicyEngine
+    ReqTenant --> PolicyEngine
+
+    PolicyEngine --> SysRoles
+    PolicyEngine --> CustomRules
+    PolicyEngine --> Permission
+    PolicyEngine -.->|implements| PEP
+
+    classDef external fill:#ffcdd2,stroke:#c62828
+    classDef api fill:#e8f5e9,stroke:#2e7d32
+    classDef app fill:#f3e5f5,stroke:#7b1fa2
+    classDef infra fill:#fff3e0,stroke:#e65100
+    classDef core fill:#e1f5fe,stroke:#01579b
+
+    class OIDC,APIClient external
+    class AuthMW,Bearer,APIKey,ReqUser,ReqRole,ReqAdmin,ReqTenant api
+    class PolicyEngine,SysRoles,CustomRules app
+    class JWTProvider,APIKeyProvider infra
+    class TenantCtx,UserCtx,Permission,IDP,PEP core
+```
+
+---
+
+## 12. Evidence & Audit Trail
+
+Nachvollziehbarkeit und Compliance durch Evidence Chain:
+
+```mermaid
+flowchart TB
+    subgraph AgentExecution["Agent Execution"]
+        LA[LeanAgent]
+        ToolExec[Tool Executor]
+    end
+
+    subgraph Collection["Evidence Collection"]
+        EC[EvidenceCollector<br/>Session-scoped]
+
+        subgraph Sources["Evidence Sources"]
+            ToolResult[Tool Results<br/>HIGH confidence]
+            RAGDoc[RAG Documents<br/>Score-based confidence]
+            LLMReason[LLM Reasoning<br/>MEDIUM confidence]
+            UserInput[User Input]
+        end
+    end
+
+    subgraph Chain["Evidence Chain"]
+        EChain[EvidenceChain<br/>chain_id, session_id]
+
+        subgraph Items["Evidence Items"]
+            EI1[EvidenceItem<br/>source_type, snippet]
+            EI2[EvidenceItem<br/>relevance_score]
+            EI3[EvidenceItem<br/>used_in_answer]
+        end
+
+        subgraph Citations["Formatted Citations"]
+            C1["[1] Document Title"]
+            C2["[2] Tool Result"]
+        end
+    end
+
+    subgraph Output["Final Output"]
+        Answer[Final Answer<br/>with inline citations]
+        Appendix[Citations Appendix<br/>full references]
+    end
+
+    LA --> ToolExec
+    ToolExec --> ToolResult
+    ToolExec --> RAGDoc
+
+    ToolResult --> EC
+    RAGDoc --> EC
+    LLMReason --> EC
+    UserInput --> EC
+
+    EC --> EChain
+    EChain --> EI1
+    EChain --> EI2
+    EChain --> EI3
+
+    EI1 -->|mark used| Citations
+    EI2 -->|mark used| Citations
+
+    Citations --> C1
+    Citations --> C2
+
+    EChain -->|finalize| Answer
+    C1 --> Appendix
+    C2 --> Appendix
+
+    classDef agent fill:#e1f5fe,stroke:#01579b
+    classDef collection fill:#fff3e0,stroke:#e65100
+    classDef chain fill:#f3e5f5,stroke:#7b1fa2
+    classDef output fill:#c8e6c9,stroke:#2e7d32
+
+    class LA,ToolExec agent
+    class EC,ToolResult,RAGDoc,LLMReason,UserInput collection
+    class EChain,EI1,EI2,EI3,C1,C2 chain
+    class Answer,Appendix output
+```
+
+---
+
+## 13. Memory Access Control (ACL)
+
+Feingranulare Zugriffskontrolle für Memory-Objekte:
+
+```mermaid
+flowchart TB
+    subgraph Request["Access Request"]
+        User[User Request<br/>user_id, roles, tenant_id]
+        Resource[Memory Resource<br/>resource_id, type]
+        Action[Requested Permission<br/>READ, WRITE, SHARE...]
+    end
+
+    subgraph ACLManager["MemoryACLManager"]
+        CheckAccess[check_access]
+        GetACL[get_acl]
+        Grant[grant_access]
+        Revoke[revoke_access]
+    end
+
+    subgraph ACL["MemoryACL"]
+        Owner[owner_id<br/>Full Access]
+        Scope[MemoryScope<br/>GLOBAL, TENANT, PROJECT, SESSION, PRIVATE]
+        Sensitivity[SensitivityLevel<br/>PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        DefaultPerms[default_permissions]
+
+        subgraph Entries["ACL Entries"]
+            E1[ACLEntry<br/>principal_type: user<br/>permissions: READ, WRITE]
+            E2[ACLEntry<br/>principal_type: role<br/>permissions: READ]
+            E3[ACLEntry<br/>expires_at: optional]
+        end
+    end
+
+    subgraph Policy["Scope Policies"]
+        SessionPolicy[Session Policy<br/>max 30 days retention]
+        TenantPolicy[Tenant Policy<br/>PUBLIC/INTERNAL only]
+        RestrictedPolicy[Restricted Policy<br/>admin roles only]
+    end
+
+    subgraph Decision["Access Decision"]
+        Allow[✓ ALLOWED]
+        Deny[✗ DENIED]
+    end
+
+    User --> CheckAccess
+    Resource --> CheckAccess
+    Action --> CheckAccess
+
+    CheckAccess --> GetACL
+    GetACL --> ACL
+
+    %% ACL evaluation
+    Owner -->|"user == owner"| Allow
+    DefaultPerms -->|"permission in defaults"| Allow
+
+    E1 -->|"user match"| Allow
+    E2 -->|"role match"| Allow
+    E3 -->|"check expiry"| Allow
+
+    Scope --> Policy
+    Sensitivity --> Policy
+    Policy -->|"compliance check"| Deny
+
+    classDef request fill:#ffecb3,stroke:#ff8f00
+    classDef manager fill:#f3e5f5,stroke:#7b1fa2
+    classDef acl fill:#e1f5fe,stroke:#01579b
+    classDef policy fill:#fff3e0,stroke:#e65100
+    classDef allow fill:#c8e6c9,stroke:#2e7d32
+    classDef deny fill:#ffcdd2,stroke:#c62828
+
+    class User,Resource,Action request
+    class CheckAccess,GetACL,Grant,Revoke manager
+    class Owner,Scope,Sensitivity,DefaultPerms,E1,E2,E3 acl
+    class SessionPolicy,TenantPolicy,RestrictedPolicy policy
+    class Allow allow
+    class Deny deny
+```
+
+---
+
+## 14. Reporting & Cost Management
+
+Usage-Tracking und Billing-Integration:
+
+```mermaid
+flowchart TB
+    subgraph Sources["Usage Sources"]
+        AgentExec[Agent Executions<br/>steps, tokens, duration]
+        ToolExec[Tool Executions<br/>count, duration]
+        APIReq[API Requests<br/>endpoint, status, latency]
+    end
+
+    subgraph Tracking["Usage Tracking"]
+        UsageTracker[UsageTracker]
+
+        subgraph Records["Usage Records"]
+            R1[UsageRecord<br/>tenant_id, user_id]
+            R2[UsageRecord<br/>usage_type, quantity]
+            R3[UsageRecord<br/>model, timestamp]
+        end
+
+        Aggregation[UsageAggregation<br/>by tenant, user, model]
+    end
+
+    subgraph Cost["Cost Calculation"]
+        CostCalc[CostCalculator]
+
+        subgraph Pricing["Pricing Config"]
+            TokenPrice[Token Pricing<br/>input/output per model]
+            ExecPrice[Execution Pricing<br/>per agent/tool]
+        end
+
+        CostReport[CostReport<br/>line_items, subtotal, adjustments]
+    end
+
+    subgraph Reports["Report Generation"]
+        ReportGen[ReportGenerator]
+
+        subgraph Formats["Output Formats"]
+            JSON[JSON Export]
+            CSV[CSV Export]
+            MD[Markdown Report]
+        end
+
+        BillingExport[Billing Export<br/>API Integration]
+    end
+
+    subgraph Output["Generated Reports"]
+        UsageReport[Usage Report<br/>by period, tenant, user]
+        CostSummary[Cost Summary<br/>detailed breakdown]
+        SLASummary[SLA Summary<br/>error rate, latency P50/P95/P99]
+    end
+
+    AgentExec --> UsageTracker
+    ToolExec --> UsageTracker
+    APIReq --> UsageTracker
+
+    UsageTracker --> R1
+    UsageTracker --> R2
+    UsageTracker --> R3
+
+    R1 --> Aggregation
+    R2 --> Aggregation
+    R3 --> Aggregation
+
+    Aggregation --> CostCalc
+    TokenPrice --> CostCalc
+    ExecPrice --> CostCalc
+    CostCalc --> CostReport
+
+    Aggregation --> ReportGen
+    CostReport --> ReportGen
+
+    ReportGen --> JSON
+    ReportGen --> CSV
+    ReportGen --> MD
+    ReportGen --> BillingExport
+
+    JSON --> UsageReport
+    CSV --> CostSummary
+    MD --> SLASummary
+
+    classDef source fill:#ffecb3,stroke:#ff8f00
+    classDef tracking fill:#e1f5fe,stroke:#01579b
+    classDef cost fill:#f3e5f5,stroke:#7b1fa2
+    classDef report fill:#fff3e0,stroke:#e65100
+    classDef output fill:#c8e6c9,stroke:#2e7d32
+
+    class AgentExec,ToolExec,APIReq source
+    class UsageTracker,R1,R2,R3,Aggregation tracking
+    class CostCalc,TokenPrice,ExecPrice,CostReport cost
+    class ReportGen,JSON,CSV,MD,BillingExport report
+    class UsageReport,CostSummary,SLASummary output
+```
+
+---
+
+## 15. Approval Workflows
+
+Enterprise Governance mit Genehmigungsprozessen:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant API
+    participant WFM as WorkflowManager
+    participant Workflow as ApprovalWorkflow
+    participant Request as ApprovalRequest
+    participant Approver
+    participant Callback as Event Callbacks
+
+    User->>API: Request agent publish
+    API->>WFM: create_request(AGENT_PUBLISH, agent_id)
+
+    WFM->>WFM: get_workflow(tenant_id, AGENT_PUBLISH)
+    WFM->>Workflow: Check workflow config
+
+    Note over Workflow: required_approvers: 1<br/>allowed_roles: [admin, agent_designer]<br/>auto_expire_hours: 72
+
+    WFM->>Request: Create ApprovalRequest
+    Request-->>WFM: request_id
+
+    WFM->>Callback: trigger("request_created", request)
+    Callback-->>Approver: Notification
+
+    WFM-->>API: ApprovalRequest
+    API-->>User: Request pending, ID: xxx
+
+    Note over Approver: Reviews request
+
+    Approver->>API: Approve request
+    API->>WFM: approve_request(request_id, approver_id)
+
+    WFM->>Request: approve(approver_id)
+    Request->>Request: Add ApprovalAction
+    Request->>Request: current_approvers += 1
+
+    alt len(approvers) >= required
+        Request->>Request: status = APPROVED
+        WFM->>Callback: trigger("request_approved", request)
+        WFM-->>API: True (fully approved)
+        API-->>Approver: Approved - action executed
+    else Need more approvals
+        WFM-->>API: False (needs more)
+        API-->>Approver: Approval recorded, awaiting more
+    end
+```
+
+---
+
+## 16. Data Retention & GDPR Compliance
+
+Datenaufbewahrung und Right-to-be-Forgotten:
+
+```mermaid
+flowchart TB
+    subgraph Categories["Data Categories"]
+        SessionData[SESSION_DATA<br/>30 days default]
+        ToolResults[TOOL_RESULTS<br/>7 days default]
+        AuditLogs[AUDIT_LOGS<br/>365 days, no soft delete]
+        Memory[MEMORY<br/>90 days]
+        Evidence[EVIDENCE<br/>365 days, archive first]
+        UserData[USER_DATA<br/>never auto-delete]
+    end
+
+    subgraph Config["RetentionConfig"]
+        Policies[Policies per Category]
+        TenantOverride[Tenant Override<br/>if allowed]
+        DryRun[Dry Run Mode]
+    end
+
+    subgraph Service["RetentionService"]
+        CheckRetention[check_retention<br/>should data be kept?]
+        ProcessDeletion[process_deletion<br/>with audit trail]
+        RTBF[right_to_be_forgotten<br/>GDPR Article 17]
+    end
+
+    subgraph Scheduler["RetentionScheduler"]
+        Timer[Background Timer<br/>24h interval]
+        Cleanup[Cleanup Cycle]
+    end
+
+    subgraph Audit["Deletion Audit"]
+        DeletionRecord[DeletionRecord<br/>category, tenant_id, reason]
+        AuditCallback[Audit Callback<br/>for compliance logs]
+    end
+
+    subgraph Outcomes["Deletion Outcomes"]
+        SoftDelete[Soft Delete<br/>mark as deleted]
+        HardDelete[Hard Delete<br/>permanent removal]
+        Archive[Archive First<br/>then delete]
+    end
+
+    Categories --> Config
+    Config --> Service
+
+    Service --> CheckRetention
+    Service --> ProcessDeletion
+    Service --> RTBF
+
+    Scheduler --> Timer
+    Timer --> Cleanup
+    Cleanup --> CheckRetention
+
+    CheckRetention -->|expired| ProcessDeletion
+    ProcessDeletion --> DeletionRecord
+    DeletionRecord --> AuditCallback
+
+    ProcessDeletion -->|soft_delete=true| SoftDelete
+    ProcessDeletion -->|soft_delete=false| HardDelete
+    ProcessDeletion -->|archive_before_delete=true| Archive
+
+    RTBF -->|all user data| ProcessDeletion
+
+    classDef category fill:#e1f5fe,stroke:#01579b
+    classDef config fill:#fff3e0,stroke:#e65100
+    classDef service fill:#f3e5f5,stroke:#7b1fa2
+    classDef scheduler fill:#ffecb3,stroke:#ff8f00
+    classDef audit fill:#fff9c4,stroke:#f9a825
+    classDef outcome fill:#c8e6c9,stroke:#2e7d32
+
+    class SessionData,ToolResults,AuditLogs,Memory,Evidence,UserData category
+    class Policies,TenantOverride,DryRun config
+    class CheckRetention,ProcessDeletion,RTBF service
+    class Timer,Cleanup scheduler
+    class DeletionRecord,AuditCallback audit
+    class SoftDelete,HardDelete,Archive outcome
+```
+
+---
+
+## 17. Encryption at Rest
+
+Per-Tenant Verschlüsselung mit Key Rotation:
+
+```mermaid
+flowchart TB
+    subgraph Keys["Key Management"]
+        MasterKey[Master Key<br/>TASKFORCE_ENCRYPTION_KEY]
+        KeyManager[KeyManager]
+
+        subgraph TenantKeys["Per-Tenant Keys"]
+            TK1["tenant:A:v1<br/>Derived via PBKDF2"]
+            TK2["tenant:B:v1"]
+            TK3["tenant:A:v2<br/>Rotated"]
+        end
+    end
+
+    subgraph Encryption["DataEncryptor"]
+        Encrypt[encrypt<br/>data + tenant_id]
+        Decrypt[decrypt<br/>encrypted + tenant_id]
+
+        subgraph Algorithms["Algorithms"]
+            Fernet[Fernet<br/>AES-128-CBC + HMAC]
+            AESGCM[AES-256-GCM<br/>AEAD]
+        end
+    end
+
+    subgraph Format["Encrypted Data Format"]
+        Header["Header<br/>key_id:algorithm:"]
+        Ciphertext[Ciphertext<br/>encrypted payload]
+    end
+
+    subgraph Storage["Persistence"]
+        StateFile[State Files<br/>.taskforce/states/]
+        ToolResultStore[Tool Results<br/>.taskforce/tool_results/]
+    end
+
+    MasterKey --> KeyManager
+    KeyManager -->|derive| TK1
+    KeyManager -->|derive| TK2
+    KeyManager -->|rotate| TK3
+
+    TK1 --> Encrypt
+    Encrypt --> Fernet
+    Encrypt --> AESGCM
+
+    Fernet --> Header
+    AESGCM --> Header
+    Header --> Ciphertext
+
+    Ciphertext --> StateFile
+    Ciphertext --> ToolResultStore
+
+    StateFile --> Decrypt
+    ToolResultStore --> Decrypt
+    Decrypt --> KeyManager
+
+    classDef key fill:#ffecb3,stroke:#ff8f00
+    classDef encrypt fill:#f3e5f5,stroke:#7b1fa2
+    classDef format fill:#e1f5fe,stroke:#01579b
+    classDef storage fill:#fff3e0,stroke:#e65100
+
+    class MasterKey,KeyManager,TK1,TK2,TK3 key
+    class Encrypt,Decrypt,Fernet,AESGCM encrypt
+    class Header,Ciphertext format
+    class StateFile,ToolResultStore storage
+```
+
+---
+
+## 18. Metrics & Observability
+
+SLA-Monitoring und Prometheus-Integration:
+
+```mermaid
+flowchart TB
+    subgraph Sources["Metric Sources"]
+        HTTPReq[HTTP Requests<br/>endpoint, status, duration]
+        AgentExec[Agent Execution<br/>success, steps, tokens]
+        ToolExec[Tool Execution<br/>name, success, duration]
+    end
+
+    subgraph Collector["MetricsCollector"]
+        Inc[inc<br/>Counter]
+        Set[set<br/>Gauge]
+        Observe[observe<br/>Histogram]
+        Time[time<br/>Timer Context]
+    end
+
+    subgraph Storage["Metric Storage"]
+        Counters["Counters<br/>taskforce_http_requests_total<br/>taskforce_agent_executions_total"]
+        Gauges["Gauges<br/>taskforce_active_sessions"]
+        Histograms["Histograms<br/>taskforce_http_request_duration_seconds<br/>taskforce_agent_execution_duration_seconds"]
+    end
+
+    subgraph Labels["Dimension Labels"]
+        L1["endpoint, method, status"]
+        L2["agent_id, tenant_id, success"]
+        L3["tool, tenant_id"]
+    end
+
+    subgraph Export["Export Formats"]
+        Prometheus["/metrics<br/>Prometheus Text"]
+        JSON[get_all_metrics<br/>JSON API]
+        SLA[get_sla_summary<br/>Error Rate, P50/P95/P99]
+    end
+
+    subgraph Buckets["Histogram Buckets"]
+        B1["0.005, 0.01, 0.025, 0.05"]
+        B2["0.1, 0.25, 0.5, 1.0"]
+        B3["2.5, 5.0, 10.0, +Inf"]
+    end
+
+    HTTPReq --> Inc
+    HTTPReq --> Observe
+    AgentExec --> Inc
+    AgentExec --> Observe
+    ToolExec --> Inc
+    ToolExec --> Observe
+
+    Inc --> Counters
+    Set --> Gauges
+    Observe --> Histograms
+    Time --> Histograms
+
+    L1 --> Counters
+    L2 --> Counters
+    L3 --> Counters
+
+    Histograms --> Buckets
+
+    Counters --> Prometheus
+    Gauges --> Prometheus
+    Histograms --> Prometheus
+
+    Counters --> JSON
+    Gauges --> JSON
+
+    Histograms --> SLA
+
+    classDef source fill:#ffecb3,stroke:#ff8f00
+    classDef collector fill:#f3e5f5,stroke:#7b1fa2
+    classDef storage fill:#e1f5fe,stroke:#01579b
+    classDef export fill:#c8e6c9,stroke:#2e7d32
+
+    class HTTPReq,AgentExec,ToolExec source
+    class Inc,Set,Observe,Time collector
+    class Counters,Gauges,Histograms storage
+    class Prometheus,JSON,SLA export
+```
+
+---
+
 ## Legende
 
 | Farbe | Bedeutung |
@@ -1019,13 +1818,54 @@ flowchart TB
 | Orange (#fff3e0) | Infrastructure Layer |
 | Violett (#f3e5f5) | Application Layer |
 | Grün (#e8f5e9) | API Layer |
-| Gelb (#ffecb3) | Protocols/Interfaces |
+| Gelb (#ffecb3) | Protocols/Interfaces, Inputs |
 | Grau (#f5f5f5) | External Services |
-| Hellgrün (#c8e6c9) | New Unified Components (2026-01 Refactoring) |
+| Hellgrün (#c8e6c9) | Outputs, Unified Components |
+| Hellgelb (#fff9c4) | Enterprise Features |
+| Rot (#ffcdd2) | External Systems, Denied |
 
 ---
 
 ## Changelog
+
+### 2026-01-22: Enterprise Features Architecture
+
+Added comprehensive enterprise architecture documentation:
+
+**New Enterprise Components:**
+
+| Component | Layer | Description |
+|-----------|-------|-------------|
+| `IdentityProviderProtocol` | Core/Interfaces | Protocol for JWT/API-Key authentication |
+| `PolicyEngineProtocol` | Core/Interfaces | Protocol for RBAC policy evaluation |
+| `Identity` (TenantContext, UserContext, Permission) | Core/Domain | Multi-tenant identity models |
+| `Evidence` (EvidenceChain, EvidenceItem, Citation) | Core/Domain | Audit trail and source tracking |
+| `MemoryACL` (ACLEntry, ScopePolicy) | Core/Domain | Fine-grained memory access control |
+| `JWTIdentityProvider` | Infrastructure/Auth | JWT token validation |
+| `APIKeyProvider` | Infrastructure/Auth | API key authentication |
+| `DataEncryptor`, `KeyManager` | Infrastructure/Persistence | Per-tenant encryption at rest |
+| `MetricsCollector` | Infrastructure/Metrics | Prometheus-compatible metrics |
+| `AuthMiddleware` | API/Middleware | FastAPI authentication middleware |
+| `Admin Routes` (users, roles, tenants) | API/Routes | Administrative endpoints |
+| `PolicyEngine` | Application/Policy | RBAC evaluation with custom rules |
+| `ReportGenerator` | Application/Reporting | Usage, cost, and compliance reports |
+| `WorkflowManager` | Application/Workflows | Approval workflows for governance |
+| `RetentionService` | Application | GDPR-compliant data retention |
+
+**New Diagrams Added:**
+
+| # | Diagram | Description |
+|---|---------|-------------|
+| 11 | Enterprise Security Architecture | Multi-tenant auth, RBAC, identity flow |
+| 12 | Evidence & Audit Trail | Evidence collection and citation generation |
+| 13 | Memory Access Control (ACL) | Fine-grained memory permissions |
+| 14 | Reporting & Cost Management | Usage tracking and billing integration |
+| 15 | Approval Workflows | Enterprise governance sequences |
+| 16 | Data Retention & GDPR Compliance | Retention policies and right-to-be-forgotten |
+| 17 | Encryption at Rest | Per-tenant key management |
+| 18 | Metrics & Observability | SLA monitoring and Prometheus export |
+
+---
 
 ### 2026-01-21: Unified Agent Architecture Refactoring
 
@@ -1048,5 +1888,5 @@ New diagrams added:
 ---
 
 *Erstellt am: 2026-01-21*
-*Letzte Aktualisierung: 2026-01-21 (Unified Agent Architecture)*
+*Letzte Aktualisierung: 2026-01-22 (Enterprise Features Architecture)*
 *Basierend auf: Taskforce Codebase Analyse*
