@@ -84,6 +84,20 @@ For visual representations of the architecture, see **[Architecture Diagrams](ar
 - Complete System Overview
 - Import Rules & Layer Dependencies
 
+## Enterprise Capabilities (2026-01)
+
+PyTaskforce includes enterprise-ready features for multi-tenant deployments:
+
+| Capability | Components | Documentation |
+|------------|------------|---------------|
+| **Identity & RBAC** | TenantContext, UserContext, PolicyEngine | [Enterprise Features](features/enterprise.md#1-identity-tenancy--rbac) |
+| **Evidence Tracking** | Evidence, RAGCitations | [Enterprise Features](features/enterprise.md#2-evidence--source-tracking) |
+| **Memory Governance** | Encryption, MemoryACL | [Enterprise Features](features/enterprise.md#3-secure-memory-governance) |
+| **Operations** | Metrics, Usage, Cost, Compliance | [Enterprise Features](features/enterprise.md#4-enterprise-operations) |
+| **Productization** | AgentCatalog, ApprovalWorkflows | [Enterprise Features](features/enterprise.md#6-agent-catalog--versioning) |
+
+See **[ADR-003: Enterprise Transformation](adr/adr-003-enterprise-transformation.md)** for architectural decisions.
+
 ## 📄 Detailed Documentation
 
 The architecture documentation is sharded into specialized sections:

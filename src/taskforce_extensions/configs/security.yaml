@@ -1,0 +1,142 @@
+# Security Configuration for Taskforce
+# This file configures authentication, authorization, and security settings.
+
+# Authentication settings
+auth:
+  # Enable/disable authentication (set to false for development)
+  enabled: false
+
+  # Allow anonymous access with limited permissions
+  allow_anonymous: true
+
+  # Default tenant for anonymous/unauthenticated users
+  default_tenant_id: "default"
+
+  # Paths exempt from authentication
+  exempt_paths:
+    - "/health"
+    - "/health/"
+    - "/docs"
+    - "/docs/"
+    - "/openapi.json"
+    - "/redoc"
+    - "/redoc/"
+
+# JWT settings
+jwt:
+  # Secret key for HS256 signing (use environment variable in production)
+  # Set via TASKFORCE_JWT_SECRET environment variable
+  secret_key_env: "TASKFORCE_JWT_SECRET"
+
+  # Public key for RS256 (optional, for asymmetric signing)
+  # Set via TASKFORCE_JWT_PUBLIC_KEY environment variable
+  public_key_env: "TASKFORCE_JWT_PUBLIC_KEY"
+
+  # Allowed signing algorithms
+  algorithms:
+    - "HS256"
+
+  # Expected issuer (optional)
+  issuer: null
+
+  # Expected audience (optional)
+  audience: null
+
+  # Clock skew tolerance in seconds
+  leeway_seconds: 30
+
+  # JWT claim mappings
+  claims:
+    tenant_id: "tenant_id"
+    roles: "roles"
+    username: "preferred_username"
+    email: "email"
+
+# API key settings
+api_keys:
+  # Enable API key authentication
+  enabled: true
+
+  # Header name for API keys
+  header_name: "X-API-Key"
+
+  # Key prefix for identification
+  prefix: "tf_"
+
+# CORS settings (configure for production)
+cors:
+  # Allowed origins (use specific domains in production)
+  allow_origins:
+    - "*"  # WARNING: Change this in production!
+
+  # Allowed HTTP methods
+  allow_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "PATCH"
+
+  # Allowed headers
+  allow_headers:
+    - "*"
+
+  # Allow credentials
+  allow_credentials: false
+
+  # Max age for preflight cache
+  max_age: 600
+
+# RBAC settings
+rbac:
+  # Enable RBAC enforcement
+  enabled: true
+
+  # Default role for new users (if not specified)
+  default_role: "viewer"
+
+  # System roles (built-in, cannot be deleted)
+  system_roles:
+    - "admin"
+    - "agent_designer"
+    - "operator"
+    - "auditor"
+    - "viewer"
+
+# Audit logging
+audit:
+  # Enable audit logging
+  enabled: true
+
+  # Events to log
+  log_events:
+    - "auth.success"
+    - "auth.failed"
+    - "permission.denied"
+    - "agent.execute"
+    - "session.create"
+    - "session.delete"
+    - "admin.action"
+
+  # Log destination (console, file, or external)
+  destination: "console"
+
+  # File path for file destination
+  file_path: ".taskforce/audit.log"
+
+# Rate limiting (optional)
+rate_limiting:
+  enabled: false
+  requests_per_minute: 60
+  burst_size: 10
+
+# Session settings
+sessions:
+  # Maximum sessions per user
+  max_per_user: 10
+
+  # Session timeout in seconds (0 = no timeout)
+  timeout_seconds: 0
+
+  # Enable session persistence
+  persist: true

@@ -16,6 +16,10 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Configuration Profiles](profiles.md)**: Managing dev, staging, and production settings.
 - **[ADRs (Architecture Decision Records)](adr/index.md)**: Why we made certain technical choices.
 
+### 🏢 Enterprise Features
+- **[Enterprise Features](features/enterprise.md)**: Multi-tenant identity, RBAC, compliance, and governance.
+- **[Long-Term Memory](features/longterm-memory.md)**: Persistent knowledge graph memory for agents.
+
 ### 🛠 Development & Community
 - **[Testing Guide](testing.md)**: How to run and write tests for Taskforce.
 - **[Examples & Tutorials](examples.md)**: Real-world use cases and code samples.
