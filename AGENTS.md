@@ -16,6 +16,7 @@ This file should be updated automatically when project-specific patterns, conven
   - Architecture changes → `docs/architecture.md` (entry) and/or `docs/architecture/` sharded pages
   - Cross-cutting decisions → add/update an ADR in `docs/adr/`
   - Developer workflow (uv/pytest/ruff/black/mypy) → `README.md` and `docs/testing.md`
+- CI runs on every push, executes `uv run pytest`, and tags the default branch as `v<major>.<minor>.<patch>` where major/minor come from `pyproject.toml` and patch auto-increments.
 
 - LeanAgent planning strategy selection lives under `agent.planning_strategy` and optional `agent.planning_strategy_params` in profile YAML; supported values are `native_react`, `plan_and_execute`, and `plan_and_react` (default).
 
