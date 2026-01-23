@@ -24,7 +24,7 @@ TaskforceChatApp {
     dock: bottom;
     width: 100%;
     height: auto;
-    background: $panel;
+    background: $surface;
     border-top: solid $border;
 }
 
@@ -34,14 +34,14 @@ TaskforceChatApp {
     height: 6;
     max-height: 8;
     border-top: solid $border;
-    background: $panel;
+    background: $surface;
     padding: 0 1;
     scrollbar-gutter: stable;
 }
 
 #bottom-container InputBar {
     dock: none;
-    height: 5;
+    height: auto;
     border-top: none;
 }
 
@@ -64,13 +64,13 @@ ChatLog {
     width: 100%;
     height: 1fr;
     background: $surface;
-    border: solid $border;
-    padding: 1;
+    border: none;
+    padding: 1 2;
     scrollbar-gutter: stable;
 }
 
 ChatLog:focus {
-    border: solid $primary;
+    border: none;
 }
 
 /* Plan Panel Styling */
@@ -91,40 +91,32 @@ PlanPanel.hidden {
 /* Input Bar Styling */
 InputBar {
     dock: none;
-    height: 5;
+    height: auto;
     width: 100%;
-    background: $panel;
+    background: $surface;
     border-top: solid $border;
-    padding: 1 2;
+    padding: 1 2 0 2;
 }
 
-InputBar Input {
-    border: solid $border;
-    background: $surface;
+InputBar TextArea {
+    border: none;
+    background: $panel;
     color: $text;
     width: 1fr;
-    margin-right: 1;
+    min-height: 4;
+    max-height: 8;
+    padding: 0 1;
 }
 
-InputBar Input:focus {
-    border: solid $primary;
-}
-
-InputBar Button {
-    background: $panel;
-    color: $text;
-    min-width: 10;
-    border: solid $border;
-}
-
-InputBar Button:hover {
-    background: $primary;
+InputBar TextArea:focus {
+    border: none;
 }
 
 InputBar .hint-text {
     color: $text-muted;
     text-style: italic;
     margin-top: 1;
+    margin-bottom: 1;
 }
 
 /* Chat Message Styling */

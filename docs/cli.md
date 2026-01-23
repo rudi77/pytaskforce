@@ -15,6 +15,7 @@ Open a continuous conversation with an agent.
 ```powershell
 taskforce chat
 ```
+Use `Ctrl+Enter` to send messages and `Enter` to insert a new line (multi-line input is supported).
 Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own.
 
 ### Loading Plugins
@@ -90,4 +91,3 @@ taskforce config show
 
 ---
 *For full command details, run `taskforce --help`.*
-

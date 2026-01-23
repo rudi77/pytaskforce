@@ -40,6 +40,9 @@ uvicorn taskforce.api.server:app --reload
 # CLI: Load plugin directly
 taskforce chat --plugin examples/accounting_agent
 
+# Chat input
+# Use Ctrl+Enter to send, Enter for new lines (multi-line input supported)
+
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins
 # POST /api/v1/execution/execute with agent_id: "accounting_agent"

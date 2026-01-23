@@ -88,13 +88,13 @@ taskforce --profile rag_dev chat \
 
 The UI supports different message types with distinct styling:
 
-- **User Messages**: Green border, user input
-- **Agent Messages**: Cyan border, agent responses
-- **System Messages**: Blue border, system notifications
-- **Tool Calls**: Yellow border, tool invocations (debug mode)
-- **Tool Results**: Green/Red border, tool outputs (debug mode)
-- **Errors**: Red border, error messages
-- **Plan Updates**: Magenta border, plan modifications
+- **User Messages**: Inline label with timestamp
+- **Agent Messages**: Inline label with timestamp, markdown-formatted output
+- **System Messages**: Inline label with timestamp
+- **Tool Calls**: Inline label with timestamp (debug mode)
+- **Tool Results**: Inline label with timestamp (debug mode)
+- **Errors**: Inline label with timestamp
+- **Plan Updates**: Inline label with timestamp
 
 ### Commands
 
@@ -111,7 +111,8 @@ Custom commands can be added by placing Markdown files in `.taskforce/commands/`
 
 ### Keyboard Shortcuts
 
-- `Enter` - Send message
+- `Ctrl+Enter` - Send message
+- `Enter` - Insert newline (multi-line input)
 - `Ctrl+C` - Quit application
 - `Ctrl+L` - Clear chat
 - `F1` - Show help
