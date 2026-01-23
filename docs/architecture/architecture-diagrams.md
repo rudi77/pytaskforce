@@ -13,7 +13,7 @@ graph TB
     subgraph "API Layer (Entrypoints)"
         CLI[Typer CLI<br/>main.py]
         REST[FastAPI REST<br/>server.py]
-        TUI[Textual TUI<br/>chat_ui/app.py]
+        ChatCLI[Simple CLI Chat<br/>simple_chat.py]
     end
 
     subgraph "Application Layer (Orchestration)"
@@ -775,16 +775,9 @@ flowchart TB
         OF[OutputFormatter<br/>Rich Formatting]
     end
 
-    subgraph TUI["TUI Layer (Textual)"]
+    subgraph ChatConsole["Chat Console (REPL)"]
         direction TB
-        APP[app.py<br/>Chat Application]
-
-        subgraph Widgets["Widgets"]
-            CL[ChatLog]
-            EP[EventsPanel]
-            PP[PlanPanel]
-            IB[InputBar]
-        end
+        SIMPLE[SimpleChatRunner<br/>simple_chat.py]
     end
 
     subgraph REST["REST Layer (FastAPI)"]

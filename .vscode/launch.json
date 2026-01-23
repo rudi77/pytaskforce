@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug: taskforce chat chat",
+            "type": "python",
+            "request": "launch",
+            "module": "taskforce.api.cli.main",
+            "args": [
+                "chat",
+                "chat",
+                "--profile",
+                "rag_agent",
+                "--user-id",
+                "ms-user",
+                "--org-id",
+                "MS-corp",
+                "--scope",
+                "shared",
+                "--lean",
+                "--stream"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        }
+    ]
+}

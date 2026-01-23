@@ -15,7 +15,8 @@ Open a continuous conversation with an agent.
 ```powershell
 taskforce chat
 ```
-Use `Ctrl+Enter` to send messages and `Enter` to insert a new line (multi-line input is supported).
+Use `Enter` to send messages (simple REPL-style input).
+Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color.
 Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own.
 
 ### Loading Plugins
