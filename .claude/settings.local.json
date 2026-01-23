@@ -41,7 +41,10 @@
       "Bash(xargs:*)",
       "Bash(ls -la \"D:\\\\home\\\\Source\\\\pytaskforce\\\\src\\\\taskforce\"\" 2>/dev/null || echo \"Not found, let me try the root \")",
       "Bash(cd:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(timeout /t 3)",
+      "Bash(curl:*)",
+      "Bash(powershell -Command:*)"
     ],
     "deny": [],
     "ask": []
