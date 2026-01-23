@@ -68,7 +68,7 @@ class FileAgentRegistry:
 
     def __init__(
         self,
-        configs_dir: str = "configs",
+        configs_dir: Optional[str] = None,
         tool_mapper: Optional[ToolMapperProtocol] = None,
         base_path: Optional[Path] = None,
     ):
@@ -77,13 +77,40 @@ class FileAgentRegistry:
 
         Args:
             configs_dir: Root directory for configuration files.
-                        Defaults to "configs" relative to current directory.
+                        If None, auto-detects: tries 'src/taskforce_extensions/configs/'
+                        first, falls back to 'configs/' for backward compatibility.
             tool_mapper: Optional tool mapper for tool name resolution.
                         If not provided, tool mapping features are disabled.
             base_path: Optional base path for plugin discovery.
                       If not provided, uses configs_dir parent as base.
         """
-        self.configs_dir = Path(configs_dir)
+        if configs_dir is None:
+            # Auto-detect config directory (same logic as AgentRegistry)
+            import sys
+
+            def get_base_path() -> Path:
+                """Get base path for resource files, handling frozen executables."""
+                if getattr(sys, "frozen", False):
+                    return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+                else:
+                    # Navigate from file_agent_registry.py to project root
+                    # file_agent_registry.py is at: src/taskforce/infrastructure/persistence/
+                    # Project root is 5 levels up
+                    return Path(__file__).parent.parent.parent.parent.parent
+
+            detected_base = get_base_path()
+            new_config_dir = detected_base / "src" / "taskforce_extensions" / "configs"
+            old_config_dir = detected_base / "configs"
+            if new_config_dir.exists():
+                self.configs_dir = new_config_dir
+            elif old_config_dir.exists():
+                self.configs_dir = old_config_dir
+            else:
+                # Default to new location even if it doesn't exist yet
+                self.configs_dir = new_config_dir
+        else:
+            self.configs_dir = Path(configs_dir)
+
         self.custom_dir = self.configs_dir / "custom"
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self._tool_mapper = tool_mapper
