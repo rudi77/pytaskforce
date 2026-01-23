@@ -7,7 +7,7 @@ import pyperclip
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Footer, Input
+from textual.widgets import Footer, TextArea
 
 from taskforce.api.cli.chat_ui.widgets import (
     ChatLog,
@@ -177,7 +177,8 @@ Custom commands are loaded from:
 Use **/commands** to see available custom commands.
 
 **Keyboard Shortcuts:**
-• **Enter** - Send message
+• **Ctrl+Enter** - Send message
+• **Enter** - New line
 • **Ctrl+C** - Quit application
 • **Ctrl+L** - Clear chat
 • **F1** - Show help
@@ -532,7 +533,7 @@ Use **/commands** to see available custom commands.
         """
         # Don't toggle if input has focus (user is typing 'c')
         try:
-            input_widget = self.query_one("#message-input", Input)
+            input_widget = self.query_one("#message-input", TextArea)
             if input_widget.has_focus:
                 return
         except Exception:
@@ -554,7 +555,7 @@ Use **/commands** to see available custom commands.
         """
         # Don't copy if input has focus (user is typing 'y')
         try:
-            input_widget = self.query_one("#message-input", Input)
+            input_widget = self.query_one("#message-input", TextArea)
             if input_widget.has_focus:
                 return
         except Exception:

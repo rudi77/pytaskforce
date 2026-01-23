@@ -4,9 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from rich.console import RenderableType
+from rich.console import Group, RenderableType
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Static
@@ -123,25 +122,29 @@ class ChatMessage(Static):
         elif self.message_type == MessageType.DEBUG:
             return self._render_debug(time_str)
         else:
-            return Panel(self.content, border_style="white")
+            return self._render_simple_message("Message", time_str, Text(self.content))
 
-    def _render_user_message(self, time_str: str) -> Panel:
+    def _render_simple_message(
+        self,
+        label: str,
+        time_str: str,
+        content: RenderableType,
+        label_style: str = "bold bright_white",
+    ) -> RenderableType:
+        """Render a formatted message block without panels."""
+        header = Text()
+        header.append(label, style=label_style)
+        header.append(f"  {time_str}", style="dim")
+        return Group(header, content)
+
+    def _render_user_message(self, time_str: str) -> RenderableType:
         """Render user message."""
-        title = f"🧑 You                                        {time_str}"
-        return Panel(
-            self.content,
-            title=title,
-            title_align="left",
-            border_style="dim bright_white",  # Changed from green to neutral
-            padding=(0, 1),
-        )
+        content = Markdown(self.content) if self.content else Text("")
+        return self._render_simple_message("🧑 You", time_str, content, "bold cyan")
 
-    def _render_agent_message(self, time_str: str) -> Panel:
+    def _render_agent_message(self, time_str: str) -> RenderableType:
         """Render agent message with optional thought."""
-        title = f"🤖 Agent                                      {time_str}"
-
-        # Build content with optional thought
-        content_parts = []
+        content_parts: list[RenderableType] = []
 
         if self.thought:
             thought_text = Text()
@@ -154,38 +157,22 @@ class ChatMessage(Static):
         if self.content:
             content_parts.append(Markdown(self.content))
 
-        # Combine all parts
-        if len(content_parts) == 0:
-            final_content = ""
+        if not content_parts:
+            final_content: RenderableType = Text("")
         elif len(content_parts) == 1:
             final_content = content_parts[0]
         else:
-            from rich.console import Group
             final_content = Group(*content_parts)
 
-        return Panel(
-            final_content,
-            title=title,
-            title_align="left",
-            border_style="dim cyan",  # More subtle border
-            padding=(0, 1),
-        )
+        return self._render_simple_message("🤖 Agent", time_str, final_content, "bold bright_green")
 
-    def _render_system_message(self, time_str: str) -> Panel:
+    def _render_system_message(self, time_str: str) -> RenderableType:
         """Render system message."""
-        title = f"ℹ️ System                                              {time_str}"
-        return Panel(
-            self.content,  # Changed from blue to subtle
-            title=title,
-            title_align="left",
-            border_style="yellow",  # Changed from blue to neutral
-            padding=(0, 1),
-        )
+        content = Text(self.content, style="yellow")
+        return self._render_simple_message("ℹ️ System", time_str, content, "bold yellow")
 
-    def _render_tool_call(self, time_str: str) -> Panel:
+    def _render_tool_call(self, time_str: str) -> RenderableType:
         """Render tool call message."""
-        title = f"🔧 Tool Call                                  {time_str}"
-
         content = Text()
         content.append(f"Tool: ", style="bold yellow")
         content.append(f"{self.tool_name}\n", style="yellow")
@@ -194,19 +181,12 @@ class ChatMessage(Static):
             content.append("Parameters: ", style="bold yellow")
             content.append(f"{self.tool_params}", style="dim yellow")
 
-        return Panel(
-            content,
-            title=title,
-            title_align="left",
-            border_style="yellow",
-            padding=(0, 1),
-        )
+        return self._render_simple_message("🔧 Tool Call", time_str, content, "bold yellow")
 
-    def _render_tool_result(self, time_str: str) -> Panel:
+    def _render_tool_result(self, time_str: str) -> RenderableType:
         """Render tool result message."""
         status_icon = "✅" if self.success else "❌"
         status_color = "green" if self.success else "red"
-        title = f"{status_icon} Tool Result                              {time_str}"
 
         content = Text()
         if self.tool_name:
@@ -215,46 +195,27 @@ class ChatMessage(Static):
 
         content.append(self.content, style=status_color)
 
-        return Panel(
+        return self._render_simple_message(
+            f"{status_icon} Tool Result",
+            time_str,
             content,
-            title=title,
-            title_align="left",
-            border_style=status_color,
-            padding=(0, 1),
+            f"bold {status_color}",
         )
 
-    def _render_error(self, time_str: str) -> Panel:
+    def _render_error(self, time_str: str) -> RenderableType:
         """Render error message."""
-        title = f"❌ Error                                      {time_str}"
-        return Panel(
-            Text(self.content, style="bold red"),
-            title=title,
-            title_align="left",
-            border_style="red",
-            padding=(0, 1),
-        )
+        content = Text(self.content, style="bold red")
+        return self._render_simple_message("❌ Error", time_str, content, "bold red")
 
-    def _render_plan(self, time_str: str) -> Panel:
+    def _render_plan(self, time_str: str) -> RenderableType:
         """Render plan message."""
-        title = f"🧭 Plan Update                                {time_str}"
-        return Panel(
-            Text(self.content, style="magenta"),
-            title=title,
-            title_align="left",
-            border_style="magenta",
-            padding=(0, 1),
-        )
+        content = Text(self.content, style="magenta")
+        return self._render_simple_message("🧭 Plan Update", time_str, content, "bold magenta")
 
-    def _render_debug(self, time_str: str) -> Panel:
+    def _render_debug(self, time_str: str) -> RenderableType:
         """Render debug message."""
-        title = f"🔍 Debug                                      {time_str}"
-        return Panel(
-            Text(self.content, style="dim white"),
-            title=title,
-            title_align="left",
-            border_style="dim white",
-            padding=(0, 1),
-        )
+        content = Text(self.content, style="dim white")
+        return self._render_simple_message("🔍 Debug", time_str, content, "bold dim white")
 
     def to_plain_text(self) -> str:
         """Generate plain text representation of this message.

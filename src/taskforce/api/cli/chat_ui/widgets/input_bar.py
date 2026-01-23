@@ -1,10 +1,10 @@
 """Input bar widget for user message input."""
 
-from textual import on
 from textual.app import ComposeResult
-from textual.containers import Horizontal
+from textual.containers import Vertical
 from textual.message import Message
-from textual.widgets import Button, Input, Static
+from textual.events import Key
+from textual.widgets import Static, TextArea
 
 
 class InputBar(Static):
@@ -19,19 +19,15 @@ class InputBar(Static):
         padding: 1;
     }
 
-    InputBar Horizontal {
+    InputBar Vertical {
         width: 100%;
         height: auto;
     }
 
-    InputBar Input {
+    InputBar TextArea {
         width: 1fr;
-        margin-right: 1;
-    }
-
-    InputBar Button {
-        width: auto;
-        min-width: 10;
+        min-height: 4;
+        max-height: 8;
     }
 
     InputBar .hint-text {
@@ -64,50 +60,36 @@ class InputBar(Static):
 
     def compose(self) -> ComposeResult:
         """Compose the input bar layout."""
-        with Horizontal():
-            yield Input(
-                placeholder=self.placeholder,
+        with Vertical():
+            yield TextArea(
                 id="message-input",
             )
-            yield Button("Send", variant="primary", id="send-button")
-        yield Static(
-            "Commands: /help /clear /export /exit  |  Ctrl+C to quit",
-            classes="hint-text",
-        )
-
-    @on(Input.Submitted)
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle input submission via Enter key.
-
-        Args:
-            event: Input submitted event
-        """
-        self._submit_message()
-
-    @on(Button.Pressed, "#send-button")
-    def on_send_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle send button press.
-
-        Args:
-            event: Button pressed event
-        """
-        self._submit_message()
+            yield Static(
+                "Ctrl+Enter to send · Enter for newline · /help for commands · Ctrl+C to quit",
+                classes="hint-text",
+            )
 
     def _submit_message(self) -> None:
         """Submit the current message."""
-        input_widget = self.query_one("#message-input", Input)
-        message = input_widget.value.strip()
+        input_widget = self.query_one("#message-input", TextArea)
+        message = input_widget.text.strip()
 
         if message:
             # Post message to parent
             self.post_message(self.MessageSubmitted(message))
             # Clear input
-            input_widget.value = ""
+            input_widget.text = ""
             input_widget.focus()
+
+    def on_key(self, event: Key) -> None:
+        """Handle key events for submit shortcuts."""
+        if event.key == "enter" and event.ctrl:
+            event.stop()
+            self._submit_message()
 
     def focus_input(self) -> None:
         """Focus the input field."""
-        input_widget = self.query_one("#message-input", Input)
+        input_widget = self.query_one("#message-input", TextArea)
         input_widget.focus()
 
     def set_enabled(self, enabled: bool) -> None:
@@ -116,11 +98,9 @@ class InputBar(Static):
         Args:
             enabled: Whether input should be enabled
         """
-        input_widget = self.query_one("#message-input", Input)
-        send_button = self.query_one("#send-button", Button)
+        input_widget = self.query_one("#message-input", TextArea)
 
         input_widget.disabled = not enabled
-        send_button.disabled = not enabled
 
         if enabled:
             input_widget.focus()
@@ -131,6 +111,9 @@ class InputBar(Static):
         Args:
             text: Text to insert
         """
-        input_widget = self.query_one("#message-input", Input)
-        input_widget.insert_text_at_cursor(text)
+        input_widget = self.query_one("#message-input", TextArea)
+        if hasattr(input_widget, "insert"):
+            input_widget.insert(text)
+        else:
+            input_widget.text = f"{input_widget.text}{text}"
         input_widget.focus()
