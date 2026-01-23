@@ -58,10 +58,8 @@ async def lifespan(app: FastAPI):
     # Initialize tracing first (before any LLM calls)
     init_tracing()
 
-    # Load plugins (enterprise, custom, etc.)
-    plugin_config = _load_plugin_config()
-    load_all_plugins(plugin_config)
-
+    # Note: Plugins are already loaded in create_app() before this runs
+    # This ensures routers are registered before the app starts
     enterprise_status = "available" if is_enterprise_available() else "not installed"
     await logger.ainfo(
         "fastapi.startup",
@@ -144,7 +142,12 @@ def create_app(plugin_config: Optional[dict[str, Any]] = None) -> FastAPI:
     )
     app.include_router(health.router, tags=["health"])
 
-    # Register plugin components
+    # Load plugins BEFORE registering them (must happen before lifespan)
+    # This ensures routers are available for OpenAPI schema generation
+    config = plugin_config or _load_plugin_config()
+    load_all_plugins(config)
+
+    # Register plugin components (middleware and routers)
     _register_plugins(app)
 
     return app
@@ -187,14 +190,18 @@ def _register_plugins(app: FastAPI) -> None:
     # Register routers from plugins
     for router in registry.routers:
         try:
-            # Get router prefix and tags from plugin if available
-            prefix = getattr(router, "prefix", "/api/v1")
+            # Get tags from router, default to ["plugin"]
             tags = getattr(router, "tags", ["plugin"])
 
-            app.include_router(router, prefix=prefix, tags=tags)
-            logger.debug(
+            # Plugin routers already have their sub-prefix (e.g., /admin/users)
+            # We add the /api/v1 prefix when including them
+            app.include_router(router, prefix="/api/v1", tags=tags)
+
+            # Log the full path for debugging
+            router_prefix = getattr(router, "prefix", "")
+            logger.info(
                 "plugin.router.added",
-                prefix=prefix,
+                full_path=f"/api/v1{router_prefix}",
                 tags=tags,
             )
         except Exception as e:
