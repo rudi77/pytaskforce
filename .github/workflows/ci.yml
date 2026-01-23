@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest
+
+  tag:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compute next tag
+        id: compute_tag
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          import tomllib
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          major, minor, *_ = version.split(".")
+          pattern = f"v{major}.{minor}."
+
+          tags = subprocess.check_output(
+              ["git", "tag", "--list", f"{pattern}*"]
+          ).decode().split()
+
+          max_patch = -1
+          for tag in tags:
+              match = re.fullmatch(rf"v{major}\.{minor}\.(\d+)", tag)
+              if match:
+                  max_patch = max(max_patch, int(match.group(1)))
+
+          next_patch = max_patch + 1
+          next_tag = f"v{major}.{minor}.{next_patch}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={next_tag}\n")
+
+          print(f"Next tag: {next_tag}")
+          PY
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.compute_tag.outputs.tag }}"
+          git push origin "${{ steps.compute_tag.outputs.tag }}"
