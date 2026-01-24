@@ -90,5 +90,41 @@ View the current active configuration:
 taskforce config show
 ```
 
+### Skills
+Manage and inspect agent skills:
+
+```powershell
+# List all available skills
+taskforce skills list
+
+# List with full descriptions
+taskforce skills list --verbose
+
+# Show skill details (preview first 20 lines)
+taskforce skills show pdf-processing
+
+# Show complete skill instructions
+taskforce skills show pdf-processing --full
+
+# List bundled resources for a skill
+taskforce skills resources pdf-processing
+
+# Read a specific resource file
+taskforce skills read pdf-processing forms.md
+
+# Show skill search directories
+taskforce skills paths
+```
+
+Skills are modular capabilities that extend agent functionality with domain-specific expertise. Each skill packages instructions, metadata, and optional resources (scripts, templates, documentation).
+
+**Available Built-in Skills:**
+- `code-review` - Code review for bugs, security, and quality
+- `data-analysis` - Data exploration, statistics, and visualization
+- `documentation` - Technical documentation creation
+- `pdf-processing` - PDF manipulation (extract text, fill forms, merge/split)
+
+See **[Skills Documentation](features/skills.md)** for creating custom skills.
+
 ---
 *For full command details, run `taskforce --help`.*

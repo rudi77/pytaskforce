@@ -84,6 +84,52 @@ For visual representations of the architecture, see **[Architecture Diagrams](ar
 - Complete System Overview
 - Import Rules & Layer Dependencies
 
+## Agent Skills System (2026-01)
+
+The Skills System provides modular, domain-specific capabilities that extend agent functionality. Skills follow Clean Architecture principles with strict layer separation.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    System Prompt                             │
+│  ┌─────────────────┐  ┌─────────────────────────────────┐   │
+│  │ Available Skills │  │ Active Skills (full instructions)│   │
+│  │ (metadata only)  │  │ Loaded on-demand when triggered  │   │
+│  └─────────────────┘  └─────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Skill Service                           │
+│  • Discovery & Registration    • Activation Management       │
+│  • Resource Access             • Prompt Section Generation   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+     ~/.taskforce/    .taskforce/skills/   taskforce_extensions/
+        skills/       (project-level)         skills/
+     (user-level)                          (built-in)
+```
+
+### Progressive Loading Pattern
+
+Skills use three-level loading to minimize token usage:
+
+| Level | Content | Loaded When | Token Cost |
+|-------|---------|-------------|------------|
+| 1 | Metadata (name, description) | Discovery | ~100 tokens/skill |
+| 2 | Instructions (SKILL.md body) | Skill triggered | <5k tokens |
+| 3 | Resources (scripts, templates) | On-demand | Unlimited |
+
+### Available Built-in Skills
+
+- **code-review**: Structured code analysis for bugs, security, and quality
+- **data-analysis**: EDA, statistical analysis, and visualization
+- **documentation**: Technical documentation creation
+- **pdf-processing**: PDF manipulation with bundled Python scripts
+
+See **[Skills Documentation](features/skills.md)** for creating custom skills.
+
 ## Plugin System (2026-01)
 
 Taskforce verwendet ein Entry-Point-basiertes Plugin-System für Erweiterbarkeit:

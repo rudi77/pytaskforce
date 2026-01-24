@@ -131,6 +131,56 @@ def validate_parameters(params: Dict[str, Any]) -> bool
 
 ---
 
+#### **SkillProtocol**
+
+**Responsibility:** Defines contract for agent skills. Abstracts skill metadata, instructions, and resource access.
+
+**Key Interfaces:**
+```python
+@property
+def name() -> str
+
+@property
+def description() -> str
+
+@property
+def instructions() -> str
+
+@property
+def source_path() -> str
+
+def get_resources() -> dict[str, str]
+def read_resource(path: str) -> str | None
+```
+
+**Dependencies:** None (protocol definition)
+
+**Technology Stack:** Python Protocol (PEP 544)
+
+**Code Location:** `taskforce/src/taskforce/core/interfaces/skills.py`
+
+---
+
+#### **SkillRegistryProtocol**
+
+**Responsibility:** Defines contract for skill discovery and management. Enables swappable file-based or database-backed implementations.
+
+**Key Interfaces:**
+```python
+def discover_skills() -> list[SkillMetadata]
+def get_skill(name: str) -> Skill | None
+def list_skills() -> list[str]
+def refresh() -> None
+```
+
+**Dependencies:** None (protocol definition)
+
+**Technology Stack:** Python Protocol (PEP 544)
+
+**Code Location:** `taskforce/src/taskforce/core/interfaces/skills.py`
+
+---
+
 ### **Infrastructure Layer Components**
 
 #### **FileStateManager**
@@ -225,6 +275,44 @@ def validate_parameters(params: Dict[str, Any]) -> bool
 
 ---
 
+#### **Skills Infrastructure**
+
+**Responsibility:** File-based skill discovery, parsing, and caching. Implements progressive loading pattern for token efficiency.
+
+**Components:**
+
+**SkillParser:**
+- `parse_skill_markdown(content: str) -> Skill` - Full skill parsing from SKILL.md
+- `parse_skill_metadata(content: str) -> SkillMetadata` - Lightweight metadata extraction
+- `_extract_frontmatter(content: str) -> dict` - YAML frontmatter parsing
+
+**SkillLoader:**
+- `discover_skill_directories() -> list[Path]` - Find SKILL.md files
+- `discover_metadata() -> list[SkillMetadata]` - Lightweight metadata discovery
+- `load_skill(path: Path) -> Skill` - Load complete skill
+- `load_skill_by_name(name: str) -> Skill | None` - Find and load by name
+
+**FileSkillRegistry:**
+- Metadata cache for efficient discovery
+- Full skill cache for loaded skills
+- Methods: `discover_skills()`, `get_skill()`, `list_skills()`, `refresh()`
+
+**Default Skill Directories:**
+- `~/.taskforce/skills/` - User-level skills
+- `.taskforce/skills/` - Project-level skills
+- `src/taskforce_extensions/skills/` - Extension skills
+
+**Dependencies:**
+- `PyYAML` - YAML frontmatter parsing
+- `pathlib` - Path operations
+- File system access
+
+**Technology Stack:** Python 3.11, PyYAML, pathlib
+
+**Code Location:** `taskforce/src/taskforce/infrastructure/skills/`
+
+---
+
 ### **Application Layer Components**
 
 #### **AgentFactory**
@@ -288,6 +376,32 @@ def validate_parameters(params: Dict[str, Any]) -> bool
 
 ---
 
+#### **SkillService**
+
+**Responsibility:** High-level skill management service. Provides skill discovery, activation, context management, and system prompt generation.
+
+**Key Interfaces:**
+- `list_skills() -> list[str]` - List available skill names
+- `get_skill(name: str) -> Skill | None` - Get skill by name
+- `activate_skill(name: str) -> bool` - Activate a skill
+- `deactivate_skill(name: str) -> None` - Deactivate a skill
+- `get_active_skills() -> list[Skill]` - Get currently active skills
+- `get_combined_instructions() -> str` - Merged instructions from active skills
+- `get_skill_prompt_section() -> str` - Metadata for system prompt
+- `get_active_skills_prompt_section() -> str` - Active instructions for prompt
+- `read_skill_resource(skill_name: str, path: str) -> str | None` - Read resource file
+
+**Dependencies:**
+- `FileSkillRegistry` - For skill discovery and loading
+- `SkillContext` - For managing active skills
+- Core domain `Skill`, `SkillMetadataModel`
+
+**Technology Stack:** Python 3.11, singleton pattern via `get_skill_service()`
+
+**Code Location:** `taskforce/src/taskforce/application/skill_service.py`
+
+---
+
 ### **API Layer Components**
 
 #### **FastAPI REST Service**
@@ -326,6 +440,11 @@ def validate_parameters(params: Dict[str, Any]) -> bool
 - `taskforce sessions list` - List sessions
 - `taskforce sessions show <session-id>` - Show session details
 - `taskforce config show` - Show configuration
+- `taskforce skills list [--verbose]` - List available skills
+- `taskforce skills show <skill> [--full]` - Show skill details
+- `taskforce skills resources <skill>` - List skill resources
+- `taskforce skills read <skill> <path>` - Read skill resource
+- `taskforce skills paths` - Show skill search directories
 
 **Dependencies:**
 - `AgentExecutor` - For mission execution
@@ -354,6 +473,7 @@ C4Component
         Component(executor, "AgentExecutor", "Python", "Orchestrates execution")
         Component(factory, "AgentFactory", "Python", "Dependency injection")
         Component(profiles, "ProfileLoader", "Python, PyYAML", "Config management")
+        Component(skill_svc, "SkillService", "Python", "Skill management")
     }
     
     Container_Boundary(core, "Core Layer") {
@@ -366,6 +486,7 @@ C4Component
         Component(state_proto, "StateManagerProtocol", "Python Protocol", "State persistence contract")
         Component(llm_proto, "LLMProviderProtocol", "Python Protocol", "LLM provider contract")
         Component(tool_proto, "ToolProtocol", "Python Protocol", "Tool execution contract")
+        Component(skill_proto, "SkillProtocol", "Python Protocol", "Skill capability contract")
     }
     
     Container_Boundary(infra, "Infrastructure Layer") {
@@ -374,6 +495,7 @@ C4Component
         Component(llm_svc, "OpenAIService", "Python, LiteLLM", "LLM integration")
         Component(tools, "Native Tools", "Python", "11+ tool implementations")
         Component(rag_tools, "RAG Tools", "Python, Azure SDK", "Semantic search tools")
+        Component(skills_infra, "Skills Infrastructure", "Python, PyYAML", "Skill discovery & loading")
     }
     
     Container_Boundary(external, "External Systems") {
@@ -401,6 +523,8 @@ C4Component
     Rel(llm_proto, llm_svc, "Implemented by")
     Rel(tool_proto, tools, "Implemented by")
     Rel(tool_proto, rag_tools, "Implemented by")
+    Rel(skill_proto, skills_infra, "Implemented by")
+    Rel(skill_svc, skill_proto, "Depends on")
     
     Rel(file_state, "File System", "Writes to")
     Rel(db_state, postgres, "Writes to")
