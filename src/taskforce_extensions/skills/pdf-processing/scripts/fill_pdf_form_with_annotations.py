@@ -82,9 +82,7 @@ def fill_pdf_form(
         page_num = field["page_number"]
 
         # Get image dimensions for this page
-        page_info = next(
-            p for p in fields_data["pages"] if p["page_number"] == page_num
-        )
+        page_info = next(p for p in fields_data["pages"] if p["page_number"] == page_num)
         image_width = page_info["image_width"]
         image_height = page_info["image_height"]
         pdf_width, pdf_height = pdf_dimensions[page_num]
@@ -134,10 +132,7 @@ def fill_pdf_form(
 def main() -> None:
     """Main entry point."""
     if len(sys.argv) != 4:
-        print(
-            "Usage: fill_pdf_form_with_annotations.py "
-            "[input pdf] [fields.json] [output pdf]"
-        )
+        print("Usage: fill_pdf_form_with_annotations.py " "[input pdf] [fields.json] [output pdf]")
         sys.exit(1)
 
     input_pdf = sys.argv[1]

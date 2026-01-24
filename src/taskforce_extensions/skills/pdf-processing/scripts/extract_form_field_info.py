@@ -11,7 +11,7 @@ from typing import Any
 from pypdf import PdfReader
 
 
-def get_full_annotation_field_id(annotation: dict) -> str | None:
+def get_full_annotation_field_id(annotation: Any) -> str | None:
     """Get the full hierarchical field ID from an annotation.
 
     Args:
@@ -20,12 +20,13 @@ def get_full_annotation_field_id(annotation: dict) -> str | None:
     Returns:
         Full field ID as dot-separated string, or None if not found.
     """
-    components = []
-    while annotation:
-        field_name = annotation.get("/T")
+    components: list[str] = []
+    current = annotation
+    while current:
+        field_name = current.get("/T")
         if field_name:
-            components.append(field_name)
-        annotation = annotation.get("/Parent")
+            components.append(str(field_name))
+        current = current.get("/Parent")
     return ".".join(reversed(components)) if components else None
 
 
@@ -49,9 +50,7 @@ def make_field_dict(field: dict, field_id: str) -> dict[str, Any]:
         states = field.get("/_States_", [])
         if len(states) == 2:
             if "/Off" in states:
-                field_dict["checked_value"] = (
-                    states[0] if states[0] != "/Off" else states[1]
-                )
+                field_dict["checked_value"] = states[0] if states[0] != "/Off" else states[1]
                 field_dict["unchecked_value"] = "/Off"
             else:
                 print(f"Unexpected state values for checkbox `{field_id}`...")
