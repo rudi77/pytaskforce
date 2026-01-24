@@ -1,13 +1,13 @@
 # Accounts Payable PoC Gatekeeper
 # Extracts invoice data and checks §14 UStG requirements.
-# Uses the invoice-extraction skill for guidance.
+# Uses the invoice-extraction skill directly.
 
 agent:
   type: custom
   planning_strategy: plan_and_execute
   max_steps: 30
 
-# Reference to the invoice-extraction skill for detailed extraction workflow
+# The invoice-extraction skill provides the extract_invoice.py script
 skills:
   - invoice-extraction
 
@@ -17,29 +17,22 @@ system_prompt: |
 
   ## How to Extract Invoices
 
-  Use the `gatekeeper_extract_invoice` tool with the invoice file path.
-  The tool handles everything internally:
-  - OCR text extraction
-  - Field parsing (invoice_id, dates, amounts, supplier, recipient)
-  - §14 UStG compliance validation
+  Execute the invoice-extraction skill script directly:
 
-  ## Example
-
-  When given an invoice at `/path/to/invoice.pdf`:
-  ```
-  gatekeeper_extract_invoice(invoice_path="/path/to/invoice.pdf")
+  ```bash
+  python src/taskforce_extensions/skills/invoice-extraction/scripts/extract_invoice.py /path/to/invoice.pdf
   ```
 
-  ## Output Format
-
-  The tool returns a structured JSON with:
+  The script outputs JSON to stdout with:
   - invoice_data: All extracted fields
   - missing_fields: List of §14 UStG mandatory fields that are missing
   - compliant: Boolean indicating if all required fields are present
 
-# Only the extraction tool is needed - it handles OCR internally
+  Parse the JSON output and report the results.
+
+# bash tool to execute the skill script directly
 tool_allowlist:
-  - gatekeeper_extract_invoice
+  - bash
   - file_read
 
 context_policy:
