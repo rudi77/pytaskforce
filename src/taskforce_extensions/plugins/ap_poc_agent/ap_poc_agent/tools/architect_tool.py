@@ -40,10 +40,7 @@ class ArchitectConfigTool:
                     "description": "Configuration payload (JSON object)",
                 },
             },
-            "anyOf": [
-                {"required": ["config_path"]},
-                {"required": ["config_payload"]},
-            ],
+            "required": [],
         }
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:

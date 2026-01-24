@@ -50,12 +50,7 @@ class GatekeeperTool:
                     "items": {"type": "object"},
                 },
             },
-            "anyOf": [
-                {"required": ["invoice_path"]},
-                {"required": ["invoice_payload"]},
-                {"required": ["ocr_text"]},
-                {"required": ["ocr_blocks"]},
-            ],
+            "required": [],
         }
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
