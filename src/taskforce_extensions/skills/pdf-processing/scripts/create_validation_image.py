@@ -64,9 +64,7 @@ def main() -> None:
         input_image_path = sys.argv[3]
         output_image_path = sys.argv[4]
 
-        create_validation_image(
-            page_number, fields_json_path, input_image_path, output_image_path
-        )
+        create_validation_image(page_number, fields_json_path, input_image_path, output_image_path)
     except ValueError:
         print("Error: Page number must be an integer")
         sys.exit(1)

@@ -6,16 +6,17 @@ Usage:
 """
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
+# Add scripts directory to path for sibling imports
+sys.path.insert(0, str(Path(__file__).parent))
 from extract_form_field_info import get_field_info
 
 
-def validation_error_for_field_value(
-    field_info: dict[str, Any], field_value: str
-) -> str | None:
+def validation_error_for_field_value(field_info: dict[str, Any], field_value: str) -> str | None:
     """Validate that a field value is valid for the field type.
 
     Args:
@@ -82,9 +83,7 @@ def monkeypatch_pypdf_method() -> None:
     DictionaryObject.get_inherited = patched_get_inherited
 
 
-def fill_pdf_fields(
-    input_pdf_path: str, fields_json_path: str, output_pdf_path: str
-) -> None:
+def fill_pdf_fields(input_pdf_path: str, fields_json_path: str, output_pdf_path: str) -> None:
     """Fill PDF form fields from a JSON specification.
 
     Args:
@@ -145,8 +144,8 @@ def fill_pdf_fields(
     # dialog even if the user doesn't make any changes.
     writer.set_need_appearances_writer(True)
 
-    with open(output_pdf_path, "wb") as f:
-        writer.write(f)
+    with open(output_pdf_path, "wb") as output_file:
+        writer.write(output_file)
 
     print(f"Successfully filled PDF and saved to {output_pdf_path}")
 

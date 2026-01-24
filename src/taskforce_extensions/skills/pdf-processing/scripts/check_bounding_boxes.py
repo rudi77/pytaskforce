@@ -78,9 +78,7 @@ def get_bounding_box_messages(fields_json_stream: IO[str]) -> list[str]:
                         f"`{rj.field['description']}` ({rj.rect})"
                     )
                 if len(messages) >= 20:
-                    messages.append(
-                        "Aborting further checks; fix bounding boxes and try again"
-                    )
+                    messages.append("Aborting further checks; fix bounding boxes and try again")
                     return messages
 
         # Check entry box height vs font size
@@ -97,9 +95,7 @@ def get_bounding_box_messages(fields_json_stream: IO[str]) -> list[str]:
                         f"or decrease the font size."
                     )
                     if len(messages) >= 20:
-                        messages.append(
-                            "Aborting further checks; fix bounding boxes and try again"
-                        )
+                        messages.append("Aborting further checks; fix bounding boxes and try again")
                         return messages
 
     if not has_error:
