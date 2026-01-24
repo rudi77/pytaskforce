@@ -1,0 +1,32 @@
+# Accounts Payable PoC Gatekeeper
+# Extracts invoice data and checks §14 UStG requirements.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 30
+
+system_prompt: |
+  You are the Gatekeeper for the Accounts Payable PoC.
+  Extract structured invoice data and check for mandatory §14 UStG fields.
+  Report missing fields and mark the invoice as compliant or not.
+
+  If OCR tools are available, you may call them before extraction.
+  Otherwise, use the provided JSON invoice payload.
+
+tool_allowlist:
+  - gatekeeper_extract_invoice
+  - ocr_extract
+  - layout_detect
+  - file_read
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce_ap_poc
+
+logging:
+  level: INFO

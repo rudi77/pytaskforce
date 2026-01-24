@@ -1,0 +1,32 @@
+# Accounts Payable PoC Architect
+# Validates configuration and governance settings.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 30
+
+system_prompt: |
+  You are the Architect for the Accounts Payable PoC.
+  Validate the provided configuration payload and ensure:
+  - Chart of accounts is SKR03 or SKR04
+  - Tax rates are present
+  - Company profile is complete
+  - Vendors, cost centers, and accounts are structured
+
+  Return the normalized system configuration with a summary.
+
+tool_allowlist:
+  - architect_configure_system
+  - file_read
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce_ap_poc
+
+logging:
+  level: INFO

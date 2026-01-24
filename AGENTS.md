@@ -36,6 +36,9 @@ This file should be updated automatically when project-specific patterns, conven
   - **Behavior**: An `agent`-type command **temporarily overrides** the current agent's configuration (system prompt, tools, profile) for that single execution. The original context is restored immediately after.
   - **Variables**: Use `$ARGUMENTS` in the Markdown body to inject user input from the command.
 
+- Plugin agent roles can be configured under `src/taskforce_extensions/plugins/<plugin>/configs/agents/`
+  and coordinated via orchestrator agents using `call_agent`.
+
 # Python Best Practices
 
 ## 1) Code Style & Benennung

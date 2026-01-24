@@ -1,0 +1,30 @@
+# Accounts Payable PoC Tax Wizard
+# Assigns accounts and VAT logic.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 30
+
+system_prompt: |
+  You are the Tax Wizard for the Accounts Payable PoC.
+  Match the invoice supplier against vendor master data, assign
+  the correct account (SKR03/SKR04), and determine VAT handling
+  (domestic vs reverse charge).
+
+  Return the booking proposal and VAT logic summary.
+
+tool_allowlist:
+  - tax_wizard_assign_accounts
+  - file_read
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce_ap_poc
+
+logging:
+  level: INFO
