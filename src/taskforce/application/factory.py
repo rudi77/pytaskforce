@@ -617,6 +617,23 @@ class AgentFactory:
         if not system_prompt:
             raise ValueError("agent_definition must include 'system_prompt'")
 
+        # Load skill instructions if skills are specified in definition
+        skill_names = agent_definition.get("skills", [])
+        if skill_names:
+            from taskforce.application.infrastructure_builder import (
+                InfrastructureBuilder,
+            )
+
+            infra_builder = InfrastructureBuilder(self.config_dir)
+            skill_instructions = infra_builder.build_skill_instructions(skill_names)
+            if skill_instructions:
+                system_prompt += "\n\n" + skill_instructions
+                self.logger.debug(
+                    "skills_loaded_for_definition",
+                    skill_names=skill_names,
+                    instructions_length=len(skill_instructions),
+                )
+
         # Get model_alias from config
         llm_config = config.get("llm", {})
         model_alias = llm_config.get("default_model", "main")
@@ -801,11 +818,31 @@ class AgentFactory:
 
         # Build system prompt - check if plugin provides custom prompt
         custom_prompt = plugin_config.get("system_prompt")
+
+        # Load skill instructions if skills are specified in config
+        skill_names = plugin_config.get("skills", [])
+        skill_instructions = ""
+        if skill_names:
+            from taskforce.application.infrastructure_builder import (
+                InfrastructureBuilder,
+            )
+
+            infra_builder = InfrastructureBuilder(self.config_dir)
+            skill_instructions = infra_builder.build_skill_instructions(skill_names)
+            self.logger.debug(
+                "skills_loaded_for_plugin",
+                plugin=manifest.name,
+                skill_names=skill_names,
+                instructions_length=len(skill_instructions),
+            )
+
         if custom_prompt:
-            # LEAN_KERNEL + Plugin-Prompt (ergänzen, nicht ersetzen)
+            # LEAN_KERNEL + Plugin-Prompt + Skills (ergänzen, nicht ersetzen)
             from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 
             base_prompt = LEAN_KERNEL_PROMPT + "\n\n" + custom_prompt
+            if skill_instructions:
+                base_prompt += "\n\n" + skill_instructions
             tools_description = format_tools_description(all_tools) if all_tools else ""
             system_prompt = build_system_prompt(
                 base_prompt=base_prompt,
@@ -820,6 +857,9 @@ class AgentFactory:
             # Fallback to specialist-based prompt
             specialist = plugin_config.get("specialist")
             system_prompt = self._assemble_lean_system_prompt(specialist, all_tools)
+            # Append skill instructions if available
+            if skill_instructions:
+                system_prompt += "\n\n" + skill_instructions
 
         # Get model alias
         llm_config = merged_config.get("llm", {})
@@ -931,6 +971,12 @@ class AgentFactory:
             base_mcp = merged.get("mcp_servers", [])
             plugin_mcp = plugin_config["mcp_servers"]
             merged["mcp_servers"] = base_mcp + plugin_mcp
+
+        # Skills from plugin (additive)
+        if "skills" in plugin_config:
+            base_skills = merged.get("skills", [])
+            plugin_skills = plugin_config["skills"]
+            merged["skills"] = base_skills + plugin_skills
 
         return merged
 
