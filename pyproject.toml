@@ -96,6 +96,13 @@ taskforce = "taskforce.api.cli.main:app"
 rag = [
     "azure-search-documents>=11.4.0",
 ]
+pdf = [
+    "pypdf>=4.0.0",
+    "pdfplumber>=0.10.0",
+    "pdf2image>=1.16.0",
+    "reportlab>=4.0.0",
+    "pillow>=10.0.0",
+]
 dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=0.23",
@@ -186,6 +193,11 @@ module = [
     "litellm.*",
     "aiofiles.*",
     "azure.*",
+    "pypdf.*",
+    "pdfplumber.*",
+    "pdf2image.*",
+    "reportlab.*",
+    "PIL.*",
 ]
 ignore_missing_imports = true
 
