@@ -9,6 +9,8 @@ Available Protocols:
     - StateManagerProtocol: Session state persistence
     - LLMProviderProtocol: Language model interactions
     - ToolProtocol: Tool execution capabilities
+    - SkillProtocol: Modular agent capabilities
+    - SkillRegistryProtocol: Skill discovery and management
 
 Usage:
     from taskforce.core.interfaces import StateManagerProtocol, LLMProviderProtocol
@@ -22,6 +24,12 @@ Usage:
 """
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.skills import (
+    SkillContextProtocol,
+    SkillMetadata,
+    SkillProtocol,
+    SkillRegistryProtocol,
+)
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
@@ -30,4 +38,8 @@ __all__ = [
     "LLMProviderProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
+    "SkillProtocol",
+    "SkillRegistryProtocol",
+    "SkillMetadata",
+    "SkillContextProtocol",
 ]
