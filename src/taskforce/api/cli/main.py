@@ -3,7 +3,16 @@
 import typer
 from rich.console import Console
 
-from taskforce.api.cli.commands import chat, commands, config, missions, run, sessions, tools
+from taskforce.api.cli.commands import (
+    chat,
+    commands,
+    config,
+    missions,
+    run,
+    sessions,
+    skills,
+    tools,
+)
 
 app = typer.Typer(
     name="taskforce",
@@ -19,6 +28,7 @@ console = Console()
 app.add_typer(run.app, name="run", help="Execute missions")
 app.add_typer(chat.app, name="chat", help="Interactive chat mode")
 app.add_typer(tools.app, name="tools", help="Tool management")
+app.add_typer(skills.app, name="skills", help="Skill management")
 app.add_typer(sessions.app, name="sessions", help="Session management")
 app.add_typer(missions.app, name="missions", help="Mission management")
 app.add_typer(config.app, name="config", help="Configuration management")
@@ -29,7 +39,12 @@ app.add_typer(commands.app, name="commands", help="Manage custom slash commands"
 def main(
     ctx: typer.Context,
     profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug output (shows agent thoughts, actions, observations)"),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        "-d",
+        help="Enable debug output (shows agent thoughts, actions, observations)",
+    ),
 ):
     """Taskforce Agent CLI."""
     # Store global options in context for subcommands
