@@ -1,0 +1,37 @@
+{
+  "chart_of_accounts": "SKR03",
+  "tax_rates": [0.19, 0.07, 0.0],
+  "company": {
+    "name": "Muster GmbH",
+    "country": "DE",
+    "vat_id": "DE123456789"
+  },
+  "cost_centers": [
+    {"code": "CC100", "name": "IT & Cloud"},
+    {"code": "CC200", "name": "Finance"}
+  ],
+  "accounts": [
+    {
+      "code": "4920",
+      "name": "Telefon/IT-Kosten",
+      "keywords": ["cloud", "hosting", "saas", "software"]
+    },
+    {
+      "code": "4950",
+      "name": "Werbekosten",
+      "keywords": ["ads", "marketing", "campaign"]
+    }
+  ],
+  "vendors": [
+    {
+      "vendor_id": "VEND-100",
+      "name": "Cloud Provider GmbH",
+      "vat_id": "DE999999999",
+      "country": "DE",
+      "default_account": "4920",
+      "default_cost_center": "CC100"
+    }
+  ],
+  "payment_terms_days": 30,
+  "default_currency": "EUR"
+}

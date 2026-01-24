@@ -1,0 +1,15 @@
+{
+  "vendors": [
+    {
+      "vendor_id": "VEND-200",
+      "name": "Nordic Hosting AB",
+      "vat_id": "SE123456789",
+      "country": "SE",
+      "default_account": "4920",
+      "default_cost_center": "CC100"
+    }
+  ],
+  "cost_centers": [
+    {"code": "CC300", "name": "Operations"}
+  ]
+}

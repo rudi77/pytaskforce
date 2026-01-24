@@ -1,0 +1,40 @@
+# Accounts Payable PoC Orchestrator
+# Coordinates Architect, Gatekeeper, Tax Wizard, and Review Log steps.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 50
+
+system_prompt: |
+  You are the Accounts Payable PoC Orchestrator.
+  Coordinate the specialist agents in sequence and produce a final summary
+  for the CFO review. Use call_agent to delegate work.
+
+  Flow:
+  1) Ask the Architect agent to validate the system configuration.
+  2) Ask the Gatekeeper agent to extract invoice data and check §14 UStG fields.
+  3) Ask the Tax Wizard agent to assign accounts and VAT logic.
+  4) Use the Review Log tool to generate the approval prompt.
+
+  Return a concise summary plus structured JSON:
+  - system_config
+  - invoice_data
+  - booking_proposal
+  - review_entry
+
+tool_allowlist:
+  - call_agent
+  - review_log_generate
+  - file_read
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce_ap_poc
+
+logging:
+  level: INFO

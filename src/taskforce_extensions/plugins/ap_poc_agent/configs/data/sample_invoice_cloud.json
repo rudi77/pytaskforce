@@ -1,0 +1,30 @@
+{
+  "invoice_id": "INV-2025-001",
+  "invoice_date": "2025-01-05",
+  "service_date": "2024-12-31",
+  "description": "SaaS cloud hosting subscription",
+  "supplier": {
+    "name": "Cloud Provider GmbH",
+    "address": "Musterstr. 1, 10115 Berlin",
+    "vat_id": "DE999999999",
+    "country": "DE"
+  },
+  "recipient": {
+    "name": "Muster GmbH",
+    "address": "Hauptstr. 10, 80331 München"
+  },
+  "currency": "EUR",
+  "line_items": [
+    {
+      "description": "Cloud hosting December",
+      "net_amount": 1000.0,
+      "vat_rate": 0.19
+    }
+  ],
+  "totals": {
+    "net_amount": 1000.0,
+    "tax_rate": 0.19,
+    "tax_amount": 190.0,
+    "total_amount": 1190.0
+  }
+}

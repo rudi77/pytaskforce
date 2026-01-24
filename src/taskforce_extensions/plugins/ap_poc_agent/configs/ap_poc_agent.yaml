@@ -1,0 +1,32 @@
+# Accounts Payable PoC Agent Plugin
+# Focus: From invoice to pre-accounting (Vorkontierung)
+
+specialist: accounts_payable_poc
+
+agent:
+  max_steps: 40
+  planning_strategy: plan_and_execute
+
+tools:
+  - file_read
+
+mcp_servers:
+  - type: stdio
+    command: uv
+    args:
+      - "--directory"
+      - "servers/document-extraction-mcp"
+      - "run"
+      - "python"
+      - "-m"
+      - "document_extraction_mcp.server"
+    env:
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TQDM_DISABLE: "1"
+      DISABLE_MODEL_SOURCE_CHECK: "True"
+    description: "Document extraction tools (OCR, Layout, Reading Order, VLM Analysis)"
+
+persistence:
+  type: file
+  work_dir: .taskforce_ap_poc
