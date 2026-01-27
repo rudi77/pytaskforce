@@ -241,31 +241,92 @@ llm:
 # Use ${PLUGIN_PATH} to reference files relative to the plugin directory.
 #
 # Available accounting tools:
+#   Core:
 #   - docling_extract: PDF/image to Markdown extraction
 #   - invoice_extract: LLM-based invoice data extraction (DACH region)
-#   - apply_kontierung_rules: YAML-based account assignment
 #   - check_compliance: §14 UStG compliance validation
 #   - calculate_tax: VAT and AfA calculations
 #   - audit_log: GoBD-compliant logging
+#
+#   Semantic Rules Engine (PRD Phase 1):
+#   - semantic_rule_engine: Embedding-based account assignment (replaces apply_kontierung_rules)
+#   - confidence_evaluator: Weighted confidence evaluation with hard gates
+#   - rag_fallback: LLM-based suggestions when no rules match
+#   - hitl_review: Human-in-the-loop review workflow
+#   - rule_learning: Automatic rule generation from bookings/corrections
 tools:
-  # Simple tools (no params needed)
+  # Core extraction and validation tools
   - docling_extract
   - invoice_extract
   - calculate_tax
   - audit_log
 
-  # Tools with YAML-based rules (params specify rules location)
-  - name: apply_kontierung_rules
-    params:
-      rules_path: "${PLUGIN_PATH}/configs/accounting/rules/"
-
+  # Compliance checker with rules
   - name: check_compliance
     params:
       rules_path: "${PLUGIN_PATH}/configs/accounting/rules/compliance_rules.yaml"
 
+  # Semantic Rules Engine (PRD Phase 1)
+  - name: semantic_rule_engine
+    params:
+      rules_path: "${PLUGIN_PATH}/configs/accounting/rules/"
+
+  - name: confidence_evaluator
+    params:
+      auto_book_threshold: 0.95
+      high_amount_threshold: 5000.0
+      critical_accounts: ["1800", "2100"]
+
+  - rag_fallback
+  - hitl_review
+  - rule_learning
+
+  # Legacy rule engine (backward compatibility)
+  - name: apply_kontierung_rules
+    params:
+      rules_path: "${PLUGIN_PATH}/configs/accounting/rules/"
+
   # Native taskforce tools
   - file_read
   - ask_user
+
+# =============================================================================
+# WORKFLOW CONFIGURATION (PRD Phase 1)
+# =============================================================================
+
+workflow:
+  # Confidence threshold for automatic booking (no HITL required)
+  auto_book_threshold: 0.95
+
+  # Hard gates that always trigger HITL review
+  hard_gates:
+    new_vendor: true
+    high_amount_threshold: 5000  # EUR
+    critical_accounts:
+      - "1800"  # Privatentnahmen
+      - "2100"  # Anzahlungen
+
+  # Enable automatic rule learning from high-confidence bookings
+  auto_rule_learning: true
+  min_confidence_for_rule_learning: 0.95
+
+  # Enable rule learning from HITL corrections
+  learn_from_hitl: true
+
+# =============================================================================
+# EMBEDDINGS CONFIGURATION (Azure OpenAI)
+# =============================================================================
+
+embeddings:
+  provider: azure
+  # Uses environment variables:
+  # - AZURE_OPENAI_API_KEY
+  # - AZURE_OPENAI_ENDPOINT
+  # - AZURE_OPENAI_EMBEDDING_DEPLOYMENT (default: text-embedding-ada-002)
+  deployment_name: text-embedding-ada-002
+  api_version: "2024-02-01"
+  cache_enabled: true
+  cache_max_size: 1000
 
 # Context policy for conversation management
 context_policy:
