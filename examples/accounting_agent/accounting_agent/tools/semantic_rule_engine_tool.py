@@ -44,16 +44,22 @@ class SemanticRuleEngineTool:
 
     def __init__(
         self,
-        rules_path: str = "configs/accounting/rules/",
+        rules_path: Optional[str] = None,
         embedding_service: Optional[Any] = None,
     ):
         """
         Initialize SemanticRuleEngineTool.
 
         Args:
-            rules_path: Path to directory containing rule YAML files
+            rules_path: Path to directory containing rule YAML files.
+                        If None, auto-detects based on module location.
             embedding_service: EmbeddingProviderProtocol implementation
         """
+        # Auto-detect rules path relative to this module if not provided
+        if rules_path is None:
+            module_dir = Path(__file__).parent.parent.parent  # accounting_agent dir
+            rules_path = str(module_dir / "configs" / "accounting" / "rules")
+
         self._rules_path = Path(rules_path)
         self._embedding_service = embedding_service
         self._rules: list[AccountingRule] = []
@@ -76,7 +82,7 @@ class SemanticRuleEngineTool:
             )
             return
 
-        # Load all YAML rule files
+        # Load all YAML rule files from rules directory
         for yaml_file in self._rules_path.glob("*.yaml"):
             try:
                 with open(yaml_file, encoding="utf-8") as f:
@@ -90,6 +96,30 @@ class SemanticRuleEngineTool:
                     error=str(e),
                 )
                 continue
+
+        # Also load learned_rules.yaml from persistence directory (auto-generated rules)
+        learned_rules_paths = [
+            self._rules_path / "learned_rules.yaml",  # In rules dir
+            Path(".taskforce_accounting/learned_rules.yaml"),  # In work dir
+        ]
+        for learned_path in learned_rules_paths:
+            if learned_path.exists():
+                try:
+                    with open(learned_path, encoding="utf-8") as f:
+                        content = yaml.safe_load(f)
+                        if content:
+                            self._raw_rules["learned_rules"] = content
+                            logger.info(
+                                "semantic_rule_engine.learned_rules_loaded",
+                                path=str(learned_path),
+                            )
+                            break  # Use first found
+                except yaml.YAMLError as e:
+                    logger.warning(
+                        "semantic_rule_engine.learned_rules_error",
+                        path=str(learned_path),
+                        error=str(e),
+                    )
 
         # Parse vendor_rules (Regeltyp A - Vendor-Only)
         kontierung_rules = self._raw_rules.get("kontierung_rules", {})
@@ -127,6 +157,50 @@ class SemanticRuleEngineTool:
             )
             if rule.is_active:
                 self._rules.append(rule)
+
+        # Parse learned_rules (auto-generated from high-confidence bookings and HITL)
+        learned_rules = self._raw_rules.get("learned_rules", {})
+        for vendor_rule in learned_rules.get("vendor_rules", []):
+            if not vendor_rule.get("is_active", True):
+                continue
+            source = self._parse_rule_source(vendor_rule.get("source", "auto_high_confidence"))
+            rule = AccountingRule(
+                rule_id=vendor_rule.get("rule_id", f"LEARNED-VR-{len(self._rules)}"),
+                rule_type=RuleType.VENDOR_ONLY,
+                vendor_pattern=vendor_rule.get("vendor_pattern", ""),
+                target_account=vendor_rule.get("target_account", ""),
+                target_account_name=vendor_rule.get("target_account_name"),
+                priority=vendor_rule.get("priority", 75),  # Between manual (100) and legacy (10)
+                source=source,
+                legal_basis=vendor_rule.get("legal_basis"),
+                is_active=True,
+            )
+            self._rules.append(rule)
+
+        for semantic_rule in learned_rules.get("semantic_rules", []):
+            if not semantic_rule.get("is_active", True):
+                continue
+            source = self._parse_rule_source(semantic_rule.get("source", "auto_high_confidence"))
+            rule = AccountingRule(
+                rule_id=semantic_rule.get("rule_id", f"LEARNED-SR-{len(self._rules)}"),
+                rule_type=RuleType.VENDOR_ITEM,
+                vendor_pattern=semantic_rule.get("vendor_pattern", ""),
+                item_patterns=semantic_rule.get("item_patterns", []),
+                target_account=semantic_rule.get("target_account", ""),
+                target_account_name=semantic_rule.get("target_account_name"),
+                priority=semantic_rule.get("priority", 75),
+                similarity_threshold=semantic_rule.get("similarity_threshold", 0.8),
+                source=source,
+                legal_basis=semantic_rule.get("legal_basis"),
+                is_active=True,
+            )
+            self._rules.append(rule)
+
+        logger.info(
+            "semantic_rule_engine.learned_rules_parsed",
+            vendor_rules=len(learned_rules.get("vendor_rules", [])),
+            semantic_rules=len(learned_rules.get("semantic_rules", [])),
+        )
 
         # Also parse legacy expense_categories format for backward compatibility
         expense_categories = kontierung_rules.get("expense_categories", {})

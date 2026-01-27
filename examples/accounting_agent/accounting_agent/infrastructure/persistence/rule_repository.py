@@ -41,20 +41,29 @@ class RuleRepository:
 
     def __init__(
         self,
-        rules_dir: str = "configs/accounting/rules/",
+        rules_dir: Optional[str] = None,
         learned_rules_file: str = "learned_rules.yaml",
         history_file: str = ".taskforce_accounting/rules_history.jsonl",
+        work_dir: str = ".taskforce_accounting",
     ):
         """
         Initialize rule repository.
 
         Args:
-            rules_dir: Directory containing rule YAML files
+            rules_dir: Directory containing rule YAML files.
+                       If None, auto-detects based on module location.
             learned_rules_file: Name of file for learned rules
             history_file: Path to JSONL history file
         """
+        # Auto-detect rules_dir relative to module if not provided
+        if rules_dir is None:
+            module_dir = Path(__file__).parent.parent.parent  # accounting_agent dir
+            rules_dir = str(module_dir / "configs" / "accounting" / "rules")
+
         self._rules_dir = Path(rules_dir)
-        self._learned_rules_path = self._rules_dir / learned_rules_file
+        self._work_dir = Path(work_dir)
+        # Save learned rules to work_dir (persistent across sessions)
+        self._learned_rules_path = self._work_dir / learned_rules_file
         self._history_path = Path(history_file)
 
         # In-memory cache
@@ -63,6 +72,7 @@ class RuleRepository:
 
         # Ensure directories exist
         self._rules_dir.mkdir(parents=True, exist_ok=True)
+        self._work_dir.mkdir(parents=True, exist_ok=True)
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def _ensure_loaded(self) -> None:

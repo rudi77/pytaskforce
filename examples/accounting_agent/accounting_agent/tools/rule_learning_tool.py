@@ -12,6 +12,7 @@ PRD Reference:
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 import re
 
@@ -25,6 +26,16 @@ from accounting_agent.domain.models import (
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 logger = structlog.get_logger(__name__)
+
+# Lazy import to avoid circular dependency
+_rule_repository_class = None
+
+def _get_rule_repository_class():
+    global _rule_repository_class
+    if _rule_repository_class is None:
+        from accounting_agent.infrastructure.persistence.rule_repository import RuleRepository
+        _rule_repository_class = RuleRepository
+    return _rule_repository_class
 
 
 class RuleLearningTool:
@@ -47,9 +58,16 @@ class RuleLearningTool:
         Initialize rule learning tool.
 
         Args:
-            rule_repository: RuleRepositoryProtocol for rule storage
+            rule_repository: RuleRepositoryProtocol for rule storage.
+                            If None, auto-creates a RuleRepository.
             min_confidence_for_auto_rule: Minimum confidence for auto-rule creation
         """
+        # Auto-create RuleRepository if not provided
+        if rule_repository is None:
+            RuleRepository = _get_rule_repository_class()
+            rule_repository = RuleRepository()
+            logger.info("rule_learning.auto_created_repository")
+
         self._rule_repository = rule_repository
         self._min_confidence = min_confidence_for_auto_rule
 
