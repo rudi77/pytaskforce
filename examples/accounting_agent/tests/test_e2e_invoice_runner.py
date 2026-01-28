@@ -34,12 +34,18 @@ Options:
 """
 
 import asyncio
+import io
 import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+# Fix Windows console encoding for Unicode characters (box drawing, emojis)
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -156,6 +162,7 @@ class AccountingAgentTestRunner:
         agent_response = ""
         error: Optional[str] = None
         booking_proposals: list[dict] = []  # Capture from semantic_rule_engine results
+        pending_hitl_review: Optional[dict] = None  # Capture HITL review data for auto rule learning
 
         # Create fresh agent if configured (avoids MCP cancel scope issues)
         scenario_agent = None
@@ -224,6 +231,31 @@ class AccountingAgentTestRunner:
                                 bp_value = result_data.get("booking_proposals", "MISSING")
                                 print(f"       ⚠️ booking_proposals empty or missing. Value: {type(bp_value).__name__}={bp_value}")
 
+                    # Capture HITL review data for auto rule learning
+                    if tool_name == "hitl_review" and success:
+                        # Parse result - might be dict or JSON string
+                        result_data = result
+                        if isinstance(result_data, str):
+                            try:
+                                result_data = json.loads(result_data)
+                            except (json.JSONDecodeError, TypeError):
+                                result_data = {}
+                        if not isinstance(result_data, dict):
+                            result_data = {}
+
+                        if self.verbose:
+                            print(f"       🔍 HITL result status: {result_data.get('status')}")
+
+                        if result_data.get("status") == "pending":
+                            # Store HITL review data for later rule learning
+                            pending_hitl_review = {
+                                "review_id": result_data.get("review_id"),
+                                "invoice_data": result_args.get("invoice_data", {}),
+                                "booking_proposal": result_args.get("booking_proposal", {}),
+                            }
+                            if self.verbose:
+                                print(f"       📝 Captured HITL review: {pending_hitl_review.get('review_id')}")
+
                 elif event_type == "ask_user":
                     hitl_triggered = True
                     question = update.details.get("question", "")
@@ -248,6 +280,10 @@ class AccountingAgentTestRunner:
                         # Auto-confirm for testing
                         hitl_response = "1"  # Confirm
                         print(f"  → Auto-response: {hitl_response}")
+
+                        # Auto-learn rule when HITL is confirmed (since agent often skips hitl_review(action="process"))
+                        if pending_hitl_review and hitl_response == "1":
+                            await self._auto_learn_rule_from_hitl_confirmation(pending_hitl_review)
 
                 elif event_type == "plan_updated":
                     action = update.details.get("action", "unknown")
@@ -378,6 +414,43 @@ class AccountingAgentTestRunner:
                 print(f"       ... ({len(agent_response)} chars total)")
 
         return result
+
+    async def _auto_learn_rule_from_hitl_confirmation(self, pending_hitl_review: dict) -> None:
+        """
+        Automatically learn a rule when HITL is confirmed.
+
+        This is a workaround for agents that don't properly call hitl_review(action="process")
+        after the user confirms a booking. We trigger rule learning directly from the test runner.
+        """
+        try:
+            from accounting_agent.tools.rule_learning_tool import RuleLearningTool
+
+            rule_learning = RuleLearningTool()
+
+            invoice_data = pending_hitl_review.get("invoice_data", {})
+            booking_proposal = pending_hitl_review.get("booking_proposal", {})
+
+            if not invoice_data or not booking_proposal:
+                if self.verbose:
+                    print(f"       ⚠️ Cannot auto-learn rule: missing invoice_data or booking_proposal")
+                return
+
+            result = await rule_learning.execute(
+                action="create_from_booking",
+                invoice_data=invoice_data,
+                booking_proposal=booking_proposal,
+                confidence=1.0,  # User confirmed = 100% confidence
+            )
+
+            if result.get("success"):
+                print(f"       ✅ Auto-learned rule: {result.get('rule_id')}")
+            else:
+                if self.verbose:
+                    print(f"       ⚠️ Rule not created: {result.get('error', 'unknown')}")
+
+        except Exception as e:
+            if self.verbose:
+                print(f"       ⚠️ Auto rule learning failed: {e}")
 
     def _wrap_text(self, text: str, width: int) -> list[str]:
         """Wrap text to specified width."""

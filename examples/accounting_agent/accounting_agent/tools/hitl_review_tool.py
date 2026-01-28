@@ -43,15 +43,35 @@ class HITLReviewTool:
     - options: Suggested actions (confirm, correct, reject)
     """
 
-    def __init__(self, rule_learning_tool: Optional[Any] = None):
+    def __init__(self, rule_learning_tool: Optional[Any] = None, auto_learn_rules: bool = True):
         """
         Initialize HITL review tool.
 
         Args:
             rule_learning_tool: RuleLearningTool for creating rules from corrections
+            auto_learn_rules: Whether to automatically learn rules from confirmations/corrections
         """
         self._rule_learning_tool = rule_learning_tool
+        self._auto_learn_rules = auto_learn_rules
         self._pending_reviews: dict[str, dict[str, Any]] = {}
+
+    def _get_rule_learning_tool(self) -> Optional[Any]:
+        """Lazily get or create the rule learning tool."""
+        if self._rule_learning_tool is not None:
+            return self._rule_learning_tool
+
+        # Try to lazily create a RuleLearningTool
+        try:
+            from accounting_agent.tools.rule_learning_tool import RuleLearningTool
+            self._rule_learning_tool = RuleLearningTool()
+            logger.info("hitl_review.rule_learning_tool_created")
+            return self._rule_learning_tool
+        except Exception as e:
+            logger.warning(
+                "hitl_review.rule_learning_tool_creation_failed",
+                error=str(e),
+            )
+            return None
 
     @property
     def name(self) -> str:
@@ -350,6 +370,40 @@ Bitte wählen Sie eine Option und geben Sie ggf. das korrekte Konto an.
                 review_id=review_id,
             )
 
+            # Create rule from confirmed booking (user confirmation = 100% confidence)
+            # Auto-learn if auto_learn_rules is True OR if create_rule is explicitly requested
+            should_learn = create_rule or self._auto_learn_rules
+            rule_tool = self._get_rule_learning_tool() if should_learn else None
+
+            if rule_tool:
+                try:
+                    rule_result = await rule_tool.execute(
+                        action="create_from_booking",
+                        invoice_data=review["invoice_data"],
+                        booking_proposal=review["booking_proposal"],
+                        confidence=1.0,  # User confirmed = 100% confidence
+                    )
+                    result["rule_created"] = rule_result.get("success", False)
+                    result["rule_id"] = rule_result.get("rule_id")
+                    if rule_result.get("success"):
+                        logger.info(
+                            "hitl_review.rule_created_from_confirmation",
+                            review_id=review_id,
+                            rule_id=rule_result.get("rule_id"),
+                        )
+                    elif rule_result.get("error"):
+                        logger.info(
+                            "hitl_review.rule_not_created",
+                            review_id=review_id,
+                            reason=rule_result.get("error"),
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "hitl_review.rule_creation_failed",
+                        error=str(e),
+                    )
+                    result["rule_created"] = False
+
         elif user_decision == "correct":
             if not correction:
                 return {
@@ -370,16 +424,25 @@ Bitte wählen Sie eine Option und geben Sie ggf. das korrekte Konto an.
                 new_account=correction.get("debit_account"),
             )
 
-            # Optionally create rule from correction
-            if create_rule and self._rule_learning_tool:
+            # Create rule from correction (auto-learn if enabled OR explicitly requested)
+            should_learn = create_rule or self._auto_learn_rules
+            rule_tool = self._get_rule_learning_tool() if should_learn else None
+
+            if rule_tool:
                 try:
-                    rule_result = await self._rule_learning_tool.execute(
+                    rule_result = await rule_tool.execute(
                         action="create_from_hitl",
                         invoice_data=review["invoice_data"],
                         correction=correction,
                     )
                     result["rule_created"] = rule_result.get("success", False)
                     result["rule_id"] = rule_result.get("rule_id")
+                    if rule_result.get("success"):
+                        logger.info(
+                            "hitl_review.rule_created_from_correction",
+                            review_id=review_id,
+                            rule_id=rule_result.get("rule_id"),
+                        )
                 except Exception as e:
                     logger.warning(
                         "hitl_review.rule_creation_failed",

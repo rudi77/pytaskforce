@@ -104,8 +104,8 @@ class RuleLearningTool:
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "Action to perform",
-                    "enum": ["create_from_booking", "create_from_hitl", "check_conflicts"],
+                    "description": "Action to perform: 'create_from_booking' (auto-rule, requires confidence>=95%), 'create_from_hitl_confirmation' (user confirmed HITL, no confidence check), 'create_from_hitl' (user correction), 'check_conflicts'",
+                    "enum": ["create_from_booking", "create_from_hitl_confirmation", "create_from_hitl", "check_conflicts"],
                 },
                 "invoice_data": {
                     "type": "object",
@@ -159,7 +159,7 @@ class RuleLearningTool:
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
         action = kwargs.get("action")
-        if action not in ["create_from_booking", "create_from_hitl", "check_conflicts"]:
+        if action not in ["create_from_booking", "create_from_hitl_confirmation", "create_from_hitl", "check_conflicts"]:
             return False, "Invalid action"
         if "invoice_data" not in kwargs:
             return False, "Missing invoice_data"
@@ -195,6 +195,13 @@ class RuleLearningTool:
                     invoice_data=invoice_data,
                     booking_proposal=booking_proposal or {},
                     confidence=confidence or 0.0,
+                    rule_type_str=rule_type,
+                )
+            elif action == "create_from_hitl_confirmation":
+                # User confirmed HITL - no confidence check needed
+                return await self._create_from_hitl_confirmation(
+                    invoice_data=invoice_data,
+                    booking_proposal=booking_proposal or {},
                     rule_type_str=rule_type,
                 )
             elif action == "create_from_hitl":
@@ -234,8 +241,21 @@ class RuleLearningTool:
         rule_type_str: str,
     ) -> dict[str, Any]:
         """Create auto-rule from high-confidence booking."""
+        logger.info(
+            "rule_learning.create_from_booking_start",
+            confidence=confidence,
+            min_confidence=self._min_confidence,
+            has_invoice_data=bool(invoice_data),
+            has_booking_proposal=bool(booking_proposal),
+        )
+
         # Check confidence threshold
         if confidence < self._min_confidence:
+            logger.info(
+                "rule_learning.confidence_below_threshold",
+                confidence=confidence,
+                threshold=self._min_confidence,
+            )
             return {
                 "success": False,
                 "error": f"Confidence {confidence:.1%} below threshold {self._min_confidence:.1%}",
@@ -319,6 +339,100 @@ class RuleLearningTool:
             "rule_id": rule_id,
             "rule_type": rule_type.value,
             "source": RuleSource.AUTO_HIGH_CONFIDENCE.value,
+            "vendor_pattern": rule.vendor_pattern,
+            "target_account": rule.target_account,
+            "item_patterns": item_patterns,
+        }
+
+    async def _create_from_hitl_confirmation(
+        self,
+        invoice_data: dict[str, Any],
+        booking_proposal: dict[str, Any],
+        rule_type_str: str,
+    ) -> dict[str, Any]:
+        """
+        Create rule from HITL confirmation (user confirmed the booking proposal).
+
+        Unlike create_from_booking, this does NOT check confidence threshold
+        because the user has already confirmed the booking.
+        """
+        # Use helper for supplier name extraction
+        supplier_name = extract_supplier_name(invoice_data)
+        if not supplier_name:
+            return {
+                "success": False,
+                "error": "Missing supplier_name (tried: supplier_name, vendor_name, lieferant, supplier, vendor)",
+                "rule_created": False,
+            }
+
+        # Determine rule type
+        rule_type = RuleType.VENDOR_ONLY if rule_type_str == "vendor_only" else RuleType.VENDOR_ITEM
+
+        # Generate rule ID
+        timestamp = datetime.now(timezone.utc)
+        rule_id = f"HITL-CONF-{timestamp.strftime('%Y%m%d%H%M%S')}"
+
+        # Use helper for line item extraction
+        line_items = extract_line_items(invoice_data)
+
+        # Extract item patterns using constants
+        item_patterns = self._extract_item_patterns(line_items, rule_type)
+
+        # Create rule with auto priority (75) since it's a confirmed booking, not a correction
+        rule = AccountingRule(
+            rule_id=rule_id,
+            rule_type=rule_type,
+            vendor_pattern=self._create_vendor_pattern(supplier_name),
+            item_patterns=item_patterns,
+            target_account=booking_proposal.get("debit_account", ""),
+            target_account_name=booking_proposal.get("debit_account_name"),
+            priority=AUTO_RULE_PRIORITY,  # Same as auto-rules
+            similarity_threshold=0.8,
+            source=RuleSource.AUTO_HIGH_CONFIDENCE,  # Treat as high-confidence since user confirmed
+            legal_basis=booking_proposal.get("legal_basis"),
+            created_at=timestamp.isoformat(),
+            is_active=True,
+        )
+
+        # Check for conflicts
+        if self._rule_repository:
+            conflicts = await self._rule_repository.find_conflicting_rules(rule)
+            if conflicts:
+                logger.warning(
+                    "rule_learning.conflicts_found",
+                    rule_id=rule_id,
+                    conflicts=[c.rule_id for c in conflicts],
+                )
+                return {
+                    "success": False,
+                    "error": "Rule conflicts with existing rules",
+                    "rule_created": False,
+                    "conflicts": [
+                        {
+                            "rule_id": c.rule_id,
+                            "target_account": c.target_account,
+                        }
+                        for c in conflicts
+                    ],
+                }
+
+            # Save rule
+            await self._rule_repository.save_rule(rule)
+
+        logger.info(
+            "rule_learning.hitl_confirmation_rule_created",
+            rule_id=rule_id,
+            rule_type=rule_type.value,
+            vendor=supplier_name,
+            account=rule.target_account,
+        )
+
+        return {
+            "success": True,
+            "rule_created": True,
+            "rule_id": rule_id,
+            "rule_type": rule_type.value,
+            "source": "hitl_confirmation",
             "vendor_pattern": rule.vendor_pattern,
             "target_account": rule.target_account,
             "item_patterns": item_patterns,

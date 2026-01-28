@@ -49,7 +49,14 @@
       "Bash(set PYTHONIOENCODING=utf-8)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python:*)",
       "Bash(copy:*)",
-      "Bash(cmd /c copy:*)"
+      "Bash(cmd /c copy:*)",
+      "Bash(gh pr list:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rebase:*)",
+      "Bash(git stash push:*)",
+      "Bash(Remove-Item \"D:\\\\home\\\\Source\\\\pytaskforce\\\\.taskforce_accounting\\\\learned_rules.yaml\" -ErrorAction SilentlyContinue)",
+      "Bash(test:*)",
+      "Bash(tee:*)"
     ],
     "deny": [],
     "ask": []

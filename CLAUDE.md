@@ -368,6 +368,41 @@ class DbStateManager:
         ...
 ```
 
+### 5. Type Safety: Concrete Types over Dictionaries
+
+- **No magic strings** - Use `Enum`, `Literal`, or class constants
+- **Concrete data structures** - Use `dataclass`, `NamedTuple`, or Pydantic `BaseModel` instead of `dict`
+- **Typed return values** - Functions return concrete types, not `Dict[str, Any]`
+
+```python
+# ❌ AVOID - Magic strings and dictionaries
+def get_status(data: dict) -> dict:
+    if data["status"] == "success":
+        return {"code": 200, "message": "OK"}
+
+# ✅ PREFERRED - Enums and dataclasses
+from dataclasses import dataclass
+from enum import Enum
+
+class Status(Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
+
+@dataclass
+class StatusResult:
+    code: int
+    message: str
+
+def get_status(data: RequestData) -> StatusResult:
+    if data.status == Status.SUCCESS:
+        return StatusResult(code=200, message="OK")
+```
+
+**Exceptions** (where `dict` is acceptable):
+- Dynamic JSON payloads from external APIs (before validation)
+- Logging contexts and metrics
+- Temporary intermediate results in tests
+
 ---
 
 ## Testing Strategy
@@ -872,6 +907,8 @@ See `docs/architecture/section-10-deployment.md` for:
 - Add comprehensive docstrings
 - Write tests for all new functionality
 - Use type annotations everywhere
+- Use concrete types (`dataclass`, Pydantic) instead of `dict`
+- Use `Enum` or constants instead of magic strings
 - Keep functions ≤30 lines
 - Log with structured context
 - Make everything async for I/O
@@ -885,11 +922,13 @@ See `docs/architecture/section-10-deployment.md` for:
 - Write blocking I/O (use async)
 - Catch generic `Exception` without re-raising
 - Skip type annotations
+- Use `Dict[str, Any]` for structured data (use dataclasses/Pydantic)
+- Use magic strings (use Enum or constants)
 - Create God objects or classes
 - Log sensitive data (API keys, passwords)
 - Hardcode configuration values
 
 ---
 
-**Last Updated:** 2026-01-06
+**Last Updated:** 2026-01-28
 **For Questions:** See `docs/` or create an issue in the repository

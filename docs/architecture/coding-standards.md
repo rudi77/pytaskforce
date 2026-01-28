@@ -99,6 +99,52 @@ root/
 * Metriken (Latenz, Throughput, Fehlerquote) pro Service/Endpoint.
 * Tracing (OpenTelemetry) für kritische Pfade (Ingestion → Embedding → Retrieval).
 
+## 15) Typsicherheit: Konkrete Typen statt Dictionaries
+
+* **Keine Magic Strings**: Verwende `Enum`, `Literal`, Konstanten oder Klassen-Attribute statt hartcodierter Strings.
+* **Konkrete Datenstrukturen**: Nutze `dataclass`, `NamedTuple`, oder Pydantic `BaseModel` statt `dict`.
+* **Typisierte Rückgabewerte**: Funktionen geben konkrete Typen zurück, keine `Dict[str, Any]`.
+
+```python
+# ❌ VERMEIDEN - Magic Strings und Dictionaries
+def process_invoice(data: dict) -> dict:
+    if data["status"] == "approved":
+        return {"type": "invoice", "amount": data["total"]}
+
+# ✅ BEVORZUGT - Enums und Dataclasses
+from dataclasses import dataclass
+from enum import Enum
+
+class InvoiceStatus(Enum):
+    APPROVED = "approved"
+    PENDING = "pending"
+    REJECTED = "rejected"
+
+@dataclass
+class InvoiceInput:
+    status: InvoiceStatus
+    total: float
+
+@dataclass
+class InvoiceResult:
+    type: str
+    amount: float
+
+def process_invoice(data: InvoiceInput) -> InvoiceResult:
+    if data.status == InvoiceStatus.APPROVED:
+        return InvoiceResult(type="invoice", amount=data.total)
+```
+
+**Ausnahmen** (wo `dict` akzeptabel ist):
+* Dynamische JSON-Payloads von externen APIs (vor Validierung)
+* Logging-Kontexte und Metriken
+* Temporäre Zwischenergebnisse in Tests
+
+**Vorteile:**
+* IDE-Autovervollständigung und Refactoring-Unterstützung
+* Compile-Zeit-Fehler statt Runtime-Fehler bei Tippfehlern
+* Selbstdokumentierender Code durch explizite Feldnamen
+
 ---
 
 ## Minimal-Checkliste für PRs
@@ -110,6 +156,7 @@ root/
 * [ ] Fehlerbehandlung spezifisch, sinnvolle Log-Kontexte.
 * [ ] Keine Duplikate; Funktionen ≤ 30 Zeilen oder sinnvoll zerlegt.
 * [ ] Public API/Schemas dokumentiert; Migrationshinweise bei Changes.
+* [ ] Konkrete Typen (dataclass/Pydantic) statt `dict`; keine Magic Strings.
 * [ ] Nur notwendige Löschungen/Refactorings — **Stabilität first**.
 
 

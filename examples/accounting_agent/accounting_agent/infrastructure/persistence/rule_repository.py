@@ -229,8 +229,9 @@ class RuleRepository:
             total_rules=len(self._rules),
         )
 
-        # Write to appropriate file - use string comparison for robustness
-        if str(rule.source) in {"auto_high_confidence", "hitl_correction"}:
+        # Write to appropriate file - use .value for enum comparison
+        source_value = rule.source.value if hasattr(rule.source, 'value') else str(rule.source)
+        if source_value in {"auto_high_confidence", "hitl_correction"}:
             await self._save_learned_rules()
         else:
             # For manual rules, just log - don't overwrite main config
@@ -255,7 +256,7 @@ class RuleRepository:
         valid_sources = {"auto_high_confidence", "hitl_correction"}
         learned_rules = [
             r for r in self._rules.values()
-            if str(r.source) in valid_sources
+            if (r.source.value if hasattr(r.source, 'value') else str(r.source)) in valid_sources
         ]
 
         if not learned_rules:
