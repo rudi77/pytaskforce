@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import aiofiles
 import yaml
 import structlog
 
@@ -25,6 +26,14 @@ from accounting_agent.domain.models import (
     RuleSource,
     RuleMatch,
     MatchType,
+)
+from accounting_agent.domain.invoice_utils import (
+    extract_supplier_name,
+    extract_line_items,
+    extract_description,
+    extract_net_amount,
+    extract_vat_rate,
+    extract_vat_amount,
 )
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
@@ -84,42 +93,10 @@ class SemanticRuleEngineTool:
 
         # Load all YAML rule files from rules directory
         for yaml_file in self._rules_path.glob("*.yaml"):
-            try:
-                with open(yaml_file, encoding="utf-8") as f:
-                    content = yaml.safe_load(f)
-                    if content:
-                        self._raw_rules[yaml_file.stem] = content
-            except yaml.YAMLError as e:
-                logger.error(
-                    "semantic_rule_engine.yaml_error",
-                    file=str(yaml_file),
-                    error=str(e),
-                )
-                continue
+            await self._load_single_yaml_file(yaml_file)
 
         # Also load learned_rules.yaml from persistence directory (auto-generated rules)
-        learned_rules_paths = [
-            self._rules_path / "learned_rules.yaml",  # In rules dir
-            Path(".taskforce_accounting/learned_rules.yaml"),  # In work dir
-        ]
-        for learned_path in learned_rules_paths:
-            if learned_path.exists():
-                try:
-                    with open(learned_path, encoding="utf-8") as f:
-                        content = yaml.safe_load(f)
-                        if content:
-                            self._raw_rules["learned_rules"] = content
-                            logger.info(
-                                "semantic_rule_engine.learned_rules_loaded",
-                                path=str(learned_path),
-                            )
-                            break  # Use first found
-                except yaml.YAMLError as e:
-                    logger.warning(
-                        "semantic_rule_engine.learned_rules_error",
-                        path=str(learned_path),
-                        error=str(e),
-                    )
+        await self._load_learned_rules()
 
         # Parse vendor_rules (Regeltyp A - Vendor-Only)
         kontierung_rules = self._raw_rules.get("kontierung_rules", {})
@@ -263,6 +240,59 @@ class SemanticRuleEngineTool:
             vendor_item=len([r for r in self._rules if r.rule_type == RuleType.VENDOR_ITEM]),
         )
 
+    async def _load_single_yaml_file(self, yaml_file: Path) -> None:
+        """Load a single YAML file asynchronously."""
+        try:
+            async with aiofiles.open(yaml_file, encoding="utf-8") as f:
+                content_str = await f.read()
+                content = yaml.safe_load(content_str)
+                if content:
+                    self._raw_rules[yaml_file.stem] = content
+        except yaml.YAMLError as e:
+            logger.error(
+                "semantic_rule_engine.yaml_error",
+                file=str(yaml_file),
+                error=str(e),
+            )
+        except OSError as e:
+            logger.error(
+                "semantic_rule_engine.file_read_error",
+                file=str(yaml_file),
+                error=str(e),
+            )
+
+    async def _load_learned_rules(self) -> None:
+        """Load learned rules from persistence directory asynchronously."""
+        learned_rules_paths = [
+            self._rules_path / "learned_rules.yaml",  # In rules dir
+            Path(".taskforce_accounting/learned_rules.yaml"),  # In work dir
+        ]
+        for learned_path in learned_rules_paths:
+            if learned_path.exists():
+                try:
+                    async with aiofiles.open(learned_path, encoding="utf-8") as f:
+                        content_str = await f.read()
+                        content = yaml.safe_load(content_str)
+                        if content:
+                            self._raw_rules["learned_rules"] = content
+                            logger.info(
+                                "semantic_rule_engine.learned_rules_loaded",
+                                path=str(learned_path),
+                            )
+                            return  # Use first found
+                except yaml.YAMLError as e:
+                    logger.warning(
+                        "semantic_rule_engine.learned_rules_error",
+                        path=str(learned_path),
+                        error=str(e),
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "semantic_rule_engine.learned_rules_file_error",
+                        path=str(learned_path),
+                        error=str(e),
+                    )
+
     async def _precompute_embeddings(self) -> None:
         """Precompute embeddings for all item patterns."""
         if not self._embedding_service:
@@ -390,27 +420,55 @@ class SemanticRuleEngineTool:
             - ambiguous_items: Items with ambiguous matches
         """
         try:
+            # Log incoming invoice_data for debugging
+            logger.info(
+                "semantic_rule_engine.execute_start",
+                invoice_data_keys=list(invoice_data.keys()) if invoice_data else [],
+                has_line_items=bool(invoice_data.get("line_items")),
+                chart=chart_of_accounts,
+            )
+
             # Ensure rules are loaded
             await self._load_rules()
 
-            supplier_name = invoice_data.get("supplier_name", "")
-            line_items = invoice_data.get("line_items", [])
+            # Use helper functions for field extraction (eliminates code duplication)
+            supplier_name = extract_supplier_name(invoice_data)
+            line_items = extract_line_items(invoice_data)
 
-            # If no line items, try to create one from invoice totals
-            if not line_items and invoice_data.get("total_net"):
-                line_items = [
-                    {
-                        "description": invoice_data.get("description", "Rechnung"),
-                        "net_amount": invoice_data.get("total_net"),
-                        "vat_rate": invoice_data.get("vat_rate", 0.19),
-                        "vat_amount": invoice_data.get("total_vat", 0),
-                    }
-                ]
+            # If no line items from helper, try to create one from invoice totals
+            if not line_items:
+                net_amount = extract_net_amount(invoice_data)
+                if net_amount:
+                    description = extract_description(invoice_data) or "Rechnung"
+                    line_items = [
+                        {
+                            "description": description,
+                            "net_amount": net_amount,
+                            "vat_rate": extract_vat_rate(invoice_data),
+                            "vat_amount": extract_vat_amount(invoice_data) or 0,
+                        }
+                    ]
+                    logger.debug(
+                        "semantic_rule_engine.fallback_line_item_created",
+                        description=description[:50] if description else "",
+                        net_amount=net_amount,
+                    )
 
             rule_matches: list[dict[str, Any]] = []
             booking_proposals: list[dict[str, Any]] = []
             unmatched_items: list[dict[str, Any]] = []
             ambiguous_items: list[dict[str, Any]] = []
+
+            # Log processing info
+            logger.info(
+                "semantic_rule_engine.processing",
+                supplier=supplier_name[:30] if supplier_name else "N/A",
+                line_items_count=len(line_items),
+                total_rules=len(self._rules),
+                line_item_descriptions=[
+                    str(item.get("description", ""))[:40] for item in line_items[:3]
+                ],
+            )
 
             for idx, line_item in enumerate(line_items):
                 match_result = await self._match_item(

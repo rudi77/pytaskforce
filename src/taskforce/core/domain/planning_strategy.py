@@ -94,6 +94,32 @@ def _parse_tool_args(
         return {}
 
 
+def _extract_tool_output(tool_result: dict[str, Any]) -> str:
+    """Extract output from tool result for streaming events.
+
+    Handles both formats:
+    - Tools with "output" key: returns tool_result["output"]
+    - Tools with flat dict: serializes entire result as JSON
+
+    Args:
+        tool_result: Tool execution result dict
+
+    Returns:
+        String representation of tool output
+    """
+    if "output" in tool_result:
+        output = tool_result["output"]
+        if isinstance(output, str):
+            return output
+        return json.dumps(output, default=str, ensure_ascii=False)
+    elif "error" in tool_result:
+        return str(tool_result["error"])
+    else:
+        # Serialize entire result for tools that return flat dicts
+        # (e.g., semantic_rule_engine returns {success, booking_proposals, ...})
+        return json.dumps(tool_result, default=str, ensure_ascii=False)
+
+
 def _tool_supports_parallelism(agent: "Agent", tool_name: str) -> bool:
     """Return whether a tool is safe to execute in parallel."""
     tool = agent.tools.get(tool_name)
@@ -386,15 +412,16 @@ class NativeReActStrategy:
 
         tool_result = await agent._execute_tool(tool_name, tool_args, session_id=session_id)
 
+        # Extract output: use "output" key if present, otherwise serialize entire result
+        output_data = _extract_tool_output(tool_result)
+
         yield StreamEvent(
             event_type="tool_result",
             data={
                 "tool": tool_name,
                 "id": tool_call_id,
                 "success": tool_result.get("success", False),
-                "output": agent._truncate_output(
-                    tool_result.get("output", str(tool_result.get("error", "")))
-                ),
+                "output": agent._truncate_output(output_data),
                 "args": tool_args,
             },
         )
@@ -635,11 +662,7 @@ class NativeReActStrategy:
                             "tool": request.tool_name,
                             "id": request.tool_call_id,
                             "success": tool_result.get("success", False),
-                            "output": agent._truncate_output(
-                                tool_result.get(
-                                    "output", str(tool_result.get("error", ""))
-                                )
-                            ),
+                            "output": agent._truncate_output(_extract_tool_output(tool_result)),
                             "args": request.tool_args,
                         },
                     )
@@ -844,9 +867,7 @@ class NativeReActStrategy:
                             "tool": tool_name,
                             "id": tool_call_id,
                             "success": tool_result.get("success", False),
-                            "output": agent._truncate_output(
-                                tool_result.get("output", str(tool_result.get("error", "")))
-                            ),
+                            "output": agent._truncate_output(_extract_tool_output(tool_result)),
                             "args": tool_args,
                         },
                     )
@@ -942,11 +963,7 @@ class PlanAndExecuteStrategy:
                 "tool": request.tool_name,
                 "id": request.tool_call_id,
                 "success": tool_result.get("success", False),
-                "output": agent._truncate_output(
-                    tool_result.get(
-                        "output", str(tool_result.get("error", ""))
-                    )
-                ),
+                "output": agent._truncate_output(_extract_tool_output(tool_result)),
                 "args": request.tool_args,
             },
         )
@@ -1002,6 +1019,64 @@ class PlanAndExecuteStrategy:
 
         requests: list[ToolCallRequest] = []
         async for request, event in self._build_tool_requests(tool_calls, logger):
+            # Special case: ask_user is a control-flow pause, not a normal tool.
+            if request.tool_name == "ask_user":
+                yield event  # Yield tool_call event first
+
+                question = str(request.tool_args.get("question", "")).strip()
+                missing = request.tool_args.get("missing") or []
+
+                # Add synthetic tool result to messages so LLM history is valid
+                # (LLM expects every tool_call to have a tool_result)
+                tool_result = {
+                    "success": True,
+                    "output": f"[Waiting for user response to: {question[:100]}...]",
+                }
+
+                # Emit tool_result event for streaming consumers
+                yield StreamEvent(
+                    event_type="tool_result",
+                    data={
+                        "tool": request.tool_name,
+                        "id": request.tool_call_id,
+                        "success": True,
+                        "output": tool_result["output"],
+                        "args": request.tool_args,
+                    },
+                )
+
+                tool_message = await agent._create_tool_message(
+                    request.tool_call_id,
+                    request.tool_name,
+                    tool_result,
+                    session_id,
+                    step_index,
+                )
+                messages.append(tool_message)
+
+                # Save pending question to state for resumption
+                state = await agent.state_manager.load_state(session_id) or {}
+                state["pending_question"] = {
+                    "question": question,
+                    "missing": missing,
+                }
+                await agent.state_store.save(
+                    session_id=session_id,
+                    state=state,
+                    planner=agent.planner,
+                )
+
+                yield StreamEvent(
+                    event_type="ask_user",
+                    data={"question": question, "missing": missing},
+                )
+                logger.info(
+                    "execute_stream_paused_for_user_input",
+                    session_id=session_id,
+                    question=question[:200],
+                )
+                return  # Pause execution - don't process remaining tools
+
             requests.append(request)
             yield event
 

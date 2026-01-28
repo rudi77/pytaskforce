@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import aiofiles
 import yaml
 import structlog
 
@@ -100,10 +101,11 @@ class RuleRepository:
     async def _load_yaml_rules(
         self, path: Path, source: str = "manual"
     ) -> None:
-        """Load rules from a YAML file."""
+        """Load rules from a YAML file asynchronously."""
         try:
-            with open(path, encoding="utf-8") as f:
-                content = yaml.safe_load(f) or {}
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                content_str = await f.read()
+                content = yaml.safe_load(content_str) or {}
 
             # Parse vendor_rules
             for rule_data in content.get("vendor_rules", []):
@@ -117,9 +119,15 @@ class RuleRepository:
                 if rule:
                     self._rules[rule.rule_id] = rule
 
-        except Exception as e:
+        except yaml.YAMLError as e:
             logger.error(
-                "rule_repository.load_error",
+                "rule_repository.yaml_parse_error",
+                path=str(path),
+                error=str(e),
+            )
+        except OSError as e:
+            logger.error(
+                "rule_repository.file_read_error",
                 path=str(path),
                 error=str(e),
             )
@@ -214,8 +222,15 @@ class RuleRepository:
         # Add to memory cache
         self._rules[rule.rule_id] = rule
 
-        # Write to appropriate file
-        if rule.source in [RuleSource.AUTO_HIGH_CONFIDENCE, RuleSource.HITL_CORRECTION]:
+        logger.debug(
+            "rule_repository.rule_added_to_cache",
+            rule_id=rule.rule_id,
+            source=str(rule.source),
+            total_rules=len(self._rules),
+        )
+
+        # Write to appropriate file - use string comparison for robustness
+        if str(rule.source) in {"auto_high_confidence", "hitl_correction"}:
             await self._save_learned_rules()
         else:
             # For manual rules, just log - don't overwrite main config
@@ -236,12 +251,19 @@ class RuleRepository:
 
     async def _save_learned_rules(self) -> None:
         """Save learned rules to YAML file."""
+        # Use string comparison to handle both enum and string source values
+        valid_sources = {"auto_high_confidence", "hitl_correction"}
         learned_rules = [
             r for r in self._rules.values()
-            if r.source in [RuleSource.AUTO_HIGH_CONFIDENCE, RuleSource.HITL_CORRECTION]
+            if str(r.source) in valid_sources
         ]
 
         if not learned_rules:
+            logger.debug(
+                "rule_repository.no_learned_rules_to_save",
+                total_rules=len(self._rules),
+                rule_sources=[str(r.source) for r in self._rules.values()],
+            )
             return
 
         # Group by rule type
@@ -267,23 +289,23 @@ class RuleRepository:
             content["semantic_rules"] = semantic_rules
 
         try:
-            with open(self._learned_rules_path, "w", encoding="utf-8") as f:
-                yaml.dump(
-                    content,
-                    f,
-                    default_flow_style=False,
-                    allow_unicode=True,
-                    sort_keys=False,
-                )
+            yaml_str = yaml.dump(
+                content,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+            async with aiofiles.open(self._learned_rules_path, "w", encoding="utf-8") as f:
+                await f.write(yaml_str)
 
             logger.info(
                 "rule_repository.learned_rules_saved",
                 path=str(self._learned_rules_path),
                 count=len(learned_rules),
             )
-        except Exception as e:
+        except OSError as e:
             logger.error(
-                "rule_repository.save_error",
+                "rule_repository.file_write_error",
                 path=str(self._learned_rules_path),
                 error=str(e),
             )
@@ -335,8 +357,8 @@ class RuleRepository:
         rule.is_active = False
         rule.updated_at = datetime.now(timezone.utc).isoformat()
 
-        # Update storage
-        if rule.source in [RuleSource.AUTO_HIGH_CONFIDENCE, RuleSource.HITL_CORRECTION]:
+        # Update storage - use string comparison for robustness
+        if str(rule.source) in {"auto_high_confidence", "hitl_correction"}:
             await self._save_learned_rules()
 
         # Record in history
@@ -364,8 +386,8 @@ class RuleRepository:
 
         history = []
         try:
-            with open(self._history_path, "r", encoding="utf-8") as f:
-                for line in f:
+            async with aiofiles.open(self._history_path, "r", encoding="utf-8") as f:
+                async for line in f:
                     line = line.strip()
                     if not line:
                         continue
@@ -375,7 +397,7 @@ class RuleRepository:
                             history.append(entry)
                     except json.JSONDecodeError:
                         continue
-        except Exception as e:
+        except OSError as e:
             logger.error(
                 "rule_repository.history_read_error",
                 error=str(e),
@@ -386,7 +408,7 @@ class RuleRepository:
         return history
 
     async def _record_history(self, action: str, rule: AccountingRule) -> None:
-        """Record rule change in history file."""
+        """Record rule change in history file asynchronously."""
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
@@ -399,9 +421,9 @@ class RuleRepository:
         }
 
         try:
-            with open(self._history_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception as e:
+            async with aiofiles.open(self._history_path, "a", encoding="utf-8") as f:
+                await f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError as e:
             logger.error(
                 "rule_repository.history_write_error",
                 error=str(e),

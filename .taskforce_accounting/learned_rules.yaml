@@ -1,6 +1,6 @@
 version: '2.0'
 description: Auto-generated rules from high-confidence bookings and HITL corrections
-updated_at: '2026-01-27T17:47:39.561442+00:00'
+updated_at: '2026-01-27T20:03:58.351578+00:00'
 vendor_rules:
 - rule_id: AUTO-20260127095124
   vendor_pattern: Büromarkt\ Böttcher\ AG
@@ -21,6 +21,128 @@ vendor_rules:
   target_account_name: '4930'
   created_at: '2026-01-27T17:47:39.561442+00:00'
   updated_at: '2026-01-27T17:47:39.561442+00:00'
+- rule_id: AUTO-20260127183449
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T18:34:49.969251+00:00'
+  updated_at: '2026-01-27T18:34:49.969251+00:00'
+- rule_id: AUTO-20260127184048
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T18:40:48.586228+00:00'
+  updated_at: '2026-01-27T18:40:48.586228+00:00'
+- rule_id: AUTO-20260127184217
+  vendor_pattern: DATEV\ eG
+  target_account: '4950'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Rechts- und Beratungskosten
+  legal_basis: §4 Abs. 4 EStG
+  created_at: '2026-01-27T18:42:17.722926+00:00'
+  updated_at: '2026-01-27T18:42:17.722926+00:00'
+- rule_id: AUTO-20260127184400
+  vendor_pattern: Amazon\ Web\ Services\ EMEA\ SARL
+  target_account: '6805'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Porto (SKR04 Mapping für Cloud)
+  legal_basis: §4 Abs. 4 EStG
+  created_at: '2026-01-27T18:44:00.084329+00:00'
+  updated_at: '2026-01-27T18:44:00.084329+00:00'
+- rule_id: AUTO-20260127184450
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T18:44:50.232541+00:00'
+  updated_at: '2026-01-27T18:44:50.232541+00:00'
+- rule_id: AUTO-20260127184854
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T18:48:54.278836+00:00'
+  updated_at: '2026-01-27T18:48:54.278836+00:00'
+- rule_id: AUTO-20260127194925
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T19:49:25.911990+00:00'
+  updated_at: '2026-01-27T19:49:25.911990+00:00'
+- rule_id: AUTO-20260127195524
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T19:55:24.906610+00:00'
+  updated_at: '2026-01-27T19:55:24.906610+00:00'
+- rule_id: AUTO-20260127195718
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Bürobedarf
+  created_at: '2026-01-27T19:57:18.194360+00:00'
+  updated_at: '2026-01-27T19:57:18.194360+00:00'
+- rule_id: AUTO-20260127195833
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T19:58:33.369848+00:00'
+  updated_at: '2026-01-27T19:58:33.369848+00:00'
+- rule_id: AUTO-20260127200048
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T20:00:48.169072+00:00'
+  updated_at: '2026-01-27T20:00:48.169072+00:00'
+- rule_id: AUTO-20260127200358
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  created_at: '2026-01-27T20:03:58.351578+00:00'
+  updated_at: '2026-01-27T20:03:58.351578+00:00'
 semantic_rules:
 - rule_id: HITL-20260127101559
   vendor_pattern: Office\ Depot\ GmbH

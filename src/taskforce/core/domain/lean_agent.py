@@ -271,13 +271,15 @@ class Agent:
         ):
             yield event
 
-    def _truncate_output(self, output: str, max_length: int = 200) -> str:
+    def _truncate_output(self, output: str, max_length: int = 4000) -> str:
         """
         Truncate output for streaming events.
 
         Args:
             output: The output string to truncate
-            max_length: Maximum length before truncation (default: 200)
+            max_length: Maximum length before truncation (default: 4000)
+                       Increased from 200 to preserve useful data like
+                       booking_proposals in tool results.
 
         Returns:
             Truncated string with "..." suffix if truncated.

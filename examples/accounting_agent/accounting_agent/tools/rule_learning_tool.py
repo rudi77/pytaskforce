@@ -23,6 +23,15 @@ from accounting_agent.domain.models import (
     RuleType,
     RuleSource,
 )
+from accounting_agent.domain.invoice_utils import (
+    extract_supplier_name,
+    extract_line_items,
+    AUTO_RULE_PRIORITY,
+    HITL_RULE_PRIORITY,
+    MAX_ITEM_PATTERNS,
+    MAX_PATTERN_LENGTH,
+    MIN_PATTERN_LENGTH,
+)
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 logger = structlog.get_logger(__name__)
@@ -233,11 +242,12 @@ class RuleLearningTool:
                 "rule_created": False,
             }
 
-        supplier_name = invoice_data.get("supplier_name", "")
+        # Use helper for supplier name extraction
+        supplier_name = extract_supplier_name(invoice_data)
         if not supplier_name:
             return {
                 "success": False,
-                "error": "Missing supplier_name",
+                "error": "Missing supplier_name (tried: supplier_name, vendor_name, lieferant, supplier, vendor)",
                 "rule_created": False,
             }
 
@@ -248,24 +258,21 @@ class RuleLearningTool:
         timestamp = datetime.now(timezone.utc)
         rule_id = f"AUTO-{timestamp.strftime('%Y%m%d%H%M%S')}"
 
-        # Extract item patterns from line items
-        item_patterns = []
-        if rule_type == RuleType.VENDOR_ITEM:
-            for item in invoice_data.get("line_items", []):
-                desc = item.get("description", "")
-                if desc and len(desc) > 3:
-                    # Extract key terms
-                    item_patterns.append(desc[:50])
+        # Use helper for line item extraction
+        line_items = extract_line_items(invoice_data)
+
+        # Extract item patterns using constants
+        item_patterns = self._extract_item_patterns(line_items, rule_type)
 
         # Create rule
         rule = AccountingRule(
             rule_id=rule_id,
             rule_type=rule_type,
             vendor_pattern=self._create_vendor_pattern(supplier_name),
-            item_patterns=item_patterns[:5],  # Limit to 5 patterns
+            item_patterns=item_patterns,
             target_account=booking_proposal.get("debit_account", ""),
             target_account_name=booking_proposal.get("debit_account_name"),
-            priority=75,  # Higher than legacy, lower than manual
+            priority=AUTO_RULE_PRIORITY,
             similarity_threshold=0.8,
             source=RuleSource.AUTO_HIGH_CONFIDENCE,
             legal_basis=booking_proposal.get("legal_basis"),
@@ -324,11 +331,12 @@ class RuleLearningTool:
         rule_type_str: str,
     ) -> dict[str, Any]:
         """Create rule from HITL correction."""
-        supplier_name = invoice_data.get("supplier_name", "")
+        # Use helper for supplier name extraction
+        supplier_name = extract_supplier_name(invoice_data)
         if not supplier_name:
             return {
                 "success": False,
-                "error": "Missing supplier_name",
+                "error": "Missing supplier_name (tried: supplier_name, vendor_name, lieferant, supplier, vendor)",
                 "rule_created": False,
             }
 
@@ -347,23 +355,21 @@ class RuleLearningTool:
         timestamp = datetime.now(timezone.utc)
         rule_id = f"HITL-{timestamp.strftime('%Y%m%d%H%M%S')}"
 
-        # Extract item patterns from line items
-        item_patterns = []
-        if rule_type == RuleType.VENDOR_ITEM:
-            for item in invoice_data.get("line_items", []):
-                desc = item.get("description", "")
-                if desc and len(desc) > 3:
-                    item_patterns.append(desc[:50])
+        # Use helper for line item extraction
+        line_items = extract_line_items(invoice_data)
+
+        # Extract item patterns using constants
+        item_patterns = self._extract_item_patterns(line_items, rule_type)
 
         # Create rule
         rule = AccountingRule(
             rule_id=rule_id,
             rule_type=rule_type,
             vendor_pattern=self._create_vendor_pattern(supplier_name),
-            item_patterns=item_patterns[:5],
+            item_patterns=item_patterns,
             target_account=target_account,
             target_account_name=correction.get("debit_account_name"),
-            priority=90,  # Higher priority for HITL corrections
+            priority=HITL_RULE_PRIORITY,
             similarity_threshold=0.8,
             source=RuleSource.HITL_CORRECTION,
             legal_basis=correction.get("legal_basis"),
@@ -419,7 +425,8 @@ class RuleLearningTool:
                 "conflicts": [],
             }
 
-        supplier_name = invoice_data.get("supplier_name", "")
+        # Use helper for supplier name extraction
+        supplier_name = extract_supplier_name(invoice_data)
 
         # Create temporary rule for conflict check
         temp_rule = AccountingRule(
@@ -451,6 +458,32 @@ class RuleLearningTool:
         escaped = re.escape(vendor_name)
         # Make it case-insensitive friendly
         return escaped
+
+    def _extract_item_patterns(
+        self,
+        line_items: list[dict[str, Any]],
+        rule_type: RuleType,
+    ) -> list[str]:
+        """
+        Extract item patterns from invoice line items.
+
+        Args:
+            line_items: List of line item dictionaries
+            rule_type: Type of rule being created
+
+        Returns:
+            List of item patterns (max MAX_ITEM_PATTERNS)
+        """
+        if rule_type != RuleType.VENDOR_ITEM:
+            return []
+
+        patterns = []
+        for item in line_items:
+            desc = item.get("description", "")
+            if desc and len(desc) > MIN_PATTERN_LENGTH:
+                patterns.append(desc[:MAX_PATTERN_LENGTH])
+
+        return patterns[:MAX_ITEM_PATTERNS]
 
     def set_rule_repository(self, rule_repository: Any) -> None:
         """Set or update the rule repository."""

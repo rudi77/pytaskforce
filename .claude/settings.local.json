@@ -44,7 +44,12 @@
       "Bash(git checkout:*)",
       "Bash(timeout /t 3)",
       "Bash(curl:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(chcp:*)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python:*)",
+      "Bash(copy:*)",
+      "Bash(cmd /c copy:*)"
     ],
     "deny": [],
     "ask": []
