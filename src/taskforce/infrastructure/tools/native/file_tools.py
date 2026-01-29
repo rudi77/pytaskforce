@@ -8,8 +8,6 @@ Migrated from Agent V2 with full preservation of functionality.
 from pathlib import Path
 from typing import Any
 
-import aiofiles
-
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
@@ -95,8 +93,7 @@ class FileReadTool(ToolProtocol):
                     "error": f"File too large: {file_size_mb:.2f}MB > {max_size_mb}MB",
                 }
 
-            async with aiofiles.open(file_path, encoding=encoding) as f:
-                content = await f.read()
+            content = file_path.read_text(encoding=encoding)
             return {
                 "success": True,
                 "content": content,
@@ -197,18 +194,14 @@ class FileWriteTool(ToolProtocol):
             backed_up = False
             if backup and file_path.exists():
                 backup_path = file_path.with_suffix(file_path.suffix + ".bak")
-                async with aiofiles.open(file_path, encoding="utf-8") as src:
-                    original_content = await src.read()
-                async with aiofiles.open(backup_path, "w", encoding="utf-8") as dst:
-                    await dst.write(original_content)
+                backup_path.write_text(file_path.read_text(), encoding="utf-8")
                 backed_up = True
 
             # Create parent directories
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write content
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                await f.write(content)
+            file_path.write_text(content, encoding="utf-8")
 
             return {
                 "success": True,
