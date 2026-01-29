@@ -5,14 +5,14 @@ Provides Git operations (init, add, commit, push, etc.) and GitHub API integrati
 Migrated from Agent V2 with full preservation of functionality.
 """
 
+import asyncio
 import json
 import os
 import subprocess
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import structlog
 
@@ -32,7 +32,7 @@ class GitTool(ToolProtocol):
         return "Execute git operations (init, add, commit, push, status, clone, etc.)"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -100,9 +100,7 @@ class GitTool(ToolProtocol):
             return f"⚠️ GIT PUSH OPERATION\nTool: {self.name}\nOperation: push\nRemote: {remote}\nBranch: {branch}"
         return f"Tool: {self.name}\nOperation: {operation}\nParameters: {kwargs}"
 
-    async def execute(
-        self, operation: str, repo_path: str = ".", **kwargs
-    ) -> Dict[str, Any]:
+    async def execute(self, operation: str, repo_path: str = ".", **kwargs) -> dict[str, Any]:
         """
         Execute git operations.
 
@@ -264,7 +262,7 @@ class GitHubTool(ToolProtocol):
         return "GitHub operations (create/list/delete repos) using REST API. Requires GITHUB_TOKEN."
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -299,7 +297,7 @@ class GitHubTool(ToolProtocol):
         name = kwargs.get("name", "")
         return f"⚠️ GITHUB API OPERATION\nTool: {self.name}\nAction: {action}\nRepository: {name}"
 
-    async def execute(self, action: str, **kwargs) -> Dict[str, Any]:
+    async def execute(self, action: str, **kwargs) -> dict[str, Any]:
         """
         Execute GitHub API operations.
 
@@ -327,8 +325,8 @@ class GitHubTool(ToolProtocol):
             api_base = "https://api.github.com"
 
             def request(
-                method: str, url: str, body: Optional[Dict[str, Any]] = None
-            ) -> Tuple[int, str]:
+                method: str, url: str, body: dict[str, Any] | None = None
+            ) -> tuple[int, str]:
                 headers = {
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {token}",
@@ -339,9 +337,7 @@ class GitHubTool(ToolProtocol):
                 if body is not None:
                     data_bytes = json.dumps(body).encode("utf-8")
                     headers["Content-Type"] = "application/json"
-                req = urllib.request.Request(
-                    url, data=data_bytes, headers=headers, method=method
-                )
+                req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
                 try:
                     with urllib.request.urlopen(req, timeout=30) as resp:
                         return resp.getcode(), resp.read().decode("utf-8")
@@ -374,7 +370,7 @@ class GitHubTool(ToolProtocol):
                     status, text = request("POST", f"{api_base}/user/repos", body)
                     if status not in (500, 502, 503, 504, -1, 0):
                         break
-                    time.sleep(1)
+                    await asyncio.sleep(1)
                 ok = status in (200, 201)
                 payload = {}
                 try:
@@ -383,9 +379,7 @@ class GitHubTool(ToolProtocol):
                     payload = {"raw": text}
                 error_msg = None
                 if not ok:
-                    base_msg = (
-                        payload.get("message") if isinstance(payload, dict) else None
-                    )
+                    base_msg = payload.get("message") if isinstance(payload, dict) else None
                     errors = payload.get("errors") if isinstance(payload, dict) else None
                     if status == 422 and errors:
                         error_msg = f"Validation failed: {errors}"
@@ -409,13 +403,9 @@ class GitHubTool(ToolProtocol):
                     "error": error_msg,
                 }
                 if ok:
-                    logger.info(
-                        "github_create_repo_success", full_name=result["repo_full_name"]
-                    )
+                    logger.info("github_create_repo_success", full_name=result["repo_full_name"])
                 else:
-                    logger.error(
-                        "github_create_repo_failed", status=status, error=error_msg
-                    )
+                    logger.error("github_create_repo_failed", status=status, error=error_msg)
                 return result
 
             elif action == "list_repos":
@@ -424,11 +414,7 @@ class GitHubTool(ToolProtocol):
                 repos = []
                 try:
                     data = json.loads(text) if text else []
-                    repos = [
-                        item.get("full_name")
-                        for item in data
-                        if isinstance(item, dict)
-                    ]
+                    repos = [item.get("full_name") for item in data if isinstance(item, dict)]
                 except Exception:
                     repos = []
                 result = {
@@ -472,9 +458,7 @@ class GitHubTool(ToolProtocol):
                 detail = e.read().decode("utf-8")
             except Exception:
                 detail = str(e)
-            logger.error(
-                "github_http_error", status=getattr(e, "code", None), detail=detail
-            )
+            logger.error("github_http_error", status=getattr(e, "code", None), detail=detail)
             tool_error = ToolError(
                 f"{self.name} failed: HTTPError {e.code}: {detail}",
                 tool_name=self.name,

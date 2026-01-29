@@ -6,7 +6,9 @@ Migrated from Agent V2 with full preservation of functionality.
 """
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
+import aiofiles
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
@@ -24,7 +26,7 @@ class FileReadTool(ToolProtocol):
         return "Read file contents safely with size limits and encoding detection"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -63,7 +65,7 @@ class FileReadTool(ToolProtocol):
 
     async def execute(
         self, path: str, encoding: str = "utf-8", max_size_mb: int = 10, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Read file contents safely with size limits and encoding detection.
 
@@ -93,7 +95,8 @@ class FileReadTool(ToolProtocol):
                     "error": f"File too large: {file_size_mb:.2f}MB > {max_size_mb}MB",
                 }
 
-            content = file_path.read_text(encoding=encoding)
+            async with aiofiles.open(file_path, encoding=encoding) as f:
+                content = await f.read()
             return {
                 "success": True,
                 "content": content,
@@ -129,7 +132,7 @@ class FileWriteTool(ToolProtocol):
         return "Write content to file with backup and safety checks"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -164,15 +167,13 @@ class FileWriteTool(ToolProtocol):
     def get_approval_preview(self, **kwargs: Any) -> str:
         path = kwargs.get("path", "")
         content = kwargs.get("content", "")
-        content_preview = (
-            content[:100] + "..." if len(content) > 100 else content
-        )
+        content_preview = content[:100] + "..." if len(content) > 100 else content
         backup = kwargs.get("backup", True)
         return f"⚠️ FILE WRITE OPERATION\nTool: {self.name}\nPath: {path}\nBackup: {backup}\nContent Preview:\n{content_preview}"
 
     async def execute(
         self, path: str, content: str, backup: bool = True, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Write content to file with backup and safety checks.
 
@@ -196,14 +197,18 @@ class FileWriteTool(ToolProtocol):
             backed_up = False
             if backup and file_path.exists():
                 backup_path = file_path.with_suffix(file_path.suffix + ".bak")
-                backup_path.write_text(file_path.read_text(), encoding="utf-8")
+                async with aiofiles.open(file_path, encoding="utf-8") as src:
+                    original_content = await src.read()
+                async with aiofiles.open(backup_path, "w", encoding="utf-8") as dst:
+                    await dst.write(original_content)
                 backed_up = True
 
             # Create parent directories
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write content
-            file_path.write_text(content, encoding="utf-8")
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                await f.write(content)
 
             return {
                 "success": True,

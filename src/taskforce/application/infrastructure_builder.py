@@ -125,9 +125,7 @@ class InfrastructureBuilder:
                 )
                 profile_path = custom_path
             else:
-                raise FileNotFoundError(
-                    f"Profile not found: {profile_path} or {custom_path}"
-                )
+                raise FileNotFoundError(f"Profile not found: {profile_path} or {custom_path}")
 
         with open(profile_path) as f:
             config = yaml.safe_load(f)
@@ -195,9 +193,7 @@ class InfrastructureBuilder:
             db_url = os.getenv(db_url_env)
 
             if not db_url:
-                raise ValueError(
-                    f"Database URL not found in environment variable: {db_url_env}"
-                )
+                raise ValueError(f"Database URL not found in environment variable: {db_url_env}")
 
             return DbStateManager(db_url=db_url)
 
@@ -221,13 +217,15 @@ class InfrastructureBuilder:
         from taskforce.infrastructure.llm.openai_service import OpenAIService
 
         llm_config = config.get("llm", {})
-        config_path = llm_config.get("config_path", "src/taskforce_extensions/configs/llm_config.yaml")
+        config_path = llm_config.get(
+            "config_path", "src/taskforce_extensions/configs/llm_config.yaml"
+        )
 
         # Resolve relative paths against base path (handles frozen executables)
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
             resolved_path = get_base_path() / config_path
-            
+
             # Backward compatibility: if old path doesn't exist, try new location
             if not resolved_path.exists() and config_path.startswith("configs/"):
                 # Try new location: src/taskforce_extensions/configs/...
@@ -239,7 +237,7 @@ class InfrastructureBuilder:
                         old_path=config_path,
                         new_path=str(new_path),
                     )
-            
+
             config_path = str(resolved_path)
 
         return OpenAIService(config_path=config_path)
@@ -267,124 +265,16 @@ class InfrastructureBuilder:
             Tuple of (tools, contexts) where contexts are the connection
             contexts that must be kept alive for the tools to work
         """
+        from taskforce.infrastructure.tools.mcp.connection_manager import (
+            create_default_connection_manager,
+        )
+
         if not mcp_servers:
             return [], []
 
-        from taskforce.infrastructure.tools.filters import simplify_wiki_list_output
-        from taskforce.infrastructure.tools.mcp.client import MCPClient
-        from taskforce.infrastructure.tools.mcp.wrapper import MCPToolWrapper
-        from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
-
-        tools: list[ToolProtocol] = []
-        contexts: list[Any] = []
-
-        for server_config in mcp_servers:
-            try:
-                mcp_tools, ctx = await self._connect_mcp_server(server_config)
-
-                # Filter tools if allowlist provided
-                if tool_filter:
-                    mcp_tools = [t for t in mcp_tools if t.name in tool_filter]
-
-                # Apply output filtering for specific tools
-                filtered_tools: list[ToolProtocol] = []
-                for tool in mcp_tools:
-                    if tool.name == "list_wiki":
-                        # Apply wiki output filter
-                        filtered_tools.append(
-                            OutputFilteringTool(tool, simplify_wiki_list_output)
-                        )
-                    else:
-                        filtered_tools.append(tool)
-
-                tools.extend(filtered_tools)
-                contexts.append(ctx)
-
-                self._logger.info(
-                    "mcp_server_connected",
-                    server_type=server_config.type,
-                    command=server_config.command,
-                    tools_count=len(mcp_tools),
-                    tool_names=[t.name for t in mcp_tools],
-                )
-
-            except Exception as e:
-                self._logger.warning(
-                    "mcp_server_connection_failed",
-                    server_type=server_config.type,
-                    command=server_config.command,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-                # Continue with other servers
-
-        return tools, contexts
-
-    async def _connect_mcp_server(
-        self, server_config: MCPServerConfig
-    ) -> tuple[list[ToolProtocol], Any]:
-        """
-        Connect to a single MCP server and get its tools.
-
-        Uses the existing MCPClient class for connection management.
-
-        Args:
-            server_config: MCP server configuration
-
-        Returns:
-            Tuple of (tools, context_manager)
-        """
-        from taskforce.infrastructure.tools.mcp.client import MCPClient
-        from taskforce.infrastructure.tools.mcp.wrapper import MCPToolWrapper
-
-        if server_config.type == "stdio":
-            # Ensure memory directory exists if MEMORY_FILE_PATH is configured
-            env = dict(server_config.env)  # Make a copy
-            if "MEMORY_FILE_PATH" in env:
-                memory_path = Path(env["MEMORY_FILE_PATH"])
-                # Convert relative paths to absolute
-                if not memory_path.is_absolute():
-                    memory_path = memory_path.resolve()
-                memory_dir = memory_path.parent
-                if not memory_dir.exists():
-                    memory_dir.mkdir(parents=True, exist_ok=True)
-                    self._logger.debug("mcp_memory_dir_created", path=str(memory_dir))
-                # Update env with absolute path
-                env["MEMORY_FILE_PATH"] = str(memory_path)
-
-            if not server_config.command:
-                raise ValueError("stdio server requires 'command' field")
-
-            # Create context manager and enter it
-            ctx = MCPClient.create_stdio(
-                command=server_config.command,
-                args=server_config.args,
-                env=env if env else None,
-            )
-            client = await ctx.__aenter__()
-
-            # Get tools
-            tools_list = await client.list_tools()
-            tools = [MCPToolWrapper(client, tool_def) for tool_def in tools_list]
-
-            return tools, ctx
-
-        elif server_config.type == "sse":
-            if not server_config.url:
-                raise ValueError("SSE server requires 'url' field")
-
-            # Create context manager and enter it
-            ctx = MCPClient.create_sse(server_config.url)
-            client = await ctx.__aenter__()
-
-            # Get tools
-            tools_list = await client.list_tools()
-            tools = [MCPToolWrapper(client, tool_def) for tool_def in tools_list]
-
-            return tools, ctx
-
-        else:
-            raise ValueError(f"Unknown MCP server type: {server_config.type}")
+        # Use centralized connection manager
+        manager = create_default_connection_manager()
+        return await manager.connect_all(mcp_servers, tool_filter=tool_filter)
 
     # -------------------------------------------------------------------------
     # Context Policy

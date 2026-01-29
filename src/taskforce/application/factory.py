@@ -39,6 +39,7 @@ def get_base_path() -> Path:
         # Project root is 4 levels up
         return Path(__file__).parent.parent.parent.parent
 
+
 import structlog
 import yaml
 
@@ -54,8 +55,6 @@ from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts import build_system_prompt, format_tools_description
-from taskforce.infrastructure.tools.filters import simplify_wiki_list_output
-from taskforce.infrastructure.tools.wrappers import OutputFilteringTool
 from taskforce.application.plugin_loader import PluginLoader, PluginManifest
 
 
@@ -242,9 +241,7 @@ class AgentFactory:
         # Handle plugin tools if this is a plugin agent
         plugin_tools: list[ToolProtocol] = []
         if definition.source == AgentSource.PLUGIN and definition.plugin_path:
-            plugin_tools = await self._load_plugin_tools_for_definition(
-                definition, llm_provider
-            )
+            plugin_tools = await self._load_plugin_tools_for_definition(definition, llm_provider)
 
         # Combine all tools
         all_tools = plugin_tools + native_tools + mcp_tools
@@ -264,7 +261,9 @@ class AgentFactory:
         max_steps = definition.max_steps or agent_config.get("max_steps")
         max_parallel_tools = agent_config.get("max_parallel_tools")
         strategy_name = definition.planning_strategy or agent_config.get("planning_strategy")
-        strategy_params = definition.planning_strategy_params or agent_config.get("planning_strategy_params")
+        strategy_params = definition.planning_strategy_params or agent_config.get(
+            "planning_strategy_params"
+        )
         selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
 
         self.logger.debug(
@@ -741,7 +740,10 @@ class AgentFactory:
             # Minimal defaults when no base profile exists
             base_config = {
                 "persistence": {"type": "file", "work_dir": ".taskforce"},
-                "llm": {"config_path": "src/taskforce_extensions/configs/llm_config.yaml", "default_model": "main"},
+                "llm": {
+                    "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+                    "default_model": "main",
+                },
                 "logging": {"level": "WARNING"},
             }
 
@@ -922,9 +924,9 @@ class AgentFactory:
 
         # Work dir from plugin (allows plugin-specific workspace)
         if plugin_config.get("persistence", {}).get("work_dir"):
-            merged.setdefault("persistence", {})["work_dir"] = plugin_config[
-                "persistence"
-            ]["work_dir"]
+            merged.setdefault("persistence", {})["work_dir"] = plugin_config["persistence"][
+                "work_dir"
+            ]
 
         # MCP servers from plugin (additive)
         if "mcp_servers" in plugin_config:
@@ -950,9 +952,7 @@ class AgentFactory:
         Raises:
             ValueError: If strategy name is invalid or params are malformed
         """
-        normalized = (
-            strategy_name or "native_react"
-        ).strip().lower().replace("-", "_")
+        normalized = (strategy_name or "native_react").strip().lower().replace("-", "_")
         params = params or {}
         if not isinstance(params, dict):
             raise ValueError("planning_strategy_params must be a dictionary")
@@ -967,9 +967,7 @@ class AgentFactory:
             max_plan_steps_value = params.get("max_plan_steps")
             return PlanAndExecuteStrategy(
                 max_step_iterations=(
-                    int(max_step_iterations_value)
-                    if max_step_iterations_value is not None
-                    else 4
+                    int(max_step_iterations_value) if max_step_iterations_value is not None else 4
                 ),
                 max_plan_steps=(
                     int(max_plan_steps_value) if max_plan_steps_value is not None else 12
@@ -1033,9 +1031,7 @@ class AgentFactory:
 
             # Filter MCP tools by allowlist if specified
             if mcp_tool_allowlist:
-                filtered_mcp_tools = [
-                    t for t in mcp_tools if t.name in mcp_tool_allowlist
-                ]
+                filtered_mcp_tools = [t for t in mcp_tools if t.name in mcp_tool_allowlist]
                 self.logger.debug(
                     "mcp_tools_filtered",
                     original_count=len(mcp_tools),
@@ -1049,9 +1045,7 @@ class AgentFactory:
 
         return tools
 
-    def _get_all_native_tools(
-        self, llm_provider: LLMProviderProtocol
-    ) -> list[ToolProtocol]:
+    def _get_all_native_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
         """
         Get all available native tools.
 
@@ -1123,9 +1117,7 @@ class AgentFactory:
             else:
                 # Don't log error here - let caller decide how to handle
                 # (e.g., create_agent_with_plugin uses defaults as fallback)
-                raise FileNotFoundError(
-                    f"Profile not found: {profile_path} or {custom_path}"
-                )
+                raise FileNotFoundError(f"Profile not found: {profile_path} or {custom_path}")
 
         with open(profile_path) as f:
             config = yaml.safe_load(f)
@@ -1183,9 +1175,7 @@ class AgentFactory:
             db_url = os.getenv(db_url_env)
 
             if not db_url:
-                raise ValueError(
-                    f"Database URL not found in environment variable: {db_url_env}"
-                )
+                raise ValueError(f"Database URL not found in environment variable: {db_url_env}")
 
             return DbStateManager(db_url=db_url)
 
@@ -1205,13 +1195,15 @@ class AgentFactory:
         from taskforce.infrastructure.llm.openai_service import OpenAIService
 
         llm_config = config.get("llm", {})
-        config_path = llm_config.get("config_path", "src/taskforce_extensions/configs/llm_config.yaml")
+        config_path = llm_config.get(
+            "config_path", "src/taskforce_extensions/configs/llm_config.yaml"
+        )
 
         # Resolve relative paths against base path (handles frozen executables)
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
             resolved_path = get_base_path() / config_path
-            
+
             # Backward compatibility: if old path doesn't exist, try new location
             if not resolved_path.exists() and config_path.startswith("configs/"):
                 # Try new location: src/taskforce_extensions/configs/...
@@ -1223,13 +1215,16 @@ class AgentFactory:
                         old_path=config_path,
                         new_path=str(new_path),
                     )
-            
+
             config_path = str(resolved_path)
 
         return OpenAIService(config_path=config_path)
 
     def _create_native_tools(
-        self, config: dict, llm_provider: LLMProviderProtocol, user_context: Optional[dict[str, Any]] = None
+        self,
+        config: dict,
+        llm_provider: LLMProviderProtocol,
+        user_context: Optional[dict[str, Any]] = None,
     ) -> list[ToolProtocol]:
         """
         Create native tools from configuration.
@@ -1248,11 +1243,11 @@ class AgentFactory:
             LLM capabilities for text generation rather than calling a tool.
         """
         tools_config = config.get("tools", [])
-        
+
         if not tools_config:
             # Fallback to default tool set if no config provided
             return self._create_default_tools(llm_provider)
-        
+
         tools = []
         for tool_spec in tools_config:
             tool = self._instantiate_tool(tool_spec, llm_provider, user_context=user_context)
@@ -1292,9 +1287,9 @@ class AgentFactory:
                     reason="include_llm_generate is False (default)",
                     remaining_tools=[t.name for t in tools],
                 )
-        
+
         return tools
-    
+
     async def _create_mcp_tools(self, config: dict) -> tuple[list[ToolProtocol], list[Any]]:
         """
         Create MCP tools from configuration.
@@ -1320,164 +1315,25 @@ class AgentFactory:
               - type: sse
                 url: http://localhost:8000/sse
         """
-        from taskforce.infrastructure.tools.mcp.client import MCPClient
-        from taskforce.infrastructure.tools.mcp.wrapper import MCPToolWrapper
+        from taskforce.core.domain.agent_definition import MCPServerConfig
+        from taskforce.infrastructure.tools.mcp.connection_manager import (
+            create_default_connection_manager,
+        )
 
         mcp_servers_config = config.get("mcp_servers", [])
-        
+
         if not mcp_servers_config:
             self.logger.debug("no_mcp_servers_configured")
             return [], []
-        
-        mcp_tools = []
-        client_contexts = []
-        
-        for server_config in mcp_servers_config:
-            server_type = server_config.get("type")
 
-            try:
-                if server_type == "stdio":
-                    # Local stdio server
-                    command = server_config.get("command")
-                    args = server_config.get("args", [])
-                    env = server_config.get("env")
+        # Convert dict configs to MCPServerConfig objects
+        server_configs = [
+            MCPServerConfig.from_dict(s) if isinstance(s, dict) else s for s in mcp_servers_config
+        ]
 
-                    # Ensure memory directory exists if MEMORY_FILE_PATH is configured
-                    if env and "MEMORY_FILE_PATH" in env:
-                        memory_path = Path(env["MEMORY_FILE_PATH"])
-                        # Resolve to absolute path to avoid issues with relative paths
-                        if not memory_path.is_absolute():
-                            memory_path = memory_path.resolve()
-                        memory_dir = memory_path.parent
-                        if not memory_dir.exists():
-                            memory_dir.mkdir(parents=True, exist_ok=True)
-                            self.logger.info(
-                                "memory_directory_created",
-                                memory_dir=str(memory_dir),
-                                memory_file=str(memory_path),
-                            )
-                        # Update env with absolute path for MCP server
-                        env = env.copy()
-                        env["MEMORY_FILE_PATH"] = str(memory_path)
-
-                    if not command:
-                        self.logger.warning(
-                            "mcp_server_missing_command",
-                            server_config=server_config,
-                            hint="stdio server requires 'command' field",
-                        )
-                        continue
-                    
-                    self.logger.info(
-                        "connecting_to_mcp_server",
-                        server_type="stdio",
-                        command=command,
-                        args=args,
-                    )
-                    
-                    # Create context manager but don't enter yet
-                    ctx = MCPClient.create_stdio(command, args, env)
-                    client = await ctx.__aenter__()
-                    client_contexts.append(ctx)
-                    
-                    tools_list = await client.list_tools()
-                    
-                    self.logger.info(
-                        "mcp_server_connected",
-                        server_type="stdio",
-                        command=command,
-                        tools_count=len(tools_list),
-                        tool_names=[t["name"] for t in tools_list],
-                    )
-                    
-                    # Wrap each tool
-                    for tool_def in tools_list:
-                        wrapper = MCPToolWrapper(client, tool_def)
-
-                        # Apply output filtering for specific tools
-                        if wrapper.name == "list_wiki":
-                            self.logger.debug(
-                                "wrapping_tool_with_filter",
-                                tool_name=wrapper.name,
-                                filter="simplify_wiki_list_output",
-                            )
-                            wrapper = OutputFilteringTool(
-                                original_tool=wrapper,
-                                filter_func=simplify_wiki_list_output
-                            )
-
-                        mcp_tools.append(wrapper)
-                
-                elif server_type == "sse":
-                    # Remote SSE server
-                    url = server_config.get("url")
-                    
-                    if not url:
-                        self.logger.warning(
-                            "mcp_server_missing_url",
-                            server_config=server_config,
-                            hint="sse server requires 'url' field",
-                        )
-                        continue
-                    
-                    self.logger.info(
-                        "connecting_to_mcp_server",
-                        server_type="sse",
-                        url=url,
-                    )
-                    
-                    # Create context manager but don't enter yet
-                    ctx = MCPClient.create_sse(url)
-                    client = await ctx.__aenter__()
-                    client_contexts.append(ctx)
-                    
-                    tools_list = await client.list_tools()
-                    
-                    self.logger.info(
-                        "mcp_server_connected",
-                        server_type="sse",
-                        url=url,
-                        tools_count=len(tools_list),
-                        tool_names=[t["name"] for t in tools_list],
-                    )
-                    
-                    # Wrap each tool
-                    for tool_def in tools_list:
-                        wrapper = MCPToolWrapper(client, tool_def)
-
-                        # Apply output filtering for specific tools
-                        if wrapper.name == "list_wiki":
-                            self.logger.debug(
-                                "wrapping_tool_with_filter",
-                                tool_name=wrapper.name,
-                                filter="simplify_wiki_list_output",
-                            )
-                            wrapper = OutputFilteringTool(
-                                original_tool=wrapper,
-                                filter_func=simplify_wiki_list_output
-                            )
-
-                        mcp_tools.append(wrapper)
-                
-                else:
-                    self.logger.warning(
-                        "unknown_mcp_server_type",
-                        server_type=server_type,
-                        hint="Supported types: 'stdio', 'sse'",
-                    )
-            
-            except Exception as e:
-                # Log error but don't crash - graceful degradation
-                self.logger.warning(
-                    "mcp_server_connection_failed",
-                    server_type=server_type,
-                    server_config=server_config,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    hint="Agent will continue without this MCP server",
-                )
-        
-        return mcp_tools, client_contexts
+        # Use centralized connection manager
+        manager = create_default_connection_manager()
+        return await manager.connect_all(server_configs)
 
     async def _build_tools(
         self,
@@ -1499,9 +1355,7 @@ class AgentFactory:
                 specialist=specialist,
                 tool_count=len(tools_config),
             )
-            tools = self._create_native_tools(
-                config, llm_provider, user_context=user_context
-            )
+            tools = self._create_native_tools(config, llm_provider, user_context=user_context)
         elif use_specialist_defaults and specialist in ("coding", "rag"):
             self.logger.debug("using_specialist_defaults", specialist=specialist)
             tools = self._create_specialist_tools(
@@ -1516,7 +1370,7 @@ class AgentFactory:
         mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
         tools.extend(mcp_tools)
         return tools, mcp_contexts
-    
+
     def _create_default_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
         """
         Create default tool set (fallback when no config provided).
@@ -1537,6 +1391,7 @@ class AgentFactory:
             FileWriteTool,
         )
         from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
+
         # REMOVED: LLMTool - Agent uses internal LLM for text generation
         from taskforce.infrastructure.tools.native.python_tool import PythonTool
         from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
@@ -1637,7 +1492,7 @@ class AgentFactory:
 
         else:
             raise ValueError(f"Unknown specialist profile: {specialist}")
-    
+
     def _instantiate_tool(
         self,
         tool_spec: str | dict[str, Any],
@@ -1657,7 +1512,7 @@ class AgentFactory:
         """
         import importlib
         from taskforce.infrastructure.tools.registry import resolve_tool_spec
-        
+
         resolved_spec = resolve_tool_spec(tool_spec)
         if not resolved_spec:
             self.logger.warning(
@@ -1670,34 +1525,34 @@ class AgentFactory:
         tool_type = resolved_spec.get("type")
         tool_module = resolved_spec.get("module")
         tool_params = resolved_spec.get("params", {}).copy()
-        
+
         try:
             # Import the module
             module = importlib.import_module(tool_module)
-            
+
             # Get the tool class
             tool_class = getattr(module, tool_type)
-            
+
             # Special handling for LLMTool - inject llm_service
             if tool_type == "LLMTool":
                 tool_params["llm_service"] = llm_provider
-            
+
             # Special handling for RAG tools - inject user_context
             if tool_type in ["SemanticSearchTool", "ListDocumentsTool", "GetDocumentTool"]:
                 if user_context:
                     tool_params["user_context"] = user_context
-            
+
             # Instantiate the tool with params
             tool_instance = tool_class(**tool_params)
-            
+
             self.logger.debug(
                 "tool_instantiated",
                 tool_type=tool_type,
                 tool_name=tool_instance.name,
             )
-            
+
             return tool_instance
-            
+
         except Exception as e:
             self.logger.error(
                 "tool_instantiation_failed",

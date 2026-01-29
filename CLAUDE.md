@@ -737,18 +737,25 @@ def _create_state_manager(self, config: dict) -> StateManagerProtocol:
 - **ALL I/O operations must be async** - file, database, HTTP, LLM calls
 - Use `asyncio.gather()` for parallel operations
 - Use `async with` for resource management
+- Use `await asyncio.sleep()` instead of `time.sleep()` (blocks event loop!)
 
 ```python
-# ✅ GOOD - Async I/O
+# ✅ GOOD - Async I/O with aiofiles
 async def process_files(file_paths: List[str]) -> List[str]:
     async with aiofiles.open(file_paths[0]) as f:
         content = await f.read()
     return content
 
+# ✅ GOOD - Async sleep
+await asyncio.sleep(1)  # Non-blocking
+
 # ❌ BAD - Blocking I/O
 def process_files(file_paths: List[str]) -> List[str]:
     with open(file_paths[0]) as f:  # Blocks event loop!
         content = f.read()
+
+# ❌ BAD - Blocking sleep
+time.sleep(1)  # Blocks entire event loop!
 ```
 
 ### 2. State Versioning
@@ -870,6 +877,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/persistence/db_state.py` - Database state
 - `src/taskforce/infrastructure/llm/litellm_service.py` - LLM service
 - `src/taskforce/infrastructure/tools/native/*.py` - Native tools
+- `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP server connections
 
 ### Application
 - `src/taskforce/application/factory.py` - Dependency injection
