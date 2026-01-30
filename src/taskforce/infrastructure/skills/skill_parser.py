@@ -7,6 +7,7 @@ Parses SKILL.md files with YAML frontmatter:
 """
 
 import re
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -65,6 +66,7 @@ def parse_skill_markdown(
 
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
+    _validate_name_matches_directory(name, source_path)
     license_text = _parse_optional_string(frontmatter, "license")
     compatibility = _parse_optional_string(
         frontmatter,
@@ -121,6 +123,7 @@ def parse_skill_metadata(
 
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
+    _validate_name_matches_directory(name, source_path)
     license_text = _parse_optional_string(frontmatter, "license")
     compatibility = _parse_optional_string(
         frontmatter,
@@ -221,12 +224,26 @@ def _parse_metadata_dict(frontmatter: dict[str, Any]) -> dict[str, str] | None:
 
 
 def _parse_allowed_tools(frontmatter: dict[str, Any]) -> str | None:
-    allowed_tools = _parse_optional_string(frontmatter, "allowed_tools")
+    allowed_tools = None
+    if "allowed-tools" in frontmatter:
+        allowed_tools = _parse_optional_string(frontmatter, "allowed-tools")
+    elif "allowed_tools" in frontmatter:
+        allowed_tools = _parse_optional_string(frontmatter, "allowed_tools")
     if allowed_tools is None:
         return None
     if not ALLOWED_TOOLS_PATTERN.match(allowed_tools):
-        raise SkillParseError("Frontmatter 'allowed_tools' must be space-delimited")
+        raise SkillParseError("Frontmatter 'allowed-tools' must be space-delimited")
     return allowed_tools
+
+
+def _validate_name_matches_directory(name: str, source_path: str) -> None:
+    if not source_path:
+        return
+    directory_name = Path(source_path).name
+    if directory_name != name:
+        raise SkillParseError(
+            f"Skill name '{name}' does not match directory name '{directory_name}'"
+        )
 
 
 def validate_skill_file(skill_path: str) -> tuple[bool, str | None]:
