@@ -7,6 +7,7 @@ Parses SKILL.md files with YAML frontmatter:
 """
 
 import re
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -74,6 +75,13 @@ def parse_skill_markdown(
     metadata = _parse_metadata_dict(frontmatter)
     allowed_tools = _parse_allowed_tools(frontmatter)
     instructions = body.strip()
+    expected_name = Path(source_path).name
+
+    if name != expected_name:
+        raise SkillParseError(
+            "Skill name does not match directory name: "
+            f"'{name}' != '{expected_name}'"
+        )
 
     # Create and return skill (validation happens in __post_init__)
     try:

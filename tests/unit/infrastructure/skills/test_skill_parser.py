@@ -38,7 +38,7 @@ This is the instructions section.
 
 More instructions here.
 """
-        skill = parse_skill_markdown(content, "/path/to/skill")
+        skill = parse_skill_markdown(content, "/path/to/test-skill")
 
         assert skill.name == "test-skill"
         assert skill.description == "This is a test skill for unit testing."
@@ -48,7 +48,7 @@ More instructions here.
         assert skill.allowed_tools == "file_read file_write"
         assert "# Test Skill" in skill.instructions
         assert "## Section 1" in skill.instructions
-        assert skill.source_path == "/path/to/skill"
+        assert skill.source_path == "/path/to/test-skill"
 
     def test_parse_minimal_skill(self):
         """Minimal valid SKILL.md should parse correctly."""
@@ -59,7 +59,7 @@ description: Minimal skill.
 
 Instructions.
 """
-        skill = parse_skill_markdown(content, "/path")
+        skill = parse_skill_markdown(content, "/path/minimal")
 
         assert skill.name == "minimal"
         assert skill.description == "Minimal skill."
@@ -74,7 +74,7 @@ description: No name field.
 Instructions.
 """
         with pytest.raises(SkillParseError) as exc_info:
-            parse_skill_markdown(content, "/path")
+            parse_skill_markdown(content, "/path/test-skill")
 
         assert "name" in str(exc_info.value).lower()
 
@@ -87,7 +87,7 @@ name: test-skill
 Instructions.
 """
         with pytest.raises(SkillParseError) as exc_info:
-            parse_skill_markdown(content, "/path")
+            parse_skill_markdown(content, "/path/test-skill")
 
         assert "description" in str(exc_info.value).lower()
 
@@ -98,7 +98,7 @@ Instructions.
 No frontmatter here.
 """
         with pytest.raises(SkillParseError) as exc_info:
-            parse_skill_markdown(content, "/path")
+            parse_skill_markdown(content, "/path/test-skill")
 
         assert "frontmatter" in str(exc_info.value).lower()
 
@@ -113,21 +113,21 @@ invalid yaml: [unclosed bracket
 Instructions.
 """
         with pytest.raises(SkillParseError) as exc_info:
-            parse_skill_markdown(content, "/path")
+            parse_skill_markdown(content, "/path/test")
 
         assert "yaml" in str(exc_info.value).lower()
 
     def test_parse_invalid_name_raises(self):
         """Invalid skill name should raise SkillParseError."""
         content = """---
-name: Invalid Name
+name: invalid--name
 description: Description.
 ---
 
 Instructions.
 """
         with pytest.raises(SkillParseError) as exc_info:
-            parse_skill_markdown(content, "/path")
+            parse_skill_markdown(content, "/path/invalid--name")
 
         assert "validation" in str(exc_info.value).lower()
 
@@ -184,7 +184,7 @@ name: empty-body
 description: A skill with no instructions.
 ---
 """
-        skill = parse_skill_markdown(content, "/path")
+        skill = parse_skill_markdown(content, "/path/empty-body")
 
         assert skill.name == "empty-body"
         assert skill.instructions == ""
@@ -202,12 +202,26 @@ First line.
 
         More indented.
 """
-        skill = parse_skill_markdown(content, "/path")
+        skill = parse_skill_markdown(content, "/path/whitespace")
 
         # Body is stripped of leading/trailing whitespace, but internal whitespace preserved
         assert "First line." in skill.instructions
         assert "    Indented text." in skill.instructions
         assert "        More indented." in skill.instructions
+
+    def test_parse_name_mismatch_raises(self):
+        """Mismatched directory name should raise SkillParseError."""
+        content = """---
+name: mismatched
+description: Mismatch test.
+---
+
+Instructions.
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_markdown(content, "/path/expected-name")
+
+        assert "directory name" in str(exc_info.value).lower()
 
 
 class TestParseSkillMetadata:
@@ -227,7 +241,7 @@ allowed_tools: file_read
 
 # Instructions that should not be loaded
 """
-        metadata = parse_skill_metadata(content, "/path")
+        metadata = parse_skill_metadata(content, "/path/test-skill")
 
         assert isinstance(metadata, SkillMetadataModel)
         assert metadata.name == "test-skill"
@@ -247,7 +261,7 @@ description: No name.
 Content.
 """
         with pytest.raises(SkillParseError):
-            parse_skill_metadata(content, "/path")
+            parse_skill_metadata(content, "/path/test")
 
     def test_parse_metadata_missing_description(self):
         """Missing description should raise SkillParseError."""
@@ -258,7 +272,19 @@ name: test
 Content.
 """
         with pytest.raises(SkillParseError):
-            parse_skill_metadata(content, "/path")
+            parse_skill_metadata(content, "/path/test")
+
+    def test_parse_metadata_name_mismatch(self):
+        """Mismatched directory name should raise SkillParseError."""
+        content = """---
+name: mismatched
+description: Mismatch.
+---
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_metadata(content, "/path/expected-name")
+
+        assert "directory name" in str(exc_info.value).lower()
 
     def test_parse_metadata_invalid_metadata_values(self):
         """Metadata values must be strings."""
@@ -289,7 +315,9 @@ class TestValidateSkillFile:
 
     def test_validate_valid_file(self, tmp_path):
         """Valid SKILL.md file should pass validation."""
-        skill_file = tmp_path / "SKILL.md"
+        skill_dir = tmp_path / "valid-skill"
+        skill_dir.mkdir()
+        skill_file = skill_dir / "SKILL.md"
         skill_file.write_text("""---
 name: valid-skill
 description: Valid skill description.
@@ -304,7 +332,9 @@ Instructions.
 
     def test_validate_invalid_content(self, tmp_path):
         """Invalid content should fail validation."""
-        skill_file = tmp_path / "SKILL.md"
+        skill_dir = tmp_path / "invalid-skill"
+        skill_dir.mkdir()
+        skill_file = skill_dir / "SKILL.md"
         skill_file.write_text("Just plain text, no frontmatter.")
 
         is_valid, error = validate_skill_file(str(skill_file))
