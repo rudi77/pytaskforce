@@ -99,18 +99,13 @@ my-skill/
 **name:**
 - Maximum 64 characters
 - Lowercase letters, numbers, and hyphens only (kebab-case)
-- Must start with a letter
 - Must match the skill directory name
-- Cannot contain `--` or end with `-`
-- Cannot contain reserved words: "anthropic", "claude"
+- Cannot contain `--` or start/end with `-`
 
 **description:**
 - Maximum 1024 characters
 - Must be non-empty
-- Cannot contain XML tags
 - Should describe both what the skill does AND when to use it
-
-**Project-specific extension:** Reserved words are enforced by Taskforce (`anthropic`, `claude`) and may be expanded in this project.
 
 ### Optional Frontmatter
 
@@ -118,21 +113,17 @@ Skills may also include optional YAML frontmatter fields:
 
 **license:**
 - Optional license identifier or short label (e.g., SPDX)
-- Maximum 128 characters
 
 **compatibility:**
 - Optional compatibility note (runtime, model, platform)
-- Maximum 256 characters
+- Maximum 500 characters
 
 **metadata:**
 - Optional key/value metadata for internal tooling
 - YAML object or map only
-- Serialized length maximum 2048 characters
 
 **allowed-tools:**
-- Optional list of tool short-names to scope execution
-- Maximum 64 entries
-- Each entry maximum 64 characters
+- Optional space-delimited tool allowlist string
 
 ## Progressive Loading
 

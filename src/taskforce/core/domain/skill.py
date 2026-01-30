@@ -22,9 +22,8 @@ from typing import Any
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_COMPATIBILITY_LENGTH = 500
-RESERVED_WORDS = {"anthropic", "claude"}
-NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
-ALLOWED_TOOLS_PATTERN = re.compile(r"^[^\\s]+(\\s+[^\\s]+)*$")
+NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+ALLOWED_TOOLS_PATTERN = re.compile(r"^[^\s]+(\s+[^\s]+)*$")
 
 
 class SkillValidationError(ValueError):
@@ -38,10 +37,10 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
     Validate a skill name.
 
     Requirements:
-    - Lowercase with hyphens only (kebab-case)
-    - Starts with a letter
+    - Lowercase letters, numbers, and hyphens only (kebab-case)
+    - Cannot start or end with a hyphen
+    - No consecutive hyphens
     - Maximum 64 characters
-    - No reserved words
 
     Args:
         name: The skill name to validate
@@ -56,13 +55,11 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
         return False, f"Skill name exceeds {MAX_NAME_LENGTH} characters"
 
     if not NAME_PATTERN.match(name):
-        return False, "Skill name must be lowercase with hyphens only (kebab-case)"
-
-    # Check for reserved words
-    name_lower = name.lower()
-    for word in RESERVED_WORDS:
-        if word in name_lower:
-            return False, f"Skill name cannot contain reserved word: {word}"
+        return (
+            False,
+            "Skill name must be lowercase alphanumeric with hyphens only, "
+            "with no leading/trailing or consecutive hyphens",
+        )
 
     return True, None
 
@@ -74,7 +71,6 @@ def validate_skill_description(description: str) -> tuple[bool, str | None]:
     Requirements:
     - Non-empty
     - Maximum 1024 characters
-    - No XML tags
 
     Args:
         description: The skill description to validate
@@ -87,10 +83,6 @@ def validate_skill_description(description: str) -> tuple[bool, str | None]:
 
     if len(description) > MAX_DESCRIPTION_LENGTH:
         return False, f"Skill description exceeds {MAX_DESCRIPTION_LENGTH} characters"
-
-    # Check for XML tags
-    if re.search(r"<[^>]+>", description):
-        return False, "Skill description cannot contain XML tags"
 
     return True, None
 
