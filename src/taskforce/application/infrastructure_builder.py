@@ -277,6 +277,61 @@ class InfrastructureBuilder:
         return await manager.connect_all(mcp_servers, tool_filter=tool_filter)
 
     # -------------------------------------------------------------------------
+    # Skills
+    # -------------------------------------------------------------------------
+
+    def build_skill_instructions(self, skill_names: list[str]) -> str:
+        """
+        Load skills and combine their instructions.
+
+        Loads the specified skills from the skill registry and combines
+        their instructions into a single string that can be appended to
+        the system prompt.
+
+        Args:
+            skill_names: List of skill names to load (e.g., ["invoice-extraction"])
+
+        Returns:
+            Combined instructions from all specified skills, or empty string
+            if no skills were found or loaded successfully.
+        """
+        if not skill_names:
+            return ""
+
+        from taskforce.application.skill_service import get_skill_service
+
+        skill_service = get_skill_service(
+            extension_directories=[
+                str(get_base_path() / "src" / "taskforce_extensions" / "skills")
+            ]
+        )
+
+        instructions_parts: list[str] = []
+
+        for skill_name in skill_names:
+            skill = skill_service.get_skill(skill_name)
+            if skill:
+                instructions_parts.append(
+                    f"## Skill: {skill.name}\n\n{skill.instructions}"
+                )
+                self._logger.info(
+                    "skill_loaded_for_agent",
+                    skill_name=skill.name,
+                    instructions_length=len(skill.instructions),
+                )
+            else:
+                self._logger.warning(
+                    "skill_not_found",
+                    skill_name=skill_name,
+                    hint="Check that the skill exists in the skills directory",
+                )
+
+        if not instructions_parts:
+            return ""
+
+        return "# Active Skills\n\n" + "\n\n".join(instructions_parts)
+
+    # -------------------------------------------------------------------------
     # Context Policy
     # -------------------------------------------------------------------------
 
