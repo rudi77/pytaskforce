@@ -30,6 +30,7 @@ class TestSkillValidation:
             "a",
             "a-b-c",
             "skill123",
+            "123skill",
         ]
         for name in valid_names:
             is_valid, error = validate_skill_name(name)
@@ -42,8 +43,9 @@ class TestSkillValidation:
             ("Code-Review", "uppercase"),
             ("code_review", "underscore"),
             ("code review", "space"),
-            ("123skill", "starts with number"),
             ("-skill", "starts with hyphen"),
+            ("skill-", "ends with hyphen"),
+            ("skill--name", "double hyphen"),
             ("a" * 65, "too long"),
             ("my-anthropic-skill", "reserved word"),
             ("claude-helper", "reserved word"),

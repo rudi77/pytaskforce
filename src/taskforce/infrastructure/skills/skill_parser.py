@@ -7,6 +7,7 @@ Parses SKILL.md files with YAML frontmatter:
 """
 
 import re
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -64,10 +65,9 @@ def parse_skill_markdown(
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
     instructions = body.strip()
-
     # Create and return skill (validation happens in __post_init__)
     try:
-        return Skill(
+        skill = Skill(
             name=name,
             description=description,
             instructions=instructions,
@@ -75,6 +75,15 @@ def parse_skill_markdown(
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill validation failed: {e}") from e
+
+    expected_name = Path(source_path).name
+    if skill.name != expected_name:
+        raise SkillParseError(
+            "Skill name does not match directory name: "
+            f"'{skill.name}' != '{expected_name}'"
+        )
+
+    return skill
 
 
 def parse_skill_metadata(
@@ -107,15 +116,23 @@ def parse_skill_metadata(
 
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
-
     try:
-        return SkillMetadataModel(
+        metadata = SkillMetadataModel(
             name=name,
             description=description,
             source_path=source_path,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill metadata validation failed: {e}") from e
+
+    expected_name = Path(source_path).name
+    if metadata.name != expected_name:
+        raise SkillParseError(
+            "Skill name does not match directory name: "
+            f"'{metadata.name}' != '{expected_name}'"
+        )
+
+    return metadata
 
 
 def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
