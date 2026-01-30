@@ -16,6 +16,10 @@ pattern described in Cursor's multi-agent research.
 - Orchestration lives in `taskforce.application.epic_orchestrator.EpicOrchestrator`.
 - Tasks are dispatched via a `MessageBusProtocol` implementation (default: in-memory).
 - Planner/worker/judge agents are standard `Agent` instances created via `AgentFactory`.
+- Each epic run persists state in `.taskforce/epic_runs/<run_id>/`:
+  - `MISSION.md` captures the desired end state (mission goal).
+  - `CURRENT_STATE.md` is rewritten after every round with the latest judge summary.
+  - `MEMORY.md` accumulates a round-by-round log of tasks and worker outcomes.
 
 ## Profiles
 
