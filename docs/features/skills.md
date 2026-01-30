@@ -1,13 +1,13 @@
 # Agent Skills
 
-Agent Skills are modular capabilities that extend agent functionality with domain-specific expertise. Each skill packages instructions, metadata, and optional resources (scripts, templates, documentation) that agents can use when relevant to user requests.
+Agent Skills are modular capabilities that extend agent functionality with domain-specific expertise. Each skill packages instructions, metadata, and optional resources (scripts, references, assets) that agents can use when relevant to user requests.
 
 ## Overview
 
 Skills provide:
 - **Domain-specific expertise**: Specialized knowledge and workflows for specific tasks
 - **Progressive loading**: Only load what's needed, when it's needed
-- **Resource bundling**: Include scripts, templates, and reference materials
+- **Resource bundling**: Include scripts, references, and asset files
 - **Easy extensibility**: Create custom skills as simple directories with SKILL.md files
 
 ## Quick Start
@@ -81,16 +81,17 @@ The body contains instructions for the agent.
 
 ### Optional Resources
 
-Skills can include additional files:
+Skills can include additional files and folders:
 
 ```
 my-skill/
 ├── SKILL.md              # Required: metadata and instructions
-├── REFERENCE.md          # Optional: additional documentation
 ├── scripts/              # Optional: executable scripts
 │   └── helper.py
-└── templates/            # Optional: template files
-    └── report.html
+├── references/           # Optional: reference docs/notes
+│   └── README.md
+└── assets/               # Optional: static assets
+    └── diagram.png
 ```
 
 ### Field Requirements
@@ -99,6 +100,8 @@ my-skill/
 - Maximum 64 characters
 - Lowercase letters, numbers, and hyphens only (kebab-case)
 - Must start with a letter
+- Must match the skill directory name
+- Cannot contain `--` or end with `-`
 - Cannot contain reserved words: "anthropic", "claude"
 
 **description:**
@@ -106,6 +109,30 @@ my-skill/
 - Must be non-empty
 - Cannot contain XML tags
 - Should describe both what the skill does AND when to use it
+
+**Project-specific extension:** Reserved words are enforced by Taskforce (`anthropic`, `claude`) and may be expanded in this project.
+
+### Optional Frontmatter
+
+Skills may also include optional YAML frontmatter fields:
+
+**license:**
+- Optional license identifier or short label (e.g., SPDX)
+- Maximum 128 characters
+
+**compatibility:**
+- Optional compatibility note (runtime, model, platform)
+- Maximum 256 characters
+
+**metadata:**
+- Optional key/value metadata for internal tooling
+- YAML object or map only
+- Serialized length maximum 2048 characters
+
+**allowed-tools:**
+- Optional list of tool short-names to scope execution
+- Maximum 64 entries
+- Each entry maximum 64 characters
 
 ## Progressive Loading
 
@@ -125,7 +152,7 @@ The full SKILL.md body content. Loaded when a skill is activated based on releva
 
 ### Level 3: Resources (Loaded As Needed)
 
-Additional files (REFERENCE.md, scripts, templates). Loaded only when explicitly referenced during execution.
+Additional files (references/, scripts/, assets/). Loaded only when explicitly referenced during execution.
 
 **Token cost:** Effectively unlimited (loaded on demand)
 
@@ -340,6 +367,8 @@ description: Analyze data, create visualizations, and extract insights. Use when
 
 Common validation issues:
 - Name contains uppercase letters or spaces
+- Name does not match the skill directory name
+- Name contains `--` or ends with `-`
 - Name exceeds 64 characters
 - Description is empty or exceeds 1024 characters
 - Description contains XML tags

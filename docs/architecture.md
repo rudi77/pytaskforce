@@ -119,7 +119,7 @@ Skills use three-level loading to minimize token usage:
 |-------|---------|-------------|------------|
 | 1 | Metadata (name, description) | Discovery | ~100 tokens/skill |
 | 2 | Instructions (SKILL.md body) | Skill triggered | <5k tokens |
-| 3 | Resources (scripts, templates) | On-demand | Unlimited |
+| 3 | Resources (scripts, references, assets) | On-demand | Unlimited |
 
 ### Available Built-in Skills
 
@@ -191,4 +191,3 @@ The architecture documentation is sharded into specialized sections:
 
 ---
 *For a high-level view of the source tree, see [docs/architecture/source-tree.md](architecture/source-tree.md).*
-
