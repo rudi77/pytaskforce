@@ -22,7 +22,7 @@ from typing import Any
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 RESERVED_WORDS = {"anthropic", "claude"}
-NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+NAME_PATTERN = re.compile(r"^[a-z0-9-]+$")
 
 
 class SkillValidationError(ValueError):
@@ -37,7 +37,8 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
 
     Requirements:
     - Lowercase with hyphens only (kebab-case)
-    - Starts with a letter
+    - Does not start or end with a hyphen
+    - Does not contain consecutive hyphens
     - Maximum 64 characters
     - No reserved words
 
@@ -53,8 +54,20 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
     if len(name) > MAX_NAME_LENGTH:
         return False, f"Skill name exceeds {MAX_NAME_LENGTH} characters"
 
+    if name.startswith("-"):
+        return False, "Skill name cannot start with a hyphen"
+
     if not NAME_PATTERN.match(name):
-        return False, "Skill name must be lowercase with hyphens only (kebab-case)"
+        return (
+            False,
+            "Skill name must contain only lowercase letters, numbers, and hyphens",
+        )
+
+    if name.endswith("-"):
+        return False, "Skill name cannot end with a hyphen"
+
+    if "--" in name:
+        return False, "Skill name cannot contain consecutive hyphens"
 
     # Check for reserved words
     name_lower = name.lower()
