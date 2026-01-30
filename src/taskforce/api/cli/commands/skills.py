@@ -103,6 +103,24 @@ def show_skill(
     console.print("\n[bold]Source:[/bold]")
     console.print(f"  {skill.source_path}")
 
+    if full:
+        if skill.license:
+            console.print("\n[bold]License:[/bold]")
+            console.print(f"  {skill.license}")
+
+        if skill.compatibility:
+            console.print("\n[bold]Compatibility:[/bold]")
+            console.print(f"  {skill.compatibility}")
+
+        if skill.allowed_tools:
+            console.print("\n[bold]Allowed Tools:[/bold]")
+            console.print(f"  {skill.allowed_tools}")
+
+        if skill.metadata:
+            console.print("\n[bold]Metadata:[/bold]")
+            for key in sorted(skill.metadata.keys()):
+                console.print(f"  {key}: {skill.metadata[key]}")
+
     # Resources
     resources = skill.get_resources()
     if resources:

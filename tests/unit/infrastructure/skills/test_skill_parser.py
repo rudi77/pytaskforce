@@ -23,6 +23,11 @@ class TestParseSkillMarkdown:
         content = """---
 name: test-skill
 description: This is a test skill for unit testing.
+license: MIT
+compatibility: Taskforce 2.x
+metadata:
+  owner: platform
+allowed_tools: file_read file_write
 ---
 
 # Test Skill
@@ -37,6 +42,10 @@ More instructions here.
 
         assert skill.name == "test-skill"
         assert skill.description == "This is a test skill for unit testing."
+        assert skill.license == "MIT"
+        assert skill.compatibility == "Taskforce 2.x"
+        assert skill.metadata == {"owner": "platform"}
+        assert skill.allowed_tools == "file_read file_write"
         assert "# Test Skill" in skill.instructions
         assert "## Section 1" in skill.instructions
         assert skill.source_path == "/path/to/skill"
@@ -122,6 +131,52 @@ Instructions.
 
         assert "validation" in str(exc_info.value).lower()
 
+    def test_parse_invalid_compatibility_length_raises(self):
+        """Compatibility over max length should raise SkillParseError."""
+        content = f"""---
+name: long-compat
+description: Test description.
+compatibility: {"a" * 501}
+---
+
+Instructions.
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_markdown(content, "/path")
+
+        assert "compatibility" in str(exc_info.value).lower()
+
+    def test_parse_invalid_metadata_type_raises(self):
+        """Non-dict metadata should raise SkillParseError."""
+        content = """---
+name: metadata-invalid
+description: Test description.
+metadata: ["not-a-dict"]
+---
+
+Instructions.
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_markdown(content, "/path")
+
+        assert "metadata" in str(exc_info.value).lower()
+
+    def test_parse_invalid_allowed_tools_raises(self):
+        """Invalid allowed_tools should raise SkillParseError."""
+        content = """---
+name: tools-invalid
+description: Test description.
+allowed_tools:
+  - file_read
+---
+
+Instructions.
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_markdown(content, "/path")
+
+        assert "allowed_tools" in str(exc_info.value).lower()
+
     def test_parse_empty_body_allowed(self):
         """Empty body (instructions) should be allowed."""
         content = """---
@@ -163,6 +218,11 @@ class TestParseSkillMetadata:
         content = """---
 name: test-skill
 description: Test description.
+license: Apache-2.0
+compatibility: Taskforce >= 2.0
+metadata:
+  team: integrations
+allowed_tools: file_read
 ---
 
 # Instructions that should not be loaded
@@ -173,6 +233,10 @@ description: Test description.
         assert metadata.name == "test-skill"
         assert metadata.description == "Test description."
         assert metadata.source_path == "/path"
+        assert metadata.license == "Apache-2.0"
+        assert metadata.compatibility == "Taskforce >= 2.0"
+        assert metadata.metadata == {"team": "integrations"}
+        assert metadata.allowed_tools == "file_read"
 
     def test_parse_metadata_missing_name(self):
         """Missing name should raise SkillParseError."""
@@ -195,6 +259,22 @@ Content.
 """
         with pytest.raises(SkillParseError):
             parse_skill_metadata(content, "/path")
+
+    def test_parse_metadata_invalid_metadata_values(self):
+        """Metadata values must be strings."""
+        content = """---
+name: invalid-metadata
+description: Description.
+metadata:
+  version: 1
+---
+
+Content.
+"""
+        with pytest.raises(SkillParseError) as exc_info:
+            parse_skill_metadata(content, "/path")
+
+        assert "metadata" in str(exc_info.value).lower()
 
 
 class TestValidateSkillFile:

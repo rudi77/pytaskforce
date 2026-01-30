@@ -21,8 +21,10 @@ from typing import Any
 # Validation constants
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
+MAX_COMPATIBILITY_LENGTH = 500
 RESERVED_WORDS = {"anthropic", "claude"}
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+ALLOWED_TOOLS_PATTERN = re.compile(r"^[^\\s]+(\\s+[^\\s]+)*$")
 
 
 class SkillValidationError(ValueError):
@@ -93,6 +95,51 @@ def validate_skill_description(description: str) -> tuple[bool, str | None]:
     return True, None
 
 
+def _validate_optional_string(
+    field_name: str,
+    value: str | None,
+    max_length: int | None = None,
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise SkillValidationError(f"{field_name} must be a string")
+    if not value.strip():
+        raise SkillValidationError(f"{field_name} cannot be empty")
+    if max_length is not None and len(value) > max_length:
+        raise SkillValidationError(f"{field_name} exceeds {max_length} characters")
+
+
+def _validate_metadata_dict(metadata: dict[str, str] | None) -> None:
+    if metadata is None:
+        return
+    if not isinstance(metadata, dict):
+        raise SkillValidationError("metadata must be a dictionary of strings")
+    for key, value in metadata.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise SkillValidationError("metadata must map strings to strings")
+
+
+def _validate_allowed_tools(allowed_tools: str | None) -> None:
+    if allowed_tools is None:
+        return
+    if not isinstance(allowed_tools, str):
+        raise SkillValidationError("allowed_tools must be a string")
+    if not allowed_tools.strip():
+        raise SkillValidationError("allowed_tools cannot be empty")
+    if not ALLOWED_TOOLS_PATTERN.match(allowed_tools):
+        raise SkillValidationError("allowed_tools must be space-delimited")
+
+
+def _normalize_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return value
+
+
 @dataclass(frozen=True)
 class SkillMetadataModel:
     """
@@ -106,11 +153,19 @@ class SkillMetadataModel:
         name: Unique identifier (lowercase, hyphenated)
         description: What the skill does and when to use it
         source_path: Path to the skill directory
+        license: Optional skill license identifier
+        compatibility: Optional compatibility notes (max 500 chars)
+        metadata: Optional freeform metadata map
+        allowed_tools: Optional space-delimited tool allowlist
     """
 
     name: str
     description: str
     source_path: str
+    license: str | None = None
+    compatibility: str | None = None
+    metadata: dict[str, str] | None = None
+    allowed_tools: str | None = None
 
     def __post_init__(self) -> None:
         """Validate metadata after initialization."""
@@ -122,12 +177,25 @@ class SkillMetadataModel:
         if not valid:
             raise SkillValidationError(f"Invalid skill description: {error}")
 
-    def to_dict(self) -> dict[str, str]:
+        _validate_optional_string("license", self.license)
+        _validate_optional_string(
+            "compatibility",
+            self.compatibility,
+            max_length=MAX_COMPATIBILITY_LENGTH,
+        )
+        _validate_metadata_dict(self.metadata)
+        _validate_allowed_tools(self.allowed_tools)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "name": self.name,
             "description": self.description,
             "source_path": self.source_path,
+            "license": self.license,
+            "compatibility": self.compatibility,
+            "metadata": self.metadata,
+            "allowed_tools": self.allowed_tools,
         }
 
     @classmethod
@@ -137,6 +205,10 @@ class SkillMetadataModel:
             name=data["name"],
             description=data["description"],
             source_path=data.get("source_path", ""),
+            license=_normalize_optional_str(data.get("license")),
+            compatibility=_normalize_optional_str(data.get("compatibility")),
+            metadata=data.get("metadata"),
+            allowed_tools=_normalize_optional_str(data.get("allowed_tools")),
         )
 
 
@@ -156,6 +228,10 @@ class Skill:
         description: What the skill does and when to use it
         instructions: Main instructional content from SKILL.md
         source_path: Path to the skill directory
+        license: Optional skill license identifier
+        compatibility: Optional compatibility notes (max 500 chars)
+        metadata: Optional freeform metadata map
+        allowed_tools: Optional space-delimited tool allowlist
         _resources_cache: Cached resource paths (internal)
     """
 
@@ -163,6 +239,10 @@ class Skill:
     description: str
     instructions: str
     source_path: str
+    license: str | None = None
+    compatibility: str | None = None
+    metadata: dict[str, str] | None = None
+    allowed_tools: str | None = None
     _resources_cache: dict[str, str] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -175,13 +255,26 @@ class Skill:
         if not valid:
             raise SkillValidationError(f"Invalid skill description: {error}")
 
+        _validate_optional_string("license", self.license)
+        _validate_optional_string(
+            "compatibility",
+            self.compatibility,
+            max_length=MAX_COMPATIBILITY_LENGTH,
+        )
+        _validate_metadata_dict(self.metadata)
+        _validate_allowed_tools(self.allowed_tools)
+
     @property
-    def metadata(self) -> SkillMetadataModel:
+    def metadata_model(self) -> SkillMetadataModel:
         """Get lightweight metadata object."""
         return SkillMetadataModel(
             name=self.name,
             description=self.description,
             source_path=self.source_path,
+            license=self.license,
+            compatibility=self.compatibility,
+            metadata=self.metadata,
+            allowed_tools=self.allowed_tools,
         )
 
     def get_resources(self) -> dict[str, str]:
@@ -262,6 +355,10 @@ class Skill:
             "description": self.description,
             "instructions": self.instructions,
             "source_path": self.source_path,
+            "license": self.license,
+            "compatibility": self.compatibility,
+            "metadata": self.metadata,
+            "allowed_tools": self.allowed_tools,
         }
 
     @classmethod
@@ -272,6 +369,10 @@ class Skill:
             description=data["description"],
             instructions=data.get("instructions", ""),
             source_path=data.get("source_path", ""),
+            license=_normalize_optional_str(data.get("license")),
+            compatibility=_normalize_optional_str(data.get("compatibility")),
+            metadata=data.get("metadata"),
+            allowed_tools=_normalize_optional_str(data.get("allowed_tools")),
         )
 
     @classmethod
@@ -291,6 +392,10 @@ class Skill:
             description=metadata.description,
             instructions=instructions,
             source_path=metadata.source_path,
+            license=metadata.license,
+            compatibility=metadata.compatibility,
+            metadata=metadata.metadata,
+            allowed_tools=metadata.allowed_tools,
         )
 
 
