@@ -11,6 +11,12 @@ persistence:
   type: file
   work_dir: .taskforce
 
+# Runtime tracking (heartbeats + checkpoints)
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
 # Agent configuration
 agent:
   planning_strategy: native_react

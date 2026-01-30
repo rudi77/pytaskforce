@@ -70,6 +70,23 @@ factory = AgentFactory()
 agent = await factory.create(definition)
 ```
 
+## 🤝 Multi-Agent Runtime & Messaging (2026-02)
+
+Taskforce supports long-running, multi-agent workflows with clean separation between
+core interfaces and infrastructure adapters:
+
+- **Message Bus Protocols** live in `core/interfaces` and provide publish/subscribe
+  contracts for queue-backed coordination.
+- **Infrastructure Adapters** live under `taskforce_extensions/infrastructure/` and
+  include in-memory message buses plus file-backed runtime stores.
+- **Runtime Tracking** records heartbeats and checkpoints to support recovery and
+  long-lived sessions.
+- **Sub-Agent Spawning** uses a dedicated spawner to create isolated sessions for
+  planners and specialist workers.
+
+See **[Epic Orchestration](architecture/epic-orchestration.md)** for the
+planner → worker → judge pipeline.
+
 ## 📊 Architecture Diagrams
 
 For visual representations of the architecture, see **[Architecture Diagrams](architecture/architecture-diagrams.md)** which includes:

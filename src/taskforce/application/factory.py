@@ -52,6 +52,7 @@ from taskforce.core.domain.planning_strategy import (
     PlanningStrategy,
 )
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts import build_system_prompt, format_tools_description
@@ -255,6 +256,10 @@ class AgentFactory:
 
         # Build context policy
         context_policy = infra_builder.build_context_policy(base_config)
+        runtime_tracker = self._create_runtime_tracker(
+            base_config,
+            work_dir_override=definition.work_dir,
+        )
 
         # Get agent settings
         agent_config = base_config.get("agent", {})
@@ -288,6 +293,7 @@ class AgentFactory:
             max_steps=max_steps,
             max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
+            runtime_tracker=runtime_tracker,
         )
 
         # Store MCP contexts for lifecycle management
@@ -428,6 +434,14 @@ class AgentFactory:
 
         # Create ContextPolicy from config (Story 9.2)
         context_policy = self._create_context_policy(config)
+        runtime_tracker = self._create_runtime_tracker(
+            config,
+            work_dir_override=config.get("persistence", {}).get("work_dir"),
+        )
+        runtime_tracker = self._create_runtime_tracker(
+            config,
+            work_dir_override=config.get("persistence", {}).get("work_dir"),
+        )
 
         # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})
@@ -470,6 +484,7 @@ class AgentFactory:
             max_steps=max_steps,
             max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
+            runtime_tracker=runtime_tracker,
         )
 
         # Store MCP contexts on agent for lifecycle management
@@ -665,6 +680,7 @@ class AgentFactory:
             max_steps=max_steps,
             max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
+            runtime_tracker=runtime_tracker,
         )
 
         # Store MCP contexts on agent for lifecycle management
@@ -829,6 +845,10 @@ class AgentFactory:
 
         # Create context policy
         context_policy = self._create_context_policy(merged_config)
+        runtime_tracker = self._create_runtime_tracker(
+            merged_config,
+            work_dir_override=merged_config.get("persistence", {}).get("work_dir"),
+        )
 
         # Get agent settings
         agent_config = merged_config.get("agent", {})
@@ -871,6 +891,7 @@ class AgentFactory:
             max_parallel_tools=max_parallel_tools,
             planning_strategy=selected_strategy,
             logger=agent_logger,
+            runtime_tracker=runtime_tracker,
         )
 
         # Store MCP contexts and plugin manifest for lifecycle management
@@ -1182,6 +1203,48 @@ class AgentFactory:
         else:
             raise ValueError(f"Unknown persistence type: {persistence_type}")
 
+    def _create_runtime_tracker(
+        self,
+        config: dict,
+        work_dir_override: str | None = None,
+    ) -> AgentRuntimeTrackerProtocol | None:
+        runtime_config = config.get("runtime", {})
+        enabled = runtime_config.get("enabled", False)
+        if not enabled:
+            return None
+
+        runtime_work_dir = runtime_config.get("work_dir")
+        if not runtime_work_dir:
+            runtime_work_dir = work_dir_override
+        if not runtime_work_dir:
+            runtime_work_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
+
+        store_type = runtime_config.get("store", "file")
+        if store_type == "memory":
+            from taskforce_extensions.infrastructure.runtime import (
+                AgentRuntimeTracker,
+                InMemoryCheckpointStore,
+                InMemoryHeartbeatStore,
+            )
+
+            return AgentRuntimeTracker(
+                heartbeat_store=InMemoryHeartbeatStore(),
+                checkpoint_store=InMemoryCheckpointStore(),
+            )
+        if store_type == "file":
+            from taskforce_extensions.infrastructure.runtime import (
+                AgentRuntimeTracker,
+                FileCheckpointStore,
+                FileHeartbeatStore,
+            )
+
+            return AgentRuntimeTracker(
+                heartbeat_store=FileHeartbeatStore(runtime_work_dir),
+                checkpoint_store=FileCheckpointStore(runtime_work_dir),
+            )
+
+        raise ValueError(f"Unknown runtime store type: {store_type}")
+
     def _create_llm_provider(self, config: dict) -> LLMProviderProtocol:
         """
         Create LLM provider based on configuration.
@@ -1257,10 +1320,18 @@ class AgentFactory:
         # Add AgentTool if orchestration is enabled (Feature: Multi-Agent Orchestration)
         orchestration_config = config.get("orchestration", {})
         if orchestration_config.get("enabled", False):
+            from taskforce.application.sub_agent_spawner import SubAgentSpawner
             from taskforce.infrastructure.tools.orchestration import AgentTool
 
+            sub_agent_spawner = SubAgentSpawner(
+                agent_factory=self,
+                profile=orchestration_config.get("sub_agent_profile", "dev"),
+                work_dir=orchestration_config.get("sub_agent_work_dir"),
+                max_steps=orchestration_config.get("sub_agent_max_steps"),
+            )
             agent_tool = AgentTool(
                 agent_factory=self,
+                sub_agent_spawner=sub_agent_spawner,
                 profile=orchestration_config.get("sub_agent_profile", "dev"),
                 work_dir=orchestration_config.get("sub_agent_work_dir"),
                 max_steps=orchestration_config.get("sub_agent_max_steps"),

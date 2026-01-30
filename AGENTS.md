@@ -26,6 +26,11 @@ This file should be updated automatically when project-specific patterns, conven
 - Profile YAML tool lists now use short tool names (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs.
 - LeanAgent support services live in `src/taskforce/core/domain/lean_agent_components/` (prompt builder, message history manager, tool execution helpers, state store, resource closer).
 - Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
+- Multi-agent runtime tracking (heartbeats + checkpoints) uses adapters under `src/taskforce_extensions/infrastructure/runtime/` and is wired via `AgentRuntimeTracker`.
+- Message bus adapters live under `src/taskforce_extensions/infrastructure/messaging/` and implement `MessageBusProtocol` for agent-to-agent coordination.
+- Sub-agent spawning is centralized in `src/taskforce/application/sub_agent_spawner.py` to standardize isolated session creation.
+- Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce_extensions/configs/`.
+- Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
 
 - **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
   - **Storage**: Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level commands override user-level commands.

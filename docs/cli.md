@@ -68,6 +68,25 @@ taskforce run mission "Review code quality in src/" --profile code_reviewer
 
 See [Multi-Agent Orchestration Plan](architecture/multi-agent-orchestration-plan.md) for details.
 
+### Epic Orchestration (Planner → Workers → Judge)
+Run epic-scale workflows that generate tasks, execute them in parallel, and
+consolidate changes with a judge agent:
+
+```powershell
+taskforce epic run "Implement epic: billing export overhaul" \
+  --scope "backend export pipeline" \
+  --scope "frontend export UI" \
+  --workers 4 \
+  --rounds 3 \
+  --auto-commit \
+  --commit-message "Epic: billing export overhaul"
+```
+
+Profiles used by default:
+- `planner` (task generation)
+- `worker` (implementation)
+- `judge` (review/commit)
+
 ## 🔍 Inspection & Management
 
 ### Tools
