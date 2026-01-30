@@ -623,7 +623,7 @@ flowchart TB
     G1 -->|Ja| HITL_NEW[→ HITL<br/>Grund: Neuer Lieferant]
     G1 -->|Nein| G2{high_amount?}
 
-    G2 -->|Ja| HITL_AMT[→ HITL<br/>Grund: Betrag > 5000€]
+    G2 -->|Ja| HITL_AMT["→ HITL<br/>Grund: Betrag > 5000€"]
     G2 -->|Nein| G3{critical_account?}
 
     G3 -->|Ja| HITL_CRIT[→ HITL<br/>Grund: Kritisches Konto]

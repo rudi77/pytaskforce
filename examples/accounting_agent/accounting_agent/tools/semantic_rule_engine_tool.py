@@ -520,6 +520,7 @@ class SemanticRuleEngineTool:
                             "line_item_index": idx,
                             "rule_id": match_result.rule.rule_id,
                             "rule_type": match_result.rule.rule_type.value,
+                            "rule_source": match_result.rule.source.value,
                             "match_type": match_result.match_type.value,
                             "similarity_score": match_result.similarity_score,
                             "matched_pattern": match_result.matched_item_pattern,
