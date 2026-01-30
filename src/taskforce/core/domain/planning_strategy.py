@@ -555,6 +555,11 @@ class NativeReActStrategy:
                 progress_steps=step,
                 max_steps=agent.max_steps,
             )
+            await agent.record_heartbeat(
+                session_id,
+                "running",
+                {"step": step, "iteration": loop_iterations},
+            )
 
             current_system_prompt = agent._build_system_prompt(
                 mission=mission, state=state, messages=messages
@@ -759,6 +764,11 @@ class NativeReActStrategy:
                 iteration=loop_iterations,
                 progress_steps=step,
                 max_steps=agent.max_steps,
+            )
+            await agent.record_heartbeat(
+                session_id,
+                "running",
+                {"step": step, "iteration": loop_iterations},
             )
 
             yield StreamEvent(
@@ -1284,6 +1294,11 @@ class PlanAndExecuteStrategy:
                 break
 
             step_iterations += 1
+            await agent.record_heartbeat(
+                session_id,
+                "running",
+                {"plan_step": step_index, "iteration": step_iterations},
+            )
             async for event, new_progress, is_complete in self._execute_step_iteration(
                 agent, step_index, step_description, mission, state, messages,
                 progress_steps, step_iterations, session_id, logger

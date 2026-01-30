@@ -13,6 +13,7 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 
 ### 🏗 Architecture & Design
 - **[Architecture Overview](architecture.md)**: The core design principles and layer structure.
+- **[Epic Orchestration](architecture/epic-orchestration.md)**: Planner → worker → judge workflow.
 - **[Plugin System](architecture/plugin-system.md)**: Entry-Point-basiertes Erweiterungssystem.
 - **[Configuration Profiles](profiles.md)**: Managing dev, staging, and production settings.
 - **[ADRs (Architecture Decision Records)](adr/index.md)**: Why we made certain technical choices.
@@ -35,4 +36,3 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 ---
 
 *Note: This documentation is maintained in Markdown format directly within the repository.*
-

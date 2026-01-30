@@ -10,6 +10,9 @@ Taskforce uses YAML-based configuration profiles to manage settings across diffe
 - **`dev`**: (Default) Uses file-based persistence and local/OpenAI LLM settings.
 - **`staging`**: Uses PostgreSQL persistence and Cloud LLM (e.g., Azure OpenAI).
 - **`prod`**: Production settings with structured logging and high-performance persistence.
+- **`planner`**: Epic planner profile for generating task lists.
+- **`worker`**: Epic worker profile for executing assigned tasks.
+- **`judge`**: Epic judge profile for consolidation and optional commits.
 
 ## 🛠 LeanAgent Planning Strategies
 
@@ -26,6 +29,21 @@ agent:
 - **`native_react`**: Traditional Reason + Act loop.
 - **`plan_and_execute`**: Generates a full plan first, then executes it sequentially.
 - **`plan_and_react`**: Creates a plan, then iterates through steps with re-planning as needed.
+
+## ⏱ Runtime Tracking (Heartbeats & Checkpoints)
+
+Profiles can enable runtime tracking to support long-running, recoverable sessions:
+
+```yaml
+runtime:
+  enabled: true
+  store: file  # Options: file, memory
+  work_dir: .taskforce
+```
+
+When enabled (disabled by default), Taskforce records:
+- **Heartbeats** for active sessions
+- **Checkpoints** for recovering session state after restarts
 
 ## 📂 Example Multi-Agent Templates
 

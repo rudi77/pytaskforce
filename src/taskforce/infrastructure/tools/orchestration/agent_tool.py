@@ -14,6 +14,8 @@ from typing import Any, Optional
 
 import structlog
 
+from taskforce.core.domain.sub_agents import SubAgentSpec
+from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -46,6 +48,7 @@ class AgentTool:
     def __init__(
         self,
         agent_factory: "AgentFactory",  # type: ignore # noqa: F821
+        sub_agent_spawner: SubAgentSpawnerProtocol | None = None,
         profile: str = "dev",
         work_dir: Optional[str] = None,
         max_steps: Optional[int] = None,
@@ -64,6 +67,7 @@ class AgentTool:
             summary_max_length: Max chars before summarization kicks in
         """
         self._factory = agent_factory
+        self._spawner = sub_agent_spawner
         self._profile = profile
         self._work_dir = work_dir
         self._max_steps = max_steps
@@ -260,6 +264,19 @@ class AgentTool:
         )
 
         try:
+            if self._spawner:
+                spec = SubAgentSpec(
+                    mission=mission,
+                    parent_session_id=parent_session,
+                    specialist=specialist,
+                    planning_strategy=planning_strategy,
+                    profile=self._profile,
+                    work_dir=self._work_dir,
+                    max_steps=self._max_steps,
+                )
+                result = await self._spawner.spawn(spec)
+                return self._format_spawner_result(result)
+
             self.logger.info(
                 "spawning_sub_agent",
                 parent_session=parent_session,
@@ -403,3 +420,20 @@ class AgentTool:
             )
 
         return True, None
+
+    def _format_spawner_result(self, result: Any) -> dict[str, Any]:
+        if not hasattr(result, "session_id"):
+            return {
+                "success": False,
+                "error": "Sub-agent spawner returned invalid result.",
+                "error_type": "InvalidSubAgentResult",
+                "session_id": "unknown",
+            }
+        success = getattr(result, "success", False)
+        return {
+            "success": success,
+            "result": getattr(result, "final_message", "") or "No result",
+            "session_id": getattr(result, "session_id", "unknown"),
+            "status": getattr(result, "status", "unknown"),
+            "error": None if success else getattr(result, "error", None),
+        }

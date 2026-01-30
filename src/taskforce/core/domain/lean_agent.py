@@ -42,6 +42,7 @@ from taskforce.core.domain.planning_strategy import (
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.logging import LoggerProtocol
+from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
@@ -90,6 +91,7 @@ class Agent:
         max_steps: int | None = None,
         max_parallel_tools: int | None = None,
         planning_strategy: PlanningStrategy | None = None,
+        runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -112,6 +114,7 @@ class Agent:
                       (default: 4)
             planning_strategy: Optional planning strategy override for Agent.
             logger: Logger instance (created in factory and always required).
+            runtime_tracker: Optional runtime tracker for heartbeats/checkpoints.
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -119,6 +122,7 @@ class Agent:
         self.model_alias = model_alias
         self.tool_result_store = tool_result_store
         self.logger = logger
+        self.runtime_tracker = runtime_tracker
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -187,6 +191,7 @@ class Agent:
         self.state_store = LeanAgentStateStore(
             state_manager=self.state_manager,
             logger=self.logger,
+            runtime_tracker=self.runtime_tracker,
         )
 
         # Resource cleanup helper
@@ -232,7 +237,18 @@ class Agent:
         Returns:
             ExecutionResult with status and final message
         """
-        return await self.planning_strategy.execute(self, mission, session_id)
+        await self.record_heartbeat(
+            session_id,
+            "starting",
+            {"mission_length": len(mission)},
+        )
+        result = await self.planning_strategy.execute(self, mission, session_id)
+        await self.mark_finished(
+            session_id,
+            result.status,
+            {"final_message_length": len(result.final_message or "")},
+        )
+        return result
 
     async def execute_stream(
         self,
@@ -266,10 +282,16 @@ class Agent:
             - final_answer: Agent completed with final response
             - error: Error occurred during execution
         """
+        await self.record_heartbeat(
+            session_id,
+            "starting",
+            {"mission_length": len(mission)},
+        )
         async for event in self.planning_strategy.execute_stream(
             self, mission, session_id
         ):
             yield event
+        await self.mark_finished(session_id, "stream_complete", None)
 
     def _truncate_output(self, output: str, max_length: int = 4000) -> str:
         """
@@ -377,6 +399,28 @@ class Agent:
             state=state,
             planner=self._planner,
         )
+
+    async def record_heartbeat(
+        self,
+        session_id: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a runtime heartbeat when tracking is enabled."""
+        if not self.runtime_tracker:
+            return
+        await self.runtime_tracker.record_heartbeat(session_id, status, details)
+
+    async def mark_finished(
+        self,
+        session_id: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Record final status for runtime tracking."""
+        if not self.runtime_tracker:
+            return
+        await self.runtime_tracker.mark_finished(session_id, status, details)
 
     async def close(self) -> None:
         """

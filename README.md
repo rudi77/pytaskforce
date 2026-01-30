@@ -163,6 +163,21 @@ Orchestrator agents have access to the `call_agent` tool, which:
 
 See [docs/architecture/multi-agent-orchestration-plan.md](docs/architecture/multi-agent-orchestration-plan.md) for implementation details.
 
+## 🧩 Epic Orchestration (Planner → Workers → Judge)
+
+Taskforce can run epic-scale workflows where a planner creates tasks, workers execute
+them in parallel, and a judge consolidates results and optionally commits changes.
+
+```powershell
+taskforce epic run "Implement epic: billing export overhaul" `
+  --scope "backend export pipeline" `
+  --scope "frontend export UI" `
+  --workers 4 `
+  --rounds 3 `
+  --auto-commit `
+  --commit-message "Epic: billing export overhaul"
+```
+
 ---
 
 ## 📚 Documentation & Next Steps

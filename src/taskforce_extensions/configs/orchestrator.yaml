@@ -43,6 +43,12 @@ persistence:
   type: file
   work_dir: .taskforce
 
+# Runtime tracking
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
 # Logging
 logging:
   level: INFO

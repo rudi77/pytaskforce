@@ -1,0 +1,33 @@
+# Planner Profile
+#
+# Focused on decomposing epics into worker-ready tasks.
+
+profile: planner
+specialist: null
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: plan_and_execute
+  max_steps: 40
+
+llm:
+  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 15
+  max_chars_per_item: 3000
+  max_total_chars: 20000
+
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - ask_user

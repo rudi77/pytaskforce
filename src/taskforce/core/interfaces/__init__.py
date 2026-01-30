@@ -24,6 +24,12 @@ Usage:
 """
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.messaging import MessageBusProtocol
+from taskforce.core.interfaces.runtime import (
+    AgentRuntimeTrackerProtocol,
+    CheckpointStoreProtocol,
+    HeartbeatStoreProtocol,
+)
 from taskforce.core.interfaces.skills import (
     SkillContextProtocol,
     SkillMetadata,
@@ -31,13 +37,19 @@ from taskforce.core.interfaces.skills import (
     SkillRegistryProtocol,
 )
 from taskforce.core.interfaces.state import StateManagerProtocol
+from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 __all__ = [
     "StateManagerProtocol",
     "LLMProviderProtocol",
+    "MessageBusProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
+    "HeartbeatStoreProtocol",
+    "CheckpointStoreProtocol",
+    "AgentRuntimeTrackerProtocol",
+    "SubAgentSpawnerProtocol",
     "SkillProtocol",
     "SkillRegistryProtocol",
     "SkillMetadata",
