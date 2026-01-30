@@ -58,6 +58,7 @@ taskforce chat --plugin examples/accounting_agent
 - **Swappable Persistence**: File-based for dev, PostgreSQL for production.
 - **LLM Agnostic**: Support for OpenAI, Azure OpenAI, and more via LiteLLM.
 - **Plugin System**: Load custom agent plugins with specialized tools.
+- **Skill Metadata**: Optional skill frontmatter fields (license, compatibility, allowed tools, metadata) show up in `taskforce skills show --full`.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
 - **Long-Term Memory**: Session-persistent knowledge graphs via MCP Memory Server.
 - **Enterprise Ready**: Optional `taskforce-enterprise` Add-on for RBAC, multi-tenancy, and compliance.

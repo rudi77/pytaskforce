@@ -13,6 +13,8 @@ from typing import Any
 import yaml
 
 from taskforce.core.domain.skill import (
+    ALLOWED_TOOLS_PATTERN,
+    MAX_COMPATIBILITY_LENGTH,
     Skill,
     SkillMetadataModel,
     SkillValidationError,
@@ -64,6 +66,14 @@ def parse_skill_markdown(
 
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
+    license_text = _parse_optional_string(frontmatter, "license")
+    compatibility = _parse_optional_string(
+        frontmatter,
+        "compatibility",
+        max_length=MAX_COMPATIBILITY_LENGTH,
+    )
+    metadata = _parse_metadata_dict(frontmatter)
+    allowed_tools = _parse_allowed_tools(frontmatter)
     instructions = body.strip()
     expected_name = Path(source_path).name
 
@@ -80,6 +90,10 @@ def parse_skill_markdown(
             description=description,
             instructions=instructions,
             source_path=source_path,
+            license=license_text,
+            compatibility=compatibility,
+            metadata=metadata,
+            allowed_tools=allowed_tools,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill validation failed: {e}") from e
@@ -115,19 +129,24 @@ def parse_skill_metadata(
 
     name = str(frontmatter["name"]).strip()
     description = str(frontmatter["description"]).strip()
-    expected_name = Path(source_path).name
-
-    if name != expected_name:
-        raise SkillParseError(
-            "Skill name does not match directory name: "
-            f"'{name}' != '{expected_name}'"
-        )
+    license_text = _parse_optional_string(frontmatter, "license")
+    compatibility = _parse_optional_string(
+        frontmatter,
+        "compatibility",
+        max_length=MAX_COMPATIBILITY_LENGTH,
+    )
+    metadata = _parse_metadata_dict(frontmatter)
+    allowed_tools = _parse_allowed_tools(frontmatter)
 
     try:
         return SkillMetadataModel(
             name=name,
             description=description,
             source_path=source_path,
+            license=license_text,
+            compatibility=compatibility,
+            metadata=metadata,
+            allowed_tools=allowed_tools,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill metadata validation failed: {e}") from e
@@ -173,6 +192,49 @@ def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
         raise SkillParseError(f"Invalid YAML in frontmatter: {e}") from e
 
     return frontmatter, body
+
+
+def _parse_optional_string(
+    frontmatter: dict[str, Any],
+    field_name: str,
+    max_length: int | None = None,
+) -> str | None:
+    if field_name not in frontmatter or frontmatter[field_name] is None:
+        return None
+    value = frontmatter[field_name]
+    if not isinstance(value, str):
+        raise SkillParseError(f"Frontmatter '{field_name}' must be a string")
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if max_length is not None and len(cleaned) > max_length:
+        raise SkillParseError(
+            f"Frontmatter '{field_name}' exceeds {max_length} characters"
+        )
+    return cleaned
+
+
+def _parse_metadata_dict(frontmatter: dict[str, Any]) -> dict[str, str] | None:
+    if "metadata" not in frontmatter or frontmatter["metadata"] is None:
+        return None
+    value = frontmatter["metadata"]
+    if not isinstance(value, dict):
+        raise SkillParseError("Frontmatter 'metadata' must be a dictionary")
+    metadata: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            raise SkillParseError("Frontmatter 'metadata' must map strings to strings")
+        metadata[key] = item
+    return metadata
+
+
+def _parse_allowed_tools(frontmatter: dict[str, Any]) -> str | None:
+    allowed_tools = _parse_optional_string(frontmatter, "allowed_tools")
+    if allowed_tools is None:
+        return None
+    if not ALLOWED_TOOLS_PATTERN.match(allowed_tools):
+        raise SkillParseError("Frontmatter 'allowed_tools' must be space-delimited")
+    return allowed_tools
 
 
 def validate_skill_file(skill_path: str) -> tuple[bool, str | None]:

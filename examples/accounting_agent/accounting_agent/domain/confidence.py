@@ -180,14 +180,27 @@ class ConfidenceCalculator:
     ) -> ConfidenceSignals:
         """Calculate individual confidence signals."""
         # Rule type score: Vendor-Only (1.0) > Vendor+Item (0.8) > RAG (0.5)
+        # Boost for confirmed learned rules with exact match
         if is_rag_suggestion:
             rule_type_score = 0.5
         elif rule_match:
             rule_type = rule_match.get("rule_type", "")
+            rule_source = rule_match.get("rule_source", "")
+            match_type = rule_match.get("match_type", "")
+            similarity = rule_match.get("similarity_score", 0.0)
+
+            # Check if this is a confirmed learned rule with exact match
+            is_confirmed_rule = rule_source in ("auto_high_confidence", "hitl_correction")
+            is_exact_match = match_type == "exact" and similarity >= 0.99
+
             if rule_type == "vendor_only":
                 rule_type_score = 1.0
             elif rule_type == "vendor_item":
-                rule_type_score = 0.8
+                # Boost confirmed learned rules with exact match to near vendor_only level
+                if is_confirmed_rule and is_exact_match:
+                    rule_type_score = 0.98  # Almost as trusted as vendor_only
+                else:
+                    rule_type_score = 0.8
             else:
                 rule_type_score = 0.6
         else:

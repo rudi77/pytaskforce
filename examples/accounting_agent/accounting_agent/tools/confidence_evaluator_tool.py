@@ -215,8 +215,26 @@ class ConfidenceEvaluatorTool:
             elif vendor_is_new is None:
                 vendor_is_new = False
 
-            # Get historical hit rate (placeholder - could be from repository)
-            historical_hit_rate = 0.8  # Default assumption
+            # Get historical hit rate based on rule source
+            # Confirmed learned rules (from HITL or high-confidence auto) have higher hit rate
+            if rule_match:
+                rule_source = rule_match.get("rule_source", "")
+                match_type = rule_match.get("match_type", "")
+                similarity = rule_match.get("similarity_score", 0.0)
+
+                is_confirmed_rule = rule_source in ("auto_high_confidence", "hitl_correction")
+                is_exact_match = match_type == "exact" and similarity >= 0.99
+
+                if is_confirmed_rule and is_exact_match:
+                    # Confirmed rules with exact match are highly reliable
+                    historical_hit_rate = 0.98
+                elif is_confirmed_rule:
+                    # Confirmed rules with semantic match
+                    historical_hit_rate = 0.90
+                else:
+                    historical_hit_rate = 0.8  # Default for manual rules
+            else:
+                historical_hit_rate = 0.8  # Default assumption
 
             # Calculate confidence
             result = self._calculator.calculate(

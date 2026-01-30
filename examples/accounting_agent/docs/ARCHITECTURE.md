@@ -53,21 +53,24 @@ Der Agent verfolgt einen **hybriden Ansatz**, der deterministische Regelverarbei
 Das folgende Diagramm zeigt die Einbettung des Accounting Agents in seine Systemumgebung. Der Agent interagiert mit mehreren externen Systemen, die jeweils spezifische Funktionen bereitstellen.
 
 ```mermaid
-C4Context
-    title Systemkontext - Accounting Agent
+graph TB
+    subgraph "External Systems"
+        direction TB
+        Azure["Azure OpenAI<br/>(LLM & Embeddings)"]
+        Docling["Docling<br/>(PDF/Image Extraktion)"]
+        MCP["MCP Memory Server<br/>(Long-Term Knowledge Graph)"]
+    end
 
-    Person(user, "Buchhalter", "Verarbeitet Eingangsrechnungen")
+    User(("Buchhalter<br/>(Verarbeitet Eingangsrechnungen)"))
 
-    System(agent, "Accounting Agent", "Automatisierte Rechnungsverarbeitung und Kontierung")
+    subgraph "Accounting Agent System"
+        Agent["Accounting Agent<br/>(Automatisierte Rechnungsverarbeitung)"]
+    end
 
-    System_Ext(azure, "Azure OpenAI", "LLM & Embeddings")
-    System_Ext(docling, "Docling", "PDF/Image Extraktion")
-    System_Ext(mcp_memory, "MCP Memory Server", "Long-Term Knowledge Graph")
-
-    Rel(user, agent, "Rechnung hochladen, HITL-Entscheidungen")
-    Rel(agent, azure, "LLM Completion, Embeddings")
-    Rel(agent, docling, "Dokumentenextraktion")
-    Rel(agent, mcp_memory, "Wissen speichern/abrufen")
+    User <-->|Rechnung hochladen| Agent
+    Agent <-->|LLM Completion| Azure
+    Agent <-->|Dokumentenextraktion| Docling
+    Agent <-->|Wissen speichern| MCP
 ```
 
 **Erläuterung der Systembeziehungen:**
@@ -486,7 +489,7 @@ graph LR
 
     subgraph "Regeltyp B: Vendor+Item"
         VIA[Lieferant erkannt] --> VIB[Semantic Matching]
-        VIB --> VIC[Ähnlichkeit > Threshold]
+        VIB --> VIC["Ähnlichkeit > Threshold"]
         VIC --> VID["Konto: 4985"]
     end
 
@@ -727,7 +730,7 @@ flowchart TB
     EXACT -->|Ja| EXACT_MATCH[MatchType: EXACT]
     EXACT -->|Nein| SEMANTIC[Embedding<br/>Similarity]
 
-    SEMANTIC --> SIM_CHECK{Similarity ><br/>Threshold?}
+    SEMANTIC --> SIM_CHECK{"Similarity ><br/>Threshold?"}
     SIM_CHECK -->|Ja| SEM_MATCH[MatchType: SEMANTIC]
     SIM_CHECK -->|Nein| LEGACY
 
@@ -1812,7 +1815,7 @@ flowchart TB
 
     subgraph "Hard Gates"
         G1[new_vendor]
-        G2[high_amount > 5000€]
+        G2["high_amount > 5000€"]
         G3[critical_account]
     end
 

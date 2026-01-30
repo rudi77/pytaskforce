@@ -1,8 +1,8 @@
 version: '2.0'
 description: Auto-generated rules from high-confidence bookings and HITL corrections
-updated_at: '2026-01-30T08:25:52.486093+00:00'
+updated_at: '2026-01-30T08:44:36.148617+00:00'
 semantic_rules:
-- rule_id: AUTO-20260128193643
+- rule_id: HITL-CONF-20260130084307
   vendor_pattern: Büromarkt\ Böttcher\ AG
   target_account: '4930'
   priority: 75
@@ -12,9 +12,9 @@ semantic_rules:
   target_account_name: Bürobedarf
   item_patterns:
   - 5x Druckertoner Brother TN-2420
-  created_at: '2026-01-28T19:36:43.923357+00:00'
-  updated_at: '2026-01-28T19:36:43.923357+00:00'
-- rule_id: HITL-CONF-20260129085926
+  created_at: '2026-01-30T08:43:07.260492+00:00'
+  updated_at: '2026-01-30T08:43:07.260492+00:00'
+- rule_id: AUTO-20260130084436
   vendor_pattern: Büromarkt\ Böttcher\ AG
   target_account: '4930'
   priority: 75
@@ -24,17 +24,5 @@ semantic_rules:
   target_account_name: Bürobedarf
   item_patterns:
   - 5x Druckertoner Brother TN-2420
-  created_at: '2026-01-29T08:59:26.378516+00:00'
-  updated_at: '2026-01-29T08:59:26.378516+00:00'
-- rule_id: HITL-CONF-20260130082552
-  vendor_pattern: Büromarkt\ Böttcher\ AG
-  target_account: '4930'
-  priority: 75
-  source: auto_high_confidence
-  version: 1
-  is_active: true
-  target_account_name: Bürobedarf
-  item_patterns:
-  - 5x Druckertoner Brother TN-2420
-  created_at: '2026-01-30T08:25:52.486093+00:00'
-  updated_at: '2026-01-30T08:25:52.486093+00:00'
+  created_at: '2026-01-30T08:44:36.148617+00:00'
+  updated_at: '2026-01-30T08:44:36.148617+00:00'
