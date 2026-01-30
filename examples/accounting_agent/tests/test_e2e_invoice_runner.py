@@ -43,9 +43,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Fix Windows console encoding for Unicode characters (box drawing, emojis)
+# line_buffering=True ensures output is flushed after each newline (required for live streaming)
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
