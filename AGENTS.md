@@ -31,6 +31,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Sub-agent spawning is centralized in `src/taskforce/application/sub_agent_spawner.py` to standardize isolated session creation.
 - Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce_extensions/configs/`.
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
+- Epic orchestration persists run state under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, and `MEMORY.md`.
 
 - **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
   - **Storage**: Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level commands override user-level commands.
