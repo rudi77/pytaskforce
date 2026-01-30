@@ -106,6 +106,9 @@ taskforce skills show pdf-processing
 # Show complete skill instructions
 taskforce skills show pdf-processing --full
 
+# --full output includes optional skill frontmatter fields when available
+# (license, compatibility, allowed_tools, metadata)
+
 # List bundled resources for a skill
 taskforce skills resources pdf-processing
 

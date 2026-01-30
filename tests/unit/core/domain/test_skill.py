@@ -114,12 +114,20 @@ class TestSkillMetadataModel:
             name="test-skill",
             description="Test description.",
             source_path="/test/path",
+            license="MIT",
+            compatibility="Taskforce 1.x",
+            metadata={"owner": "team"},
+            allowed_tools="file_read file_write",
         )
         result = metadata.to_dict()
         assert result == {
             "name": "test-skill",
             "description": "Test description.",
             "source_path": "/test/path",
+            "license": "MIT",
+            "compatibility": "Taskforce 1.x",
+            "metadata": {"owner": "team"},
+            "allowed_tools": "file_read file_write",
         }
 
     def test_from_dict(self):
@@ -128,10 +136,18 @@ class TestSkillMetadataModel:
             "name": "test-skill",
             "description": "Test description.",
             "source_path": "/test/path",
+            "license": "Apache-2.0",
+            "compatibility": "Taskforce >= 2.0",
+            "metadata": {"domain": "testing"},
+            "allowed_tools": "file_read",
         }
         metadata = SkillMetadataModel.from_dict(data)
         assert metadata.name == "test-skill"
         assert metadata.description == "Test description."
+        assert metadata.license == "Apache-2.0"
+        assert metadata.compatibility == "Taskforce >= 2.0"
+        assert metadata.metadata == {"domain": "testing"}
+        assert metadata.allowed_tools == "file_read"
 
 
 class TestSkill:
@@ -150,17 +166,25 @@ class TestSkill:
         assert skill.instructions.startswith("# Code Review")
 
     def test_skill_metadata_property(self):
-        """Skill should provide metadata property."""
+        """Skill should provide metadata model property."""
         skill = Skill(
             name="test-skill",
             description="Test description.",
             instructions="Instructions",
             source_path="/path",
+            license="MIT",
+            compatibility="Taskforce 2.x",
+            metadata={"category": "testing"},
+            allowed_tools="file_read",
         )
-        metadata = skill.metadata
+        metadata = skill.metadata_model
         assert isinstance(metadata, SkillMetadataModel)
         assert metadata.name == skill.name
         assert metadata.description == skill.description
+        assert metadata.license == "MIT"
+        assert metadata.compatibility == "Taskforce 2.x"
+        assert metadata.metadata == {"category": "testing"}
+        assert metadata.allowed_tools == "file_read"
 
     def test_get_resources_with_files(self):
         """Skill should list resource files in directory."""
@@ -235,6 +259,10 @@ class TestSkill:
             description="Test description.",
             instructions="# Instructions",
             source_path="/path/to/skill",
+            license="MIT",
+            compatibility="Taskforce 2.x",
+            metadata={"owner": "qa"},
+            allowed_tools="file_read file_write",
         )
 
         data = original.to_dict()
@@ -244,6 +272,10 @@ class TestSkill:
         assert restored.description == original.description
         assert restored.instructions == original.instructions
         assert restored.source_path == original.source_path
+        assert restored.license == original.license
+        assert restored.compatibility == original.compatibility
+        assert restored.metadata == original.metadata
+        assert restored.allowed_tools == original.allowed_tools
 
 
 class TestSkillContext:
