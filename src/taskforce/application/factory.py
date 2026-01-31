@@ -57,6 +57,10 @@ from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts import build_system_prompt, format_tools_description
 from taskforce.application.plugin_loader import PluginLoader, PluginManifest
+from taskforce.application.skill_manager import (
+    SkillManager,
+    create_skill_manager_from_manifest,
+)
 
 
 # Type for factory extension callbacks
@@ -877,6 +881,27 @@ class AgentFactory:
             planning_strategy=selected_strategy.name,
         )
 
+        # Create skill manager if plugin has skills
+        skill_manager = None
+        if manifest.skills_path:
+            skill_configs = plugin_config.get("skills", {}).get("available", [])
+            skill_manager = create_skill_manager_from_manifest(
+                manifest, skill_configs=skill_configs
+            )
+            if skill_manager and skill_manager.has_skills:
+                self.logger.info(
+                    "plugin_skills_loaded",
+                    plugin=manifest.name,
+                    skills=skill_manager.list_skills(),
+                )
+
+                # Add default switch conditions for known patterns
+                skills_config = plugin_config.get("skills", {})
+                if skills_config.get("activation", {}).get("auto_switch", True):
+                    self._configure_skill_switch_conditions(
+                        skill_manager, manifest.skill_names
+                    )
+
         # Create logger for agent
         agent_logger = structlog.get_logger().bind(component="agent")
 
@@ -892,6 +917,7 @@ class AgentFactory:
             planning_strategy=selected_strategy,
             logger=agent_logger,
             runtime_tracker=runtime_tracker,
+            skill_manager=skill_manager,
         )
 
         # Store MCP contexts and plugin manifest for lifecycle management
@@ -902,6 +928,45 @@ class AgentFactory:
         agent = self._apply_extensions(merged_config, agent)
 
         return agent
+
+    def _configure_skill_switch_conditions(
+        self, skill_manager: SkillManager, skill_names: list[str]
+    ) -> None:
+        """
+        Configure default skill switch conditions based on available skills.
+
+        Args:
+            skill_manager: The skill manager to configure
+            skill_names: List of available skill names
+        """
+        from taskforce.application.skill_manager import SkillSwitchCondition
+
+        # Auto-configure smart-booking workflow if both skills exist
+        if "smart-booking-auto" in skill_names and "smart-booking-hitl" in skill_names:
+            # Switch on recommendation = hitl_review
+            skill_manager.add_switch_condition(
+                SkillSwitchCondition(
+                    from_skill="smart-booking-auto",
+                    to_skill="smart-booking-hitl",
+                    trigger_tool="confidence_evaluator",
+                    condition_key="recommendation",
+                    condition_check=lambda v: v == "hitl_review",
+                )
+            )
+            # Switch on hard gates triggered
+            skill_manager.add_switch_condition(
+                SkillSwitchCondition(
+                    from_skill="smart-booking-auto",
+                    to_skill="smart-booking-hitl",
+                    trigger_tool="confidence_evaluator",
+                    condition_key="triggered_hard_gates",
+                    condition_check=lambda v: bool(v) if isinstance(v, list) else False,
+                )
+            )
+            self.logger.debug(
+                "skill_switch_conditions_configured",
+                pattern="smart-booking",
+            )
 
     def _merge_plugin_config(
         self, base_config: dict[str, Any], plugin_config: dict[str, Any]
