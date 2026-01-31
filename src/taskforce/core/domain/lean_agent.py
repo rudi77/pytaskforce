@@ -487,9 +487,9 @@ class Agent:
             step=step,
         )
 
-    async def _preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Preflight budget check before LLM call."""
-        return await self.message_history_manager.preflight_budget_check(messages)
+        return self.message_history_manager.preflight_budget_check(messages)
 
     async def _save_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Save state including PlannerTool state."""

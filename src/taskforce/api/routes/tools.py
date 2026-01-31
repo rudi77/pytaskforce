@@ -14,7 +14,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Any, Dict, List
 
-from taskforce.application.tool_catalog import get_tool_catalog
+from taskforce.application.tool_registry import get_tool_registry
 
 router = APIRouter()
 
@@ -46,6 +46,6 @@ def get_tools() -> ToolCatalogResponse:
     Returns:
         Tool catalog with list of native tool definitions
     """
-    catalog = get_tool_catalog()
-    tools = catalog.get_native_tools()
+    registry = get_tool_registry()
+    tools = registry.list_native_tools()
     return ToolCatalogResponse(tools=tools)

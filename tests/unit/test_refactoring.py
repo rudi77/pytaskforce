@@ -20,7 +20,7 @@ from taskforce.core.domain.config_schema import (
     validate_agent_config,
     extract_tool_names,
 )
-from taskforce.application.tool_resolver import ToolResolver
+from taskforce.application.tool_registry import ToolRegistry
 from taskforce.infrastructure.tools.registry import (
     get_all_tool_names,
     is_registered,
@@ -190,13 +190,13 @@ class TestMCPServerConfig:
         assert data["env"]["KEY"] == "value"
 
 
-class TestToolResolver:
-    """Tests for tool resolver."""
+class TestToolRegistry:
+    """Tests for tool registry."""
 
     def test_get_available_tools(self):
         """Test listing available tools."""
-        resolver = ToolResolver()
-        tools = resolver.get_available_tools()
+        registry = ToolRegistry()
+        tools = registry.get_available_tools()
 
         assert "python" in tools
         assert "file_read" in tools
@@ -204,17 +204,17 @@ class TestToolResolver:
 
     def test_is_valid_tool(self):
         """Test tool validation."""
-        resolver = ToolResolver()
+        registry = ToolRegistry()
 
-        assert resolver.is_valid_tool("python") is True
-        assert resolver.is_valid_tool("file_read") is True
-        assert resolver.is_valid_tool("nonexistent_tool") is False
+        assert registry.is_valid_tool("python") is True
+        assert registry.is_valid_tool("file_read") is True
+        assert registry.is_valid_tool("nonexistent_tool") is False
 
     def test_validate_tools(self):
         """Test validating a list of tools."""
-        resolver = ToolResolver()
+        registry = ToolRegistry()
 
-        valid, invalid = resolver.validate_tools(
+        valid, invalid = registry.validate_tools(
             ["python", "file_read", "nonexistent", "web_search"]
         )
 
@@ -225,9 +225,9 @@ class TestToolResolver:
 
     def test_resolve_tools(self):
         """Test resolving tool names to instances."""
-        resolver = ToolResolver()
+        registry = ToolRegistry()
 
-        tools = resolver.resolve(["file_read", "file_write"])
+        tools = registry.resolve(["file_read", "file_write"])
 
         assert len(tools) == 2
         tool_names = [t.name for t in tools]
@@ -235,7 +235,7 @@ class TestToolResolver:
         assert "file_write" in tool_names
 
 
-class TestToolRegistry:
+class TestToolRegistryInfra:
     """Tests for tool registry extensions."""
 
     def test_get_all_tool_names(self):
