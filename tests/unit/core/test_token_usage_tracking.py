@@ -12,7 +12,7 @@ import pytest
 
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import StreamEvent, ExecutionResult
-from taskforce.core.domain.planning_strategy import _collect_execution_result
+from taskforce.core.domain.planning_strategy import _collect_result
 
 
 @pytest.fixture
@@ -40,6 +40,18 @@ def mock_tool():
     return tool
 
 
+@pytest.fixture
+def mock_logger():
+    """Mock LoggerProtocol."""
+    logger = MagicMock()
+    logger.debug = MagicMock()
+    logger.info = MagicMock()
+    logger.warning = MagicMock()
+    logger.error = MagicMock()
+    logger.bind = MagicMock(return_value=logger)
+    return logger
+
+
 async def mock_stream_with_token_usage():
     """Mock streaming generator that yields tokens and token usage."""
     # First LLM call with token usage
@@ -60,7 +72,7 @@ class TestTokenUsageTracking:
 
     @pytest.mark.asyncio
     async def test_stream_event_includes_token_usage(
-        self, mock_state_manager, mock_tool
+        self, mock_state_manager, mock_tool, mock_logger
     ):
         """Test that token_usage StreamEvent is emitted with LLM calls."""
         # Create mock provider with streaming support that includes usage
@@ -73,6 +85,7 @@ class TestTokenUsageTracking:
             state_manager=mock_state_manager,
             llm_provider=mock_provider,
             tools=[mock_tool],
+            logger=mock_logger,
         )
 
         # Collect all events
@@ -121,13 +134,13 @@ class TestTokenUsageTracking:
                 data={"content": "Test complete"},
             )
 
-        result = await _collect_execution_result("test-session", mock_events())
+        result = await _collect_result("test-session", mock_events())
 
         # Verify aggregated token usage
         assert result.token_usage is not None
-        assert result.token_usage["prompt_tokens"] == 30  # 10 + 20
-        assert result.token_usage["completion_tokens"] == 15  # 5 + 10
-        assert result.token_usage["total_tokens"] == 45  # 15 + 30
+        assert result.token_usage.prompt_tokens == 30  # 10 + 20
+        assert result.token_usage.completion_tokens == 15  # 5 + 10
+        assert result.token_usage.total_tokens == 45  # 15 + 30
 
     @pytest.mark.asyncio
     async def test_execution_result_default_token_usage(self):
@@ -140,13 +153,13 @@ class TestTokenUsageTracking:
                 data={"content": "Test complete"},
             )
 
-        result = await _collect_execution_result("test-session", mock_events())
+        result = await _collect_result("test-session", mock_events())
 
         # Verify default token usage
         assert result.token_usage is not None
-        assert result.token_usage["prompt_tokens"] == 0
-        assert result.token_usage["completion_tokens"] == 0
-        assert result.token_usage["total_tokens"] == 0
+        assert result.token_usage.prompt_tokens == 0
+        assert result.token_usage.completion_tokens == 0
+        assert result.token_usage.total_tokens == 0
 
     def test_execution_result_has_token_usage_field(self):
         """Test that ExecutionResult includes token_usage field."""
@@ -158,9 +171,9 @@ class TestTokenUsageTracking:
 
         # Verify token_usage field exists with defaults
         assert hasattr(result, "token_usage")
-        assert result.token_usage["prompt_tokens"] == 0
-        assert result.token_usage["completion_tokens"] == 0
-        assert result.token_usage["total_tokens"] == 0
+        assert result.token_usage.prompt_tokens == 0
+        assert result.token_usage.completion_tokens == 0
+        assert result.token_usage.total_tokens == 0
 
     def test_execution_result_accepts_custom_token_usage(self):
         """Test that ExecutionResult accepts custom token usage."""

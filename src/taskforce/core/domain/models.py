@@ -7,7 +7,9 @@ These models represent the fundamental business entities and execution results.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
+
+from taskforce.core.domain.enums import EventType, ExecutionStatus
 
 
 @dataclass
@@ -30,22 +32,12 @@ class StreamEvent:
     - error: Error occurred during execution
 
     Attributes:
-        event_type: The type of event (see above)
+        event_type: The type of event (see EventType enum)
         data: Event-specific payload (varies by type)
         timestamp: When the event occurred (auto-generated)
     """
 
-    event_type: Literal[
-        "step_start",
-        "llm_token",
-        "tool_call",
-        "tool_result",
-        "ask_user",
-        "plan_updated",
-        "token_usage",
-        "final_answer",
-        "error",
-    ]
+    event_type: EventType | str  # Allow string for backward compatibility
     data: dict[str, Any]
     timestamp: datetime = field(default_factory=datetime.now)
 
@@ -56,11 +48,68 @@ class StreamEvent:
         Returns:
             Dictionary with event_type, data, and ISO-formatted timestamp.
         """
+        event_type_value = (
+            self.event_type.value
+            if isinstance(self.event_type, EventType)
+            else self.event_type
+        )
         return {
-            "event_type": self.event_type,
+            "event_type": event_type_value,
             "data": self.data,
             "timestamp": self.timestamp.isoformat(),
         }
+
+
+@dataclass
+class TokenUsage:
+    """Token usage statistics for LLM calls."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def to_dict(self) -> dict[str, int]:
+        """Convert to dictionary."""
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, int]) -> "TokenUsage":
+        """Create from dictionary."""
+        return cls(
+            prompt_tokens=data.get("prompt_tokens", 0),
+            completion_tokens=data.get("completion_tokens", 0),
+            total_tokens=data.get("total_tokens", 0),
+        )
+
+
+@dataclass
+class PendingQuestion:
+    """Question awaiting user response."""
+
+    question: str
+    context: str = ""
+    tool_call_id: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "question": self.question,
+            "context": self.context,
+            "tool_call_id": self.tool_call_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PendingQuestion":
+        """Create from dictionary."""
+        return cls(
+            question=data.get("question", ""),
+            context=data.get("context", ""),
+            tool_call_id=data.get("tool_call_id", ""),
+        )
 
 
 @dataclass
@@ -79,18 +128,48 @@ class ExecutionResult:
         execution_history: List of execution events (thoughts, actions, observations)
         todolist_id: ID of the TodoList that was executed (if any)
         pending_question: Question awaiting user response (if status is paused)
-        token_usage: Total token usage statistics (prompt_tokens, completion_tokens, total_tokens)
+        token_usage: Total token usage statistics
     """
 
     session_id: str
-    status: str
+    status: ExecutionStatus | str  # Allow string for backward compatibility
     final_message: str
     execution_history: list[dict[str, Any]] = field(default_factory=list)
     todolist_id: str | None = None
-    pending_question: dict[str, Any] | None = None
-    token_usage: dict[str, int] = field(default_factory=lambda: {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-    })
+    pending_question: PendingQuestion | dict[str, Any] | None = None
+    token_usage: TokenUsage | dict[str, int] = field(
+        default_factory=lambda: TokenUsage()
+    )
+
+    @property
+    def status_value(self) -> str:
+        """Get status as string value."""
+        if isinstance(self.status, ExecutionStatus):
+            return self.status.value
+        return self.status
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        pending_q = None
+        if self.pending_question:
+            if isinstance(self.pending_question, PendingQuestion):
+                pending_q = self.pending_question.to_dict()
+            else:
+                pending_q = self.pending_question
+
+        token_usage_dict = (
+            self.token_usage.to_dict()
+            if isinstance(self.token_usage, TokenUsage)
+            else self.token_usage
+        )
+
+        return {
+            "session_id": self.session_id,
+            "status": self.status_value,
+            "final_message": self.final_message,
+            "execution_history": self.execution_history,
+            "todolist_id": self.todolist_id,
+            "pending_question": pending_q,
+            "token_usage": token_usage_dict,
+        }
 

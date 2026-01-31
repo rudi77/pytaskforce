@@ -23,6 +23,7 @@ from typing import Any
 import structlog
 
 from taskforce.application.factory import AgentFactory
+from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.errors import (
     CancelledError,
     NotFoundError,
@@ -49,15 +50,22 @@ class ProgressUpdate:
 
     Attributes:
         timestamp: When this update occurred
-        event_type: Type of event (started, thought, action, observation, complete, error)
+        event_type: Type of event (see EventType enum)
         message: Human-readable message describing the event
         details: Additional structured data about the event
     """
 
     timestamp: datetime
-    event_type: str
+    event_type: EventType | str  # Allow string for backward compatibility
     message: str
-    details: dict
+    details: dict[str, Any]
+
+    @property
+    def event_type_value(self) -> str:
+        """Get event type as string value."""
+        if isinstance(self.event_type, EventType):
+            return self.event_type.value
+        return self.event_type
 
 
 class AgentExecutor:
@@ -147,9 +155,10 @@ class AgentExecutor:
                 progress_callback(update)
 
             # Extract result from complete event
-            if update.event_type == "complete":
+            event_type = update.event_type if isinstance(update.event_type, EventType) else update.event_type
+            if event_type == EventType.COMPLETE or event_type == EventType.COMPLETE.value:
                 result = ExecutionResult(
-                    status=update.details.get("status", "completed"),
+                    status=update.details.get("status", ExecutionStatus.COMPLETED.value),
                     final_message=update.message,
                     session_id=update.details.get("session_id", ""),
                     todolist_id=update.details.get("todolist_id"),
@@ -208,7 +217,7 @@ class AgentExecutor:
 
         yield ProgressUpdate(
             timestamp=datetime.now(),
-            event_type="started",
+            event_type=EventType.STARTED,
             message=f"Starting mission: {mission[:80]}",
             details={
                 "session_id": resolved_session_id,
@@ -268,7 +277,7 @@ class AgentExecutor:
 
             yield ProgressUpdate(
                 timestamp=datetime.now(),
-                event_type="error",
+                event_type=EventType.ERROR,
                 message=f"Execution cancelled: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
@@ -289,7 +298,7 @@ class AgentExecutor:
             # Yield error event
             yield ProgressUpdate(
                 timestamp=datetime.now(),
-                event_type="error",
+                event_type=EventType.ERROR,
                 message=f"Execution failed: {str(e)}",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
@@ -514,10 +523,10 @@ class AgentExecutor:
         progress_callback(
             ProgressUpdate(
                 timestamp=datetime.now(),
-                event_type="complete",
+                event_type=EventType.COMPLETE,
                 message=result.final_message,
                 details={
-                    "status": result.status,
+                    "status": result.status_value if hasattr(result, "status_value") else result.status,
                     "session_id": result.session_id,
                     "todolist_id": result.todolist_id,
                 },
@@ -561,37 +570,42 @@ class AgentExecutor:
 
             # Yield updates based on execution history
             for event in result.execution_history:
-                event_type = event.get("type", "unknown")
+                event_type_str = event.get("type", "unknown")
                 step = event.get("step", "?")
 
-                if event_type == "thought":
+                if event_type_str == "thought":
                     data = event.get("data", {})
                     rationale = data.get("rationale", "")
                     yield ProgressUpdate(
                         timestamp=datetime.now(),
-                        event_type="thought",
+                        event_type="thought",  # Keep as string for legacy event types
                         message=f"Step {step}: {rationale[:80]}",
                         details=data,
                     )
 
-                elif event_type == "observation":
+                elif event_type_str == "observation":
                     data = event.get("data", {})
                     success = data.get("success", False)
-                    status = "success" if success else "failed"
+                    status = ExecutionStatus.COMPLETED.value if success else ExecutionStatus.FAILED.value
                     yield ProgressUpdate(
                         timestamp=datetime.now(),
-                        event_type="observation",
+                        event_type="observation",  # Keep as string for legacy event types
                         message=f"Step {step}: {status}",
                         details=data,
                     )
 
             # Yield final completion update
+            status_value = (
+                result.status_value
+                if hasattr(result, "status_value")
+                else result.status
+            )
             yield ProgressUpdate(
                 timestamp=datetime.now(),
-                event_type="complete",
+                event_type=EventType.COMPLETE,
                 message=result.final_message,
                 details={
-                    "status": result.status,
+                    "status": status_value,
                     "session_id": result.session_id,
                     "todolist_id": result.todolist_id,
                 },
@@ -610,24 +624,29 @@ class AgentExecutor:
             ProgressUpdate for consumer display
         """
         message_map = {
-            "step_start": lambda d: f"Step {d.get('step', '?')} starting...",
-            "llm_token": lambda d: d.get("content", ""),
-            "tool_call": lambda d: f"🔧 Calling: {d.get('tool', 'unknown')}",
-            "tool_result": lambda d: (
+            EventType.STEP_START.value: lambda d: f"Step {d.get('step', '?')} starting...",
+            EventType.LLM_TOKEN.value: lambda d: d.get("content", ""),
+            EventType.TOOL_CALL.value: lambda d: f"🔧 Calling: {d.get('tool', 'unknown')}",
+            EventType.TOOL_RESULT.value: lambda d: (
                 f"{'✅' if d.get('success') else '❌'} "
                 f"{d.get('tool', 'unknown')}: {str(d.get('output', ''))[:50]}"
             ),
-            "ask_user": lambda d: f"❓ {d.get('question', 'User input required')}",
-            "plan_updated": lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
-            "token_usage": lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
-            "final_answer": lambda d: d.get("content", ""),
-            "complete": lambda d: (
+            EventType.ASK_USER.value: lambda d: f"❓ {d.get('question', 'User input required')}",
+            EventType.PLAN_UPDATED.value: lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
+            EventType.TOKEN_USAGE.value: lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
+            EventType.FINAL_ANSWER.value: lambda d: d.get("content", ""),
+            EventType.COMPLETE.value: lambda d: (
                 f"✅ Execution completed. Status: {d.get('status', 'unknown')}"
             ),
-            "error": lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
+            EventType.ERROR.value: lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
         }
 
-        message_fn = message_map.get(event.event_type, lambda d: str(d))
+        event_type_value = (
+            event.event_type.value
+            if isinstance(event.event_type, EventType)
+            else event.event_type
+        )
+        message_fn = message_map.get(event_type_value, lambda d: str(d))
 
         return ProgressUpdate(
             timestamp=event.timestamp,

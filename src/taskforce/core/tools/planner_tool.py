@@ -8,6 +8,8 @@ State is serializable for persistence via StateManager.
 
 from typing import Any
 
+from taskforce.core.domain.enums import PlannerAction, TaskStatus
+from taskforce.core.domain.tool_result import PlanTask, ToolResult
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
 
@@ -72,12 +74,7 @@ class PlannerTool(ToolProtocol):
                 "action": {
                     "type": "string",
                     "description": "Required. The operation to perform.",
-                    "enum": [
-                        "create_plan",
-                        "mark_done",
-                        "read_plan",
-                        "update_plan",
-                    ],
+                    "enum": [action.value for action in PlannerAction],
                 },
                 "tasks": {
                     "type": "array",
@@ -127,21 +124,21 @@ class PlannerTool(ToolProtocol):
     def get_approval_preview(self, **kwargs: Any) -> str:
         """Generate preview for approval prompt."""
         action = kwargs.get("action", "unknown")
-        if action == "create_plan":
+        if action == PlannerAction.CREATE_PLAN.value:
             tasks = kwargs.get("tasks", [])
             return (
                 f"Tool: {self.name}\nOperation: Create plan\n"
                 f"Tasks: {len(tasks)} tasks"
             )
-        elif action == "mark_done":
+        elif action == PlannerAction.MARK_DONE.value:
             step_index = kwargs.get("step_index", "?")
             return (
                 f"Tool: {self.name}\nOperation: Mark step {step_index} "
                 "as done"
             )
-        elif action == "read_plan":
+        elif action == PlannerAction.READ_PLAN.value:
             return f"Tool: {self.name}\nOperation: Read current plan"
-        elif action == "update_plan":
+        elif action == PlannerAction.UPDATE_PLAN.value:
             add_count = len(kwargs.get("add_steps", []))
             remove_count = len(kwargs.get("remove_indices", []))
             return (
@@ -163,30 +160,27 @@ class PlannerTool(ToolProtocol):
             Dict with success status and result/error message.
         """
         action_map = {
-            "create_plan": self._create_plan,
-            "mark_done": self._mark_done,
-            "read_plan": self._read_plan,
-            "update_plan": self._update_plan,
+            PlannerAction.CREATE_PLAN.value: self._create_plan,
+            PlannerAction.MARK_DONE.value: self._mark_done,
+            PlannerAction.READ_PLAN.value: self._read_plan,
+            PlannerAction.UPDATE_PLAN.value: self._update_plan,
         }
 
-        handler = action_map.get(action)
-        if not handler:
-            return {
-                "success": False,
-                "error": (
-                    f"Unknown action: {action}. "
-                    f"Valid: {list(action_map.keys())}"
-                ),
-            }
+        if action not in action_map:
+            valid_actions = [a.value for a in PlannerAction]
+            return ToolResult.error_result(
+                error=f"Unknown action: {action}. Valid: {valid_actions}"
+            ).to_dict()
 
+        handler = action_map[action]
         try:
-            return handler(**kwargs)
+            result = handler(**kwargs)
+            return result.to_dict()
         except Exception as e:
-            return {
-                "success": False,
-                "error": f"Execution error: {str(e)}",
-                "error_type": type(e).__name__,
-            }
+            return ToolResult.error_result(
+                error=f"Execution error: {str(e)}",
+                error_type=type(e).__name__,
+            ).to_dict()
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """
@@ -202,12 +196,7 @@ class PlannerTool(ToolProtocol):
             return False, "Missing required parameter: action"
 
         action = kwargs.get("action")
-        valid_actions = [
-            "create_plan",
-            "mark_done",
-            "read_plan",
-            "update_plan",
-        ]
+        valid_actions = [a.value for a in PlannerAction]
         if action not in valid_actions:
             return (
                 False,
@@ -215,7 +204,7 @@ class PlannerTool(ToolProtocol):
             )
 
         # Action-specific validation
-        if action == "create_plan":
+        if action == PlannerAction.CREATE_PLAN.value:
             if "tasks" not in kwargs:
                 return False, "Missing required parameter: tasks"
             if not isinstance(kwargs["tasks"], list):
@@ -223,7 +212,7 @@ class PlannerTool(ToolProtocol):
             if len(kwargs["tasks"]) == 0:
                 return False, "Parameter 'tasks' must be a non-empty list"
 
-        elif action == "mark_done":
+        elif action == PlannerAction.MARK_DONE.value:
             if "step_index" not in kwargs:
                 return False, "Missing required parameter: step_index"
             if not isinstance(kwargs["step_index"], int):
@@ -257,7 +246,7 @@ class PlannerTool(ToolProtocol):
 
     def _create_plan(
         self, tasks: list[str] | None = None, **kwargs: Any
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """
         Create a new plan from a list of task descriptions.
 
@@ -265,27 +254,26 @@ class PlannerTool(ToolProtocol):
             tasks: List of task description strings.
 
         Returns:
-            Success dict with confirmation or error.
+            ToolResult with confirmation or error.
         """
         if not tasks or not isinstance(tasks, list) or len(tasks) == 0:
-            return {
-                "success": False,
-                "error": "tasks must be a non-empty list of strings",
-            }
+            return ToolResult.error_result(
+                error="tasks must be a non-empty list of strings"
+            )
 
         self._state["tasks"] = [
-            {"description": task, "status": "PENDING"} for task in tasks
+            PlanTask(description=task, status=TaskStatus.PENDING.value).to_dict()
+            for task in tasks
         ]
 
-        return {
-            "success": True,
-            "message": f"Plan created with {len(tasks)} tasks.",
-            "output": self._format_plan(),
-        }
+        return ToolResult.success_result(
+            output=self._format_plan(),
+            message=f"Plan created with {len(tasks)} tasks.",
+        )
 
     def _mark_done(
         self, step_index: int | None = None, **kwargs: Any
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """
         Mark a specific step as completed.
 
@@ -293,49 +281,44 @@ class PlannerTool(ToolProtocol):
             step_index: One-based index of the step to mark done.
 
         Returns:
-            Success dict with updated status or error.
+            ToolResult with updated status or error.
         """
         if step_index is None:
-            return {"success": False, "error": "step_index is required"}
+            return ToolResult.error_result(error="step_index is required")
 
         tasks = self._state.get("tasks", [])
 
         if not tasks:
-            return {"success": False, "error": "No active plan."}
+            return ToolResult.error_result(error="No active plan.")
 
         # Convert 1-based to 0-based index
         zero_based_index = step_index - 1
 
         if zero_based_index < 0 or zero_based_index >= len(tasks):
-            return {
-                "success": False,
-                "error": (
-                    f"step_index {step_index} out of bounds "
-                    f"(1-{len(tasks)})"
-                ),
-            }
+            return ToolResult.error_result(
+                error=f"step_index {step_index} out of bounds (1-{len(tasks)})"
+            )
 
-        tasks[zero_based_index]["status"] = "DONE"
+        tasks[zero_based_index]["status"] = TaskStatus.DONE.value
 
-        return {
-            "success": True,
-            "message": f"Step {step_index} marked done.",
-            "output": self._format_plan(),
-        }
+        return ToolResult.success_result(
+            output=self._format_plan(),
+            message=f"Step {step_index} marked done.",
+        )
 
-    def _read_plan(self, **kwargs: Any) -> dict[str, Any]:
+    def _read_plan(self, **kwargs: Any) -> ToolResult:
         """
         Return the current plan as formatted Markdown.
 
         Returns:
-            Success dict with plan string or 'No active plan.'.
+            ToolResult with plan string or 'No active plan.'.
         """
         tasks = self._state.get("tasks", [])
 
         if not tasks:
-            return {"success": True, "output": "No active plan."}
+            return ToolResult.success_result(output="No active plan.")
 
-        return {"success": True, "output": self._format_plan()}
+        return ToolResult.success_result(output=self._format_plan())
 
     def get_plan_summary(self) -> str:
         """
@@ -344,14 +327,15 @@ class PlannerTool(ToolProtocol):
         Returns:
             Formatted plan string or 'No active plan.' if no plan exists.
         """
-        return self._read_plan().get("output", "")
+        result = self._read_plan()
+        return result.output
 
     def _update_plan(
         self,
         add_steps: list[str] | None = None,
         remove_indices: list[int] | None = None,
         **kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """
         Dynamically modify the plan by adding or removing steps.
 
@@ -361,7 +345,7 @@ class PlannerTool(ToolProtocol):
                 (processed in descending order).
 
         Returns:
-            Success dict with updated plan or error.
+            ToolResult with updated plan or error.
         """
         tasks = self._state.get("tasks", [])
 
@@ -378,15 +362,18 @@ class PlannerTool(ToolProtocol):
         # Add new steps
         if add_steps:
             for step in add_steps:
-                tasks.append({"description": step, "status": "PENDING"})
+                tasks.append(
+                    PlanTask(
+                        description=step, status=TaskStatus.PENDING.value
+                    ).to_dict()
+                )
 
         self._state["tasks"] = tasks
 
-        return {
-            "success": True,
-            "message": "Plan updated.",
-            "output": self._format_plan(),
-        }
+        return ToolResult.success_result(
+            output=self._format_plan(),
+            message="Plan updated.",
+        )
 
     def _format_plan(self) -> str:
         """
@@ -401,7 +388,7 @@ class PlannerTool(ToolProtocol):
 
         lines = []
         for i, task in enumerate(tasks, start=1):
-            checkbox = "[x]" if task["status"] == "DONE" else "[ ]"
+            checkbox = "[x]" if task["status"] == TaskStatus.DONE.value else "[ ]"
             lines.append(f"{checkbox} {i}. {task['description']}")
 
         return "\n".join(lines)
