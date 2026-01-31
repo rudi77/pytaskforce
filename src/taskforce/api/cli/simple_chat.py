@@ -12,6 +12,7 @@ from rich.markdown import Markdown
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.slash_command_registry import SlashCommandRegistry
+from taskforce.core.domain.enums import EventType, MessageRole, TaskStatus
 from taskforce.core.interfaces.slash_commands import (
     CommandType,
     SlashCommandDefinition,
@@ -166,7 +167,7 @@ class SimpleChatRunner:
         """Handle a regular chat message."""
         state = await self.agent.state_manager.load_state(self.session_id) or {}
         history = state.get("conversation_history", [])
-        history.append({"role": "user", "content": content})
+        history.append({"role": MessageRole.USER.value, "content": content})
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
 
@@ -188,7 +189,7 @@ class SimpleChatRunner:
         ):
             event_type = update.event_type
 
-            if event_type == "llm_token":
+            if event_type == EventType.LLM_TOKEN.value:
                 token = update.details.get("content", "")
                 if token:
                     if not started_output:
@@ -198,14 +199,14 @@ class SimpleChatRunner:
                     self.console.file.flush()
                     final_tokens.append(token)
 
-            elif event_type == "final_answer":
+            elif event_type == EventType.FINAL_ANSWER.value:
                 if not final_tokens:
                     content = update.details.get("content", "")
                     if content:
                         self.console.print(f"[agent]🤖 Agent:[/agent] {content}")
                         final_tokens.append(content)
 
-            elif event_type == "thought":
+            elif event_type == EventType.THOUGHT.value:
                 thought_text = (
                     update.details.get("rationale")
                     or update.details.get("thought")
@@ -214,21 +215,21 @@ class SimpleChatRunner:
                 if thought_text:
                     self.console.print(f"[thought]💭 Thought:[/thought] {thought_text}")
 
-            elif event_type == "observation":
+            elif event_type == EventType.OBSERVATION.value:
                 observation = update.details.get("observation") or update.message
                 if observation:
                     self.console.print(
                         f"[observation]🔎 Observation:[/observation] {observation}"
                     )
 
-            elif event_type == "plan_updated":
+            elif event_type == EventType.PLAN_UPDATED.value:
                 self._handle_plan_update(update)
 
-            elif event_type == "token_usage":
+            elif event_type == EventType.TOKEN_USAGE.value:
                 usage = update.details
                 self.total_tokens += usage.get("total_tokens", 0)
 
-            elif event_type == "tool_call":
+            elif event_type == EventType.TOOL_CALL.value:
                 tool = update.details.get("tool", "unknown")
                 params = update.details.get("params", {})
                 signature = (event_type, f"{tool}:{params}")
@@ -238,7 +239,7 @@ class SimpleChatRunner:
                     )
                 self._last_event_signature = signature
 
-            elif event_type == "tool_result":
+            elif event_type == EventType.TOOL_RESULT.value:
                 tool = update.details.get("tool", "unknown")
                 success = update.details.get("success", True)
                 output = str(update.details.get("output", ""))[:200]
@@ -250,14 +251,14 @@ class SimpleChatRunner:
                     )
                 self._last_event_signature = signature
 
-            elif event_type == "step_start":
+            elif event_type == EventType.STEP_START.value:
                 step = update.details.get("step", "?")
                 self.console.print(f"[info]🧠 Step {step} starting...[/info]")
 
-            elif event_type == "started":
+            elif event_type == EventType.STARTED.value:
                 self.console.print("[info]🚀 Started[/info]")
 
-            elif event_type == "ask_user":
+            elif event_type == EventType.ASK_USER.value:
                 paused_question = update.details
                 question = update.details.get("question", "")
                 missing = update.details.get("missing", [])
@@ -271,10 +272,10 @@ class SimpleChatRunner:
                         f"[warning]❓ Agent needs input:[/warning] {question}"
                     )
 
-            elif event_type == "error":
+            elif event_type == EventType.ERROR.value:
                 self.console.print(f"[error]❌ Error:[/error] {update.message}")
 
-            elif event_type == "complete":
+            elif event_type == EventType.COMPLETE.value:
                 if not final_tokens and update.message:
                     self.console.print(f"[agent]🤖 Agent:[/agent] {update.message}")
                     final_tokens.append(update.message)
@@ -287,7 +288,7 @@ class SimpleChatRunner:
             if question_text:
                 state = await self.agent.state_manager.load_state(self.session_id) or {}
                 history = state.get("conversation_history", [])
-                history.append({"role": "assistant", "content": question_text})
+                history.append({"role": MessageRole.ASSISTANT.value, "content": question_text})
                 state["conversation_history"] = history
                 await self.agent.state_manager.save_state(self.session_id, state)
             return
@@ -295,7 +296,7 @@ class SimpleChatRunner:
         final_message = "".join(final_tokens) if final_tokens else "No response"
         state = await self.agent.state_manager.load_state(self.session_id) or {}
         history = state.get("conversation_history", [])
-        history.append({"role": "assistant", "content": final_message})
+        history.append({"role": MessageRole.ASSISTANT.value, "content": final_message})
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
 
@@ -323,7 +324,7 @@ class SimpleChatRunner:
         if self.plan_state.steps:
             for idx, step in enumerate(self.plan_state.steps, start=1):
                 status = step.get("status", "PENDING")
-                marker = "✓" if status in {"DONE", "COMPLETED"} else "⏳" if status in {
+                marker = "✓" if status in {TaskStatus.DONE.value, "COMPLETED"} else "⏳" if status in {
                     "IN_PROGRESS",
                     "ACTIVE",
                 } else " "

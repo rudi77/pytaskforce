@@ -38,6 +38,9 @@ class EventType(str, Enum):
     FINAL_ANSWER = "final_answer"
     COMPLETE = "complete"
     ERROR = "error"
+    # Legacy event types (for original Agent)
+    THOUGHT = "thought"
+    OBSERVATION = "observation"
 
 
 class LLMStreamEventType(str, Enum):
