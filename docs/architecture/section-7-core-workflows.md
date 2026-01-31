@@ -65,10 +65,10 @@ sequenceDiagram
 
 ---
 
-### **Workflow 1b: Mission Execution via API (Legacy vs LeanAgent)**
+### **Workflow 1b: Mission Execution via API**
 
-This workflow shows the shared HTTP entrypoint and how execution branches to the
-legacy Agent or the LeanAgent planning strategy.
+This workflow shows the shared HTTP entrypoint and how execution flows through
+the Agent planning strategy.
 
 ```mermaid
 sequenceDiagram
@@ -76,30 +76,20 @@ sequenceDiagram
     participant API as FastAPI
     participant Executor as AgentExecutor
     participant Factory as AgentFactory
-    participant Legacy as Agent (ReAct)
-    participant Lean as LeanAgent
+    participant Agent as Agent
     participant Planner as PlanningStrategy
     participant Tool as ToolProtocol
     participant State as StateManager
 
-    Client->>API: POST /api/v1/execute (lean=true|false)
+    Client->>API: POST /api/v1/execute
     API->>Executor: execute_mission(...)
-    Executor->>Factory: create_agent(...) or create_lean_agent(...)
-
-    alt lean == false (legacy)
-        Factory->>Legacy: new Agent(state, llm, tools)
-        Legacy->>State: load_state(session_id)
-        Legacy->>Tool: execute(tool_input)
-        Legacy->>State: save_state(session_id)
-        Legacy-->>Executor: ExecutionResult
-    else lean == true (LeanAgent)
-        Factory->>Lean: new LeanAgent(state, llm, tools)
-        Lean->>Planner: execute(mission, session_id)
-        Planner->>Tool: execute(tool_input)
-        Planner->>State: save_state(session_id)
-        Planner-->>Lean: ExecutionResult
-        Lean-->>Executor: ExecutionResult
-    end
+    Executor->>Factory: create_agent(...)
+    Factory->>Agent: new Agent(state, llm, tools)
+    Agent->>Planner: execute(mission, session_id)
+    Planner->>Tool: execute(tool_input)
+    Planner->>State: save_state(session_id)
+    Planner-->>Agent: ExecutionResult
+    Agent-->>Executor: ExecutionResult
 
     Executor-->>API: ExecuteMissionResponse
     API-->>Client: 200 OK (result)
@@ -371,4 +361,3 @@ sequenceDiagram
 🏗️ **Proceeding to Security...**
 
 ---
-

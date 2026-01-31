@@ -102,7 +102,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Test", "profile": "coding_agent", "lean": True},
+                json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -135,7 +135,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Search for data", "profile": "coding_agent", "lean": True},
+                json={"mission": "Search for data", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -171,7 +171,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Say hello", "profile": "coding_agent", "lean": True},
+                json={"mission": "Say hello", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -201,7 +201,7 @@ class TestServerSSEStreaming:
             with client.stream(
                 "POST",
                 "/api/v1/execute/stream",
-                json={"mission": "Answer question", "profile": "coding_agent", "lean": True},
+                json={"mission": "Answer question", "profile": "coding_agent"},
             ) as response:
                 events = []
                 for line in response.iter_lines():
@@ -347,4 +347,3 @@ class TestServerSSEBackwardCompatibility:
             assert "session_id" in data
             assert "status" in data
             assert "message" in data
-

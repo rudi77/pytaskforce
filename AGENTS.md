@@ -32,6 +32,8 @@ This file should be updated automatically when project-specific patterns, conven
 - Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce_extensions/configs/`.
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
 - Epic orchestration persists run state under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, and `MEMORY.md`.
+- Unified `AgentDefinition`/`AgentRegistry` flow exists, but legacy agent models (`CustomAgentDefinition`, `PluginAgentDefinition`) are still present and referenced in the executor/API layer (e.g., `AgentExecutor`), so both paradigms currently coexist. (Discovered 2026-01-31)
+- The `lean` request/CLI flag has been removed; agent execution is now always the native tool-calling path. (Discovered 2026-01-31)
 
 - **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
   - **Storage**: Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level commands override user-level commands.

@@ -10,8 +10,7 @@ Endpoints:
 - POST /execute/stream - Streaming mission execution via SSE
 
 Both endpoints support:
-- Legacy Agent (ReAct loop with TodoList planning)
-- Agent (native tool calling with PlannerTool) via `lean: true`
+- Agent execution with native tool calling via PlannerTool
 - RAG-enabled execution with user context filtering
 """
 
@@ -144,7 +143,7 @@ STREAM_RESPONSE_EXAMPLES = {
             "data: {\"timestamp\":\"2025-01-02T12:00:00.123456\","
             "\"event_type\":\"started\",\"message\":\"Starting\","
             "\"details\":{\"session_id\":\"550e8400-...\","
-            "\"profile\":\"coding_agent\",\"lean\":true}}\n\n"
+            "\"profile\":\"coding_agent\"}}\n\n"
         ),
     },
     "final_answer": {
@@ -231,7 +230,6 @@ class ExecuteMissionRequest(BaseModel):
         user_id: User identifier for RAG security filtering (optional).
         org_id: Organization identifier for RAG security filtering.
         scope: Access scope for RAG security filtering (optional).
-        lean: Deprecated. Agent is now always used.
         planning_strategy: Optional Agent planning strategy override.
         planning_strategy_params: Optional parameters for planning strategy.
 
@@ -286,12 +284,6 @@ class ExecuteMissionRequest(BaseModel):
     scope: Optional[str] = Field(
         default=None,
         description="Access scope for RAG security filtering."
-    )
-    lean: bool = Field(
-        default=True,
-        description=(
-            "Deprecated: Agent is now always used. This field is ignored."
-        ),
     )
     agent_id: Optional[str] = Field(
         default=None,
@@ -584,8 +576,7 @@ async def execute_mission_stream(
             "message": "Starting mission: Search for...",
             "details": {
                 "session_id": "550e8400-...",
-                "profile": "coding_agent",
-                "lean": true
+                "profile": "coding_agent"
             }
         }
 
@@ -769,7 +760,7 @@ async def execute_mission_stream(
         const response = await fetch('/api/v1/execute/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: 'Find AI news', lean: true })
+            body: JSON.stringify({ mission: 'Find AI news' })
         });
 
         const reader = response.body.getReader();
@@ -816,7 +807,7 @@ async def execute_mission_stream(
             async with client.stream(
                 'POST',
                 'http://localhost:8000/api/v1/execute/stream',
-                json={'mission': 'Find AI news', 'lean': True}
+                json={'mission': 'Find AI news'}
             ) as response:
                 async for line in response.aiter_lines():
                     if line.startswith('data: '):

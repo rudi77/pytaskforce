@@ -29,7 +29,7 @@ async def test_execute_mission_with_agent_id_success():
         execution_history=[],
         todolist_id="todo-456",
     )
-    mock_factory.create_lean_agent_from_definition = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent_from_definition = AsyncMock(return_value=mock_agent)
 
     # Mock registry
     mock_registry_response = CustomAgentResponse(
@@ -68,8 +68,8 @@ async def test_execute_mission_with_agent_id_success():
         mock_registry.get_agent.assert_called_once_with("test-agent")
 
         # Verify factory method was called with agent definition
-        mock_factory.create_lean_agent_from_definition.assert_called_once()
-        call_args = mock_factory.create_lean_agent_from_definition.call_args
+        mock_factory.create_agent_from_definition.assert_called_once()
+        call_args = mock_factory.create_agent_from_definition.call_args
         agent_def = call_args.kwargs["agent_definition"]
         assert agent_def["system_prompt"] == "You are a test agent"
         assert agent_def["tool_allowlist"] == ["web_search", "python"]
@@ -141,8 +141,8 @@ async def test_execute_mission_agent_id_profile_agent_rejected():
 
 
 @pytest.mark.asyncio
-async def test_execute_mission_agent_id_takes_priority_over_lean_flag():
-    """Test that agent_id takes priority over use_lean_agent flag."""
+async def test_execute_mission_agent_id_takes_priority_over_profile():
+    """Test that agent_id path is used instead of profile-based agent creation."""
     mock_factory = MagicMock(spec=AgentFactory)
     mock_agent = AsyncMock()
     mock_agent.execute.return_value = ExecutionResult(
@@ -150,8 +150,8 @@ async def test_execute_mission_agent_id_takes_priority_over_lean_flag():
         status="completed",
         final_message="Success",
     )
-    mock_factory.create_lean_agent_from_definition = AsyncMock(return_value=mock_agent)
-    mock_factory.create_lean_agent = AsyncMock()  # Should NOT be called
+    mock_factory.create_agent_from_definition = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock()  # Should NOT be called
 
     mock_registry_response = CustomAgentResponse(
         source="custom",
@@ -178,12 +178,11 @@ async def test_execute_mission_agent_id_takes_priority_over_lean_flag():
             mission="Test",
             profile="dev",
             agent_id="test-agent",
-            use_lean_agent=False,  # Should be ignored
         )
 
-        # Verify agent_id path was used (not lean flag)
-        mock_factory.create_lean_agent_from_definition.assert_called_once()
-        mock_factory.create_lean_agent.assert_not_called()
+        # Verify agent_id path was used (not profile-based agent creation)
+        mock_factory.create_agent_from_definition.assert_called_once()
+        mock_factory.create_agent.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -210,7 +209,7 @@ async def test_execute_mission_streaming_with_agent_id():
     from datetime import datetime
 
     mock_agent.execute_stream = mock_stream
-    mock_factory.create_lean_agent_from_definition = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent_from_definition = AsyncMock(return_value=mock_agent)
 
     mock_registry_response = CustomAgentResponse(
         source="custom",
@@ -281,7 +280,7 @@ async def test_execute_mission_with_agent_id_and_mcp_tools():
         status="completed",
         final_message="Success",
     )
-    mock_factory.create_lean_agent_from_definition = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent_from_definition = AsyncMock(return_value=mock_agent)
 
     # Agent with MCP servers configured
     mock_registry_response = CustomAgentResponse(
@@ -318,7 +317,7 @@ async def test_execute_mission_with_agent_id_and_mcp_tools():
         )
 
         # Verify agent definition included MCP config
-        call_args = mock_factory.create_lean_agent_from_definition.call_args
+        call_args = mock_factory.create_agent_from_definition.call_args
         agent_def = call_args.kwargs["agent_definition"]
         assert len(agent_def["mcp_servers"]) == 1
         assert agent_def["mcp_tool_allowlist"] == ["read_file", "write_file"]

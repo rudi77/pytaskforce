@@ -37,9 +37,6 @@ def _run_chat(
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
-    lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
-    ),
     stream: bool = typer.Option(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
@@ -57,9 +54,6 @@ def _run_chat(
     Examples:
         # Standard chat
         taskforce chat
-
-        # Agent chat (new simplified architecture)
-        taskforce chat --lean
 
         # Load external plugin with custom tools
         taskforce chat --plugin examples/accounting_agent
@@ -180,9 +174,6 @@ def chat(
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
-    lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
-    ),
     stream: bool = typer.Option(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
@@ -199,7 +190,6 @@ def chat(
         org_id=org_id,
         scope=scope,
         debug=debug,
-        lean=lean,
         stream=stream,
     )
 
@@ -225,9 +215,6 @@ def chat_command(
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
-    lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
-    ),
     stream: bool = typer.Option(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
@@ -242,6 +229,5 @@ def chat_command(
         org_id=org_id,
         scope=scope,
         debug=debug,
-        lean=lean,
         stream=stream,
     )
