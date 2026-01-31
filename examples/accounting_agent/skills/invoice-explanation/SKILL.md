@@ -5,7 +5,7 @@ description: |
   Aktivieren wenn: User stellt eine Frage (INVOICE_QUESTION Intent) wie
   "Was ist die MwSt?", "Wer ist der Lieferant?", "Warum zwei Steuersätze?".
   KEINE Tool-Aufrufe nötig - nur Erklärungen basierend auf extrahierten Daten.
-allowed_tools: []
+allowed_tools: ""
 ---
 
 # Rechnungs-Erklärung (Invoice Explanation)

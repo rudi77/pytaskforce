@@ -213,6 +213,7 @@ class Skill:
     is activated. Includes:
     - Metadata (name, description)
     - Instructions (SKILL.md body)
+    - Optional workflow (deterministic tool sequence)
     - Resource access methods
 
     Attributes:
@@ -224,6 +225,7 @@ class Skill:
         compatibility: Optional compatibility notes (max 500 chars)
         metadata: Optional freeform metadata map
         allowed_tools: Optional space-delimited tool allowlist
+        workflow: Optional deterministic workflow definition
         _resources_cache: Cached resource paths (internal)
     """
 
@@ -235,6 +237,7 @@ class Skill:
     compatibility: str | None = None
     metadata: dict[str, str] | None = None
     allowed_tools: str | None = None
+    workflow: dict[str, Any] | None = None
     _resources_cache: dict[str, str] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -267,6 +270,15 @@ class Skill:
             compatibility=self.compatibility,
             metadata=self.metadata,
             allowed_tools=self.allowed_tools,
+        )
+
+    @property
+    def has_workflow(self) -> bool:
+        """Check if skill has a deterministic workflow defined."""
+        return (
+            self.workflow is not None
+            and isinstance(self.workflow, dict)
+            and len(self.workflow.get("steps", [])) > 0
         )
 
     def get_resources(self) -> dict[str, str]:

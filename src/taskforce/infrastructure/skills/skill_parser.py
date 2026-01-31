@@ -75,6 +75,7 @@ def parse_skill_markdown(
     )
     metadata = _parse_metadata_dict(frontmatter)
     allowed_tools = _parse_allowed_tools(frontmatter)
+    workflow = _parse_workflow(frontmatter)
     instructions = body.strip()
 
     # Create and return skill (validation happens in __post_init__)
@@ -88,6 +89,7 @@ def parse_skill_markdown(
             compatibility=compatibility,
             metadata=metadata,
             allowed_tools=allowed_tools,
+            workflow=workflow,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill validation failed: {e}") from e
@@ -234,6 +236,48 @@ def _parse_allowed_tools(frontmatter: dict[str, Any]) -> str | None:
     if not ALLOWED_TOOLS_PATTERN.match(allowed_tools):
         raise SkillParseError("Frontmatter 'allowed-tools' must be space-delimited")
     return allowed_tools
+
+
+def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Parse workflow definition from frontmatter.
+
+    The workflow defines a deterministic sequence of tool calls that
+    can be executed without LLM intervention.
+
+    Args:
+        frontmatter: Parsed YAML frontmatter
+
+    Returns:
+        Workflow definition dict or None if not present
+    """
+    if "workflow" not in frontmatter:
+        return None
+
+    workflow = frontmatter["workflow"]
+    if not isinstance(workflow, dict):
+        raise SkillParseError("Frontmatter 'workflow' must be a dictionary")
+
+    steps = workflow.get("steps", [])
+    if not isinstance(steps, list):
+        raise SkillParseError("Workflow 'steps' must be a list")
+
+    # Validate each step
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise SkillParseError(f"Workflow step {i} must be a dictionary")
+
+        # Either 'tool' or 'switch' must be present
+        if "tool" not in step and "switch" not in step:
+            raise SkillParseError(
+                f"Workflow step {i} must have 'tool' or 'switch'"
+            )
+
+        if "tool" in step:
+            if not isinstance(step["tool"], str):
+                raise SkillParseError(f"Workflow step {i} 'tool' must be a string")
+
+    return workflow
 
 
 def _validate_name_matches_directory(name: str, source_path: str) -> None:

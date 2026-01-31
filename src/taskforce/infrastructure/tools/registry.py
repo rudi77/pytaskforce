@@ -10,6 +10,12 @@ from typing import Any, Optional
 ToolSpec = dict[str, Any]
 
 _TOOL_REGISTRY: dict[str, ToolSpec] = {
+    # Native tools - Skill activation
+    "activate_skill": {
+        "type": "ActivateSkillTool",
+        "module": "taskforce.infrastructure.tools.native.activate_skill_tool",
+        "params": {},
+    },
     # Native tools - Web
     "web_search": {
         "type": "WebSearchTool",

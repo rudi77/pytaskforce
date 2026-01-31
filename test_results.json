@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-30T09:44:51.914731",
+  "timestamp": "2026-01-31T12:22:51.087493",
   "total": 1,
   "passed": 1,
   "results": [
@@ -9,12 +9,11 @@
       "success": true,
       "account_match": true,
       "tools_called": [
+        "activate_skill",
         "check_compliance",
         "semantic_rule_engine",
         "confidence_evaluator",
         "rule_learning",
-        "audit_log",
-        "audit_log",
         "audit_log"
       ],
       "hitl_triggered": false,
@@ -22,7 +21,7 @@
       "detected_credit": "1600",
       "expected_debit": "4930",
       "expected_credit": "1600",
-      "duration_ms": 51940,
+      "duration_ms": 42009,
       "error": null,
       "booking_proposals_count": 2
     }

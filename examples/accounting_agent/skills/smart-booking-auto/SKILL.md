@@ -5,165 +5,98 @@ description: |
   Aktivieren wenn: INVOICE_PROCESSING Intent erkannt wurde.
   Dieser Skill führt den deterministischen Workflow aus und wechselt automatisch
   zu smart-booking-hitl wenn Confidence <95% oder Hard Gates ausgelöst werden.
-allowed_tools:
-  - docling_extract
-  - invoice_extract
-  - check_compliance
-  - semantic_rule_engine
-  - confidence_evaluator
-  - rule_learning
-  - audit_log
+allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log
+
+workflow:
+  steps:
+    # Step 1: PDF zu Markdown extrahieren
+    - tool: docling_extract
+      params:
+        file_path: "${input.file_path}"
+      output: markdown_content
+      optional: true  # Kann übersprungen werden wenn bereits Markdown
+
+    # Step 2: Strukturierte Rechnungsdaten extrahieren
+    - tool: invoice_extract
+      params:
+        markdown_content: "${markdown_content}"
+        expected_currency: "EUR"
+      output: invoice_data
+
+    # Step 3: Compliance prüfen (§14 UStG)
+    - tool: check_compliance
+      params:
+        invoice_data: "${invoice_data}"
+      output: compliance_result
+      abort_on_error: true  # Bei kritischen Fehlern abbrechen
+
+    # Step 4: Kontierungsregeln anwenden
+    - tool: semantic_rule_engine
+      params:
+        invoice_data: "${invoice_data}"
+        chart_of_accounts: "SKR03"
+      output: rule_match
+
+    # Step 5: Confidence bewerten
+    - tool: confidence_evaluator
+      params:
+        invoice_data: "${invoice_data}"
+        rule_match: "${rule_match}"
+        booking_proposal: "${rule_match.booking_proposal}"
+      output: confidence_result
+
+    # Step 6: Entscheidung - Auto oder HITL?
+    - switch:
+        "on": confidence_result.recommendation
+        cases:
+          hitl_review:
+            skill: smart-booking-hitl
+          auto_book:
+            continue: true
+
+    # Step 7: Bei Auto-Booking - Regel lernen
+    - tool: rule_learning
+      params:
+        action: "create_from_booking"
+        invoice_data: "${invoice_data}"
+        booking_proposal: "${rule_match.booking_proposal}"
+        confidence: "${confidence_result.overall_confidence}"
+      output: learned_rule
+      optional: true
+
+    # Step 8: Audit-Log erstellen
+    - tool: audit_log
+      params:
+        action: "booking_created"
+        invoice_data: "${invoice_data}"
+        booking_proposal: "${rule_match.booking_proposal}"
+        confidence: "${confidence_result.overall_confidence}"
+        auto_booked: true
+      output: audit_entry
+
+  on_complete: "Buchung erfolgreich erstellt"
+  on_error: "Buchung konnte nicht abgeschlossen werden"
 ---
 
 # Smart Booking - Automatischer Workflow
 
-Führe diesen deterministischen Workflow **exakt in dieser Reihenfolge** aus.
+Dieser Skill führt einen **deterministischen Workflow** aus, der Rechnungen
+automatisch verarbeitet und bucht, wenn die Confidence >= 95% ist.
 
-## Workflow-Schritte
+## Workflow-Übersicht
 
-### Schritt 1: Extraktion
-
-```tool
-docling_extract(file_path="<pfad_zur_rechnung>")
+```
+PDF/Bild → Markdown → Strukturierte Daten → Compliance → Regeln → Confidence → Buchung
 ```
 
-Konvertiert PDF/Bild zu Markdown.
+## Automatische Ausführung
 
-Falls bereits Markdown vorhanden, überspringe diesen Schritt.
-
-### Schritt 2: Strukturierung
-
-```tool
-invoice_extract(markdown_content="<markdown_aus_schritt_1>")
-```
-
-Extrahiert strukturierte Rechnungsdaten (Invoice-Objekt).
-
-**Ausgabe speichern als:** `invoice_data`
-
-### Schritt 3: Kontext-Analyse
-
-Bestimme den Steuer-Kontext anhand der extrahierten Daten:
-
-| Kontext | Erkennung | Behandlung |
-|---------|-----------|------------|
-| Inlandsrechnung (DE→DE) | USt-IdNr. beginnt mit "DE" | Strenge §14 UStG Prüfung |
-| EU-Rechnung (EU→DE) | USt-IdNr. beginnt mit AT/FR/NL/etc. | Reverse Charge prüfen |
-| Drittland-Rechnung | Keine EU-USt-IdNr. | Einfuhr-USt prüfen |
-
-### Schritt 4: Compliance-Prüfung
-
-```tool
-check_compliance(invoice_data=<invoice_data>)
-```
-
-Validiert Pflichtangaben nach §14 UStG.
-
-**Bei kritischen Fehlern:** STOPP - User informieren, kein Buchungsvorschlag.
-
-**Bei Warnungen:** Fortfahren mit Hinweis.
-
-### Schritt 5: Regel-Matching
-
-```tool
-semantic_rule_engine(
-  invoice_data=<invoice_data>,
-  match_mode="vendor_then_item"
-)
-```
-
-Findet passende Buchungsregel:
-1. **Vendor-Only Rules** (Priorität 100) - Exakte Lieferanten-Zuordnung
-2. **Vendor+Item Rules** (Priorität 90) - Semantisches Item-Matching
-3. **Learned Rules** - Aus vorherigen Buchungen/Korrekturen
-
-**Ausgabe speichern als:** `rule_match`
-
-### Schritt 6: Confidence-Bewertung
-
-```tool
-confidence_evaluator(
-  invoice_data=<invoice_data>,
-  rule_match=<rule_match>,
-  booking_proposal=<booking_proposal_aus_rule_match>
-)
-```
-
-Berechnet gewichtete Confidence und prüft Hard Gates.
-
-**Ausgabe enthält:**
-- `overall_confidence`: Float (0.0-1.0)
-- `recommendation`: "auto_book" oder "hitl_review"
-- `triggered_hard_gates`: Liste der ausgelösten Gates
-- `signals`: Detaillierte Bewertung
-
-### Schritt 7: Entscheidung
-
-**WENN** `confidence >= 0.95` **UND** `triggered_hard_gates == []`:
-
-→ Weiter zu **Schritt 8** (Auto-Booking)
-
-**SONST:**
-
-→ **SKILL WECHSELN** zu `smart-booking-hitl`
-
-   Übergib: `invoice_data`, `rule_match`, `confidence_result`
-
-### Schritt 8: Auto-Booking abschließen
-
-#### 8a: Regel lernen
-
-```tool
-rule_learning(
-  action="create_from_booking",
-  invoice_data=<invoice_data>,
-  booking_proposal=<booking_proposal>,
-  confidence=<overall_confidence>,
-  rule_type="vendor_only"  # oder "vendor_item"
-)
-```
-
-#### 8b: Audit-Log
-
-```tool
-audit_log(
-  action="booking_created",
-  invoice_data=<invoice_data>,
-  booking_proposal=<booking_proposal>,
-  confidence=<overall_confidence>,
-  auto_booked=true
-)
-```
-
-### Schritt 9: Output
-
-Präsentiere dem User das Ergebnis:
-
-```markdown
-## Buchung erfolgreich erstellt
-
-### Rechnungsübersicht
-- **Lieferant:** [Name]
-- **Rechnungsnummer:** [Nummer]
-- **Bruttobetrag:** [Betrag] EUR
-
-### Buchungsvorschlag (automatisch gebucht)
-
-| Soll-Konto | Haben-Konto | Betrag | Buchungstext |
-|------------|-------------|--------|--------------|
-| [Konto]    | 1600        | [Netto]| [Text]       |
-| 1576       | 1600        | [USt]  | Vorsteuer 19%|
-
-### Confidence
-[X]% - Automatische Buchung
-
-### Rechtsgrundlage
-[Basis aus Regel]
-```
+Der Workflow wird vom `activate_skill` Tool **direkt ausgeführt**:
+- Keine LLM-Calls zwischen den Schritten
+- Deterministische Tool-Sequenz
+- Automatischer Skill-Wechsel bei niedrigem Confidence
 
 ## Hard Gates (Auslöser für HITL)
-
-Diese Bedingungen lösen **immer** einen HITL-Review aus:
 
 | Hard Gate | Bedingung | Grund |
 |-----------|-----------|-------|

@@ -5,12 +5,7 @@ description: |
   Aktivieren wenn: Confidence <95% ODER Hard Gate ausgelöst wurde.
   Dieser Skill wird automatisch von smart-booking-auto aufgerufen.
   KRITISCH: ask_user MUSS aufgerufen werden und auf Antwort gewartet werden!
-allowed_tools:
-  - hitl_review
-  - ask_user
-  - rule_learning
-  - audit_log
-  - rag_fallback
+allowed_tools: "hitl_review, ask_user, rule_learning, audit_log, rag_fallback"
 ---
 
 # Smart Booking - HITL Workflow

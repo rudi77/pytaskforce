@@ -5,6 +5,7 @@ Provides all native tools migrated from Agent V2.
 These tools implement the ToolProtocol interface for dependency injection.
 """
 
+from taskforce.infrastructure.tools.native.activate_skill_tool import ActivateSkillTool
 from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
 from taskforce.infrastructure.tools.native.file_tools import FileReadTool, FileWriteTool
 from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
@@ -14,15 +15,16 @@ from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool, She
 from taskforce.infrastructure.tools.native.web_tools import WebFetchTool, WebSearchTool
 
 __all__ = [
-    "PythonTool",
+    "ActivateSkillTool",
+    "AskUserTool",
     "FileReadTool",
     "FileWriteTool",
-    "GitTool",
     "GitHubTool",
-    "ShellTool",
-    "PowerShellTool",
-    "WebSearchTool",
-    "WebFetchTool",
+    "GitTool",
     "LLMTool",
-    "AskUserTool",
+    "PowerShellTool",
+    "PythonTool",
+    "ShellTool",
+    "WebFetchTool",
+    "WebSearchTool",
 ]

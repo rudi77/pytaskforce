@@ -131,7 +131,7 @@ def _run_chat(
         else:
             # Standard agent creation
             agent = await factory.create_agent(
-                profile=profile, user_context=user_context
+                config=profile, user_context=user_context
             )
 
         try:

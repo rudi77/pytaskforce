@@ -952,6 +952,17 @@ class AgentFactory:
         mcp_tools, mcp_contexts = await self._create_mcp_tools(merged_config)
         all_tools.extend(mcp_tools)
 
+        # Create ActivateSkillTool if plugin has skills (will be configured later)
+        activate_skill_tool = None
+        if manifest.skills_path:
+            from taskforce.infrastructure.tools.native.activate_skill_tool import (
+                ActivateSkillTool,
+            )
+
+            activate_skill_tool = ActivateSkillTool()
+            all_tools.append(activate_skill_tool)
+            self.logger.debug("activate_skill_tool_added", plugin=manifest.name)
+
         # Build system prompt - check if plugin provides custom prompt
         custom_prompt = plugin_config.get("system_prompt")
         if custom_prompt:
@@ -1054,6 +1065,11 @@ class AgentFactory:
         # Store MCP contexts and plugin manifest for lifecycle management
         agent._mcp_contexts = mcp_contexts
         agent._plugin_manifest = manifest
+
+        # Set agent reference on ActivateSkillTool if present
+        if activate_skill_tool is not None:
+            activate_skill_tool.set_agent_ref(agent)
+            self.logger.debug("activate_skill_tool_agent_ref_set", plugin=manifest.name)
 
         # Apply plugin extensions
         agent = self._apply_extensions(merged_config, agent)

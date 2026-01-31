@@ -129,6 +129,9 @@ llm:
 # =============================================================================
 
 tools:
+  # Skill activation tool (must be first - LLM calls this after intent recognition)
+  - activate_skill
+
   # Core extraction and validation tools
   - docling_extract
   - invoice_extract
@@ -214,12 +217,12 @@ logging:
 # LONG-TERM MEMORY CONFIGURATION (via MCP)
 # =============================================================================
 
-mcp_servers:
-  - type: stdio
-    command: npx
-    args:
-      - "-y"
-      - "@modelcontextprotocol/server-memory"
-    env:
-      MEMORY_FILE_PATH: ".taskforce_accounting/.memory/knowledge_graph.jsonl"
-    description: "Accounting knowledge: suppliers, rules, projects, user preferences"
+# mcp_servers:
+#   - type: stdio
+#     command: npx
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-memory"
+#     env:
+#       MEMORY_FILE_PATH: ".taskforce_accounting/.memory/knowledge_graph.jsonl"
+#     description: "Accounting knowledge: suppliers, rules, projects, user preferences"

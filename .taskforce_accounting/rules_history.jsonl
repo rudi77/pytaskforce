@@ -1,2 +1,4 @@
 {"timestamp": "2026-01-30T08:43:07.262493+00:00", "action": "save", "rule_id": "HITL-CONF-20260130084307", "version": 1, "rule_type": "vendor_item", "source": "auto_high_confidence", "target_account": "4930", "is_active": true}
 {"timestamp": "2026-01-30T08:44:36.151617+00:00", "action": "save", "rule_id": "AUTO-20260130084436", "version": 1, "rule_type": "vendor_item", "source": "auto_high_confidence", "target_account": "4930", "is_active": true}
+{"timestamp": "2026-01-31T11:22:43.911385+00:00", "action": "save", "rule_id": "AUTO-20260131112243", "version": 1, "rule_type": "vendor_item", "source": "auto_high_confidence", "target_account": "4930", "is_active": true}
+{"timestamp": "2026-01-31T11:46:04.797016+00:00", "action": "save", "rule_id": "HITL-20260131114604", "version": 1, "rule_type": "vendor_item", "source": "hitl_correction", "target_account": "4930", "is_active": true}
