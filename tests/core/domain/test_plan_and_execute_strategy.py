@@ -149,7 +149,7 @@ class TestGenerateFinalResponse:
 
         assert result == "Final summary"
         assert len(messages) == 2
-        assert "All planned steps are complete" in messages[1]["content"]
+        assert "All steps complete" in messages[1]["content"]
         mock_agent.llm_provider.complete.assert_called_once()
 
     @pytest.mark.asyncio
