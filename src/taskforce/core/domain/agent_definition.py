@@ -14,8 +14,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from taskforce.core.domain.serialization import parse_timestamp, to_dict_optional
-
 
 class AgentSource(str, Enum):
     """Source/origin of an agent definition."""
@@ -81,11 +79,16 @@ class MCPServerConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         result: dict[str, Any] = {"type": self.type}
-        to_dict_optional(result, "command", self.command)
-        to_dict_optional(result, "args", self.args)
-        to_dict_optional(result, "url", self.url)
-        to_dict_optional(result, "env", self.env)
-        to_dict_optional(result, "description", self.description)
+        if self.command:
+            result["command"] = self.command
+        if self.args:
+            result["args"] = self.args
+        if self.url:
+            result["url"] = self.url
+        if self.env:
+            result["env"] = self.env
+        if self.description:
+            result["description"] = self.description
         return result
 
 
@@ -401,24 +404,41 @@ class AgentDefinition:
             "source": self.source.value,
         }
 
-        # Add optional fields using utility (handles empty checks and type conversions)
-        to_dict_optional(result, "description", self.description)
-        to_dict_optional(result, "system_prompt", self.system_prompt)
-        to_dict_optional(result, "specialist", self.specialist)
-        to_dict_optional(result, "planning_strategy", self.planning_strategy, default="native_react")
-        to_dict_optional(result, "planning_strategy_params", self.planning_strategy_params)
-        to_dict_optional(result, "max_steps", self.max_steps)
-        to_dict_optional(result, "tools", self.tools)
-        to_dict_optional(result, "mcp_servers", self.mcp_servers)
-        to_dict_optional(result, "mcp_tool_filter", self.mcp_tool_filter, skip_empty=False)
-        to_dict_optional(result, "base_profile", self.base_profile, default="dev")
-        to_dict_optional(result, "work_dir", self.work_dir)
-        to_dict_optional(result, "plugin_path", self.plugin_path)
-        to_dict_optional(result, "tool_classes", self.tool_classes)
-        to_dict_optional(result, "source_path", self.source_path)
-        to_dict_optional(result, "prompt_template", self.prompt_template)
-        to_dict_optional(result, "created_at", self.created_at)
-        to_dict_optional(result, "updated_at", self.updated_at)
+        # Add optional fields only if they have values
+        if self.description:
+            result["description"] = self.description
+        if self.system_prompt:
+            result["system_prompt"] = self.system_prompt
+        if self.specialist:
+            result["specialist"] = self.specialist
+        if self.planning_strategy != "native_react":
+            result["planning_strategy"] = self.planning_strategy
+        if self.planning_strategy_params:
+            result["planning_strategy_params"] = self.planning_strategy_params
+        if self.max_steps:
+            result["max_steps"] = self.max_steps
+        if self.tools:
+            result["tools"] = self.tools
+        if self.mcp_servers:
+            result["mcp_servers"] = [s.to_dict() for s in self.mcp_servers]
+        if self.mcp_tool_filter is not None:
+            result["mcp_tool_filter"] = self.mcp_tool_filter
+        if self.base_profile != "dev":
+            result["base_profile"] = self.base_profile
+        if self.work_dir:
+            result["work_dir"] = self.work_dir
+        if self.plugin_path:
+            result["plugin_path"] = self.plugin_path
+        if self.tool_classes:
+            result["tool_classes"] = self.tool_classes
+        if self.source_path:
+            result["source_path"] = self.source_path
+        if self.prompt_template:
+            result["prompt_template"] = self.prompt_template
+        if self.created_at:
+            result["created_at"] = self.created_at.isoformat()
+        if self.updated_at:
+            result["updated_at"] = self.updated_at.isoformat()
 
         return result
 
@@ -433,9 +453,19 @@ class AgentDefinition:
         Returns:
             AgentDefinition instance
         """
-        # Parse timestamps and source using utilities
-        created_at = parse_timestamp(data.get("created_at"))
-        updated_at = parse_timestamp(data.get("updated_at"))
+        # Parse timestamps if present
+        created_at = None
+        updated_at = None
+        if data.get("created_at"):
+            if isinstance(data["created_at"], str):
+                created_at = datetime.fromisoformat(data["created_at"])
+            else:
+                created_at = data["created_at"]
+        if data.get("updated_at"):
+            if isinstance(data["updated_at"], str):
+                updated_at = datetime.fromisoformat(data["updated_at"])
+            else:
+                updated_at = data["updated_at"]
 
         source = data.get("source", "custom")
         if isinstance(source, str):

@@ -60,20 +60,6 @@ class ProgressUpdate:
     details: dict
 
 
-@dataclass
-class ExecutionContext:
-    """Context for agent execution, prepared by _prepare_execution.
-
-    Groups all the common setup data needed by both execute_mission
-    and execute_mission_streaming to avoid code duplication.
-    """
-
-    agent: Agent
-    session_id: str
-    start_time: datetime
-    owns_agent: bool  # True if we created the agent, False if passed in
-
-
 class AgentExecutor:
     """Service layer orchestrating agent execution.
 
@@ -143,7 +129,9 @@ class AgentExecutor:
         Raises:
             Exception: If agent creation or execution fails
         """
-        ctx = await self._prepare_execution(
+        # Delegate to streaming implementation and collect result
+        result: ExecutionResult | None = None
+        async for update in self.execute_mission_streaming(
             mission=mission,
             profile=profile,
             session_id=session_id,
@@ -153,68 +141,28 @@ class AgentExecutor:
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             plugin_path=plugin_path,
-            log_event="mission.execution.started",
-        )
+        ):
+            # Forward progress updates to callback if provided
+            if progress_callback:
+                progress_callback(update)
 
-        try:
-            # Execute ReAct loop with progress tracking
-            result = await self._execute_with_progress(
-                agent=ctx.agent,
-                mission=mission,
-                session_id=ctx.session_id,
-                progress_callback=progress_callback,
+            # Extract result from complete event
+            if update.event_type == "complete":
+                result = ExecutionResult(
+                    status=update.details.get("status", "completed"),
+                    final_message=update.message,
+                    session_id=update.details.get("session_id", ""),
+                    todolist_id=update.details.get("todolist_id"),
+                    execution_history=[],
+                )
+
+        if result is None:
+            raise AgentExecutionError(
+                "No completion event received from streaming execution",
+                session_id=session_id,
             )
 
-            duration = (datetime.now() - ctx.start_time).total_seconds()
-
-            self.logger.info(
-                "mission.execution.completed",
-                session_id=ctx.session_id,
-                status=result.status,
-                duration_seconds=duration,
-                agent_id=agent_id,
-                plugin_path=plugin_path,
-            )
-
-            return result
-
-        except asyncio.CancelledError as e:
-            duration = (datetime.now() - ctx.start_time).total_seconds()
-
-            self.logger.warning(
-                "mission.execution.cancelled",
-                session_id=ctx.session_id,
-                error=str(e),
-                duration_seconds=duration,
-                agent_id=agent_id,
-                plugin_path=plugin_path,
-            )
-            raise CancelledError(
-                f"Mission execution cancelled: {str(e)}",
-                details={"session_id": ctx.session_id},
-            ) from e
-        except Exception as e:
-            duration = (datetime.now() - ctx.start_time).total_seconds()
-
-            self._log_execution_failure(
-                event_name="mission.execution.failed",
-                error=e,
-                session_id=ctx.session_id,
-                agent_id=agent_id,
-                duration_seconds=duration,
-                plugin_path=plugin_path,
-            )
-            raise self._wrap_exception(
-                e,
-                context="Mission execution failed",
-                session_id=ctx.session_id,
-                agent_id=agent_id,
-            ) from e
-
-        finally:
-            # Clean up MCP connections to avoid cancel scope errors
-            if ctx.agent:
-                await ctx.agent.close()
+        return result
 
     async def execute_mission_streaming(
         self,
@@ -255,10 +203,9 @@ class AgentExecutor:
         Raises:
             Exception: If agent creation or execution fails
         """
-        # Resolve session_id first for initial yield
         resolved_session_id = self._resolve_session_id(session_id)
+        owns_agent = agent is None
 
-        # Yield initial started event before any async setup
         yield ProgressUpdate(
             timestamp=datetime.now(),
             event_type="started",
@@ -271,133 +218,14 @@ class AgentExecutor:
             },
         )
 
-        ctx = await self._prepare_execution(
-            mission=mission,
-            profile=profile,
-            session_id=resolved_session_id,
-            conversation_history=conversation_history,
-            user_context=user_context,
-            agent_id=agent_id,
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-            plugin_path=plugin_path,
-            agent=agent,
-            log_event="mission.streaming.started",
-        )
-
-        try:
-            # Execute with streaming
-            async for update in self._execute_streaming(
-                ctx.agent, mission, ctx.session_id
-            ):
-                yield update
-
-            self.logger.info(
-                "mission.streaming.completed",
-                session_id=ctx.session_id,
-                agent_id=agent_id,
-                plugin_path=plugin_path,
-            )
-
-        except asyncio.CancelledError as e:
-            self.logger.warning(
-                "mission.streaming.cancelled",
-                session_id=ctx.session_id,
-                error=str(e),
-                agent_id=agent_id,
-                plugin_path=plugin_path,
-            )
-
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type="error",
-                message=f"Execution cancelled: {str(e)}",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-
-            raise CancelledError(
-                f"Mission streaming cancelled: {str(e)}",
-                details={"session_id": ctx.session_id},
-            ) from e
-        except Exception as e:
-            self._log_execution_failure(
-                event_name="mission.streaming.failed",
-                error=e,
-                session_id=ctx.session_id,
-                agent_id=agent_id,
-                plugin_path=plugin_path,
-            )
-
-            # Yield error event
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type="error",
-                message=f"Execution failed: {str(e)}",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-
-            raise self._wrap_exception(
-                e,
-                context="Mission streaming failed",
-                session_id=ctx.session_id,
-                agent_id=agent_id,
-            ) from e
-
-        finally:
-            # Clean up MCP connections to avoid cancel scope errors
-            # Only close agent if we created it (not if it was passed in)
-            if ctx.agent and ctx.owns_agent:
-                await ctx.agent.close()
-
-    async def _prepare_execution(
-        self,
-        mission: str,
-        profile: str,
-        session_id: str | None,
-        conversation_history: list[dict[str, Any]] | None,
-        user_context: dict[str, Any] | None,
-        agent_id: str | None,
-        planning_strategy: str | None,
-        planning_strategy_params: dict[str, Any] | None,
-        plugin_path: str | None,
-        agent: Agent | None = None,
-        log_event: str = "mission.execution.started",
-    ) -> ExecutionContext:
-        """Prepare execution context with agent and session.
-
-        Consolidates common setup logic shared by execute_mission and
-        execute_mission_streaming to avoid code duplication.
-
-        Args:
-            mission: Mission description
-            profile: Configuration profile
-            session_id: Optional existing session ID
-            conversation_history: Optional conversation history
-            user_context: Optional user context for RAG
-            agent_id: Optional custom agent ID
-            planning_strategy: Optional planning strategy override
-            planning_strategy_params: Optional planning strategy params
-            plugin_path: Optional plugin path
-            agent: Optional pre-created agent (for streaming)
-            log_event: Log event name for start message
-
-        Returns:
-            ExecutionContext with agent, session_id, and metadata
-        """
-        start_time = datetime.now()
-        resolved_session_id = self._resolve_session_id(session_id)
-        owns_agent = agent is None
-
         self.logger.info(
-            log_event,
+            "mission.streaming.started",
             mission=mission[:100],
             profile=profile,
             session_id=resolved_session_id,
             has_user_context=user_context is not None,
             agent_id=agent_id,
-            planning_strategy=planning_strategy,
             plugin_path=plugin_path,
-            using_provided_agent=not owns_agent,
         )
 
         if agent is None:
@@ -416,12 +244,67 @@ class AgentExecutor:
             conversation_history=conversation_history,
         )
 
-        return ExecutionContext(
-            agent=agent,
-            session_id=resolved_session_id,
-            start_time=start_time,
-            owns_agent=owns_agent,
-        )
+        try:
+            async for update in self._execute_streaming(
+                agent, mission, resolved_session_id
+            ):
+                yield update
+
+            self.logger.info(
+                "mission.streaming.completed",
+                session_id=resolved_session_id,
+                agent_id=agent_id,
+                plugin_path=plugin_path,
+            )
+
+        except asyncio.CancelledError as e:
+            self.logger.warning(
+                "mission.streaming.cancelled",
+                session_id=resolved_session_id,
+                error=str(e),
+                agent_id=agent_id,
+                plugin_path=plugin_path,
+            )
+
+            yield ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type="error",
+                message=f"Execution cancelled: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+
+            raise CancelledError(
+                f"Mission streaming cancelled: {str(e)}",
+                details={"session_id": resolved_session_id},
+            ) from e
+        except Exception as e:
+            self._log_execution_failure(
+                event_name="mission.streaming.failed",
+                error=e,
+                session_id=resolved_session_id,
+                agent_id=agent_id,
+                plugin_path=plugin_path,
+            )
+
+            # Yield error event
+            yield ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type="error",
+                message=f"Execution failed: {str(e)}",
+                details={"error": str(e), "error_type": type(e).__name__},
+            )
+
+            raise self._wrap_exception(
+                e,
+                context="Mission streaming failed",
+                session_id=resolved_session_id,
+                agent_id=agent_id,
+            ) from e
+
+        finally:
+            # Clean up MCP connections if we created the agent
+            if agent and owns_agent:
+                await agent.close()
 
     async def _create_agent(
         self,

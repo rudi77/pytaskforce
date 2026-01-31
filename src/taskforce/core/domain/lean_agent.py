@@ -328,27 +328,6 @@ class Agent:
             return output
         return output[:max_length] + "..."
 
-    async def _compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Compress message history using safe LLM-based summarization."""
-        return await self.message_history_manager.compress_messages(messages)
-
-    def _deterministic_compression(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Deterministic compression without LLM (emergency fallback)."""
-        return self.message_history_manager.deterministic_compression(messages)
-
-    def _build_safe_summary_input(self, messages: list[dict[str, Any]]) -> str:
-        """Build safe summary input from messages without raw JSON dumps."""
-        return self.message_history_manager.build_safe_summary_input(messages)
-
-    def _fallback_compression(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """
-        Fallback compression when LLM summarization fails.
-
-        DEPRECATED: Now redirects to _deterministic_compression for consistency.
-        """
-        self.logger.warning("fallback_compression_redirecting_to_deterministic")
-        return self._deterministic_compression(messages)
-
     def _build_initial_messages(
         self,
         mission: str,
@@ -469,27 +448,6 @@ class Agent:
         if not self.skill_manager:
             return None
         return self.skill_manager.active_skill_name
-
-    async def _create_tool_message(
-        self,
-        tool_call_id: str,
-        tool_name: str,
-        tool_result: dict[str, Any],
-        session_id: str,
-        step: int,
-    ) -> dict[str, Any]:
-        """Create a tool message for message history."""
-        return await self.tool_result_message_factory.build_message(
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            tool_result=tool_result,
-            session_id=session_id,
-            step=step,
-        )
-
-    def _preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Preflight budget check before LLM call."""
-        return self.message_history_manager.preflight_budget_check(messages)
 
     async def _save_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Save state including PlannerTool state."""
