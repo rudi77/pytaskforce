@@ -29,6 +29,7 @@ from taskforce.core.interfaces.slash_commands import (
     CommandType,
     SlashCommandLoaderProtocol,
 )
+from taskforce.core.utils.paths import get_base_path
 
 logger = structlog.get_logger(__name__)
 
@@ -80,19 +81,6 @@ class AgentRegistry:
             base_path: Base path for plugin discovery (defaults to config_dir parent)
         """
         if config_dir is None:
-            # Use same logic as AgentFactory to find config directory
-            import sys
-            
-            def get_base_path() -> Path:
-                """Get base path for resource files, handling frozen executables."""
-                if getattr(sys, "frozen", False):
-                    return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-                else:
-                    # Navigate from agent_registry.py to project root
-                    # agent_registry.py is at: src/taskforce/application/agent_registry.py
-                    # Project root is 4 levels up
-                    return Path(__file__).parent.parent.parent.parent
-            
             base_path_obj = get_base_path()
             # Try new location first, then fall back to old location for compatibility
             new_config_dir = base_path_obj / "src" / "taskforce_extensions" / "configs"

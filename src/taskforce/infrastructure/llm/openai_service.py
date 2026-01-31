@@ -51,6 +51,8 @@ litellm.set_verbose = False
 litellm.suppress_debug_info = True
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol  # noqa: E402
+from taskforce.infrastructure.llm.error_handler import LLMErrorHandler  # noqa: E402
+from taskforce.infrastructure.llm.parameter_mapper import ParameterMapper  # noqa: E402
 
 
 @dataclass
@@ -86,6 +88,14 @@ class OpenAIService(LLMProviderProtocol):
         self.logger = structlog.get_logger()
         self._load_config(config_path)
         self._initialize_provider()
+
+        # Initialize helper services
+        self._error_handler = LLMErrorHandler(self.provider_config)
+        self._param_mapper = ParameterMapper(
+            model_params=self.model_params,
+            default_params=self.default_params,
+            log_mapping=self.logging_config.get("log_parameter_mapping", True),
+        )
 
         self.logger.info(
             "llm_service_initialized",
@@ -422,99 +432,16 @@ class OpenAIService(LLMProviderProtocol):
     def _parse_azure_error(self, error: Exception) -> dict[str, Any]:
         """
         Parse Azure API error and extract actionable information.
-        
-        Common Azure error scenarios and troubleshooting:
-        
-        1. DeploymentNotFound / ResourceNotFound:
-           - Cause: Deployment name doesn't exist or is misspelled in Azure
-           - Fix: Verify deployment name in Azure Portal matches deployment_mapping config
-           - Check: Azure Portal → OpenAI Resource → Model deployments
-        
-        2. InvalidApiVersion / UnsupportedApiVersion:
-           - Cause: API version not supported by Azure endpoint
-           - Fix: Update api_version in config to supported version (e.g., "2024-02-15-preview")
-           - Check: Azure OpenAI API documentation for supported versions
-        
-        3. AuthenticationError / InvalidApiKey:
-           - Cause: API key is invalid, expired, or missing
-           - Fix: Regenerate API key in Azure Portal and update environment variable
-           - Check: Environment variable AZURE_OPENAI_API_KEY is set correctly
-        
-        4. InvalidEndpoint / EndpointNotFound:
-           - Cause: Endpoint URL is incorrect or resource doesn't exist
-           - Fix: Verify endpoint URL matches Azure resource endpoint
-           - Check: Azure Portal → OpenAI Resource → Keys and Endpoint
-        
-        5. RateLimitError / TooManyRequests:
-           - Cause: Exceeded rate limit or quota for deployment
-           - Fix: Wait and retry, or increase deployment capacity in Azure
-           - Check: Azure Portal → OpenAI Resource → Quotas
-        
+
+        Delegates to LLMErrorHandler for consistent error handling.
+
         Args:
             error: Exception raised by LiteLLM/Azure API
-        
+
         Returns:
             Dict with extracted error information and troubleshooting guidance
         """
-        import re
-
-        error_msg = str(error)
-        error_type = type(error).__name__
-
-        parsed_info = {
-            "error_type": error_type,
-            "error_message": error_msg,
-            "provider": "azure" if "azure" in error_msg.lower() else "unknown",
-        }
-
-        # Extract deployment name if present
-        if "deployment" in error_msg.lower():
-            # Try to extract deployment name from error message
-            deployment_match = re.search(r"deployment[:\s]+['\"]?([a-zA-Z0-9\-_]+)['\"]?", error_msg, re.IGNORECASE)
-            if deployment_match:
-                parsed_info["deployment_name"] = deployment_match.group(1)
-                parsed_info["hint"] = (
-                    f"Deployment '{deployment_match.group(1)}' not found. "
-                    "Check Azure Portal → OpenAI Resource → Model deployments"
-                )
-
-        # Extract API version if present
-        if "api" in error_msg.lower() and "version" in error_msg.lower():
-            api_version_match = re.search(r"version\s+['\"]([0-9]{4}-[0-9]{2}-[0-9]{2}[a-z\-]*)['\"]", error_msg, re.IGNORECASE)
-            if api_version_match:
-                parsed_info["api_version"] = api_version_match.group(1)
-                parsed_info["hint"] = (
-                    f"API version '{api_version_match.group(1)}' may not be supported. "
-                    "Try '2024-02-15-preview' or check Azure OpenAI documentation"
-                )
-
-        # Extract endpoint if present
-        if "endpoint" in error_msg.lower() or "https://" in error_msg:
-            endpoint_match = re.search(r"https://[a-zA-Z0-9\-\.]+", error_msg)
-            if endpoint_match:
-                parsed_info["endpoint_url"] = endpoint_match.group(0)
-                parsed_info["hint"] = (
-                    f"Check endpoint URL '{endpoint_match.group(0)}' in Azure Portal → "
-                    "OpenAI Resource → Keys and Endpoint"
-                )
-
-        # Authentication errors
-        if any(keyword in error_msg.lower() for keyword in ["auth", "authentication", "api key", "unauthorized"]):
-            azure_config = self.provider_config.get("azure", {})
-            api_key_env = azure_config.get("api_key_env", "AZURE_OPENAI_API_KEY")
-            parsed_info["hint"] = (
-                f"Authentication failed. Check that environment variable '{api_key_env}' "
-                "is set with a valid Azure OpenAI API key"
-            )
-
-        # Rate limit errors
-        if any(keyword in error_msg.lower() for keyword in ["rate limit", "quota", "too many requests"]):
-            parsed_info["hint"] = (
-                "Rate limit exceeded. Wait and retry, or increase deployment capacity "
-                "in Azure Portal → OpenAI Resource → Quotas"
-            )
-
-        return parsed_info
+        return self._error_handler.parse_error(error)
 
     async def test_azure_connection(self) -> dict[str, Any]:
         """
@@ -666,17 +593,7 @@ class OpenAIService(LLMProviderProtocol):
         Returns:
             Model-specific parameters or defaults
         """
-        # Check for exact model match
-        if model in self.model_params:
-            return self.model_params[model].copy()
-
-        # Check for model family match (e.g., "gpt-4" matches "gpt-4-turbo")
-        for model_key, params in self.model_params.items():
-            if model.startswith(model_key):
-                return params.copy()
-
-        # Fallback to defaults
-        return self.default_params.copy()
+        return self._param_mapper.get_model_parameters(model)
 
     def _map_parameters_for_model(
         self, model: str, params: dict[str, Any]
@@ -694,53 +611,7 @@ class OpenAIService(LLMProviderProtocol):
         Returns:
             Mapped parameters suitable for the model
         """
-        # Detect GPT-5/o1/o3 reasoning models
-        # These models don't support traditional parameters like temperature, top_p, etc.
-        # Azure OpenAI also doesn't support effort/reasoning_effort parameters
-        if "gpt-5" in model.lower() or "o1" in model.lower() or "o3" in model.lower():
-            mapped = {}
-
-            # GPT-5 uses max_completion_tokens instead of max_tokens
-            if "max_tokens" in params:
-                mapped["max_completion_tokens"] = params["max_tokens"]
-            if "max_completion_tokens" in params:
-                mapped["max_completion_tokens"] = params["max_completion_tokens"]
-
-            # Log ignored parameters for debugging
-            ignored = [
-                k for k in params.keys()
-                if k not in ["max_tokens", "max_completion_tokens"]
-            ]
-            if ignored and self.logging_config.get("log_parameter_mapping", True):
-                self.logger.info(
-                    "parameters_ignored_for_reasoning_model",
-                    model=model,
-                    ignored_params=ignored,
-                    hint="GPT-5/o1/o3 models only support max_completion_tokens",
-                )
-
-            return mapped
-        else:
-            # GPT-4 and other models: use traditional parameters
-            allowed_params = [
-                "temperature",
-                "top_p",
-                "max_tokens",
-                "frequency_penalty",
-                "presence_penalty",
-                "response_format",
-            ]
-            filtered = {k: v for k, v in params.items() if k in allowed_params}
-
-            # Ensure response_format is properly formatted for LiteLLM
-            # Azure requires response_format as a simple dict, not Pydantic model
-            if "response_format" in filtered:
-                rf = filtered["response_format"]
-                if isinstance(rf, dict):
-                    # Ensure it's a clean dict (not a Pydantic model dump)
-                    filtered["response_format"] = {"type": rf.get("type", "json_object")}
-
-            return filtered
+        return self._param_mapper.map_for_model(model, params)
 
     async def _trace_interaction(
         self,

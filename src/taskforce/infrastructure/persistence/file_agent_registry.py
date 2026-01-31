@@ -35,6 +35,7 @@ from taskforce.core.domain.agent_models import (
     ProfileAgentDefinition,
 )
 from taskforce.core.interfaces.tool_mapping import ToolMapperProtocol
+from taskforce.core.utils.paths import get_base_path
 
 logger = structlog.get_logger()
 
@@ -85,19 +86,6 @@ class FileAgentRegistry:
                       If not provided, uses configs_dir parent as base.
         """
         if configs_dir is None:
-            # Auto-detect config directory (same logic as AgentRegistry)
-            import sys
-
-            def get_base_path() -> Path:
-                """Get base path for resource files, handling frozen executables."""
-                if getattr(sys, "frozen", False):
-                    return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-                else:
-                    # Navigate from file_agent_registry.py to project root
-                    # file_agent_registry.py is at: src/taskforce/infrastructure/persistence/
-                    # Project root is 5 levels up
-                    return Path(__file__).parent.parent.parent.parent.parent
-
             detected_base = get_base_path()
             new_config_dir = detected_base / "src" / "taskforce_extensions" / "configs"
             old_config_dir = detected_base / "configs"

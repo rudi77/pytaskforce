@@ -25,32 +25,13 @@ from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
+from taskforce.core.utils.paths import get_base_path
 
 if TYPE_CHECKING:
     from taskforce.core.domain.agent_definition import AgentDefinition, MCPServerConfig
 
 
 logger = structlog.get_logger(__name__)
-
-
-def get_base_path() -> Path:
-    """
-    Get base path for resource files, handling frozen executables.
-
-    When running as a PyInstaller executable, resources are extracted to
-    a temporary directory (sys._MEIPASS). When running as a normal Python
-    script, returns the project root directory.
-
-    Returns:
-        Path to the base directory containing configs and other resources
-    """
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    else:
-        # Navigate from this file to project root
-        # infrastructure_builder.py is at: src/taskforce/application/infrastructure_builder.py
-        # Project root is 4 levels up
-        return Path(__file__).parent.parent.parent.parent
 
 
 class InfrastructureBuilder:
