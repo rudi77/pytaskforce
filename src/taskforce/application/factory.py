@@ -18,29 +18,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-def get_base_path() -> Path:
-    """
-    Get base path for resource files, handling frozen executables.
-
-    When running as a PyInstaller executable, resources are extracted to
-    a temporary directory (sys._MEIPASS). When running as a normal Python
-    script, returns the project root directory.
-
-    Returns:
-        Path to the base directory containing configs and other resources
-    """
-    if getattr(sys, "frozen", False):
-        # Running as PyInstaller executable
-        # Resources are extracted to sys._MEIPASS
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    else:
-        # Running as script - navigate from factory.py to project root
-        # factory.py is at: src/taskforce/application/factory.py
-        # Project root is 4 levels up
-        return Path(__file__).parent.parent.parent.parent
-
-
 import structlog
+
+from taskforce.core.utils.paths import get_base_path
 import yaml
 
 from taskforce.core.domain.context_policy import ContextPolicy
@@ -371,16 +351,7 @@ class AgentFactory:
         """
         Create Agent with simplified ReAct loop.
 
-        Creates an Agent instance using native tool calling and PlannerTool
-        for dynamic plan management. This is the new simplified architecture
-        that replaces TodoListManager and custom JSON parsing.
-
-        Key differences from create_agent():
-        - Uses Agent (native tool calling) instead of legacy agent flow
-        - No TodoListManager (replaced by PlannerTool)
-        - No QueryRouter/fast-path logic
-        - Uses LEAN_KERNEL_PROMPT by default
-        - Native tool calling (no JSON parsing)
+        This method converts parameters to AgentDefinition and delegates to create().
 
         Args:
             profile: Configuration profile name (dev/staging/prod)
@@ -401,103 +372,63 @@ class AgentFactory:
             >>> agent = await factory.create_agent(profile="dev")
             >>> result = await agent.execute("Do something", "session-123")
         """
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
+
+        # Load profile to get tool configuration
         config = self._load_profile(profile)
 
-        # Override work_dir if provided
-        if work_dir:
-            config.setdefault("persistence", {})["work_dir"] = work_dir
-
-        # Determine specialist: parameter > config > default (None = lean kernel)
+        # Determine effective specialist
         effective_specialist = specialist or config.get("specialist")
 
+        # Get tools from profile config
+        tools_config = config.get("tools", [])
+        tool_names = [t.get("name") or t.get("type", "").replace("Tool", "").lower() for t in tools_config if isinstance(t, dict)]
+
+        # Get MCP servers from config
+        mcp_servers_config = config.get("mcp_servers", [])
+
+        # Create AgentDefinition
+        definition = AgentDefinition(
+            agent_id=f"profile-{profile}",
+            name=f"Profile Agent ({profile})",
+            source=AgentSource.PROFILE,
+            specialist=effective_specialist,
+            base_profile=profile,
+            work_dir=work_dir,
+            tools=tool_names,
+            mcp_servers=[
+                MCPServerConfig.from_dict(s) for s in mcp_servers_config
+            ] if mcp_servers_config else [],
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+
+        # Import MCPServerConfig for creating MCP servers
+        from taskforce.core.domain.agent_definition import MCPServerConfig
+
+        # Re-create definition with MCP servers properly instantiated
+        definition = AgentDefinition(
+            agent_id=f"profile-{profile}",
+            name=f"Profile Agent ({profile})",
+            source=AgentSource.PROFILE,
+            specialist=effective_specialist,
+            base_profile=profile,
+            work_dir=work_dir,
+            tools=tool_names,
+            mcp_servers=[
+                MCPServerConfig.from_dict(s) for s in mcp_servers_config
+            ] if mcp_servers_config else [],
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+
         self.logger.info(
-            "creating_lean_agent",
+            "create_agent_delegating_to_create",
             profile=profile,
             specialist=effective_specialist,
-            work_dir=config.get("persistence", {}).get("work_dir", ".taskforce"),
-            has_user_context=user_context is not None,
         )
 
-        # Instantiate infrastructure adapters (reuse existing methods)
-        state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
-
-        tools, mcp_contexts = await self._build_tools(
-            config=config,
-            llm_provider=llm_provider,
-            user_context=user_context,
-            include_mcp=True,
-        )
-
-        # Build system prompt - use LEAN_KERNEL_PROMPT or specialist variant
-        system_prompt = self._assemble_lean_system_prompt(effective_specialist, tools)
-
-        # Get model_alias from config
-        llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
-
-        # Create ContextPolicy from config (Story 9.2)
-        context_policy = self._create_context_policy(config)
-        runtime_tracker = self._create_runtime_tracker(
-            config,
-            work_dir_override=config.get("persistence", {}).get("work_dir"),
-        )
-        runtime_tracker = self._create_runtime_tracker(
-            config,
-            work_dir_override=config.get("persistence", {}).get("work_dir"),
-        )
-
-        # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
-        agent_config = config.get("agent", {})
-        max_steps = agent_config.get("max_steps")  # None means use agent default
-        max_parallel_tools = agent_config.get("max_parallel_tools")
-        strategy_name = (
-            planning_strategy
-            if planning_strategy is not None
-            else agent_config.get("planning_strategy")
-        )
-        strategy_params = (
-            planning_strategy_params
-            if planning_strategy_params is not None
-            else agent_config.get("planning_strategy_params")
-        )
-        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
-
-        self.logger.debug(
-            "lean_agent_created",
-            tools_count=len(tools),
-            tool_names=[t.name for t in tools],
-            model_alias=model_alias,
-            context_policy_max_items=context_policy.max_items,
-            max_steps=max_steps or "default",
-            max_parallel_tools=max_parallel_tools or "default",
-            planning_strategy=selected_strategy.name,
-        )
-
-        # Create logger for agent
-        agent_logger = structlog.get_logger().bind(component="agent")
-
-        agent = Agent(
-            state_manager=state_manager,
-            llm_provider=llm_provider,
-            tools=tools,
-            logger=agent_logger,
-            system_prompt=system_prompt,
-            model_alias=model_alias,
-            context_policy=context_policy,
-            max_steps=max_steps,
-            max_parallel_tools=max_parallel_tools,
-            planning_strategy=selected_strategy,
-            runtime_tracker=runtime_tracker,
-        )
-
-        # Store MCP contexts on agent for lifecycle management
-        agent._mcp_contexts = mcp_contexts
-
-        # Apply plugin extensions
-        agent = self._apply_extensions(config, agent)
-
-        return agent
+        return await self.create(definition, user_context=user_context)
 
     def _assemble_lean_system_prompt(
         self, specialist: Optional[str], tools: list[ToolProtocol]
@@ -561,18 +492,8 @@ class AgentFactory:
         """
         Create Agent from custom agent definition.
 
-        This method is used by Story 8.3 to create agents from stored
-        custom agent definitions (loaded from configs/custom/{agent_id}.yaml).
-
-        The agent_definition provides:
-        - system_prompt: Custom prompt for the agent
-        - tool_allowlist: List of allowed native tool names
-        - mcp_servers: Optional MCP server configurations
-        - mcp_tool_allowlist: Optional list of allowed MCP tool names
-
-        The profile parameter controls infrastructure settings:
-        - LLM config, logging, persistence work_dir
-        - Does NOT override the custom agent's prompt/toolset
+        This method converts the dict-based definition to AgentDefinition
+        and delegates to create().
 
         Args:
             agent_definition: Agent definition dict with system_prompt,
@@ -601,100 +522,46 @@ class AgentFactory:
             ...     definition, profile="dev"
             ... )
         """
-        # Load profile for infrastructure settings
-        # _load_profile() will handle fallback if profile doesn't exist
-        # (checks configs/custom/ as fallback)
-        config = self._load_profile(profile)
-
-        # Override work_dir if provided
-        if work_dir:
-            config.setdefault("persistence", {})["work_dir"] = work_dir
-
-        self.logger.info(
-            "creating_lean_agent_from_definition",
-            profile=profile,
-            work_dir=config.get("persistence", {}).get("work_dir", ".taskforce"),
-            tool_allowlist=agent_definition.get("tool_allowlist", []),
-            has_mcp_servers=bool(agent_definition.get("mcp_servers", [])),
+        from taskforce.core.domain.agent_definition import (
+            AgentDefinition,
+            AgentSource,
+            MCPServerConfig,
         )
 
-        # Instantiate infrastructure adapters
-        state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
-
-        # Create tools filtered by allowlist
-        tools = await self._create_tools_from_allowlist(
-            tool_allowlist=agent_definition.get("tool_allowlist", []),
-            mcp_servers=agent_definition.get("mcp_servers", []),
-            mcp_tool_allowlist=agent_definition.get("mcp_tool_allowlist", []),
-            llm_provider=llm_provider,
-        )
-
-        # Use custom system prompt from definition
+        # Validate required field
         system_prompt = agent_definition.get("system_prompt", "")
         if not system_prompt:
             raise ValueError("agent_definition must include 'system_prompt'")
 
-        # Get model_alias from config
-        llm_config = config.get("llm", {})
-        model_alias = llm_config.get("default_model", "main")
+        # Convert MCP servers from dict to MCPServerConfig
+        mcp_servers_raw = agent_definition.get("mcp_servers", [])
+        mcp_servers = [
+            MCPServerConfig.from_dict(s) for s in mcp_servers_raw
+        ] if mcp_servers_raw else []
 
-        # Create ContextPolicy from config (Story 9.2)
-        context_policy = self._create_context_policy(config)
-
-        # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
-        agent_config = config.get("agent", {})
-        max_steps = agent_config.get("max_steps")  # None means use agent default
-        max_parallel_tools = agent_config.get("max_parallel_tools")
-        strategy_name = (
-            planning_strategy
-            if planning_strategy is not None
-            else agent_config.get("planning_strategy")
-        )
-        strategy_params = (
-            planning_strategy_params
-            if planning_strategy_params is not None
-            else agent_config.get("planning_strategy_params")
-        )
-        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
-
-        self.logger.debug(
-            "lean_agent_from_definition_created",
-            tools_count=len(tools),
-            tool_names=[t.name for t in tools],
-            model_alias=model_alias,
-            prompt_length=len(system_prompt),
-            context_policy_max_items=context_policy.max_items,
-            max_steps=max_steps or "default",
-            max_parallel_tools=max_parallel_tools or "default",
-            planning_strategy=selected_strategy.name,
-        )
-
-        # Create logger for agent
-        agent_logger = structlog.get_logger().bind(component="agent")
-
-        agent = Agent(
-            state_manager=state_manager,
-            llm_provider=llm_provider,
-            tools=tools,
-            logger=agent_logger,
+        # Create AgentDefinition from dict
+        definition = AgentDefinition(
+            agent_id=agent_definition.get("agent_id", "custom-agent"),
+            name=agent_definition.get("name", "Custom Agent"),
+            description=agent_definition.get("description", ""),
+            source=AgentSource.CUSTOM,
             system_prompt=system_prompt,
-            model_alias=model_alias,
-            context_policy=context_policy,
-            max_steps=max_steps,
-            max_parallel_tools=max_parallel_tools,
-            planning_strategy=selected_strategy,
-            runtime_tracker=runtime_tracker,
+            base_profile=profile,
+            work_dir=work_dir,
+            tools=agent_definition.get("tool_allowlist", []),
+            mcp_servers=mcp_servers,
+            mcp_tool_filter=agent_definition.get("mcp_tool_allowlist"),
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
         )
 
-        # Store MCP contexts on agent for lifecycle management
-        # (contexts are stored in tools list, no separate tracking needed)
-        agent._mcp_contexts = []
+        self.logger.info(
+            "create_agent_from_definition_delegating_to_create",
+            agent_id=definition.agent_id,
+            profile=profile,
+        )
 
-        # Apply plugin extensions
-        agent = self._apply_extensions(config, agent)
-
-        return agent
+        return await self.create(definition)
 
     async def create_agent_with_plugin(
         self,

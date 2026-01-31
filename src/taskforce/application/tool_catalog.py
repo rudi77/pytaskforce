@@ -1,97 +1,42 @@
 """
-Tool Catalog Service
-====================
+Tool Catalog Service (Compatibility Wrapper)
+=============================================
 
-Provides the service tool catalog for allowlist validation and API exposure.
+This module provides backward compatibility for code using ToolCatalog.
+All functionality has been consolidated into ToolRegistry.
 
-Story: 8.2 - Tool Catalog + Allowlist Validation
+Deprecated: Use ToolRegistry instead.
 """
 
 from typing import Any, Dict, List
 
-from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
-from taskforce.infrastructure.tools.native.file_tools import (
-    FileReadTool,
-    FileWriteTool,
-)
-from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
-from taskforce.infrastructure.tools.native.python_tool import PythonTool
-from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
-from taskforce.infrastructure.tools.native.web_tools import (
-    WebFetchTool,
-    WebSearchTool,
-)
+from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
 
 
 class ToolCatalog:
     """
     Service tool catalog providing native tool definitions.
 
-    This is the single source of truth for tool allowlist validation.
+    Deprecated: Use ToolRegistry instead. This class delegates to ToolRegistry.
     """
 
-    def __init__(self):
-        """Initialize the tool catalog with all native tools."""
-        self._native_tools = [
-            WebSearchTool(),
-            WebFetchTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PythonTool(),
-            GitTool(),
-            GitHubTool(),
-            PowerShellTool(),
-            AskUserTool(),
-        ]
+    def __init__(self) -> None:
+        """Initialize the tool catalog (delegates to ToolRegistry)."""
+        self._registry = ToolRegistry()
 
     def get_native_tools(self) -> List[Dict[str, Any]]:
-        """
-        Get all native tool definitions.
-
-        Returns:
-            List of tool definitions with name, description,
-            parameters_schema, requires_approval, approval_risk_level,
-            and origin fields.
-        """
-        tools = []
-        for tool in self._native_tools:
-            tools.append({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters_schema": tool.parameters_schema,
-                "requires_approval": tool.requires_approval,
-                "approval_risk_level": tool.approval_risk_level.value,
-                "supports_parallelism": getattr(tool, "supports_parallelism", False),
-                "origin": "native",
-            })
-        return tools
+        """Get all native tool definitions."""
+        return self._registry.list_native_tools()
 
     def get_native_tool_names(self) -> set[str]:
-        """
-        Get set of all native tool names for validation.
-
-        Returns:
-            Set of native tool names (case-sensitive).
-        """
-        return {tool.name for tool in self._native_tools}
+        """Get set of all native tool names for validation."""
+        return self._registry.get_native_tool_names()
 
     def validate_native_tools(
         self, tool_names: List[str]
     ) -> tuple[bool, List[str]]:
-        """
-        Validate that tool names are in the native catalog.
-
-        Args:
-            tool_names: List of tool names to validate
-
-        Returns:
-            Tuple of (is_valid, invalid_tool_names)
-        """
-        available_tools = self.get_native_tool_names()
-        invalid_tools = [
-            name for name in tool_names if name not in available_tools
-        ]
-        return len(invalid_tools) == 0, invalid_tools
+        """Validate that tool names are in the native catalog."""
+        return self._registry.validate_native_tools(tool_names)
 
 
 # Singleton instance
