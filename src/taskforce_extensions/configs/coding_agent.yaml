@@ -40,17 +40,30 @@ context_policy:
 
 # Tool configuration for coding agent
 # These tools override the specialist defaults when defined
+# Claude Code style tools for software development
 tools:
-  - file_read
-  - file_write
-  - powershell
-  - ask_user
-  - llm
+  # File reading and searching (Claude Code style)
+  - file_read      # Read file contents
+  - grep           # Search file contents with regex patterns
+  - glob           # Find files by name patterns
 
-  # Optional: Add more tools as needed
-  - git
+  # File modification (Claude Code style)
+  - file_write     # Write entire file
+  - edit           # Exact string replacement (surgical edits)
 
-  - python
+  # Multimedia support (Claude Code style)
+  - multimedia     # Read images, PDFs, notebooks
+
+  # Shell and execution
+  - powershell     # Execute shell commands
+  - python         # Execute Python code
+
+  # User interaction and LLM
+  - ask_user       # Ask user for clarification
+  - llm            # Generate content with LLM
+
+  # Version control
+  - git            # Git operations
 
 # Long-term Memory Configuration (via MCP)
 # Enables persistent memory across sessions for this agent profile

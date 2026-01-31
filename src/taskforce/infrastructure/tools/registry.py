@@ -95,6 +95,29 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.rag.global_document_analysis_tool",
         "params": {},
     },
+    # Native tools - Search operations (Claude Code style)
+    "grep": {
+        "type": "GrepTool",
+        "module": "taskforce.infrastructure.tools.native.search_tools",
+        "params": {},
+    },
+    "glob": {
+        "type": "GlobTool",
+        "module": "taskforce.infrastructure.tools.native.search_tools",
+        "params": {},
+    },
+    # Native tools - File editing (Claude Code style)
+    "edit": {
+        "type": "EditTool",
+        "module": "taskforce.infrastructure.tools.native.edit_tool",
+        "params": {},
+    },
+    # Native tools - Multimedia (Claude Code style)
+    "multimedia": {
+        "type": "MultimediaTool",
+        "module": "taskforce.infrastructure.tools.native.multimedia_tool",
+        "params": {},
+    },
 }
 
 
