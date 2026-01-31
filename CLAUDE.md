@@ -150,26 +150,40 @@ class StateManagerProtocol(Protocol):
 
 ### 2. Dependency Injection via Factory
 
-The `AgentFactory` wires domain objects with infrastructure adapters based on YAML configuration:
+The `AgentFactory` provides a unified API with two mutually exclusive modes:
 
 ```python
 # application/factory.py
-class AgentFactory:
-    def create_agent(self, profile: str = "dev") -> Agent:
-        config = ProfileLoader.load(profile)
+from taskforce.application.factory import AgentFactory
 
-        # Select adapter based on config
-        state_manager = self._create_state_manager(config)
-        llm_provider = self._create_llm_provider(config)
-        tools = self._create_tools(config)
+factory = AgentFactory()
 
-        # Wire everything together
-        return Agent(
-            state_manager=state_manager,
-            llm_provider=llm_provider,
-            tools=tools
-        )
+# ══════════════════════════════════════════════════════════════
+# Option 1: Config file (for predefined agents)
+# ══════════════════════════════════════════════════════════════
+agent = await factory.create_agent(config="dev")
+agent = await factory.create_agent(config="configs/custom/my_agent.yaml")
+
+# ══════════════════════════════════════════════════════════════
+# Option 2: Inline parameters (for programmatic creation)
+# ══════════════════════════════════════════════════════════════
+agent = await factory.create_agent(
+    system_prompt="You are a helpful coding assistant.",
+    tools=["python", "file_read", "file_write"],
+    persistence={"type": "file", "work_dir": ".taskforce_coding"},
+    max_steps=20,
+)
+
+# ══════════════════════════════════════════════════════════════
+# ERROR: Cannot mix both modes
+# ══════════════════════════════════════════════════════════════
+# agent = await factory.create_agent(config="dev", tools=["python"])  # ValueError!
 ```
+
+**Rules:**
+- `config` and inline parameters are **mutually exclusive**
+- If `config` provided → all settings loaded from YAML file
+- If inline parameters → settings from parameters (with sensible defaults from `dev.yaml`)
 
 ### 3. ReAct Loop (Reason + Act)
 

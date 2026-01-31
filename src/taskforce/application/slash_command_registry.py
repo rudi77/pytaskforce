@@ -197,25 +197,15 @@ class SlashCommandRegistry:
 
         agent_config = command_def.agent_config or {}
 
-        # Build agent definition
-        agent_definition = {
-            "system_prompt": command_def.prompt_template,
-            "tool_allowlist": agent_config.get("tools", []),
-            "mcp_servers": agent_config.get("mcp_servers", []),
-            "mcp_tool_allowlist": [],
-        }
-
-        # Use command's profile if specified, otherwise base_profile
-        profile = agent_config.get("profile", base_profile)
-
         self.logger.info(
             "creating_agent_from_command",
             command=command_def.name,
-            profile=profile,
             tools=agent_config.get("tools", []),
         )
 
-        return await self.factory.create_agent_from_definition(
-            agent_definition=agent_definition,
-            profile=profile,
+        # Use new unified API with inline parameters
+        return await self.factory.create_agent(
+            system_prompt=command_def.prompt_template,
+            tools=agent_config.get("tools", []),
+            mcp_servers=agent_config.get("mcp_servers", []),
         )

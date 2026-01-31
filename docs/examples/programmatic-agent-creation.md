@@ -11,9 +11,10 @@ import asyncio
 from taskforce.application.factory import AgentFactory
 
 async def main():
-    # Create factory and agent
     factory = AgentFactory()
-    agent = await factory.create_agent(profile="dev")
+
+    # Option 1: From config file
+    agent = await factory.create_agent(config="dev")
 
     # Execute a mission
     result = await agent.execute(
@@ -27,9 +28,38 @@ async def main():
 asyncio.run(main())
 ```
 
-## Creating Agents with Specific Tools
+## Two Ways to Create Agents
 
-Use `create_agent_from_definition()` to specify exactly which tools the agent can use:
+The `create_agent()` method supports two mutually exclusive modes:
+
+### Option 1: Config File Path
+
+Load all settings from a YAML configuration file:
+
+```python
+# Use a profile name (resolves to configs/{name}.yaml)
+agent = await factory.create_agent(config="dev")
+
+# Or use a full path
+agent = await factory.create_agent(config="configs/custom/my_agent.yaml")
+```
+
+### Option 2: Inline Parameters
+
+Specify settings programmatically:
+
+```python
+agent = await factory.create_agent(
+    system_prompt="You are a helpful coding assistant. Be concise.",
+    tools=["python", "file_read", "file_write"],
+    persistence={"type": "file", "work_dir": ".taskforce_coding"},
+    max_steps=20,
+)
+```
+
+**Important:** You cannot mix both modes. Either provide `config` OR inline parameters.
+
+## Creating Agents with Specific Tools
 
 ```python
 import asyncio
@@ -38,17 +68,10 @@ from taskforce.application.factory import AgentFactory
 async def main():
     factory = AgentFactory()
 
-    # Define agent with specific tools
-    agent_definition = {
-        "system_prompt": "You are a helpful coding assistant. Be concise.",
-        "tool_allowlist": ["python", "file_read", "file_write"],
-        "mcp_servers": [],
-        "mcp_tool_allowlist": []
-    }
-
-    agent = await factory.create_agent_from_definition(
-        agent_definition=agent_definition,
-        profile="dev",
+    # Create agent with specific tools
+    agent = await factory.create_agent(
+        system_prompt="You are a helpful coding assistant. Be concise.",
+        tools=["python", "file_read", "file_write"],
         work_dir=".taskforce_coding"
     )
 
@@ -186,7 +209,6 @@ Inject custom tools when creating an agent:
 ```python
 import asyncio
 from taskforce.application.factory import AgentFactory
-from taskforce.application.tool_registry import ToolRegistry
 
 # Import your custom tool
 from my_tools import CalculatorTool
@@ -195,15 +217,10 @@ from my_tools import CalculatorTool
 async def main():
     factory = AgentFactory()
 
-    # Create base agent
-    agent = await factory.create_agent_from_definition(
-        agent_definition={
-            "system_prompt": "You are a math tutor. Use the calculator tool for computations.",
-            "tool_allowlist": [],  # We'll add tools manually
-            "mcp_servers": [],
-            "mcp_tool_allowlist": []
-        },
-        profile="dev"
+    # Create agent with minimal tools
+    agent = await factory.create_agent(
+        system_prompt="You are a math tutor. Use the calculator tool for computations.",
+        tools=[],  # Start with no native tools
     )
 
     # Add custom tool to agent's toolset
@@ -228,30 +245,20 @@ Mix built-in tools with custom implementations:
 ```python
 import asyncio
 from taskforce.application.factory import AgentFactory
-from taskforce.application.tool_registry import ToolRegistry
 
-from my_tools import CalculatorTool, WeatherTool  # Your custom tools
+from my_tools import CalculatorTool
 
 
 async def main():
     factory = AgentFactory()
 
-    # Get native tools via registry
-    # Note: ToolRegistry requires an LLM provider, get it from a base agent
-    base_agent = await factory.create_agent(profile="dev")
-
     # Create agent with native tools
-    agent = await factory.create_agent_from_definition(
-        agent_definition={
-            "system_prompt": """You are a helpful assistant with access to:
+    agent = await factory.create_agent(
+        system_prompt="""You are a helpful assistant with access to:
 - Calculator for math operations
 - Python for complex computations
 - File operations for reading/writing data""",
-            "tool_allowlist": ["python", "file_read"],
-            "mcp_servers": [],
-            "mcp_tool_allowlist": []
-        },
-        profile="dev"
+        tools=["python", "file_read"],
     )
 
     # Add custom tools
@@ -278,7 +285,7 @@ from taskforce.application.factory import AgentFactory
 
 async def main():
     factory = AgentFactory()
-    agent = await factory.create_agent(profile="dev")
+    agent = await factory.create_agent(config="dev")
 
     # Stream execution events
     async for event in agent.execute_stream(
@@ -367,13 +374,13 @@ async def main():
 
     # Native ReAct (default) - immediate tool use
     agent_react = await factory.create_agent(
-        profile="dev",
+        config="dev",
         planning_strategy="native_react"
     )
 
     # Plan-and-Execute - creates plan first, then executes steps
     agent_plan = await factory.create_agent(
-        profile="dev",
+        config="dev",
         planning_strategy="plan_and_execute",
         planning_strategy_params={
             "max_plan_steps": 10,
@@ -383,7 +390,7 @@ async def main():
 
     # Plan-and-React - hybrid approach
     agent_hybrid = await factory.create_agent(
-        profile="dev",
+        tools=["python", "file_read"],
         planning_strategy="plan_and_react"
     )
 ```
@@ -465,16 +472,11 @@ async def main():
     factory = AgentFactory()
 
     # Create agent with file reading + custom analysis tool
-    agent = await factory.create_agent_from_definition(
-        agent_definition={
-            "system_prompt": """You are a data analyst assistant.
+    agent = await factory.create_agent(
+        system_prompt="""You are a data analyst assistant.
 You can read data files and perform statistical analysis.
 Always show your calculations and explain the results.""",
-            "tool_allowlist": ["file_read", "python"],
-            "mcp_servers": [],
-            "mcp_tool_allowlist": []
-        },
-        profile="dev"
+        tools=["file_read", "python"],
     )
 
     # Add custom analysis tool
@@ -495,6 +497,26 @@ Always show your calculations and explain the results.""",
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## API Reference
+
+### `create_agent()` Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `config` | `str` | Path to YAML config file (mutually exclusive with inline params) |
+| `system_prompt` | `str` | Custom system prompt for the agent |
+| `tools` | `list[str]` | List of tool names to enable |
+| `llm` | `dict` | LLM configuration |
+| `persistence` | `dict` | Persistence configuration |
+| `mcp_servers` | `list[dict]` | MCP server configurations |
+| `max_steps` | `int` | Maximum execution steps |
+| `planning_strategy` | `str` | Planning strategy name |
+| `planning_strategy_params` | `dict` | Planning strategy parameters |
+| `context_policy` | `dict` | Context policy configuration |
+| `work_dir` | `str` | Override for work directory |
+| `user_context` | `dict` | User context for RAG tools |
+| `specialist` | `str` | Specialist profile ("coding", "rag", "wiki") |
 
 ## Environment Setup
 

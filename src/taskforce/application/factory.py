@@ -341,94 +341,388 @@ class AgentFactory:
 
     async def create_agent(
         self,
-        profile: str = "dev",
+        *,
+        # Option 1: Config file path
+        config: Optional[str] = None,
+        # Option 2: Inline parameters
+        system_prompt: Optional[str] = None,
+        tools: Optional[list[str]] = None,
+        llm: Optional[dict[str, Any]] = None,
+        persistence: Optional[dict[str, Any]] = None,
+        mcp_servers: Optional[list[dict[str, Any]]] = None,
+        max_steps: Optional[int] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
+        context_policy: Optional[dict[str, Any]] = None,
+        # Shared optional parameters
+        work_dir: Optional[str] = None,
+        user_context: Optional[dict[str, Any]] = None,
         specialist: Optional[str] = None,
+    ) -> Agent:
+        """
+        Create an Agent instance.
+
+        Supports two mutually exclusive modes:
+
+        **Option 1: Config file** - Load all settings from a YAML file:
+            agent = await factory.create_agent(config="configs/dev.yaml")
+
+        **Option 2: Inline parameters** - Specify settings programmatically:
+            agent = await factory.create_agent(
+                system_prompt="You are a helpful assistant.",
+                tools=["python", "file_read"],
+                persistence={"type": "file", "work_dir": ".taskforce"},
+            )
+
+        Args:
+            config: Path to YAML configuration file. If provided, all other
+                   agent settings are loaded from this file.
+
+            system_prompt: Custom system prompt for the agent.
+            tools: List of tool names to enable (e.g., ["python", "file_read"]).
+            llm: LLM configuration dict (e.g., {"config_path": "...", "default_model": "main"}).
+            persistence: Persistence configuration (e.g., {"type": "file", "work_dir": ".taskforce"}).
+            mcp_servers: List of MCP server configurations.
+            max_steps: Maximum execution steps for the agent.
+            planning_strategy: Planning strategy ("native_react", "plan_and_execute", "plan_and_react").
+            planning_strategy_params: Parameters for the planning strategy.
+            context_policy: Context policy configuration dict.
+
+            work_dir: Override for work directory (applies to both modes).
+            user_context: User context for RAG tools (user_id, org_id, scope).
+            specialist: Specialist profile ("coding", "rag", "wiki") - only used
+                       when no system_prompt is provided.
+
+        Returns:
+            Agent instance with injected dependencies.
+
+        Raises:
+            ValueError: If both config and inline parameters are provided.
+            FileNotFoundError: If config file not found.
+
+        Examples:
+            # Option 1: From config file
+            agent = await factory.create_agent(config="configs/dev.yaml")
+
+            # Option 2: Inline parameters
+            agent = await factory.create_agent(
+                system_prompt="You are a coding assistant.",
+                tools=["python", "file_read", "file_write"],
+                persistence={"type": "file", "work_dir": ".taskforce_coding"},
+            )
+
+            # Minimal inline (uses defaults)
+            agent = await factory.create_agent(
+                tools=["python", "web_search"],
+            )
+        """
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource, MCPServerConfig
+
+        # Check for mutually exclusive options
+        has_inline_params = any([
+            system_prompt is not None,
+            tools is not None,
+            llm is not None,
+            persistence is not None,
+            mcp_servers is not None,
+            max_steps is not None,
+            context_policy is not None,
+        ])
+
+        if config and has_inline_params:
+            raise ValueError(
+                "Cannot use 'config' with inline parameters. "
+                "Either provide a config file path OR inline parameters, not both."
+            )
+
+        # Option 1: Load from config file
+        if config:
+            return await self._create_agent_from_config_file(
+                config_path=config,
+                work_dir=work_dir,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+            )
+
+        # Option 2: Inline parameters (or defaults)
+        return await self._create_agent_from_inline_params(
+            system_prompt=system_prompt,
+            tools=tools,
+            llm=llm,
+            persistence=persistence,
+            mcp_servers=mcp_servers,
+            max_steps=max_steps,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+            context_policy=context_policy,
+            work_dir=work_dir,
+            user_context=user_context,
+            specialist=specialist,
+        )
+
+    async def _create_agent_from_config_file(
+        self,
+        config_path: str,
         work_dir: Optional[str] = None,
         user_context: Optional[dict[str, Any]] = None,
         planning_strategy: Optional[str] = None,
         planning_strategy_params: Optional[dict[str, Any]] = None,
     ) -> Agent:
         """
-        Create Agent with simplified ReAct loop.
-
-        This method converts parameters to AgentDefinition and delegates to create().
+        Create Agent from a YAML configuration file.
 
         Args:
-            profile: Configuration profile name (dev/staging/prod)
-            specialist: Specialist profile override. If None, uses LEAN_KERNEL_PROMPT.
-            work_dir: Optional override for work directory
-            user_context: Optional user context for RAG tools (user_id, org_id, scope)
-            planning_strategy: Optional planning strategy override
-            planning_strategy_params: Optional planning strategy parameters
+            config_path: Path to the YAML config file.
+            work_dir: Optional override for work directory.
+            user_context: Optional user context for RAG tools.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
 
         Returns:
-            Agent instance with injected dependencies
-
-        Raises:
-            FileNotFoundError: If profile YAML not found
-
-        Example:
-            >>> factory = AgentFactory()
-            >>> agent = await factory.create_agent(profile="dev")
-            >>> result = await agent.execute("Do something", "session-123")
+            Agent instance.
         """
-        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource, MCPServerConfig
+        from pathlib import Path
 
-        # Load profile to get tool configuration
-        config = self._load_profile(profile)
+        # Resolve config path
+        config_path_obj = Path(config_path)
+        if not config_path_obj.is_absolute():
+            # Try relative to config_dir first, then current directory
+            if (self.config_dir / config_path).exists():
+                config_path_obj = self.config_dir / config_path
+            elif (self.config_dir / f"{config_path}.yaml").exists():
+                config_path_obj = self.config_dir / f"{config_path}.yaml"
+            elif not config_path_obj.exists():
+                # Try with .yaml extension
+                if Path(f"{config_path}.yaml").exists():
+                    config_path_obj = Path(f"{config_path}.yaml")
 
-        # Determine effective specialist
-        effective_specialist = specialist or config.get("specialist")
+        if not config_path_obj.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        # Get tools from profile config
+        # Load config
+        with open(config_path_obj) as f:
+            config = yaml.safe_load(f)
+
+        self.logger.info(
+            "creating_agent_from_config_file",
+            config_path=str(config_path_obj),
+        )
+
+        # Extract settings from config
+        effective_specialist = config.get("specialist")
         tools_config = config.get("tools", [])
-        tool_names = [t.get("name") or t.get("type", "").replace("Tool", "").lower() for t in tools_config if isinstance(t, dict)]
 
-        # Get MCP servers from config
+        # Handle both string and dict tool specs
+        tool_names = []
+        for t in tools_config:
+            if isinstance(t, str):
+                tool_names.append(t)
+            elif isinstance(t, dict):
+                tool_names.append(t.get("name") or t.get("type", "").replace("Tool", "").lower())
+
         mcp_servers_config = config.get("mcp_servers", [])
+
+        # Use profile name from config or derive from filename
+        profile_name = config.get("profile", config_path_obj.stem)
 
         # Create AgentDefinition
         definition = AgentDefinition(
-            agent_id=f"profile-{profile}",
-            name=f"Profile Agent ({profile})",
+            agent_id=f"config-{profile_name}",
+            name=f"Config Agent ({profile_name})",
             source=AgentSource.PROFILE,
             specialist=effective_specialist,
-            base_profile=profile,
+            base_profile=profile_name,
             work_dir=work_dir,
             tools=tool_names,
             mcp_servers=[
                 MCPServerConfig.from_dict(s) for s in mcp_servers_config
             ] if mcp_servers_config else [],
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-        )
-
-        # Import MCPServerConfig for creating MCP servers
-        from taskforce.core.domain.agent_definition import MCPServerConfig
-
-        # Re-create definition with MCP servers properly instantiated
-        definition = AgentDefinition(
-            agent_id=f"profile-{profile}",
-            name=f"Profile Agent ({profile})",
-            source=AgentSource.PROFILE,
-            specialist=effective_specialist,
-            base_profile=profile,
-            work_dir=work_dir,
-            tools=tool_names,
-            mcp_servers=[
-                MCPServerConfig.from_dict(s) for s in mcp_servers_config
-            ] if mcp_servers_config else [],
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-        )
-
-        self.logger.info(
-            "create_agent_delegating_to_create",
-            profile=profile,
-            specialist=effective_specialist,
+            planning_strategy=planning_strategy or config.get("agent", {}).get("planning_strategy"),
+            planning_strategy_params=planning_strategy_params or config.get("agent", {}).get("planning_strategy_params"),
+            max_steps=config.get("agent", {}).get("max_steps"),
+            system_prompt=config.get("system_prompt"),
         )
 
         return await self.create(definition, user_context=user_context)
+
+    async def _create_agent_from_inline_params(
+        self,
+        system_prompt: Optional[str] = None,
+        tools: Optional[list[str]] = None,
+        llm: Optional[dict[str, Any]] = None,
+        persistence: Optional[dict[str, Any]] = None,
+        mcp_servers: Optional[list[dict[str, Any]]] = None,
+        max_steps: Optional[int] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
+        context_policy: Optional[dict[str, Any]] = None,
+        work_dir: Optional[str] = None,
+        user_context: Optional[dict[str, Any]] = None,
+        specialist: Optional[str] = None,
+    ) -> Agent:
+        """
+        Create Agent from inline parameters.
+
+        Args:
+            system_prompt: Custom system prompt.
+            tools: List of tool names.
+            llm: LLM configuration.
+            persistence: Persistence configuration.
+            mcp_servers: MCP server configurations.
+            max_steps: Maximum execution steps.
+            planning_strategy: Planning strategy.
+            planning_strategy_params: Planning strategy parameters.
+            context_policy: Context policy configuration.
+            work_dir: Work directory override.
+            user_context: User context for RAG tools.
+            specialist: Specialist profile.
+
+        Returns:
+            Agent instance.
+        """
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource, MCPServerConfig
+        from taskforce.application.tool_registry import ToolRegistry
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+        self.logger.info(
+            "creating_agent_from_inline_params",
+            has_system_prompt=system_prompt is not None,
+            tools=tools,
+            specialist=specialist,
+        )
+
+        # Build infrastructure using defaults or provided config
+        infra_builder = InfrastructureBuilder(self.config_dir)
+
+        # Load default config for infrastructure settings not provided
+        default_config = self._get_default_config()
+
+        # Merge provided settings with defaults
+        effective_persistence = persistence or default_config.get("persistence", {"type": "file", "work_dir": ".taskforce"})
+        if work_dir:
+            effective_persistence = {**effective_persistence, "work_dir": work_dir}
+
+        effective_llm = llm or default_config.get("llm", {
+            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+            "default_model": "main",
+        })
+
+        effective_context_policy = context_policy or default_config.get("context_policy")
+
+        # Build merged config for infrastructure
+        merged_config = {
+            "persistence": effective_persistence,
+            "llm": effective_llm,
+            "context_policy": effective_context_policy,
+            "mcp_servers": mcp_servers or [],
+        }
+
+        # Create infrastructure
+        state_manager = infra_builder.build_state_manager(merged_config, work_dir_override=work_dir)
+        llm_provider = infra_builder.build_llm_provider(merged_config)
+
+        # Build MCP tools
+        mcp_tools_list, mcp_contexts = await infra_builder.build_mcp_tools(
+            [MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
+            tool_filter=None,
+        )
+
+        # Resolve native tools
+        tool_registry = ToolRegistry(
+            llm_provider=llm_provider,
+            user_context=user_context,
+        )
+
+        # Use provided tools or default tools
+        effective_tools = tools if tools is not None else self._get_default_tool_names()
+        native_tools = tool_registry.resolve(effective_tools)
+
+        # Combine all tools
+        all_tools = native_tools + mcp_tools_list
+
+        # Build system prompt
+        if system_prompt:
+            # Custom system prompt provided
+            from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
+            from taskforce.core.prompts import build_system_prompt, format_tools_description
+
+            base_prompt = LEAN_KERNEL_PROMPT + "\n\n" + system_prompt
+            tools_description = format_tools_description(all_tools) if all_tools else ""
+            final_system_prompt = build_system_prompt(
+                base_prompt=base_prompt,
+                tools_description=tools_description,
+            )
+        else:
+            # Use specialist-based prompt or default
+            final_system_prompt = self._assemble_lean_system_prompt(specialist, all_tools)
+
+        # Get model alias
+        model_alias = effective_llm.get("default_model", "main")
+
+        # Build context policy
+        context_policy_obj = self._create_context_policy(merged_config)
+
+        # Build runtime tracker
+        runtime_tracker = self._create_runtime_tracker(merged_config, work_dir_override=work_dir)
+
+        # Get agent settings
+        effective_max_steps = max_steps or default_config.get("agent", {}).get("max_steps", 30)
+        max_parallel_tools = default_config.get("agent", {}).get("max_parallel_tools")
+        selected_strategy = self._select_planning_strategy(planning_strategy, planning_strategy_params)
+
+        self.logger.debug(
+            "agent_created_from_inline",
+            tools_count=len(all_tools),
+            tool_names=[t.name for t in all_tools],
+            model_alias=model_alias,
+            planning_strategy=selected_strategy.name,
+        )
+
+        # Create agent
+        agent_logger = structlog.get_logger().bind(component="agent")
+        agent = Agent(
+            state_manager=state_manager,
+            llm_provider=llm_provider,
+            tools=all_tools,
+            logger=agent_logger,
+            system_prompt=final_system_prompt,
+            model_alias=model_alias,
+            context_policy=context_policy_obj,
+            max_steps=effective_max_steps,
+            max_parallel_tools=max_parallel_tools,
+            planning_strategy=selected_strategy,
+            runtime_tracker=runtime_tracker,
+        )
+
+        # Store MCP contexts for lifecycle management
+        agent._mcp_contexts = mcp_contexts
+
+        # Apply extensions
+        agent = self._apply_extensions(merged_config, agent)
+
+        return agent
+
+    def _get_default_config(self) -> dict[str, Any]:
+        """Get default configuration for inline agent creation."""
+        try:
+            return self._load_profile("dev")
+        except FileNotFoundError:
+            # Minimal defaults if no dev profile exists
+            return {
+                "persistence": {"type": "file", "work_dir": ".taskforce"},
+                "llm": {
+                    "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+                    "default_model": "main",
+                },
+                "agent": {"max_steps": 30},
+                "logging": {"level": "WARNING"},
+            }
+
+    def _get_default_tool_names(self) -> list[str]:
+        """Get default tool names for inline agent creation."""
+        return ["web_search", "web_fetch", "file_read", "file_write", "python", "powershell", "ask_user"]
 
     def _assemble_lean_system_prompt(
         self, specialist: Optional[str], tools: list[ToolProtocol]
@@ -490,78 +784,48 @@ class AgentFactory:
         planning_strategy_params: Optional[dict[str, Any]] = None,
     ) -> Agent:
         """
-        Create Agent from custom agent definition.
+        DEPRECATED: Use create_agent() with inline parameters instead.
 
-        This method converts the dict-based definition to AgentDefinition
-        and delegates to create().
+        This method is maintained for backward compatibility.
 
-        Args:
-            agent_definition: Agent definition dict with system_prompt,
-                            tool_allowlist, mcp_servers, mcp_tool_allowlist
-            profile: Configuration profile for infrastructure settings
-            work_dir: Optional override for work directory
-            planning_strategy: Optional planning strategy override
-            planning_strategy_params: Optional planning strategy parameters
+        Migration guide:
+            # Old way (deprecated):
+            agent = await factory.create_agent_from_definition(
+                agent_definition={
+                    "system_prompt": "You are a helper.",
+                    "tool_allowlist": ["python", "file_read"],
+                },
+                profile="dev",
+            )
 
-        Returns:
-            Agent instance configured from definition
-
-        Raises:
-            FileNotFoundError: If profile YAML not found
-            ValueError: If agent_definition is invalid
-
-        Example:
-            >>> factory = AgentFactory()
-            >>> definition = {
-            ...     "system_prompt": "You are a helpful assistant",
-            ...     "tool_allowlist": ["web_search", "python"],
-            ...     "mcp_servers": [],
-            ...     "mcp_tool_allowlist": []
-            ... }
-            >>> agent = await factory.create_agent_from_definition(
-            ...     definition, profile="dev"
-            ... )
+            # New way:
+            agent = await factory.create_agent(
+                system_prompt="You are a helper.",
+                tools=["python", "file_read"],
+            )
         """
-        from taskforce.core.domain.agent_definition import (
-            AgentDefinition,
-            AgentSource,
-            MCPServerConfig,
+        import warnings
+        warnings.warn(
+            "create_agent_from_definition() is deprecated. "
+            "Use create_agent() with inline parameters instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
 
-        # Validate required field
+        # Extract settings from agent_definition
         system_prompt = agent_definition.get("system_prompt", "")
-        if not system_prompt:
-            raise ValueError("agent_definition must include 'system_prompt'")
+        tools = agent_definition.get("tool_allowlist", [])
+        mcp_servers = agent_definition.get("mcp_servers", [])
 
-        # Convert MCP servers from dict to MCPServerConfig
-        mcp_servers_raw = agent_definition.get("mcp_servers", [])
-        mcp_servers = [
-            MCPServerConfig.from_dict(s) for s in mcp_servers_raw
-        ] if mcp_servers_raw else []
-
-        # Create AgentDefinition from dict
-        definition = AgentDefinition(
-            agent_id=agent_definition.get("agent_id", "custom-agent"),
-            name=agent_definition.get("name", "Custom Agent"),
-            description=agent_definition.get("description", ""),
-            source=AgentSource.CUSTOM,
-            system_prompt=system_prompt,
-            base_profile=profile,
+        # Delegate to new unified API
+        return await self.create_agent(
+            system_prompt=system_prompt if system_prompt else None,
+            tools=tools if tools else None,
+            mcp_servers=mcp_servers if mcp_servers else None,
             work_dir=work_dir,
-            tools=agent_definition.get("tool_allowlist", []),
-            mcp_servers=mcp_servers,
-            mcp_tool_filter=agent_definition.get("mcp_tool_allowlist"),
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
         )
-
-        self.logger.info(
-            "create_agent_from_definition_delegating_to_create",
-            agent_id=definition.agent_id,
-            profile=profile,
-        )
-
-        return await self.create(definition)
 
     async def create_agent_with_plugin(
         self,
@@ -1567,10 +1831,38 @@ class AgentFactory:
             return None
 
     # Backwards-compatible aliases (deprecated)
-    async def create_lean_agent(self, *args, **kwargs) -> Agent:
-        """Deprecated: Use create_agent instead."""
-        return await self.create_agent(*args, **kwargs)
+    async def create_lean_agent(
+        self,
+        profile: str = "dev",
+        specialist: Optional[str] = None,
+        work_dir: Optional[str] = None,
+        user_context: Optional[dict[str, Any]] = None,
+        planning_strategy: Optional[str] = None,
+        planning_strategy_params: Optional[dict[str, Any]] = None,
+    ) -> Agent:
+        """Deprecated: Use create_agent(config=profile) instead."""
+        import warnings
+        warnings.warn(
+            "create_lean_agent() is deprecated. Use create_agent(config=profile) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.create_agent(
+            config=profile,
+            specialist=specialist,
+            work_dir=work_dir,
+            user_context=user_context,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
 
     async def create_lean_agent_from_definition(self, *args, **kwargs) -> Agent:
-        """Deprecated: Use create_agent_from_definition instead."""
+        """Deprecated: Use create_agent() with inline parameters instead."""
+        import warnings
+        warnings.warn(
+            "create_lean_agent_from_definition() is deprecated. "
+            "Use create_agent() with inline parameters instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return await self.create_agent_from_definition(*args, **kwargs)
