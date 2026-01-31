@@ -22,6 +22,7 @@ This dynamically loads all tools from the plugin and makes them available to the
 
 ## 🎓 Tutorials
 
+- **[Programmatic Agent Creation](examples/programmatic-agent-creation.md)**: Create and run agents programmatically in Python with custom tools.
 - **[Custom Tool Tutorial](https://github.com/rudi77/pytaskforce/blob/main/examples/custom-tool-and-profile-tutorial.ipynb)**: A Jupyter notebook walking through how to create your own tools and configuration profiles.
 
 ## 💡 Common Use Cases
