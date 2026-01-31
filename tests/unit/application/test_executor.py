@@ -32,7 +32,7 @@ async def test_execute_mission_basic():
         todolist_id="todo-456",
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     # Execute mission
     executor = AgentExecutor(factory=mock_factory)
@@ -44,7 +44,7 @@ async def test_execute_mission_basic():
     assert result.todolist_id == "todo-456"
 
     # Verify factory and agent were called correctly
-    mock_factory.create_lean_agent.assert_called_once()
+    mock_factory.create_agent.assert_called_once()
     mock_agent.execute.assert_called_once()
 
     # Verify execute was called with mission and generated session_id
@@ -65,7 +65,7 @@ async def test_execute_mission_with_session_id():
         final_message="Success",
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission(
@@ -102,7 +102,7 @@ async def test_execute_mission_with_progress_callback():
         ],
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     # Track progress updates
     updates = []
@@ -136,7 +136,7 @@ async def test_execute_mission_error_handling():
     mock_agent = AsyncMock()
     mock_agent.execute.side_effect = RuntimeError("LLM failure")
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -157,24 +157,24 @@ async def test_execute_mission_different_profiles():
         session_id="test-123", status="completed", final_message="Success"
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
     # Test dev profile
     await executor.execute_mission("Test mission", profile="dev")
-    call_args = mock_factory.create_lean_agent.call_args
-    assert call_args.kwargs["profile"] == "dev"
+    call_args = mock_factory.create_agent.call_args
+    assert call_args.kwargs["config"] == "dev"
 
     # Test staging profile
     await executor.execute_mission("Test mission", profile="staging")
-    call_args = mock_factory.create_lean_agent.call_args
-    assert call_args.kwargs["profile"] == "staging"
+    call_args = mock_factory.create_agent.call_args
+    assert call_args.kwargs["config"] == "staging"
 
     # Test prod profile
     await executor.execute_mission("Test mission", profile="prod")
-    call_args = mock_factory.create_lean_agent.call_args
-    assert call_args.kwargs["profile"] == "prod"
+    call_args = mock_factory.create_agent.call_args
+    assert call_args.kwargs["config"] == "prod"
 
 
 @pytest.mark.asyncio
@@ -200,7 +200,7 @@ async def test_execute_mission_streaming_basic():
         ],
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -242,7 +242,7 @@ async def test_execute_mission_streaming_with_session_id():
         execution_history=[],
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -268,7 +268,7 @@ async def test_execute_mission_streaming_error_handling():
     mock_agent = AsyncMock()
     mock_agent.execute.side_effect = RuntimeError("Execution failed")
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
 
@@ -300,7 +300,7 @@ async def test_execute_mission_paused_status():
         execution_history=[],
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission("Test mission")
@@ -322,7 +322,7 @@ async def test_execute_mission_failed_status():
         execution_history=[],
     )
     mock_agent.close = AsyncMock()
-    mock_factory.create_lean_agent = AsyncMock(return_value=mock_agent)
+    mock_factory.create_agent = AsyncMock(return_value=mock_agent)
 
     executor = AgentExecutor(factory=mock_factory)
     result = await executor.execute_mission("Test mission")
