@@ -79,8 +79,13 @@ class SkillManager:
     tool outputs. Designed to work with any plugin that has
     a skills/ directory.
 
+    Skills are loaded from multiple sources (in priority order):
+    1. Plugin-specific skills (from plugin's skills/ directory)
+    2. Project skills (from .taskforce/skills)
+    3. User skills (from ~/.taskforce/skills)
+
     Attributes:
-        skills_path: Path to the skills directory
+        skills_path: Path to the plugin skills directory
         skill_context: Current execution context with active skills
         switch_conditions: List of conditions for automatic switching
     """
@@ -90,14 +95,17 @@ class SkillManager:
         skills_path: str | Path | None = None,
         skill_configs: list[dict[str, Any]] | None = None,
         switch_conditions: list[SkillSwitchCondition] | None = None,
+        include_global_skills: bool = True,
     ):
         """
         Initialize the skill manager.
 
         Args:
-            skills_path: Path to directory containing skills
+            skills_path: Path to plugin directory containing skills
             skill_configs: Optional list of skill configurations from plugin config
             switch_conditions: Optional list of switch conditions
+            include_global_skills: If True, include skills from ~/.taskforce/skills
+                                  and .taskforce/skills (default: True)
         """
         self._skills_path = Path(skills_path) if skills_path else None
         self._skill_configs = self._parse_skill_configs(skill_configs or [])
@@ -105,22 +113,55 @@ class SkillManager:
         self._active_skill_name: str | None = None
         self._previous_skill_name: str | None = None
         self._context_data: dict[str, Any] = {}
+        self._include_global_skills = include_global_skills
 
-        # Initialize registry if skills path exists
-        if self._skills_path and self._skills_path.exists():
+        # Build list of skill directories
+        skill_directories = self._build_skill_directories()
+
+        # Initialize registry with all skill directories
+        if skill_directories:
             self._registry = FileSkillRegistry(
-                skill_directories=[str(self._skills_path)],
+                skill_directories=skill_directories,
                 auto_discover=True,
             )
             self._skill_context = SkillContext()
             logger.info(
                 f"SkillManager initialized with {self._registry.get_skill_count()} skills "
-                f"from {self._skills_path}"
+                f"from {len(skill_directories)} directories"
             )
+            if self._registry.get_skill_count() > 0:
+                logger.debug(f"Available skills: {self._registry.list_skills()}")
         else:
             self._registry = None
             self._skill_context = SkillContext()
-            logger.debug("SkillManager initialized without skills directory")
+            logger.debug("SkillManager initialized without skills")
+
+    def _build_skill_directories(self) -> list[str]:
+        """
+        Build the list of skill directories to search.
+
+        Returns:
+            List of directory paths, with plugin skills first (highest priority)
+        """
+        directories: list[str] = []
+
+        # Plugin-specific skills have highest priority
+        if self._skills_path and self._skills_path.exists():
+            directories.append(str(self._skills_path))
+
+        # Include global skills if enabled
+        if self._include_global_skills:
+            # Project skills (.taskforce/skills)
+            project_skills = Path.cwd() / ".taskforce" / "skills"
+            if project_skills.exists():
+                directories.append(str(project_skills))
+
+            # User skills (~/.taskforce/skills)
+            user_skills = Path.home() / ".taskforce" / "skills"
+            if user_skills.exists():
+                directories.append(str(user_skills))
+
+        return directories
 
     def _parse_skill_configs(
         self, configs: list[dict[str, Any]]
@@ -385,6 +426,7 @@ class SkillManager:
 def create_skill_manager_from_manifest(
     manifest: Any,  # PluginManifest
     skill_configs: list[dict[str, Any]] | None = None,
+    include_global_skills: bool = True,
 ) -> SkillManager | None:
     """
     Create a SkillManager from a plugin manifest.
@@ -392,16 +434,21 @@ def create_skill_manager_from_manifest(
     Args:
         manifest: PluginManifest with skills_path
         skill_configs: Optional skill configurations from plugin config
+        include_global_skills: If True, include skills from ~/.taskforce/skills
+                              and .taskforce/skills (default: True)
 
     Returns:
-        SkillManager instance, or None if no skills in manifest
+        SkillManager instance, or None if no skills available
     """
-    if not manifest.skills_path:
+    # Create manager even without plugin skills if global skills are enabled
+    # This allows using global skills with any plugin
+    if not manifest.skills_path and not include_global_skills:
         return None
 
     return SkillManager(
         skills_path=manifest.skills_path,
         skill_configs=skill_configs,
+        include_global_skills=include_global_skills,
     )
 
 
