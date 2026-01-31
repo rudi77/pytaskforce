@@ -1,0 +1,272 @@
+# Kontierung Rules for German Accounting (SKR03/SKR04)
+# Version: 2.0 - Enhanced with Semantic Rules Engine support
+# These rules are used by SemanticRuleEngineTool for intelligent account assignment
+#
+# Rule Types:
+# - vendor_rules: Direct vendor → account mapping (highest priority)
+# - semantic_rules: Vendor + item patterns with embedding similarity
+# - expense_categories: Legacy keyword-based rules (backward compatible)
+
+version: "2.0"
+chart_of_accounts: SKR03
+
+# =============================================================================
+# VENDOR-ONLY RULES (Regeltyp A - Highest Priority)
+# Direct mapping: Vendor → Account
+# No item pattern matching required
+# =============================================================================
+
+vendor_rules:
+  # Cloud & Infrastructure
+  - rule_id: "VR-001"
+    vendor_pattern: "Amazon Web Services"
+    target_account: "6805"
+    target_account_name: "Porto (SKR04 Mapping für Cloud)"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+  - rule_id: "VR-002"
+    vendor_pattern: "Microsoft (Ireland|Azure)"
+    target_account: "4964"
+    target_account_name: "Aufwendungen für Software"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+  - rule_id: "VR-003"
+    vendor_pattern: "Google Cloud"
+    target_account: "6805"
+    target_account_name: "EDV-Kosten"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Telecommunications
+  - rule_id: "VR-004"
+    vendor_pattern: "Deutsche Telekom"
+    target_account: "4920"
+    target_account_name: "Telefon"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+  - rule_id: "VR-005"
+    vendor_pattern: "Vodafone"
+    target_account: "4920"
+    target_account_name: "Telefon"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Professional Services
+  - rule_id: "VR-006"
+    vendor_pattern: "DATEV"
+    target_account: "4950"
+    target_account_name: "Rechts- und Beratungskosten"
+    priority: 100
+    legal_basis: "§4 Abs. 4 EStG"
+
+# =============================================================================
+# SEMANTIC RULES (Regeltyp B - Medium Priority)
+# Vendor pattern + Item patterns with embedding similarity
+# similarity_threshold: Minimum cosine similarity (0.0-1.0)
+# =============================================================================
+
+semantic_rules:
+  # Office Supplies (semantic matching)
+  - rule_id: "SR-001"
+    vendor_pattern: ".*"  # Any vendor
+    item_patterns:
+      - "Bürobedarf"
+      - "Schreibwaren"
+      - "Druckerpapier"
+      - "Kopierpapier"
+      - "Toner"
+      - "Druckerpatrone"
+      - "Ordner"
+      - "Heftklammern"
+    target_account: "4930"
+    target_account_name: "Bürobedarf"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Literature & Subscriptions
+  - rule_id: "SR-002"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Fachliteratur"
+      - "Fachbuch"
+      - "Fachzeitschrift"
+      - "Abonnement"
+      - "Zeitschrift"
+    target_account: "4940"
+    target_account_name: "Zeitschriften, Bücher"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # IT Equipment (semantic)
+  - rule_id: "SR-003"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Laptop"
+      - "Notebook"
+      - "Computer"
+      - "Monitor"
+      - "Tastatur"
+      - "Maus"
+      - "Server"
+      - "Drucker"
+    target_account: "4985"
+    target_account_name: "Werkzeuge und Kleingeräte (GWG)"
+    priority: 50
+    similarity_threshold: 0.75
+    legal_basis: "§6 Abs. 2 EStG"
+    note: "Für Beträge < 800 EUR. Höhere Beträge: 0420 (Anlagevermögen)"
+
+  # Software & Licenses
+  - rule_id: "SR-004"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Software"
+      - "Lizenz"
+      - "SaaS"
+      - "Cloud-Service"
+      - "Subscription"
+    target_account: "4964"
+    target_account_name: "Aufwendungen für Software (GWG)"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§6 Abs. 2 EStG"
+
+  # Travel & Hospitality
+  - rule_id: "SR-005"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Reise"
+      - "Flug"
+      - "Hotel"
+      - "Übernachtung"
+      - "Mietwagen"
+      - "Bahnfahrt"
+    target_account: "4660"
+    target_account_name: "Reisekosten Arbeitnehmer"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§9 Abs. 1 Nr. 4a EStG"
+
+  # Entertainment
+  - rule_id: "SR-006"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Bewirtung"
+      - "Geschäftsessen"
+      - "Restaurant"
+      - "Gaststätte"
+    target_account: "4650"
+    target_account_name: "Bewirtungskosten"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§4 Abs. 5 Nr. 2 EStG"
+    note: "70% abzugsfähig"
+
+  # Training & Education
+  - rule_id: "SR-007"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Fortbildung"
+      - "Schulung"
+      - "Seminar"
+      - "Workshop"
+      - "Weiterbildung"
+      - "Zertifizierung"
+    target_account: "4945"
+    target_account_name: "Fortbildungskosten"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§4 Abs. 4 EStG"
+
+  # Consulting & Legal
+  - rule_id: "SR-008"
+    vendor_pattern: ".*"
+    item_patterns:
+      - "Beratung"
+      - "Consulting"
+      - "Rechtsanwalt"
+      - "Steuerberater"
+      - "Wirtschaftsprüfer"
+    target_account: "4950"
+    target_account_name: "Rechts- und Beratungskosten"
+    priority: 50
+    similarity_threshold: 0.8
+    legal_basis: "§4 Abs. 4 EStG"
+
+# =============================================================================
+# VAT RULES
+# =============================================================================
+
+vat_rules:
+  standard_rate:
+    rate: 0.19
+    input_tax_account: "1576"
+    input_tax_name: "Abziehbare Vorsteuer 19%"
+    legal_basis: "§15 Abs. 1 UStG"
+
+  reduced_rate:
+    rate: 0.07
+    input_tax_account: "1571"
+    input_tax_name: "Abziehbare Vorsteuer 7%"
+    legal_basis: "§15 Abs. 1 UStG"
+    applies_to:
+      - "Bücher"
+      - "Lebensmittel"
+      - "Zeitungen"
+      - "Fahrkarten"
+
+  reverse_charge:
+    applies_when:
+      - supplier_country: "!DE"
+    vat_account: "1787"
+    input_tax_account: "1577"
+    legal_basis: "§13b UStG"
+    note: "Steuerschuldnerschaft des Leistungsempfängers"
+
+# =============================================================================
+# CREDIT ACCOUNTS (Haben-Konten)
+# =============================================================================
+
+credit_accounts:
+  liabilities:
+    account: "1600"
+    name: "Verbindlichkeiten aus Lieferungen und Leistungen"
+    skr04_account: "3300"
+
+  bank:
+    account: "1200"
+    name: "Bank"
+    skr04_account: "1800"
+
+# =============================================================================
+# SKR04 MAPPING
+# =============================================================================
+
+skr04_mapping:
+  "4930": "6815"  # Bürobedarf
+  "4940": "6820"  # Zeitschriften
+  "4910": "6805"  # Porto
+  "4920": "6810"  # Telefon
+  "4985": "6845"  # GWG
+  "0420": "0650"  # EDV-Anlagen
+  "4964": "6835"  # Software-Aufwand
+  "0027": "0135"  # Software-Anlage
+  "0410": "0620"  # Geschäftsausstattung
+  "0210": "0440"  # Maschinen
+  "4230": "6320"  # Heizung
+  "4660": "6660"  # Reisekosten
+  "4650": "6640"  # Bewirtung
+  "4945": "6825"  # Fortbildung
+  "4950": "6830"  # Beratung
+  "4360": "6400"  # Versicherungen
+  "4210": "6310"  # Miete
+  "4600": "6600"  # Werbekosten
+  "4909": "6300"  # Fremdleistungen
+  "1576": "1406"  # Vorsteuer 19%
+  "1571": "1401"  # Vorsteuer 7%
+  "1600": "3300"  # Verbindlichkeiten
