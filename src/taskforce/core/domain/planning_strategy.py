@@ -203,7 +203,13 @@ async def _process_tool_calls(
     for req, res in await _execute_tool_calls(agent, requests, session_id):
         async for e in _emit_tool_result(agent, req, res):
             yield e
-        messages.append(await agent._create_tool_message(req.tool_call_id, req.tool_name, res, session_id, step))
+        messages.append(await agent.tool_result_message_factory.build_message(
+            tool_call_id=req.tool_call_id,
+            tool_name=req.tool_name,
+            tool_result=res,
+            session_id=session_id,
+            step=step,
+        ))
 
 
 # --- Strategies ---
@@ -243,8 +249,8 @@ class NativeReActStrategy:
             messages[0] = {"role": "system", "content": agent._build_system_prompt(mission=mission, state=state, messages=messages)}
 
             if use_stream:
-                messages = await agent._compress_messages(messages)
-                messages = await agent._preflight_budget_check(messages)
+                messages = await agent.message_history_manager.compress_messages(messages)
+                messages = agent.message_history_manager.preflight_budget_check(messages)
 
             tool_calls, content = [], ""
 

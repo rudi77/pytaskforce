@@ -282,7 +282,7 @@ Keep it factual and concise."""
 
         return "\n\n".join(summary_parts)
 
-    async def preflight_budget_check(
+    def preflight_budget_check(
         self, messages: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """

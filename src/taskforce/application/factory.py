@@ -187,7 +187,7 @@ class AgentFactory:
             >>> result = await agent.execute("Do something", "session-123")
         """
         from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
-        from taskforce.application.tool_resolver import ToolResolver
+        from taskforce.application.tool_registry import ToolRegistry
         from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
         self.logger.info(
@@ -217,11 +217,11 @@ class AgentFactory:
         )
 
         # Resolve native tools
-        tool_resolver = ToolResolver(
+        tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
         )
-        native_tools = tool_resolver.resolve(definition.tools)
+        native_tools = tool_registry.resolve(definition.tools)
 
         # Handle plugin tools if this is a plugin agent
         plugin_tools: list[ToolProtocol] = []

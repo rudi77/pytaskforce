@@ -1,28 +1,29 @@
 """
-Unit Tests for Tool Catalog Service
-====================================
+Unit Tests for Tool Registry Service (Catalog Functionality)
+=============================================================
 
-Tests the ToolCatalog service for tool validation and catalog generation.
+Tests the ToolRegistry service for tool validation and catalog generation.
 
 Story: 8.2 - Tool Catalog + Allowlist Validation
 """
 
 import pytest
 
-from taskforce.application.tool_catalog import ToolCatalog, get_tool_catalog
+from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
 
 
-def test_tool_catalog_singleton():
-    """Test that get_tool_catalog returns singleton instance."""
-    catalog1 = get_tool_catalog()
-    catalog2 = get_tool_catalog()
-    assert catalog1 is catalog2
+def test_tool_registry_returns_instance():
+    """Test that get_tool_registry returns an instance."""
+    registry1 = get_tool_registry()
+    registry2 = get_tool_registry()
+    assert isinstance(registry1, ToolRegistry)
+    assert isinstance(registry2, ToolRegistry)
 
 
-def test_get_native_tools_returns_list():
-    """Test get_native_tools returns list of tool definitions."""
-    catalog = ToolCatalog()
-    tools = catalog.get_native_tools()
+def test_list_native_tools_returns_list():
+    """Test list_native_tools returns list of tool definitions."""
+    registry = ToolRegistry()
+    tools = registry.list_native_tools()
 
     assert isinstance(tools, list)
     assert len(tools) > 0
@@ -30,8 +31,8 @@ def test_get_native_tools_returns_list():
 
 def test_native_tool_structure():
     """Test that native tools have required fields."""
-    catalog = ToolCatalog()
-    tools = catalog.get_native_tools()
+    registry = ToolRegistry()
+    tools = registry.list_native_tools()
 
     for tool in tools:
         assert "name" in tool
@@ -49,8 +50,8 @@ def test_native_tool_structure():
 
 def test_get_native_tool_names_returns_set():
     """Test get_native_tool_names returns set of tool names."""
-    catalog = ToolCatalog()
-    tool_names = catalog.get_native_tool_names()
+    registry = ToolRegistry()
+    tool_names = registry.get_native_tool_names()
 
     assert isinstance(tool_names, set)
     assert len(tool_names) > 0
@@ -59,8 +60,8 @@ def test_get_native_tool_names_returns_set():
 
 def test_required_native_tools_present():
     """Test that all required native tools are present."""
-    catalog = ToolCatalog()
-    tool_names = catalog.get_native_tool_names()
+    registry = ToolRegistry()
+    tool_names = registry.get_native_tool_names()
 
     required_tools = {
         "web_search",
@@ -79,8 +80,8 @@ def test_required_native_tools_present():
 
 def test_validate_native_tools_valid():
     """Test validation with valid tool names."""
-    catalog = ToolCatalog()
-    is_valid, invalid_tools = catalog.validate_native_tools(
+    registry = ToolRegistry()
+    is_valid, invalid_tools = registry.validate_native_tools(
         ["web_search", "file_read", "python"]
     )
 
@@ -90,8 +91,8 @@ def test_validate_native_tools_valid():
 
 def test_validate_native_tools_invalid():
     """Test validation with invalid tool names."""
-    catalog = ToolCatalog()
-    is_valid, invalid_tools = catalog.validate_native_tools(
+    registry = ToolRegistry()
+    is_valid, invalid_tools = registry.validate_native_tools(
         ["web_search", "invalid_tool", "another_bad_tool"]
     )
 
@@ -103,8 +104,8 @@ def test_validate_native_tools_invalid():
 
 def test_validate_native_tools_empty_list():
     """Test validation with empty tool list."""
-    catalog = ToolCatalog()
-    is_valid, invalid_tools = catalog.validate_native_tools([])
+    registry = ToolRegistry()
+    is_valid, invalid_tools = registry.validate_native_tools([])
 
     assert is_valid is True
     assert invalid_tools == []
@@ -112,8 +113,8 @@ def test_validate_native_tools_empty_list():
 
 def test_validate_native_tools_all_invalid():
     """Test validation with all invalid tool names."""
-    catalog = ToolCatalog()
-    is_valid, invalid_tools = catalog.validate_native_tools(
+    registry = ToolRegistry()
+    is_valid, invalid_tools = registry.validate_native_tools(
         ["fake1", "fake2", "fake3"]
     )
 
@@ -126,8 +127,8 @@ def test_validate_native_tools_all_invalid():
 
 def test_validate_native_tools_case_sensitive():
     """Test that tool name validation is case-sensitive."""
-    catalog = ToolCatalog()
-    is_valid, invalid_tools = catalog.validate_native_tools(
+    registry = ToolRegistry()
+    is_valid, invalid_tools = registry.validate_native_tools(
         ["Web_Search", "FILE_READ"]
     )
 
@@ -136,14 +137,13 @@ def test_validate_native_tools_case_sensitive():
     assert "FILE_READ" in invalid_tools
 
 
-def test_tool_catalog_deterministic():
-    """Test that catalog returns consistent results."""
-    catalog = ToolCatalog()
-    tools1 = catalog.get_native_tools()
-    tools2 = catalog.get_native_tools()
+def test_tool_registry_deterministic():
+    """Test that registry returns consistent results."""
+    registry = ToolRegistry()
+    tools1 = registry.list_native_tools()
+    tools2 = registry.list_native_tools()
 
     assert len(tools1) == len(tools2)
     names1 = {tool["name"] for tool in tools1}
     names2 = {tool["name"] for tool in tools2}
     assert names1 == names2
-

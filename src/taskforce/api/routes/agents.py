@@ -16,7 +16,7 @@ Story: 8.1 - Custom Agent Registry (CRUD + YAML Persistence)
 Clean Architecture Notes:
 - Uses Domain Models from core/domain/agent_models.py
 - Converts between API schemas and Domain models
-- Injects ToolMapper into FileAgentRegistry
+- Injects ToolRegistry into FileAgentRegistry
 """
 
 from fastapi import APIRouter, HTTPException, status
@@ -30,8 +30,7 @@ from taskforce.api.schemas.agent_schemas import (
     PluginAgentResponse,
     ProfileAgentResponse,
 )
-from taskforce.application.tool_catalog import get_tool_catalog
-from taskforce.application.tool_mapper import get_tool_mapper
+from taskforce.application.tool_registry import get_tool_registry
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     PluginAgentDefinition,
@@ -46,7 +45,7 @@ router = APIRouter()
 
 # Singleton registry instance with injected tool mapper and base path
 _registry = FileAgentRegistry(
-    tool_mapper=get_tool_mapper(),
+    tool_mapper=get_tool_registry(),
     base_path=get_base_path(),
 )
 
@@ -67,7 +66,7 @@ def _validate_tool_allowlists(
     Raises:
         HTTPException 400: If validation fails with details
     """
-    catalog = get_tool_catalog()
+    catalog = get_tool_registry()
 
     # Validate native tools
     if tool_allowlist:
