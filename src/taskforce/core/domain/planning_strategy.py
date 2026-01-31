@@ -2,6 +2,9 @@
 Planning Strategy Abstractions for Agent.
 
 Defines the strategy interface and built-in strategy implementations.
+Simplified architecture with two strategies:
+- NativeReActStrategy: ReAct loop with optional upfront plan generation
+- PlanAndExecuteStrategy: Generate plan, execute steps sequentially
 """
 
 from __future__ import annotations
@@ -14,9 +17,7 @@ from typing import Any, Protocol, TYPE_CHECKING
 
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.interfaces.logging import LoggerProtocol
-from taskforce.core.tools.tool_converter import (
-    assistant_tool_calls_to_message,
-)
+from taskforce.core.tools.tool_converter import assistant_tool_calls_to_message
 
 if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
@@ -56,6 +57,11 @@ class PlanningStrategy(Protocol):
         """Execute a mission with streaming updates."""
 
 
+# =============================================================================
+# Shared Helper Functions
+# =============================================================================
+
+
 def _build_plan_update(
     action: str,
     *,
@@ -77,10 +83,7 @@ def _build_plan_update(
     return data
 
 
-def _parse_tool_args(
-    tool_call: dict[str, Any],
-    logger: LoggerProtocol,
-) -> dict[str, Any]:
+def _parse_tool_args(tool_call: dict[str, Any], logger: LoggerProtocol) -> dict[str, Any]:
     """Parse tool arguments from a tool call payload."""
     raw_args = tool_call["function"]["arguments"]
     try:
@@ -95,29 +98,13 @@ def _parse_tool_args(
 
 
 def _extract_tool_output(tool_result: dict[str, Any]) -> str:
-    """Extract output from tool result for streaming events.
-
-    Handles both formats:
-    - Tools with "output" key: returns tool_result["output"]
-    - Tools with flat dict: serializes entire result as JSON
-
-    Args:
-        tool_result: Tool execution result dict
-
-    Returns:
-        String representation of tool output
-    """
+    """Extract output from tool result for streaming events."""
     if "output" in tool_result:
         output = tool_result["output"]
-        if isinstance(output, str):
-            return output
-        return json.dumps(output, default=str, ensure_ascii=False)
-    elif "error" in tool_result:
+        return output if isinstance(output, str) else json.dumps(output, default=str, ensure_ascii=False)
+    if "error" in tool_result:
         return str(tool_result["error"])
-    else:
-        # Serialize entire result for tools that return flat dicts
-        # (e.g., semantic_rule_engine returns {success, booking_proposals, ...})
-        return json.dumps(tool_result, default=str, ensure_ascii=False)
+    return json.dumps(tool_result, default=str, ensure_ascii=False)
 
 
 def _tool_supports_parallelism(agent: "Agent", tool_name: str) -> bool:
@@ -125,22 +112,7 @@ def _tool_supports_parallelism(agent: "Agent", tool_name: str) -> bool:
     tool = agent.tools.get(tool_name)
     if not tool:
         return False
-    return (
-        bool(getattr(tool, "supports_parallelism", False))
-        and not tool.requires_approval
-    )
-
-
-async def _execute_with_limit(
-    agent: "Agent",
-    tool_name: str,
-    tool_args: dict[str, Any],
-    semaphore: asyncio.Semaphore,
-    session_id: str | None = None,
-) -> dict[str, Any]:
-    """Execute a tool with concurrency limits applied."""
-    async with semaphore:
-        return await agent._execute_tool(tool_name, tool_args, session_id=session_id)
+    return bool(getattr(tool, "supports_parallelism", False)) and not tool.requires_approval
 
 
 async def _execute_tool_calls(
@@ -157,16 +129,14 @@ async def _execute_tool_calls(
     results: dict[str, dict[str, Any]] = {}
     parallel_tasks: list[tuple[ToolCallRequest, asyncio.Task[dict[str, Any]]]] = []
 
+    async def execute_with_limit(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        async with semaphore:
+            return await agent._execute_tool(name, args, session_id=session_id)
+
     for request in requests:
         if _tool_supports_parallelism(agent, request.tool_name) and max_parallel > 1:
             task = asyncio.create_task(
-                _execute_with_limit(
-                    agent,
-                    request.tool_name,
-                    request.tool_args,
-                    semaphore,
-                    session_id=session_id,
-                )
+                execute_with_limit(request.tool_name, request.tool_args)
             )
             parallel_tasks.append((request, task))
         else:
@@ -191,19 +161,8 @@ async def _collect_execution_result(
     final_message = ""
     last_error = ""
     pending_question: dict[str, Any] | None = None
-    total_token_usage = {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-    }
-    history_event_types = {
-        "tool_call",
-        "tool_result",
-        "ask_user",
-        "plan_updated",
-        "final_answer",
-        "error",
-    }
+    total_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    history_event_types = {"tool_call", "tool_result", "ask_user", "plan_updated", "final_answer", "error"}
 
     async for event in events:
         event_type = event.event_type
@@ -212,15 +171,12 @@ async def _collect_execution_result(
         if event_type == "final_answer":
             final_message = event.data.get("content", "")
         elif event_type == "ask_user":
-            # Execution pauses until a human provides input.
             pending_question = dict(event.data)
-            # Provide a meaningful message for synchronous /execute consumers.
             if not final_message:
                 final_message = str(event.data.get("question", "")).strip() or "Waiting for user input"
         elif event_type == "error":
             last_error = event.data.get("message", "")
         elif event_type == "token_usage":
-            # Accumulate token usage across all LLM calls
             usage = event.data
             total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
             total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
@@ -271,660 +227,429 @@ async def _generate_plan_steps(
         logger.warning("plan_generation_failed", error=result.get("error"))
         return []
 
-    content = result.get("content", "") or ""
-    return _parse_plan_steps(content, logger)
+    return _parse_plan_steps(result.get("content", "") or "", logger)
 
 
 def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
-    """Parse plan steps from LLM response with specific error handling."""
+    """Parse plan steps from LLM response."""
     text = content.strip()
-    
-    # Try JSON parsing first (with or without code blocks)
+    if not text:
+        return []
+
+    # Try JSON parsing (with or without code blocks)
+    json_text = text
     if "```" in text:
         try:
             parts = text.split("```")
             if len(parts) >= 2:
                 json_text = parts[1].strip()
-                # Remove language identifier if present (e.g., "json\n[...]" -> "[...]")
                 if "\n" in json_text:
                     lines = json_text.split("\n", 1)
                     if len(lines) > 1 and not lines[0].strip().startswith("["):
                         json_text = lines[1].strip()
-                data = json.loads(json_text)
-                if isinstance(data, list):
-                    steps = [str(item).strip() for item in data if str(item).strip()]
-                    return steps
-        except json.JSONDecodeError as e:
-            logger.debug("json_parse_failed", error=str(e), content_preview=text[:100])
-        except (TypeError, ValueError) as e:
-            logger.debug("plan_steps_parse_error", error=str(e))
-    else:
-        # Try parsing as JSON directly if no code block
-        try:
-            data = json.loads(text)
-            if isinstance(data, list):
-                steps = [str(item).strip() for item in data if str(item).strip()]
-                return steps
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    
+        except Exception as e:
+            logger.debug("code_block_parse_error", error=str(e))
+
+    try:
+        data = json.loads(json_text)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()]
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        logger.debug("json_parse_failed", error=str(e), content_preview=text[:100])
+
     # Fallback to line-based parsing
     steps: list[str] = []
     for line in text.splitlines():
         candidate = line.strip().lstrip("-").strip()
-        if not candidate:
-            continue
-        # Skip code block markers
-        if candidate.startswith("```"):
+        if not candidate or candidate.startswith("```"):
             continue
         if candidate[0].isdigit() and "." in candidate:
             candidate = candidate.split(".", 1)[1].strip()
         if candidate:
             steps.append(candidate)
-    
     return steps
 
 
+async def _handle_ask_user(
+    agent: "Agent",
+    tool_args: dict[str, Any],
+    session_id: str,
+    state: dict[str, Any],
+    logger: LoggerProtocol,
+) -> AsyncIterator[StreamEvent]:
+    """Handle ask_user tool - pause execution for user input."""
+    question = str(tool_args.get("question", "")).strip()
+    missing = tool_args.get("missing") or []
+
+    state["pending_question"] = {"question": question, "missing": missing}
+    await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+
+    yield StreamEvent(event_type="ask_user", data={"question": question, "missing": missing})
+    logger.info("execute_stream_paused_for_user_input", session_id=session_id, question=question[:200])
+
+
+async def _emit_tool_result(
+    agent: "Agent",
+    request: ToolCallRequest,
+    tool_result: dict[str, Any],
+) -> AsyncIterator[StreamEvent]:
+    """Emit tool result and optional plan update events."""
+    yield StreamEvent(
+        event_type="tool_result",
+        data={
+            "tool": request.tool_name,
+            "id": request.tool_call_id,
+            "success": tool_result.get("success", False),
+            "output": agent._truncate_output(_extract_tool_output(tool_result)),
+            "args": request.tool_args,
+        },
+    )
+
+    if request.tool_name in ("planner", "manage_plan") and tool_result.get("success"):
+        plan_output = tool_result.get("output")
+        if not plan_output and agent._planner:
+            plan_output = agent._planner.get_plan_summary()
+        yield StreamEvent(
+            event_type="plan_updated",
+            data=_build_plan_update(action=request.tool_args.get("action", "unknown"), plan=plan_output),
+        )
+
+
+# =============================================================================
+# NativeReActStrategy - Main ReAct Loop with optional upfront planning
+# =============================================================================
+
+
 class NativeReActStrategy:
-    """Strategy that owns the native tool calling ReAct loop."""
+    """Strategy that owns the native tool calling ReAct loop.
+
+    Optionally generates a plan upfront before running the ReAct loop.
+    This consolidates the former PlanAndReactStrategy functionality.
+    """
 
     name = "native_react"
+
+    def __init__(
+        self,
+        generate_plan_first: bool = False,
+        max_plan_steps: int = 12,
+        logger: LoggerProtocol | None = None,
+    ) -> None:
+        self.generate_plan_first = generate_plan_first
+        self.max_plan_steps = max_plan_steps
+        self._logger = logger
 
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
         agent.logger.info("execute_start", session_id=session_id, mission=mission[:100])
-
         result = await _collect_execution_result(
-            session_id,
-            self.execute_stream(agent, mission, session_id),
+            session_id, self.execute_stream(agent, mission, session_id)
         )
-
-        agent.logger.info(
-            "execute_complete",
-            session_id=session_id,
-            status=result.status,
-        )
+        agent.logger.info("execute_complete", session_id=session_id, status=result.status)
         return result
 
-    def _accumulate_tool_calls(
-        self, tool_calls_accumulated: dict[int, dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Convert accumulated tool calls to OpenAI format."""
-        return [
-            {
-                "id": tc_data["id"],
-                "type": "function",
-                "function": {
-                    "name": tc_data["name"],
-                    "arguments": tc_data["arguments"],
-                },
-            }
-            for tc_data in tool_calls_accumulated.values()
-        ]
+    async def execute_stream(
+        self, agent: "Agent", mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        logger = self._logger or agent.logger
+        logger.info("execute_stream_start", session_id=session_id)
 
-    async def _emit_plan_update_if_needed(
+        state = await agent.state_manager.load_state(session_id) or {}
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
+
+        # Optional upfront plan generation (replaces PlanAndReactStrategy)
+        if self.generate_plan_first:
+            async for event in self._generate_initial_plan(agent, mission, state, session_id, logger):
+                yield event
+
+        messages = agent._build_initial_messages(mission, state)
+        use_streaming = hasattr(agent.llm_provider, "complete_stream")
+
+        if not use_streaming:
+            logger.warning("llm_provider_no_streaming", fallback="execute")
+
+        async for event in self._execute_loop(
+            agent, mission, session_id, messages, state, use_streaming, logger
+        ):
+            yield event
+
+    async def _generate_initial_plan(
         self,
         agent: "Agent",
-        tool_name: str,
-        tool_args: dict[str, Any],
-        tool_result: dict[str, Any],
+        mission: str,
+        state: dict[str, Any],
+        session_id: str,
+        logger: LoggerProtocol,
     ) -> AsyncIterator[StreamEvent]:
-        """Emit plan update event if tool is planner/manage_plan."""
-        if tool_name in ("planner", "manage_plan") and tool_result.get("success"):
-            plan_output = tool_result.get("output")
-            if not plan_output and agent._planner:
-                plan_output = agent._planner.get_plan_summary()
+        """Generate and save initial plan before ReAct loop."""
+        plan_steps = await _generate_plan_steps(agent, mission, logger)
+        if not plan_steps:
+            plan_steps = [
+                "Analyze the mission and identify required actions.",
+                "Execute the required actions using available tools.",
+                "Summarize the results and provide the final response.",
+            ]
+        plan_steps = plan_steps[: self.max_plan_steps]
+
+        if agent._planner:
+            await agent._planner.execute(action="create_plan", tasks=plan_steps)
             yield StreamEvent(
                 event_type="plan_updated",
                 data=_build_plan_update(
-                    action=tool_args.get("action", "unknown"),
-                    plan=plan_output,
+                    action="create_plan",
+                    steps=plan_steps,
+                    plan=agent._planner.get_plan_summary(),
                 ),
             )
 
-    async def _process_single_tool_call(
-        self,
-        agent: "Agent",
-        tool_call: dict[str, Any],
-        session_id: str,
-        step: int,
-        messages: list[dict[str, Any]],
-    ) -> AsyncIterator[StreamEvent]:
-        """Process a single tool call and emit events."""
-        tool_name = tool_call["function"]["name"]
-        tool_call_id = tool_call["id"]
+        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
 
-        try:
-            tool_args = json.loads(tool_call["function"]["arguments"])
-        except json.JSONDecodeError:
-            tool_args = {}
-            agent.logger.warning(
-                "stream_tool_args_parse_failed",
-                tool=tool_name,
-                raw_args=tool_call["function"]["arguments"],
-            )
-
-        yield StreamEvent(
-            event_type="tool_call",
-            data={"tool": tool_name, "id": tool_call_id, "status": "executing", "args": tool_args},
-        )
-
-        tool_result = await agent._execute_tool(tool_name, tool_args, session_id=session_id)
-
-        # Extract output: use "output" key if present, otherwise serialize entire result
-        output_data = _extract_tool_output(tool_result)
-
-        yield StreamEvent(
-            event_type="tool_result",
-            data={
-                "tool": tool_name,
-                "id": tool_call_id,
-                "success": tool_result.get("success", False),
-                "output": agent._truncate_output(output_data),
-                "args": tool_args,
-            },
-        )
-
-        async for event in self._emit_plan_update_if_needed(agent, tool_name, tool_args, tool_result):
-            yield event
-
-        tool_message = await agent._create_tool_message(
-            tool_call_id, tool_name, tool_result, session_id, step
-        )
-        messages.append(tool_message)
-
-    async def _emit_tool_events(
-        self,
-        agent: "Agent",
-        tool_calls_list: list[dict[str, Any]],
-        session_id: str,
-        step: int,
-        messages: list[dict[str, Any]],
-    ) -> AsyncIterator[StreamEvent]:
-        """Execute tool calls and emit corresponding events."""
-        for tool_call in tool_calls_list:
-            async for event in self._process_single_tool_call(
-                agent, tool_call, session_id, step, messages
-            ):
-                yield event
-
-    async def _process_stream_chunk(
-        self,
-        chunk: dict[str, Any],
-        tool_calls_accumulated: dict[int, dict[str, Any]],
-        content_accumulated: list[str],
-        agent: "Agent",
-        step: int,
-    ) -> AsyncIterator[StreamEvent]:
-        """Process individual streaming chunk, yield events, and update state."""
-        chunk_type = chunk.get("type")
-
-        if chunk_type == "token":
-            token_content = chunk.get("content", "")
-            if token_content:
-                yield StreamEvent(event_type="llm_token", data={"content": token_content})
-                content_accumulated[0] += token_content
-
-        elif chunk_type == "tool_call_start":
-            tc_id = chunk.get("id", "")
-            tc_name = chunk.get("name", "")
-            tc_index = chunk.get("index", 0)
-
-            tool_calls_accumulated[tc_index] = {
-                "id": tc_id,
-                "name": tc_name,
-                "arguments": "",
-            }
-
-            yield StreamEvent(
-                event_type="tool_call",
-                data={"tool": tc_name, "id": tc_id, "status": "starting"},
-            )
-
-        elif chunk_type == "tool_call_delta":
-            tc_index = chunk.get("index", 0)
-            if tc_index in tool_calls_accumulated:
-                tool_calls_accumulated[tc_index]["arguments"] += chunk.get(
-                    "arguments_delta", ""
-                )
-
-        elif chunk_type == "tool_call_end":
-            tc_index = chunk.get("index", 0)
-            if tc_index in tool_calls_accumulated:
-                tool_calls_accumulated[tc_index]["arguments"] = chunk.get(
-                    "arguments", tool_calls_accumulated[tc_index]["arguments"]
-                )
-
-        elif chunk_type == "done":
-            usage = chunk.get("usage")
-            if usage:
-                yield StreamEvent(event_type="token_usage", data=usage)
-
-        elif chunk_type == "error":
-            yield StreamEvent(
-                event_type="error",
-                data={"message": chunk.get("message", "Unknown error"), "step": step},
-            )
-
-    async def _handle_streaming_completion(
-        self,
-        agent: "Agent",
-        session_id: str,
-        step: int,
-        final_message: str,
-        state: dict[str, Any],
-        loop_iterations: int,
-    ) -> AsyncIterator[StreamEvent]:
-        """Handle final completion logic and state persistence."""
-        if step >= agent.max_steps and not final_message:
-            final_message = f"Exceeded maximum steps ({agent.max_steps})"
-            yield StreamEvent(event_type="error", data={"message": final_message, "step": step})
-
-        await agent.state_store.save(
-            session_id=session_id, state=state, planner=agent.planner
-        )
-
-        agent.logger.info(
-            "execute_stream_complete",
-            session_id=session_id,
-            progress_steps=step,
-            total_iterations=loop_iterations,
-            overhead_iterations=loop_iterations - step,
-        )
-
-    async def _execute_non_streaming_loop(
+    async def _execute_loop(
         self,
         agent: "Agent",
         mission: str,
         session_id: str,
         messages: list[dict[str, Any]],
         state: dict[str, Any],
+        use_streaming: bool,
+        logger: LoggerProtocol,
     ) -> AsyncIterator[StreamEvent]:
-        """Execute using non-streaming LLM calls when streaming unavailable."""
+        """Unified execution loop for streaming and non-streaming LLM calls."""
         step = 0
         loop_iterations = 0
         final_message = ""
 
         while step < agent.max_steps:
             loop_iterations += 1
-            agent.logger.debug(
+            logger.debug(
                 "loop_iteration",
                 session_id=session_id,
                 iteration=loop_iterations,
                 progress_steps=step,
                 max_steps=agent.max_steps,
             )
-            await agent.record_heartbeat(
-                session_id,
-                "running",
-                {"step": step, "iteration": loop_iterations},
-            )
-
-            current_system_prompt = agent._build_system_prompt(
-                mission=mission, state=state, messages=messages
-            )
-            messages[0] = {"role": "system", "content": current_system_prompt}
-
-            result = await agent.llm_provider.complete(
-                messages=messages,
-                model=agent.model_alias,
-                tools=agent._openai_tools,
-                tool_choice="auto",
-                temperature=0.2,
-            )
-
-            if result.get("usage"):
-                yield StreamEvent(event_type="token_usage", data=result["usage"])
-
-            if not result.get("success"):
-                agent.logger.error(
-                    "llm_call_failed",
-                    error=result.get("error"),
-                    iteration=loop_iterations,
-                    step=step,
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"[System Error: {result.get('error')}. Please try again.]",
-                    }
-                )
-                continue
-
-            tool_calls = result.get("tool_calls")
-
-            if tool_calls:
-                # Special case: ask_user is a control-flow pause, not a normal tool.
-                for tool_call in tool_calls:
-                    tool_name = tool_call["function"]["name"]
-                    if tool_name == "ask_user":
-                        tool_args = _parse_tool_args(tool_call, agent.logger)
-                        question = str(tool_args.get("question", "")).strip()
-                        missing = tool_args.get("missing") or []
-
-                        state["pending_question"] = {
-                            "question": question,
-                            "missing": missing,
-                        }
-                        await agent.state_store.save(
-                            session_id=session_id,
-                            state=state,
-                            planner=agent.planner,
-                        )
-
-                        yield StreamEvent(
-                            event_type="ask_user",
-                            data={"question": question, "missing": missing},
-                        )
-                        agent.logger.info(
-                            "execute_stream_paused_for_user_input",
-                            session_id=session_id,
-                            question=question[:200],
-                        )
-                        return
-
-                step += 1
-                agent.logger.info(
-                    "tool_calls_received",
-                    step=step,
-                    iteration=loop_iterations,
-                    count=len(tool_calls),
-                    tools=[tc["function"]["name"] for tc in tool_calls],
-                )
-
-                messages.append(assistant_tool_calls_to_message(tool_calls))
-
-                requests: list[ToolCallRequest] = []
-                for tool_call in tool_calls:
-                    tool_name = tool_call["function"]["name"]
-                    tool_call_id = tool_call["id"]
-                    tool_args = _parse_tool_args(tool_call, agent.logger)
-
-                    yield StreamEvent(
-                        event_type="tool_call",
-                        data={
-                            "tool": tool_name,
-                            "id": tool_call_id,
-                            "status": "executing",
-                            "args": tool_args,
-                        },
-                    )
-
-                    requests.append(
-                        ToolCallRequest(
-                            tool_call_id=tool_call_id,
-                            tool_name=tool_name,
-                            tool_args=tool_args,
-                        )
-                    )
-
-                tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
-                for request, tool_result in tool_results:
-                    yield StreamEvent(
-                        event_type="tool_result",
-                        data={
-                            "tool": request.tool_name,
-                            "id": request.tool_call_id,
-                            "success": tool_result.get("success", False),
-                            "output": agent._truncate_output(_extract_tool_output(tool_result)),
-                            "args": request.tool_args,
-                        },
-                    )
-
-                    if request.tool_name in (
-                        "planner",
-                        "manage_plan",
-                    ) and tool_result.get("success"):
-                        plan_output = tool_result.get("output")
-                        if not plan_output and agent._planner:
-                            plan_output = agent._planner.get_plan_summary()
-                        yield StreamEvent(
-                            event_type="plan_updated",
-                            data=_build_plan_update(
-                                action=request.tool_args.get("action", "unknown"),
-                                plan=plan_output,
-                            ),
-                        )
-
-                    tool_message = await agent._create_tool_message(
-                        request.tool_call_id,
-                        request.tool_name,
-                        tool_result,
-                        session_id,
-                        step,
-                    )
-                    messages.append(tool_message)
-
-                continue
-
-            content = result.get("content", "")
-            if content:
-                step += 1
-                final_message = content
-                yield StreamEvent(event_type="final_answer", data={"content": content})
-                break
-
-            agent.logger.warning("empty_response", step=step, iteration=loop_iterations)
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "[System: Your response was empty. Please provide an answer or use a tool.]",
-                }
-            )
-
-        async for event in self._handle_streaming_completion(
-            agent, session_id, step, final_message, state, loop_iterations
-        ):
-            yield event
-
-    async def execute_stream(
-        self, agent: "Agent", mission: str, session_id: str
-    ) -> AsyncIterator[StreamEvent]:
-        agent.logger.info("execute_stream_start", session_id=session_id)
-
-        state = await agent.state_manager.load_state(session_id) or {}
-
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
-
-        if not hasattr(agent.llm_provider, "complete_stream"):
-            agent.logger.warning("llm_provider_no_streaming", fallback="execute")
-
-            messages = agent._build_initial_messages(mission, state)
-            async for event in self._execute_non_streaming_loop(
-                agent, mission, session_id, messages, state
-            ):
-                yield event
-            return
-
-        async for event in self._execute_streaming_loop(
-            agent, mission, session_id, state
-        ):
-            yield event
-
-    async def _execute_streaming_loop(
-        self,
-        agent: "Agent",
-        mission: str,
-        session_id: str,
-        state: dict[str, Any],
-    ) -> AsyncIterator[StreamEvent]:
-        """Execute using streaming LLM calls for real-time updates."""
-        messages = agent._build_initial_messages(mission, state)
-        step = 0
-        loop_iterations = 0
-        final_message = ""
-
-        while step < agent.max_steps:
-            loop_iterations += 1
-            agent.logger.debug(
-                "stream_loop_iteration",
-                session_id=session_id,
-                iteration=loop_iterations,
-                progress_steps=step,
-                max_steps=agent.max_steps,
-            )
-            await agent.record_heartbeat(
-                session_id,
-                "running",
-                {"step": step, "iteration": loop_iterations},
-            )
+            await agent.record_heartbeat(session_id, "running", {"step": step, "iteration": loop_iterations})
 
             yield StreamEvent(
                 event_type="step_start",
                 data={"step": step, "max_steps": agent.max_steps, "iteration": loop_iterations},
             )
 
-            current_system_prompt = agent._build_system_prompt(
-                mission=mission, state=state, messages=messages
-            )
+            # Update system prompt
+            current_system_prompt = agent._build_system_prompt(mission=mission, state=state, messages=messages)
             messages[0] = {"role": "system", "content": current_system_prompt}
 
-            messages = await agent._compress_messages(messages)
-            messages = await agent._preflight_budget_check(messages)
+            if use_streaming:
+                messages = await agent._compress_messages(messages)
+                messages = await agent._preflight_budget_check(messages)
 
-            tool_calls_accumulated: dict[int, dict[str, Any]] = {}
-            content_accumulated = [""]
+            # Call LLM (streaming or non-streaming)
+            tool_calls: list[dict[str, Any]] = []
+            content = ""
 
-            try:
-                async for chunk in agent.llm_provider.complete_stream(
+            if use_streaming:
+                async for chunk_event in self._process_streaming_llm(agent, messages, step, logger):
+                    if chunk_event.event_type == "_internal_tool_calls":
+                        tool_calls = chunk_event.data["tool_calls"]
+                    elif chunk_event.event_type == "_internal_content":
+                        content = chunk_event.data["content"]
+                    else:
+                        yield chunk_event
+            else:
+                result = await agent.llm_provider.complete(
                     messages=messages,
                     model=agent.model_alias,
                     tools=agent._openai_tools,
                     tool_choice="auto",
                     temperature=0.2,
-                ):
-                    async for event in self._process_stream_chunk(
-                        chunk, tool_calls_accumulated, content_accumulated, agent, step
-                    ):
-                        yield event
+                )
+                if result.get("usage"):
+                    yield StreamEvent(event_type="token_usage", data=result["usage"])
+                if not result.get("success"):
+                    logger.error("llm_call_failed", error=result.get("error"), iteration=loop_iterations, step=step)
+                    messages.append({"role": "user", "content": f"[System Error: {result.get('error')}. Please try again.]"})
+                    continue
+                tool_calls = result.get("tool_calls") or []
+                content = result.get("content", "")
 
-            except Exception as e:
-                agent.logger.error("stream_error", error=str(e), step=step)
-                yield StreamEvent(event_type="error", data={"message": str(e), "step": step})
+            # Process tool calls
+            if tool_calls:
+                should_return = False
+                async for event in self._process_tool_calls(
+                    agent, tool_calls, session_id, step, state, messages, logger
+                ):
+                    if event.event_type == "ask_user":
+                        should_return = True
+                    yield event
+                if should_return:
+                    return
+                step += 1
                 continue
 
-            if tool_calls_accumulated:
+            # Process content response
+            if content:
                 step += 1
-                tool_calls_list = self._accumulate_tool_calls(tool_calls_accumulated)
-
-                agent.logger.info(
-                    "stream_tool_calls_received",
-                    step=step,
-                    iteration=loop_iterations,
-                    count=len(tool_calls_list),
-                    tools=[tc["function"]["name"] for tc in tool_calls_list],
-                )
-
-                messages.append(assistant_tool_calls_to_message(tool_calls_list))
-
-                for tool_call in tool_calls_list:
-                    tool_name = tool_call["function"]["name"]
-                    tool_call_id = tool_call["id"]
-
-                    try:
-                        tool_args = json.loads(tool_call["function"]["arguments"])
-                    except json.JSONDecodeError:
-                        tool_args = {}
-                        agent.logger.warning(
-                            "stream_tool_args_parse_failed",
-                            tool=tool_name,
-                            raw_args=tool_call["function"]["arguments"],
-                        )
-
-                    yield StreamEvent(
-                        event_type="tool_call",
-                        data={
-                            "tool": tool_name,
-                            "id": tool_call_id,
-                            "status": "executing",
-                            "args": tool_args,
-                        },
-                    )
-
-                    # Special case: ask_user is a control-flow pause, not a normal tool.
-                    if tool_name == "ask_user":
-                        question = str(tool_args.get("question", "")).strip()
-                        missing = tool_args.get("missing") or []
-
-                        state["pending_question"] = {
-                            "question": question,
-                            "missing": missing,
-                        }
-                        await agent.state_store.save(
-                            session_id=session_id,
-                            state=state,
-                            planner=agent.planner,
-                        )
-
-                        yield StreamEvent(
-                            event_type="ask_user",
-                            data={"question": question, "missing": missing},
-                        )
-                        agent.logger.info(
-                            "execute_stream_paused_for_user_input",
-                            session_id=session_id,
-                            question=question[:200],
-                        )
-                        return
-
-                    tool_result = await agent._execute_tool(tool_name, tool_args, session_id=session_id)
-
-                    yield StreamEvent(
-                        event_type="tool_result",
-                        data={
-                            "tool": tool_name,
-                            "id": tool_call_id,
-                            "success": tool_result.get("success", False),
-                            "output": agent._truncate_output(_extract_tool_output(tool_result)),
-                            "args": tool_args,
-                        },
-                    )
-
-                    if tool_name in ("planner", "manage_plan") and tool_result.get("success"):
-                        plan_output = tool_result.get("output")
-                        if not plan_output and agent._planner:
-                            plan_output = agent._planner.get_plan_summary()
-                        yield StreamEvent(
-                            event_type="plan_updated",
-                            data=_build_plan_update(
-                                action=tool_args.get("action", "unknown"),
-                                plan=plan_output,
-                            ),
-                        )
-
-                    tool_message = await agent._create_tool_message(
-                        tool_call_id, tool_name, tool_result, session_id, step
-                    )
-                    messages.append(tool_message)
-
-            elif content_accumulated[0]:
-                step += 1
-                final_message = content_accumulated[0]
-                agent.logger.info(
-                    "stream_final_answer",
-                    step=step,
-                    iteration=loop_iterations,
-                    total_iterations=loop_iterations,
-                )
-
-                yield StreamEvent(event_type="final_answer", data={"content": final_message})
+                final_message = content
+                yield StreamEvent(event_type="final_answer", data={"content": content})
                 break
 
-            else:
-                agent.logger.warning("stream_empty_response", step=step, iteration=loop_iterations)
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "[System: Empty response. Please provide an answer or use a tool.]",
-                    }
-                )
+            # Empty response
+            logger.warning("empty_response", step=step, iteration=loop_iterations)
+            messages.append({
+                "role": "user",
+                "content": "[System: Your response was empty. Please provide an answer or use a tool.]",
+            })
 
-        async for event in self._handle_streaming_completion(
-            agent, session_id, step, final_message, state, loop_iterations
-        ):
-            yield event
+        # Handle completion
+        if step >= agent.max_steps and not final_message:
+            final_message = f"Exceeded maximum steps ({agent.max_steps})"
+            yield StreamEvent(event_type="error", data={"message": final_message, "step": step})
+
+        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+        logger.info(
+            "execute_stream_complete",
+            session_id=session_id,
+            progress_steps=step,
+            total_iterations=loop_iterations,
+        )
+
+    async def _process_streaming_llm(
+        self,
+        agent: "Agent",
+        messages: list[dict[str, Any]],
+        step: int,
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[StreamEvent]:
+        """Process streaming LLM call, yield events, return tool_calls/content via internal events."""
+        tool_calls_accumulated: dict[int, dict[str, Any]] = {}
+        content_accumulated = ""
+
+        try:
+            async for chunk in agent.llm_provider.complete_stream(
+                messages=messages,
+                model=agent.model_alias,
+                tools=agent._openai_tools,
+                tool_choice="auto",
+                temperature=0.2,
+            ):
+                chunk_type = chunk.get("type")
+
+                if chunk_type == "token":
+                    token_content = chunk.get("content", "")
+                    if token_content:
+                        yield StreamEvent(event_type="llm_token", data={"content": token_content})
+                        content_accumulated += token_content
+
+                elif chunk_type == "tool_call_start":
+                    tc_index = chunk.get("index", 0)
+                    tool_calls_accumulated[tc_index] = {
+                        "id": chunk.get("id", ""),
+                        "name": chunk.get("name", ""),
+                        "arguments": "",
+                    }
+                    yield StreamEvent(
+                        event_type="tool_call",
+                        data={"tool": chunk.get("name", ""), "id": chunk.get("id", ""), "status": "starting"},
+                    )
+
+                elif chunk_type == "tool_call_delta":
+                    tc_index = chunk.get("index", 0)
+                    if tc_index in tool_calls_accumulated:
+                        tool_calls_accumulated[tc_index]["arguments"] += chunk.get("arguments_delta", "")
+
+                elif chunk_type == "tool_call_end":
+                    tc_index = chunk.get("index", 0)
+                    if tc_index in tool_calls_accumulated:
+                        tool_calls_accumulated[tc_index]["arguments"] = chunk.get(
+                            "arguments", tool_calls_accumulated[tc_index]["arguments"]
+                        )
+
+                elif chunk_type == "done":
+                    usage = chunk.get("usage")
+                    if usage:
+                        yield StreamEvent(event_type="token_usage", data=usage)
+
+                elif chunk_type == "error":
+                    yield StreamEvent(
+                        event_type="error",
+                        data={"message": chunk.get("message", "Unknown error"), "step": step},
+                    )
+
+        except Exception as e:
+            logger.error("stream_error", error=str(e), step=step)
+            yield StreamEvent(event_type="error", data={"message": str(e), "step": step})
+            return
+
+        # Return results via internal events
+        if tool_calls_accumulated:
+            tool_calls_list = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                }
+                for tc in tool_calls_accumulated.values()
+            ]
+            yield StreamEvent(event_type="_internal_tool_calls", data={"tool_calls": tool_calls_list})
+        elif content_accumulated:
+            yield StreamEvent(event_type="_internal_content", data={"content": content_accumulated})
+
+    async def _process_tool_calls(
+        self,
+        agent: "Agent",
+        tool_calls: list[dict[str, Any]],
+        session_id: str,
+        step: int,
+        state: dict[str, Any],
+        messages: list[dict[str, Any]],
+        logger: LoggerProtocol,
+    ) -> AsyncIterator[StreamEvent]:
+        """Process tool calls and yield events."""
+        logger.info(
+            "tool_calls_received",
+            step=step + 1,
+            count=len(tool_calls),
+            tools=[tc["function"]["name"] for tc in tool_calls],
+        )
+
+        messages.append(assistant_tool_calls_to_message(tool_calls))
+        requests: list[ToolCallRequest] = []
+
+        for tool_call in tool_calls:
+            tool_name = tool_call["function"]["name"]
+            tool_call_id = tool_call["id"]
+            tool_args = _parse_tool_args(tool_call, logger)
+
+            yield StreamEvent(
+                event_type="tool_call",
+                data={"tool": tool_name, "id": tool_call_id, "status": "executing", "args": tool_args},
+            )
+
+            # Handle ask_user specially - pause execution
+            if tool_name == "ask_user":
+                async for event in _handle_ask_user(agent, tool_args, session_id, state, logger):
+                    yield event
+                return
+
+            requests.append(ToolCallRequest(tool_call_id=tool_call_id, tool_name=tool_name, tool_args=tool_args))
+
+        # Execute tools
+        tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
+        for request, tool_result in tool_results:
+            async for event in _emit_tool_result(agent, request, tool_result):
+                yield event
+
+            tool_message = await agent._create_tool_message(
+                request.tool_call_id, request.tool_name, tool_result, session_id, step + 1
+            )
+            messages.append(tool_message)
+
+
+# =============================================================================
+# PlanAndExecuteStrategy - Generate plan, execute steps sequentially
+# =============================================================================
 
 
 class PlanAndExecuteStrategy:
@@ -942,13 +667,30 @@ class PlanAndExecuteStrategy:
         self.max_plan_steps = max_plan_steps
         self.logger = logger
 
-    async def _initialize_plan(
-        self,
-        agent: "Agent",
-        mission: str,
-        logger: LoggerProtocol,
-    ) -> list[str]:
-        """Generate plan steps using LLM or fallback to default steps."""
+    async def execute(
+        self, agent: "Agent", mission: str, session_id: str
+    ) -> ExecutionResult:
+        logger = self.logger or agent.logger
+        logger.info("execute_start", session_id=session_id, mission=mission[:100])
+        result = await _collect_execution_result(
+            session_id, self.execute_stream(agent, mission, session_id)
+        )
+        logger.info("execute_complete", session_id=session_id, status=result.status)
+        return result
+
+    async def execute_stream(
+        self, agent: "Agent", mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        logger = self.logger or agent.logger
+        logger.info("execute_stream_start", session_id=session_id)
+
+        state = await agent.state_manager.load_state(session_id) or {}
+        if agent._planner and state.get("planner_state"):
+            agent._planner.set_state(state["planner_state"])
+
+        messages = agent._build_initial_messages(mission, state)
+
+        # Generate plan
         plan_steps = await _generate_plan_steps(agent, mission, logger)
         if not plan_steps:
             plan_steps = [
@@ -956,320 +698,63 @@ class PlanAndExecuteStrategy:
                 "Execute the required actions using available tools.",
                 "Summarize the results and provide the final response.",
             ]
-
         plan_steps = plan_steps[: self.max_plan_steps]
-        return plan_steps
 
-    async def _emit_tool_result_events(
-        self,
-        request: ToolCallRequest,
-        tool_result: dict[str, Any],
-        agent: "Agent",
-    ) -> AsyncIterator[StreamEvent]:
-        """Emit tool result and plan update events."""
-        yield StreamEvent(
-            event_type="tool_result",
-            data={
-                "tool": request.tool_name,
-                "id": request.tool_call_id,
-                "success": tool_result.get("success", False),
-                "output": agent._truncate_output(_extract_tool_output(tool_result)),
-                "args": request.tool_args,
-            },
-        )
-
-        if request.tool_name in ("planner", "manage_plan") and tool_result.get("success"):
-            plan_output = tool_result.get("output")
-            if not plan_output and agent._planner:
-                plan_output = agent._planner.get_plan_summary()
+        if agent._planner:
+            await agent._planner.execute(action="create_plan", tasks=plan_steps)
             yield StreamEvent(
                 event_type="plan_updated",
-                data=_build_plan_update(
-                    action=request.tool_args.get("action", "unknown"),
-                    plan=plan_output,
-                ),
+                data=_build_plan_update(action="create_plan", steps=plan_steps, plan=agent._planner.get_plan_summary()),
             )
 
-    async def _build_tool_requests(
-        self,
-        tool_calls: list[dict[str, Any]],
-        logger: LoggerProtocol,
-    ) -> AsyncIterator[tuple[ToolCallRequest, StreamEvent]]:
-        """Build tool requests and emit tool call events."""
-        for tool_call in tool_calls:
-            tool_name = tool_call["function"]["name"]
-            tool_call_id = tool_call["id"]
-            tool_args = _parse_tool_args(tool_call, logger)
+        progress_steps = 0
 
-            yield (ToolCallRequest(
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                tool_args=tool_args,
-            ), StreamEvent(
-                event_type="tool_call",
-                data={
-                    "tool": tool_name,
-                    "id": tool_call_id,
-                    "status": "executing",
-                    "args": tool_args,
-                },
-            ))
+        # Execute each plan step
+        for step_index, step_description in enumerate(plan_steps, start=1):
+            if progress_steps >= agent.max_steps:
+                break
 
-    async def _process_step_tool_calls(
-        self,
-        tool_calls: list[dict[str, Any]],
-        agent: "Agent",
-        session_id: str,
-        step_index: int,
-        messages: list[dict[str, Any]],
-        logger: LoggerProtocol,
-    ) -> AsyncIterator[StreamEvent]:
-        """Process tool calls for a plan step."""
-        messages.append(assistant_tool_calls_to_message(tool_calls))
-
-        requests: list[ToolCallRequest] = []
-        async for request, event in self._build_tool_requests(tool_calls, logger):
-            # Special case: ask_user is a control-flow pause, not a normal tool.
-            if request.tool_name == "ask_user":
-                yield event  # Yield tool_call event first
-
-                question = str(request.tool_args.get("question", "")).strip()
-                missing = request.tool_args.get("missing") or []
-
-                # Add synthetic tool result to messages so LLM history is valid
-                # (LLM expects every tool_call to have a tool_result)
-                tool_result = {
-                    "success": True,
-                    "output": f"[Waiting for user response to: {question[:100]}...]",
-                }
-
-                # Emit tool_result event for streaming consumers
-                yield StreamEvent(
-                    event_type="tool_result",
-                    data={
-                        "tool": request.tool_name,
-                        "id": request.tool_call_id,
-                        "success": True,
-                        "output": tool_result["output"],
-                        "args": request.tool_args,
-                    },
-                )
-
-                tool_message = await agent._create_tool_message(
-                    request.tool_call_id,
-                    request.tool_name,
-                    tool_result,
-                    session_id,
-                    step_index,
-                )
-                messages.append(tool_message)
-
-                # Save pending question to state for resumption
-                state = await agent.state_manager.load_state(session_id) or {}
-                state["pending_question"] = {
-                    "question": question,
-                    "missing": missing,
-                }
-                await agent.state_store.save(
-                    session_id=session_id,
-                    state=state,
-                    planner=agent.planner,
-                )
-
-                yield StreamEvent(
-                    event_type="ask_user",
-                    data={"question": question, "missing": missing},
-                )
-                logger.info(
-                    "execute_stream_paused_for_user_input",
-                    session_id=session_id,
-                    question=question[:200],
-                )
-                return  # Pause execution - don't process remaining tools
-
-            requests.append(request)
-            yield event
-
-        tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
-        for request, tool_result in tool_results:
-            async for event in self._emit_tool_result_events(request, tool_result, agent):
-                yield event
-
-            tool_message = await agent._create_tool_message(
-                request.tool_call_id,
-                request.tool_name,
-                tool_result,
-                session_id,
-                step_index,
-            )
-            messages.append(tool_message)
-
-    async def _check_step_completion(
-        self,
-        content: str,
-        agent: "Agent",
-        step_index: int,
-        messages: list[dict[str, Any]],
-    ) -> tuple[bool, StreamEvent | None]:
-        """Determine if a plan step is complete based on content."""
-        if not content:
-            return (False, None)
-
-        messages.append({"role": "assistant", "content": content})
-        plan_event = None
-        if agent._planner:
-            await agent._planner.execute(action="mark_done", step_index=step_index)
-            plan_event = StreamEvent(
-                event_type="plan_updated",
-                data=_build_plan_update(
-                    action="mark_done",
-                    step=step_index,
-                    status="completed",
-                    plan=agent._planner.get_plan_summary(),
-                ),
-            )
-        return (True, plan_event)
-
-    def _prepare_step_iteration(
-        self,
-        agent: "Agent",
-        step_index: int,
-        step_description: str,
-        mission: str,
-        state: dict[str, Any],
-        messages: list[dict[str, Any]],
-    ) -> None:
-        """Prepare messages for a step iteration."""
-        current_system_prompt = agent._build_system_prompt(
-            mission=mission, state=state, messages=messages
-        )
-        messages[0] = {"role": "system", "content": current_system_prompt}
-
-        step_instruction = (
-            f"Execute plan step {step_index}: {step_description}\n"
-            "Call tools when needed. When the step is complete, respond with "
-            "a short completion note."
-        )
-        messages.append({"role": "user", "content": step_instruction})
-
-    def _handle_llm_error(
-        self,
-        result: dict[str, Any],
-        step_index: int,
-        step_iterations: int,
-        messages: list[dict[str, Any]],
-        logger: LoggerProtocol,
-    ) -> None:
-        """Handle LLM call error."""
-        logger.error(
-            "llm_call_failed",
-            error=result.get("error"),
-            iteration=step_iterations,
-            plan_step=step_index,
-        )
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    f"[System Error: {result.get('error')}. Please try again.]"
-                ),
-            }
-        )
-
-    async def _handle_step_content(
-        self,
-        content: str,
-        agent: "Agent",
-        step_index: int,
-        progress_steps: int,
-        messages: list[dict[str, Any]],
-    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
-        """Handle step content completion."""
-        if not content:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "[System: Your response was empty. Please provide an answer "
-                        "or use a tool.]"
-                    ),
-                }
-            )
-            return
-
-        is_complete, plan_event = await self._check_step_completion(
-            content, agent, step_index, messages
-        )
-        if is_complete and plan_event:
-            yield (plan_event, progress_steps + 1, True)
-
-    async def _handle_step_llm_result(
-        self,
-        result: dict[str, Any],
-        agent: "Agent",
-        step_index: int,
-        step_iterations: int,
-        progress_steps: int,
-        session_id: str,
-        messages: list[dict[str, Any]],
-        logger: LoggerProtocol,
-    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
-        """Handle LLM result for a step iteration."""
-        if result.get("usage"):
-            yield (StreamEvent(
-                event_type="token_usage",
-                data=result["usage"],
-            ), progress_steps, False)
-
-        if not result.get("success"):
-            self._handle_llm_error(result, step_index, step_iterations, messages, logger)
-            return
-
-        tool_calls = result.get("tool_calls")
-        if tool_calls:
-            async for event in self._process_step_tool_calls(
-                tool_calls, agent, session_id, progress_steps + 1, messages, logger
+            async for event, new_progress in self._execute_plan_step(
+                agent, step_index, step_description, messages, session_id, mission, state, progress_steps, logger
             ):
-                yield (event, progress_steps + 1, False)
-            return
+                yield event
+                progress_steps = max(progress_steps, new_progress)
 
-        content = result.get("content", "")
-        async for event, new_progress, is_complete in self._handle_step_content(
-            content, agent, step_index, progress_steps, messages
-        ):
-            yield (event, new_progress, is_complete)
+            if progress_steps >= agent.max_steps:
+                break
 
-    async def _execute_step_iteration(
-        self,
-        agent: "Agent",
-        step_index: int,
-        step_description: str,
-        mission: str,
-        state: dict[str, Any],
-        messages: list[dict[str, Any]],
-        progress_steps: int,
-        step_iterations: int,
-        session_id: str,
-        logger: LoggerProtocol,
-    ) -> AsyncIterator[tuple[StreamEvent, int, bool]]:
-        """Execute a single iteration of a plan step."""
-        self._prepare_step_iteration(
-            agent, step_index, step_description, mission, state, messages
+        # Generate final response
+        final_message = ""
+        if progress_steps < agent.max_steps:
+            async for event in self._generate_final_response_stream(agent, messages):
+                yield event
+                if event.event_type == "final_answer":
+                    final_message = event.data.get("content", "")
+
+        # Handle edge cases
+        if progress_steps >= agent.max_steps and not final_message:
+            final_message = f"Exceeded maximum steps ({agent.max_steps})"
+            yield StreamEvent(event_type="error", data={"message": final_message, "step": progress_steps})
+            yield StreamEvent(event_type="final_answer", data={"content": final_message})
+        elif not final_message:
+            # Try to extract from messages
+            for msg in reversed(messages):
+                if msg.get("role") == "assistant" and msg.get("content"):
+                    final_message = msg.get("content", "").strip()
+                    if final_message:
+                        break
+            if not final_message:
+                final_message = "Plan execution completed."
+                yield StreamEvent(event_type="final_answer", data={"content": final_message})
+
+        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+
+        yield StreamEvent(
+            event_type="complete",
+            data={"status": "completed", "session_id": session_id, "progress_steps": progress_steps},
         )
 
-        result = await agent.llm_provider.complete(
-            messages=messages,
-            model=agent.model_alias,
-            tools=agent._openai_tools,
-            tool_choice="auto",
-            temperature=0.2,
-        )
-
-        async for event, new_progress, is_complete in self._handle_step_llm_result(
-            result, agent, step_index, step_iterations, progress_steps,
-            session_id, messages, logger
-        ):
-            yield (event, new_progress, is_complete)
+        logger.info("execute_stream_complete", session_id=session_id, progress_steps=progress_steps)
 
     async def _execute_plan_step(
         self,
@@ -1281,53 +766,113 @@ class PlanAndExecuteStrategy:
         mission: str,
         state: dict[str, Any],
         current_progress: int,
-        max_iterations: int,
         logger: LoggerProtocol,
-    ) -> AsyncIterator[tuple[StreamEvent, int, int, bool]]:
+    ) -> AsyncIterator[tuple[StreamEvent, int]]:
         """Execute a single plan step with iteration limits."""
-        step_complete = False
-        step_iterations = 0
-        progress_steps = current_progress
+        progress = current_progress
 
-        while not step_complete and step_iterations < max_iterations:
-            if progress_steps >= agent.max_steps:
+        for iteration in range(1, self.max_step_iterations + 1):
+            if progress >= agent.max_steps:
                 break
 
-            step_iterations += 1
-            await agent.record_heartbeat(
-                session_id,
-                "running",
-                {"plan_step": step_index, "iteration": step_iterations},
+            await agent.record_heartbeat(session_id, "running", {"plan_step": step_index, "iteration": iteration})
+
+            # Prepare step instruction
+            current_system_prompt = agent._build_system_prompt(mission=mission, state=state, messages=messages)
+            messages[0] = {"role": "system", "content": current_system_prompt}
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"Execute plan step {step_index}: {step_description}\n"
+                    "Call tools when needed. When the step is complete, respond with a short completion note."
+                ),
+            })
+
+            # Call LLM
+            result = await agent.llm_provider.complete(
+                messages=messages,
+                model=agent.model_alias,
+                tools=agent._openai_tools,
+                tool_choice="auto",
+                temperature=0.2,
             )
-            async for event, new_progress, is_complete in self._execute_step_iteration(
-                agent, step_index, step_description, mission, state, messages,
-                progress_steps, step_iterations, session_id, logger
-            ):
-                progress_steps = max(progress_steps, new_progress)
-                if is_complete:
-                    step_complete = True
-                yield (event, progress_steps, step_iterations, is_complete)
+
+            if result.get("usage"):
+                yield (StreamEvent(event_type="token_usage", data=result["usage"]), progress)
+
+            if not result.get("success"):
+                logger.error("llm_call_failed", error=result.get("error"), plan_step=step_index, iteration=iteration)
+                messages.append({"role": "user", "content": f"[System Error: {result.get('error')}. Please try again.]"})
+                continue
+
+            tool_calls = result.get("tool_calls")
+            if tool_calls:
+                progress += 1
+                messages.append(assistant_tool_calls_to_message(tool_calls))
+
+                requests: list[ToolCallRequest] = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    tool_call_id = tool_call["id"]
+                    tool_args = _parse_tool_args(tool_call, logger)
+
+                    yield (StreamEvent(
+                        event_type="tool_call",
+                        data={"tool": tool_name, "id": tool_call_id, "status": "executing", "args": tool_args},
+                    ), progress)
+
+                    # Handle ask_user
+                    if tool_name == "ask_user":
+                        async for event in _handle_ask_user(agent, tool_args, session_id, state, logger):
+                            yield (event, progress)
+                        return
+
+                    requests.append(ToolCallRequest(tool_call_id=tool_call_id, tool_name=tool_name, tool_args=tool_args))
+
+                tool_results = await _execute_tool_calls(agent, requests, session_id=session_id)
+                for request, tool_result in tool_results:
+                    async for event in _emit_tool_result(agent, request, tool_result):
+                        yield (event, progress)
+                    tool_message = await agent._create_tool_message(
+                        request.tool_call_id, request.tool_name, tool_result, session_id, step_index
+                    )
+                    messages.append(tool_message)
+                continue
+
+            # Content response - step complete
+            content = result.get("content", "")
+            if content:
+                messages.append({"role": "assistant", "content": content})
+                if agent._planner:
+                    await agent._planner.execute(action="mark_done", step_index=step_index)
+                    yield (StreamEvent(
+                        event_type="plan_updated",
+                        data=_build_plan_update(
+                            action="mark_done",
+                            step=step_index,
+                            status="completed",
+                            plan=agent._planner.get_plan_summary(),
+                        ),
+                    ), progress + 1)
+                return
+
+            # Empty response
+            messages.append({
+                "role": "user",
+                "content": "[System: Your response was empty. Please provide an answer or use a tool.]",
+            })
 
     async def _generate_final_response_stream(
         self,
         agent: "Agent",
         messages: list[dict[str, Any]],
     ) -> AsyncIterator[StreamEvent]:
-        """Generate and stream final response after all plan steps complete.
-        
-        Streams the final response as llm_token events, then yields final_answer event.
-        This ensures compatibility with clients that expect streaming tokens.
-        """
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "All planned steps are complete. Provide the final response "
-                    "to the mission."
-                ),
-            }
-        )
-        
+        """Generate and stream final response after all plan steps complete."""
+        messages.append({
+            "role": "user",
+            "content": "All planned steps are complete. Provide the final response to the mission.",
+        })
+
         content_accumulated = ""
         async for chunk in agent.llm_provider.complete_stream(
             messages=messages,
@@ -1350,237 +895,60 @@ class PlanAndExecuteStrategy:
                     data={"message": chunk.get("message", "LLM error"), "error_type": "LLMError"},
                 )
                 return
-        
-        # Yield final_answer event with accumulated content
+
         if content_accumulated:
-            yield StreamEvent(
-                event_type="final_answer",
-                data={"content": content_accumulated},
-            )
+            yield StreamEvent(event_type="final_answer", data={"content": content_accumulated})
 
-    async def execute(
-        self, agent: "Agent", mission: str, session_id: str
-    ) -> ExecutionResult:
-        # Use strategy logger or fallback to agent logger
-        logger = self.logger or agent.logger
-        logger.info("execute_start", session_id=session_id, mission=mission[:100])
-        result = await _collect_execution_result(
-            session_id,
-            self.execute_stream(agent, mission, session_id),
+    async def _generate_final_response(
+        self,
+        agent: "Agent",
+        messages: list[dict[str, Any]],
+    ) -> str:
+        """Generate final response (non-streaming, for tests)."""
+        messages.append({
+            "role": "user",
+            "content": "All planned steps are complete. Provide the final response to the mission.",
+        })
+        result = await agent.llm_provider.complete(
+            messages=messages,
+            model=agent.model_alias,
+            tools=None,
+            tool_choice="none",
+            temperature=0.2,
         )
+        if not result.get("success"):
+            return ""
+        return result.get("content", "") or ""
 
-        logger.info(
-            "execute_complete",
-            session_id=session_id,
-            status=result.status,
-        )
-        return result
 
-    async def execute_stream(
-        self, agent: "Agent", mission: str, session_id: str
-    ) -> AsyncIterator[StreamEvent]:
-        # Use strategy logger or fallback to agent logger
-        logger = self.logger or agent.logger
-        logger.info("execute_stream_start", session_id=session_id)
-
-        state = await agent.state_manager.load_state(session_id) or {}
-
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
-
-        messages = agent._build_initial_messages(mission, state)
-
-        plan_steps = await self._initialize_plan(agent, mission, logger)
-
-        if agent._planner:
-            await agent._planner.execute(action="create_plan", tasks=plan_steps)
-            yield StreamEvent(
-                event_type="plan_updated",
-                data=_build_plan_update(
-                    action="create_plan",
-                    steps=plan_steps,
-                    plan=agent._planner.get_plan_summary(),
-                ),
-            )
-
-        progress_steps = 0
-        loop_iterations = 0
-        final_message = ""
-
-        for index, description in enumerate(plan_steps, start=1):
-            if progress_steps >= agent.max_steps:
-                break
-
-            step_complete = False
-            async for event, step_progress, step_iters, is_complete in self._execute_plan_step(
-                agent=agent,
-                step_index=index,
-                step_description=description,
-                messages=messages,
-                session_id=session_id,
-                mission=mission,
-                state=state,
-                current_progress=progress_steps,
-                max_iterations=self.max_step_iterations,
-                logger=logger,
-            ):
-                if progress_steps < agent.max_steps:
-                    progress_steps = max(progress_steps, step_progress)
-                loop_iterations = max(loop_iterations, step_iters)
-                yield event
-                if is_complete:
-                    step_complete = True
-
-            if progress_steps >= agent.max_steps:
-                break
-
-        if progress_steps < agent.max_steps:
-            # Stream final response as llm_token events, then final_answer
-            final_message = ""
-            async for event in self._generate_final_response_stream(agent, messages):
-                yield event
-                # Extract final message from final_answer event
-                if event.event_type == "final_answer":
-                    final_message = event.data.get("content", "")
-            
-            logger.debug(
-                "_generate_final_response_result",
-                session_id=session_id,
-                has_message=bool(final_message),
-                message_length=len(final_message) if final_message else 0,
-            )
-
-        if progress_steps >= agent.max_steps and not final_message:
-            final_message = f"Exceeded maximum steps ({agent.max_steps})"
-            yield StreamEvent(
-                event_type="error",
-                data={"message": final_message, "step": progress_steps},
-            )
-        elif not final_message:
-            # Try to extract final message from last assistant message if available
-            for msg in reversed(messages):
-                if msg.get("role") == "assistant" and msg.get("content"):
-                    final_message = msg.get("content", "").strip()
-                    if final_message:
-                        logger.debug(
-                            "extracted_final_message_from_messages",
-                            session_id=session_id,
-                            message_length=len(final_message),
-                        )
-                        break
-            
-            if not final_message:
-                final_message = "Plan execution did not produce a final response."
-                yield StreamEvent(
-                    event_type="error",
-                    data={"message": final_message, "step": progress_steps},
-                )
-
-        # final_answer event is already sent by _generate_final_response_stream
-        # Only send it here if we didn't stream the final response (e.g., max steps exceeded)
-        if progress_steps >= agent.max_steps or (progress_steps < agent.max_steps and not final_message):
-            logger.info(
-                "sending_final_answer_event_fallback",
-                session_id=session_id,
-                has_message=bool(final_message),
-                message_length=len(final_message) if final_message else 0,
-            )
-            yield StreamEvent(
-                event_type="final_answer",
-                data={"content": final_message or "Execution completed."},
-            )
-
-        await agent.state_store.save(
-            session_id=session_id,
-            state=state,
-            planner=agent.planner,
-        )
-
-        # Send complete event to signal end of execution
-        yield StreamEvent(
-            event_type="complete",
-            data={
-                "status": "completed",
-                "session_id": session_id,
-                "progress_steps": progress_steps,
-                "total_iterations": loop_iterations,
-            },
-        )
-
-        logger.info(
-            "execute_stream_complete",
-            session_id=session_id,
-            progress_steps=progress_steps,
-            total_iterations=loop_iterations,
-        )
+# =============================================================================
+# PlanAndReactStrategy - Alias for backwards compatibility
+# =============================================================================
 
 
 class PlanAndReactStrategy:
-    """Generate a plan and run the ReAct loop with plan context."""
+    """Generate a plan and run the ReAct loop with plan context.
+
+    This is now a thin wrapper around NativeReActStrategy with generate_plan_first=True.
+    Kept for backwards compatibility with existing configurations.
+    """
 
     name = "plan_and_react"
 
     def __init__(self, max_plan_steps: int = 12, logger: LoggerProtocol | None = None) -> None:
-        self.max_plan_steps = max_plan_steps
-        self.logger = logger
-        self._react_strategy = NativeReActStrategy()
+        self._delegate = NativeReActStrategy(
+            generate_plan_first=True,
+            max_plan_steps=max_plan_steps,
+            logger=logger,
+        )
 
     async def execute(
         self, agent: "Agent", mission: str, session_id: str
     ) -> ExecutionResult:
-        # Use strategy logger or fallback to agent logger
-        logger = self.logger or agent.logger
-        logger.info("execute_start", session_id=session_id, mission=mission[:100])
-        result = await _collect_execution_result(
-            session_id,
-            self.execute_stream(agent, mission, session_id),
-        )
-        logger.info(
-            "execute_complete",
-            session_id=session_id,
-            status=result.status,
-        )
-        return result
+        return await self._delegate.execute(agent, mission, session_id)
 
     async def execute_stream(
         self, agent: "Agent", mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
-        # Use strategy logger or fallback to agent logger
-        logger = self.logger or agent.logger
-        logger.info("execute_stream_start", session_id=session_id)
-        state = await agent.state_manager.load_state(session_id) or {}
-
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
-
-        plan_steps = await _generate_plan_steps(agent, mission, logger)
-        if not plan_steps:
-            plan_steps = [
-                "Analyze the mission and identify required actions.",
-                "Execute the required actions using available tools.",
-                "Summarize the results and provide the final response.",
-            ]
-
-        plan_steps = plan_steps[: self.max_plan_steps]
-
-        if agent._planner:
-            await agent._planner.execute(action="create_plan", tasks=plan_steps)
-            yield StreamEvent(
-                event_type="plan_updated",
-                data=_build_plan_update(
-                    action="create_plan",
-                    steps=plan_steps,
-                    plan=agent._planner.get_plan_summary(),
-                ),
-            )
-
-        await agent.state_store.save(
-            session_id=session_id,
-            state=state,
-            planner=agent.planner,
-        )
-
-        async for event in self._react_strategy.execute_stream(
-            agent, mission, session_id
-        ):
+        async for event in self._delegate.execute_stream(agent, mission, session_id):
             yield event

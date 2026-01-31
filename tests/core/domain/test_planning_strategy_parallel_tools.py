@@ -57,7 +57,7 @@ class FakeAgent:
         self.max_parallel_tools = max_parallel_tools
 
     async def _execute_tool(
-        self, tool_name: str, tool_args: dict[str, object]
+        self, tool_name: str, tool_args: dict[str, object], session_id: str | None = None
     ) -> dict[str, object]:
         tool = self.tools[tool_name]
         return await tool.execute(**tool_args)
