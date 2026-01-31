@@ -63,6 +63,12 @@ class PluginManifest:
     tool_classes: list[str] = field(default_factory=list)
     """List of tool class names exported via __all__."""
 
+    skills_path: Path | None = None
+    """Path to skills directory, or None if not found."""
+
+    skill_names: list[str] = field(default_factory=list)
+    """List of discovered skill names in the plugin."""
+
 
 class PluginLoader:
     """
@@ -142,12 +148,18 @@ class PluginLoader:
         tools_module_name = f"{package_name}.tools"
         tool_classes = self._get_tool_classes(path, tools_module_name)
 
+        # Find skills directory and discover skills
+        skills_path = self._find_skills_path(path)
+        skill_names = self._get_skill_names(skills_path) if skills_path else []
+
         logger.info(
             "plugin.discovered",
             name=package_name,
             path=str(path),
             tools=tool_classes,
             has_config=config_path is not None,
+            has_skills=skills_path is not None,
+            skill_names=skill_names,
         )
 
         return PluginManifest(
@@ -157,6 +169,8 @@ class PluginLoader:
             tools_module=tools_module_name,
             config_path=config_path,
             tool_classes=tool_classes,
+            skills_path=skills_path,
+            skill_names=skill_names,
         )
 
     def load_tools(
@@ -551,6 +565,52 @@ class PluginLoader:
                 return candidate
 
         return None
+
+    def _find_skills_path(self, plugin_path: Path) -> Path | None:
+        """Find the skills directory within the plugin.
+
+        Looks for a 'skills' directory at the plugin root level.
+        Each subdirectory containing a SKILL.md file is considered a skill.
+
+        Args:
+            plugin_path: Path to the plugin directory
+
+        Returns:
+            Path to skills directory, or None if not found
+        """
+        skills_path = plugin_path / "skills"
+        if skills_path.exists() and skills_path.is_dir():
+            return skills_path
+        return None
+
+    def _get_skill_names(self, skills_path: Path) -> list[str]:
+        """Get list of skill names from the skills directory.
+
+        Each subdirectory containing a SKILL.md file is considered a skill.
+
+        Args:
+            skills_path: Path to the skills directory
+
+        Returns:
+            List of skill names (directory names)
+        """
+        skill_names: list[str] = []
+
+        if not skills_path or not skills_path.exists():
+            return skill_names
+
+        for item in skills_path.iterdir():
+            if item.is_dir():
+                skill_md = item / "SKILL.md"
+                if skill_md.exists():
+                    skill_names.append(item.name)
+                    logger.debug(
+                        "plugin.skill_discovered",
+                        skill_name=item.name,
+                        skill_path=str(item),
+                    )
+
+        return sorted(skill_names)
 
     def _get_tool_classes(self, plugin_path: Path, tools_module: str) -> list[str]:
         """Get tool class names from __all__ in tools module."""

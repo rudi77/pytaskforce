@@ -92,6 +92,7 @@ class Agent:
         max_parallel_tools: int | None = None,
         planning_strategy: PlanningStrategy | None = None,
         runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
+        skill_manager: Any | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -115,6 +116,8 @@ class Agent:
             planning_strategy: Optional planning strategy override for Agent.
             logger: Logger instance (created in factory and always required).
             runtime_tracker: Optional runtime tracker for heartbeats/checkpoints.
+            skill_manager: Optional SkillManager for plugin-based skill activation
+                          and automatic skill switching based on tool outputs.
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -123,6 +126,8 @@ class Agent:
         self.tool_result_store = tool_result_store
         self.logger = logger
         self.runtime_tracker = runtime_tracker
+        self.skill_manager = skill_manager
+        self._skill_switch_pending = False  # Flag for skill switch during execution
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -213,12 +218,25 @@ class Agent:
         state: dict[str, Any] | None = None,
         messages: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Build system prompt with dynamic plan and context injection."""
-        return self.prompt_builder.build_system_prompt(
+        """Build system prompt with dynamic plan, context, and skill injection."""
+        base_prompt = self.prompt_builder.build_system_prompt(
             mission=mission,
             state=state,
             messages=messages,
         )
+
+        # Inject active skill instructions if skill manager is configured
+        if self.skill_manager and self.skill_manager.active_skill_name:
+            skill_instructions = self.skill_manager.get_active_instructions()
+            if skill_instructions:
+                base_prompt = f"""{base_prompt}
+
+# ACTIVE SKILL: {self.skill_manager.active_skill_name}
+
+{skill_instructions}
+"""
+
+        return base_prompt
 
     async def execute(self, mission: str, session_id: str) -> ExecutionResult:
         """
@@ -369,7 +387,88 @@ class Agent:
         if tool_name == "call_agent" and session_id:
             tool_args = {**tool_args, "_parent_session_id": session_id}
 
-        return await self.tool_executor.execute(tool_name, tool_args)
+        result = await self.tool_executor.execute(tool_name, tool_args)
+
+        # Check for skill switch after tool execution
+        if self.skill_manager and isinstance(result, dict):
+            switch_result = self.skill_manager.check_skill_switch(tool_name, result)
+            if switch_result.switched:
+                self.logger.info(
+                    "skill_switched",
+                    from_skill=switch_result.from_skill,
+                    to_skill=switch_result.to_skill,
+                    trigger_tool=tool_name,
+                )
+                # Mark that prompt needs refresh
+                self._skill_switch_pending = True
+
+        return result
+
+    def get_effective_system_prompt(self) -> str:
+        """
+        Get the effective system prompt, including active skill instructions.
+
+        If a skill manager is configured and has an active skill, the skill
+        instructions are appended to the base system prompt.
+
+        Returns:
+            The complete system prompt with skill instructions
+        """
+        if not self.skill_manager:
+            return self._base_system_prompt
+
+        return self.skill_manager.enhance_prompt(self._base_system_prompt)
+
+    def activate_skill_by_intent(self, intent: str) -> bool:
+        """
+        Activate a skill based on user intent.
+
+        Args:
+            intent: User intent string (e.g., "INVOICE_PROCESSING")
+
+        Returns:
+            True if a skill was activated, False otherwise
+        """
+        if not self.skill_manager:
+            return False
+
+        skill = self.skill_manager.activate_by_intent(intent)
+        if skill:
+            self.logger.info(
+                "skill_activated_by_intent",
+                intent=intent,
+                skill=skill.name,
+            )
+            return True
+        return False
+
+    def activate_skill(self, skill_name: str) -> bool:
+        """
+        Activate a specific skill by name.
+
+        Args:
+            skill_name: Name of the skill to activate
+
+        Returns:
+            True if skill was activated, False otherwise
+        """
+        if not self.skill_manager:
+            return False
+
+        skill = self.skill_manager.activate_skill(skill_name)
+        if skill:
+            self.logger.info(
+                "skill_activated",
+                skill=skill.name,
+            )
+            return True
+        return False
+
+    def get_active_skill_name(self) -> str | None:
+        """Get the name of the currently active skill."""
+        if not self.skill_manager:
+            return None
+        return self.skill_manager.active_skill_name
 
     async def _create_tool_message(
         self,
