@@ -19,6 +19,13 @@ import sys
 from pathlib import Path
 
 
+# PyInstaller uses different path separators for --add-data on different platforms
+DATA_SEP = ";" if sys.platform == "win32" else ":"
+
+# Executable extension varies by platform
+EXE_EXT = ".exe" if sys.platform == "win32" else ""
+
+
 def get_project_root() -> Path:
     """Get project root directory."""
     return Path(__file__).parent.parent
@@ -87,6 +94,9 @@ def build_executable(
 
     spec_file = project_root / "taskforce.spec"
 
+    # Path to config directory (relative to source tree)
+    configs_path = project_root / "src" / "taskforce_extensions" / "configs"
+
     if use_folder:
         # Direct PyInstaller invocation for folder build (faster for testing)
         print("Building as folder (faster for testing)...")
@@ -95,7 +105,7 @@ def build_executable(
             "--name", "taskforce",
             "--console",
             "--noconfirm",
-            "--add-data", f"{project_root / 'configs'};configs",
+            "--add-data", f"{configs_path}{DATA_SEP}taskforce_extensions/configs",
             "--paths", str(project_root / "src"),
         ]
 
@@ -115,7 +125,7 @@ def build_executable(
                 "--onefile",
                 "--console",
                 "--noconfirm",
-                "--add-data", f"{project_root / 'configs'};configs",
+                "--add-data", f"{configs_path}{DATA_SEP}taskforce_extensions/configs",
                 "--paths", str(project_root / "src"),
                 str(project_root / "src" / "taskforce" / "api" / "cli" / "main.py"),
             ]
@@ -142,10 +152,11 @@ def build_executable(
     dist_path = project_root / "dist"
 
     if dist_path.exists():
+        exe_name = f"taskforce{EXE_EXT}"
         if use_folder:
-            exe_path = dist_path / "taskforce" / "taskforce.exe"
+            exe_path = dist_path / "taskforce" / exe_name
         else:
-            exe_path = dist_path / "taskforce.exe"
+            exe_path = dist_path / exe_name
 
         if exe_path.exists():
             size_mb = exe_path.stat().st_size / (1024 * 1024)
