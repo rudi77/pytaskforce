@@ -417,14 +417,6 @@ class AgentExecutor:
 
             # Handle custom agents
             if isinstance(agent_response, CustomAgentDefinition):
-                # Convert response to definition dict
-                agent_definition = {
-                    "system_prompt": agent_response.system_prompt,
-                    "tool_allowlist": agent_response.tool_allowlist,
-                    "mcp_servers": agent_response.mcp_servers,
-                    "mcp_tool_allowlist": agent_response.mcp_tool_allowlist,
-                }
-
                 self.logger.info(
                     "loading_custom_agent",
                     agent_id=agent_id,
@@ -432,9 +424,11 @@ class AgentExecutor:
                     tool_count=len(agent_response.tool_allowlist),
                 )
 
-                return await self.factory.create_agent_from_definition(
-                    agent_definition=agent_definition,
-                    profile=profile,
+                # Use new unified API with inline parameters
+                return await self.factory.create_agent(
+                    system_prompt=agent_response.system_prompt,
+                    tools=agent_response.tool_allowlist,
+                    mcp_servers=agent_response.mcp_servers,
                     planning_strategy=planning_strategy,
                     planning_strategy_params=planning_strategy_params,
                 )
@@ -481,9 +475,9 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
             )
 
-        # Standard Agent creation with optional user_context for RAG tools
+        # Standard Agent creation with config file
         return await self.factory.create_agent(
-            profile=profile,
+            config=profile,
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,

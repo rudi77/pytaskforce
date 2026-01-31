@@ -79,14 +79,18 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         profile = spec.profile or self._profile
         work_dir = spec.work_dir or self._work_dir
         if custom_definition:
-            return await self._agent_factory.create_agent_from_definition(
-                agent_definition=custom_definition,
-                profile=profile,
+            # Use new unified API with inline parameters
+            return await self._agent_factory.create_agent(
+                system_prompt=custom_definition.get("system_prompt"),
+                tools=custom_definition.get("tool_allowlist") or custom_definition.get("tools"),
+                mcp_servers=custom_definition.get("mcp_servers"),
                 work_dir=work_dir,
                 planning_strategy=spec.planning_strategy,
+                specialist=custom_definition.get("specialist"),
             )
+        # Use config file path
         return await self._agent_factory.create_agent(
-            profile=profile,
+            config=profile,
             specialist=spec.specialist,
             work_dir=work_dir,
             planning_strategy=spec.planning_strategy,

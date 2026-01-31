@@ -1,30 +1,34 @@
 """
-Unit tests for AgentFactory - Agent creation.
+Unit tests for AgentFactory - Agent creation with unified API.
 
 Tests verify:
-- Agent creation with dev profile
+- Agent creation with config file path
+- Agent creation with inline parameters
+- Mutually exclusive config vs inline parameters
 - Planning strategy configuration
 - Specialist profile integration
 - System prompt assembly
+- Backward compatibility with deprecated methods
 """
 
 from unittest.mock import MagicMock
+import warnings
 
 import pytest
 
 from taskforce.application.factory import AgentFactory
 
 
-class TestAgentFactory:
-    """Tests for Agent factory creation (Story 5: CLI Integration)."""
+class TestAgentFactoryConfigFile:
+    """Tests for Agent creation using config file path."""
 
     @pytest.mark.asyncio
-    async def test_create_lean_agent_basic(self):
-        """Test creating a basic Agent."""
+    async def test_create_agent_with_config_path(self):
+        """Test creating agent with config file path."""
         from taskforce.core.domain.agent import Agent
 
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(profile="dev")
+        agent = await factory.create_agent(config="dev")
 
         assert isinstance(agent, Agent)
         assert agent.state_manager is not None
@@ -32,69 +36,158 @@ class TestAgentFactory:
         assert len(agent.tools) > 0
 
     @pytest.mark.asyncio
-    async def test_lean_agent_has_planner_tool(self):
-        """Test that Agent has PlannerTool injected."""
-        from taskforce.core.tools.planner_tool import PlannerTool
-
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(profile="dev")
-
-        # PlannerTool should be present (injected by Agent if not in tools)
-        assert "planner" in agent.tools
-        assert isinstance(agent.tools["planner"], PlannerTool)
-
-    @pytest.mark.asyncio
-    async def test_lean_agent_uses_lean_kernel_prompt(self):
-        """Test that Agent uses LEAN_KERNEL_PROMPT."""
-        from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
-
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(profile="dev")
-
-        # The system prompt should contain LEAN_KERNEL_PROMPT content
-        assert "Lean ReAct Agent" in agent.system_prompt
-
-    @pytest.mark.asyncio
-    async def test_lean_agent_with_specialist(self):
-        """Test creating Agent with specialist profile."""
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(profile="dev", specialist="coding")
-
-        # Should have coding specialist content appended
-        assert "Coding Specialist" in agent.system_prompt or "Senior Software Engineer" in agent.system_prompt
-
-    @pytest.mark.asyncio
-    async def test_lean_agent_work_dir_override(self):
-        """Test Agent with work_dir override."""
+    async def test_create_agent_with_full_config_path(self):
+        """Test creating agent with full config file path."""
         from taskforce.core.domain.agent import Agent
 
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(
-            profile="dev", work_dir=".lean_test_workdir"
+        agent = await factory.create_agent(config="dev.yaml")
+
+        assert isinstance(agent, Agent)
+
+    @pytest.mark.asyncio
+    async def test_create_agent_config_not_found(self):
+        """Test error when config file not found."""
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+
+        with pytest.raises(FileNotFoundError):
+            await factory.create_agent(config="nonexistent_profile")
+
+    @pytest.mark.asyncio
+    async def test_create_agent_with_work_dir_override(self):
+        """Test agent with work_dir override."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            config="dev",
+            work_dir=".test_workdir"
         )
 
         assert isinstance(agent, Agent)
-        # State manager should use the override work_dir
-        assert ".lean_test_workdir" in str(agent.state_manager.work_dir)
+        assert ".test_workdir" in str(agent.state_manager.work_dir)
+
+
+class TestAgentFactoryInlineParams:
+    """Tests for Agent creation using inline parameters."""
 
     @pytest.mark.asyncio
-    async def test_lean_agent_planning_strategy_default(self):
-        """Test that Agent defaults to NativeReAct strategy."""
+    async def test_create_agent_with_inline_tools(self):
+        """Test creating agent with inline tool list."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            tools=["python", "file_read"]
+        )
+
+        assert isinstance(agent, Agent)
+        tool_names = [t.name for t in agent.tools.values()]
+        assert "python" in tool_names
+        assert "file_read" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_create_agent_with_system_prompt(self):
+        """Test creating agent with custom system prompt."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            system_prompt="You are a custom test assistant.",
+            tools=["python"]
+        )
+
+        assert isinstance(agent, Agent)
+        assert "custom test assistant" in agent.system_prompt
+
+    @pytest.mark.asyncio
+    async def test_create_agent_with_specialist(self):
+        """Test creating agent with specialist profile."""
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            tools=["python"],
+            specialist="coding"
+        )
+
+        # Should have coding specialist content in prompt (German: "Lead Software Architect")
+        assert "Lead Software" in agent.system_prompt or "Architectural Mindset" in agent.system_prompt
+
+    @pytest.mark.asyncio
+    async def test_create_agent_minimal_defaults(self):
+        """Test creating agent with minimal parameters (uses defaults)."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            tools=["python"]
+        )
+
+        assert isinstance(agent, Agent)
+        assert agent.max_steps == 30  # Default from dev config
+
+    @pytest.mark.asyncio
+    async def test_create_agent_with_max_steps(self):
+        """Test creating agent with custom max_steps."""
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            tools=["python"],
+            max_steps=10
+        )
+
+        assert agent.max_steps == 10
+
+
+class TestAgentFactoryMutualExclusion:
+    """Tests for mutual exclusion of config vs inline parameters."""
+
+    @pytest.mark.asyncio
+    async def test_config_and_inline_raises_error(self):
+        """Test that providing both config and inline params raises ValueError."""
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+
+        with pytest.raises(ValueError) as exc_info:
+            await factory.create_agent(
+                config="dev",
+                system_prompt="This should fail"
+            )
+
+        assert "Cannot use 'config' with inline parameters" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_config_and_tools_raises_error(self):
+        """Test that providing config and tools raises ValueError."""
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+
+        with pytest.raises(ValueError) as exc_info:
+            await factory.create_agent(
+                config="dev",
+                tools=["python"]
+            )
+
+        assert "Cannot use 'config' with inline parameters" in str(exc_info.value)
+
+
+class TestAgentFactoryPlanningStrategy:
+    """Tests for planning strategy configuration."""
+
+    @pytest.mark.asyncio
+    async def test_default_planning_strategy(self):
+        """Test that agent defaults to NativeReAct strategy."""
         from taskforce.core.domain.planning_strategy import NativeReActStrategy
 
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(profile="dev")
+        agent = await factory.create_agent(config="dev")
 
         assert isinstance(agent.planning_strategy, NativeReActStrategy)
 
     @pytest.mark.asyncio
-    async def test_lean_agent_planning_strategy_override(self):
-        """Test overriding planning strategy for Agent."""
+    async def test_planning_strategy_override_config(self):
+        """Test overriding planning strategy with config file."""
         from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
 
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
-        agent = await factory.create_lean_agent(
-            profile="dev",
+        agent = await factory.create_agent(
+            config="dev",
             planning_strategy="plan_and_execute",
             planning_strategy_params={"max_step_iterations": 2, "max_plan_steps": 3},
         )
@@ -104,12 +197,32 @@ class TestAgentFactory:
         assert agent.planning_strategy.max_plan_steps == 3
 
     @pytest.mark.asyncio
-    async def test_lean_agent_invalid_planning_strategy(self):
+    async def test_planning_strategy_override_inline(self):
+        """Test overriding planning strategy with inline params."""
+        from taskforce.core.domain.planning_strategy import PlanAndReactStrategy
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(
+            tools=["python"],
+            planning_strategy="plan_and_react",
+        )
+
+        assert isinstance(agent.planning_strategy, PlanAndReactStrategy)
+
+    @pytest.mark.asyncio
+    async def test_invalid_planning_strategy(self):
         """Test invalid planning strategy raises ValueError."""
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
         with pytest.raises(ValueError):
-            await factory.create_lean_agent(profile="dev", planning_strategy="invalid")
+            await factory.create_agent(
+                config="dev",
+                planning_strategy="invalid_strategy"
+            )
+
+
+class TestAgentFactorySystemPrompt:
+    """Tests for system prompt assembly."""
 
     @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_no_specialist(self):
@@ -131,8 +244,8 @@ class TestAgentFactory:
         prompt = factory._assemble_lean_system_prompt("coding", [])
 
         assert "Lean ReAct Agent" in prompt
-        # Should have coding specialist content
-        assert "Senior Software Engineer" in prompt or "Coding Specialist" in prompt
+        # Should have coding specialist content (German: "Lead Software Architect")
+        assert "Lead Software" in prompt or "Architectural Mindset" in prompt
 
     @pytest.mark.asyncio
     async def test_assemble_lean_system_prompt_with_rag(self):
@@ -144,3 +257,77 @@ class TestAgentFactory:
         assert "Lean ReAct Agent" in prompt
         # Should have RAG specialist content
         assert "RAG" in prompt
+
+
+class TestAgentFactoryBackwardCompatibility:
+    """Tests for backward compatibility with deprecated methods."""
+
+    @pytest.mark.asyncio
+    async def test_create_lean_agent_deprecated(self):
+        """Test that create_lean_agent still works but shows deprecation warning."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            agent = await factory.create_lean_agent(profile="dev")
+
+            # Check deprecation warning was raised
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
+
+        assert isinstance(agent, Agent)
+
+    @pytest.mark.asyncio
+    async def test_create_agent_from_definition_deprecated(self):
+        """Test that create_agent_from_definition still works but shows deprecation warning."""
+        from taskforce.core.domain.agent import Agent
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            agent = await factory.create_agent_from_definition(
+                agent_definition={
+                    "system_prompt": "Test assistant",
+                    "tool_allowlist": ["python"],
+                },
+                profile="dev",
+            )
+
+            # Check deprecation warning was raised
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
+
+        assert isinstance(agent, Agent)
+
+
+class TestAgentFactoryHasPlannerTool:
+    """Tests for PlannerTool injection."""
+
+    @pytest.mark.asyncio
+    async def test_agent_has_planner_tool_with_config(self):
+        """Test that Agent has PlannerTool injected when using config."""
+        from taskforce.core.tools.planner_tool import PlannerTool
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(config="dev")
+
+        # PlannerTool should be present (injected by Agent if not in tools)
+        assert "planner" in agent.tools
+        assert isinstance(agent.tools["planner"], PlannerTool)
+
+    @pytest.mark.asyncio
+    async def test_agent_has_planner_tool_with_inline(self):
+        """Test that Agent has PlannerTool injected when using inline params."""
+        from taskforce.core.tools.planner_tool import PlannerTool
+
+        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        agent = await factory.create_agent(tools=["python"])
+
+        # PlannerTool should be present
+        assert "planner" in agent.tools
+        assert isinstance(agent.tools["planner"], PlannerTool)

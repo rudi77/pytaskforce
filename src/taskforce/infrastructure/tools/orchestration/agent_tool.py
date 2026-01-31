@@ -292,29 +292,23 @@ class AgentTool:
                 custom_agent_path = self._find_agent_config(specialist)
 
                 if custom_agent_path:
-                    # Load custom agent definition from found config
-                    import yaml
-
+                    # Load custom agent from config file path
                     self.logger.debug(
                         "loading_custom_agent",
                         specialist=specialist,
                         config_path=str(custom_agent_path),
                     )
 
-                    with open(custom_agent_path) as f:
-                        agent_definition = yaml.safe_load(f)
-
-                    # Create agent from custom definition
-                    sub_agent = await self._factory.create_agent_from_definition(
-                        agent_definition=agent_definition,
-                        profile=self._profile,
+                    # Create agent from config file
+                    sub_agent = await self._factory.create_agent(
+                        config=str(custom_agent_path),
                         work_dir=self._work_dir,
                         planning_strategy=planning_strategy,
                     )
                 else:
                     # Standard specialist agent (coding/rag/wiki)
                     sub_agent = await self._factory.create_agent(
-                        profile=self._profile,
+                        config=self._profile,
                         specialist=specialist,
                         work_dir=self._work_dir,
                         planning_strategy=planning_strategy,
@@ -322,7 +316,7 @@ class AgentTool:
             else:
                 # Generic agent (no specialist)
                 sub_agent = await self._factory.create_agent(
-                    profile=self._profile,
+                    config=self._profile,
                     work_dir=self._work_dir,
                     planning_strategy=planning_strategy,
                 )
