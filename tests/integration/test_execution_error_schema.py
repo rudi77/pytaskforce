@@ -114,8 +114,7 @@ def test_execute_returns_standard_error_schema(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("lean", [False, True])
-def test_execute_unknown_error_preserves_detail(client, lean):
+def test_execute_unknown_error_preserves_detail(client):
     with patch("taskforce.api.routes.execution.executor") as mock_executor:
         mock_executor.execute_mission = AsyncMock(
             side_effect=RuntimeError("Unexpected failure")
@@ -123,7 +122,7 @@ def test_execute_unknown_error_preserves_detail(client, lean):
 
         response = client.post(
             "/api/v1/execute",
-            json={"mission": "Test", "profile": "coding_agent", "lean": lean},
+            json={"mission": "Test", "profile": "coding_agent"},
         )
 
     _assert_error_response(

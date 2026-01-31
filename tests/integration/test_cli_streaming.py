@@ -59,7 +59,6 @@ class TestCLIStreamingFlag:
                 mission="Test mission",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -67,7 +66,6 @@ class TestCLIStreamingFlag:
             mock_stream.assert_called_once()
             call_kwargs = mock_stream.call_args.kwargs
             assert call_kwargs["mission"] == "Test mission"
-            assert call_kwargs["use_lean_agent"] is True
 
     @pytest.mark.asyncio
     async def test_streaming_displays_tool_calls(self):
@@ -94,7 +92,6 @@ class TestCLIStreamingFlag:
                 mission="Search and analyze",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -122,7 +119,6 @@ class TestCLIStreamingFlag:
                 mission="Say hello",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -148,7 +144,6 @@ class TestCLIStreamingFlag:
                 mission="Test error handling",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -172,7 +167,6 @@ class TestCLIStreamingFlag:
                 mission="Create a plan",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -209,7 +203,6 @@ class TestCLIStreamingMultipleToolCalls:
                 mission="Multi-step task",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -240,7 +233,6 @@ class TestCLIStreamingMultipleToolCalls:
                 mission="Fetch data",
                 profile="dev",
                 session_id=None,
-                lean=True,
                 console=console,
             )
 
@@ -269,11 +261,7 @@ class TestCLIStreamingBackwardCompatibility:
                 mission="Legacy test",
                 profile="dev",
                 session_id=None,
-                lean=False,  # Use legacy agent
                 console=console,
             )
 
             mock_stream.assert_called_once()
-            call_kwargs = mock_stream.call_args.kwargs
-            assert call_kwargs["use_lean_agent"] is False
-

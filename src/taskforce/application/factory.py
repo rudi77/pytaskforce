@@ -442,10 +442,6 @@ class AgentFactory:
             config,
             work_dir_override=config.get("persistence", {}).get("work_dir"),
         )
-        runtime_tracker = self._create_runtime_tracker(
-            config,
-            work_dir_override=config.get("persistence", {}).get("work_dir"),
-        )
 
         # Get max_steps from config (defaults to Agent.DEFAULT_MAX_STEPS if not specified)
         agent_config = config.get("agent", {})

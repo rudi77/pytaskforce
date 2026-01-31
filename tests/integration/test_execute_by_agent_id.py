@@ -154,8 +154,6 @@ def test_execute_sync_backward_compatibility_without_agent_id(client):
             json={
                 "mission": "Test mission",
                 "profile": "coding_agent",
-                # No agent_id - uses legacy path
-                "lean": False,
             },
         )
 
@@ -166,7 +164,6 @@ def test_execute_sync_backward_compatibility_without_agent_id(client):
         # Verify agent_id was None
         call_kwargs = mock_executor.execute_mission.call_args.kwargs
         assert call_kwargs["agent_id"] is None
-        assert call_kwargs["use_lean_agent"] is False
 
 
 def test_execute_stream_with_agent_id_success(client, mock_custom_agent):
@@ -266,44 +263,6 @@ def test_execute_stream_agent_id_not_found(client):
         assert error_event["details"]["status_code"] == 404
 
 
-def test_execute_with_agent_id_ignores_lean_flag(client, mock_custom_agent):
-    """Test that agent_id takes priority over lean flag."""
-    with patch(
-        "taskforce.api.routes.execution.executor"
-    ) as mock_executor, patch(
-        "taskforce.infrastructure.persistence.file_agent_registry.FileAgentRegistry"
-    ) as mock_registry_class:
-        mock_registry = MagicMock()
-        mock_registry.get_agent.return_value = mock_custom_agent
-        mock_registry_class.return_value = mock_registry
-
-        mock_executor.execute_mission = AsyncMock(
-            return_value=ExecutionResult(
-                session_id="test-123",
-                status="completed",
-                final_message="Success",
-            )
-        )
-
-        response = client.post(
-            "/api/agent/execute",
-            json={
-                "mission": "Test",
-                "profile": "coding_agent",
-                "agent_id": "invoice-extractor",
-                "lean": False,  # Should be ignored
-            },
-        )
-
-        assert response.status_code == 200
-
-        # Verify agent_id was passed (lean flag ignored)
-        call_kwargs = mock_executor.execute_mission.call_args.kwargs
-        assert call_kwargs["agent_id"] == "invoice-extractor"
-        # lean flag is still passed but agent_id takes priority in executor
-        assert call_kwargs["use_lean_agent"] is False
-
-
 def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
     """Test agent_id execution with RAG user context."""
     with patch(
@@ -345,4 +304,3 @@ def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
             "org_id": "org456",
             "scope": "private",
         }
-

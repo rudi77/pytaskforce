@@ -27,9 +27,6 @@ def run_mission(
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
-    lean: bool = typer.Option(
-        False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
-    ),
     planning_strategy: str | None = typer.Option(
         None,
         "--planning-strategy",
@@ -54,11 +51,8 @@ def run_mission(
         # Execute a simple mission
         taskforce run mission "Analyze data.csv"
 
-        # Use Agent (new simplified architecture)
-        taskforce run mission "Plan and execute" --lean
-
         # Use streaming output for real-time progress
-        taskforce run mission "Search and analyze" --lean --stream
+        taskforce run mission "Search and analyze" --stream
 
         # Resume a previous session
         taskforce run mission "Continue analysis" --session abc-123
@@ -100,13 +94,6 @@ def run_mission(
     if session_id:
         tf_console.print_system_message(f"Resuming session: {session_id}", "info")
     tf_console.print_system_message(f"Profile: {profile}", "info")
-    if planning_strategy and not lean:
-        lean = True
-        tf_console.print_system_message(
-            "Planning strategy override requested; enabling Agent.", "info"
-        )
-    if lean:
-        tf_console.print_system_message("Using Agent (native tool calling)", "info")
     if planning_strategy:
         tf_console.print_system_message(
             f"Planning strategy: {planning_strategy}", "info"
@@ -123,7 +110,6 @@ def run_mission(
             mission=mission,
             profile=profile,
             session_id=session_id,
-            lean=lean,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             console=tf_console.console,
@@ -134,7 +120,6 @@ def run_mission(
             mission=mission,
             profile=profile,
             session_id=session_id,
-            lean=lean,
             debug=debug,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
@@ -147,7 +132,6 @@ def _execute_standard_mission(
     mission: str,
     profile: str,
     session_id: str | None,
-    lean: bool,
     debug: bool,
     planning_strategy: str | None,
     planning_strategy_params: str | None,
@@ -205,7 +189,6 @@ async def _execute_streaming_mission(
     mission: str,
     profile: str,
     session_id: str | None,
-    lean: bool,
     planning_strategy: str | None,
     planning_strategy_params: str | None,
     console: Console,
@@ -520,7 +503,6 @@ def run_command(
                     mission=mission,
                     profile=profile,
                     session_id=None,
-                    lean=True,
                     planning_strategy=None,
                     planning_strategy_params=None,
                     console=tf_console.console,
@@ -531,7 +513,6 @@ def run_command(
                 mission=mission,
                 profile=profile,
                 session_id=None,
-                lean=True,
                 debug=debug,
                 planning_strategy=None,
                 planning_strategy_params=None,
