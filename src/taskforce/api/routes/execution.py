@@ -26,6 +26,7 @@ from typing import Optional, List, Dict, Any
 
 from taskforce.application.executor import AgentExecutor
 from taskforce.api.schemas.errors import ErrorResponse
+from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.errors import (
     CancelledError,
     ConfigError,
@@ -849,7 +850,7 @@ async def execute_mission_stream(
             ):
                 # Serialize dataclass to JSON, handling datetime
                 # Log final_answer events for debugging
-                if update.event_type == "final_answer":
+                if update.event_type == EventType.FINAL_ANSWER.value:
                     import structlog
                     logger = structlog.get_logger()
                     logger.info(
@@ -867,7 +868,7 @@ async def execute_mission_stream(
                 error_data = json.dumps(
                     {
                         "timestamp": datetime.now().isoformat(),
-                        "event_type": "error",
+                        "event_type": EventType.ERROR.value,
                         "message": f"Profile not found: {msg}",
                         "details": {
                             "error": msg,
@@ -882,7 +883,7 @@ async def execute_mission_stream(
                 error_data = json.dumps(
                     {
                         "timestamp": datetime.now().isoformat(),
-                        "event_type": "error",
+                        "event_type": EventType.ERROR.value,
                         "message": f"Agent not found: {msg}",
                         "details": {
                             "error": msg,
@@ -897,7 +898,7 @@ async def execute_mission_stream(
             error_data = json.dumps(
                 {
                     "timestamp": datetime.now().isoformat(),
-                    "event_type": "error",
+                    "event_type": EventType.ERROR.value,
                     "message": f"Invalid agent definition: {str(e)}",
                     "details": {
                         "error": str(e),
@@ -912,7 +913,7 @@ async def execute_mission_stream(
             error_data = json.dumps(
                 {
                     "timestamp": datetime.now().isoformat(),
-                    "event_type": "error",
+                    "event_type": EventType.ERROR.value,
                     "message": f"Execution failed: {str(e)}",
                     "details": {
                         "error": str(e),

@@ -8,6 +8,7 @@ from typing import Any
 import structlog
 import yaml
 
+from taskforce.core.domain.enums import ExecutionStatus
 from taskforce.core.domain.sub_agents import (
     SubAgentResult,
     SubAgentSpec,
@@ -55,13 +56,16 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             )
             return SubAgentResult(
                 session_id=session_id,
-                status="failed",
+                status=ExecutionStatus.FAILED.value,
                 success=False,
                 final_message="",
                 error=str(exc),
             )
 
-        success = result.status in {"completed", "paused"}
+        success = result.status in {
+            ExecutionStatus.COMPLETED.value,
+            ExecutionStatus.PAUSED.value,
+        }
         return SubAgentResult(
             session_id=session_id,
             status=result.status,
