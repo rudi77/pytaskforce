@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.0
-**Date:** 2026-01-03
+**Version:** 1.1
+**Date:** 2026-01-31
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---
@@ -803,6 +803,59 @@ def execute(self, code: str) -> Dict[str, Any]:
     return namespace.get("result")
 ```
 
+### 5. Simplified Architecture Patterns
+
+**Executor Pattern - Single Source of Truth:**
+
+`execute_mission()` delegates to `execute_mission_streaming()` to avoid code duplication:
+
+```python
+# ✅ CURRENT PATTERN - execute_mission delegates to streaming
+async def execute_mission(self, mission, ...) -> ExecutionResult:
+    result = None
+    async for update in self.execute_mission_streaming(mission, ...):
+        if progress_callback:
+            progress_callback(update)
+        if update.event_type == "complete":
+            result = ExecutionResult(...)
+    return result
+
+# execute_mission_streaming is the single source of truth for execution logic
+```
+
+**Tool Registry - Direct Usage:**
+
+Use `ToolRegistry` directly instead of deprecated wrapper classes:
+
+```python
+# ✅ CORRECT - Use ToolRegistry directly
+from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
+
+registry = get_tool_registry()
+tools = registry.list_native_tools()
+resolved = registry.resolve(["python", "file_read"])
+
+# ❌ DEPRECATED - Don't use these (removed)
+# from taskforce.application.tool_catalog import ToolCatalog
+# from taskforce.application.tool_mapper import ToolMapper
+# from taskforce.application.tool_resolver import ToolResolver
+```
+
+**Agent Components - Call Directly:**
+
+Call component methods directly instead of through agent wrapper methods:
+
+```python
+# ✅ CORRECT - Call component methods directly
+messages = await agent.message_history_manager.compress_messages(messages)
+messages = agent.message_history_manager.preflight_budget_check(messages)
+tool_msg = await agent.tool_result_message_factory.build_message(...)
+
+# ❌ AVOID - Wrapper methods have been removed
+# messages = await agent._compress_messages(messages)
+# messages = agent._preflight_budget_check(messages)
+```
+
 ---
 
 ## Deployment
@@ -864,6 +917,11 @@ See `docs/architecture/section-10-deployment.md` for:
 ### Core Domain
 - `src/taskforce/core/domain/agent.py` - ReAct loop implementation
 - `src/taskforce/core/domain/lean_agent.py` - LeanAgent (simplified) implementation
+- `src/taskforce/core/domain/lean_agent_components/` - Agent components (call directly, not via wrappers):
+  - `message_history_manager.py` - Message compression and budget management
+  - `tool_executor.py` - Tool execution and result message factory
+  - `prompt_builder.py` - System prompt construction
+- `src/taskforce/core/domain/planning_strategy.py` - Planning strategies (native_react, plan_and_react)
 - `src/taskforce/core/domain/plan.py` - TodoList planning logic
 - `src/taskforce/core/domain/events.py` - Domain events
 
@@ -881,7 +939,8 @@ See `docs/architecture/section-10-deployment.md` for:
 
 ### Application
 - `src/taskforce/application/factory.py` - Dependency injection
-- `src/taskforce/application/executor.py` - Execution orchestration
+- `src/taskforce/application/executor.py` - Execution orchestration (streaming-first)
+- `src/taskforce/application/tool_registry.py` - Tool catalog, mapping, and resolution
 - `src/taskforce/application/profiles.py` - Configuration loading
 
 ### API
