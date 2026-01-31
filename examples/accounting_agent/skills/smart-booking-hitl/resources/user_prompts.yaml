@@ -1,0 +1,191 @@
+# User Prompt Templates für HITL-Workflow
+# Diese Templates werden für die Kommunikation mit dem User verwendet
+
+version: "1.0"
+
+# =============================================================================
+# REVIEW REQUEST PROMPTS
+# =============================================================================
+
+review_request:
+  # Standard Review (Confidence zu niedrig)
+  low_confidence:
+    template: |
+      Buchungsvorschlag zur Prüfung:
+
+      Lieferant: {supplier_name}
+      Rechnungsnummer: {invoice_number}
+      Bruttobetrag: {total_gross} EUR
+      Nettobetrag: {total_net} EUR
+      MwSt: {total_vat} EUR ({vat_rate}%)
+
+      Vorgeschlagenes Soll-Konto: {debit_account} - {debit_account_name}
+      Haben-Konto: 1600 - Verbindlichkeiten
+
+      Confidence: {confidence}%
+      Grund für Prüfung: Confidence unter 95%
+
+      Bitte wählen Sie:
+      1. Bestätigen - Vorschlag übernehmen
+      2. Korrigieren - Anderes Konto angeben (z.B. 'Konto 4930')
+      3. Ablehnen - Nicht buchen
+
+  # New Vendor (Hard Gate)
+  new_vendor:
+    template: |
+      Buchungsvorschlag zur Prüfung (NEUER LIEFERANT):
+
+      Lieferant: {supplier_name} ⚠️ ERSTMALIG
+      Rechnungsnummer: {invoice_number}
+      Bruttobetrag: {total_gross} EUR
+
+      Vorgeschlagenes Soll-Konto: {debit_account} - {debit_account_name}
+
+      Dies ist die erste Rechnung von diesem Lieferanten.
+      Bitte prüfen Sie den Buchungsvorschlag sorgfältig.
+
+      Bitte wählen Sie:
+      1. Bestätigen - Vorschlag übernehmen (Regel wird gelernt)
+      2. Korrigieren - Anderes Konto angeben
+      3. Ablehnen - Nicht buchen
+
+  # High Amount (Hard Gate)
+  high_amount:
+    template: |
+      Buchungsvorschlag zur Prüfung (HOHER BETRAG):
+
+      Lieferant: {supplier_name}
+      Rechnungsnummer: {invoice_number}
+      Bruttobetrag: {total_gross} EUR ⚠️ ÜBER SCHWELLENWERT
+
+      Vorgeschlagenes Soll-Konto: {debit_account} - {debit_account_name}
+
+      Der Betrag überschreitet den Schwellenwert von {threshold} EUR.
+      Bitte prüfen Sie die Buchung sorgfältig.
+
+      Bitte wählen Sie:
+      1. Bestätigen - Vorschlag übernehmen
+      2. Korrigieren - Anderes Konto angeben
+      3. Ablehnen - Nicht buchen
+
+  # Critical Account (Hard Gate)
+  critical_account:
+    template: |
+      Buchungsvorschlag zur Prüfung (KRITISCHES KONTO):
+
+      Lieferant: {supplier_name}
+      Rechnungsnummer: {invoice_number}
+      Bruttobetrag: {total_gross} EUR
+
+      Vorgeschlagenes Soll-Konto: {debit_account} - {debit_account_name} ⚠️ KRITISCH
+
+      Das vorgeschlagene Konto erfordert besondere Aufmerksamkeit:
+      - 1800: Privatentnahmen
+      - 2100: Anzahlungen
+
+      Bitte prüfen Sie, ob dieses Konto korrekt ist.
+
+      Bitte wählen Sie:
+      1. Bestätigen - Vorschlag übernehmen
+      2. Korrigieren - Anderes Konto angeben
+      3. Ablehnen - Nicht buchen
+
+  # No Rule Match (RAG Fallback)
+  no_match:
+    template: |
+      Keine passende Buchungsregel gefunden:
+
+      Lieferant: {supplier_name}
+      Rechnungsnummer: {invoice_number}
+      Bruttobetrag: {total_gross} EUR
+
+      Positionen:
+      {line_items}
+
+      Es konnte keine automatische Kontenzuordnung vorgenommen werden.
+
+      Bitte geben Sie das Soll-Konto an (z.B. '4930 Bürobedarf'):
+
+# =============================================================================
+# RESPONSE PATTERNS
+# =============================================================================
+
+response_patterns:
+  confirm:
+    patterns:
+      - "1"
+      - "bestätigen"
+      - "ja"
+      - "ok"
+      - "übernehmen"
+      - "korrekt"
+      - "passt"
+    action: "confirm"
+
+  correct:
+    patterns:
+      - "2"
+      - "korrigieren"
+      - "konto"
+      - "ändern"
+    extract_account: true
+    action: "correct"
+
+  reject:
+    patterns:
+      - "3"
+      - "ablehnen"
+      - "nein"
+      - "nicht buchen"
+      - "abbrechen"
+    action: "reject"
+
+# =============================================================================
+# CONFIRMATION MESSAGES
+# =============================================================================
+
+confirmation_messages:
+  confirmed:
+    template: |
+      ✓ Buchung bestätigt und durchgeführt.
+
+      Neue Regel wurde für zukünftige Buchungen von {supplier_name} erstellt.
+
+  corrected:
+    template: |
+      ✓ Buchung mit Korrektur durchgeführt.
+
+      Geändert: {original_account} → {new_account}
+
+      Neue Regel wurde für zukünftige Buchungen erstellt.
+
+  rejected:
+    template: |
+      ✗ Buchung wurde abgelehnt.
+
+      Die Rechnung wurde nicht gebucht.
+      Bitte prüfen Sie die Rechnung manuell.
+
+# =============================================================================
+# ERROR MESSAGES
+# =============================================================================
+
+error_messages:
+  invalid_account:
+    template: |
+      ⚠️ Ungültiges Konto: {account}
+
+      Bitte geben Sie ein gültiges SKR03-Konto an (z.B. '4930').
+
+      Häufige Konten:
+      - 4930 Bürobedarf
+      - 4920 Telefon
+      - 4660 Reisekosten
+      - 4950 Beratungskosten
+
+  timeout:
+    template: |
+      ⏱️ Zeitüberschreitung bei der Prüfung.
+
+      Der Review-Vorgang bleibt offen.
+      Sie können jederzeit mit 'hitl status' den aktuellen Stand abrufen.
