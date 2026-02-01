@@ -116,9 +116,9 @@ Taskforce integrates with several external APIs for LLM capabilities and RAG fun
   - Personal Access Token: `Authorization: Bearer $GITHUB_TOKEN` header
   - OAuth tokens (future enhancement)
 - **Rate Limits:** 
-  - Authenticated: 5,000 requests/hour
-  - Unauthenticated: 60 requests/hour
-  - GraphQL: 5,000 points/hour (different counting)
+- Authenticated: 5,000 requests/hour
+- Unauthenticated: 60 requests/hour
+- GraphQL: 5,000 points/hour (different counting)
 
 **Key Endpoints Used:**
 - `POST /user/repos` - Create repository
@@ -131,6 +131,22 @@ Taskforce integrates with several external APIs for LLM capabilities and RAG fun
 - Used by GitHubTool in `infrastructure/tools/native/git_tools.py`
 - Environment variable: `GITHUB_TOKEN` (optional, tool gracefully degrades without it)
 - Fallback to local git operations if GitHub API unavailable
+
+---
+
+### **Communication Providers (Telegram/MS Teams)**
+
+- **Purpose:** Enable inbound and outbound messaging so agents can communicate
+  with users via chat platforms while preserving session history.
+- **Integration Pattern:** Provider-specific adapters implement the
+  `CommunicationGatewayProtocol` for outbound messages and a dedicated webhook
+  receiver forwards inbound messages to `/api/v1/integrations/{provider}/messages`.
+- **Session Mapping:** Provider conversation IDs are mapped to Taskforce
+  `session_id` values through a conversation store (file-backed by default).
+- **Security:** Provider signature verification should be enforced at the
+  gateway or middleware layer before forwarding events into Taskforce.
+- **Configuration:** Provider secrets/tokens are stored via environment variables
+  in deployment (not in source control).
 
 ---
 
@@ -232,4 +248,4 @@ retry:
 🏗️ **Proceeding to Core Workflows...**
 
 ---
-
+
