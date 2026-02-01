@@ -1,0 +1,51 @@
+# Personal Assistant Plugin Configuration
+# Usage:
+#   taskforce run mission "Daily briefing" --profile personal_assistant --plugin examples/personal_assistant
+
+profile: personal_assistant
+
+system_prompt: |
+  You are a personal assistant that manages email, calendar, and tasks.
+  - Default to read-only actions.
+  - Ask for confirmation before risky actions like sending emails or creating events.
+  - Summarize results clearly and provide next-step recommendations.
+
+skills:
+  directories:
+    - "${PLUGIN_PATH}/skills"
+  available:
+    - name: daily-briefing
+      description: "Prepare a morning briefing from emails, calendar, and tasks."
+      trigger: "DAILY_BRIEFING"
+    - name: inbox-triage
+      description: "Triage inbox items and suggest follow-ups."
+      trigger: "INBOX_TRIAGE"
+    - name: calendar-assist
+      description: "Draft meeting preparation and scheduling suggestions."
+      trigger: "CALENDAR_ASSIST"
+  activation:
+    mode: "intent_based"
+    auto_switch: false
+
+persistence:
+  type: file
+  work_dir: .taskforce_personal_assistant
+
+agent:
+  max_steps: 40
+  planning_strategy: plan_and_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 10
+
+llm:
+  config_path: configs/llm_config.yaml
+  default_model: main
+
+tools:
+  - gmail
+  - google_calendar
+  - task_list
+  - task_create
+  - task_complete
+  - ask_user
