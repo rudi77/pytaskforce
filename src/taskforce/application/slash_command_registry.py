@@ -43,6 +43,8 @@ class SlashCommandRegistry:
         "q",
         "debug",
         "tokens",
+        "plugins",
+        "skills",
     })
 
     def __init__(
@@ -105,6 +107,18 @@ class SlashCommandRegistry:
                     {
                         "name": "tokens",
                         "description": "Show token usage",
+                        "source": "builtin",
+                        "type": "builtin",
+                    },
+                    {
+                        "name": "plugins",
+                        "description": "List available plugin agents",
+                        "source": "builtin",
+                        "type": "builtin",
+                    },
+                    {
+                        "name": "skills",
+                        "description": "List available skills",
                         "source": "builtin",
                         "type": "builtin",
                     },

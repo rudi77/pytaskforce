@@ -42,6 +42,9 @@ taskforce chat --plugin examples/accounting_agent
 
 # Chat input
 # Use Ctrl+Enter to send, Enter for new lines (multi-line input supported)
+# List plugins and switch via slash commands
+# /plugins
+# /accounting_agent
 
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins

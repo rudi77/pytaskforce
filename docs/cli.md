@@ -17,7 +17,7 @@ taskforce chat
 ```
 Use `Enter` to send messages (simple REPL-style input).
 Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color.
-Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own.
+Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. Built-ins include `/plugins` and `/skills` to list available plugin agents and skills, and you can switch to a plugin agent by typing `/<plugin_name>` after selecting it from `/plugins`. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own.
 
 ### Loading Plugins
 Load external agent plugins with custom tools:
