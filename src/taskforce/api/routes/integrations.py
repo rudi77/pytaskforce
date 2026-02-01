@@ -14,19 +14,16 @@ from taskforce.application.communication_service import (
     CommunicationService,
 )
 from taskforce.application.executor import AgentExecutor
-from taskforce_extensions.infrastructure.communication import FileConversationStore
+from taskforce_extensions.infrastructure.communication import build_provider_registry
 
 router = APIRouter(prefix="/integrations")
 
-_ALLOWED_PROVIDERS = {"telegram", "teams"}
-
-conversation_store = FileConversationStore(
-    work_dir=os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-)
 executor = AgentExecutor()
 service = CommunicationService(
     executor=executor,
-    conversation_store=conversation_store,
+    providers=build_provider_registry(
+        work_dir=os.getenv("TASKFORCE_WORK_DIR", ".taskforce"),
+    ),
 )
 
 
@@ -116,7 +113,7 @@ async def handle_inbound_message(
     request: InboundMessageRequest,
 ) -> InboundMessageResponse:
     """Handle inbound communication from Telegram/MS Teams."""
-    if provider not in _ALLOWED_PROVIDERS:
+    if provider not in service.supported_providers():
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(

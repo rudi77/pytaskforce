@@ -28,7 +28,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
 - Multi-agent runtime tracking (heartbeats + checkpoints) uses adapters under `src/taskforce_extensions/infrastructure/runtime/` and is wired via `AgentRuntimeTracker`.
 - Message bus adapters live under `src/taskforce_extensions/infrastructure/messaging/` and implement `MessageBusProtocol` for agent-to-agent coordination.
-- External communication integrations use `CommunicationService` plus conversation stores under `src/taskforce_extensions/infrastructure/communication/`; API routes live at `/api/v1/integrations/{provider}/messages` and persist chat history in `.taskforce/conversations/`.
+- External communication integrations use `CommunicationService` with provider adapters under `src/taskforce_extensions/infrastructure/communication/` (see `providers.py` + `registry.py`); API routes live at `/api/v1/integrations/{provider}/messages` and persist chat history in `.taskforce/conversations/`.
 - Sub-agent spawning is centralized in `src/taskforce/application/sub_agent_spawner.py` to standardize isolated session creation.
 - Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce_extensions/configs/`.
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.

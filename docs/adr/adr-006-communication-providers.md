@@ -12,9 +12,8 @@ architecture that keeps provider-specific logic in infrastructure adapters.
 ## Decision
 We introduce a **provider architecture** with:
 
-1. **Core protocols** for external communication:
-   - `CommunicationGatewayProtocol` for outbound messages.
-   - `ConversationStoreProtocol` for session mapping and history persistence.
+1. **Core protocol** for external communication:
+   - `CommunicationProviderProtocol` for outbound messaging plus session/history access.
 2. **Infrastructure adapters** in `taskforce_extensions/infrastructure/communication/`
    for concrete providers (Telegram, Teams) and storage backends.
 3. **Application service** (`CommunicationService`) responsible for:
