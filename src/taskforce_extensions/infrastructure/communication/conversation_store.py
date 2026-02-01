@@ -12,9 +12,6 @@ from typing import Any, Callable
 import aiofiles
 import structlog
 
-from taskforce.core.interfaces.communication import ConversationStoreProtocol
-
-
 @dataclass(frozen=True)
 class ConversationRecord:
     """Persisted conversation record for provider mappings."""
@@ -26,7 +23,7 @@ class ConversationRecord:
     updated_at: str
 
 
-class FileConversationStore(ConversationStoreProtocol):
+class FileConversationStore:
     """File-based conversation store for provider mappings and history."""
 
     def __init__(
@@ -152,7 +149,7 @@ class FileConversationStore(ConversationStoreProtocol):
                 )
 
 
-class InMemoryConversationStore(ConversationStoreProtocol):
+class InMemoryConversationStore:
     """In-memory conversation store for tests."""
 
     def __init__(self) -> None:

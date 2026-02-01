@@ -9,7 +9,7 @@ from uuid import uuid4
 from taskforce.application.executor import AgentExecutor
 from taskforce.core.domain.enums import MessageRole
 from taskforce.core.domain.models import ExecutionResult
-from taskforce.core.interfaces.communication import ConversationStoreProtocol
+from taskforce.core.interfaces.communication import CommunicationProviderProtocol
 
 
 @dataclass(frozen=True)
@@ -42,10 +42,10 @@ class CommunicationService:
         self,
         *,
         executor: AgentExecutor,
-        conversation_store: ConversationStoreProtocol,
+        providers: dict[str, CommunicationProviderProtocol],
     ) -> None:
         self._executor = executor
-        self._conversation_store = conversation_store
+        self._providers = providers
 
     async def handle_message(
         self,
@@ -57,14 +57,15 @@ class CommunicationService:
     ) -> CommunicationResponse:
         """Handle a message from an external communication provider."""
         resolved_options = options or CommunicationOptions()
+        adapter = self._get_provider(provider)
         resolved_session_id, updated_history = await self._prepare_history(
-            provider=provider,
+            provider=adapter,
             conversation_id=conversation_id,
             session_id=resolved_options.session_id,
             message=message,
         )
         return await self._execute_and_store(
-            provider=provider,
+            provider=adapter,
             conversation_id=conversation_id,
             message=message,
             profile=resolved_options.profile,
@@ -80,7 +81,7 @@ class CommunicationService:
     async def _prepare_history(
         self,
         *,
-        provider: str,
+        provider: CommunicationProviderProtocol,
         conversation_id: str,
         session_id: str | None,
         message: str,
@@ -90,7 +91,7 @@ class CommunicationService:
             conversation_id=conversation_id,
             session_id=session_id,
         )
-        history = await self._conversation_store.load_history(provider, conversation_id)
+        history = await provider.load_history(conversation_id)
         updated_history = self._append_message(
             history,
             MessageRole.USER.value,
@@ -101,7 +102,7 @@ class CommunicationService:
     async def _execute_and_store(
         self,
         *,
-        provider: str,
+        provider: CommunicationProviderProtocol,
         conversation_id: str,
         message: str,
         profile: str,
@@ -124,12 +125,34 @@ class CommunicationService:
             planning_strategy_params=planning_strategy_params,
             plugin_path=plugin_path,
         )
+        return await self._finalize_response(
+            provider=provider,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            conversation_history=conversation_history,
+            result=result,
+        )
+
+    async def _finalize_response(
+        self,
+        *,
+        provider: CommunicationProviderProtocol,
+        conversation_id: str,
+        session_id: str,
+        conversation_history: list[dict[str, Any]],
+        result: ExecutionResult,
+    ) -> CommunicationResponse:
         final_history = self._append_message(
             conversation_history,
             MessageRole.ASSISTANT.value,
             result.final_message,
         )
-        await self._conversation_store.save_history(provider, conversation_id, final_history)
+        await provider.save_history(conversation_id, final_history)
+        await provider.send_message(
+            conversation_id=conversation_id,
+            message=result.final_message,
+            metadata={"status": result.status},
+        )
         return CommunicationResponse(
             session_id=session_id,
             status=result.status,
@@ -165,30 +188,29 @@ class CommunicationService:
     async def _resolve_session_id(
         self,
         *,
-        provider: str,
+        provider: CommunicationProviderProtocol,
         conversation_id: str,
         session_id: str | None,
     ) -> str:
         if session_id:
-            await self._conversation_store.set_session_id(
-                provider,
-                conversation_id,
-                session_id,
-            )
+            await provider.set_session_id(conversation_id, session_id)
             return session_id
-        existing = await self._conversation_store.get_session_id(
-            provider,
-            conversation_id,
-        )
+        existing = await provider.get_session_id(conversation_id)
         if existing:
             return existing
         generated = str(uuid4())
-        await self._conversation_store.set_session_id(
-            provider,
-            conversation_id,
-            generated,
-        )
+        await provider.set_session_id(conversation_id, generated)
         return generated
+
+    def _get_provider(self, name: str) -> CommunicationProviderProtocol:
+        provider = self._providers.get(name)
+        if provider is None:
+            raise ValueError(f"Unsupported provider '{name}'")
+        return provider
+
+    def supported_providers(self) -> set[str]:
+        """Return supported provider identifiers."""
+        return set(self._providers.keys())
 
     @staticmethod
     def _append_message(

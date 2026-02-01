@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from taskforce.application.communication_service import (
@@ -7,6 +9,9 @@ from taskforce.application.communication_service import (
 from taskforce.core.domain.models import ExecutionResult
 from taskforce_extensions.infrastructure.communication.conversation_store import (
     InMemoryConversationStore,
+)
+from taskforce_extensions.infrastructure.communication.providers import (
+    TelegramProvider,
 )
 
 
@@ -22,9 +27,22 @@ class FakeExecutor:
 @pytest.mark.asyncio
 async def test_service_tracks_history_and_session() -> None:
     store = InMemoryConversationStore()
+    outbound_messages: list[tuple[str, str]] = []
+
+    async def outbound_sender(
+        conversation_id: str,
+        message: str,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        outbound_messages.append((conversation_id, message))
+
+    provider = TelegramProvider(
+        conversation_store=store,
+        outbound_sender=outbound_sender,
+    )
     service = CommunicationService(
         executor=FakeExecutor(),
-        conversation_store=store,
+        providers={"telegram": provider},
     )
 
     response = await service.handle_message(
@@ -43,3 +61,4 @@ async def test_service_tracks_history_and_session() -> None:
         {"role": "user", "content": "Hallo!"},
         {"role": "assistant", "content": "Antwort"},
     ]
+    assert outbound_messages == [("conv-42", "Antwort")]

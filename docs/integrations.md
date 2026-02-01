@@ -117,3 +117,10 @@ https://your-domain.example/teams/webhook
 
 If you want per-user sessions (instead of per-conversation), combine
 `conversation_id` with the user ID in your webhook handler.
+
+## 📤 Outbound (Push) Messages
+
+Provider adapters can optionally send outbound messages (push notifications).
+Configure an outbound sender in your deployment (e.g., a Telegram Bot API client
+or Teams Bot Framework client). When configured, Taskforce will send the agent's
+reply via the provider adapter in addition to returning the response payload.

@@ -139,7 +139,7 @@ Taskforce integrates with several external APIs for LLM capabilities and RAG fun
 - **Purpose:** Enable inbound and outbound messaging so agents can communicate
   with users via chat platforms while preserving session history.
 - **Integration Pattern:** Provider-specific adapters implement the
-  `CommunicationGatewayProtocol` for outbound messages and a dedicated webhook
+  `CommunicationProviderProtocol` (outbound + history) and a dedicated webhook
   receiver forwards inbound messages to `/api/v1/integrations/{provider}/messages`.
 - **Session Mapping:** Provider conversation IDs are mapped to Taskforce
   `session_id` values through a conversation store (file-backed by default).
