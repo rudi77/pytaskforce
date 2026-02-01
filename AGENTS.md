@@ -42,6 +42,7 @@ This file should be updated automatically when project-specific patterns, conven
     - `agent`: Defines a specialized agent with its own `profile`, `tools`, and `system_prompt` (from the file body).
   - **Behavior**: An `agent`-type command **temporarily overrides** the current agent's configuration (system prompt, tools, profile) for that single execution. The original context is restored immediately after.
   - **Variables**: Use `$ARGUMENTS` in the Markdown body to inject user input from the command.
+  - **Built-ins**: Chat includes built-ins like `/plugins` and `/skills` for discovery, and `/<plugin_name>` switches the current chat agent to a plugin agent.
 
 - Plugin agent roles can be configured under `src/taskforce_extensions/plugins/<plugin>/configs/agents/`
   and coordinated via orchestrator agents using `call_agent`.
