@@ -27,6 +27,7 @@ Once the server is running, you can access the interactive documentation at:
   - Supported providers: `telegram`, `teams`
   - The API maintains conversation history per provider conversation and maps it to a Taskforce `session_id`.
   - Setup guide: see [External Integrations](integrations.md).
+  - Telegram push requires `TELEGRAM_BOT_TOKEN` in `.env`.
 
 **Example: Send a Telegram message**
 ```python

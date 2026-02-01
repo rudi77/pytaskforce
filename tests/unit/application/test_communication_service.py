@@ -27,14 +27,14 @@ class FakeExecutor:
 @pytest.mark.asyncio
 async def test_service_tracks_history_and_session() -> None:
     store = InMemoryConversationStore()
-    outbound_messages: list[tuple[str, str]] = []
+    outbound_messages: list[tuple[str, str, dict[str, Any] | None]] = []
 
     async def outbound_sender(
         conversation_id: str,
         message: str,
         metadata: dict[str, Any] | None,
     ) -> None:
-        outbound_messages.append((conversation_id, message))
+        outbound_messages.append((conversation_id, message, metadata))
 
     provider = TelegramProvider(
         conversation_store=store,
@@ -61,4 +61,4 @@ async def test_service_tracks_history_and_session() -> None:
         {"role": "user", "content": "Hallo!"},
         {"role": "assistant", "content": "Antwort"},
     ]
-    assert outbound_messages == [("conv-42", "Antwort")]
+    assert outbound_messages == [("conv-42", "Antwort", {"status": "completed"})]

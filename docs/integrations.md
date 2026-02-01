@@ -124,3 +124,14 @@ Provider adapters can optionally send outbound messages (push notifications).
 Configure an outbound sender in your deployment (e.g., a Telegram Bot API client
 or Teams Bot Framework client). When configured, Taskforce will send the agent's
 reply via the provider adapter in addition to returning the response payload.
+
+### Telegram push configuration
+
+Set the environment variable below so the registry wires the Telegram sender:
+
+```
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+```
+
+With this configured, outbound replies are sent via the Telegram Bot API
+`sendMessage` endpoint using the provider's `conversation_id` as `chat_id`.

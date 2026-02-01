@@ -147,6 +147,7 @@ Taskforce integrates with several external APIs for LLM capabilities and RAG fun
   gateway or middleware layer before forwarding events into Taskforce.
 - **Configuration:** Provider secrets/tokens are stored via environment variables
   in deployment (not in source control).
+  - Telegram push: `TELEGRAM_BOT_TOKEN`
 
 ---
 
