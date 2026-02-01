@@ -1887,6 +1887,52 @@ New diagrams added:
 
 ---
 
+## 7. Communication Provider Architecture
+
+```mermaid
+flowchart TB
+    subgraph "External Providers"
+        TelegramAPI[Telegram Bot API]
+        TeamsAPI[Teams Bot Framework]
+    end
+
+    subgraph "API Layer"
+        Webhook[Webhook Receiver<br/>/api/v1/integrations/{provider}/messages]
+    end
+
+    subgraph "Application Layer"
+        CommService[CommunicationService<br/>Session + History Orchestration]
+    end
+
+    subgraph "Infrastructure Layer"
+        ProviderRegistry[Provider Registry<br/>build_provider_registry]
+        TelegramProvider[TelegramProvider]
+        TeamsProvider[TeamsProvider]
+        Store[FileConversationStore<br/>.taskforce/conversations]
+    end
+
+    subgraph "Core Interfaces"
+        ProviderProtocol[CommunicationProviderProtocol]
+    end
+
+    TelegramAPI --> Webhook
+    TeamsAPI --> Webhook
+    Webhook --> CommService
+    CommService --> ProviderRegistry
+    ProviderRegistry --> TelegramProvider
+    ProviderRegistry --> TeamsProvider
+    TelegramProvider -.implements.-> ProviderProtocol
+    TeamsProvider -.implements.-> ProviderProtocol
+    TelegramProvider --> Store
+    TeamsProvider --> Store
+    CommService --> TelegramProvider
+    CommService --> TeamsProvider
+    TelegramProvider --> TelegramAPI
+    TeamsProvider --> TeamsAPI
+```
+
+---
+
 *Erstellt am: 2026-01-21*
-*Letzte Aktualisierung: 2026-01-22 (Enterprise Features Architecture)*
+*Letzte Aktualisierung: 2026-02-01 (Communication Provider Architecture)*
 *Basierend auf: Taskforce Codebase Analyse*
