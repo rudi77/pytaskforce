@@ -166,6 +166,8 @@ graph TB
 
 - **Event-Driven (Internal):** Domain events (Thought, Action, Observation) flow through ReAct loop, enabling progress callbacks and streaming updates. _Rationale:_ Decouples execution logic from progress reporting. Enables both CLI (Rich progress bars) and API (Server-Sent Events) interfaces.
 
+- **External Communication Gateways:** Provider-specific adapters (e.g., Telegram/Teams) map conversation IDs to Taskforce sessions and persist chat history alongside execution. _Rationale:_ Keeps external messaging concerns in infrastructure while preserving session continuity in the application layer.
+
 **Code Organization Patterns:**
 
 - **Domain-Driven Design (Lite):** Core domain entities (Agent, TodoList, TodoItem) encapsulate business logic. _Rationale:_ Keeps planning algorithms and execution semantics close to domain concepts. Avoids anemic domain model anti-pattern.
@@ -212,4 +214,4 @@ graph TB
 🏗️ **Proceeding to Tech Stack...**
 
 ---
-
+

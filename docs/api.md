@@ -22,6 +22,27 @@ Once the server is running, you can access the interactive documentation at:
 - `POST /api/v1/execution/execute`: Run a mission synchronously.
 - `POST /api/v1/execution/execute/stream`: Run a mission with real-time SSE progress updates.
 
+### Integrations (Telegram/MS Teams)
+- `POST /api/v1/integrations/{provider}/messages`: Accept inbound messages and route them to the agent.
+  - Supported providers: `telegram`, `teams`
+  - The API maintains conversation history per provider conversation and maps it to a Taskforce `session_id`.
+  - Setup guide: see [External Integrations](integrations.md).
+
+**Example: Send a Telegram message**
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/api/v1/integrations/telegram/messages",
+    json={
+        "conversation_id": "telegram:123456",
+        "message": "Was haben wir zuletzt besprochen?",
+        "profile": "dev"
+    }
+)
+print(response.json())
+```
+
 #### Streaming pause on `ask_user`
 
 If the agent needs missing information, it emits an SSE event with `event_type: "ask_user"` and **stops streaming** (the agent is paused until you provide input). The event payload contains:
@@ -218,4 +239,3 @@ execute_response = requests.post(
     }
 )
 ```
-

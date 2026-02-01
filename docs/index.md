@@ -10,6 +10,7 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Slash Commands](slash-commands.md)**: Extending the chat interface with custom commands.
 - **[Plugin Development](plugins.md)**: Creating and loading custom agent plugins.
 - **[REST API Guide](api.md)**: Integrating Taskforce via FastAPI and OpenAPI.
+- **[External Integrations](integrations.md)**: Connect Taskforce to Telegram or MS Teams.
 
 ### 🏗 Architecture & Design
 - **[Architecture Overview](architecture.md)**: The core design principles and layer structure.
