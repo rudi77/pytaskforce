@@ -87,6 +87,13 @@ core interfaces and infrastructure adapters:
 See **[Epic Orchestration](architecture/epic-orchestration.md)** for the
 planner → worker → judge pipeline.
 
+## 💬 External Communication Integrations (2026-03)
+
+Taskforce exposes inbound messaging endpoints that map external provider
+conversations (e.g., Telegram or MS Teams) to Taskforce session IDs. The
+conversation store persists chat history per provider conversation so repeated
+messages resume the correct session context without losing history.
+
 ## 📊 Architecture Diagrams
 
 For visual representations of the architecture, see **[Architecture Diagrams](architecture/architecture-diagrams.md)** which includes:
