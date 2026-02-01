@@ -10,8 +10,12 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
+from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.application.factory import AgentFactory
 from taskforce.application.slash_command_registry import SlashCommandRegistry
+from taskforce.application.skill_service import get_skill_service
+from taskforce.core.domain.agent_definition import AgentSource
 from taskforce.core.domain.enums import EventType, MessageRole, TaskStatus
 from taskforce.core.interfaces.slash_commands import (
     CommandType,
@@ -44,6 +48,7 @@ class SimpleChatRunner:
         self.console = Console(theme=TASKFORCE_THEME)
         self.executor = AgentExecutor()
         self.command_registry = SlashCommandRegistry()
+        self.agent_registry = AgentRegistry()
         self.total_tokens = 0
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature: tuple[str, str] | None = None
@@ -97,10 +102,16 @@ class SimpleChatRunner:
             self._print_system(f"Total tokens used: {self.total_tokens:,}", style="info")
         elif cmd_name == "commands":
             self._list_custom_commands()
+        elif cmd_name == "plugins":
+            self._list_plugins()
+        elif cmd_name == "skills":
+            self._list_skills()
         else:
             command_def, args = self.command_registry.resolve_command(command)
             if command_def:
                 await self._execute_custom_command(command_def, args)
+            elif await self._try_switch_plugin(cmd_name):
+                return False
             else:
                 self._print_system(f"Unknown command: {command}", style="warning")
                 self._print_system("Type /help for available commands.", style="info")
@@ -116,6 +127,8 @@ class SimpleChatRunner:
             "- /export or /e\n"
             "- /tokens\n"
             "- /commands\n"
+            "- /plugins\n"
+            "- /skills\n"
             "- /debug\n"
             "- /quit or /exit\n"
         )
@@ -137,6 +150,86 @@ class SimpleChatRunner:
             source_tag = f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
             lines.append(f"- /{cmd['name']} — {cmd['description']} {source_tag}")
         self.console.print(Markdown("\n".join(lines)))
+
+    def _list_plugins(self) -> None:
+        """List available plugin agents."""
+        plugins = [
+            agent
+            for agent in self.agent_registry.list_all(sources=[AgentSource.PLUGIN])
+        ]
+        if not plugins:
+            self._print_system("No plugin agents found.", style="info")
+            self._print_system(
+                "Add plugin folders under examples/ or src/taskforce_extensions/plugins/.",
+                style="info",
+            )
+            return
+
+        lines = ["**Plugin Agents:**"]
+        for plugin in sorted(plugins, key=lambda item: item.agent_id):
+            description = plugin.description or "Plugin agent"
+            path = f"[{plugin.plugin_path}]" if plugin.plugin_path else ""
+            lines.append(f"- /{plugin.agent_id} — {description} {path}")
+        self.console.print(Markdown("\n".join(lines)))
+
+    def _list_skills(self) -> None:
+        """List available skills."""
+        skill_manager = getattr(self.agent, "skill_manager", None)
+        if skill_manager and skill_manager.has_skills:
+            active = (
+                f" (active: {skill_manager.active_skill_name})"
+                if skill_manager.active_skill_name
+                else ""
+            )
+            lines = [f"**Skills (plugin + global){active}:**"]
+            for skill_name in skill_manager.list_skills():
+                lines.append(f"- {skill_name}")
+            self.console.print(Markdown("\n".join(lines)))
+            return
+
+        skill_service = get_skill_service()
+        skills = skill_service.list_skills()
+        if not skills:
+            self._print_system("No skills found.", style="info")
+            self._print_system(
+                "Add skills under .taskforce/skills/ or ~/.taskforce/skills/.",
+                style="info",
+            )
+            return
+
+        lines = ["**Skills:**"]
+        for skill_name in skills:
+            lines.append(f"- {skill_name}")
+        self.console.print(Markdown("\n".join(lines)))
+
+    async def _try_switch_plugin(self, command_name: str) -> bool:
+        """Switch to a plugin agent if the command matches one."""
+        plugin_def = self.agent_registry.get(command_name)
+        if not plugin_def or plugin_def.source != AgentSource.PLUGIN:
+            return False
+
+        plugin_path = plugin_def.plugin_path
+        if not plugin_path:
+            self._print_system(
+                f"Plugin definition for /{command_name} is missing a path.",
+                style="warning",
+            )
+            return True
+
+        self._print_system(f"Switching to plugin: {command_name}", style="info")
+        factory = AgentFactory()
+
+        if self.agent:
+            await self.agent.close()
+
+        self.agent = await factory.create_agent_with_plugin(
+            plugin_path=plugin_path,
+            profile=plugin_def.base_profile or self.profile,
+            user_context=self.user_context,
+        )
+        self.profile = f"plugin:{command_name}"
+        self._print_session_info()
+        return True
 
     async def _execute_custom_command(
         self,

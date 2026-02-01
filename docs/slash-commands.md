@@ -2,6 +2,16 @@
 
 Slash Commands are flexible, file-based commands that allow you to extend the functionality of the Taskforce Chat interface. They can be simple prompt templates or specialized agents with their own configuration.
 
+## 🧭 Built-in Chat Commands
+
+Taskforce ships with a handful of built-in commands in chat:
+
+- `/help`, `/clear`, `/tokens`, `/quit`
+- `/commands` (list custom slash commands)
+- `/plugins` (list available plugin agents)
+- `/skills` (list available skills from plugin or global skill directories)
+- `/<plugin_name>` (switch to a plugin agent listed in `/plugins`)
+
 ## 📂 Storage Locations
 
 Taskforce searches for slash commands in two locations:
@@ -70,4 +80,3 @@ When you execute a slash command:
 1. The system loads the definition from the Markdown file.
 2. If it's a `prompt` type, it substitutes `$ARGUMENTS` and sends it as a user message.
 3. If it's an `agent` type, it creates a temporary agent context with the specified system prompt and tools, executes the request, and then restores the previous agent state.
-
