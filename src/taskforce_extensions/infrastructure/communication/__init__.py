@@ -12,6 +12,9 @@ from taskforce_extensions.infrastructure.communication.providers import (
 from taskforce_extensions.infrastructure.communication.registry import (
     build_provider_registry,
 )
+from taskforce_extensions.infrastructure.communication.telegram_sender import (
+    build_telegram_sender,
+)
 
 __all__ = [
     "BaseCommunicationProvider",
@@ -20,4 +23,5 @@ __all__ = [
     "TeamsProvider",
     "TelegramProvider",
     "build_provider_registry",
+    "build_telegram_sender",
 ]

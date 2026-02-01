@@ -27,7 +27,7 @@ We introduce a **provider architecture** with:
 ## Consequences
 - Provider-specific dependencies remain in the infrastructure layer.
 - Conversation history and session mapping are consistent across providers.
-- Outbound push messaging becomes possible by implementing gateway adapters
+- Outbound push messaging becomes possible by implementing provider senders
   without changing core logic.
 
 ## Alternatives Considered
