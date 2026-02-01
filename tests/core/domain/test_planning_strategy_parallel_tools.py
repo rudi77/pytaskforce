@@ -13,9 +13,20 @@ import pytest
 
 
 def _install_structlog_stub() -> None:
+    try:
+        import structlog  # noqa: F401
+        import structlog.testing  # noqa: F401
+
+        return
+    except Exception:
+        pass
+
     structlog_module = types.ModuleType("structlog")
 
     class _StubLogger:
+        def bind(self, **kwargs: Any) -> "_StubLogger":
+            return self
+
         def warning(self, *args: Any, **kwargs: Any) -> None:
             return None
 
@@ -32,11 +43,19 @@ def _install_structlog_stub() -> None:
         return _StubLogger()
 
     structlog_module.get_logger = _get_logger  # type: ignore[attr-defined]
+    structlog_module.make_filtering_bound_logger = (  # type: ignore[attr-defined]
+        lambda *args, **kwargs: _StubLogger
+    )
+    structlog_module.configure = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+
+    testing_module = types.ModuleType("structlog.testing")
+    testing_module.LogCapture = object  # type: ignore[attr-defined]
 
     typing_module = types.ModuleType("structlog.typing")
     typing_module.FilteringBoundLogger = Any  # type: ignore[attr-defined]
 
     sys.modules.setdefault("structlog", structlog_module)
+    sys.modules.setdefault("structlog.testing", testing_module)
     sys.modules.setdefault("structlog.typing", typing_module)
 
 
