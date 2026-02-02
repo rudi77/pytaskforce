@@ -110,20 +110,36 @@ def _build_gmail_service(auth: GmailAuthConfig):
 
 
 def _load_credentials(auth: GmailAuthConfig):
-    """Load OAuth credentials from token or token file."""
+    """Load OAuth credentials from token, token file, or environment variables.
+
+    Priority order:
+    1. access_token parameter
+    2. token_file parameter
+    3. GOOGLE_ACCESS_TOKEN environment variable
+    4. GOOGLE_TOKEN_FILE environment variable
+    """
+    import os
+
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
-    if auth.access_token:
-        creds = Credentials(token=auth.access_token, scopes=GMAIL_SCOPES)
-    elif auth.token_file:
-        creds = Credentials.from_authorized_user_file(auth.token_file, GMAIL_SCOPES)
-    else:
-        raise ValueError("Provide access_token or token_file for GmailTool")
+    access_token = auth.access_token or os.environ.get("GOOGLE_ACCESS_TOKEN")
+    token_file = auth.token_file or os.environ.get("GOOGLE_TOKEN_FILE")
 
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    return creds
+    if access_token:
+        # Pure access token - no refresh possible
+        return Credentials(token=access_token, scopes=GMAIL_SCOPES)
+    elif token_file:
+        creds = Credentials.from_authorized_user_file(token_file, GMAIL_SCOPES)
+        # Only refresh if we have the necessary fields (from token_file)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        return creds
+    else:
+        raise ValueError(
+            "Provide access_token or token_file for GmailTool, "
+            "or set GOOGLE_ACCESS_TOKEN / GOOGLE_TOKEN_FILE environment variables"
+        )
 
 
 def _list_messages(service: Any, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 version: '2.0'
 description: Auto-generated rules from high-confidence bookings and HITL corrections
-updated_at: '2026-02-02T11:52:31.950209+00:00'
+updated_at: '2026-02-02T12:18:18.610413+00:00'
 semantic_rules:
 - rule_id: AUTO-20260202115223
   vendor_pattern: Büromarkt\ Böttcher\ AG
@@ -24,3 +24,15 @@ semantic_rules:
   - 5x Druckertoner Brother TN-2420
   created_at: '2026-02-02T11:52:31.950209+00:00'
   updated_at: '2026-02-02T11:52:31.950209+00:00'
+- rule_id: AUTO-20260202121818
+  vendor_pattern: Büromarkt\ Böttcher\ AG
+  target_account: '4930'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: '4930'
+  item_patterns:
+  - 5x Druckertoner Brother TN-2420
+  created_at: '2026-02-02T12:18:18.610413+00:00'
+  updated_at: '2026-02-02T12:18:18.610413+00:00'
