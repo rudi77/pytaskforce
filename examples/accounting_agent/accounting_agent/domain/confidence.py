@@ -37,6 +37,7 @@ class ConfidenceCalculator:
     - extraction: 0.15 (OCR/extraction quality)
 
     Hard Gates (always trigger HITL):
+    - no_rule_match: No matching rule found (ALWAYS triggers HITL)
     - new_vendor: First invoice from this vendor
     - high_amount: Amount > threshold (default 5000 EUR)
     - critical_account: Account in critical list
@@ -56,6 +57,7 @@ class ConfidenceCalculator:
 
     # Default hard gate configuration
     DEFAULT_HARD_GATES = {
+        "no_rule_match": True,  # CRITICAL: Always require HITL when no rule found
         "new_vendor": True,
         "high_amount_threshold": Decimal("5000.00"),
         "critical_accounts": ["1800", "2100"],  # Example critical accounts
@@ -135,8 +137,12 @@ class ConfidenceCalculator:
             + self._weights["extraction"] * signals.extraction_score
         )
 
+        # Determine if we have a valid rule match
+        has_rule_match = rule_match is not None and bool(rule_match)
+
         # Check hard gates
         hard_gates = self._check_hard_gates(
+            has_rule_match=has_rule_match,
             is_new_vendor=is_new_vendor,
             invoice_amount=invoice_amount,
             target_account=target_account,
@@ -241,12 +247,24 @@ class ConfidenceCalculator:
 
     def _check_hard_gates(
         self,
+        has_rule_match: bool,
         is_new_vendor: bool,
         invoice_amount: Optional[Decimal],
         target_account: Optional[str],
     ) -> list[HardGate]:
         """Check all hard gates and return results."""
         gates = []
+
+        # No rule match gate (CRITICAL - always check first)
+        if self._hard_gate_config.get("no_rule_match", True):
+            no_match = not has_rule_match
+            gates.append(
+                HardGate(
+                    gate_type="no_rule_match",
+                    triggered=no_match,
+                    reason="Keine passende Buchungsregel gefunden - User muss Konto angeben" if no_match else "",
+                )
+            )
 
         # New vendor gate
         if self._hard_gate_config.get("new_vendor", True):

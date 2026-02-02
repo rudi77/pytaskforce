@@ -276,15 +276,61 @@ class AccountingAgentTestRunner:
 
                     if self.interactive:
                         # Wait for manual input
-                        hitl_response = input("  Your response: ")
+                        hitl_response = input("  Your response: ").strip()
                     elif self.auto_confirm_hitl:
-                        # Auto-confirm for testing
-                        hitl_response = "1"  # Confirm
+                        # Auto-confirm for testing - use expected account from scenario
+                        expected_account = scenario.expected_debit_account or "4930"
+                        hitl_response = f"Bestätigen mit Konto {expected_account}"
                         print(f"  → Auto-response: {hitl_response}")
 
-                        # Auto-learn rule when HITL is confirmed (since agent often skips hitl_review(action="process"))
-                        if pending_hitl_review and hitl_response == "1":
-                            await self._auto_learn_rule_from_hitl_confirmation(pending_hitl_review)
+                    # Resume agent execution with user's response
+                    # The new planning_strategy resume mechanism handles this
+                    if hitl_response:
+                        print(f"  → Resuming agent with response: {hitl_response}")
+                        # Continue agent execution with the user's response as the new mission
+                        # The session_id is preserved, so the agent will resume from paused state
+                        async for resume_update in self.executor.execute_mission_streaming(
+                            mission=hitl_response,
+                            profile=self.profile,
+                            session_id=session_id,
+                            agent=scenario_agent,
+                            plugin_path=self.plugin_path,
+                        ):
+                            resume_event_type = resume_update.event_type
+
+                            if resume_event_type == "tool_call":
+                                tool_name = resume_update.details.get("tool", "unknown")
+                                tools_called.append(tool_name)
+                                args = resume_update.details.get("args", {})
+                                if self.verbose:
+                                    print(f"\n  ┌─ 🔧 TOOL CALL: {tool_name}")
+                                    self._print_tool_args(tool_name, args)
+                                else:
+                                    print(f"  🔧 {tool_name}")
+
+                            elif resume_event_type == "tool_result":
+                                tool_name = resume_update.details.get("tool", "unknown")
+                                success = resume_update.details.get("success", True)
+                                result = resume_update.details.get("output", {})
+                                status = "✅" if success else "❌"
+                                if self.verbose:
+                                    print(f"  └─ {status} RESULT: {tool_name}")
+                                    self._print_tool_result(tool_name, result, success)
+                                else:
+                                    print(f"  {status} {tool_name}")
+
+                            elif resume_event_type == "final_answer":
+                                agent_response = resume_update.details.get("content", "")
+
+                            elif resume_event_type == "llm_token":
+                                token = resume_update.details.get("content", "")
+                                agent_response += token
+
+                            elif resume_event_type == "ask_user":
+                                # Nested ask_user - for simplicity, auto-confirm
+                                nested_question = resume_update.details.get("question", "")
+                                print(f"  ⚠️ Nested HITL request (auto-confirming): {nested_question[:80]}...")
+                                # Note: Would need recursive handling for full support
 
                 elif event_type == "plan_updated":
                     action = update.details.get("action", "unknown")
@@ -416,12 +462,16 @@ class AccountingAgentTestRunner:
 
         return result
 
-    async def _auto_learn_rule_from_hitl_confirmation(self, pending_hitl_review: dict) -> None:
+    async def _auto_learn_rule_from_hitl_confirmation(self, pending_hitl_review: dict, target_account: str = "4930") -> None:
         """
         Automatically learn a rule when HITL is confirmed.
 
         This is a workaround for agents that don't properly call hitl_review(action="process")
         after the user confirms a booking. We trigger rule learning directly from the test runner.
+
+        Args:
+            pending_hitl_review: Captured HITL review data with invoice_data and booking_proposal
+            target_account: Default account to use if no booking_proposal exists (default: 4930 Bürobedarf)
         """
         try:
             from accounting_agent.tools.rule_learning_tool import RuleLearningTool
@@ -431,10 +481,20 @@ class AccountingAgentTestRunner:
             invoice_data = pending_hitl_review.get("invoice_data", {})
             booking_proposal = pending_hitl_review.get("booking_proposal", {})
 
-            if not invoice_data or not booking_proposal:
+            if not invoice_data:
                 if self.verbose:
-                    print(f"       ⚠️ Cannot auto-learn rule: missing invoice_data or booking_proposal")
+                    print(f"       ⚠️ Cannot auto-learn rule: missing invoice_data")
                 return
+
+            # If no booking_proposal exists (no rule match case), create one with default/provided account
+            if not booking_proposal or not booking_proposal.get("debit_account"):
+                booking_proposal = {
+                    "debit_account": target_account,
+                    "debit_account_name": self._get_account_name(target_account),
+                    "type": "debit",
+                }
+                if self.verbose:
+                    print(f"       📝 Created booking proposal with account: {target_account}")
 
             result = await rule_learning.execute(
                 action="create_from_booking",
@@ -452,6 +512,32 @@ class AccountingAgentTestRunner:
         except Exception as e:
             if self.verbose:
                 print(f"       ⚠️ Auto rule learning failed: {e}")
+
+    async def _auto_learn_rule_with_correction(self, pending_hitl_review: dict, corrected_account: str) -> None:
+        """
+        Learn a rule with user-corrected account.
+
+        Args:
+            pending_hitl_review: Captured HITL review data
+            corrected_account: The account number provided by the user
+        """
+        await self._auto_learn_rule_from_hitl_confirmation(pending_hitl_review, target_account=corrected_account)
+
+    def _get_account_name(self, account: str) -> str:
+        """Get account name for common SKR03 accounts."""
+        account_names = {
+            "4930": "Bürobedarf",
+            "4940": "Zeitschriften, Bücher",
+            "4950": "Rechts- und Beratungskosten",
+            "4960": "Miete",
+            "4970": "Porto",
+            "4980": "Telefon",
+            "6800": "Abschreibungen",
+            "1576": "Vorsteuer 19%",
+            "1571": "Vorsteuer 7%",
+            "1600": "Verbindlichkeiten aus Lieferungen und Leistungen",
+        }
+        return account_names.get(account, f"Konto {account}")
 
     def _wrap_text(self, text: str, width: int) -> list[str]:
         """Wrap text to specified width."""

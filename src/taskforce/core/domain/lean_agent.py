@@ -34,6 +34,7 @@ from taskforce.core.domain.lean_agent_components.tool_executor import (
     ToolExecutor,
     ToolResultMessageFactory,
 )
+from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
@@ -305,10 +306,27 @@ class Agent:
             "starting",
             {"mission_length": len(mission)},
         )
+        final_message = ""
+        status = ExecutionStatus.COMPLETED.value
         async for event in self.planning_strategy.execute_stream(
             self, mission, session_id
         ):
             yield event
+            # Track final answer content for COMPLETE event
+            if event.event_type == EventType.FINAL_ANSWER:
+                final_message = event.data.get("content", "")
+            elif event.event_type == EventType.ERROR:
+                status = ExecutionStatus.FAILED.value
+
+        # Yield COMPLETE event for executor.execute_mission() compatibility
+        yield StreamEvent(
+            event_type=EventType.COMPLETE,
+            data={
+                "status": status,
+                "session_id": session_id,
+                "final_message": final_message,
+            },
+        )
         await self.mark_finished(session_id, "stream_complete", None)
 
     def _truncate_output(self, output: str, max_length: int = 4000) -> str:

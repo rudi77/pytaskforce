@@ -12,6 +12,18 @@ allowed_tools: "hitl_review, ask_user, rule_learning, audit_log, rag_fallback"
 
 Dieser Workflow wird ausgeführt wenn die automatische Buchung nicht möglich ist.
 
+## ⛔ ABSOLUTE PFLICHT - LIES DIES ZUERST! ⛔
+
+**DU MUSST DAS TOOL `ask_user` AUFRUFEN!**
+
+**OHNE `ask_user` DARFST DU:**
+- ❌ KEINE Buchung erstellen
+- ❌ KEINE Regel lernen
+- ❌ KEIN Konto selbst wählen
+- ❌ NICHT fortfahren
+
+**Der Workflow ist BLOCKIERT bis der User antwortet!**
+
 ## Voraussetzungen
 
 Du erhältst aus dem vorherigen Skill:
@@ -34,11 +46,13 @@ hitl_review(
 
 **Ausgabe speichern als:** `review_result` (enthält `review_id`)
 
-### Schritt 2: User befragen (KRITISCH!)
+### Schritt 2: User befragen (PFLICHT - DARF NICHT ÜBERSPRUNGEN WERDEN!)
 
-**DU MUSST `ask_user` AUFRUFEN!**
+## ⚠️ WARNUNG: DIESER SCHRITT IST NICHT OPTIONAL! ⚠️
 
-**DU DARFST NICHT selbst entscheiden!**
+**DU MUSST JETZT `ask_user` AUFRUFEN!**
+
+**WENN DU `ask_user` NICHT AUFRUFST, IST DER WORKFLOW FEHLERHAFT!**
 
 ```tool
 ask_user(

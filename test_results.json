@@ -1,29 +1,38 @@
 {
-  "timestamp": "2026-01-31T12:22:51.087493",
+  "timestamp": "2026-02-02T12:52:40.208188",
   "total": 1,
-  "passed": 1,
+  "passed": 0,
   "results": [
     {
       "scenario_id": "IN-DE-001",
       "scenario_name": "Büromaterial Inland (gelernte Regel)",
       "success": true,
-      "account_match": true,
+      "account_match": false,
       "tools_called": [
-        "activate_skill",
+        "planner",
         "check_compliance",
+        "planner",
+        "apply_kontierung_rules",
+        "planner",
         "semantic_rule_engine",
+        "planner",
         "confidence_evaluator",
+        "planner",
+        "hitl_review",
+        "ask_user",
+        "hitl_review",
+        "planner",
         "rule_learning",
-        "audit_log"
+        "planner"
       ],
-      "hitl_triggered": false,
+      "hitl_triggered": true,
       "detected_debit": "4930",
-      "detected_credit": "1600",
+      "detected_credit": "4930",
       "expected_debit": "4930",
       "expected_credit": "1600",
-      "duration_ms": 42009,
+      "duration_ms": 2388658,
       "error": null,
-      "booking_proposals_count": 2
+      "booking_proposals_count": 0
     }
   ]
 }

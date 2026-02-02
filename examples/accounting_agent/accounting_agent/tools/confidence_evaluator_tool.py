@@ -99,7 +99,8 @@ class ConfidenceEvaluatorTool:
                 "booking_proposal": {
                     "type": "object",
                     "description": (
-                        "Booking proposal to evaluate. "
+                        "Booking proposal to evaluate (OPTIONAL). "
+                        "If missing or empty, no_rule_match hard gate triggers HITL. "
                         "Should include: debit_account, amount"
                     ),
                 },
@@ -131,7 +132,7 @@ class ConfidenceEvaluatorTool:
                     "maximum": 1.0,
                 },
             },
-            "required": ["booking_proposal", "invoice_data"],
+            "required": ["invoice_data"],
         }
 
     @property
@@ -158,16 +159,16 @@ class ConfidenceEvaluatorTool:
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
-        if "booking_proposal" not in kwargs:
-            return False, "Missing required parameter: booking_proposal"
+        # Note: booking_proposal is now OPTIONAL - when missing/empty, the
+        # no_rule_match hard gate will trigger HITL automatically
         if "invoice_data" not in kwargs:
             return False, "Missing required parameter: invoice_data"
         return True, None
 
     async def execute(
         self,
-        booking_proposal: dict[str, Any],
         invoice_data: dict[str, Any],
+        booking_proposal: Optional[dict[str, Any]] = None,
         rule_match: Optional[dict[str, Any]] = None,
         extraction_score: float = 1.0,
         is_new_vendor: Optional[bool] = None,
@@ -179,8 +180,8 @@ class ConfidenceEvaluatorTool:
         Evaluate confidence for a booking proposal.
 
         Args:
-            booking_proposal: Proposed booking with debit_account, amount
             invoice_data: Invoice context with supplier_name, total_gross
+            booking_proposal: Proposed booking with debit_account, amount (optional - if missing, no_rule_match gate triggers)
             rule_match: Rule match result (if rule-based)
             extraction_score: OCR quality score
             is_new_vendor: True for first-time vendors (auto-detected if None)
@@ -202,7 +203,10 @@ class ConfidenceEvaluatorTool:
             if invoice_amount is not None:
                 invoice_amount = Decimal(str(invoice_amount))
 
-            target_account = booking_proposal.get("debit_account")
+            # Handle missing booking_proposal (no rule match case)
+            target_account = None
+            if booking_proposal:
+                target_account = booking_proposal.get("debit_account")
 
             # Auto-detect new vendor if not provided
             vendor_is_new = is_new_vendor
@@ -268,12 +272,27 @@ class ConfidenceEvaluatorTool:
                 "extraction": result.signals.extraction_score,
             }
 
+            # Check if no_rule_match hard gate was triggered
+            no_rule_match_triggered = any(
+                g.gate_type == "no_rule_match" and g.triggered
+                for g in result.hard_gates_triggered
+            )
+
             logger.info(
                 "confidence_evaluator.evaluated",
                 confidence=result.overall_confidence,
                 recommendation=result.recommendation.value,
                 hard_gates_triggered=len([g for g in result.hard_gates_triggered if g.triggered]),
+                no_rule_match=no_rule_match_triggered,
+                has_booking_proposal=booking_proposal is not None and bool(booking_proposal),
             )
+
+            if no_rule_match_triggered:
+                logger.warning(
+                    "confidence_evaluator.no_rule_match_hitl_required",
+                    supplier=invoice_data.get("supplier_name", "unknown"),
+                    message="Keine passende Buchungsregel gefunden - HITL erforderlich",
+                )
 
             return {
                 "success": True,

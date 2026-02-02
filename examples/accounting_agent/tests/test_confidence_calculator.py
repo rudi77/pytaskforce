@@ -108,6 +108,7 @@ class TestConfidenceCalculator:
         """Critical account hard gate should trigger HITL."""
         calc = ConfidenceCalculator(
             hard_gate_config={
+                "no_rule_match": True,
                 "new_vendor": False,
                 "high_amount_threshold": Decimal("10000.00"),
                 "critical_accounts": ["1800", "2100"],
@@ -128,6 +129,55 @@ class TestConfidenceCalculator:
 
         assert result.recommendation == ConfidenceRecommendation.HITL_REVIEW
         assert any(g.gate_type == "critical_account" and g.triggered for g in result.hard_gates_triggered)
+
+    def test_no_rule_match_triggers_hitl(self):
+        """Missing rule match should always trigger HITL via no_rule_match hard gate."""
+        calc = ConfidenceCalculator(
+            hard_gate_config={
+                "no_rule_match": True,
+                "new_vendor": False,
+                "high_amount_threshold": Decimal("10000.00"),
+                "critical_accounts": [],
+            }
+        )
+
+        # Test with rule_match=None
+        result = calc.calculate(
+            rule_match=None,
+            extraction_score=1.0,
+            historical_hit_rate=0.8,
+            is_new_vendor=False,
+            invoice_amount=Decimal("100.00"),
+            target_account=None,
+        )
+
+        assert result.recommendation == ConfidenceRecommendation.HITL_REVIEW
+        assert any(g.gate_type == "no_rule_match" and g.triggered for g in result.hard_gates_triggered)
+        assert "Keine passende Buchungsregel" in result.explanation
+
+    def test_no_rule_match_with_empty_dict_triggers_hitl(self):
+        """Empty rule match dict should also trigger HITL via no_rule_match hard gate."""
+        calc = ConfidenceCalculator(
+            hard_gate_config={
+                "no_rule_match": True,
+                "new_vendor": False,
+                "high_amount_threshold": Decimal("10000.00"),
+                "critical_accounts": [],
+            }
+        )
+
+        # Test with rule_match={}
+        result = calc.calculate(
+            rule_match={},
+            extraction_score=1.0,
+            historical_hit_rate=0.8,
+            is_new_vendor=False,
+            invoice_amount=Decimal("100.00"),
+            target_account=None,
+        )
+
+        assert result.recommendation == ConfidenceRecommendation.HITL_REVIEW
+        assert any(g.gate_type == "no_rule_match" and g.triggered for g in result.hard_gates_triggered)
 
     def test_rag_suggestion_lower_confidence(self):
         """RAG suggestions should have lower rule_type score."""

@@ -187,10 +187,41 @@ DEFAULT_PLAN = [
 ]
 
 
-async def _handle_ask_user(agent: "Agent", args: dict, session_id: str, state: dict, logger: LoggerProtocol) -> AsyncIterator[StreamEvent]:
-    """Handle ask_user tool."""
+async def _handle_ask_user(
+    agent: "Agent",
+    args: dict,
+    session_id: str,
+    state: dict,
+    logger: LoggerProtocol,
+    messages: list[dict[str, Any]],
+    tool_call_id: str,
+    step: int,
+    plan: list[str] | None = None,
+    plan_step_idx: int | None = None,
+    plan_iteration: int | None = None,
+) -> AsyncIterator[StreamEvent]:
+    """Handle ask_user tool and save state for resume.
+
+    When ask_user is called, we save:
+    - pending_question: The question being asked
+    - paused_messages: The conversation history up to this point
+    - paused_tool_call_id: The tool call ID to create proper response on resume
+    - paused_step: The step number to continue from
+    - paused_plan: The plan steps (for PlanAndExecuteStrategy)
+    - paused_plan_step_idx: Current plan step index
+    - paused_plan_iteration: Current iteration within plan step
+    """
     q, missing = str(args.get("question", "")).strip(), args.get("missing") or []
     state["pending_question"] = {"question": q, "missing": missing}
+    state["paused_messages"] = messages
+    state["paused_tool_call_id"] = tool_call_id
+    state["paused_step"] = step
+    if plan is not None:
+        state["paused_plan"] = plan
+    if plan_step_idx is not None:
+        state["paused_plan_step_idx"] = plan_step_idx
+    if plan_iteration is not None:
+        state["paused_plan_iteration"] = plan_iteration
     await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
     yield StreamEvent(event_type=EventType.ASK_USER, data={"question": q, "missing": missing})
     logger.info("paused_for_user_input", session_id=session_id)
@@ -217,7 +248,16 @@ class ToolCallStatus:
 
 
 async def _process_tool_calls(
-    agent: "Agent", tool_calls: list[dict], session_id: str, step: int, state: dict, messages: list, logger: LoggerProtocol
+    agent: "Agent",
+    tool_calls: list[dict],
+    session_id: str,
+    step: int,
+    state: dict,
+    messages: list,
+    logger: LoggerProtocol,
+    plan: list[str] | None = None,
+    plan_step_idx: int | None = None,
+    plan_iteration: int | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Process tool calls, yield events, update messages."""
     messages.append(assistant_tool_calls_to_message(tool_calls))
@@ -232,7 +272,11 @@ async def _process_tool_calls(
         )
 
         if name == "ask_user":
-            async for e in _handle_ask_user(agent, args, session_id, state, logger):
+            async for e in _handle_ask_user(
+                agent, args, session_id, state, logger,
+                messages=messages, tool_call_id=tc_id, step=step,
+                plan=plan, plan_step_idx=plan_step_idx, plan_iteration=plan_iteration,
+            ):
                 yield e
             return
 
@@ -270,20 +314,49 @@ class NativeReActStrategy:
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
-        # Optional plan generation
-        if self.generate_plan_first:
-            steps = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:self.max_plan_steps]
-            if agent._planner:
-                await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=steps)
-                yield StreamEvent(
-                    event_type=EventType.PLAN_UPDATED,
-                    data={"action": PlannerAction.CREATE_PLAN.value, "steps": steps, "plan": agent._planner.get_plan_summary()},
-                )
-            await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+        # Check for resume from ask_user pause
+        is_resume = state.get("pending_question") is not None and state.get("paused_messages") is not None
+        if is_resume:
+            # Resume: restore messages and inject user's response
+            messages = state.get("paused_messages", [])
+            tool_call_id = state.get("paused_tool_call_id", "ask_user_call")
+            step = state.get("paused_step", 0)
 
-        messages = agent._build_initial_messages(mission, state)
+            # The mission is the user's answer - add as tool result
+            user_answer = mission.strip()
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": "ask_user",
+                "content": json.dumps({"success": True, "output": user_answer}),
+            })
+
+            # Clear paused state
+            del state["pending_question"]
+            del state["paused_messages"]
+            if "paused_tool_call_id" in state:
+                del state["paused_tool_call_id"]
+            if "paused_step" in state:
+                del state["paused_step"]
+
+            logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+        else:
+            # Normal start: optional plan generation
+            if self.generate_plan_first:
+                steps = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:self.max_plan_steps]
+                if agent._planner:
+                    await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=steps)
+                    yield StreamEvent(
+                        event_type=EventType.PLAN_UPDATED,
+                        data={"action": PlannerAction.CREATE_PLAN.value, "steps": steps, "plan": agent._planner.get_plan_summary()},
+                    )
+                await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+
+            messages = agent._build_initial_messages(mission, state)
+            step = 0
+
         use_stream = hasattr(agent.llm_provider, "complete_stream")
-        step, final = 0, ""
+        final = ""
 
         while step < agent.max_steps:
             await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
@@ -374,22 +447,56 @@ class PlanAndExecuteStrategy:
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
-        messages = agent._build_initial_messages(mission, state)
-        plan = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:self.max_plan_steps]
+        # Check for resume from ask_user pause
+        is_resume = state.get("pending_question") is not None and state.get("paused_messages") is not None
+        if is_resume:
+            # Resume: restore messages and inject user's response
+            messages = state.get("paused_messages", [])
+            tool_call_id = state.get("paused_tool_call_id", "ask_user_call")
+            progress = state.get("paused_step", 0)
+            plan = state.get("paused_plan", DEFAULT_PLAN)
+            start_idx = state.get("paused_plan_step_idx", 1)
+            start_it = state.get("paused_plan_iteration", 1)
 
-        if agent._planner:
-            await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=plan)
-            yield StreamEvent(
-                event_type=EventType.PLAN_UPDATED,
-                data={"action": PlannerAction.CREATE_PLAN.value, "steps": plan, "plan": agent._planner.get_plan_summary()},
-            )
+            # The mission is the user's answer - add as tool result
+            user_answer = mission.strip()
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": "ask_user",
+                "content": json.dumps({"success": True, "output": user_answer}),
+            })
 
-        progress = 0
+            # Clear paused state
+            for key in ["pending_question", "paused_messages", "paused_tool_call_id", "paused_step",
+                        "paused_plan", "paused_plan_step_idx", "paused_plan_iteration"]:
+                state.pop(key, None)
+
+            logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+        else:
+            # Normal start
+            messages = agent._build_initial_messages(mission, state)
+            plan = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:self.max_plan_steps]
+            progress = 0
+            start_idx = 1
+            start_it = 1
+
+            if agent._planner:
+                await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=plan)
+                yield StreamEvent(
+                    event_type=EventType.PLAN_UPDATED,
+                    data={"action": PlannerAction.CREATE_PLAN.value, "steps": plan, "plan": agent._planner.get_plan_summary()},
+                )
+
         for idx, desc in enumerate(plan, 1):
+            if idx < start_idx:
+                continue  # Skip already completed steps on resume
             if progress >= agent.max_steps:
                 break
 
             for it in range(1, self.max_step_iterations + 1):
+                if idx == start_idx and it < start_it:
+                    continue  # Skip already completed iterations on resume
                 if progress >= agent.max_steps:
                     break
 
@@ -408,7 +515,10 @@ class PlanAndExecuteStrategy:
                 if result.get("tool_calls"):
                     progress += 1
                     paused = False
-                    async for e in _process_tool_calls(agent, result["tool_calls"], session_id, progress, state, messages, logger):
+                    async for e in _process_tool_calls(
+                        agent, result["tool_calls"], session_id, progress, state, messages, logger,
+                        plan=plan, plan_step_idx=idx, plan_iteration=it,
+                    ):
                         event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
                         if event_type == EventType.ASK_USER:
                             paused = True
