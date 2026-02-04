@@ -235,226 +235,240 @@ def mock_mcp_client():
     return MockMemoryClient
 
 
-@pytest.mark.asyncio
-async def test_memory_directory_creation(
+def test_memory_directory_creation(
     temp_config_dir: Path, memory_config: Path, mock_memory_tools, mock_mcp_client, tmp_path: Path
 ):
     """Test that memory directory is automatically created."""
-    memory_work_dir = tmp_path / ".taskforce_test"
-    expected_memory_dir = memory_work_dir / ".memory"
+    async def _run_test() -> None:
+        memory_work_dir = tmp_path / ".taskforce_test"
+        expected_memory_dir = memory_work_dir / ".memory"
 
-    # Ensure directory doesn't exist before test
-    assert not expected_memory_dir.exists()
+        # Ensure directory doesn't exist before test
+        assert not expected_memory_dir.exists()
 
-    mock_client_instance = mock_mcp_client(mock_memory_tools)
+        mock_client_instance = mock_mcp_client(mock_memory_tools)
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch(
-        "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
-        return_value=mock_ctx,
-    ):
-        factory = AgentFactory(config_dir=str(temp_config_dir))
-        agent = await factory.create_agent(profile="test_memory")
+        with patch(
+            "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
+            return_value=mock_ctx,
+        ):
+            factory = AgentFactory(config_dir=str(temp_config_dir))
+            await factory.create_agent(config="test_memory")
 
-        # Verify memory directory was created
-        assert expected_memory_dir.exists()
-        assert expected_memory_dir.is_dir()
+            # Verify memory directory was created
+            assert expected_memory_dir.exists()
+            assert expected_memory_dir.is_dir()
+
+    asyncio.run(_run_test())
 
 
-@pytest.mark.asyncio
-async def test_memory_tools_loaded(
+def test_memory_tools_loaded(
     temp_config_dir: Path, memory_config: Path, mock_memory_tools, mock_mcp_client
 ):
     """Test that all memory tools are loaded from MCP server."""
-    mock_client_instance = mock_mcp_client(mock_memory_tools)
+    async def _run_test() -> None:
+        mock_client_instance = mock_mcp_client(mock_memory_tools)
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch(
-        "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
-        return_value=mock_ctx,
-    ):
-        factory = AgentFactory(config_dir=str(temp_config_dir))
-        agent = await factory.create_agent(profile="test_memory")
+        with patch(
+            "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
+            return_value=mock_ctx,
+        ):
+            factory = AgentFactory(config_dir=str(temp_config_dir))
+            agent = await factory.create_agent(config="test_memory")
 
-        tool_names = list(agent.tools.keys())
+            tool_names = list(agent.tools.keys())
 
-        # Verify all memory tools are present
-        expected_memory_tools = [
-            "create_entities",
-            "create_relations",
-            "add_observations",
-            "read_graph",
-            "search_nodes",
-            "open_nodes",
-            "delete_entities",
-            "delete_observations",
-            "delete_relations",
-        ]
+            # Verify all memory tools are present
+            expected_memory_tools = [
+                "create_entities",
+                "create_relations",
+                "add_observations",
+                "read_graph",
+                "search_nodes",
+                "open_nodes",
+                "delete_entities",
+                "delete_observations",
+                "delete_relations",
+            ]
 
-        for tool_name in expected_memory_tools:
-            assert tool_name in tool_names, f"Memory tool {tool_name} not loaded"
+            for tool_name in expected_memory_tools:
+                assert tool_name in tool_names, f"Memory tool {tool_name} not loaded"
+
+    asyncio.run(_run_test())
 
 
-@pytest.mark.asyncio
-async def test_memory_tool_execution(
+def test_memory_tool_execution(
     temp_config_dir: Path, memory_config: Path, mock_memory_tools, mock_mcp_client
 ):
     """Test that memory tools can be executed successfully."""
-    mock_client_instance = mock_mcp_client(mock_memory_tools)
+    async def _run_test() -> None:
+        mock_client_instance = mock_mcp_client(mock_memory_tools)
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch(
-        "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
-        return_value=mock_ctx,
-    ):
-        factory = AgentFactory(config_dir=str(temp_config_dir))
-        agent = await factory.create_agent(profile="test_memory")
+        with patch(
+            "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
+            return_value=mock_ctx,
+        ):
+            factory = AgentFactory(config_dir=str(temp_config_dir))
+            agent = await factory.create_agent(config="test_memory")
 
-        # Test create_entities tool
-        create_entities_tool = agent.tools.get("create_entities")
-        assert create_entities_tool is not None
+            # Test create_entities tool
+            create_entities_tool = agent.tools.get("create_entities")
+            assert create_entities_tool is not None
 
-        result = await create_entities_tool.execute(
-            entities=[
-                {
-                    "name": "TestUser",
-                    "entityType": "User",
-                    "observations": ["Prefers Python", "Works on backend"],
-                }
-            ]
-        )
+            result = await create_entities_tool.execute(
+                entities=[
+                    {
+                        "name": "TestUser",
+                        "entityType": "User",
+                        "observations": ["Prefers Python", "Works on backend"],
+                    }
+                ]
+            )
 
-        assert result["success"] is True
-        assert "Created 1 entities" in result["output"]
+            assert result["success"] is True
+            assert "Created 1 entities" in result["output"]
 
-        # Test read_graph tool
-        read_graph_tool = agent.tools.get("read_graph")
-        assert read_graph_tool is not None
+            # Test read_graph tool
+            read_graph_tool = agent.tools.get("read_graph")
+            assert read_graph_tool is not None
 
-        result = await read_graph_tool.execute()
+            result = await read_graph_tool.execute()
 
-        assert result["success"] is True
-        graph = result["result"]
-        assert "entities" in graph
-        assert len(graph["entities"]) == 1
-        assert graph["entities"][0]["name"] == "TestUser"
+            assert result["success"] is True
+            graph = result["result"]
+            assert "entities" in graph
+            assert len(graph["entities"]) == 1
+            assert graph["entities"][0]["name"] == "TestUser"
+
+    asyncio.run(_run_test())
 
 
-@pytest.mark.asyncio
-async def test_multiple_profiles_separate_memory(
+def test_multiple_profiles_separate_memory(
     temp_config_dir: Path, tmp_path: Path, mock_memory_tools, mock_mcp_client
 ):
     """Test that different profiles have separate memory storage."""
-    # Create two profiles with different memory paths
-    profile1_work_dir = tmp_path / ".taskforce_profile1"
-    profile2_work_dir = tmp_path / ".taskforce_profile2"
+    async def _run_test() -> None:
+        # Create two profiles with different memory paths
+        profile1_work_dir = tmp_path / ".taskforce_profile1"
+        profile2_work_dir = tmp_path / ".taskforce_profile2"
 
-    config1 = {
-        "profile": "profile1",
-        "persistence": {"type": "file", "work_dir": str(profile1_work_dir)},
-        "llm": {"config_path": "configs/llm_config.yaml"},
-        "mcp_servers": [
-            {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-memory"],
-                "env": {
-                    "MEMORY_FILE_PATH": str(profile1_work_dir / ".memory" / "kg.jsonl")
-                },
-            }
-        ],
-    }
+        config1 = {
+            "profile": "profile1",
+            "persistence": {"type": "file", "work_dir": str(profile1_work_dir)},
+            "llm": {"config_path": "configs/llm_config.yaml"},
+            "mcp_servers": [
+                {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-memory"],
+                    "env": {
+                        "MEMORY_FILE_PATH": str(
+                            profile1_work_dir / ".memory" / "kg.jsonl"
+                        )
+                    },
+                }
+            ],
+        }
 
-    config2 = {
-        "profile": "profile2",
-        "persistence": {"type": "file", "work_dir": str(profile2_work_dir)},
-        "llm": {"config_path": "configs/llm_config.yaml"},
-        "mcp_servers": [
-            {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-memory"],
-                "env": {
-                    "MEMORY_FILE_PATH": str(profile2_work_dir / ".memory" / "kg.jsonl")
-                },
-            }
-        ],
-    }
+        config2 = {
+            "profile": "profile2",
+            "persistence": {"type": "file", "work_dir": str(profile2_work_dir)},
+            "llm": {"config_path": "configs/llm_config.yaml"},
+            "mcp_servers": [
+                {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-memory"],
+                    "env": {
+                        "MEMORY_FILE_PATH": str(
+                            profile2_work_dir / ".memory" / "kg.jsonl"
+                        )
+                    },
+                }
+            ],
+        }
 
-    # Write configs
-    with open(temp_config_dir / "profile1.yaml", "w") as f:
-        yaml.dump(config1, f)
-    with open(temp_config_dir / "profile2.yaml", "w") as f:
-        yaml.dump(config2, f)
+        # Write configs
+        with open(temp_config_dir / "profile1.yaml", "w") as f:
+            yaml.dump(config1, f)
+        with open(temp_config_dir / "profile2.yaml", "w") as f:
+            yaml.dump(config2, f)
 
-    mock_client_instance = mock_mcp_client(mock_memory_tools)
+        mock_client_instance = mock_mcp_client(mock_memory_tools)
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch(
-        "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
-        return_value=mock_ctx,
-    ):
-        factory = AgentFactory(config_dir=str(temp_config_dir))
+        with patch(
+            "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
+            return_value=mock_ctx,
+        ):
+            factory = AgentFactory(config_dir=str(temp_config_dir))
 
-        # Create agents with different profiles
-        await factory.create_agent(profile="profile1")
-        await factory.create_agent(profile="profile2")
+            # Create agents with different profiles
+            await factory.create_agent(config="profile1")
+            await factory.create_agent(config="profile2")
 
-        # Verify separate memory directories exist
-        assert (profile1_work_dir / ".memory").exists()
-        assert (profile2_work_dir / ".memory").exists()
+            # Verify separate memory directories exist
+            assert (profile1_work_dir / ".memory").exists()
+            assert (profile2_work_dir / ".memory").exists()
 
-        # Verify they are different directories
-        assert profile1_work_dir / ".memory" != profile2_work_dir / ".memory"
+            # Verify they are different directories
+            assert profile1_work_dir / ".memory" != profile2_work_dir / ".memory"
+
+    asyncio.run(_run_test())
 
 
-@pytest.mark.asyncio
-async def test_memory_config_without_env_var(
+def test_memory_config_without_env_var(
     temp_config_dir: Path, tmp_path: Path, mock_memory_tools, mock_mcp_client
 ):
     """Test that memory server works without explicit MEMORY_FILE_PATH."""
-    config = {
-        "profile": "test_no_env",
-        "persistence": {"type": "file", "work_dir": str(tmp_path / ".taskforce")},
-        "llm": {"config_path": "configs/llm_config.yaml"},
-        "mcp_servers": [
-            {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-memory"],
-                # No env dict - server should use default path
-            }
-        ],
-    }
+    async def _run_test() -> None:
+        config = {
+            "profile": "test_no_env",
+            "persistence": {"type": "file", "work_dir": str(tmp_path / ".taskforce")},
+            "llm": {"config_path": "configs/llm_config.yaml"},
+            "mcp_servers": [
+                {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-memory"],
+                    # No env dict - server should use default path
+                }
+            ],
+        }
 
-    with open(temp_config_dir / "test_no_env.yaml", "w") as f:
-        yaml.dump(config, f)
+        with open(temp_config_dir / "test_no_env.yaml", "w") as f:
+            yaml.dump(config, f)
 
-    mock_client_instance = mock_mcp_client(mock_memory_tools)
+        mock_client_instance = mock_mcp_client(mock_memory_tools)
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch(
-        "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
-        return_value=mock_ctx,
-    ):
-        factory = AgentFactory(config_dir=str(temp_config_dir))
-        agent = await factory.create_agent(profile="test_no_env")
+        with patch(
+            "taskforce.infrastructure.tools.mcp.client.MCPClient.create_stdio",
+            return_value=mock_ctx,
+        ):
+            factory = AgentFactory(config_dir=str(temp_config_dir))
+            agent = await factory.create_agent(config="test_no_env")
 
-        # Should load memory tools successfully
-        assert "create_entities" in agent.tools
-        assert "read_graph" in agent.tools
+            # Should load memory tools successfully
+            assert "create_entities" in agent.tools
+            assert "read_graph" in agent.tools
+
+    asyncio.run(_run_test())
