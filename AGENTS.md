@@ -18,7 +18,7 @@ This file should be updated automatically when project-specific patterns, conven
   - Developer workflow (uv/pytest/ruff/black/mypy) → `README.md` and `docs/testing.md`
 - CI runs on every push, executes `uv run pytest`, and tags the default branch as `v<major>.<minor>.<patch>` where major/minor come from `pyproject.toml` and patch auto-increments.
 
-- LeanAgent planning strategy selection lives under `agent.planning_strategy` and optional `agent.planning_strategy_params` in profile YAML; supported values are `native_react`, `plan_and_execute`, and `plan_and_react` (default).
+- LeanAgent planning strategy selection lives under `agent.planning_strategy` and optional `agent.planning_strategy_params` in profile YAML; supported values are `native_react`, `plan_and_execute`, `plan_and_react`, and `spar` (default: `native_react`).
 
 - Execution API errors now use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header and handled in `taskforce.api.server.taskforce_http_exception_handler`.
 - Taskforce exception types live in `src/taskforce/core/domain/errors.py` (TaskforceError + LLMError, ToolError, etc.). Infra tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.

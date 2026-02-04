@@ -56,6 +56,15 @@ REQUEST_EXAMPLES = {
             "planning_strategy_params": {"max_plan_steps": 3},
         },
     },
+    "spar": {
+        "summary": "Agent with SPAR strategy",
+        "value": {
+            "mission": "Review a PR and summarize findings.",
+            "profile": "coding_agent",
+            "planning_strategy": "spar",
+            "planning_strategy_params": {"reflect_every_step": True},
+        },
+    },
     "custom_agent": {
         "summary": "Custom agent by ID",
         "value": {
@@ -309,7 +318,7 @@ class ExecuteMissionRequest(BaseModel):
         default=None,
         description=(
             "Agent planning strategy override "
-            "(native_react, plan_and_execute, or plan_and_react)."
+            "(native_react, plan_and_execute, plan_and_react, or spar)."
         ),
     )
     planning_strategy_params: Optional[Dict[str, Any]] = Field(

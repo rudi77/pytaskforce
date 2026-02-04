@@ -29,6 +29,7 @@ from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
     PlanAndExecuteStrategy,
     PlanAndReactStrategy,
+    SparStrategy,
     PlanningStrategy,
 )
 from taskforce.core.interfaces.llm import LLMProviderProtocol
@@ -41,6 +42,17 @@ from taskforce.application.skill_manager import (
     SkillManager,
     create_skill_manager_from_manifest,
 )
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    """Coerce config values into booleans with sane defaults."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
 
 
 # Type for factory extension callbacks
@@ -384,7 +396,7 @@ class AgentFactory:
             persistence: Persistence configuration (e.g., {"type": "file", "work_dir": ".taskforce"}).
             mcp_servers: List of MCP server configurations.
             max_steps: Maximum execution steps for the agent.
-            planning_strategy: Planning strategy ("native_react", "plan_and_execute", "plan_and_react").
+            planning_strategy: Planning strategy ("native_react", "plan_and_execute", "plan_and_react", "spar").
             planning_strategy_params: Parameters for the planning strategy.
             context_policy: Context policy configuration dict.
 
@@ -1176,7 +1188,7 @@ class AgentFactory:
         Select and instantiate planning strategy for Agent.
 
         Args:
-            strategy_name: Strategy name (native_react, plan_and_execute, plan_and_react)
+            strategy_name: Strategy name (native_react, plan_and_execute, plan_and_react, spar)
             params: Optional strategy parameters
 
         Returns:
@@ -1215,10 +1227,28 @@ class AgentFactory:
                 ),
                 logger=logger,
             )
+        if normalized == "spar":
+            max_step_iterations_value = params.get("max_step_iterations")
+            max_plan_steps_value = params.get("max_plan_steps")
+            reflect_every_step_value = params.get("reflect_every_step")
+            max_reflection_iterations_value = params.get("max_reflection_iterations")
+            return SparStrategy(
+                max_step_iterations=(
+                    int(max_step_iterations_value) if max_step_iterations_value is not None else 3
+                ),
+                max_plan_steps=(
+                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
+                ),
+                reflect_every_step=_coerce_bool(reflect_every_step_value, True),
+                max_reflection_iterations=(
+                    int(max_reflection_iterations_value) if max_reflection_iterations_value is not None else 2
+                ),
+                logger=logger,
+            )
 
         raise ValueError(
             "Invalid planning_strategy. Supported values: native_react, plan_and_execute, "
-            "plan_and_react"
+            "plan_and_react, spar"
         )
 
     async def _create_tools_from_allowlist(
