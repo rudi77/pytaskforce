@@ -6,6 +6,7 @@ Dieses Verzeichnis enthält die Skills für den Accounting Agent. Skills ermögl
 
 ```
 skills/
+├── accounting-expert/        # Allgemeine Buchhaltungsfragen beantworten
 ├── invoice-explanation/     # Fragen zu Rechnungen beantworten
 ├── smart-booking-auto/      # Automatischer Buchungsworkflow
 └── smart-booking-hitl/      # Human-in-the-Loop Workflow
@@ -27,7 +28,22 @@ Beantwortet Fragen zu Rechnungen ohne Tool-Aufrufe. Minimaler Token-Verbrauch.
 **Ressourcen:**
 - `german_tax_glossary.yaml` - Deutsches Steuer-Glossar
 
-### 2. smart-booking-auto
+### 2. accounting-expert
+
+**Trigger:** `ACCOUNTING_QUESTION` Intent
+
+Beantwortet allgemeine Buchhaltungsfragen (Kontierung, Steuerrecht, GoBD),
+ohne Rechnungs-Workflow.
+
+**Beispiel-Anfragen:**
+- "Wie kontiere ich Bewirtungskosten?"
+- "Was bedeutet Reverse Charge?"
+- "Wann ist Vorsteuerabzug möglich?"
+
+**Ressourcen:**
+- `accounting_knowledge.md` - Kurzreferenz zu UStG/EStG/HGB/GoBD
+
+### 3. smart-booking-auto
 
 **Trigger:** `INVOICE_PROCESSING` Intent
 
@@ -46,7 +62,7 @@ Führt den automatischen Buchungsworkflow aus:
 - `kontierung_rules.yaml` - SKR03 Buchungsregeln
 - `compliance_rules.yaml` - §14 UStG Compliance
 
-### 3. smart-booking-hitl
+### 4. smart-booking-hitl
 
 **Trigger:** Automatisch von `smart-booking-auto` bei:
 - Confidence < 95%

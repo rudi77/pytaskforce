@@ -16,6 +16,11 @@ This agent can work autonomously or interactively with human oversight.
 
 ## Features
 
+### Accounting Q&A (Expert Mode)
+- Answers general bookkeeping questions (Kontierung, UStG/EStG/HGB, GoBD)
+- Provides short legal references and practical SKR03/SKR04 examples
+- Triggered via `ACCOUNTING_QUESTION` intent (`accounting-expert` skill)
+
 ### Document Extraction
 - **Tool**: `docling_extract`
 - Converts PDF and image invoices to structured Markdown
@@ -191,6 +196,15 @@ tools:
   - calculate_tax
   - audit_log
   - ask_user
+```
+
+Skills and intents are defined in the same config:
+
+```yaml
+skills:
+  available:
+    - name: accounting-expert
+      trigger: "ACCOUNTING_QUESTION"
 ```
 
 ## Domain Models
