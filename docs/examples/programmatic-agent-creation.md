@@ -393,6 +393,16 @@ async def main():
         tools=["python", "file_read"],
         planning_strategy="plan_and_react"
     )
+
+    # SPAR - Sense/Plan/Act/Reflect with explicit reflection phases
+    agent_spar = await factory.create_agent(
+        config="dev",
+        planning_strategy="spar",
+        planning_strategy_params={
+            "reflect_every_step": True,
+            "max_reflection_iterations": 2
+        }
+    )
 ```
 
 ## Complete Example: Data Analysis Agent

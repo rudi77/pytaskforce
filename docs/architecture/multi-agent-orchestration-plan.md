@@ -210,9 +210,9 @@ class AgentTool(ToolProtocol):
                     "type": "string",
                     "description": (
                         "Optional planning strategy for sub-agent: "
-                        "'native_react' (default), 'plan_and_execute', 'plan_and_react'"
+                        "'native_react' (default), 'plan_and_execute', 'plan_and_react', 'spar'"
                     ),
-                    "enum": ["native_react", "plan_and_execute", "plan_and_react"],
+                    "enum": ["native_react", "plan_and_execute", "plan_and_react", "spar"],
                 },
                 "agent_definition": {
                     "type": "object",

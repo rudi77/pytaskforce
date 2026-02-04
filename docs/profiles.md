@@ -20,7 +20,7 @@ You can configure how the agent plans its tasks in the profile YAML:
 
 ```yaml
 agent:
-  planning_strategy: native_react  # Options: native_react, plan_and_execute, plan_and_react
+  planning_strategy: native_react  # Options: native_react, plan_and_execute, plan_and_react, spar
   planning_strategy_params:
     max_parallel_tools: 4
 ```
@@ -29,6 +29,7 @@ agent:
 - **`native_react`**: Traditional Reason + Act loop.
 - **`plan_and_execute`**: Generates a full plan first, then executes it sequentially.
 - **`plan_and_react`**: Creates a plan, then iterates through steps with re-planning as needed.
+- **`spar`**: Sense-Plan-Act-Reflect loop with explicit reflection phases.
 
 ## ⏱ Runtime Tracking (Heartbeats & Checkpoints)
 

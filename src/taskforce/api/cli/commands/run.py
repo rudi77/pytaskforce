@@ -33,7 +33,7 @@ def run_mission(
     planning_strategy: str | None = typer.Option(
         None,
         "--planning-strategy",
-        help="Agent planning strategy (native_react or plan_and_execute).",
+        help="Agent planning strategy (native_react, plan_and_execute, plan_and_react, spar).",
     ),
     planning_strategy_params: str | None = typer.Option(
         None,

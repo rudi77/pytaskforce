@@ -117,7 +117,7 @@ class AgentConfigSchema(BaseModel):
     planning_strategy: str = Field(
         "native_react",
         description="Planning strategy to use",
-        pattern="^(native_react|plan_and_execute|plan_and_react)$",
+        pattern="^(native_react|plan_and_execute|plan_and_react|spar)$",
     )
     planning_strategy_params: dict[str, Any] = Field(
         default_factory=dict,

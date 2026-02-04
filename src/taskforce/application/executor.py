@@ -126,7 +126,7 @@ class AgentExecutor:
             agent_id: Optional custom agent ID. If provided, loads agent
                      definition from configs/custom/{agent_id}.yaml
             planning_strategy: Optional planning strategy override
-                              (native_react, plan_and_execute, plan_and_react)
+                              (native_react, plan_and_execute, plan_and_react, spar)
             planning_strategy_params: Optional params for planning strategy
             plugin_path: Optional path to external plugin directory
                         (e.g., examples/accounting_agent)

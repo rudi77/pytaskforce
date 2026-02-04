@@ -120,9 +120,10 @@ class AgentTool:
                         "Optional planning strategy for sub-agent: "
                         "'native_react' (default - best for most tasks), "
                         "'plan_and_execute' (create full plan upfront, then execute), "
-                        "'plan_and_react' (hybrid approach)"
+                        "'plan_and_react' (hybrid approach), "
+                        "'spar' (Sense-Plan-Act-Reflect loop)"
                     ),
-                    "enum": ["native_react", "plan_and_execute", "plan_and_react"],
+                    "enum": ["native_react", "plan_and_execute", "plan_and_react", "spar"],
                 },
             },
             "required": ["mission"],
@@ -407,10 +408,13 @@ class AgentTool:
             "native_react",
             "plan_and_execute",
             "plan_and_react",
+            "spar",
         ]:
             return (
                 False,
-                f"Invalid planning_strategy: {planning_strategy}. Must be one of: native_react, plan_and_execute, plan_and_react",
+                "Invalid planning_strategy: "
+                f"{planning_strategy}. Must be one of: native_react, plan_and_execute, "
+                "plan_and_react, spar",
             )
 
         return True, None
