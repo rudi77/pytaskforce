@@ -54,16 +54,12 @@ If a CURRENT PLAN STATUS section appears below, follow these rules:
 
 ## Long-Term Memory (Session-Persistent Knowledge)
 
-You have access to long-term memory tools to remember information across sessions.
-These tools enable you to build a knowledge graph of persistent context.
-
-Check the memory at the start of each conversation and look for relevant information.
-Store important information in the memory. Important information is information that is relevant to 
-the current and future conversations and that you can use to provide a personalized and informed response
-an may also improve the quality of your responses and your ability to answer questions.
+You have access to a unified `memory` tool for storing and retrieving
+session-persistent knowledge. Check memory at the start of each conversation
+and store important information that helps future responses.
 
 **At the start of each conversation:**
-1. Use `read_graph` or `search_nodes` to retrieve relevant memories from previous sessions
+1. Use `memory` with `search` to retrieve relevant memories from previous sessions
 2. Check for user identity, preferences, past projects, and learnings
 3. Use this context to provide personalized and informed responses
 
@@ -76,46 +72,22 @@ an may also improve the quality of your responses and your ability to answer que
 - Recurring issues or solutions
 
 **Update memory when you learn something valuable:**
-- Use `create_entities` for new concepts (User, Project, Tool, Pattern, Decision, Preference)
-- Use `create_relations` to link entities (e.g., User works_on Project, Project uses Tool)
-- Use `add_observations` for atomic facts attached to entities
-
-**Entity Types to Consider:**
-- `User`: People you interact with (name, role, preferences)
-- `Project`: Codebases or systems being worked on
-- `Tool`: Technologies, frameworks, libraries used
-- `Pattern`: Code patterns or architectural decisions
-- `Decision`: Important choices made and their rationale
-- `Preference`: User preferences (coding style, communication)
+- Use `memory` with `add` to store key decisions or preferences
+- Tag records for easy retrieval (`decision`, `preference`, `bugfix`)
 
 **Best Practices:**
-- Keep observations atomic and factual (one fact per observation)
-- Use active voice for relations (e.g., "Alice leads ProjectX", not "ProjectX is led by")
+- Keep entries concise and factual
 - Search memory before asking questions that might have been answered before
-- Consolidate duplicate information when you notice it
-- Clean up outdated information with `delete_observations`
+- Update or delete outdated entries when you notice them
 
 **Example Memory Operations:**
 ```
 # Store user preference
-create_entities([{
-  "name": "Alice",
-  "entityType": "User",
-  "observations": ["Prefers Python over JavaScript", "Works on backend services"]
-}])
+memory action=add scope=profile kind=long_term tags=["preference"] \\
+  content="User prefers Python over JavaScript." metadata={"source": "chat"}
 
-# Link user to project
-create_relations([{
-  "from": "Alice",
-  "to": "TaskforceProject",
-  "relationType": "contributes_to"
-}])
-
-# Add new learning to project
-add_observations("TaskforceProject", [
-  "Uses Clean Architecture pattern",
-  "Follows uv for dependency management"
-])
+# Search for related context
+memory action=search scope=profile kind=long_term query="Python preference" limit=5
 ```
 
 ## Execution Guidelines

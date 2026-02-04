@@ -21,7 +21,7 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 
 ### 🧠 Agent Capabilities
 - **[Agent Skills](features/skills.md)**: Modular domain-specific capabilities for agents (code review, data analysis, PDF processing).
-- **[Long-Term Memory](features/longterm-memory.md)**: Persistent knowledge graph memory for agents.
+- **[Long-Term Memory](features/longterm-memory.md)**: Persistent Markdown-based memory for agents.
 
 ### 🏢 Enterprise Features (Optional)
 > Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.

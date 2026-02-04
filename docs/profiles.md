@@ -90,19 +90,17 @@ tools:
 
 ## 🧠 Long-Term Memory Configuration
 
-Profiles can enable session-persistent memory using MCP servers:
+Profiles enable session-persistent memory by adding the `memory` tool and
+configuring a file-backed store:
 
 ```yaml
 # configs/coding_agent.yaml
-mcp_servers:
-  - type: stdio
-    command: npx
-    args:
-      - "-y"
-      - "@modelcontextprotocol/server-memory"
-    env:
-      MEMORY_FILE_PATH: ".taskforce_coding/.memory/knowledge_graph.jsonl"
-    description: "Long-term knowledge graph memory"
+memory:
+  type: file
+  store_dir: ".taskforce_coding/memory"
+
+tools:
+  - memory
 ```
 
 **Benefits:**

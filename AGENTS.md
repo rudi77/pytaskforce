@@ -34,6 +34,7 @@ This file should be updated automatically when project-specific patterns, conven
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
 - Epic orchestration persists run state under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, and `MEMORY.md`.
 - The `coding_agent` profile now declares sub-agents as explicit tools and delegates to custom sub-agents in `src/taskforce_extensions/configs/custom/` (`coding_planner`, `coding_worker`, `coding_reviewer`).
+- Unified long-term memory is provided by the native `memory` tool, configured via `memory.store_dir` in profile YAML (file-backed Markdown records).
 
 - **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
   - **Storage**: Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level commands override user-level commands.
