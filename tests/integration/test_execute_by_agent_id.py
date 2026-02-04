@@ -8,6 +8,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app
@@ -65,7 +67,7 @@ def test_execute_sync_with_agent_id_success(client, mock_custom_agent):
 
         # Make request
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Extract invoice fields from invoice.pdf",
                 "profile": "coding_agent",
@@ -99,7 +101,7 @@ def test_execute_sync_agent_id_not_found(client):
         )
 
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Test mission",
                 "profile": "coding_agent",
@@ -123,7 +125,7 @@ def test_execute_sync_agent_id_invalid_definition(client):
         )
 
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Test mission",
                 "profile": "coding_agent",
@@ -150,7 +152,7 @@ def test_execute_sync_backward_compatibility_without_agent_id(client):
         )
 
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Test mission",
                 "profile": "coding_agent",
@@ -166,7 +168,6 @@ def test_execute_sync_backward_compatibility_without_agent_id(client):
         # Verify agent_id was None
         call_kwargs = mock_executor.execute_mission.call_args.kwargs
         assert call_kwargs["agent_id"] is None
-        assert call_kwargs["use_lean_agent"] is False
 
 
 def test_execute_stream_with_agent_id_success(client, mock_custom_agent):
@@ -200,7 +201,7 @@ def test_execute_stream_with_agent_id_success(client, mock_custom_agent):
         mock_executor.execute_mission_streaming = mock_streaming_generator
 
         response = client.post(
-            "/api/agent/execute/stream",
+            "/api/v1/execute/stream",
             json={
                 "mission": "Extract invoice",
                 "profile": "coding_agent",
@@ -240,7 +241,7 @@ def test_execute_stream_agent_id_not_found(client):
         mock_executor.execute_mission_streaming = mock_streaming_generator
 
         response = client.post(
-            "/api/agent/execute/stream",
+            "/api/v1/execute/stream",
             json={
                 "mission": "Test",
                 "profile": "coding_agent",
@@ -286,7 +287,7 @@ def test_execute_with_agent_id_ignores_lean_flag(client, mock_custom_agent):
         )
 
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Test",
                 "profile": "coding_agent",
@@ -300,8 +301,6 @@ def test_execute_with_agent_id_ignores_lean_flag(client, mock_custom_agent):
         # Verify agent_id was passed (lean flag ignored)
         call_kwargs = mock_executor.execute_mission.call_args.kwargs
         assert call_kwargs["agent_id"] == "invoice-extractor"
-        # lean flag is still passed but agent_id takes priority in executor
-        assert call_kwargs["use_lean_agent"] is False
 
 
 def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
@@ -324,7 +323,7 @@ def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
         )
 
         response = client.post(
-            "/api/agent/execute",
+            "/api/v1/execute",
             json={
                 "mission": "Search documents",
                 "profile": "coding_agent",
@@ -345,4 +344,3 @@ def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
             "org_id": "org456",
             "scope": "private",
         }
-

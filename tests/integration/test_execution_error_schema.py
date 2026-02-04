@@ -1,6 +1,8 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app

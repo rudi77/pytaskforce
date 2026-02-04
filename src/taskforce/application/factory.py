@@ -167,6 +167,7 @@ class AgentFactory:
         self,
         definition: "AgentDefinition",
         user_context: Optional[dict[str, Any]] = None,
+        base_config_override: Optional[dict[str, Any]] = None,
     ) -> Agent:
         """
         Create an Agent from a unified AgentDefinition.
@@ -182,6 +183,7 @@ class AgentFactory:
         Args:
             definition: Unified agent definition containing all configuration
             user_context: Optional user context for RAG tools (user_id, org_id, scope)
+            base_config_override: Optional pre-loaded base profile config.
 
         Returns:
             Agent instance with injected dependencies
@@ -215,7 +217,9 @@ class AgentFactory:
 
         # Build infrastructure
         infra_builder = InfrastructureBuilder(self.config_dir)
-        base_config = infra_builder.load_profile_safe(definition.base_profile)
+        base_config = base_config_override or infra_builder.load_profile_safe(
+            definition.base_profile
+        )
 
         state_manager = infra_builder.build_state_manager(
             base_config, work_dir_override=definition.work_dir
@@ -239,6 +243,11 @@ class AgentFactory:
             memory_store_dir=memory_store_dir,
         )
         native_tools = tool_registry.resolve(definition.tools)
+        orchestration_tool = self._build_orchestration_tool(base_config)
+        if orchestration_tool and not any(
+            tool.name == orchestration_tool.name for tool in native_tools
+        ):
+            native_tools.append(orchestration_tool)
 
         # Handle plugin tools if this is a plugin agent
         plugin_tools: list[ToolProtocol] = []
@@ -359,6 +368,7 @@ class AgentFactory:
     async def create_agent(
         self,
         *,
+        profile: Optional[str] = None,
         # Option 1: Config file path
         config: Optional[str] = None,
         # Option 2: Inline parameters
@@ -394,6 +404,7 @@ class AgentFactory:
         Args:
             config: Path to YAML configuration file. If provided, all other
                    agent settings are loaded from this file.
+            profile: Profile name to load from configs/{profile}.yaml.
 
             system_prompt: Custom system prompt for the agent.
             tools: List of tool names to enable (e.g., ["python", "file_read"]).
@@ -421,6 +432,9 @@ class AgentFactory:
             # Option 1: From config file
             agent = await factory.create_agent(config="configs/dev.yaml")
 
+            # Option 1b: From profile name
+            agent = await factory.create_agent(profile="dev")
+
             # Option 2: Inline parameters
             agent = await factory.create_agent(
                 system_prompt="You are a coding assistant.",
@@ -446,10 +460,33 @@ class AgentFactory:
             context_policy is not None,
         ])
 
+        if profile and config:
+            raise ValueError(
+                "Cannot use 'profile' with 'config'. "
+                "Provide either a profile name or a config file path."
+            )
+
+        if profile and has_inline_params:
+            raise ValueError(
+                "Cannot use 'profile' with inline parameters. "
+                "Provide either a profile name or inline parameters."
+            )
+
         if config and has_inline_params:
             raise ValueError(
                 "Cannot use 'config' with inline parameters. "
                 "Either provide a config file path OR inline parameters, not both."
+            )
+
+        if profile:
+            profile_config = self._load_profile(profile)
+            return await self._create_agent_from_profile_config(
+                profile=profile,
+                config=profile_config,
+                work_dir=work_dir,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
             )
 
         # Option 1: Load from config file
@@ -476,6 +513,77 @@ class AgentFactory:
             work_dir=work_dir,
             user_context=user_context,
             specialist=specialist,
+        )
+
+    def _extract_tool_names(self, tools_config: list[Any]) -> list[str]:
+        """Extract tool names from mixed config entries."""
+        from taskforce.core.domain.agent_definition import _class_name_to_tool_name
+
+        tool_names: list[str] = []
+        for tool_entry in tools_config:
+            if isinstance(tool_entry, str):
+                tool_names.append(tool_entry)
+            elif isinstance(tool_entry, dict):
+                tool_name = tool_entry.get("name") or tool_entry.get("type", "")
+                if tool_name and (tool_name.endswith("Tool") or any(c.isupper() for c in tool_name)):
+                    tool_names.append(_class_name_to_tool_name(tool_name))
+                elif tool_name:
+                    tool_names.append(tool_name.lower())
+        return tool_names
+
+    def _build_definition_from_config(
+        self,
+        profile_name: str,
+        config: dict[str, Any],
+        work_dir: Optional[str],
+        planning_strategy: Optional[str],
+        planning_strategy_params: Optional[dict[str, Any]],
+    ) -> "AgentDefinition":
+        """Build AgentDefinition from a loaded profile config."""
+        from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource, MCPServerConfig
+
+        tools_config = config.get("tools", [])
+        mcp_servers_config = config.get("mcp_servers", [])
+
+        return AgentDefinition(
+            agent_id=f"config-{profile_name}",
+            name=f"Config Agent ({profile_name})",
+            source=AgentSource.PROFILE,
+            specialist=config.get("specialist"),
+            base_profile=profile_name,
+            work_dir=work_dir,
+            tools=self._extract_tool_names(tools_config),
+            mcp_servers=[
+                MCPServerConfig.from_dict(server) for server in mcp_servers_config
+            ] if mcp_servers_config else [],
+            planning_strategy=planning_strategy or config.get("agent", {}).get("planning_strategy"),
+            planning_strategy_params=planning_strategy_params or config.get("agent", {}).get("planning_strategy_params"),
+            max_steps=config.get("agent", {}).get("max_steps"),
+            system_prompt=config.get("system_prompt"),
+        )
+
+    async def _create_agent_from_profile_config(
+        self,
+        profile: str,
+        config: dict[str, Any],
+        work_dir: Optional[str],
+        user_context: Optional[dict[str, Any]],
+        planning_strategy: Optional[str],
+        planning_strategy_params: Optional[dict[str, Any]],
+    ) -> Agent:
+        """Create Agent from an in-memory profile configuration."""
+        self.logger.info("creating_agent_from_profile", profile=profile)
+        definition = self._build_definition_from_config(
+            profile_name=config.get("profile", profile),
+            config=config,
+            work_dir=work_dir,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+        return await self.create(
+            definition,
+            user_context=user_context,
+            base_config_override=config,
         )
 
     async def _create_agent_from_config_file(
@@ -528,40 +636,16 @@ class AgentFactory:
         )
 
         # Extract settings from config
-        effective_specialist = config.get("specialist")
-        tools_config = config.get("tools", [])
-
-        # Handle both string and dict tool specs
-        tool_names = []
-        for t in tools_config:
-            if isinstance(t, str):
-                tool_names.append(t)
-            elif isinstance(t, dict):
-                tool_names.append(t.get("name") or t.get("type", "").replace("Tool", "").lower())
-
-        mcp_servers_config = config.get("mcp_servers", [])
-
         # Use profile name from config or derive from filename
         profile_name = config.get("profile", config_path_obj.stem)
 
-        # Create AgentDefinition
-        definition = AgentDefinition(
-            agent_id=f"config-{profile_name}",
-            name=f"Config Agent ({profile_name})",
-            source=AgentSource.PROFILE,
-            specialist=effective_specialist,
-            base_profile=profile_name,
+        definition = self._build_definition_from_config(
+            profile_name=profile_name,
+            config=config,
             work_dir=work_dir,
-            tools=tool_names,
-            mcp_servers=[
-                MCPServerConfig.from_dict(s) for s in mcp_servers_config
-            ] if mcp_servers_config else [],
-            planning_strategy=planning_strategy or config.get("agent", {}).get("planning_strategy"),
-            planning_strategy_params=planning_strategy_params or config.get("agent", {}).get("planning_strategy_params"),
-            max_steps=config.get("agent", {}).get("max_steps"),
-            system_prompt=config.get("system_prompt"),
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
         )
-
         return await self.create(definition, user_context=user_context)
 
     async def _create_agent_from_inline_params(
@@ -1567,35 +1651,9 @@ class AgentFactory:
             if tool:
                 tools.append(tool)
 
-        # Add AgentTool if orchestration is enabled (Feature: Multi-Agent Orchestration)
-        orchestration_config = config.get("orchestration", {})
-        if orchestration_config.get("enabled", False):
-            from taskforce.application.sub_agent_spawner import SubAgentSpawner
-            from taskforce.infrastructure.tools.orchestration import AgentTool
-
-            sub_agent_spawner = SubAgentSpawner(
-                agent_factory=self,
-                profile=orchestration_config.get("sub_agent_profile", "dev"),
-                work_dir=orchestration_config.get("sub_agent_work_dir"),
-                max_steps=orchestration_config.get("sub_agent_max_steps"),
-            )
-            agent_tool = AgentTool(
-                agent_factory=self,
-                sub_agent_spawner=sub_agent_spawner,
-                profile=orchestration_config.get("sub_agent_profile", "dev"),
-                work_dir=orchestration_config.get("sub_agent_work_dir"),
-                max_steps=orchestration_config.get("sub_agent_max_steps"),
-                summarize_results=orchestration_config.get("summarize_results", False),
-                summary_max_length=orchestration_config.get("summary_max_length", 2000),
-            )
-            tools.append(agent_tool)
-
-            self.logger.info(
-                "orchestration_enabled",
-                agent_tool_added=True,
-                sub_agent_profile=orchestration_config.get("sub_agent_profile", "dev"),
-                sub_agent_max_steps=orchestration_config.get("sub_agent_max_steps"),
-            )
+        orchestration_tool = self._build_orchestration_tool(config)
+        if orchestration_tool:
+            tools.append(orchestration_tool)
 
         # Filter out LLMTool unless explicitly enabled in config
         include_llm_generate = config.get("agent", {}).get("include_llm_generate", False)
@@ -1610,6 +1668,39 @@ class AgentFactory:
                 )
 
         return tools
+
+    def _build_orchestration_tool(self, config: dict) -> ToolProtocol | None:
+        """Build AgentTool when orchestration is enabled."""
+        orchestration_config = config.get("orchestration", {})
+        if not orchestration_config.get("enabled", False):
+            return None
+
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration import AgentTool
+
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self,
+            profile=orchestration_config.get("sub_agent_profile", "dev"),
+            work_dir=orchestration_config.get("sub_agent_work_dir"),
+            max_steps=orchestration_config.get("sub_agent_max_steps"),
+        )
+        agent_tool = AgentTool(
+            agent_factory=self,
+            sub_agent_spawner=sub_agent_spawner,
+            profile=orchestration_config.get("sub_agent_profile", "dev"),
+            work_dir=orchestration_config.get("sub_agent_work_dir"),
+            max_steps=orchestration_config.get("sub_agent_max_steps"),
+            summarize_results=orchestration_config.get("summarize_results", False),
+            summary_max_length=orchestration_config.get("summary_max_length", 2000),
+        )
+
+        self.logger.info(
+            "orchestration_enabled",
+            agent_tool_added=True,
+            sub_agent_profile=orchestration_config.get("sub_agent_profile", "dev"),
+            sub_agent_max_steps=orchestration_config.get("sub_agent_max_steps"),
+        )
+        return agent_tool
 
     def _hydrate_memory_tool_spec(
         self, tool_spec: str | dict[str, Any], config: dict[str, Any]

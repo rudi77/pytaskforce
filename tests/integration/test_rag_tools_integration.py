@@ -7,6 +7,8 @@ They are skipped if credentials are not available.
 import os
 import pytest
 
+pytest.importorskip("azure.core")
+
 from taskforce.infrastructure.tools.rag.semantic_search_tool import SemanticSearchTool
 from taskforce.infrastructure.tools.rag.list_documents_tool import ListDocumentsTool
 from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
@@ -206,4 +208,3 @@ async def test_comparison_with_agent_v2():
     
     # TODO: Implement actual comparison with Agent V2 results
     # when both systems are available in test environment
-

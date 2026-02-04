@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.core.domain.errors import PluginError
@@ -73,7 +74,7 @@ class TestAccountingAgentPlugin:
         manifest = loader.discover_plugin(str(ACCOUNTING_AGENT_PATH))
 
         try:
-            tools = loader.load_tools(manifest)
+            tools = loader.load_tools(manifest, llm_provider=MagicMock())
 
             # Verify tools loaded
             assert len(tools) > 0, "Should load at least one tool"

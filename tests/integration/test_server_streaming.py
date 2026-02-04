@@ -10,7 +10,10 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from taskforce.api.server import app
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
@@ -36,6 +39,23 @@ async def mock_streaming_generator(updates: list[ProgressUpdate]):
     """Create an async generator from a list of updates."""
     for update in updates:
         yield update
+
+
+def collect_sse_events(
+    response: Response,
+    max_events: int | None = None,
+) -> list[dict]:
+    """Collect SSE events, stopping after complete/error or max_events."""
+    events: list[dict] = []
+    for line in response.iter_lines():
+        if line.startswith("data: "):
+            event_data = json.loads(line[6:])
+            events.append(event_data)
+            if event_data.get("event_type") in {"complete", "error"}:
+                break
+            if max_events is not None and len(events) >= max_events:
+                break
+    return events
 
 
 class TestServerSSEStreaming:
@@ -76,11 +96,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Test mission", "profile": "coding_agent"},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        event_data = json.loads(line[6:])
-                        events.append(event_data)
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 assert len(events) >= 1
                 assert events[0]["event_type"] == "started"
@@ -104,10 +120,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Test", "profile": "coding_agent", "lean": True},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 step_events = [e for e in events if e["event_type"] == "step_start"]
                 assert len(step_events) >= 1
@@ -137,10 +150,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Search for data", "profile": "coding_agent", "lean": True},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 event_types = [e["event_type"] for e in events]
                 assert "tool_call" in event_types
@@ -173,10 +183,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Say hello", "profile": "coding_agent", "lean": True},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 token_events = [e for e in events if e["event_type"] == "llm_token"]
                 assert len(token_events) == 3
@@ -203,10 +210,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Answer question", "profile": "coding_agent", "lean": True},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 final_events = [e for e in events if e["event_type"] == "final_answer"]
                 assert len(final_events) == 1
@@ -228,10 +232,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 complete_events = [e for e in events if e["event_type"] == "complete"]
                 assert len(complete_events) == 1
@@ -254,10 +255,7 @@ class TestServerSSEStreaming:
                 "/api/v1/execute/stream",
                 json={"mission": "Test error", "profile": "coding_agent"},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 error_events = [e for e in events if e["event_type"] == "error"]
                 assert len(error_events) >= 1
@@ -284,10 +282,7 @@ class TestServerSSEEventFormat:
                 "/api/v1/execute/stream",
                 json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
-                events = []
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        events.append(json.loads(line[6:]))
+                events = collect_sse_events(response, max_events=len(mock_updates))
 
                 for event in events:
                     assert "timestamp" in event
@@ -310,20 +305,20 @@ class TestServerSSEEventFormat:
                 "/api/v1/execute/stream",
                 json={"mission": "Test", "profile": "coding_agent"},
             ) as response:
-                # Collect all lines from streaming response
-                lines = list(response.iter_lines())
-                
-                # Should have at least some data lines
+                lines = []
+                for line in response.iter_lines():
+                    lines.append(line)
+                    if line.startswith("data: "):
+                        event_json = line[6:]
+                        parsed = json.loads(event_json)
+                        assert "event_type" in parsed
+                        assert "message" in parsed
+                        assert "details" in parsed
+                        if parsed.get("event_type") in {"complete", "error"}:
+                            break
+
                 data_lines = [line for line in lines if line.startswith("data: ")]
                 assert len(data_lines) >= 1, "SSE should have at least one data: event"
-                
-                # Each data line should be valid JSON after "data: " prefix
-                for line in data_lines:
-                    event_json = line[6:]
-                    parsed = json.loads(event_json)
-                    assert "event_type" in parsed
-                    assert "message" in parsed
-                    assert "details" in parsed
 
 
 class TestServerSSEBackwardCompatibility:
@@ -347,4 +342,3 @@ class TestServerSSEBackwardCompatibility:
             assert "session_id" in data
             assert "status" in data
             assert "message" in data
-
