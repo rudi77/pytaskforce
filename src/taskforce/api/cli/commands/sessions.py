@@ -14,14 +14,17 @@ console = Console()
 
 @app.command("list")
 def list_sessions(
-    profile: str = typer.Option(
-        ...,
+    ctx: typer.Context,
+    profile: str | None = typer.Option(
+        None,
         "--profile",
         "-p",
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
-    )
+    ),
 ):
     """List all agent sessions."""
+    global_opts = ctx.obj or {}
+    profile = profile or global_opts.get("profile", "dev")
 
     async def _list_sessions():
         factory = AgentFactory()
@@ -52,15 +55,18 @@ def list_sessions(
 
 @app.command("show")
 def show_session(
+    ctx: typer.Context,
     session_id: str = typer.Argument(..., help="Session ID"),
-    profile: str = typer.Option(
-        ...,
+    profile: str | None = typer.Option(
+        None,
         "--profile",
         "-p",
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
 ):
     """Show session details."""
+    global_opts = ctx.obj or {}
+    profile = profile or global_opts.get("profile", "dev")
 
     async def _show_session():
         factory = AgentFactory()
@@ -85,4 +91,3 @@ def show_session(
             await agent.close()
 
     asyncio.run(_show_session())
-
