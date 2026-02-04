@@ -31,4 +31,3 @@ def parse_task_status(value: Any) -> TaskStatus:
 print(f"Parsing 'SKIPPED': {parse_task_status('SKIPPED')}")
 print(f"Parsing 'Skipped': {parse_task_status('Skipped')}")
 print(f"Parsing 'skipped': {parse_task_status('skipped')}")
-
