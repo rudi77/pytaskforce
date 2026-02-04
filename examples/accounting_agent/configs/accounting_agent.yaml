@@ -36,6 +36,17 @@ system_prompt: |
 
   → **Aktiviere Skill:** `invoice-explanation`
 
+  ### ACCOUNTING_QUESTION
+  User stellt allgemeine Fragen zur Buchhaltung, Kontierung oder Steuerrecht,
+  ohne eine konkrete Rechnung zu verarbeiten.
+
+  Beispiele:
+  - "Wie kontiere ich Bewirtungskosten?"
+  - "Wann ist Vorsteuerabzug möglich?"
+  - "Was bedeutet Reverse Charge?"
+
+  → **Aktiviere Skill:** `accounting-expert`
+
   ### INVOICE_PROCESSING
   User möchte die Rechnung prüfen, kontieren oder buchen.
 
@@ -123,6 +134,10 @@ skills:
     - name: invoice-explanation
       description: "Beantwortet Fragen zu Rechnungen ohne Workflow"
       trigger: "INVOICE_QUESTION"
+
+    - name: accounting-expert
+      description: "Allgemeine Buchhaltungsfragen (Kontierung, Steuerrecht)"
+      trigger: "ACCOUNTING_QUESTION"
 
     - name: smart-booking-auto
       description: "Automatischer Buchungsworkflow (Confidence >=95%)"

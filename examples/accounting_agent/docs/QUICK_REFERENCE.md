@@ -21,6 +21,17 @@ Schnellreferenz für Entwickler und Operatoren.
 
 ---
 
+## Skills & Intents
+
+| Intent | Skill | Zweck |
+|--------|-------|-------|
+| `INVOICE_QUESTION` | `invoice-explanation` | Fragen zu konkreten Rechnungen beantworten |
+| `ACCOUNTING_QUESTION` | `accounting-expert` | Allgemeine Buchhaltungsfragen, Kontierung, Steuerrecht |
+| `INVOICE_PROCESSING` | `smart-booking-auto` | Vollständiger Rechnungs-Workflow |
+| `AUTO_SWITCH` | `smart-booking-hitl` | Manuelle Prüfung bei Unsicherheit |
+
+---
+
 ## Entscheidungslogik
 
 ### Auto-Book vs. HITL
