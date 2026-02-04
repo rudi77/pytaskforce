@@ -27,6 +27,7 @@ from taskforce.infrastructure.tools.native.file_tools import (
     FileWriteTool,
 )
 from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
+from taskforce.infrastructure.tools.native.memory_tool import MemoryTool
 from taskforce.infrastructure.tools.native.python_tool import PythonTool
 from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
 from taskforce.infrastructure.tools.native.web_tools import (
@@ -70,6 +71,7 @@ class ToolRegistry:
         self,
         llm_provider: Optional[LLMProviderProtocol] = None,
         user_context: Optional[dict[str, Any]] = None,
+        memory_store_dir: Optional[str] = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -80,6 +82,7 @@ class ToolRegistry:
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
+        self._memory_store_dir = memory_store_dir
         self._logger = logger.bind(component="ToolRegistry")
 
         # Initialize native tools (for catalog functionality)
@@ -93,6 +96,7 @@ class ToolRegistry:
             GitHubTool(),
             PowerShellTool(),
             AskUserTool(),
+            MemoryTool(),
         ]
 
     # -------------------------------------------------------------------------
@@ -355,6 +359,10 @@ class ToolRegistry:
                 if self._user_context:
                     tool_params["user_context"] = self._user_context
 
+            # Special handling for MemoryTool - inject store_dir
+            if tool_type == "MemoryTool" and self._memory_store_dir:
+                tool_params.setdefault("store_dir", self._memory_store_dir)
+
             # Instantiate the tool
             tool_instance: ToolProtocol = tool_class(**tool_params)
 
@@ -384,6 +392,7 @@ _registry: Optional[ToolRegistry] = None
 def get_tool_registry(
     llm_provider: Optional["LLMProviderProtocol"] = None,
     user_context: Optional[dict[str, Any]] = None,
+    memory_store_dir: Optional[str] = None,
 ) -> ToolRegistry:
     """
     Get the tool registry instance.
@@ -399,9 +408,15 @@ def get_tool_registry(
         ToolRegistry instance
     """
     global _registry
-    if _registry is None or llm_provider is not None or user_context is not None:
+    if (
+        _registry is None
+        or llm_provider is not None
+        or user_context is not None
+        or memory_store_dir is not None
+    ):
         _registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
+            memory_store_dir=memory_store_dir,
         )
     return _registry

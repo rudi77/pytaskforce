@@ -64,7 +64,7 @@ taskforce chat --plugin examples/accounting_agent
 - **Communication Integrations**: Inbound messaging endpoints for Telegram/MS Teams with session-bound chat history ([docs/integrations.md](docs/integrations.md)).
 - **Skill Metadata**: Optional skill frontmatter fields (license, compatibility, allowed tools, metadata) show up in `taskforce skills show --full`.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
-- **Long-Term Memory**: Session-persistent knowledge graphs via MCP Memory Server.
+- **Long-Term Memory**: Session-persistent memory records stored in Markdown.
 - **Enterprise Ready**: Optional `taskforce-enterprise` Add-on for RBAC, multi-tenancy, and compliance.
 
 ## 🏢 Enterprise Features (Optional)
@@ -195,7 +195,7 @@ Detailed guides are available in the [docs/](docs/) directory:
 - **[REST API Guide](docs/api.md)**: Integrating Taskforce into your apps (includes plugin support).
 - **[Plugin Development](docs/plugins.md)**: Creating and using custom agent plugins.
 - **[Profiles & Config](docs/profiles.md)**: Managing dev/prod environments.
-- **[Long-Term Memory](docs/features/longterm-memory.md)**: Session-persistent knowledge graphs.
+- **[Long-Term Memory](docs/features/longterm-memory.md)**: Session-persistent Markdown memory records.
 - **[Multi-Agent Orchestration](docs/architecture/multi-agent-orchestration-plan.md)**: Deep dive into orchestration.
 
 ---

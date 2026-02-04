@@ -228,10 +228,15 @@ class AgentFactory:
             tool_filter=definition.mcp_tool_filter,
         )
 
+        memory_store_dir = self._resolve_memory_store_dir(
+            base_config, work_dir_override=definition.work_dir
+        )
+
         # Resolve native tools
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
+            memory_store_dir=memory_store_dir,
         )
         native_tools = tool_registry.resolve(definition.tools)
 
@@ -1555,7 +1560,10 @@ class AgentFactory:
 
         tools = []
         for tool_spec in tools_config:
-            tool = self._instantiate_tool(tool_spec, llm_provider, user_context=user_context)
+            resolved_spec = self._hydrate_memory_tool_spec(tool_spec, config)
+            tool = self._instantiate_tool(
+                resolved_spec, llm_provider, user_context=user_context
+            )
             if tool:
                 tools.append(tool)
 
@@ -1602,6 +1610,31 @@ class AgentFactory:
                 )
 
         return tools
+
+    def _hydrate_memory_tool_spec(
+        self, tool_spec: str | dict[str, Any], config: dict[str, Any]
+    ) -> str | dict[str, Any]:
+        if tool_spec != "memory":
+            return tool_spec
+
+        memory_config = config.get("memory", {})
+        store_dir = memory_config.get("store_dir")
+        if not store_dir:
+            persistence_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
+            store_dir = str(Path(persistence_dir) / "memory")
+        return {"type": "MemoryTool", "params": {"store_dir": store_dir}}
+
+    def _resolve_memory_store_dir(
+        self, config: dict[str, Any], work_dir_override: str | None = None
+    ) -> str:
+        memory_config = config.get("memory", {})
+        store_dir = memory_config.get("store_dir")
+        if store_dir:
+            return str(store_dir)
+        persistence_dir = work_dir_override or config.get("persistence", {}).get(
+            "work_dir", ".taskforce"
+        )
+        return str(Path(persistence_dir) / "memory")
 
     async def _create_mcp_tools(self, config: dict) -> tuple[list[ToolProtocol], list[Any]]:
         """
