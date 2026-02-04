@@ -96,6 +96,7 @@ def run_mission(
     tf_console.print_banner()
 
     # Show mission info
+    tf_console.print_system_message("Starting mission", "system")
     tf_console.print_system_message(f"Mission: {mission}", "system")
     if session_id:
         tf_console.print_system_message(f"Resuming session: {session_id}", "info")
@@ -197,8 +198,13 @@ def _execute_standard_mission(
         tf_console.print_agent_message(result.final_message)
 
     # Display token usage statistics
-    if result.token_usage and result.token_usage.get("total_tokens", 0) > 0:
-        tf_console.print_token_usage(result.token_usage)
+    token_usage = (
+        result.token_usage.to_dict()
+        if hasattr(result.token_usage, "to_dict")
+        else result.token_usage
+    )
+    if token_usage and token_usage.get("total_tokens", 0) > 0:
+        tf_console.print_token_usage(token_usage)
 
 
 async def _execute_streaming_mission(
