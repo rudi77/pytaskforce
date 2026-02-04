@@ -39,23 +39,15 @@ Taskforce requires several environment variables to function correctly. These ar
 | `DATABASE_URL` | PostgreSQL connection string (required for `prod` profile). |
 | `GITHUB_TOKEN` | Optional. Required for GitHub-related tools. |
 
-## 🧠 Optional: Long-Term Memory (MCP Server)
+## 🧠 Optional: Long-Term Memory
 
-For agents with long-term memory capabilities, you'll need **Node.js** and **npm** installed:
-
-### Installation
-- **Node.js**: Download from [nodejs.org](https://nodejs.org/) (v18+ recommended)
-- **Verify installation**:
-  ```bash
-  node --version  # Should show v18.0.0 or higher
-  npm --version   # Should show 9.0.0 or higher
-  ```
-
-The MCP Memory Server will be automatically downloaded when configured in agent profiles (no manual installation needed).
+Long-term memory is file-based and does not require any external services.
+Enable the `memory` tool in your profile and point `memory.store_dir` to a
+writable directory (typically under the profile `work_dir`). See
+`docs/features/longterm-memory.md` for details.
 
 ## 🚀 Verifying the Install
 Run the help command to ensure everything is wired correctly:
 ```powershell
 taskforce --help
 ```
-

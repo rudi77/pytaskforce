@@ -87,6 +87,13 @@ core interfaces and infrastructure adapters:
 See **[Epic Orchestration](architecture/epic-orchestration.md)** for the
 planner → worker → judge pipeline.
 
+## 🧠 Unified Memory Service (2026-03)
+
+Taskforce ships a unified memory service backed by file-based Markdown records.
+Memory entries are stored per profile/work directory and accessed through the
+native `memory` tool, allowing agents to recall and update long-term knowledge
+without external MCP servers.
+
 ## 💬 External Communication Integrations (2026-03)
 
 Taskforce exposes inbound messaging endpoints that map external provider

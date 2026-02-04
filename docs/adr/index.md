@@ -10,6 +10,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 004: Multi-Agent Runtime Tracking & Messaging](adr-004-multi-agent-runtime-and-messaging.md)**
 - **[ADR 005: Epic Orchestration Pipeline](adr-005-epic-orchestration-pipeline.md)**
 - **[ADR 006: Communication Provider Architecture](adr-006-communication-providers.md)**
+- **[ADR 007: Unified Memory Service](adr-007-unified-memory-service.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*
