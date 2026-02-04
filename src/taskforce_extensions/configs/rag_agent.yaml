@@ -68,18 +68,12 @@ tools:
   - powershell
   
   - ask_user
+  - memory
 
-# Long-term Memory Configuration (via MCP)
-# Enables persistent memory across sessions for this agent profile
-mcp_servers:
-  - type: stdio
-    command: npx
-    args:
-      - "-y"
-      - "@modelcontextprotocol/server-memory"
-    env:
-      MEMORY_FILE_PATH: ".taskforce_rag/.memory/knowledge_graph.jsonl"
-    description: "Long-term knowledge graph memory for persistent context across sessions"
+# Unified Memory Configuration
+memory:
+  type: file
+  store_dir: ".taskforce_rag/memory"
 
 # Example: Azure DevOps Wiki MCP Server (commented out)
 #  - type: stdio

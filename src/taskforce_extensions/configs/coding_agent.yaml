@@ -81,6 +81,7 @@ tools:
 
   # Version control
   - git            # Git operations
+  - memory         # Unified memory tool
 
   # Sub-agent tools (explicitly defined)
   - type: sub_agent
@@ -90,14 +91,7 @@ tools:
   - type: sub_agent
     name: coding_reviewer
 
-# Long-term Memory Configuration (via MCP)
-# Enables persistent memory across sessions for this agent profile
-# mcp_servers:
-#   - type: stdio
-#     command: npx
-#     args:
-#       - "-y"
-#       - "@modelcontextprotocol/server-memory"
-#     env:
-#       MEMORY_FILE_PATH: ".taskforce_coding/.memory/knowledge_graph.jsonl"
-#     description: "Long-term knowledge graph memory for persistent context across sessions"
+# Unified Memory Configuration
+memory:
+  type: file
+  store_dir: ".taskforce_coding/memory"
