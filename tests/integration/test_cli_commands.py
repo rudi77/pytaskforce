@@ -44,19 +44,19 @@ def mock_factory():
 
         # Mock agent with tools
         agent = MagicMock()
-        
+
         # Create mock tools with proper attributes
         python_tool = MagicMock()
         python_tool.name = "python"
         python_tool.description = "Execute Python code"
         python_tool.parameters_schema = {"code": "string"}
-        
+
         file_tool = MagicMock()
         file_tool.name = "file_read"
         file_tool.description = "Read file contents"
         file_tool.parameters_schema = {"path": "string"}
-        
-        agent.tools = [python_tool, file_tool]
+
+        agent.tools = {"python": python_tool, "file_read": file_tool}
 
         # Mock state manager
         agent.state_manager = MagicMock()
@@ -64,8 +64,9 @@ def mock_factory():
         agent.state_manager.load_state = AsyncMock(
             return_value={"status": "completed", "mission": "Test mission"}
         )
+        agent.close = AsyncMock()
 
-        factory_instance.create_agent = MagicMock(return_value=agent)
+        factory_instance.create_agent = AsyncMock(return_value=agent)
         yield factory_instance
 
 
