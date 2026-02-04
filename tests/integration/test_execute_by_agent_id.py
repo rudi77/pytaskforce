@@ -8,6 +8,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app
@@ -345,4 +347,3 @@ def test_execute_with_agent_id_and_user_context(client, mock_custom_agent):
             "org_id": "org456",
             "scope": "private",
         }
-

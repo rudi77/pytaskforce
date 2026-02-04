@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app
@@ -476,4 +478,3 @@ def test_agent_id_validation(client):
         },
     )
     assert response.status_code == 201
-
