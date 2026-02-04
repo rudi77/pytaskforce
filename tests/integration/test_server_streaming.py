@@ -17,6 +17,7 @@ from httpx import Response
 
 from taskforce.api.server import app
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.core.domain.models import ExecutionResult
 
 client = TestClient(app)
 
@@ -327,18 +328,24 @@ class TestServerSSEBackwardCompatibility:
     @pytest.mark.integration
     def test_non_streaming_endpoint_unchanged(self):
         """Test that non-streaming /execute endpoint still works."""
-        # This test doesn't mock streaming - it tests the sync endpoint
-        # If no LLM key is configured, it may return 500, which is acceptable
-        response = client.post(
-            "/api/v1/execute",
-            json={"mission": "Test", "profile": "coding_agent"},
+        mock_result = ExecutionResult(
+            status="completed",
+            session_id="session-123",
+            final_message="Done",
+            execution_history=[],
         )
+        with patch(
+            "taskforce.api.routes.execution.executor.execute_mission",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            response = client.post(
+                "/api/v1/execute",
+                json={"mission": "Test", "profile": "coding_agent"},
+            )
 
-        # Accept either success or error due to environment
-        assert response.status_code in [200, 500]
+        assert response.status_code == 200
 
-        if response.status_code == 200:
-            data = response.json()
-            assert "session_id" in data
-            assert "status" in data
-            assert "message" in data
+        data = response.json()
+        assert "session_id" in data
+        assert "status" in data
+        assert "message" in data
