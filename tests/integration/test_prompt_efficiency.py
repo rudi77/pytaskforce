@@ -64,19 +64,19 @@ class TestPromptEfficiency:
     @pytest.mark.asyncio
     async def test_coding_specialist_prompt_contains_performance_rules(self):
         """
-        Given: A coding specialist agent configuration
-        When: Agent is created via factory with coding specialist
+        Given: A coding agent configuration
+        When: Agent is created via factory with coding agent profile
         Then: System prompt contains performance rules
         """
         factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
 
-        agent = await factory.create_agent(profile="coding_dev")
+        agent = await factory.create_agent(profile="coding_agent")
 
         # Coding agent should have the kernel prompt with performance rules
         assert "YOU ARE THE GENERATOR" in agent.system_prompt
         assert "MEMORY FIRST" in agent.system_prompt
-        # Plus coding specialist content
-        assert "Coding Specialist" in agent.system_prompt
+        # Plus coding orchestrator content
+        assert "coding orchestrator" in agent.system_prompt.lower()
 
 
 @pytest.mark.integration
@@ -108,8 +108,8 @@ class TestLlmGenerateOptIn:
         ):
             # rag_dev.yaml should have include_llm_generate: true if configured
             # If not configured, this test documents the expected behavior
-            agent = await factory.create_rag_agent(
-                profile="rag_dev",
+            agent = await factory.create_agent(
+                profile="rag_agent",
                 user_context={"user_id": "test", "org_id": "test"},
             )
 
@@ -117,7 +117,7 @@ class TestLlmGenerateOptIn:
 
             # RAG agent's llm_generate inclusion depends on config
             # This test documents the configuration mechanism exists
-            # Actual inclusion depends on rag_dev.yaml having include_llm_generate: true
+            # Actual inclusion depends on rag_agent.yaml having include_llm_generate: true
             if "llm_generate" in tool_names:
                 # Config has opt-in enabled
                 pass
@@ -125,4 +125,3 @@ class TestLlmGenerateOptIn:
                 # Config does not have opt-in, which is the default
                 # This is expected behavior for efficiency
                 pass
-

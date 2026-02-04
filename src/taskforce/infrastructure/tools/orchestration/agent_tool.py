@@ -194,21 +194,25 @@ class AgentTool:
         # 3. Check plugins/*/configs/agents/{specialist}.yaml
         # Try new location first: src/taskforce_extensions/plugins
         # Then old location: plugins/ (for backward compatibility)
-        plugins_dirs = []
-        
+        plugins_dirs: list[Path] = []
+
+        def add_plugins_dir(path: Path) -> None:
+            if path not in plugins_dirs:
+                plugins_dirs.append(path)
+
         # New location: if config_dir is src/taskforce_extensions/configs, plugins is sibling
         if config_dir.name == "configs" and config_dir.parent.name == "taskforce_extensions":
-            plugins_dirs.append(config_dir.parent / "plugins")
-        
+            add_plugins_dir(config_dir.parent / "plugins")
+
         # Old location: plugins/ at project root (sibling of configs)
-        plugins_dirs.append(config_dir.parent / "plugins")
-        
+        add_plugins_dir(config_dir.parent / "plugins")
+
         # Also check project root plugins if config_dir is nested
         project_root_plugins = config_dir
         # Navigate up to find project root (where plugins/ might be)
         for _ in range(5):  # Max depth check
             if (project_root_plugins / "plugins").exists():
-                plugins_dirs.append(project_root_plugins / "plugins")
+                add_plugins_dir(project_root_plugins / "plugins")
                 break
             if project_root_plugins.parent == project_root_plugins:  # Reached filesystem root
                 break

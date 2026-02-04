@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import structlog
 
 from taskforce.core.domain.agent import Agent
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
@@ -34,9 +35,10 @@ async def integration_setup(tmp_path):
     tool_result_store = FileToolResultStore(store_dir=store_dir)
 
     # Create LLM provider (mock for integration test)
+    from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    llm_provider = AsyncMock()
+    llm_provider = SimpleNamespace(complete=AsyncMock())
 
     # Create Python tool (can generate large outputs)
     python_tool = PythonTool()
@@ -45,6 +47,7 @@ async def integration_setup(tmp_path):
         "state_manager": state_manager,
         "tool_result_store": tool_result_store,
         "llm_provider": llm_provider,
+        "logger": structlog.get_logger(),
         "python_tool": python_tool,
         "tmp_path": tmp_path,
     }
@@ -62,6 +65,7 @@ async def test_large_tool_output_stays_small_in_messages(integration_setup):
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
+        logger=integration_setup["logger"],
         tool_result_store=integration_setup["tool_result_store"],
     )
 
@@ -140,7 +144,7 @@ async def test_large_tool_output_stays_small_in_messages(integration_setup):
 
     assert stored_result is not None
     assert stored_result["success"] is True
-    assert len(stored_result["output"]) >= 50000  # Full output preserved
+    assert len(stored_result["result"]) >= 50000  # Full output preserved
 
 
 @pytest.mark.asyncio
@@ -156,6 +160,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
+        logger=integration_setup["logger"],
         tool_result_store=integration_setup["tool_result_store"],
     )
 
@@ -170,7 +175,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
                     "type": "function",
                     "function": {
                         "name": "python",
-                        "arguments": '{"code": "\\"a\\" * 20000"}',
+                        "arguments": '{"code": "result = \\"a\\" * 20000\\nresult"}',
                     },
                 }
             ],
@@ -184,7 +189,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
                     "type": "function",
                     "function": {
                         "name": "python",
-                        "arguments": '{"code": "\\"b\\" * 20000"}',
+                        "arguments": '{"code": "result = \\"b\\" * 20000\\nresult"}',
                     },
                 }
             ],
@@ -198,7 +203,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
                     "type": "function",
                     "function": {
                         "name": "python",
-                        "arguments": '{"code": "\\"c\\" * 20000"}',
+                        "arguments": '{"code": "result = \\"c\\" * 20000\\nresult"}',
                     },
                 }
             ],
@@ -250,6 +255,7 @@ async def test_session_cleanup_removes_tool_results(integration_setup):
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
+        logger=integration_setup["logger"],
         tool_result_store=integration_setup["tool_result_store"],
     )
 
@@ -263,7 +269,7 @@ async def test_session_cleanup_removes_tool_results(integration_setup):
                     "type": "function",
                     "function": {
                         "name": "python",
-                        "arguments": '{"code": "\\"x\\" * 10000"}',
+                        "arguments": '{"code": "result = \\"x\\" * 10000\\nresult"}',
                     },
                 }
             ],
@@ -304,6 +310,7 @@ async def test_backward_compatibility_without_store(integration_setup):
         state_manager=integration_setup["state_manager"],
         llm_provider=integration_setup["llm_provider"],
         tools=[integration_setup["python_tool"]],
+        logger=integration_setup["logger"],
         tool_result_store=None,  # No store
     )
 
@@ -317,7 +324,7 @@ async def test_backward_compatibility_without_store(integration_setup):
                     "type": "function",
                     "function": {
                         "name": "python",
-                        "arguments": '{"code": "\\"y\\" * 30000"}',
+                        "arguments": '{"code": "result = \\"y\\" * 30000\\nresult"}',
                     },
                 }
             ],
@@ -354,9 +361,8 @@ async def test_backward_compatibility_without_store(integration_setup):
 
     # Standard format (not handle format)
     assert "success" in tool_content
-    assert "output" in tool_content
+    assert "result" in tool_content
     assert "handle" not in tool_content
 
     # Output should be truncated
-    assert "TRUNCATED" in tool_content["output"]
-
+    assert "TRUNCATED" in tool_content["result"]

@@ -67,7 +67,7 @@ class TestCLIStreamingFlag:
             mock_stream.assert_called_once()
             call_kwargs = mock_stream.call_args.kwargs
             assert call_kwargs["mission"] == "Test mission"
-            assert call_kwargs["use_lean_agent"] is True
+            assert call_kwargs["profile"] == "dev"
 
     @pytest.mark.asyncio
     async def test_streaming_displays_tool_calls(self):
@@ -275,5 +275,4 @@ class TestCLIStreamingBackwardCompatibility:
 
             mock_stream.assert_called_once()
             call_kwargs = mock_stream.call_args.kwargs
-            assert call_kwargs["use_lean_agent"] is False
-
+            assert call_kwargs["profile"] == "dev"

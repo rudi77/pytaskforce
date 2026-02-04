@@ -1,6 +1,16 @@
+import json
+from datetime import datetime
+from unittest.mock import AsyncMock, patch
+
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+
 from taskforce.api.server import app
+from taskforce.application.executor import ProgressUpdate
+from taskforce.core.domain.enums import EventType
+from taskforce.core.domain.models import ExecutionResult
 
 client = TestClient(app)
 
@@ -12,36 +22,34 @@ def test_health_endpoint():
 
 @pytest.mark.integration
 def test_execute_mission_endpoint():
-    # Mocking execution to avoid actual agent run which might be slow or fail
-    # But this is integration test, so we might want actual run?
-    # The snippet implies actual run. However, "Create a simple Python function" might fail if no LLM key or tools.
-    # I will trust the snippet strategy.
-    
-    response = client.post(
-        "/api/v1/execute",
-        json={
-            "mission": "Say hello",
-            "profile": "coding_agent"
-        }
+    response_payload = ExecutionResult(
+        status="completed",
+        session_id="test-session-123",
+        final_message="Hello!",
+        execution_history=[],
     )
-    
-    # It might fail with 500 if LLM is not configured/mocked, but 500 would be caught by test failure.
-    # Ideally we should mock AgentExecutor, but for "Integration" we test the stack.
-    # If it fails due to missing API key, we might need to skip or handle it.
-    
-    # Check if response is success or error. 
-    # If we don't have OPENAI_API_KEY, it will fail.
-    
-    # For now, let's assume we want to test the API wiring.
-    assert response.status_code in [200, 500] 
-    if response.status_code == 200:
-        data = response.json()
-        assert "session_id" in data
-        assert data["status"] in ["completed", "failed", "in_progress"]
+
+    with patch(
+        "taskforce.api.routes.execution.executor.execute_mission",
+        new=AsyncMock(return_value=response_payload),
+    ):
+        response = client.post(
+            "/api/v1/execute",
+            json={
+                "mission": "Say hello",
+                "profile": "coding_agent",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == "test-session-123"
+    assert data["status"] == "completed"
+    assert data["message"] == "Hello!"
 
 @pytest.mark.integration
 def test_list_sessions_endpoint():
-    response = client.get("/api/v1/sessions")
+    response = client.get("/api/v1/sessions", params={"profile": "dev"})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
@@ -58,28 +66,43 @@ def test_create_session_endpoint():
 
 @pytest.mark.integration
 def test_streaming_execution():
-    # Similar to execute, might fail without LLM key
-    try:
+    async def mock_stream():
+        updates = [
+            ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type=EventType.STARTED,
+                message="Starting",
+                details={"session_id": "stream-1"},
+            ),
+            ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type=EventType.COMPLETE,
+                message="Done",
+                details={"status": "completed"},
+            ),
+        ]
+        for update in updates:
+            yield update
+
+    with patch(
+        "taskforce.api.routes.execution.executor.execute_mission_streaming",
+        return_value=mock_stream(),
+    ):
         with client.stream(
             "POST",
             "/api/v1/execute/stream",
-            json={"mission": "Test", "profile": "dev"}
+            json={"mission": "Test", "profile": "dev"},
         ) as response:
             assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream"
-            
-            # Read some events
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
             events = []
             for line in response.iter_lines():
                 if line.startswith("data:"):
                     events.append(line)
-                    if len(events) >= 3:
+                    event_json = line[5:].lstrip()
+                    parsed = json.loads(event_json)
+                    if parsed.get("event_type") == EventType.COMPLETE.value:
                         break
-            
-            # If we get events, great. If not (e.g. immediate fail), that's okay too for wiring test?
-            # Actually if immediate fail, we might get error event.
-            assert len(events) >= 0 # Just checking wiring doesn't crash
-    except Exception:
-        # Allow pass if stream setup fails due to environment (e.g. no LLM key)
-        pass
 
+            assert len(events) >= 2

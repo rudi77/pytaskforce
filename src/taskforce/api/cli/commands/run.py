@@ -206,9 +206,9 @@ async def _execute_streaming_mission(
     profile: str,
     session_id: str | None,
     lean: bool,
-    planning_strategy: str | None,
-    planning_strategy_params: str | None,
     console: Console,
+    planning_strategy: str | None = None,
+    planning_strategy_params: str | None = None,
     plugin: str | None = None,
 ) -> None:
     """Execute mission with streaming Rich Live display."""

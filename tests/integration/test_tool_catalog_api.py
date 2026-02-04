@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app
@@ -263,4 +265,3 @@ def test_all_native_tools_in_catalog(client):
         f"Missing tools: {required_tools - tool_names}, "
         f"Extra tools: {tool_names - required_tools}"
     )
-

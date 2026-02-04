@@ -226,10 +226,10 @@ persistence:
         )
         mock_custom_agent.cleanup = AsyncMock()
 
-        # Mock factory.create_agent_from_definition
+        # Mock factory.create_agent
         with patch.object(
-            factory, "create_agent_from_definition", return_value=mock_custom_agent
-        ) as mock_create_from_def:
+            factory, "create_agent", AsyncMock(return_value=mock_custom_agent)
+        ) as mock_create_agent:
             # Execute AgentTool with custom specialist
             result = await agent_tool.execute(
                 mission="Test mission",
@@ -238,7 +238,7 @@ persistence:
             )
 
             # Verify custom agent was created from definition
-            mock_create_from_def.assert_called_once()
+            mock_create_agent.assert_called_once()
 
         # Verify
         assert result["success"] is True

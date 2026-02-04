@@ -74,7 +74,7 @@ def test_version_command():
     result = runner.invoke(app, ["version"])
 
     assert result.exit_code == 0
-    assert "Taskforce" in result.output
+    assert "Version:" in result.output
     assert "0.1.0" in result.output
 
 
@@ -219,4 +219,3 @@ def test_chat_with_rag_context():
     assert "--org-id" in result.output
     assert "--scope" in result.output
     assert "RAG context" in result.output
-

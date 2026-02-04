@@ -184,8 +184,8 @@ async def test_factory_handles_mcp_connection_failure(
             assert "file_read" in tool_names
 
             # Should have no MCP tools due to connection failure
-            # (only native tools loaded)
-            assert len(agent.tools) == 1
+            # (only native + planner tools loaded)
+            assert set(agent.tools.keys()) == {"file_read", "planner"}
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,7 @@ async def test_factory_handles_invalid_mcp_server_type(temp_config_dir: Path):
     # Should only have native tools
     tool_names = list(agent.tools.keys())
     assert "file_read" in tool_names
-    assert len(agent.tools) == 1
+    assert set(agent.tools.keys()) == {"file_read", "planner"}
 
 
 @pytest.mark.asyncio
@@ -260,7 +260,7 @@ async def test_factory_handles_missing_stdio_command(temp_config_dir: Path):
     # Should only have native tools
     tool_names = list(agent.tools.keys())
     assert "file_read" in tool_names
-    assert len(agent.tools) == 1
+    assert set(agent.tools.keys()) == {"file_read", "planner"}
 
 
 @pytest.mark.asyncio
@@ -297,7 +297,7 @@ async def test_factory_handles_missing_sse_url(temp_config_dir: Path):
     # Should only have native tools
     tool_names = list(agent.tools.keys())
     assert "file_read" in tool_names
-    assert len(agent.tools) == 1
+    assert set(agent.tools.keys()) == {"file_read", "planner"}
 
 
 @pytest.mark.asyncio
@@ -344,4 +344,3 @@ async def test_mcp_tools_are_callable(
 
             assert result["success"] is True
             assert "echo_tool" in result["output"]
-
