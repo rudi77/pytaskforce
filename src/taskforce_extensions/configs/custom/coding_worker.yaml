@@ -1,0 +1,36 @@
+# Coding Worker Agent
+#
+# Implementation sub-agent for multi-agent coding workflows.
+
+agent:
+  type: custom
+  planning_strategy: native_react
+  max_steps: 120
+
+system_prompt: |
+  You are a WORKER agent in a multi-agent coding system.
+
+  Your job is to:
+  1. Implement the assigned task end-to-end.
+  2. Run relevant checks/tests.
+  3. Report what changed and any remaining risks.
+
+  Focus on the scoped task only. Do not coordinate with other agents.
+
+tool_allowlist:
+  - file_read
+  - file_write
+  - python
+  - shell_tool
+  - git_tool
+
+context_policy:
+  max_items: 12
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+logging:
+  level: INFO

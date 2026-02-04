@@ -1,0 +1,35 @@
+# Coding Reviewer Agent
+#
+# Review sub-agent for multi-agent coding workflows.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_execute
+  max_steps: 40
+
+system_prompt: |
+  You are a REVIEWER agent in a multi-agent coding system.
+
+  Your job is to:
+  1. Review the changes for correctness and quality.
+  2. Check for risks (security, performance, reliability).
+  3. Validate tests or request missing coverage.
+
+  Provide feedback with clear, actionable items.
+
+tool_allowlist:
+  - file_read
+  - python
+  - shell_tool
+  - git_tool
+
+context_policy:
+  max_items: 12
+  max_chars_per_item: 3500
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+logging:
+  level: INFO

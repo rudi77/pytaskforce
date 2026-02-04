@@ -60,6 +60,34 @@ Prompt and tool sketches are documented in:
 docs/templates/document_extraction/
 ```
 
+## 🤖 Coding Agent Multi-Agent Workflow
+
+The `coding_agent` profile now defines sub-agents as explicit tools and delegates
+work to specialist sub-agents defined in `src/taskforce_extensions/configs/custom/`.
+The `name` field is the sub-agent identifier and is used for resolution:
+
+- `coding_planner`: breaks down missions into tasks and priorities
+- `coding_worker`: implements scoped tasks with tooling access
+- `coding_reviewer`: reviews changes and test coverage
+
+Run it via:
+
+```powershell
+taskforce run mission "Implement feature X and review quality" --profile coding_agent
+```
+
+You can tune the orchestrator's planning strategy (e.g., `spar`) or
+parallelism via the profile's `agent` settings. Sub-agents are declared in the
+profile's `tools` list using `type: sub_agent`.
+
+Example snippet:
+
+```yaml
+tools:
+  - type: sub_agent
+    name: coding_planner
+```
+
 ## 🧠 Long-Term Memory Configuration
 
 Profiles can enable session-persistent memory using MCP servers:

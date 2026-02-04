@@ -40,11 +40,6 @@ class InboundMessageRequest(BaseModel):
         description="User message content.",
         examples=["Wie ist der Status?"],
     )
-    profile: str = Field(
-        default="dev",
-        description="Agent profile for execution.",
-        examples=["dev", "coding_agent"],
-    )
     session_id: str | None = Field(
         default=None,
         description="Optional session ID override for this conversation.",
@@ -140,7 +135,7 @@ async def handle_inbound_message(
         conversation_id=request.conversation_id,
         message=request.message,
         options=CommunicationOptions(
-            profile=request.profile,
+            profile="dev",
             session_id=request.session_id,
             user_context=_build_user_context(request),
             agent_id=request.agent_id,

@@ -37,8 +37,7 @@ response = requests.post(
     "http://localhost:8000/api/v1/integrations/telegram/messages",
     json={
         "conversation_id": "telegram:123456",
-        "message": "Was haben wir zuletzt besprochen?",
-        "profile": "dev"
+        "message": "Was haben wir zuletzt besprochen?"
     }
 )
 print(response.json())
@@ -177,7 +176,7 @@ response = requests.post(
     "http://localhost:8000/api/v1/execution/execute",
     json={
         "mission": "Write a hello world in Rust",
-        "profile": "coding_agent"
+        "agent_id": "coding_agent"
     }
 )
 print(response.json()["message"])

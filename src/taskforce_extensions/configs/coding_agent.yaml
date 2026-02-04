@@ -4,6 +4,21 @@
 profile: coding_agent
 specialist: coding  # Determines system prompt (Kernel + Coding Specialist)
 
+# Custom system prompt for multi-agent orchestration
+system_prompt: |
+  You are a coding orchestrator that delegates work to specialist sub-agents.
+
+  Use the sub-agent tools to run a multi-step workflow:
+  1. Ask coding_planner to break the mission into concrete tasks and priorities.
+  2. Dispatch coding_worker to implement each task (parallelize if independent).
+  3. Dispatch coding_reviewer to review changes, tests, and quality.
+  4. Consolidate results and deliver a final answer to the user.
+
+  Keep orchestration focused:
+  - Provide each sub-agent with clear mission scope and expected outputs.
+  - Summarize and reconcile findings from all sub-agents.
+  - If review finds issues, send fixes back to coding_worker.
+
 # Persistence configuration
 persistence:
   type: file
@@ -12,6 +27,8 @@ persistence:
 # Agent configuration
 agent:
   enable_fast_path: true  # Enable fast-path for follow-up queries
+  planning_strategy: spar  # Sense-Plan-Act-Reflect for orchestration
+  max_parallel_tools: 3
   router:
     use_llm_classification: true  # Use LLM for better accuracy in prod
     max_follow_up_length: 100  # Max query length for follow-up classification
@@ -64,6 +81,14 @@ tools:
 
   # Version control
   - git            # Git operations
+
+  # Sub-agent tools (explicitly defined)
+  - type: sub_agent
+    name: coding_planner
+  - type: sub_agent
+    name: coding_worker
+  - type: sub_agent
+    name: coding_reviewer
 
 # Long-term Memory Configuration (via MCP)
 # Enables persistent memory across sessions for this agent profile

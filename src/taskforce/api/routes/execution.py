@@ -232,8 +232,6 @@ class ExecuteMissionRequest(BaseModel):
 
     Attributes:
         mission: The task description for the agent to execute.
-        profile: Configuration profile name (dev/staging/prod).
-            Controls LLM settings, tool availability, and logging.
         session_id: Optional session identifier. If provided, agent
             attempts to resume existing session. If omitted, new UUID.
         conversation_history: Optional prior conversation for context.
@@ -249,7 +247,6 @@ class ExecuteMissionRequest(BaseModel):
 
         {
             "mission": "Search for recent news about AI",
-            "profile": "dev",
             "conversation_history": [
                 {"role": "user", "content": "I'm interested in AI"},
                 {"role": "assistant", "content": "What to know?"}
@@ -261,16 +258,6 @@ class ExecuteMissionRequest(BaseModel):
         ...,
         description="The task description for the agent to execute.",
         examples=["Search for recent news about AI and summarize findings"]
-    )
-    profile: str = Field(
-        default="dev",
-        description=(
-            "Configuration profile name for infrastructure settings "
-            "(e.g., coding_agent, devops_agent, rag_agent). "
-            "Defaults to 'dev' if not provided. "
-            "When using agent_id, this profile provides LLM and persistence settings."
-        ),
-        examples=["coding_agent", "devops_agent", "rag_agent"],
     )
     session_id: Optional[str] = Field(
         default=None,
@@ -309,8 +296,8 @@ class ExecuteMissionRequest(BaseModel):
             "Agent ID to use. Can be: "
             "- Custom agent ID (loads from configs/custom/{agent_id}.yaml), "
             "- Plugin agent ID (automatically loads plugin from examples/ or plugins/). "
-            "If provided, the agent definition overrides profile agent settings, "
-            "but profile still provides infrastructure settings (LLM, persistence)."
+            "Agent definitions supply their own configuration; "
+            "the API uses the default infrastructure profile internally."
         ),
         examples=["web-agent", "accounting_agent"],
     )
@@ -490,7 +477,7 @@ async def execute_mission(
         # when agent_id is provided. We pass agent_id and let the executor handle it.
         result = await executor.execute_mission(
             mission=request.mission,
-            profile=request.profile,
+            profile="dev",
             session_id=request.session_id,
             conversation_history=request.conversation_history,
             user_context=user_context,
@@ -848,7 +835,7 @@ async def execute_mission_stream(
         try:
             async for update in executor.execute_mission_streaming(
                 mission=request.mission,
-                profile=request.profile,
+                profile="dev",
                 session_id=request.session_id,
                 conversation_history=request.conversation_history,
                 user_context=user_context,
