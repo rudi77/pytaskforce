@@ -1826,6 +1826,12 @@ class AgentFactory:
         import importlib
         from taskforce.infrastructure.tools.registry import resolve_tool_spec
 
+        if isinstance(tool_spec, dict) and tool_spec.get("type") in {
+            "sub_agent",
+            "agent",
+        }:
+            return self._instantiate_sub_agent_tool(tool_spec)
+
         resolved_spec = resolve_tool_spec(tool_spec)
         if not resolved_spec:
             self.logger.warning(
@@ -1875,6 +1881,54 @@ class AgentFactory:
                 error_type=type(e).__name__,
             )
             return None
+
+    def _instantiate_sub_agent_tool(
+        self,
+        tool_spec: dict[str, Any],
+    ) -> Optional[ToolProtocol]:
+        """Instantiate a sub-agent tool from configuration."""
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration import AgentTool
+        from taskforce.infrastructure.tools.orchestration.sub_agent_tool import (
+            SubAgentTool,
+        )
+
+        tool_name = tool_spec.get("name")
+        specialist = tool_spec.get("specialist") or tool_name
+        if not tool_name:
+            self.logger.warning(
+                "invalid_sub_agent_tool_spec",
+                tool_spec=tool_spec,
+                hint="Sub-agent tool spec requires 'name'",
+            )
+            return None
+
+        profile = tool_spec.get("profile", "dev")
+        work_dir = tool_spec.get("work_dir")
+        max_steps = tool_spec.get("max_steps")
+        planning_strategy = tool_spec.get("planning_strategy")
+
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+        )
+        agent_tool = AgentTool(
+            agent_factory=self,
+            sub_agent_spawner=sub_agent_spawner,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+        )
+
+        return SubAgentTool(
+            agent_tool=agent_tool,
+            specialist=specialist,
+            name=tool_name,
+            description=tool_spec.get("description"),
+            planning_strategy=planning_strategy,
+        )
 
     # Backwards-compatible aliases (deprecated)
     async def create_lean_agent(

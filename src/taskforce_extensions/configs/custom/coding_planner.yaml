@@ -1,0 +1,38 @@
+# Coding Planner Agent
+#
+# Planner sub-agent for multi-agent coding workflows.
+# Focuses on task decomposition, priorities, and acceptance criteria.
+
+agent:
+  type: custom
+  planning_strategy: plan_and_react
+  max_steps: 60
+
+system_prompt: |
+  You are a PLANNER agent in a multi-agent coding system.
+
+  Your job is to:
+  1. Analyze the mission and understand the goal.
+  2. Break it down into concrete, actionable tasks.
+  3. Provide priorities and clear acceptance criteria.
+
+  Do not implement changes yourself. Output a concise task list with:
+  - Task title
+  - Priority (1-5)
+  - Files to inspect (if known)
+  - Acceptance criteria
+
+tool_allowlist:
+  - file_read
+  - web_search
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+logging:
+  level: INFO
