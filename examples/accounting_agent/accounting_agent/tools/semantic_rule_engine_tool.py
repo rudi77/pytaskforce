@@ -11,6 +11,7 @@ using embeddings. Implements the hybrid workflow from the PRD:
 This tool is deterministic and does NOT use LLMs for decisions.
 """
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,9 +76,14 @@ class SemanticRuleEngineTool:
         self._item_pattern_embeddings: dict[str, list[float]] = {}
         self._rules_loaded = False
         self._raw_rules: dict[str, Any] = {}
+        self._learned_rules_mtime: float = 0.0  # Track file modification time
 
     async def _load_rules(self) -> None:
         """Load rules from YAML files and precompute embeddings."""
+        # Always reload learned rules (they change dynamically)
+        # But cache static kontierung_rules (they don't change)
+        await self._reload_learned_rules_if_changed()
+
         if self._rules_loaded:
             return
 
@@ -91,7 +97,7 @@ class SemanticRuleEngineTool:
             )
             return
 
-        # Load all YAML rule files from rules directory
+        # Load all YAML rule files from rules directory (static rules)
         for yaml_file in self._rules_path.glob("*.yaml"):
             await self._load_single_yaml_file(yaml_file)
 
@@ -261,23 +267,85 @@ class SemanticRuleEngineTool:
                 error=str(e),
             )
 
-    async def _load_learned_rules(self) -> None:
-        """Load learned rules from persistence directory asynchronously."""
-        learned_rules_paths = [
+    def _get_learned_rules_paths(self) -> list[Path]:
+        """Get list of possible paths for learned_rules.yaml."""
+        cwd = Path(os.getcwd())
+        paths = [
             self._rules_path / "learned_rules.yaml",  # In rules dir
-            Path(".taskforce_accounting/learned_rules.yaml"),  # In work dir
+            Path(".taskforce_accounting/learned_rules.yaml"),  # Relative work dir
+            cwd / ".taskforce_accounting" / "learned_rules.yaml",  # Absolute from cwd
         ]
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_paths = []
+        for p in paths:
+            resolved = str(p.resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                unique_paths.append(p)
+        return unique_paths
+
+    async def _reload_learned_rules_if_changed(self) -> None:
+        """Check if learned_rules.yaml changed and force reload if needed."""
+        learned_rules_paths = self._get_learned_rules_paths()
+
         for learned_path in learned_rules_paths:
             if learned_path.exists():
                 try:
+                    current_mtime = learned_path.stat().st_mtime
+                    if current_mtime > self._learned_rules_mtime:
+                        logger.info(
+                            "semantic_rule_engine.learned_rules_changed",
+                            path=str(learned_path),
+                            old_mtime=self._learned_rules_mtime,
+                            new_mtime=current_mtime,
+                        )
+                        # Force full reload
+                        self._rules_loaded = False
+                        self._learned_rules_mtime = current_mtime
+                        return
+                except OSError:
+                    pass
+
+        # Log if no learned rules found
+        logger.debug(
+            "semantic_rule_engine.no_learned_rules_file",
+            checked_paths=[str(p) for p in learned_rules_paths],
+        )
+        return
+
+    async def _load_learned_rules(self) -> None:
+        """Load learned rules from persistence directory asynchronously."""
+        learned_rules_paths = self._get_learned_rules_paths()
+
+        logger.info(
+            "semantic_rule_engine.searching_learned_rules",
+            paths=[str(p) for p in learned_rules_paths],
+        )
+
+        for learned_path in learned_rules_paths:
+            exists = learned_path.exists()
+            logger.debug(
+                "semantic_rule_engine.checking_path",
+                path=str(learned_path),
+                exists=exists,
+            )
+            if exists:
+                try:
+                    # Track modification time
+                    self._learned_rules_mtime = learned_path.stat().st_mtime
+
                     async with aiofiles.open(learned_path, encoding="utf-8") as f:
                         content_str = await f.read()
                         content = yaml.safe_load(content_str)
                         if content:
                             self._raw_rules["learned_rules"] = content
+                            semantic_rules = content.get("semantic_rules", [])
                             logger.info(
                                 "semantic_rule_engine.learned_rules_loaded",
                                 path=str(learned_path),
+                                rules_count=len(semantic_rules),
+                                rule_ids=[r.get("rule_id", "?") for r in semantic_rules[:5]],
                             )
                             return  # Use first found
                 except yaml.YAMLError as e:
@@ -292,6 +360,11 @@ class SemanticRuleEngineTool:
                         path=str(learned_path),
                         error=str(e),
                     )
+
+        logger.warning(
+            "semantic_rule_engine.no_learned_rules_found",
+            checked_paths=[str(p) for p in learned_rules_paths],
+        )
 
     async def _precompute_embeddings(self) -> None:
         """Precompute embeddings for all item patterns."""
@@ -424,6 +497,7 @@ class SemanticRuleEngineTool:
             logger.info(
                 "semantic_rule_engine.execute_start",
                 invoice_data_keys=list(invoice_data.keys()) if invoice_data else [],
+                has_nested_invoice_data="invoice_data" in invoice_data if invoice_data else False,
                 has_line_items=bool(invoice_data.get("line_items")),
                 chart=chart_of_accounts,
             )
@@ -431,9 +505,30 @@ class SemanticRuleEngineTool:
             # Ensure rules are loaded
             await self._load_rules()
 
+            # Log learned rules for debugging
+            learned_rules_info = [
+                (r.rule_id, r.vendor_pattern[:20], r.item_patterns[:2] if r.item_patterns else [])
+                for r in self._rules if "HITL" in r.rule_id or "AUTO" in r.rule_id
+            ]
+            logger.debug(
+                "semantic_rule_engine.rules_summary",
+                total_rules=len(self._rules),
+                learned_rules_mtime=self._learned_rules_mtime,
+                learned_rules=learned_rules_info,
+            )
+
             # Use helper functions for field extraction (eliminates code duplication)
             supplier_name = extract_supplier_name(invoice_data)
             line_items = extract_line_items(invoice_data)
+
+            # Log extraction results
+            line_item_descs = [item.get("description", "")[:50] for item in line_items[:5]] if line_items else []
+            logger.debug(
+                "semantic_rule_engine.extraction",
+                supplier=supplier_name[:50] if supplier_name else "EMPTY",
+                line_items_count=len(line_items),
+                line_item_descs=line_item_descs,
+            )
 
             # If no line items from helper, try to create one from invoice totals
             if not line_items:
@@ -459,16 +554,33 @@ class SemanticRuleEngineTool:
             unmatched_items: list[dict[str, Any]] = []
             ambiguous_items: list[dict[str, Any]] = []
 
-            # Log processing info
+            # Log processing info with learned rules detail
+            learned_rule_count = len([r for r in self._rules if "HITL" in r.rule_id or "LEARNED" in r.rule_id or "AUTO" in r.rule_id])
             logger.info(
                 "semantic_rule_engine.processing",
                 supplier=supplier_name[:30] if supplier_name else "N/A",
                 line_items_count=len(line_items),
                 total_rules=len(self._rules),
+                learned_rules=learned_rule_count,
+                rule_ids=[r.rule_id for r in self._rules if "HITL" in r.rule_id or "AUTO" in r.rule_id],
+                rule_vendors=[r.vendor_pattern[:30] for r in self._rules if "HITL" in r.rule_id or "AUTO" in r.rule_id],
                 line_item_descriptions=[
                     str(item.get("description", ""))[:40] for item in line_items[:3]
                 ],
             )
+
+            # Debug: Check if supplier matches any learned rule
+            if supplier_name:
+                for rule in self._rules:
+                    if "HITL" in rule.rule_id or "AUTO" in rule.rule_id:
+                        match_result = self._matches_vendor_pattern(supplier_name, rule.vendor_pattern)
+                        logger.info(
+                            "semantic_rule_engine.vendor_match_check",
+                            rule_id=rule.rule_id,
+                            vendor_pattern=rule.vendor_pattern[:30],
+                            supplier=supplier_name[:30],
+                            matched=match_result,
+                        )
 
             for idx, line_item in enumerate(line_items):
                 match_result = await self._match_item(
@@ -543,6 +655,23 @@ class SemanticRuleEngineTool:
                     "legal_basis": "§266 Abs. 3 C.4 HGB",
                 }
                 booking_proposals.append(credit_proposal)
+
+            # Log final result for debugging
+            logger.info(
+                "semantic_rule_engine.result",
+                rules_applied=len(rule_matches),
+                unmatched_count=len(unmatched_items),
+                booking_accounts=[p.get("debit_account") for p in booking_proposals if p.get("type") == "debit"],
+            )
+
+            # Log final results
+            logger.debug(
+                "semantic_rule_engine.final_result",
+                rules_applied=len(rule_matches),
+                booking_proposals_count=len(booking_proposals),
+                unmatched_count=len(unmatched_items),
+                rule_ids=[rm.get("rule_id") for rm in rule_matches],
+            )
 
             return {
                 "success": True,
@@ -628,7 +757,19 @@ class SemanticRuleEngineTool:
                 continue
 
             # Check vendor pattern (can be regex or exact)
-            if not self._matches_vendor_pattern(supplier_name, rule.vendor_pattern):
+            vendor_matches = self._matches_vendor_pattern(supplier_name, rule.vendor_pattern)
+
+            # Log learned rule checks
+            if "HITL" in rule.rule_id or "AUTO" in rule.rule_id:
+                logger.debug(
+                    "semantic_rule_engine.checking_learned_rule",
+                    rule_id=rule.rule_id,
+                    vendor_pattern=rule.vendor_pattern,
+                    item_patterns=rule.item_patterns,
+                    vendor_matches=vendor_matches,
+                )
+
+            if not vendor_matches:
                 continue
 
             # Check item patterns
@@ -637,12 +778,55 @@ class SemanticRuleEngineTool:
             match_type = MatchType.EXACT
 
             for pattern in rule.item_patterns:
-                # First try exact/keyword match
-                if pattern.lower() in description_lower:
+                # Normalize quotes for comparison (handle typographic quotes)
+                pattern_normalized = self._normalize_quotes(pattern.lower())
+                description_normalized = self._normalize_quotes(description_lower)
+
+                # Also create a "stripped" version without any quotes for fallback matching
+                pattern_stripped = pattern_normalized.replace('"', '').replace("'", '')
+                description_stripped = description_normalized.replace('"', '').replace("'", '')
+
+                # Log pattern matching details for learned rules
+                if "HITL" in rule.rule_id or "AUTO" in rule.rule_id:
+                    logger.debug(
+                        "semantic_rule_engine.pattern_matching",
+                        rule_id=rule.rule_id,
+                        pattern_raw=pattern[:40],
+                        pattern_normalized=pattern_normalized[:40],
+                        description_raw=description[:40],
+                        description_normalized=description_normalized[:40],
+                        match_normalized=pattern_normalized in description_normalized,
+                        match_stripped=pattern_stripped in description_stripped,
+                    )
+
+                # Log detailed matching attempt
+                logger.info(
+                    "semantic_rule_engine.item_pattern_match_attempt",
+                    rule_id=rule.rule_id,
+                    pattern=pattern[:40],
+                    pattern_normalized=pattern_normalized[:40],
+                    description=description_lower[:40],
+                    description_normalized=description_normalized[:40],
+                    is_substring=pattern_normalized in description_normalized,
+                )
+
+                # First try exact/keyword match (with normalized quotes)
+                is_match = pattern_normalized in description_normalized
+                # Fallback: try stripped version (without quotes)
+                if not is_match:
+                    is_match = pattern_stripped in description_stripped
+
+                if is_match:
                     if 1.0 > best_similarity:
                         best_similarity = 1.0
                         best_pattern = pattern
                         match_type = MatchType.EXACT
+                        logger.debug(
+                            "semantic_rule_engine.pattern_matched",
+                            rule_id=rule.rule_id,
+                            pattern=pattern[:40],
+                            description=description[:40],
+                        )
                     continue
 
                 # Try semantic matching if embedding available
@@ -685,13 +869,23 @@ class SemanticRuleEngineTool:
         # Check for ambiguity (multiple high-scoring matches)
         best_match = matches[0]
         if len(matches) > 1:
-            # Consider ambiguous if second-best is within 0.05 similarity
-            # and targets a different account
             second_match = matches[1]
             similarity_diff = best_match.similarity_score - second_match.similarity_score
             different_account = best_match.rule.target_account != second_match.rule.target_account
+            priority_diff = best_match.rule.priority - second_match.rule.priority
 
-            if similarity_diff < 0.05 and different_account:
+            # Only consider ambiguous if:
+            # 1. Similarity scores are very close (within 0.05)
+            # 2. Accounts are different
+            # 3. Priorities are similar (within 10 points)
+            # If best match has significantly higher priority, trust it!
+            is_ambiguous = (
+                similarity_diff < 0.05
+                and different_account
+                and priority_diff < 10  # If priority diff >= 10, trust the higher priority rule
+            )
+
+            if is_ambiguous:
                 best_match.is_ambiguous = True
                 best_match.alternative_matches = matches[1:3]  # Include top alternatives
                 logger.info(
@@ -699,23 +893,94 @@ class SemanticRuleEngineTool:
                     best_rule=best_match.rule.rule_id,
                     alternatives=[m.rule.rule_id for m in matches[1:3]],
                 )
+            else:
+                # Not ambiguous - higher priority rule wins
+                logger.debug(
+                    "semantic_rule_engine.priority_selection",
+                    selected_rule=best_match.rule.rule_id,
+                    selected_priority=best_match.rule.priority,
+                    runner_up_rule=second_match.rule.rule_id,
+                    runner_up_priority=second_match.rule.priority,
+                )
 
         return best_match
+
+    def _normalize_quotes(self, text: str) -> str:
+        """Normalize various quote characters to standard ASCII quotes."""
+        # Map typographic quotes to ASCII - comprehensive list
+        quote_map = {
+            # Double quotes (various Unicode variants)
+            '\u201c': '"',  # " Left double quotation mark
+            '\u201d': '"',  # " Right double quotation mark
+            '\u201e': '"',  # „ German low double quote
+            '\u201f': '"',  # ‟ Double high-reversed-9 quotation mark
+            '\u00ab': '"',  # « Left-pointing double angle quotation mark
+            '\u00bb': '"',  # » Right-pointing double angle quotation mark
+            '\u2033': '"',  # ″ Double prime
+            '\u301d': '"',  # 〝 Reversed double prime quotation mark
+            '\u301e': '"',  # 〞 Double prime quotation mark
+            # Single quotes (various Unicode variants)
+            '\u2018': "'",  # ' Left single quotation mark
+            '\u2019': "'",  # ' Right single quotation mark
+            '\u201a': "'",  # ‚ German low single quote
+            '\u201b': "'",  # ‛ Single high-reversed-9 quotation mark
+            '\u2039': "'",  # ‹ Single left-pointing angle quotation mark
+            '\u203a': "'",  # › Single right-pointing angle quotation mark
+            '\u2032': "'",  # ′ Prime
+        }
+        for char, replacement in quote_map.items():
+            text = text.replace(char, replacement)
+        return text
 
     def _matches_vendor_pattern(self, vendor_name: str, pattern: str) -> bool:
         """Check if vendor name matches pattern (regex or exact)."""
         if not pattern or not vendor_name:
             return False
 
+        # First, try simple substring match (most common case)
+        # Remove backslash escapes from pattern for simple matching
+        pattern_simple = pattern.replace("\\", "")
+        if pattern_simple.lower() in vendor_name.lower():
+            logger.info(
+                "semantic_rule_engine.vendor_pattern_match_attempt",
+                pattern=pattern[:30],
+                pattern_simple=pattern_simple[:30],
+                vendor=vendor_name[:30],
+                match_type="simple",
+                matched=True,
+            )
+            return True
+
         # Treat as regex if contains regex metacharacters
         if any(c in pattern for c in ".*+?[](){}|^$\\"):
             try:
-                return bool(re.search(pattern, vendor_name, re.IGNORECASE))
-            except re.error:
+                matched = bool(re.search(pattern, vendor_name, re.IGNORECASE))
+                logger.info(
+                    "semantic_rule_engine.vendor_pattern_match_attempt",
+                    pattern=pattern[:30],
+                    vendor=vendor_name[:30],
+                    match_type="regex",
+                    matched=matched,
+                )
+                return matched
+            except re.error as e:
+                logger.warning(
+                    "semantic_rule_engine.regex_error",
+                    pattern=pattern[:30],
+                    error=str(e),
+                )
                 return False
         else:
             # Exact match (case-insensitive)
-            return pattern.lower() in vendor_name.lower()
+            matched = pattern.lower() in vendor_name.lower()
+            logger.info(
+                "semantic_rule_engine.vendor_pattern_match_attempt",
+                pattern=pattern[:30],
+                vendor=vendor_name[:30],
+                match_type="exact",
+                matched=matched,
+            )
+            return matched
 
     def _parse_rule_source(self, source_str: str) -> RuleSource:
         """Parse rule source string with fallback to MANUAL."""

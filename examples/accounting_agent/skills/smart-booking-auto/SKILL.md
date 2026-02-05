@@ -38,12 +38,13 @@ workflow:
       output: rule_result
 
     # Step 4b: KRITISCH - Prüfe ob Buchungsvorschläge vorhanden sind
-    # WENN booking_proposals LEER ist → SOFORT zu HITL wechseln!
-    - condition:
-        if: "rule_result.booking_proposals ist leer ODER rule_result.unmatched_items nicht leer"
-        then:
-          skill: smart-booking-hitl
-          reason: "Keine passende Buchungsregel gefunden - User muss entscheiden"
+    # WENN rules_applied = 0 → SOFORT zu HITL wechseln!
+    - switch:
+        "on": rule_result.rules_applied
+        cases:
+          "0":
+            skill: smart-booking-hitl
+            reason: "Keine passende Buchungsregel gefunden - User muss entscheiden"
 
     # Step 5: Confidence bewerten (NUR wenn booking_proposals vorhanden!)
     - tool: confidence_evaluator

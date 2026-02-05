@@ -69,7 +69,7 @@ class Agent:
     DEFAULT_MAX_STEPS = 30  # Conservative default for simple agents
     # Message history management (inspired by agent_v2 MessageHistory)
     MAX_MESSAGES = 50  # Hard limit on message count
-    SUMMARY_THRESHOLD = 20  # Compress when exceeding this message count (legacy fallback)
+    DEFAULT_SUMMARY_THRESHOLD = 20  # Compress when exceeding this message count (legacy fallback)
     # Tool result storage thresholds
     TOOL_RESULT_STORE_THRESHOLD = 5000  # Store results larger than 5000 chars
     DEFAULT_MAX_PARALLEL_TOOLS = 4  # Conservative parallelism limit for tool execution
@@ -94,6 +94,8 @@ class Agent:
         planning_strategy: PlanningStrategy | None = None,
         runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
         skill_manager: Any | None = None,
+        intent_router: Any | None = None,
+        summary_threshold: int | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -102,6 +104,7 @@ class Agent:
             state_manager: Protocol for session state persistence
             llm_provider: Protocol for LLM completions (must support tools parameter)
             tools: List of available tools (PlannerTool should be included)
+            logger: Logger instance (created in factory and always required).
             system_prompt: Base system prompt for LLM interactions
                           (defaults to LEAN_KERNEL_PROMPT if not provided)
             model_alias: Model alias for LLM calls (default: "main")
@@ -115,10 +118,13 @@ class Agent:
             max_parallel_tools: Maximum number of tool calls to run concurrently
                       (default: 4)
             planning_strategy: Optional planning strategy override for Agent.
-            logger: Logger instance (created in factory and always required).
             runtime_tracker: Optional runtime tracker for heartbeats/checkpoints.
             skill_manager: Optional SkillManager for plugin-based skill activation
                           and automatic skill switching based on tool outputs.
+            intent_router: Optional FastIntentRouter for pre-LLM intent classification.
+                          When provided, allows skipping planning for well-defined intents.
+            summary_threshold: Message count threshold for triggering compression
+                              (default: 20, lower values compress more aggressively).
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -128,6 +134,7 @@ class Agent:
         self.logger = logger
         self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
+        self.intent_router = intent_router
         self._skill_switch_pending = False  # Flag for skill switch during execution
 
         # Execution limits configuration
@@ -172,13 +179,16 @@ class Agent:
         # Pre-convert tools to OpenAI format
         self._openai_tools = tools_to_openai_format(self.tools)
 
+        # Message history configuration
+        self.summary_threshold = summary_threshold or self.DEFAULT_SUMMARY_THRESHOLD
+
         # Message history manager (compression, budget checks)
         self.message_history_manager = MessageHistoryManager(
             token_budgeter=self.token_budgeter,
             openai_tools=self._openai_tools,
             llm_provider=self.llm_provider,
             model_alias=self.model_alias,
-            summary_threshold=self.SUMMARY_THRESHOLD,
+            summary_threshold=self.summary_threshold,
             logger=self.logger,
         )
 
@@ -282,10 +292,11 @@ class Agent:
         to execute() - same functionality but with progressive events.
 
         Workflow:
-        1. Load state (restore PlannerTool state if exists)
-        2. Build initial messages with system prompt and mission
-        3. Loop: Stream LLM with tools → yield events → handle tool_calls or final content
-        4. Persist state and yield final_answer event
+        1. Fast intent routing (skip planning for well-defined intents)
+        2. Load state (restore PlannerTool state if exists)
+        3. Build initial messages with system prompt and mission
+        4. Loop: Stream LLM with tools → yield events → handle tool_calls or final content
+        5. Persist state and yield final_answer event
 
         Args:
             mission: User's mission description
@@ -293,6 +304,7 @@ class Agent:
 
         Yields:
             StreamEvent objects for each significant execution event:
+            - skill_auto_activated: Skill activated via fast intent routing
             - step_start: New loop iteration begins
             - llm_token: Token chunk from LLM response
             - tool_call: Tool invocation starting
@@ -306,6 +318,29 @@ class Agent:
             "starting",
             {"mission_length": len(mission)},
         )
+
+        # Fast Intent Routing: classify intent and activate skill BEFORE planning
+        if self.intent_router and self.skill_manager:
+            match = self.intent_router.classify(mission)
+            if match:  # classify() already checks min_confidence threshold
+                # Activate skill directly, skip planning overhead
+                activated = self.skill_manager.activate_skill(match.skill_name)
+                if activated:
+                    self.logger.info(
+                        "fast_intent_routing",
+                        intent=match.intent,
+                        skill=match.skill_name,
+                        confidence=match.confidence,
+                    )
+                    yield StreamEvent(
+                        event_type=EventType.SKILL_AUTO_ACTIVATED,
+                        data={
+                            "intent": match.intent,
+                            "skill": match.skill_name,
+                            "confidence": match.confidence,
+                        },
+                    )
+
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
         async for event in self.planning_strategy.execute_stream(

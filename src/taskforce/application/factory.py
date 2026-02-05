@@ -42,6 +42,10 @@ from taskforce.application.skill_manager import (
     SkillManager,
     create_skill_manager_from_manifest,
 )
+from taskforce.application.intent_router import (
+    FastIntentRouter,
+    create_intent_router_from_config,
+)
 
 
 def _coerce_bool(value: Any, default: bool) -> bool:
@@ -1162,8 +1166,24 @@ class AgentFactory:
                         skill_manager, manifest.skill_names
                     )
 
+        # Create intent router for fast intent classification (skip planning for well-defined intents)
+        intent_router = None
+        if skill_manager and skill_manager.has_skills:
+            intent_router = create_intent_router_from_config(plugin_config)
+            self.logger.info(
+                "intent_router_created",
+                plugin=manifest.name,
+                intents=intent_router.list_intents(),
+            )
+
         # Create logger for agent
         agent_logger = structlog.get_logger().bind(component="agent")
+
+        # Extract context_management settings for aggressive compression
+        context_mgmt = merged_config.get("context_management", {})
+        summary_threshold = context_mgmt.get("summary_threshold")
+        compression_trigger = context_mgmt.get("compression_trigger")
+        max_input_tokens = context_mgmt.get("max_input_tokens")
 
         agent = Agent(
             state_manager=state_manager,
@@ -1178,6 +1198,10 @@ class AgentFactory:
             logger=agent_logger,
             runtime_tracker=runtime_tracker,
             skill_manager=skill_manager,
+            intent_router=intent_router,
+            summary_threshold=summary_threshold,
+            compression_trigger=compression_trigger,
+            max_input_tokens=max_input_tokens,
         )
 
         # Store MCP contexts and plugin manifest for lifecycle management

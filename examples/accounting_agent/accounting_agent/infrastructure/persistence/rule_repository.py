@@ -430,11 +430,47 @@ class RuleRepository:
                 error=str(e),
             )
 
+    async def find_existing_rule(
+        self, vendor_pattern: str, item_patterns: list[str] | None = None
+    ) -> AccountingRule | None:
+        """
+        Find an existing rule for the same vendor/items.
+
+        Args:
+            vendor_pattern: Vendor pattern to match
+            item_patterns: Optional item patterns to match
+
+        Returns:
+            Existing rule if found, None otherwise
+        """
+        await self._ensure_loaded()
+
+        for existing in self._rules.values():
+            if not existing.is_active:
+                continue
+
+            # Check vendor match
+            if existing.vendor_pattern == vendor_pattern:
+                # If no item patterns specified, match any vendor-only rule
+                if not item_patterns:
+                    return existing
+
+                # Check for significant item overlap (>50%)
+                if existing.item_patterns:
+                    overlap = set(item_patterns) & set(existing.item_patterns)
+                    if len(overlap) >= len(item_patterns) * 0.5:
+                        return existing
+
+        return None
+
     async def find_conflicting_rules(
         self, rule: AccountingRule
     ) -> list[AccountingRule]:
         """
         Find rules that might conflict with a new rule.
+
+        A conflict exists when:
+        - Same vendor pattern AND different (non-empty) target accounts
 
         Args:
             rule: Rule to check for conflicts
@@ -451,16 +487,14 @@ class RuleRepository:
             if not existing.is_active:
                 continue
 
-            # Check for vendor pattern overlap
-            if (
-                existing.vendor_pattern == rule.vendor_pattern
-                and existing.target_account != rule.target_account
-            ):
-                conflicts.append(existing)
-            # Check for item pattern overlap
-            elif rule.rule_type == RuleType.VENDOR_ITEM:
-                overlap = set(rule.item_patterns) & set(existing.item_patterns)
-                if overlap and existing.target_account != rule.target_account:
+            # Check for vendor pattern overlap with DIFFERENT target accounts
+            # (Only conflict if BOTH have non-empty target accounts that differ)
+            if existing.vendor_pattern == rule.vendor_pattern:
+                if (
+                    existing.target_account
+                    and rule.target_account
+                    and existing.target_account != rule.target_account
+                ):
                     conflicts.append(existing)
 
         return conflicts

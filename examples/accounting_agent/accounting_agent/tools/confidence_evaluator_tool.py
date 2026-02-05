@@ -15,6 +15,7 @@ from accounting_agent.domain.confidence import ConfidenceCalculator
 from accounting_agent.domain.models import (
     ConfidenceRecommendation,
 )
+from accounting_agent.domain.invoice_utils import extract_supplier_name
 from accounting_agent.tools.tool_base import ApprovalRiskLevel
 
 logger = structlog.get_logger(__name__)
@@ -198,6 +199,13 @@ class ConfidenceEvaluatorTool:
             - explanation: Human-readable explanation
         """
         try:
+            # Log input parameters
+            logger.debug(
+                "confidence_evaluator.execute_start",
+                has_rule_match=rule_match is not None,
+                rule_id=rule_match.get("rule_id") if rule_match else None,
+                has_booking_proposal=booking_proposal is not None,
+            )
             # Extract relevant values
             invoice_amount = invoice_data.get("total_gross")
             if invoice_amount is not None:
@@ -221,24 +229,55 @@ class ConfidenceEvaluatorTool:
 
             # Get historical hit rate based on rule source
             # Confirmed learned rules (from HITL or high-confidence auto) have higher hit rate
+            force_auto_book = False
             if rule_match:
                 rule_source = rule_match.get("rule_source", "")
                 match_type = rule_match.get("match_type", "")
                 similarity = rule_match.get("similarity_score", 0.0)
+                rule_id = rule_match.get("rule_id", "")
 
                 is_confirmed_rule = rule_source in ("auto_high_confidence", "hitl_correction")
-                is_exact_match = match_type == "exact" and similarity >= 0.99
+                is_exact_match = match_type == "exact" and similarity >= 0.95
+
+                logger.info(
+                    "confidence_evaluator.rule_analysis",
+                    rule_id=rule_id,
+                    rule_source=rule_source,
+                    match_type=match_type,
+                    similarity=similarity,
+                    is_confirmed=is_confirmed_rule,
+                    is_exact=is_exact_match,
+                )
 
                 if is_confirmed_rule and is_exact_match:
-                    # Confirmed rules with exact match are highly reliable
-                    historical_hit_rate = 0.98
+                    # Confirmed rules with exact match - TRUST THEM!
+                    # These were previously approved by the user
+                    historical_hit_rate = 0.99
+                    force_auto_book = True  # Skip other confidence checks
+                    logger.debug(
+                        "confidence_evaluator.force_auto_book",
+                        rule_id=rule_id,
+                        reason="confirmed_exact_match",
+                    )
+                elif is_confirmed_rule and similarity >= 0.8:
+                    # Confirmed rules with good semantic match
+                    historical_hit_rate = 0.95
+                    # Also force auto-book for confirmed rules with good semantic match
+                    force_auto_book = True
+                    logger.debug(
+                        "confidence_evaluator.force_auto_book",
+                        rule_id=rule_id,
+                        reason="confirmed_semantic_match",
+                        similarity=similarity,
+                    )
                 elif is_confirmed_rule:
-                    # Confirmed rules with semantic match
+                    # Confirmed rules with lower match
                     historical_hit_rate = 0.90
                 else:
                     historical_hit_rate = 0.8  # Default for manual rules
             else:
                 historical_hit_rate = 0.8  # Default assumption
+                logger.debug("confidence_evaluator.no_rule_match_provided")
 
             # Calculate confidence
             result = self._calculator.calculate(
@@ -278,31 +317,59 @@ class ConfidenceEvaluatorTool:
                 for g in result.hard_gates_triggered
             )
 
+            # Override recommendation for confirmed learned rules
+            # But still respect critical hard gates (high_amount, critical_account)
+            final_recommendation = result.recommendation
+            critical_gates_triggered = any(
+                g.gate_type in ("high_amount", "critical_account") and g.triggered
+                for g in result.hard_gates_triggered
+            )
+
+            if force_auto_book and not critical_gates_triggered and not no_rule_match_triggered:
+                # Confirmed rule with exact match - auto book!
+                final_recommendation = ConfidenceRecommendation.AUTO_BOOK
+                logger.info(
+                    "confidence_evaluator.override_to_auto_book",
+                    reason="confirmed_learned_rule",
+                    original_recommendation=result.recommendation.value,
+                )
+
+            logger.debug(
+                "confidence_evaluator.recommendation_logic",
+                force_auto_book=force_auto_book,
+                critical_gates_triggered=critical_gates_triggered,
+                no_rule_match_triggered=no_rule_match_triggered,
+                final_recommendation=final_recommendation.value,
+            )
+
             logger.info(
                 "confidence_evaluator.evaluated",
                 confidence=result.overall_confidence,
-                recommendation=result.recommendation.value,
+                recommendation=final_recommendation.value,
+                force_auto_book=force_auto_book,
                 hard_gates_triggered=len([g for g in result.hard_gates_triggered if g.triggered]),
                 no_rule_match=no_rule_match_triggered,
                 has_booking_proposal=booking_proposal is not None and bool(booking_proposal),
             )
 
             if no_rule_match_triggered:
+                supplier_name = extract_supplier_name(invoice_data)
                 logger.warning(
                     "confidence_evaluator.no_rule_match_hitl_required",
-                    supplier=invoice_data.get("supplier_name", "unknown"),
+                    supplier=supplier_name or "unknown",
                     message="Keine passende Buchungsregel gefunden - HITL erforderlich",
                 )
 
             return {
                 "success": True,
                 "overall_confidence": result.overall_confidence,
-                "recommendation": result.recommendation.value,
-                "requires_hitl": result.recommendation == ConfidenceRecommendation.HITL_REVIEW,
+                "recommendation": final_recommendation.value,
+                "requires_hitl": final_recommendation == ConfidenceRecommendation.HITL_REVIEW,
                 "signals": signals_output,
                 "hard_gates": hard_gates_output,
                 "auto_book_threshold": result.auto_book_threshold,
                 "explanation": result.explanation,
+                "force_auto_book": force_auto_book,
             }
 
         except Exception as e:

@@ -38,6 +38,8 @@ class EventType(str, Enum):
     FINAL_ANSWER = "final_answer"
     COMPLETE = "complete"
     ERROR = "error"
+    # Skill-related events
+    SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

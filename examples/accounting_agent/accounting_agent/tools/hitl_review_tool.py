@@ -185,6 +185,37 @@ class HITLReviewTool:
 
         return True, None
 
+    def _ensure_dict(self, value: Any, name: str) -> dict[str, Any]:
+        """Ensure a value is a dict, with helpful error if not."""
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            # Try to parse as JSON
+            import json
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+            # Log warning and return empty dict
+            logger.warning(
+                "hitl_review.invalid_param_type",
+                param=name,
+                expected="dict",
+                got=type(value).__name__,
+            )
+            return {}
+        logger.warning(
+            "hitl_review.invalid_param_type",
+            param=name,
+            expected="dict",
+            got=type(value).__name__,
+        )
+        return {}
+
     async def execute(
         self,
         action: str,
@@ -215,16 +246,29 @@ class HITLReviewTool:
         """
         try:
             if action == "create":
+                # Ensure all dict parameters are actually dicts
+                safe_invoice_data = self._ensure_dict(invoice_data, "invoice_data")
+                safe_booking_proposal = self._ensure_dict(booking_proposal, "booking_proposal")
+                safe_confidence_result = self._ensure_dict(confidence_result, "confidence_result")
+
+                # Validate required data for create
+                if not safe_invoice_data and not safe_booking_proposal:
+                    return {
+                        "success": False,
+                        "error": "Missing required data for create action. Need invoice_data and/or booking_proposal.",
+                        "hint": "Call hitl_review with action='create', invoice_data={...}, booking_proposal={...}",
+                    }
+
                 return await self._create_review(
-                    invoice_data=invoice_data or {},
-                    booking_proposal=booking_proposal or {},
-                    confidence_result=confidence_result or {},
+                    invoice_data=safe_invoice_data,
+                    booking_proposal=safe_booking_proposal,
+                    confidence_result=safe_confidence_result,
                 )
             else:
                 return await self._process_review(
                     review_id=review_id or "",
                     user_decision=user_decision or "",
-                    correction=correction,
+                    correction=self._ensure_dict(correction, "correction") if correction else None,
                     create_rule=create_rule,
                 )
 
@@ -250,20 +294,31 @@ class HITLReviewTool:
         review_id = str(uuid.uuid4())[:8]
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Determine review reason
+        # Determine review reason - be defensive about types
         review_reasons = []
-        if confidence_result.get("overall_confidence", 0) < confidence_result.get(
-            "auto_book_threshold", 0.95
-        ):
-            conf = confidence_result.get("overall_confidence", 0)
-            threshold = confidence_result.get("auto_book_threshold", 0.95)
+        conf = confidence_result.get("overall_confidence", 0) if isinstance(confidence_result, dict) else 0
+        threshold = confidence_result.get("auto_book_threshold", 0.95) if isinstance(confidence_result, dict) else 0.95
+
+        # Ensure conf and threshold are numbers
+        try:
+            conf = float(conf) if conf else 0
+            threshold = float(threshold) if threshold else 0.95
+        except (ValueError, TypeError):
+            conf = 0
+            threshold = 0.95
+
+        if conf < threshold:
             review_reasons.append(
                 f"Konfidenz ({conf:.1%}) unter Schwellenwert ({threshold:.1%})"
             )
 
         for gate in confidence_result.get("hard_gates", []):
-            if gate.get("triggered"):
-                review_reasons.append(gate.get("reason", "Hard Gate ausgelöst"))
+            # Defensive: handle case where gate might be a string
+            if isinstance(gate, dict):
+                if gate.get("triggered"):
+                    review_reasons.append(gate.get("reason", "Hard Gate ausgelöst"))
+            elif isinstance(gate, str):
+                review_reasons.append(f"Hard Gate: {gate}")
 
         # Build review request
         review_request = {
@@ -279,12 +334,12 @@ class HITLReviewTool:
         # Store for later processing
         self._pending_reviews[review_id] = review_request
 
-        # Format for user display
-        supplier = invoice_data.get("supplier_name", "Unbekannt")
-        amount = invoice_data.get("total_gross", 0)
-        proposed_account = booking_proposal.get("debit_account", "?")
-        proposed_name = booking_proposal.get("debit_account_name", "")
-        confidence = confidence_result.get("overall_confidence", 0)
+        # Format for user display - defensive .get() with type checks
+        supplier = invoice_data.get("supplier_name", "Unbekannt") if isinstance(invoice_data, dict) else "Unbekannt"
+        amount = invoice_data.get("total_gross", 0) if isinstance(invoice_data, dict) else 0
+        proposed_account = booking_proposal.get("debit_account", "?") if isinstance(booking_proposal, dict) else "?"
+        proposed_name = booking_proposal.get("debit_account_name", "") if isinstance(booking_proposal, dict) else ""
+        confidence = conf  # Already extracted above
 
         user_prompt = f"""
 ## Buchungsvorschlag zur Prüfung
@@ -294,7 +349,7 @@ class HITLReviewTool:
 ### Rechnungsdaten
 - **Lieferant:** {supplier}
 - **Bruttobetrag:** {amount} EUR
-- **Positionen:** {len(invoice_data.get('line_items', []))}
+- **Positionen:** {len(invoice_data.get('line_items', []) if isinstance(invoice_data, dict) else [])}
 
 ### Vorgeschlagene Buchung
 - **Konto:** {proposed_account} ({proposed_name})
@@ -336,14 +391,41 @@ Bitte wählen Sie eine Option und geben Sie ggf. das korrekte Konto an.
         create_rule: bool,
     ) -> dict[str, Any]:
         """Process a HITL review response."""
+        # Validate review_id
+        if not review_id or not review_id.strip():
+            pending_ids = list(self._pending_reviews.keys())
+            if pending_ids:
+                return {
+                    "success": False,
+                    "error": "Missing review_id. Use one of the pending reviews.",
+                    "pending_reviews": pending_ids,
+                    "hint": f"Call hitl_review with action='process', review_id='{pending_ids[0]}', user_decision='confirm'",
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "No review_id provided and no pending reviews exist. First create a review with action='create'.",
+                    "hint": "Call hitl_review with action='create', invoice_data={...}, booking_proposal={...}",
+                }
+
         # Get pending review
         review = self._pending_reviews.get(review_id)
         if not review:
-            return {
-                "success": False,
-                "error": f"Review {review_id} not found",
-                "error_type": "ReviewNotFound",
-            }
+            pending_ids = list(self._pending_reviews.keys())
+            if pending_ids:
+                return {
+                    "success": False,
+                    "error": f"Review '{review_id}' not found. Available reviews: {pending_ids}",
+                    "error_type": "ReviewNotFound",
+                    "pending_reviews": pending_ids,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Review '{review_id}' not found. No pending reviews exist (reviews may have expired or session was restarted).",
+                    "error_type": "ReviewNotFound",
+                    "hint": "Create a new review with action='create', then process it with action='process'",
+                }
 
         timestamp = datetime.now(timezone.utc).isoformat()
 

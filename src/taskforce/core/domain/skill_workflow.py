@@ -151,14 +151,42 @@ class WorkflowContext:
         return self._get_nested(self.outputs, path)
 
     def _get_nested(self, data: dict[str, Any], path: str) -> Any:
-        """Get a nested value from a dict using dot notation."""
+        """Get a nested value from a dict using dot notation and array indices."""
         parts = path.split(".")
         current = data
 
         for part in parts:
             if current is None:
                 return None
-            if isinstance(current, dict):
+
+            # Check for array index syntax: key[0], key[1], etc.
+            if "[" in part and part.endswith("]"):
+                # Split into key and index: "rule_matches[0]" -> "rule_matches", "0"
+                bracket_pos = part.index("[")
+                key = part[:bracket_pos]
+                index_str = part[bracket_pos + 1:-1]
+
+                # Get the array first
+                if isinstance(current, dict):
+                    current = current.get(key)
+                else:
+                    return None
+
+                # Then get the index
+                if current is None:
+                    return None
+                if isinstance(current, (list, tuple)):
+                    try:
+                        index = int(index_str)
+                        if 0 <= index < len(current):
+                            current = current[index]
+                        else:
+                            return None  # Index out of range
+                    except ValueError:
+                        return None  # Invalid index
+                else:
+                    return None  # Not a list
+            elif isinstance(current, dict):
                 current = current.get(part)
             else:
                 return None

@@ -203,12 +203,29 @@ class ActivateSkillTool:
             "outputs": context.outputs,
         }
 
+        # Extract key decision info for LLM
+        confidence_result = context.outputs.get("confidence_result", {})
+        if confidence_result:
+            result["recommendation"] = confidence_result.get("recommendation", "unknown")
+            result["overall_confidence"] = confidence_result.get("overall_confidence", 0)
+            result["force_auto_book"] = confidence_result.get("force_auto_book", False)
+
+        # Add booking info if available
+        rule_result = context.outputs.get("rule_result", {})
+        if rule_result:
+            result["rules_applied"] = rule_result.get("rules_applied", 0)
+            result["booking_proposals"] = rule_result.get("booking_proposals", [])
+
         if context.aborted:
             result["error"] = context.error
 
         if context.switch_to_skill:
             result["switch_to_skill"] = context.switch_to_skill
             result["message"] = f"Workflow wechselt zu Skill: {context.switch_to_skill}"
+
+        # Add clear message for auto-book case
+        if result.get("recommendation") == "auto_book" and result.get("workflow_completed"):
+            result["message"] = "AUTO_BOOK: Buchung kann automatisch durchgeführt werden (bekannte Regel mit hoher Confidence)"
 
         return result
 
@@ -229,15 +246,12 @@ class ActivateSkillTool:
         if not self._agent_ref:
             raise RuntimeError("No agent reference")
 
-        # Find the tool
-        tool = None
-        for t in self._agent_ref.tools:
-            if t.name == tool_name:
-                tool = t
-                break
+        # Find the tool - agent.tools is a dict[str, ToolProtocol]
+        tool = self._agent_ref.tools.get(tool_name)
 
         if not tool:
-            raise ValueError(f"Tool not found: {tool_name}")
+            available = list(self._agent_ref.tools.keys())
+            raise ValueError(f"Tool not found: {tool_name}. Available: {available}")
 
         logger.debug(
             "workflow.tool_execute",

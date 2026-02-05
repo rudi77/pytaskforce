@@ -1,38 +1,28 @@
 version: '2.0'
 description: Auto-generated rules from high-confidence bookings and HITL corrections
-updated_at: '2026-02-02T12:18:18.610413+00:00'
+updated_at: '2026-02-05T16:29:59.737100+00:00'
 semantic_rules:
-- rule_id: AUTO-20260202115223
-  vendor_pattern: Büromarkt\ Böttcher\ AG
-  target_account: '4930'
+- rule_id: HITL-CONF-20260205162959-1
+  vendor_pattern: Experten GmbH
+  target_account: '4985'
   priority: 75
   source: auto_high_confidence
   version: 1
   is_active: true
+  target_account_name: Werkzeuge und Kleingeräte
   item_patterns:
-  - 5x Druckertoner Brother TN-2420
-  created_at: '2026-02-02T11:52:23.170406+00:00'
-  updated_at: '2026-02-02T11:52:23.170406+00:00'
-- rule_id: HITL-CONF-20260202115231
-  vendor_pattern: Büromarkt\ Böttcher\ AG
-  target_account: '4930'
+  - Bohrmaschine "Superdreh 500"
+  created_at: '2026-02-05T16:29:59.730066+00:00'
+  updated_at: '2026-02-05T16:29:59.730066+00:00'
+- rule_id: HITL-CONF-20260205162959-2
+  vendor_pattern: Experten GmbH
+  target_account: '4230'
   priority: 75
   source: auto_high_confidence
   version: 1
   is_active: true
+  target_account_name: Heizung
   item_patterns:
-  - 5x Druckertoner Brother TN-2420
-  created_at: '2026-02-02T11:52:31.950209+00:00'
-  updated_at: '2026-02-02T11:52:31.950209+00:00'
-- rule_id: AUTO-20260202121818
-  vendor_pattern: Büromarkt\ Böttcher\ AG
-  target_account: '4930'
-  priority: 75
-  source: auto_high_confidence
-  version: 1
-  is_active: true
-  target_account_name: '4930'
-  item_patterns:
-  - 5x Druckertoner Brother TN-2420
-  created_at: '2026-02-02T12:18:18.610413+00:00'
-  updated_at: '2026-02-02T12:18:18.610413+00:00'
+  - Briketts "Immerzünd" (5 kg)
+  created_at: '2026-02-05T16:29:59.737100+00:00'
+  updated_at: '2026-02-05T16:29:59.737100+00:00'

@@ -196,8 +196,9 @@ class ConfidenceCalculator:
             similarity = rule_match.get("similarity_score", 0.0)
 
             # Check if this is a confirmed learned rule with exact match
+            # Use 0.95 threshold (consistent with confidence_evaluator_tool)
             is_confirmed_rule = rule_source in ("auto_high_confidence", "hitl_correction")
-            is_exact_match = match_type == "exact" and similarity >= 0.99
+            is_exact_match = match_type == "exact" and similarity >= 0.95
 
             if rule_type == "vendor_only":
                 rule_type_score = 1.0
