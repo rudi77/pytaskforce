@@ -415,8 +415,9 @@ class Agent:
         Returns:
             Tool execution result dictionary
         """
-        # Inject parent session ID for AgentTool (multi-agent orchestration)
-        if tool_name == "call_agent" and session_id:
+        # Inject parent session ID for orchestration tools (AgentTool, SubAgentTool)
+        tool = self.tool_executor.get_tool(tool_name)
+        if tool and getattr(tool, "requires_parent_session", False) and session_id:
             tool_args = {**tool_args, "_parent_session_id": session_id}
 
         result = await self.tool_executor.execute(tool_name, tool_args)

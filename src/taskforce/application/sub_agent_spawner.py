@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 import structlog
 import yaml
 
@@ -45,8 +46,10 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 agent.max_steps = spec.max_steps
             elif self._max_steps:
                 agent.max_steps = self._max_steps
-            result = await agent.execute(mission=spec.mission, session_id=session_id)
-            await agent.close()
+            try:
+                result = await agent.execute(mission=spec.mission, session_id=session_id)
+            finally:
+                await agent.close()
         except Exception as exc:
             self._logger.error(
                 "sub_agent_spawn_failed",
@@ -75,7 +78,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         )
 
     async def _create_agent(self, spec: SubAgentSpec) -> "Agent":  # type: ignore[name-defined]
-        custom_definition = spec.agent_definition or self._load_custom_definition(spec)
+        custom_definition = spec.agent_definition or await self._load_custom_definition(spec)
         profile = spec.profile or self._profile
         work_dir = spec.work_dir or self._work_dir
         if custom_definition:
@@ -96,14 +99,15 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             planning_strategy=spec.planning_strategy,
         )
 
-    def _load_custom_definition(self, spec: SubAgentSpec) -> dict[str, Any] | None:
+    async def _load_custom_definition(self, spec: SubAgentSpec) -> dict[str, Any] | None:
         if not spec.specialist:
             return None
         config_path = self._find_agent_config(spec.specialist)
         if not config_path:
             return None
-        with open(config_path) as handle:
-            return yaml.safe_load(handle) or None
+        async with aiofiles.open(config_path) as handle:
+            content = await handle.read()
+            return yaml.safe_load(content) or None
 
     def _find_agent_config(self, specialist: str) -> Path | None:
         config_dir = Path(self._agent_factory.config_dir)

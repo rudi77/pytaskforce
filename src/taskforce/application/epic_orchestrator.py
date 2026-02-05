@@ -176,6 +176,7 @@ class EpicOrchestrator:
         run_id = uuid4().hex[:8]
         state_store = create_epic_state_store(run_id)
         state_store.initialize(mission)
+        started_at = _utc_now()
         self._log_run_start(
             run_id,
             planner_profile=planner_profile,
@@ -195,6 +196,7 @@ class EpicOrchestrator:
             sub_planner_scopes=sub_planner_scopes or [],
             auto_commit=auto_commit,
             commit_message=commit_message,
+            started_at=started_at,
         )
 
     async def _run_rounds(
@@ -211,6 +213,7 @@ class EpicOrchestrator:
         sub_planner_scopes: list[str],
         auto_commit: bool,
         commit_message: str | None,
+        started_at: datetime,
     ) -> EpicRunResult:
         tasks: list[EpicTask] = []
         worker_results: list[EpicTaskResult] = []
@@ -248,6 +251,7 @@ class EpicOrchestrator:
             worker_results,
             round_summaries,
             status,
+            started_at,
         )
 
     async def _run_round(
@@ -266,13 +270,14 @@ class EpicOrchestrator:
         round_index: int,
     ) -> dict[str, Any]:
         tasks = await self._plan_tasks(
-            mission, planner_profile, sub_planner_scopes, state_store
+            run_id, mission, planner_profile, sub_planner_scopes, state_store
         )
         await self._publish_tasks(tasks, worker_count)
         worker_results = await self._run_workers(
             run_id, mission, worker_profile, worker_count
         )
         judge_summary = await self._run_judge(
+            run_id,
             mission,
             worker_results,
             judge_profile,
@@ -307,21 +312,23 @@ class EpicOrchestrator:
 
     async def _plan_tasks(
         self,
+        run_id: str,
         mission: str,
         planner_profile: str,
         sub_planner_scopes: list[str] | None,
         state_store: EpicStateStore,
     ) -> list[EpicTask]:
         primary_tasks = await self._run_planner(
-            mission, planner_profile, None, state_store
+            run_id, mission, planner_profile, None, state_store
         )
         sub_tasks = await self._run_sub_planners(
-            mission, planner_profile, sub_planner_scopes or [], state_store
+            run_id, mission, planner_profile, sub_planner_scopes or [], state_store
         )
         return self._deduplicate_tasks(primary_tasks + sub_tasks)
 
     async def _run_planner(
         self,
+        run_id: str,
         mission: str,
         planner_profile: str,
         scope: str | None,
@@ -331,13 +338,14 @@ class EpicOrchestrator:
             mission, scope, state_store.format_state_context()
         )
         agent = await self._factory.create_agent(profile=planner_profile)
-        session_id = build_sub_agent_session_id("epic", scope or "planner")
+        session_id = build_sub_agent_session_id(run_id, scope or "planner")
         result = await agent.execute(prompt, session_id)
         await agent.close()
         return self._parse_tasks(result.final_message, scope or "planner")
 
     async def _run_sub_planners(
         self,
+        run_id: str,
         mission: str,
         planner_profile: str,
         scopes: list[str],
@@ -346,7 +354,7 @@ class EpicOrchestrator:
         tasks: list[EpicTask] = []
         for scope in scopes:
             tasks.extend(
-                await self._run_planner(mission, planner_profile, scope, state_store)
+                await self._run_planner(run_id, mission, planner_profile, scope, state_store)
             )
         return tasks
 
@@ -416,6 +424,7 @@ class EpicOrchestrator:
 
     async def _run_judge(
         self,
+        run_id: str,
         mission: str,
         worker_results: list[EpicTaskResult],
         judge_profile: str,
@@ -427,7 +436,7 @@ class EpicOrchestrator:
             mission, worker_results, auto_commit, commit_message, round_index
         )
         agent = await self._factory.create_agent(profile=judge_profile)
-        session_id = build_sub_agent_session_id("epic", "judge")
+        session_id = build_sub_agent_session_id(run_id, "judge")
         result = await agent.execute(prompt, session_id)
         await agent.close()
         return result.final_message or ""
@@ -457,11 +466,12 @@ class EpicOrchestrator:
         worker_results: list[EpicTaskResult],
         round_summaries: list[dict[str, Any]],
         status: str,
+        started_at: datetime,
     ) -> EpicRunResult:
         judge_summary = round_summaries[-1]["summary"] if round_summaries else ""
         return EpicRunResult(
             run_id=run_id,
-            started_at=_utc_now(),
+            started_at=started_at,
             completed_at=_utc_now(),
             status=status,
             tasks=tasks,

@@ -144,6 +144,11 @@ class AgentTool:
         # Sub-agents can run in parallel (isolated sessions)
         return True
 
+    @property
+    def requires_parent_session(self) -> bool:
+        """Marker: this tool needs _parent_session_id injection."""
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         """Generate approval preview for sub-agent execution."""
         specialist = kwargs.get("specialist", "generic")
@@ -337,13 +342,14 @@ class AgentTool:
                 max_steps=sub_agent.max_steps,
             )
 
-            result = await sub_agent.execute(
-                mission=mission,
-                session_id=sub_session_id,
-            )
-
-            # Cleanup sub-agent resources (MCP connections, etc.)
-            await sub_agent.close()
+            try:
+                result = await sub_agent.execute(
+                    mission=mission,
+                    session_id=sub_session_id,
+                )
+            finally:
+                # Cleanup sub-agent resources (MCP connections, etc.)
+                await sub_agent.close()
 
             # Determine success based on status
             success = result.status in ("completed", "paused")

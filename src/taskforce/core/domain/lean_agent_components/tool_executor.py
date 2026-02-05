@@ -27,6 +27,10 @@ class ToolExecutor:
         self._tools = tools
         self._logger = logger
 
+    def get_tool(self, tool_name: str) -> ToolProtocol | None:
+        """Return tool instance by name, or None."""
+        return self._tools.get(tool_name)
+
     async def execute(self, tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool by name with given arguments."""
         tool = self._tools.get(tool_name)
