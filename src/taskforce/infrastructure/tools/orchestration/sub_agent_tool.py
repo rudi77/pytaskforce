@@ -68,6 +68,11 @@ class SubAgentTool:
     def supports_parallelism(self) -> bool:
         return True
 
+    @property
+    def requires_parent_session(self) -> bool:
+        """Marker: this tool needs _parent_session_id injection."""
+        return True
+
     async def execute(
         self,
         mission: str,
