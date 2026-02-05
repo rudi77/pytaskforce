@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.1
-**Date:** 2026-01-31
+**Version:** 1.2
+**Date:** 2026-02-05
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---
@@ -13,13 +13,15 @@
 ### Key Characteristics
 
 - **Architecture:** Clean Architecture (Hexagonal) with strict four-layer separation
-- **Language:** Python 3.11
+- **Language:** Python 3.11+ (also supports 3.12)
 - **Package Manager:** `uv` (NOT pip/venv) - **This is mandatory**
+- **Build Backend:** Hatchling
 - **Deployment Modes:**
-  - CLI (Typer + Rich) for local development
+  - CLI (Typer + Rich + Textual) for local development
   - REST API (FastAPI) for production microservices
 - **Persistence:** File-based (dev) or PostgreSQL (prod) via swappable adapters
 - **LLM Integration:** OpenAI and Azure OpenAI via LiteLLM
+- **Extensibility:** Plugin system, skills, slash commands, MCP tool servers
 
 ---
 
@@ -33,6 +35,10 @@ Documentation is maintained **as Markdown in-repo**. Canonical entry points:
 | `docs/index.md` | Docs navigation hub |
 | `docs/architecture.md` | Stable architecture entry-point (links into `docs/architecture/`) |
 | `docs/adr/` | Architecture Decision Records (index: `docs/adr/index.md`) |
+| `docs/features/` | Feature guides (long-term memory, skills, enterprise) |
+| `docs/epics/` | Epic planning and tracking documents |
+| `docs/prd/` | Product Requirements Documents |
+| `docs/integrations.md` | External integrations (communication providers, etc.) |
 | `.github/PULL_REQUEST_TEMPLATE.md` | PR template with Clean Architecture compliance checklist |
 | `.github/ISSUE_TEMPLATE/bug_report.yml` | Bug report template |
 | `.github/ISSUE_TEMPLATE/feature_request.yml` | Feature request template (includes layer impact) |
@@ -50,6 +56,8 @@ When code changes affect CLI/API/config behavior, **update the relevant docs pag
 | Architecture changes | `docs/architecture.md` and/or `docs/architecture/` sharded pages |
 | Cross-cutting decisions | Add/update an ADR in `docs/adr/` |
 | Developer workflow (uv/pytest/ruff/black/mypy) | `README.md` and `docs/testing.md` |
+| Integrations/communication | `docs/integrations.md` |
+| Features (memory, skills) | `docs/features/` relevant page |
 
 ---
 
@@ -58,27 +66,73 @@ When code changes affect CLI/API/config behavior, **update the relevant docs pag
 Taskforce enforces strict architectural boundaries through four distinct layers:
 
 ```
-taskforce/
-├── src/taskforce/
-│   ├── core/              # LAYER 1: Pure Domain Logic
-│   │   ├── domain/        # Agent, PlanGenerator, Domain Events
-│   │   ├── interfaces/    # Protocols (StateManager, LLM, Tool)
-│   │   └── prompts/       # System prompts and templates
-│   │
-│   ├── infrastructure/    # LAYER 2: External Integrations
-│   │   ├── persistence/   # File and DB state managers
-│   │   ├── llm/           # LiteLLM service (OpenAI, Azure)
-│   │   ├── tools/         # Native, RAG, and MCP tools
-│   │   └── memory/        # Memory management
-│   │
-│   ├── application/       # LAYER 3: Use Cases & Orchestration
-│   │   ├── factory.py     # Dependency injection
-│   │   ├── executor.py    # Execution orchestration
-│   │   └── profiles.py    # Configuration management
-│   │
-│   └── api/               # LAYER 4: Entrypoints
-│       ├── cli/           # Typer CLI
-│       └── routes/        # FastAPI REST endpoints
+src/taskforce/
+├── core/                      # LAYER 1: Pure Domain Logic
+│   ├── domain/                # Agent, LeanAgent, Planning, Events, Models
+│   │   └── lean_agent_components/  # Modular agent components
+│   ├── interfaces/            # Protocols (15 protocol definitions)
+│   ├── prompts/               # System prompts and templates
+│   ├── tools/                 # Core tool abstractions (converter, planner)
+│   └── utils/                 # Path utilities
+│
+├── infrastructure/            # LAYER 2: External Integrations
+│   ├── llm/                   # LiteLLM service (OpenAI, Azure)
+│   ├── persistence/           # File state manager, agent registry
+│   ├── memory/                # File-based memory store
+│   ├── cache/                 # Tool result caching
+│   ├── tools/
+│   │   ├── native/            # 13 built-in tools
+│   │   ├── mcp/               # MCP server connections
+│   │   ├── rag/               # Azure AI Search tools
+│   │   └── orchestration/     # Agent/sub-agent tools
+│   ├── skills/                # Skill loading, parsing, registry
+│   ├── slash_commands/        # Slash command loading/parsing
+│   └── tracing/               # Phoenix tracing integration
+│
+├── application/               # LAYER 3: Use Cases & Orchestration
+│   ├── factory.py             # Dependency injection (central wiring)
+│   ├── executor.py            # Execution orchestration (streaming-first)
+│   ├── tool_registry.py       # Tool catalog, mapping, resolution
+│   ├── agent_registry.py      # Custom agent registration API
+│   ├── intent_router.py       # Intent routing for chat
+│   ├── skill_manager.py       # Skill lifecycle management
+│   ├── skill_service.py       # Skill execution service
+│   ├── slash_command_registry.py  # Slash command registry
+│   ├── plugin_loader.py       # Plugin loading from entry points
+│   ├── plugin_discovery.py    # Plugin discovery
+│   ├── infrastructure_builder.py  # Infrastructure setup
+│   ├── communication_service.py   # External communication
+│   ├── epic_orchestrator.py   # Multi-agent epic execution
+│   ├── epic_state_store.py    # Epic run state persistence
+│   ├── sub_agent_spawner.py   # Sub-agent session spawning
+│   ├── tracing_facade.py      # Tracing facade
+│   └── command_loader_service.py  # Command loader
+│
+└── api/                       # LAYER 4: Entrypoints
+    ├── server.py              # FastAPI application
+    ├── cli/
+    │   ├── main.py            # CLI entry point (Typer)
+    │   ├── simple_chat.py     # Interactive chat interface
+    │   ├── output_formatter.py # Rich output formatting
+    │   └── commands/          # CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config)
+    ├── routes/                # FastAPI route modules (execution, agents, sessions, tools, health, integrations)
+    └── schemas/               # Pydantic request/response schemas
+```
+
+### Extensions Package
+
+Separately under `src/taskforce_extensions/`:
+
+```
+src/taskforce_extensions/
+├── configs/                   # Profile YAML configs (dev, coding_agent, rag_agent, etc.)
+│   └── custom/                # Custom sub-agent configs
+├── infrastructure/
+│   ├── communication/         # Communication providers (Telegram, etc.)
+│   ├── messaging/             # In-memory message bus
+│   └── runtime/               # Runtime tracking (heartbeats, checkpoints)
+├── plugins/                   # Plugin agents (ap_poc_agent, document_extraction_agent)
+└── skills/                    # Skill scripts (PDF processing, etc.)
 ```
 
 ### Import Rules (CRITICAL)
@@ -103,7 +157,7 @@ from taskforce.application.executor import AgentExecutor          # Uses applica
 
 # ❌ FORBIDDEN
 # Core layer - NEVER import infrastructure
-from taskforce.infrastructure.persistence.file_state import FileStateManager  # VIOLATION!
+from taskforce.infrastructure.persistence.file_state_manager import FileStateManager  # VIOLATION!
 
 # Infrastructure should not import from API or Application
 from taskforce.api.routes.execution import execute_mission       # VIOLATION!
@@ -125,7 +179,26 @@ from taskforce.api.routes.execution import execute_mission       # VIOLATION!
 
 ### 1. Protocol-Based Design
 
-All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base classes:
+All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base classes.
+
+**15 protocol definitions** in `core/interfaces/`:
+
+| Protocol | File | Purpose |
+|----------|------|---------|
+| `StateManagerProtocol` | `state.py` | Session state persistence |
+| `LLMProviderProtocol` | `llm.py` | LLM provider abstraction |
+| `ToolProtocol` | `tools.py` | Tool execution interface |
+| `MemoryStoreProtocol` | `memory_store.py` | Long-term memory storage |
+| `CommunicationProviderProtocol` | `communication.py` | External communication |
+| `MessageBusProtocol` | `messaging.py` | Inter-agent messaging |
+| `RuntimeProtocol` | `runtime.py` | Runtime tracking |
+| `SkillProtocol` | `skills.py` | Skill interface |
+| `SlashCommandProtocol` | `slash_commands.py` | Slash command interface |
+| `ToolMappingProtocol` | `tool_mapping.py` | Tool name resolution |
+| `ToolResultStoreProtocol` | `tool_result_store.py` | Tool result caching |
+| `SubAgentProtocol` | `sub_agents.py` | Sub-agent spawning |
+| `IdentityStubsProtocol` | `identity_stubs.py` | Identity management stubs |
+| `LoggerProtocol` | `logging.py` | Structured logging |
 
 ```python
 # core/interfaces/state.py
@@ -134,13 +207,8 @@ from typing import Protocol, Optional, Dict, Any, List
 class StateManagerProtocol(Protocol):
     """Protocol for session state persistence."""
 
-    async def save_state(self, session_id: str, state_data: Dict[str, Any]) -> None:
-        """Save session state."""
-        ...
-
-    async def load_state(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Load session state."""
-        ...
+    async def save_state(self, session_id: str, state_data: Dict[str, Any]) -> None: ...
+    async def load_state(self, session_id: str) -> Optional[Dict[str, Any]]: ...
 ```
 
 **Why Protocols?**
@@ -158,15 +226,11 @@ from taskforce.application.factory import AgentFactory
 
 factory = AgentFactory()
 
-# ══════════════════════════════════════════════════════════════
 # Option 1: Config file (for predefined agents)
-# ══════════════════════════════════════════════════════════════
 agent = await factory.create_agent(config="dev")
-agent = await factory.create_agent(config="configs/custom/my_agent.yaml")
+agent = await factory.create_agent(config="src/taskforce_extensions/configs/custom/coding_worker.yaml")
 
-# ══════════════════════════════════════════════════════════════
 # Option 2: Inline parameters (for programmatic creation)
-# ══════════════════════════════════════════════════════════════
 agent = await factory.create_agent(
     system_prompt="You are a helpful coding assistant.",
     tools=["python", "file_read", "file_write"],
@@ -174,9 +238,7 @@ agent = await factory.create_agent(
     max_steps=20,
 )
 
-# ══════════════════════════════════════════════════════════════
 # ERROR: Cannot mix both modes
-# ══════════════════════════════════════════════════════════════
 # agent = await factory.create_agent(config="dev", tools=["python"])  # ValueError!
 ```
 
@@ -185,7 +247,30 @@ agent = await factory.create_agent(
 - If `config` provided → all settings loaded from YAML file
 - If inline parameters → settings from parameters (with sensible defaults from `dev.yaml`)
 
-### 3. ReAct Loop (Reason + Act)
+### 3. Planning Strategies
+
+Four planning strategies are available, configured via `agent.planning_strategy` in profile YAML:
+
+| Strategy | Value | Description |
+|----------|-------|-------------|
+| **Native ReAct** | `native_react` | Default. Pure ReAct loop - Thought → Action → Observation cycle |
+| **Plan and Execute** | `plan_and_execute` | Creates a plan first, then executes steps sequentially |
+| **Plan and React** | `plan_and_react` | Hybrid - creates plan, uses ReAct within each step |
+| **SPAR** | `spar` | Structured Sense → Plan → Act → Reflect cycle with iterative refinement |
+
+```yaml
+# Profile YAML
+agent:
+  planning_strategy: spar  # or native_react, plan_and_execute, plan_and_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: true
+```
+
+**Implementation:** `src/taskforce/core/domain/planning_strategy.py`
+
+### 4. ReAct Loop (Reason + Act)
 
 The core agent execution pattern:
 
@@ -211,7 +296,115 @@ The core agent execution pattern:
                ▼ (repeat until mission complete)
 ```
 
-**Implementation:** `src/taskforce/core/domain/agent.py`
+### 5. Domain Enums
+
+All status values, event types, and action constants are defined in `core/domain/enums.py` to eliminate magic strings:
+
+- `ExecutionStatus` - completed, failed, pending, paused
+- `TaskStatus` - PENDING, DONE
+- `EventType` - started, step_start, llm_token, tool_call, tool_result, ask_user, plan_updated, complete, error, etc.
+- `LLMStreamEventType` - token, tool_call_start, tool_call_delta, tool_call_end, done
+- `PlannerAction` - create_plan, mark_done, read_plan, update_plan
+- `LLMAction` - tool_call, respond, ask_user
+- `MessageRole` - user, assistant, system, tool
+
+### 6. Error Handling
+
+Execution API errors use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header.
+
+Exception types live in `src/taskforce/core/domain/errors.py` (`TaskforceError`, `LLMError`, `ToolError`, etc.). Infrastructure tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
+
+---
+
+## Native Tools
+
+13 built-in tools in `infrastructure/tools/native/`:
+
+| Tool | File | Description |
+|------|------|-------------|
+| File Read/Write | `file_tools.py` | File operations |
+| Shell | `shell_tool.py` | Shell command execution |
+| Python | `python_tool.py` | Python code execution (isolated namespace) |
+| Git | `git_tools.py` | Git operations |
+| Web | `web_tools.py` | HTTP requests, web crawling |
+| Search | `search_tools.py` | Grep/glob-style search |
+| Edit | `edit_tool.py` | Targeted file editing |
+| LLM | `llm_tool.py` | Delegated LLM calls |
+| Memory | `memory_tool.py` | Long-term memory CRUD |
+| Multimedia | `multimedia_tool.py` | Image/media handling |
+| Ask User | `ask_user_tool.py` | Interactive user prompts |
+| Activate Skill | `activate_skill_tool.py` | Runtime skill activation |
+
+Additional tool categories:
+- **RAG Tools** (`infrastructure/tools/rag/`): Azure AI Search integration (semantic search, document retrieval, global analysis)
+- **MCP Tools** (`infrastructure/tools/mcp/`): Model Context Protocol server connections
+- **Orchestration Tools** (`infrastructure/tools/orchestration/`): Agent invocation, sub-agent spawning
+
+Profile YAML tool lists use **short tool names** (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs. The tool registry in `infrastructure/tools/registry.py` maps short names to implementations.
+
+Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
+
+---
+
+## Skills, Slash Commands, and Plugins
+
+### Skills
+
+File-based skill definitions that can be activated at runtime. Skills are YAML+Markdown files that define specialized agent behaviors with custom prompts, tools, and workflows.
+
+- **Storage:** Project-level in `.taskforce/skills/` or bundled with plugins/extensions
+- **Management:** `SkillManager` (application layer) handles lifecycle
+- **Activation:** Via `activate_skill` tool or `/skills` chat command
+- **Docs:** `docs/features/skills.md`
+
+### Slash Commands
+
+Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
+
+- **Storage:** Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level overrides user-level.
+- **Naming:** Hierarchical based on folder structure (e.g., `agents/reviewer.md` → `/agents:reviewer`)
+- **Types:**
+  - `prompt`: Simple prompt templates where `$ARGUMENTS` is replaced by user input
+  - `agent`: Defines a specialized agent with its own `profile`, `tools`, and `system_prompt`
+- **Behavior:** An `agent`-type command temporarily overrides the current agent's configuration for that single execution
+- **Built-ins:** Chat includes `/plugins` and `/skills` for discovery, and `/<plugin_name>` switches to a plugin agent
+- **Docs:** `docs/slash-commands.md`
+
+### Plugin System
+
+Plugins extend Taskforce with custom agents, tools, and configurations via Python entry points.
+
+- **Discovery:** `setuptools` entry points under `taskforce.plugins`
+- **Structure:** Each plugin provides configs, tools, and optional domain logic
+- **Loading:** `PluginLoader` and `PluginDiscovery` in the application layer
+- **Examples:** `src/taskforce_extensions/plugins/ap_poc_agent/`, `document_extraction_agent/`
+- **Docs:** `docs/plugins.md`
+
+---
+
+## Epic Orchestration
+
+Multi-agent pipeline for complex, multi-step tasks using planner/worker/judge roles:
+
+- **Orchestrator:** `src/taskforce/application/epic_orchestrator.py`
+- **State:** Persisted under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, `MEMORY.md`
+- **Profiles:** Planner, worker, judge configs in `src/taskforce_extensions/configs/`
+- **CLI:** `taskforce epic` command with `--rounds` option for iterative refinement
+- **Docs:** `docs/architecture/epic-orchestration.md`
+
+---
+
+## Communication Providers
+
+External communication integrations (Telegram, etc.) for agent-human interaction:
+
+- **Protocol:** `core/interfaces/communication.py` (`CommunicationProviderProtocol`)
+- **Service:** `application/communication_service.py`
+- **Providers:** `taskforce_extensions/infrastructure/communication/` (Telegram sender, conversation store, registry)
+- **API Routes:** `/api/v1/integrations/{provider}/messages`
+- **Persistence:** Chat history in `.taskforce/conversations/`
+- **ADR:** `docs/adr/adr-006-communication-providers.md`
+- **Docs:** `docs/integrations.md`
 
 ---
 
@@ -243,11 +436,17 @@ uv run pytest
 # Specific layer
 uv run pytest tests/unit/core/
 uv run pytest tests/unit/infrastructure/
+uv run pytest tests/unit/application/
 uv run pytest tests/integration/
 
 # With coverage
 uv run pytest --cov=taskforce --cov-report=html
+
+# Single test file (useful for targeted debugging)
+PYTHONPATH=src pytest -q -c /dev/null <path_to_test>
 ```
+
+Note: `asyncio_mode = "auto"` is configured in `pyproject.toml`, so `@pytest.mark.asyncio` is applied automatically to all async test functions.
 
 ### Code Quality
 
@@ -265,6 +464,15 @@ uv run ruff check --fix src/taskforce tests
 uv run mypy src/taskforce
 ```
 
+Black and Ruff are configured with `line-length = 100` and `target-version = py311`.
+
+### CI Pipeline
+
+CI runs on every push (`.github/workflows/ci.yml`):
+1. `uv sync --locked` - Install dependencies
+2. `uv run pytest` - Run all tests
+3. Auto-tag on default branch: `v<major>.<minor>.<patch>` (major/minor from `pyproject.toml`, patch auto-increments)
+
 ### Running the Agent
 
 ```bash
@@ -273,10 +481,13 @@ taskforce run mission "Analyze sales data and create visualization"
 
 # With specific profile
 taskforce run mission "..." --profile dev
-taskforce run mission "..." --profile prod
+taskforce run mission "..." --profile coding_agent
 
 # Interactive chat
 taskforce chat
+
+# Epic orchestration
+taskforce epic "Build a REST API for user management" --rounds 3
 
 # API server
 uvicorn taskforce.api.server:app --reload
@@ -337,6 +548,7 @@ def generate_plan(mission: str, llm_provider: LLMProviderProtocol) -> TodoList:
 - **Specific exceptions** - Catch `ValueError`, `HTTPException`, not generic `Exception`
 - **Contextual error messages** - Include relevant IDs and state
 - **No silent failures** - Always log or re-raise
+- **Tool errors** - Convert to `ToolError` payloads via `tool_error_payload`
 
 ```python
 # ✅ GOOD
@@ -363,28 +575,9 @@ except:  # Too broad, silent
 - **Infrastructure** - Classes for I/O, state management, external APIs
 - **Avoid God objects** - Small, focused classes
 
-```python
-# ✅ GOOD - Pure function in core
-def validate_dependencies(plan: TodoList) -> bool:
-    """Check for circular dependencies in plan."""
-    # Pure logic, no side effects
-    ...
-
-# ✅ GOOD - Class for I/O in infrastructure
-class DbStateManager:
-    """PostgreSQL-backed state persistence."""
-
-    def __init__(self, db_url: str):
-        self._engine = create_async_engine(db_url)
-
-    async def save_state(self, session_id: str, state_data: Dict) -> None:
-        # Database I/O
-        ...
-```
-
 ### 5. Type Safety: Concrete Types over Dictionaries
 
-- **No magic strings** - Use `Enum`, `Literal`, or class constants
+- **No magic strings** - Use `Enum`, `Literal`, or class constants (see `core/domain/enums.py`)
 - **Concrete data structures** - Use `dataclass`, `NamedTuple`, or Pydantic `BaseModel` instead of `dict`
 - **Typed return values** - Functions return concrete types, not `Dict[str, Any]`
 
@@ -395,12 +588,7 @@ def get_status(data: dict) -> dict:
         return {"code": 200, "message": "OK"}
 
 # ✅ PREFERRED - Enums and dataclasses
-from dataclasses import dataclass
-from enum import Enum
-
-class Status(Enum):
-    SUCCESS = "success"
-    FAILED = "failed"
+from taskforce.core.domain.enums import ExecutionStatus
 
 @dataclass
 class StatusResult:
@@ -408,7 +596,7 @@ class StatusResult:
     message: str
 
 def get_status(data: RequestData) -> StatusResult:
-    if data.status == Status.SUCCESS:
+    if data.status == ExecutionStatus.COMPLETED:
         return StatusResult(code=200, message="OK")
 ```
 
@@ -428,11 +616,22 @@ Mirror source structure:
 ```
 tests/
 ├── unit/
-│   ├── core/              # Pure domain logic tests (protocol mocks)
-│   ├── infrastructure/    # Adapter tests (may use test DB)
-│   └── application/       # Service tests (integration-lite)
-├── integration/           # End-to-end tests
-└── fixtures/              # Shared test data
+│   ├── core/              # Pure domain logic tests
+│   │   └── domain/
+│   │       └── lean_agent_components/
+│   ├── infrastructure/    # Adapter tests
+│   │   ├── tools/
+│   │   ├── skills/
+│   │   └── cache/
+│   ├── application/       # Service tests
+│   └── api/               # API/CLI tests
+│       └── cli/
+├── integration/           # End-to-end tests (~25 files)
+├── core/domain/           # Additional core tests (planning strategies)
+├── fixtures/              # Shared test data
+├── examples/              # Example tests
+├── taskforce_extensions/  # Extension tests
+└── conftest.py            # Shared fixtures (mock LLM, state managers, etc.)
 ```
 
 ### Coverage Targets
@@ -468,29 +667,27 @@ def test_agent_executes_react_loop(mock_state_manager, mock_llm, mock_tools):
         llm_provider=mock_llm,
         tools=mock_tools
     )
-
     result = agent.execute("Test mission", "session-123")
-
     assert result.success
     mock_state_manager.save_state.assert_called()
 ```
 
-**Infrastructure Tests:**
+**Integration Tests:**
+
+Integration tests for `/api/v1/execute` should mock `executor.execute_mission` to avoid long-running real executions (see `tests/integration/test_server_streaming.py`).
 
 ```python
 # tests/integration/test_file_state_manager.py
 import pytest
 from pathlib import Path
-from taskforce.infrastructure.persistence.file_state import FileStateManager
+from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
 
 @pytest.mark.asyncio
 async def test_file_state_manager_saves_and_loads(tmp_path: Path):
     """Test file-based persistence with actual filesystem."""
     manager = FileStateManager(work_dir=str(tmp_path))
-
     test_data = {"mission": "Test", "step": 1}
     await manager.save_state("test-session", test_data)
-
     loaded = await manager.load_state("test-session")
     assert loaded == test_data
 ```
@@ -501,46 +698,53 @@ async def test_file_state_manager_saves_and_loads(tmp_path: Path):
 
 ### Profiles
 
-Taskforce uses YAML configuration profiles in `configs/`:
+Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce_extensions/configs/`:
+
+- `dev.yaml` - Default development profile
+- `coding_agent.yaml` - Coding specialist with sub-agents
+- `rag_agent.yaml` - RAG-enabled agent
+- `orchestrator.yaml`, `planner.yaml`, `worker.yaml`, `judge.yaml` - Epic orchestration roles
+- `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, etc.)
 
 ```yaml
-# configs/dev.yaml
-agent:
-  type: generic
-  planning_strategy: native_react
+# src/taskforce_extensions/configs/dev.yaml
+profile: dev
+specialist: null
 
 persistence:
   type: file
-  work_dir: ./workspace
+  work_dir: .taskforce
+
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: native_react
+  max_steps: 30
 
 llm:
-  provider: openai
-  model: gpt-4o
-  temperature: 0.7
+  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  default_model: main
 
 logging:
   level: DEBUG
   format: console
-```
 
-```yaml
-# configs/prod.yaml
-agent:
-  type: generic
-  planning_strategy: native_react
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
 
-persistence:
-  type: database
-  database_url: ${DATABASE_URL}  # From environment
-
-llm:
-  provider: azure
-  deployment_name: ${AZURE_DEPLOYMENT}
-  temperature: 0.5
-
-logging:
-  level: WARNING
-  format: json
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - python
+  - powershell
+  - ask_user
 ```
 
 ### Environment Variables
@@ -561,75 +765,27 @@ logging:
 
 ### Enabling Long-Term Memory
 
-**Goal:** Add session-persistent memory to an agent profile
-
-**Prerequisites:**
-- Node.js v18+ and NPM v9+ installed
-
-**Steps:**
-
-1. **Add MCP Memory Server to profile config:**
+The native `memory` tool provides file-backed Markdown records for long-term memory. Configure via profile YAML:
 
 ```yaml
-# configs/your_agent.yaml
+# In profile YAML
+memory:
+  store_dir: .taskforce/.memory
+```
 
-profile: your_agent
-specialist: coding  # or rag, or custom
+Alternatively, use an MCP Memory Server for knowledge graph-based memory:
 
-persistence:
-  type: file
-  work_dir: .taskforce_your_agent
-
-# Add this section
+```yaml
 mcp_servers:
   - type: stdio
     command: npx
-    args:
-      - "-y"
-      - "@modelcontextprotocol/server-memory"
+    args: ["-y", "@modelcontextprotocol/server-memory"]
     env:
-      MEMORY_FILE_PATH: ".taskforce_your_agent/.memory/knowledge_graph.jsonl"
+      MEMORY_FILE_PATH: ".taskforce/.memory/knowledge_graph.jsonl"
     description: "Long-term knowledge graph memory"
 ```
 
-2. **The agent automatically gains 9 memory tools:**
-- `create_entities` - Store new entities (User, Project, Pattern, etc.)
-- `create_relations` - Link entities (e.g., "Alice works_on ProjectX")
-- `add_observations` - Add facts to entities
-- `read_graph` - Retrieve entire knowledge graph
-- `search_nodes` - Search for specific entities
-- `open_nodes` - Open specific entities by name
-- `delete_entities`, `delete_observations`, `delete_relations` - Cleanup
-
-3. **System prompt automatically includes memory guidance:**
-- Agent checks memory at conversation start
-- Agent monitors for memorable information during execution
-- Agent updates memory when learning new facts
-
-**Example Memory Usage:**
-
-```python
-# Agent stores user preference
-create_entities([{
-  "name": "User_Alice",
-  "entityType": "User",
-  "observations": ["Prefers type hints", "Senior Engineer"]
-}])
-
-# Agent links user to project
-create_relations([{
-  "from": "User_Alice",
-  "to": "TaskforceProject",
-  "relationType": "contributes_to"
-}])
-
-# Later session - agent recalls preference
-search_nodes("Alice")  # Finds previous observations
-```
-
-**See:** [Long-Term Memory Documentation](docs/features/longterm-memory.md)
-
----
+**See:** [Long-Term Memory Documentation](docs/features/longterm-memory.md), [ADR-007](docs/adr/adr-007-unified-memory-service.md)
 
 ### Adding a New Tool
 
@@ -672,20 +828,7 @@ class MyTool:
         return "input" in params
 ```
 
-2. **Register in factory:**
-
-```python
-# application/factory.py
-from taskforce.infrastructure.tools.native.my_tool import MyTool
-
-class AgentFactory:
-    def _create_tools(self, config: dict) -> List[ToolProtocol]:
-        tools = [
-            # ... existing tools
-            MyTool(),
-        ]
-        return tools
-```
+2. **Register in tool registry** (`infrastructure/tools/registry.py`): Add the short name → class mapping.
 
 3. **Write tests:**
 
@@ -713,34 +856,13 @@ from taskforce.core.interfaces.state import StateManagerProtocol
 class MyStateManager:
     """Custom state persistence implementation."""
 
-    async def save_state(self, session_id: str, state_data: Dict[str, Any]) -> None:
-        # Implementation...
-        pass
-
-    async def load_state(self, session_id: str) -> Optional[Dict[str, Any]]:
-        # Implementation...
-        pass
-
-    async def delete_state(self, session_id: str) -> None:
-        # Implementation...
-        pass
-
-    async def list_sessions(self) -> List[str]:
-        # Implementation...
-        pass
+    async def save_state(self, session_id: str, state_data: Dict[str, Any]) -> None: ...
+    async def load_state(self, session_id: str) -> Optional[Dict[str, Any]]: ...
+    async def delete_state(self, session_id: str) -> None: ...
+    async def list_sessions(self) -> List[str]: ...
 ```
 
-2. **Add to factory:**
-
-```python
-# application/factory.py
-def _create_state_manager(self, config: dict) -> StateManagerProtocol:
-    persistence_type = config.get("persistence", {}).get("type")
-
-    if persistence_type == "my_custom":
-        return MyStateManager(**config["persistence"])
-    # ... other types
-```
+2. **Add to factory** (`application/factory.py`): Wire the new adapter based on `persistence.type` config value.
 
 ---
 
@@ -760,31 +882,13 @@ async def process_files(file_paths: List[str]) -> List[str]:
         content = await f.read()
     return content
 
-# ✅ GOOD - Async sleep
-await asyncio.sleep(1)  # Non-blocking
-
 # ❌ BAD - Blocking I/O
 def process_files(file_paths: List[str]) -> List[str]:
     with open(file_paths[0]) as f:  # Blocks event loop!
         content = f.read()
-
-# ❌ BAD - Blocking sleep
-time.sleep(1)  # Blocks entire event loop!
 ```
 
-### 2. State Versioning
-
-All state changes include version tracking for optimistic locking:
-
-```python
-state_data = {
-    "mission": "...",
-    "steps": [...],
-    "version": 5  # Increment on each save
-}
-```
-
-### 3. Structured Logging
+### 2. Structured Logging
 
 Use `structlog` with contextual information:
 
@@ -805,19 +909,7 @@ logger.info(
 logger.info("Mission started")
 ```
 
-### 4. Tool Execution Isolation
-
-Python tools run in isolated namespaces to prevent cross-contamination:
-
-```python
-# infrastructure/tools/native/python_tool.py
-def execute(self, code: str) -> Dict[str, Any]:
-    namespace = {}  # Isolated namespace
-    exec(code, namespace)  # Don't pollute global scope
-    return namespace.get("result")
-```
-
-### 5. Simplified Architecture Patterns
+### 3. Simplified Architecture Patterns
 
 **Executor Pattern - Single Source of Truth:**
 
@@ -833,13 +925,9 @@ async def execute_mission(self, mission, ...) -> ExecutionResult:
         if update.event_type == "complete":
             result = ExecutionResult(...)
     return result
-
-# execute_mission_streaming is the single source of truth for execution logic
 ```
 
 **Tool Registry - Direct Usage:**
-
-Use `ToolRegistry` directly instead of deprecated wrapper classes:
 
 ```python
 # ✅ CORRECT - Use ToolRegistry directly
@@ -852,12 +940,9 @@ resolved = registry.resolve(["python", "file_read"])
 # ❌ DEPRECATED - Don't use these (removed)
 # from taskforce.application.tool_catalog import ToolCatalog
 # from taskforce.application.tool_mapper import ToolMapper
-# from taskforce.application.tool_resolver import ToolResolver
 ```
 
 **Agent Components - Call Directly:**
-
-Call component methods directly instead of through agent wrapper methods:
 
 ```python
 # ✅ CORRECT - Call component methods directly
@@ -867,8 +952,11 @@ tool_msg = await agent.tool_result_message_factory.build_message(...)
 
 # ❌ AVOID - Wrapper methods have been removed
 # messages = await agent._compress_messages(messages)
-# messages = agent._preflight_budget_check(messages)
 ```
+
+### 4. Sub-Agent Spawning
+
+Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce_extensions/configs/custom/`.
 
 ---
 
@@ -933,33 +1021,103 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/core/domain/lean_agent.py` - LeanAgent (simplified) implementation
 - `src/taskforce/core/domain/lean_agent_components/` - Agent components (call directly, not via wrappers):
   - `message_history_manager.py` - Message compression and budget management
+  - `message_sanitizer.py` - Message sanitization
   - `tool_executor.py` - Tool execution and result message factory
   - `prompt_builder.py` - System prompt construction
-- `src/taskforce/core/domain/planning_strategy.py` - Planning strategies (native_react, plan_and_react)
+  - `state_store.py` - State persistence helpers
+  - `resource_closer.py` - MCP resource cleanup
+- `src/taskforce/core/domain/planning_strategy.py` - Planning strategies (native_react, plan_and_execute, plan_and_react, spar)
 - `src/taskforce/core/domain/plan.py` - TodoList planning logic
-- `src/taskforce/core/domain/events.py` - Domain events
+- `src/taskforce/core/domain/enums.py` - All domain enumerations (ExecutionStatus, EventType, etc.)
+- `src/taskforce/core/domain/models.py` - Core data models (ExecutionResult, StreamEvent, TokenUsage)
+- `src/taskforce/core/domain/errors.py` - Exception types (TaskforceError, LLMError, ToolError)
+- `src/taskforce/core/domain/config_schema.py` - Configuration schema definitions
+- `src/taskforce/core/domain/memory.py` - Memory domain models
+- `src/taskforce/core/domain/memory_service.py` - Memory service logic
+- `src/taskforce/core/domain/messaging.py` - Inter-agent messaging models
+- `src/taskforce/core/domain/sub_agents.py` - Sub-agent management
+- `src/taskforce/core/domain/skill.py` - Skill domain models
+- `src/taskforce/core/domain/skill_workflow.py` - Skill workflow orchestration
+- `src/taskforce/core/domain/epic.py` - Epic orchestration models
+- `src/taskforce/core/domain/context_builder.py` - Context construction
+- `src/taskforce/core/domain/context_policy.py` - Context filtering policies
+- `src/taskforce/core/domain/token_budgeter.py` - Token budget management
+- `src/taskforce/core/tools/tool_converter.py` - Tool format conversion
+- `src/taskforce/core/tools/planner_tool.py` - Planning tool for agents
 
-### Protocols
-- `src/taskforce/core/interfaces/state.py` - State persistence protocol
-- `src/taskforce/core/interfaces/llm.py` - LLM provider protocol
-- `src/taskforce/core/interfaces/tools.py` - Tool execution protocol
+### Protocols (core/interfaces/)
+- `state.py` - State persistence protocol
+- `llm.py` - LLM provider protocol
+- `tools.py` - Tool execution protocol
+- `memory_store.py` - Memory storage protocol
+- `communication.py` - Communication provider protocol
+- `messaging.py` - Message bus protocol
+- `runtime.py` - Runtime tracking protocol
+- `skills.py` - Skill protocol
+- `slash_commands.py` - Slash command protocol
+- `tool_mapping.py` - Tool name mapping protocol
+- `tool_result_store.py` - Tool result cache protocol
+- `sub_agents.py` - Sub-agent protocol
+- `identity_stubs.py` - Identity management stubs
+- `logging.py` - Logger protocol
 
 ### Infrastructure
-- `src/taskforce/infrastructure/persistence/file_state.py` - File-based state
-- `src/taskforce/infrastructure/persistence/db_state.py` - Database state
-- `src/taskforce/infrastructure/llm/litellm_service.py` - LLM service
-- `src/taskforce/infrastructure/tools/native/*.py` - Native tools
-- `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP server connections
+- `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
+- `src/taskforce/infrastructure/persistence/file_agent_registry.py` - File-based agent registry
+- `src/taskforce/infrastructure/llm/openai_service.py` - LLM service (OpenAI + Azure)
+- `src/taskforce/infrastructure/llm/error_handler.py` - LLM error handling
+- `src/taskforce/infrastructure/llm/parameter_mapper.py` - LLM parameter mapping
+- `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
+- `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
+- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry
+- `src/taskforce/infrastructure/tools/native/*.py` - 13 native tools
+- `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
+- `src/taskforce/infrastructure/tools/rag/*.py` - RAG tools (Azure AI Search)
+- `src/taskforce/infrastructure/tools/orchestration/*.py` - Agent/sub-agent tools
+- `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry
+- `src/taskforce/infrastructure/slash_commands/` - Slash command loading/parsing
+- `src/taskforce/infrastructure/tracing/phoenix_tracer.py` - Phoenix tracing
 
 ### Application
-- `src/taskforce/application/factory.py` - Dependency injection
+- `src/taskforce/application/factory.py` - Dependency injection (central wiring)
 - `src/taskforce/application/executor.py` - Execution orchestration (streaming-first)
 - `src/taskforce/application/tool_registry.py` - Tool catalog, mapping, and resolution
-- `src/taskforce/application/profiles.py` - Configuration loading
+- `src/taskforce/application/agent_registry.py` - Custom agent registration API
+- `src/taskforce/application/intent_router.py` - Intent routing for chat
+- `src/taskforce/application/skill_manager.py` - Skill lifecycle management
+- `src/taskforce/application/skill_service.py` - Skill execution service
+- `src/taskforce/application/slash_command_registry.py` - Slash command registry
+- `src/taskforce/application/plugin_loader.py` - Plugin loading
+- `src/taskforce/application/plugin_discovery.py` - Plugin discovery
+- `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
+- `src/taskforce/application/communication_service.py` - External communication
+- `src/taskforce/application/epic_orchestrator.py` - Epic orchestration
+- `src/taskforce/application/epic_state_store.py` - Epic state persistence
+- `src/taskforce/application/sub_agent_spawner.py` - Sub-agent session spawning
+- `src/taskforce/application/tracing_facade.py` - Tracing facade
 
 ### API
 - `src/taskforce/api/server.py` - FastAPI application
 - `src/taskforce/api/cli/main.py` - CLI entry point
+- `src/taskforce/api/cli/simple_chat.py` - Interactive chat interface
+- `src/taskforce/api/cli/commands/` - CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config)
+- `src/taskforce/api/routes/` - REST endpoints (execution, agents, sessions, tools, health, integrations)
+- `src/taskforce/api/schemas/` - Request/response schemas
+
+### Extensions
+- `src/taskforce_extensions/configs/` - Profile YAML configs
+- `src/taskforce_extensions/infrastructure/communication/` - Communication providers
+- `src/taskforce_extensions/infrastructure/messaging/` - Message bus adapters
+- `src/taskforce_extensions/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
+- `src/taskforce_extensions/plugins/` - Plugin agents
+
+### Examples
+- `examples/accounting_agent/` - Full accounting agent with custom tools, skills, rules
+- `examples/customer_support_agent/` - Customer support agent example
+- `examples/personal_assistant/` - Personal assistant with calendar, email, task tools and skills
+
+### MCP Servers
+- `servers/document-extraction-mcp/` - Document extraction MCP server (OCR, layout analysis, etc.)
 
 ---
 
@@ -971,10 +1129,16 @@ See `docs/architecture/section-10-deployment.md` for:
 - **API Guide:** `docs/api.md`
 - **Profiles & Config:** `docs/profiles.md`
 - **Testing:** `docs/testing.md`
-- **ADRs:** `docs/adr/index.md`
-- **PRD:** `docs/prd.md`
+- **Integrations:** `docs/integrations.md`
+- **Features:** `docs/features/` (longterm-memory, skills, enterprise)
+- **Plugin System:** `docs/plugins.md`
+- **Slash Commands:** `docs/slash-commands.md`
+- **ADRs:** `docs/adr/index.md` (7 ADRs covering uv, clean architecture, enterprise, multi-agent, epic orchestration, communication, memory)
+- **Epics:** `docs/epics/index.md` (20+ epic planning documents)
+- **PRD:** `docs/prd/index.md`
 - **Stories:** `docs/stories/`
 - **Coding Standards:** `docs/architecture/coding-standards.md`
+- **Examples:** `docs/examples/` (custom tool tutorial, programmatic agent creation)
 
 ---
 
@@ -985,14 +1149,15 @@ See `docs/architecture/section-10-deployment.md` for:
 - Use `uv` for all package management
 - Follow the four-layer architecture strictly
 - Write protocol-compatible implementations
-- Add comprehensive docstrings
+- Add comprehensive docstrings (Google style)
 - Write tests for all new functionality
 - Use type annotations everywhere
 - Use concrete types (`dataclass`, Pydantic) instead of `dict`
-- Use `Enum` or constants instead of magic strings
+- Use `Enum` from `core/domain/enums.py` instead of magic strings
 - Keep functions ≤30 lines
-- Log with structured context
+- Log with structured context via `structlog`
 - Make everything async for I/O
+- Register new tools in `infrastructure/tools/registry.py`
 - **Update docs when changing CLI/API/config** (see Documentation Upkeep Rule above)
 
 ### ❌ DON'T
@@ -1004,12 +1169,13 @@ See `docs/architecture/section-10-deployment.md` for:
 - Catch generic `Exception` without re-raising
 - Skip type annotations
 - Use `Dict[str, Any]` for structured data (use dataclasses/Pydantic)
-- Use magic strings (use Enum or constants)
+- Use magic strings (use `core/domain/enums.py` enums)
 - Create God objects or classes
 - Log sensitive data (API keys, passwords)
 - Hardcode configuration values
+- Use deprecated wrapper classes (`ToolCatalog`, `ToolMapper`, `ToolResolver`)
 
 ---
 
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-02-05
 **For Questions:** See `docs/` or create an issue in the repository
