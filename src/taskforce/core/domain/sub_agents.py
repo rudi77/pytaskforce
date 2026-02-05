@@ -15,7 +15,7 @@ def build_sub_agent_session_id(
     """Build a hierarchical session ID for sub-agents."""
     safe_label = label.replace(" ", "_") if label else "generic"
     suffix_value = suffix or uuid4().hex[:8]
-    return f"{parent_session_id}:sub_{safe_label}_{suffix_value}"
+    return f"{parent_session_id}--sub_{safe_label}_{suffix_value}"
 
 
 @dataclass(frozen=True)

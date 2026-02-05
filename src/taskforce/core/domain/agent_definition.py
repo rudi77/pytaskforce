@@ -155,6 +155,9 @@ class AgentDefinition:
     # Tools - ONLY string list
     tools: list[str] = field(default_factory=list)
 
+    # Sub-agent tool specs (dict configs for type: sub_agent)
+    sub_agent_specs: list[dict[str, Any]] = field(default_factory=list)
+
     # MCP configuration
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     mcp_tool_filter: list[str] | None = None  # None = all MCP tools allowed

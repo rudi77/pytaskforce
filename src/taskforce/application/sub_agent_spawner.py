@@ -46,7 +46,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             elif self._max_steps:
                 agent.max_steps = self._max_steps
             result = await agent.execute(mission=spec.mission, session_id=session_id)
-            await agent.cleanup()
+            await agent.close()
         except Exception as exc:
             self._logger.error(
                 "sub_agent_spawn_failed",

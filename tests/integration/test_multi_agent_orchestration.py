@@ -140,12 +140,12 @@ async def test_agent_tool_generates_hierarchical_session_ids(orchestrator_config
         mock_sub_agent.execute = AsyncMock(
             return_value=ExecutionResult(
                 status="completed",
-                session_id="parent-123:sub_coding_abc123",
+                session_id="parent-123--sub_coding_abc123",
                 final_message="Code analysis complete",
                 execution_history=[],
             )
         )
-        mock_sub_agent.cleanup = AsyncMock()
+        mock_sub_agent.close = AsyncMock()
 
         # Mock factory.create_agent to return our mock
         with patch.object(factory, "create_agent", return_value=mock_sub_agent) as mock_create:
@@ -163,7 +163,7 @@ async def test_agent_tool_generates_hierarchical_session_ids(orchestrator_config
 
         # Verify
         assert result["success"] is True
-        assert "parent-123:sub_coding_" in result["session_id"]
+        assert "parent-123--sub_coding_" in result["session_id"]
 
     # Cleanup
     
@@ -219,12 +219,12 @@ persistence:
         mock_custom_agent.execute = AsyncMock(
             return_value=ExecutionResult(
                 status="completed",
-                session_id="parent-456:sub_test_specialist_def456",
+                session_id="parent-456--sub_test_specialist_def456",
                 final_message="Custom agent completed",
                 execution_history=[],
             )
         )
-        mock_custom_agent.cleanup = AsyncMock()
+        mock_custom_agent.close = AsyncMock()
 
         # Mock factory.create_agent
         with patch.object(
@@ -299,12 +299,12 @@ async def test_agent_tool_handles_sub_agent_failure(orchestrator_config, tmp_pat
         mock_failed_agent.execute = AsyncMock(
             return_value=ExecutionResult(
                 status="failed",
-                session_id="parent-789:sub_coding_ghi789",
+                session_id="parent-789--sub_coding_ghi789",
                 final_message="Sub-agent execution failed: tool not found",
                 execution_history=[],
             )
         )
-        mock_failed_agent.cleanup = AsyncMock()
+        mock_failed_agent.close = AsyncMock()
 
         with patch.object(factory, "create_agent", return_value=mock_failed_agent):
             result = await agent_tool.execute(

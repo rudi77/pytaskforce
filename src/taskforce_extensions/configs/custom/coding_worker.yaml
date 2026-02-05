@@ -21,8 +21,8 @@ tool_allowlist:
   - file_read
   - file_write
   - python
-  - shell_tool
-  - git_tool
+  - powershell
+  - git
 
 context_policy:
   max_items: 12

@@ -27,7 +27,7 @@ class AgentTool:
     with different specialist profiles, tools, and system prompts.
 
     Each sub-agent execution:
-    - Gets isolated session ID (parent_session:sub_{specialist}_{uuid})
+    - Gets isolated session ID (parent_session--sub_{specialist}_{uuid})
     - Has own state management
     - Runs independently with specialist toolset
     - Returns ExecutionResult to parent agent
@@ -41,8 +41,8 @@ class AgentTool:
 
     Session Hierarchy:
         - Parent: "session-123"
-        - Sub-Agent 1: "session-123:sub_coding_a1b2c3d4"
-        - Sub-Agent 2: "session-123:sub_rag_e5f6g7h8"
+        - Sub-Agent 1: "session-123--sub_coding_a1b2c3d4"
+        - Sub-Agent 2: "session-123--sub_rag_e5f6g7h8"
     """
 
     def __init__(
@@ -265,7 +265,7 @@ class AgentTool:
         # Generate unique session ID for sub-agent
         sub_session_suffix = specialist or "generic"
         sub_session_id = (
-            f"{parent_session}:sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
+            f"{parent_session}--sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
         )
 
         try:
@@ -343,7 +343,7 @@ class AgentTool:
             )
 
             # Cleanup sub-agent resources (MCP connections, etc.)
-            await sub_agent.cleanup()
+            await sub_agent.close()
 
             # Determine success based on status
             success = result.status in ("completed", "paused")

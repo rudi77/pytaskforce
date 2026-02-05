@@ -249,6 +249,12 @@ class AgentFactory:
         ):
             native_tools.append(orchestration_tool)
 
+        # Instantiate sub-agent tools from definition specs
+        for sub_agent_spec in definition.sub_agent_specs:
+            sub_agent_tool = self._instantiate_sub_agent_tool(sub_agent_spec)
+            if sub_agent_tool:
+                native_tools.append(sub_agent_tool)
+
         # Handle plugin tools if this is a plugin agent
         plugin_tools: list[ToolProtocol] = []
         if definition.source == AgentSource.PLUGIN and definition.plugin_path:
@@ -516,7 +522,7 @@ class AgentFactory:
         )
 
     def _extract_tool_names(self, tools_config: list[Any]) -> list[str]:
-        """Extract tool names from mixed config entries."""
+        """Extract tool names from mixed config entries (excludes sub_agent specs)."""
         from taskforce.core.domain.agent_definition import _class_name_to_tool_name
 
         tool_names: list[str] = []
@@ -524,12 +530,22 @@ class AgentFactory:
             if isinstance(tool_entry, str):
                 tool_names.append(tool_entry)
             elif isinstance(tool_entry, dict):
+                # Skip sub_agent specs - they are handled separately
+                if tool_entry.get("type") in {"sub_agent", "agent"}:
+                    continue
                 tool_name = tool_entry.get("name") or tool_entry.get("type", "")
                 if tool_name and (tool_name.endswith("Tool") or any(c.isupper() for c in tool_name)):
                     tool_names.append(_class_name_to_tool_name(tool_name))
                 elif tool_name:
                     tool_names.append(tool_name.lower())
         return tool_names
+
+    def _extract_sub_agent_specs(self, tools_config: list[Any]) -> list[dict[str, Any]]:
+        """Extract sub-agent tool specs from mixed config entries."""
+        return [
+            entry for entry in tools_config
+            if isinstance(entry, dict) and entry.get("type") in {"sub_agent", "agent"}
+        ]
 
     def _build_definition_from_config(
         self,
@@ -553,6 +569,7 @@ class AgentFactory:
             base_profile=profile_name,
             work_dir=work_dir,
             tools=self._extract_tool_names(tools_config),
+            sub_agent_specs=self._extract_sub_agent_specs(tools_config),
             mcp_servers=[
                 MCPServerConfig.from_dict(server) for server in mcp_servers_config
             ] if mcp_servers_config else [],
