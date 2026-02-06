@@ -198,8 +198,9 @@ class FileAgentRegistry:
             agent_id: Agent identifier fallback
 
         Returns:
-            Parsed CustomAgentDefinition
+            Parsed CustomAgentDefinition with all settings
         """
+        # Extract tool names from tools list
         tool_names: list[str] = []
         if "tools" in data:
             for tool_def in data["tools"]:
@@ -215,8 +216,12 @@ class FileAgentRegistry:
                         if tool_name:
                             tool_names.append(tool_name)
 
+        # tool_allowlist overrides tools if present
         if "tool_allowlist" in data:
             tool_names = data["tool_allowlist"]
+
+        # Get defaults for any missing infrastructure settings
+        defaults = self._get_default_config(agent_id)
 
         return CustomAgentDefinition(
             agent_id=data.get("agent_id", agent_id),
@@ -228,6 +233,13 @@ class FileAgentRegistry:
             mcp_tool_allowlist=data.get("mcp_tool_allowlist", []),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
+            # Infrastructure settings from YAML or defaults
+            specialist=data.get("specialist", defaults["specialist"]),
+            llm=data.get("llm", defaults["llm"]),
+            persistence=data.get("persistence", defaults["persistence"]),
+            agent=data.get("agent", defaults["agent"]),
+            logging=data.get("logging", defaults["logging"]),
+            context_policy=data.get("context_policy", defaults["context_policy"]),
         )
 
     def _load_profile_agent(
@@ -300,6 +312,12 @@ class FileAgentRegistry:
             mcp_servers=agent_input.mcp_servers,
             created_at=now,
             updated_at=now,
+            specialist=agent_input.specialist,
+            llm=agent_input.llm,
+            persistence=agent_input.persistence,
+            agent=agent_input.agent,
+            logging=agent_input.logging,
+            context_policy=agent_input.context_policy,
         )
 
         self._atomic_write_yaml(path, data)
@@ -308,7 +326,10 @@ class FileAgentRegistry:
             "agent.created", agent_id=agent_input.agent_id, path=str(path)
         )
 
-        # Return domain model
+        # Get defaults for response
+        defaults = self._get_default_config(agent_input.agent_id)
+
+        # Return domain model with all settings (applied defaults where needed)
         return CustomAgentDefinition(
             agent_id=agent_input.agent_id,
             name=agent_input.name,
@@ -319,6 +340,12 @@ class FileAgentRegistry:
             mcp_tool_allowlist=agent_input.mcp_tool_allowlist,
             created_at=now,
             updated_at=now,
+            specialist=agent_input.specialist or defaults["specialist"],
+            llm=agent_input.llm or defaults["llm"],
+            persistence=agent_input.persistence or defaults["persistence"],
+            agent=agent_input.agent or defaults["agent"],
+            logging=agent_input.logging or defaults["logging"],
+            context_policy=agent_input.context_policy or defaults["context_policy"],
         )
 
     def get_agent(
@@ -427,12 +454,12 @@ class FileAgentRegistry:
         if not path.exists():
             raise FileNotFoundError(f"Agent '{agent_id}' not found")
 
-        # Load existing to preserve created_at
+        # Load existing to preserve created_at and existing infrastructure settings
         existing = self._load_custom_agent(agent_id)
         if not existing:
             raise FileNotFoundError(f"Agent '{agent_id}' is corrupt")
 
-        # Update with new data
+        # Update with new data, keep existing values if not provided
         now = datetime.now(timezone.utc).isoformat()
         data = self._build_agent_yaml(
             agent_id=agent_id,
@@ -443,6 +470,13 @@ class FileAgentRegistry:
             mcp_servers=update_input.mcp_servers,
             created_at=existing.created_at,
             updated_at=now,
+            # Use provided values or keep existing
+            specialist=update_input.specialist or existing.specialist,
+            llm=update_input.llm or existing.llm,
+            persistence=update_input.persistence or existing.persistence,
+            agent=update_input.agent or existing.agent,
+            logging=update_input.logging or existing.logging,
+            context_policy=update_input.context_policy or existing.context_policy,
         )
 
         self._atomic_write_yaml(path, data)
@@ -451,7 +485,7 @@ class FileAgentRegistry:
             "agent.updated", agent_id=agent_id, path=str(path)
         )
 
-        # Return domain model
+        # Return domain model with updated values
         return CustomAgentDefinition(
             agent_id=agent_id,
             name=update_input.name,
@@ -462,6 +496,12 @@ class FileAgentRegistry:
             mcp_tool_allowlist=update_input.mcp_tool_allowlist,
             created_at=existing.created_at,
             updated_at=now,
+            specialist=update_input.specialist or existing.specialist,
+            llm=update_input.llm or existing.llm,
+            persistence=update_input.persistence or existing.persistence,
+            agent=update_input.agent or existing.agent,
+            logging=update_input.logging or existing.logging,
+            context_policy=update_input.context_policy or existing.context_policy,
         )
 
     def delete_agent(self, agent_id: str) -> None:
@@ -639,6 +679,39 @@ class FileAgentRegistry:
 
         return None
 
+    def _get_default_config(self, agent_id: str) -> dict[str, Any]:
+        """
+        Get default configuration values for custom agents.
+
+        These defaults are used when infrastructure settings are not explicitly provided.
+        They match the settings from the dev.yaml profile for consistency.
+        """
+        return {
+            "specialist": "generic",
+            "llm": {
+                "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+                "default_model": "main",
+            },
+            "persistence": {
+                "type": "file",
+                "work_dir": f".taskforce_{agent_id}",
+            },
+            "agent": {
+                "max_steps": 30,
+                "planning_strategy": "native_react",
+                "max_parallel_tools": 4,
+            },
+            "logging": {
+                "level": "DEBUG",
+                "format": "console",
+            },
+            "context_policy": {
+                "max_items": 10,
+                "max_chars_per_item": 3000,
+                "max_total_chars": 15000,
+            },
+        }
+
     def _build_agent_yaml(
         self,
         *,
@@ -650,11 +723,27 @@ class FileAgentRegistry:
         mcp_servers: list[dict[str, Any]],
         created_at: str,
         updated_at: str,
+        specialist: str | None = None,
+        llm: dict[str, Any] | None = None,
+        persistence: dict[str, Any] | None = None,
+        agent: dict[str, Any] | None = None,
+        logging: dict[str, Any] | None = None,
+        context_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build YAML payload for a custom agent definition."""
+        """
+        Build YAML payload for a custom agent definition.
+
+        Infrastructure settings use provided values or sensible defaults.
+        This allows custom agents to be minimal (only required fields) or
+        fully configured with all infrastructure settings.
+        """
+        # Build tools list
         tools: list[dict[str, Any]] = []
         if self._tool_mapper:
             tools = self._tool_mapper.map_tools(tool_allowlist)
+
+        # Get defaults for any missing settings
+        defaults = self._get_default_config(agent_id)
 
         return {
             "agent_id": agent_id,
@@ -663,23 +752,12 @@ class FileAgentRegistry:
             "created_at": created_at,
             "updated_at": updated_at,
             "profile": agent_id,
-            "specialist": "generic",
-            "agent": {
-                "enable_fast_path": True,
-                "router": {
-                    "use_llm_classification": True,
-                    "max_follow_up_length": 100,
-                },
-            },
-            "persistence": {
-                "type": "file",
-                "work_dir": f".taskforce_{agent_id}",
-            },
-            "llm": {
-                "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
-                "default_model": "main",
-            },
-            "logging": {"level": "DEBUG", "format": "console"},
+            "specialist": specialist or defaults["specialist"],
+            "agent": agent or defaults["agent"],
+            "persistence": persistence or defaults["persistence"],
+            "llm": llm or defaults["llm"],
+            "logging": logging or defaults["logging"],
+            "context_policy": context_policy or defaults["context_policy"],
             "tools": tools,
             "mcp_servers": mcp_servers,
             "system_prompt": system_prompt,

@@ -21,6 +21,9 @@ class CustomAgentDefinition:
     Represents a user-created agent with custom system prompt and
     tool allowlist. This is the core entity stored and retrieved by
     the registry.
+
+    Custom agents are complete, self-contained profile configurations.
+    They can be loaded via AgentFactory.create_agent(profile=agent_id).
     """
 
     agent_id: str
@@ -33,6 +36,14 @@ class CustomAgentDefinition:
     created_at: str = ""
     updated_at: str = ""
     source: str = "custom"
+
+    # Infrastructure settings (stored in YAML)
+    specialist: str = "generic"
+    llm: dict[str, Any] = field(default_factory=dict)
+    persistence: dict[str, Any] = field(default_factory=dict)
+    agent: dict[str, Any] = field(default_factory=dict)
+    logging: dict[str, Any] = field(default_factory=dict)
+    context_policy: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,6 +104,7 @@ class CustomAgentInput:
     Input for creating a custom agent.
 
     Separates creation input from stored entity (no timestamps).
+    All infrastructure settings are optional - defaults will be applied if not provided.
     """
 
     agent_id: str
@@ -103,6 +115,14 @@ class CustomAgentInput:
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     mcp_tool_allowlist: list[str] = field(default_factory=list)
 
+    # Optional infrastructure settings (defaults applied if None)
+    specialist: str | None = None
+    llm: dict[str, Any] | None = None
+    persistence: dict[str, Any] | None = None
+    agent: dict[str, Any] | None = None
+    logging: dict[str, Any] | None = None
+    context_policy: dict[str, Any] | None = None
+
 
 @dataclass
 class CustomAgentUpdateInput:
@@ -111,6 +131,7 @@ class CustomAgentUpdateInput:
 
     Contains all mutable fields that can be updated.
     Does not include agent_id (immutable) or timestamps (managed by registry).
+    All infrastructure settings are optional - if not provided, existing values are kept.
     """
 
     name: str
@@ -119,3 +140,11 @@ class CustomAgentUpdateInput:
     tool_allowlist: list[str] = field(default_factory=list)
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     mcp_tool_allowlist: list[str] = field(default_factory=list)
+
+    # Optional infrastructure settings (if None, keep existing values)
+    specialist: str | None = None
+    llm: dict[str, Any] | None = None
+    persistence: dict[str, Any] | None = None
+    agent: dict[str, Any] | None = None
+    logging: dict[str, Any] | None = None
+    context_policy: dict[str, Any] | None = None

@@ -64,6 +64,76 @@ To resume, call the same endpoint again with the same `session_id` and include t
 - `PUT /api/v1/agents/{agent_id}`: Update an existing custom agent.
 - `DELETE /api/v1/agents/{agent_id}`: Delete a custom agent.
 
+#### Custom Agent Creation
+
+Custom agents are self-contained profile configurations stored as YAML files in `configs/custom/{agent_id}.yaml`. They can be loaded via `AgentFactory.create_agent(profile=agent_id)`.
+
+**Infrastructure settings are optional** - sensible defaults are applied if not provided.
+
+**Example: Minimal custom agent (with defaults)**
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/api/v1/agents",
+    json={
+        "agent_id": "my-simple-agent",
+        "name": "My Simple Agent",
+        "description": "A simple agent with default settings",
+        "system_prompt": "You are a helpful assistant.",
+        "tool_allowlist": ["python", "file_read", "file_write"]
+    }
+)
+# Uses defaults: file persistence in .taskforce_my-simple-agent/, DEBUG logging, main model, etc.
+```
+
+**Example: Fully configured custom agent**
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/api/v1/agents",
+    json={
+        "agent_id": "my-advanced-agent",
+        "name": "My Advanced Agent",
+        "description": "An agent with custom infrastructure",
+        "system_prompt": "You are an expert assistant.",
+        "tool_allowlist": ["python", "web_search", "file_read"],
+        "specialist": "coding",
+        "llm": {
+            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+            "default_model": "claude-3-opus"
+        },
+        "persistence": {
+            "type": "file",
+            "work_dir": ".my_agent_data"
+        },
+        "agent": {
+            "max_steps": 50,
+            "planning_strategy": "spar",
+            "max_parallel_tools": 8
+        },
+        "logging": {
+            "level": "INFO",
+            "format": "json"
+        },
+        "context_policy": {
+            "max_items": 15,
+            "max_chars_per_item": 5000,
+            "max_total_chars": 30000
+        }
+    }
+)
+```
+
+**Default values** (applied when fields are not provided):
+- `specialist`: `"generic"`
+- `llm`: `{"config_path": "src/taskforce_extensions/configs/llm_config.yaml", "default_model": "main"}`
+- `persistence`: `{"type": "file", "work_dir": ".taskforce_{agent_id}"}`
+- `agent`: `{"max_steps": 30, "planning_strategy": "native_react", "max_parallel_tools": 4}`
+- `logging`: `{"level": "DEBUG", "format": "console"}`
+- `context_policy`: `{"max_items": 10, "max_chars_per_item": 3000, "max_total_chars": 15000}`
+
 #### Plugin Agent Discovery
 
 The API automatically discovers plugin agents from the `examples/` and `plugins/` directories. Plugin agents are listed alongside custom and profile agents with `source: "plugin"`.

@@ -394,6 +394,60 @@ Multi-agent pipeline for complex, multi-step tasks using planner/worker/judge ro
 
 ---
 
+## Custom Agent Registry
+
+REST API for creating and managing custom agent definitions via CRUD operations:
+
+- **Routes:** `src/taskforce/api/routes/agents.py`
+- **Storage:** Custom agents stored as YAML in `configs/custom/{agent_id}.yaml`
+- **Loading:** Can be loaded via `AgentFactory.create_agent(profile=agent_id)`
+- **Full Configuration:** Custom agents are self-contained profiles with optional infrastructure settings
+
+### Key Features
+
+1. **Optional Infrastructure Settings** - All infrastructure settings have sensible defaults:
+   - `llm`: LLM config (default: main model from llm_config.yaml)
+   - `persistence`: State storage (default: file-based in `.taskforce_{agent_id}/`)
+   - `agent`: Agent behavior (default: max_steps=30, native_react strategy)
+   - `logging`: Logging config (default: DEBUG console logging)
+   - `context_policy`: Context management (default: conservative policy)
+
+2. **Minimal or Full Configuration** - Create agents with just required fields or full custom config:
+   ```python
+   # Minimal (uses defaults)
+   POST /api/v1/agents
+   {
+     "agent_id": "my-agent",
+     "name": "My Agent",
+     "description": "Simple agent",
+     "system_prompt": "You are helpful.",
+     "tool_allowlist": ["python", "file_read"]
+   }
+
+   # Fully configured
+   POST /api/v1/agents
+   {
+     "agent_id": "advanced-agent",
+     "name": "Advanced Agent",
+     "system_prompt": "You are an expert.",
+     "tool_allowlist": ["python", "web_search"],
+     "llm": {"default_model": "claude-3-opus"},
+     "agent": {"max_steps": 50, "planning_strategy": "spar"},
+     "persistence": {"type": "database", "db_url_env": "DATABASE_URL"}
+   }
+   ```
+
+3. **API Endpoints:**
+   - `POST /api/v1/agents` - Create custom agent
+   - `GET /api/v1/agents` - List all agents (custom + profile + plugin)
+   - `GET /api/v1/agents/{agent_id}` - Get specific agent
+   - `PUT /api/v1/agents/{agent_id}` - Update custom agent
+   - `DELETE /api/v1/agents/{agent_id}` - Delete custom agent
+
+**See:** `docs/api.md` for detailed API documentation and examples
+
+---
+
 ## Communication Providers
 
 External communication integrations (Telegram, etc.) for agent-human interaction:
@@ -1101,7 +1155,9 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/api/cli/simple_chat.py` - Interactive chat interface
 - `src/taskforce/api/cli/commands/` - CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config)
 - `src/taskforce/api/routes/` - REST endpoints (execution, agents, sessions, tools, health, integrations)
+- `src/taskforce/api/routes/agents.py` - Custom Agent Registry (CRUD for custom agents with optional infrastructure settings)
 - `src/taskforce/api/schemas/` - Request/response schemas
+- `src/taskforce/api/schemas/agent_schemas.py` - Agent API schemas (CustomAgentCreate/Update/Response with full config support)
 
 ### Extensions
 - `src/taskforce_extensions/configs/` - Profile YAML configs

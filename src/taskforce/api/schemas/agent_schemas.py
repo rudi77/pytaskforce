@@ -27,8 +27,14 @@ from taskforce.core.domain.agent_models import (
 
 
 class CustomAgentCreate(BaseModel):
-    """Request schema for creating a custom agent."""
+    """
+    Request schema for creating a custom agent.
 
+    Custom agents are self-contained profile configurations.
+    Infrastructure settings are optional - sensible defaults are applied if not provided.
+    """
+
+    # Required fields
     agent_id: str = Field(
         ...,
         min_length=3,
@@ -47,6 +53,8 @@ class CustomAgentCreate(BaseModel):
     system_prompt: str = Field(
         ..., min_length=1, description="LLM system prompt"
     )
+
+    # Optional agent-specific settings
     tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed tool names"
     )
@@ -55,6 +63,26 @@ class CustomAgentCreate(BaseModel):
     )
     mcp_tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed MCP tool names"
+    )
+    specialist: Optional[str] = Field(
+        None, description="Specialist type (coding, rag, wiki, or generic)"
+    )
+
+    # Optional infrastructure settings (defaults applied if not provided)
+    llm: Optional[dict[str, Any]] = Field(
+        None, description="LLM configuration (config_path, default_model)"
+    )
+    persistence: Optional[dict[str, Any]] = Field(
+        None, description="Persistence configuration (type, work_dir)"
+    )
+    agent: Optional[dict[str, Any]] = Field(
+        None, description="Agent settings (max_steps, planning_strategy, etc.)"
+    )
+    logging: Optional[dict[str, Any]] = Field(
+        None, description="Logging configuration (level, format)"
+    )
+    context_policy: Optional[dict[str, Any]] = Field(
+        None, description="Context policy (max_items, max_chars_per_item, etc.)"
     )
 
     @field_validator("agent_id")
@@ -78,12 +106,23 @@ class CustomAgentCreate(BaseModel):
             tool_allowlist=self.tool_allowlist,
             mcp_servers=self.mcp_servers,
             mcp_tool_allowlist=self.mcp_tool_allowlist,
+            specialist=self.specialist,
+            llm=self.llm,
+            persistence=self.persistence,
+            agent=self.agent,
+            logging=self.logging,
+            context_policy=self.context_policy,
         )
 
 
 class CustomAgentUpdate(BaseModel):
-    """Request schema for updating a custom agent."""
+    """
+    Request schema for updating a custom agent.
 
+    All fields that are not provided will keep their existing values.
+    """
+
+    # Required fields
     name: str = Field(
         ..., min_length=1, description="Human-readable agent name"
     )
@@ -93,6 +132,8 @@ class CustomAgentUpdate(BaseModel):
     system_prompt: str = Field(
         ..., min_length=1, description="LLM system prompt"
     )
+
+    # Optional agent-specific settings
     tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed tool names"
     )
@@ -101,6 +142,26 @@ class CustomAgentUpdate(BaseModel):
     )
     mcp_tool_allowlist: list[str] = Field(
         default_factory=list, description="List of allowed MCP tool names"
+    )
+    specialist: Optional[str] = Field(
+        None, description="Specialist type (coding, rag, wiki, or generic)"
+    )
+
+    # Optional infrastructure settings (if not provided, keep existing values)
+    llm: Optional[dict[str, Any]] = Field(
+        None, description="LLM configuration (config_path, default_model)"
+    )
+    persistence: Optional[dict[str, Any]] = Field(
+        None, description="Persistence configuration (type, work_dir)"
+    )
+    agent: Optional[dict[str, Any]] = Field(
+        None, description="Agent settings (max_steps, planning_strategy, etc.)"
+    )
+    logging: Optional[dict[str, Any]] = Field(
+        None, description="Logging configuration (level, format)"
+    )
+    context_policy: Optional[dict[str, Any]] = Field(
+        None, description="Context policy (max_items, max_chars_per_item, etc.)"
     )
 
     def to_domain(self) -> CustomAgentUpdateInput:
@@ -112,11 +173,17 @@ class CustomAgentUpdate(BaseModel):
             tool_allowlist=self.tool_allowlist,
             mcp_servers=self.mcp_servers,
             mcp_tool_allowlist=self.mcp_tool_allowlist,
+            specialist=self.specialist,
+            llm=self.llm,
+            persistence=self.persistence,
+            agent=self.agent,
+            logging=self.logging,
+            context_policy=self.context_policy,
         )
 
 
 class CustomAgentResponse(BaseModel):
-    """Response schema for custom agent (with timestamps)."""
+    """Response schema for custom agent (with timestamps and full configuration)."""
 
     source: Literal["custom"] = "custom"
     agent_id: str
@@ -128,6 +195,14 @@ class CustomAgentResponse(BaseModel):
     mcp_tool_allowlist: list[str]
     created_at: str
     updated_at: str
+
+    # Infrastructure settings
+    specialist: str
+    llm: dict[str, Any]
+    persistence: dict[str, Any]
+    agent: dict[str, Any]
+    logging: dict[str, Any]
+    context_policy: dict[str, Any]
 
     @classmethod
     def from_domain(
@@ -144,6 +219,12 @@ class CustomAgentResponse(BaseModel):
             mcp_tool_allowlist=domain.mcp_tool_allowlist,
             created_at=domain.created_at,
             updated_at=domain.updated_at,
+            specialist=domain.specialist,
+            llm=domain.llm,
+            persistence=domain.persistence,
+            agent=domain.agent,
+            logging=domain.logging,
+            context_policy=domain.context_policy,
         )
 
 
