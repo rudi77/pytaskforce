@@ -75,7 +75,7 @@ def client(temp_configs_dir, monkeypatch):
 
 
 def test_create_agent_success(client):
-    """Test successful agent creation."""
+    """Test successful agent creation with defaults applied."""
     payload = {
         "agent_id": "invoice-extractor",
         "name": "Invoice Extractor",
@@ -98,6 +98,19 @@ def test_create_agent_success(client):
     assert "created_at" in data
     assert "updated_at" in data
     assert data["source"] == "custom"
+
+    # Verify infrastructure defaults are applied
+    assert data["specialist"] == "generic"
+    assert "llm" in data
+    assert data["llm"]["default_model"] == "main"
+    assert "persistence" in data
+    assert data["persistence"]["type"] == "file"
+    assert "agent" in data
+    assert data["agent"]["max_steps"] == 30
+    assert "logging" in data
+    assert data["logging"]["level"] == "DEBUG"
+    assert "context_policy" in data
+    assert data["context_policy"]["max_items"] == 10
 
 
 def test_create_agent_conflict(client):
@@ -423,6 +436,88 @@ def test_atomic_write_windows_safe(registry):
         data = yaml.safe_load(f)
     assert data["name"] == "Updated Atomic Test"
     assert data["created_at"] == created.created_at
+
+
+def test_create_agent_with_custom_infrastructure(client):
+    """Test creating agent with custom infrastructure settings."""
+    payload = {
+        "agent_id": "advanced-agent",
+        "name": "Advanced Agent",
+        "description": "Agent with custom infrastructure",
+        "system_prompt": "You are an advanced agent.",
+        "tool_allowlist": ["python", "web_search"],
+        "specialist": "coding",
+        "llm": {
+            "config_path": "custom/llm_config.yaml",
+            "default_model": "claude-3-opus",
+        },
+        "persistence": {
+            "type": "database",
+            "db_url_env": "DATABASE_URL",
+        },
+        "agent": {
+            "max_steps": 50,
+            "planning_strategy": "spar",
+            "max_parallel_tools": 8,
+        },
+        "logging": {
+            "level": "INFO",
+            "format": "json",
+        },
+        "context_policy": {
+            "max_items": 15,
+            "max_chars_per_item": 5000,
+            "max_total_chars": 30000,
+        },
+    }
+
+    response = client.post("/api/v1/agents", json=payload)
+
+    assert response.status_code == 201
+    data = response.json()
+
+    # Verify custom infrastructure settings
+    assert data["specialist"] == "coding"
+    assert data["llm"]["default_model"] == "claude-3-opus"
+    assert data["persistence"]["type"] == "database"
+    assert data["agent"]["max_steps"] == 50
+    assert data["agent"]["planning_strategy"] == "spar"
+    assert data["logging"]["level"] == "INFO"
+    assert data["context_policy"]["max_items"] == 15
+
+
+def test_update_agent_preserves_infrastructure(client):
+    """Test that updating agent preserves infrastructure settings if not provided."""
+    # Create agent with custom infrastructure
+    create_payload = {
+        "agent_id": "preserve-test",
+        "name": "Preserve Test",
+        "description": "Test preservation",
+        "system_prompt": "Test prompt",
+        "tool_allowlist": ["python"],
+        "specialist": "coding",
+        "llm": {"default_model": "claude-3-opus"},
+        "agent": {"max_steps": 50},
+    }
+    create_response = client.post("/api/v1/agents", json=create_payload)
+    assert create_response.status_code == 201
+
+    # Update only name and description (no infrastructure)
+    update_payload = {
+        "name": "Updated Name",
+        "description": "Updated description",
+        "system_prompt": "Updated prompt",
+        "tool_allowlist": ["python", "file_read"],
+    }
+    update_response = client.put("/api/v1/agents/preserve-test", json=update_payload)
+
+    assert update_response.status_code == 200
+    data = update_response.json()
+
+    # Verify infrastructure settings are preserved
+    assert data["specialist"] == "coding"
+    assert data["llm"]["default_model"] == "claude-3-opus"
+    assert data["agent"]["max_steps"] == 50
 
 
 def test_agent_id_validation(client):
