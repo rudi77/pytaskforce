@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from taskforce.api.routes import agents, execution, health, integrations, sessions, tools
+from taskforce.api.routes import agents, execution, gateway, health, integrations, sessions, tools
 from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
 from taskforce.application.plugin_discovery import (
     load_all_plugins,
@@ -142,6 +142,9 @@ def create_app(plugin_config: Optional[dict[str, Any]] = None) -> FastAPI:
     )
     app.include_router(
         integrations.router, prefix="/api/v1", tags=["integrations"]
+    )
+    app.include_router(
+        gateway.router, prefix="/api/v1", tags=["gateway"]
     )
     app.include_router(health.router, tags=["health"])
 

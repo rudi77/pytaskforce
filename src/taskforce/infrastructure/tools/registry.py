@@ -130,6 +130,12 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.memory_tool",
         "params": {},
     },
+    # Native tools - Communication
+    "send_notification": {
+        "type": "SendNotificationTool",
+        "module": "taskforce.infrastructure.tools.native.send_notification_tool",
+        "params": {},
+    },
 }
 
 

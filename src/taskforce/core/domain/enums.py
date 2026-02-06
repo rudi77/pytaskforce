@@ -40,6 +40,8 @@ class EventType(str, Enum):
     ERROR = "error"
     # Skill-related events
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
+    # Communication gateway events
+    NOTIFICATION = "notification"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"
