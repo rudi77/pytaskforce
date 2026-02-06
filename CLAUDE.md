@@ -20,7 +20,7 @@
   - CLI (Typer + Rich + Textual) for local development
   - REST API (FastAPI) for production microservices
 - **Persistence:** File-based (dev) or PostgreSQL (prod) via swappable adapters
-- **LLM Integration:** OpenAI and Azure OpenAI via LiteLLM
+- **LLM Integration:** Multi-provider (OpenAI, Anthropic, Google, Azure, Ollama, etc.) via LiteLLM
 - **Extensibility:** Plugin system, skills, slash commands, MCP tool servers
 
 ---
@@ -76,7 +76,7 @@ src/taskforce/
 │   └── utils/                 # Path utilities
 │
 ├── infrastructure/            # LAYER 2: External Integrations
-│   ├── llm/                   # LiteLLM service (OpenAI, Azure)
+│   ├── llm/                   # LiteLLM service (multi-provider: OpenAI, Anthropic, Google, Azure, etc.)
 │   ├── persistence/           # File state manager, agent registry
 │   ├── memory/                # File-based memory store
 │   ├── cache/                 # Tool result caching
@@ -150,7 +150,7 @@ from taskforce.core.domain.agent import Agent                      # Uses domain
 
 # Application layer
 from taskforce.core.domain.agent import Agent                      # Uses domain
-from taskforce.infrastructure.llm.openai_service import OpenAIService  # Wires infrastructure
+from taskforce.infrastructure.llm.litellm_service import LiteLLMService  # Wires infrastructure
 
 # API layer
 from taskforce.application.executor import AgentExecutor          # Uses application layer
@@ -1064,9 +1064,8 @@ See `docs/architecture/section-10-deployment.md` for:
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
 - `src/taskforce/infrastructure/persistence/file_agent_registry.py` - File-based agent registry
-- `src/taskforce/infrastructure/llm/openai_service.py` - LLM service (OpenAI + Azure)
-- `src/taskforce/infrastructure/llm/error_handler.py` - LLM error handling
-- `src/taskforce/infrastructure/llm/parameter_mapper.py` - LLM parameter mapping
+- `src/taskforce/infrastructure/llm/litellm_service.py` - Unified LLM service (multi-provider via LiteLLM)
+- `src/taskforce/infrastructure/llm/openai_service.py` - Backward-compatible alias (imports LiteLLMService)
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
 - `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry

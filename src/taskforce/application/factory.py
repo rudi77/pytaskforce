@@ -1627,7 +1627,7 @@ class AgentFactory:
         Returns:
             LLM provider implementation (OpenAI)
         """
-        from taskforce.infrastructure.llm.openai_service import OpenAIService
+        from taskforce.infrastructure.llm.litellm_service import LiteLLMService
 
         llm_config = config.get("llm", {})
         config_path = llm_config.get(
@@ -1641,7 +1641,6 @@ class AgentFactory:
 
             # Backward compatibility: if old path doesn't exist, try new location
             if not resolved_path.exists() and config_path.startswith("configs/"):
-                # Try new location: src/taskforce_extensions/configs/...
                 new_path = get_base_path() / "src" / "taskforce_extensions" / config_path
                 if new_path.exists():
                     resolved_path = new_path
@@ -1653,7 +1652,7 @@ class AgentFactory:
 
             config_path = str(resolved_path)
 
-        return OpenAIService(config_path=config_path)
+        return LiteLLMService(config_path=config_path)
 
     def _create_native_tools(
         self,

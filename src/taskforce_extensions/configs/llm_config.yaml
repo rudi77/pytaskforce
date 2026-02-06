@@ -1,8 +1,19 @@
 # LLM Service Configuration
-# This file defines model aliases, parameters, retry policies, and provider settings
+# Provider-agnostic configuration using LiteLLM model string prefixes.
+#
+# The provider is determined by the model string prefix:
+#   - No prefix       → OpenAI          (needs OPENAI_API_KEY)
+#   - "anthropic/"    → Anthropic        (needs ANTHROPIC_API_KEY)
+#   - "gemini/"       → Google Gemini    (needs GEMINI_API_KEY)
+#   - "azure/"        → Azure OpenAI     (needs AZURE_API_KEY, AZURE_API_BASE, AZURE_API_VERSION)
+#   - "ollama/"       → Ollama (local)   (no key needed)
+#   - "openai/"       → OpenAI-compat    (needs OPENAI_API_KEY + api_base in model_params)
+#
+# See https://docs.litellm.ai/docs/providers for the full list.
 
 default_model: "powerful-1"
 
+# Model alias mapping: short name → LiteLLM model string
 models:
   main: "gpt-4.1"
   fast: "gpt-4.1-mini"
@@ -10,6 +21,15 @@ models:
   powerful-1: "gpt-5-mini"
   legacy: "gpt-4-turbo"
 
+  # ── Multi-provider examples (uncomment to use) ──────────────────────
+  # claude-sonnet: "anthropic/claude-sonnet-4-20250514"
+  # gemini-pro: "gemini/gemini-2.5-pro"
+  # azure-main: "azure/my-gpt4-deployment"
+  # local-llama: "ollama/llama3"
+  # kimi: "openai/moonshot-v1-8k"   # set api_base in model_params below
+
+# Per-model default parameters
+# LiteLLM's drop_params=True ensures unsupported params are ignored per provider
 model_params:
   gpt-4:
     temperature: 0.7
@@ -17,16 +37,16 @@ model_params:
     max_tokens: 2000
     frequency_penalty: 0.0
     presence_penalty: 0.0
-  
+
   gpt-4.1:
     temperature: 0.2
     top_p: 1.0
     max_tokens: 2000
-  
+
   gpt-4.1-mini:
     temperature: 0.7
     max_tokens: 10000
-  
+
   gpt-5:
     effort: "medium"
     reasoning: "balanced"
@@ -35,8 +55,22 @@ model_params:
   gpt-5-mini:
     effort: "low"
     reasoning: "minimal"
-    #max_tokens: 10000    
+    #max_tokens: 10000
 
+  # ── Examples for other providers ────────────────────────────────────
+  # anthropic/claude-sonnet-4-20250514:
+  #   max_tokens: 8192
+  #   temperature: 0.7
+  #
+  # gemini/gemini-2.5-pro:
+  #   max_tokens: 4096
+  #   temperature: 0.7
+  #
+  # openai/moonshot-v1-8k:       # Kimi / OpenAI-compatible
+  #   api_base: "https://api.moonshot.cn/v1"
+  #   max_tokens: 4096
+
+# Fallback parameters when no model-specific config matches
 default_params:
   temperature: 0.7
   max_tokens: 2000
@@ -44,116 +78,11 @@ default_params:
   frequency_penalty: 0.0
   presence_penalty: 0.0
 
-retry_policy:
+# Retry policy for transient API errors
+retry:
   max_attempts: 3
   backoff_multiplier: 2
-  timeout: 30
-  retry_on_errors:
-    - "RateLimitError"
-    - "APIConnectionError"
-    - "Timeout"
-    - "BadRequestError"
-    - "DeploymentNotFound"
-    - "InvalidApiVersion"
-    - "AuthenticationError"
-    - "ResourceNotFound"
-    - "ServiceUnavailableError"
-
-providers:
-  # OpenAI Provider (Default)
-  # Direct access to OpenAI API - requires OPENAI_API_KEY environment variable
-  openai:
-    api_key_env: "OPENAI_API_KEY"
-    organization_env: "OPENAI_ORG_ID"
-    base_url: null
-  
-  # ============================================================================
-  # Azure OpenAI Provider Configuration
-  # ============================================================================
-  # Enable this section to use Azure-hosted OpenAI models
-  # 
-  # SETUP STEPS:
-  # 1. Create Azure OpenAI resource in Azure Portal
-  # 2. Deploy models (e.g., GPT-4, GPT-4.1) with deployment names
-  # 3. Copy endpoint URL and API key from Azure Portal → Keys and Endpoint
-  # 4. Set environment variables (see below)
-  # 5. Enable Azure provider and map model aliases to deployment names
-  #
-  # See docs/azure-openai-setup.md for detailed setup guide
-  # ============================================================================
-  
-  azure:
-    # Set to true to enable Azure OpenAI (disables OpenAI provider)
-    enabled: true
-    
-    # -------------------------------------------------------------------------
-    # Required Environment Variables
-    # -------------------------------------------------------------------------
-    # These variables must be set in your environment when Azure is enabled
-    #
-    # PowerShell:
-    #   $env:AZURE_OPENAI_API_KEY = "your-api-key-here"
-    #   $env:AZURE_OPENAI_ENDPOINT = "https://your-resource.openai.azure.com/"
-    #
-    # Linux/Mac:
-    #   export AZURE_OPENAI_API_KEY="your-api-key-here"
-    #   export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/"
-    # -------------------------------------------------------------------------
-    
-    api_key_env: "AZURE_OPENAI_API_KEY"
-    endpoint_url_env: "AZURE_OPENAI_ENDPOINT"
-    
-    # -------------------------------------------------------------------------
-    # Azure API Version
-    # -------------------------------------------------------------------------
-    # Azure OpenAI uses versioned APIs. Common versions:
-    # - "2024-02-15-preview" (recommended, supports GPT-4 and GPT-5)
-    # - "2023-12-01-preview"
-    # - "2023-05-15"
-    #
-    # Check Azure OpenAI documentation for latest supported versions
-    # https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
-    # -------------------------------------------------------------------------
-    
-    api_version: "2024-02-15-preview"
-    
-    # -------------------------------------------------------------------------
-    # Deployment Mapping
-    # -------------------------------------------------------------------------
-    # Map model aliases (from 'models' section above) to Azure deployment names
-    #
-    # IMPORTANT: Deployment names must exactly match what you created in Azure Portal
-    #
-    # Example configuration:
-    #   main: "gpt-4.1"
-    #   fast: "gpt-4.1-mini"
-    # -------------------------------------------------------------------------
-    
-    deployment_mapping:
-      main: "gpt-4.1"
-      fast: "gpt-4.1-mini"
-      powerful: "gpt-5"
-      powerful-1: "gpt-5-mini"
-      legacy: "gpt-4-turbo"
-    
-    # -------------------------------------------------------------------------
-    # Hybrid Configuration Strategy
-    # -------------------------------------------------------------------------
-    # Azure provider operates in exclusive mode - when enabled, ALL LLM calls
-    # route through Azure. For true hybrid (some OpenAI, some Azure), use one of:
-    #
-    # Option 1: Multiple LLMService instances
-    #   - Create two config files (llm_config_openai.yaml, llm_config_azure.yaml)
-    #   - Instantiate separate LLMService instances for each provider
-    #
-    # Option 2: Environment-based switching
-    #   - Use different config files per environment (dev, staging, prod)
-    #   - Set azure.enabled based on deployment environment
-    #
-    # Option 3: Model-based routing (requires code changes)
-    #   - Deploy commonly-used models to Azure (cost savings)
-    #   - Keep specialized models on OpenAI
-    # -------------------------------------------------------------------------
+  timeout: 60
 
 logging:
   log_prompts: false
@@ -165,32 +94,36 @@ logging:
 tracing:
   enabled: true
   # Mode: 'file', 'phoenix', or 'both'
-  # Note: Phoenix OTEL auto-instrumentation is separate from file tracing
   mode: "file"
   file_config:
     path: "traces/llm_traces.jsonl"
   phoenix_config:
-    # Arize Phoenix collector endpoints (Docker container)
-    # HTTP endpoint for traces
     collector_endpoint: "http://localhost:6006/v1/traces"
-    # gRPC endpoint (preferred for performance)
     grpc_endpoint: "http://localhost:4317"
     project_name: "taskforce"
 
 # ============================================================================
-# Phoenix OTEL Tracing (Environment Variables)
+# Environment Variable Quick Reference
 # ============================================================================
-# The Phoenix OTEL integration is configured via environment variables:
 #
-# TRACING_ENABLED: Enable/disable tracing (default: true)
-# PHOENIX_PROJECT_NAME: Project name in Phoenix UI (default: taskforce)
-# PHOENIX_COLLECTOR_ENDPOINT: HTTP endpoint (default: http://localhost:6006/v1/traces)
-# PHOENIX_GRPC_ENDPOINT: gRPC endpoint (default: http://localhost:4317)
+# OpenAI:
+#   export OPENAI_API_KEY="sk-..."
 #
-# Example (PowerShell):
-#   $env:TRACING_ENABLED = "true"
-#   $env:PHOENIX_PROJECT_NAME = "taskforce"
-#   $env:PHOENIX_GRPC_ENDPOINT = "http://localhost:4317"
+# Anthropic:
+#   export ANTHROPIC_API_KEY="sk-ant-..."
+#
+# Google Gemini:
+#   export GEMINI_API_KEY="..."
+#
+# Azure OpenAI:
+#   export AZURE_API_KEY="..."
+#   export AZURE_API_BASE="https://your-resource.openai.azure.com/"
+#   export AZURE_API_VERSION="2024-02-15-preview"
+#
+# Ollama (local):
+#   No key needed – just run `ollama serve`
+#
+# OpenAI-compatible (e.g., Kimi, GLM):
+#   export OPENAI_API_KEY="your-provider-key"
+#   Set api_base in model_params above
 # ============================================================================
-
-
