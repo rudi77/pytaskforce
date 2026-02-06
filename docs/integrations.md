@@ -246,12 +246,6 @@ Content-Type: application/json
 
 ---
 
-## Legacy API
-
-The previous `/api/v1/integrations/{provider}/messages` endpoint is still
-available for backward compatibility. New integrations should use the
-gateway endpoints instead.
-
 ---
 
 ## Adding a New Channel

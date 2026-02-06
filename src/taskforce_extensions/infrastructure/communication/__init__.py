@@ -1,31 +1,20 @@
 """Communication infrastructure adapters.
 
-Legacy adapters (providers, conversation_store, telegram_sender) are preserved
-for backward compatibility. New code should use the gateway components.
+Gateway components for unified channel-based agent communication:
+- OutboundSenders: deliver messages to Telegram, Teams, etc.
+- InboundAdapters: normalize raw webhooks from providers
+- ConversationStore: persist session mappings and chat history
+- RecipientRegistry: track recipients for push notifications
+- GatewayRegistry: auto-configure components from environment
 """
 
-# --- Legacy exports (backward compatible) ---
-from taskforce_extensions.infrastructure.communication.conversation_store import (
-    FileConversationStore as LegacyFileConversationStore,
-    InMemoryConversationStore as LegacyInMemoryConversationStore,
-)
-from taskforce_extensions.infrastructure.communication.providers import (
-    BaseCommunicationProvider,
-    TeamsProvider,
-    TelegramProvider,
-)
-from taskforce_extensions.infrastructure.communication.registry import (
-    build_provider_registry,
-)
-from taskforce_extensions.infrastructure.communication.telegram_sender import (
-    build_telegram_sender,
-)
-
-# --- Gateway exports (new unified API) ---
+# --- Stores ---
 from taskforce_extensions.infrastructure.communication.gateway_conversation_store import (
     FileConversationStore,
     InMemoryConversationStore,
 )
+
+# --- Wiring ---
 from taskforce_extensions.infrastructure.communication.gateway_registry import (
     GatewayComponents,
     build_gateway_components,
@@ -34,6 +23,8 @@ from taskforce_extensions.infrastructure.communication.inbound_adapters import (
     TeamsInboundAdapter,
     TelegramInboundAdapter,
 )
+
+# --- Channel adapters ---
 from taskforce_extensions.infrastructure.communication.outbound_senders import (
     TeamsOutboundSender,
     TelegramOutboundSender,
@@ -44,25 +35,17 @@ from taskforce_extensions.infrastructure.communication.recipient_registry import
 )
 
 __all__ = [
-    # Legacy
-    "BaseCommunicationProvider",
-    "LegacyFileConversationStore",
-    "LegacyInMemoryConversationStore",
-    "TeamsProvider",
-    "TelegramProvider",
-    "build_provider_registry",
-    "build_telegram_sender",
-    # Gateway - Stores
+    # Stores
     "FileConversationStore",
     "InMemoryConversationStore",
     "FileRecipientRegistry",
     "InMemoryRecipientRegistry",
-    # Gateway - Channel adapters
+    # Channel adapters
     "TelegramOutboundSender",
     "TeamsOutboundSender",
     "TelegramInboundAdapter",
     "TeamsInboundAdapter",
-    # Gateway - Wiring
+    # Wiring
     "GatewayComponents",
     "build_gateway_components",
 ]

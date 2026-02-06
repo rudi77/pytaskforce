@@ -22,22 +22,27 @@ Once the server is running, you can access the interactive documentation at:
 - `POST /api/v1/execution/execute`: Run a mission synchronously.
 - `POST /api/v1/execution/execute/stream`: Run a mission with real-time SSE progress updates.
 
-### Integrations (Telegram/MS Teams)
-- `POST /api/v1/integrations/{provider}/messages`: Accept inbound messages and route them to the agent.
-  - Supported providers: `telegram`, `teams`
-  - The API maintains conversation history per provider conversation and maps it to a Taskforce `session_id`.
+### Communication Gateway (Telegram/MS Teams)
+- `POST /api/v1/gateway/{channel}/messages`: Handle normalized inbound messages from any channel.
+- `POST /api/v1/gateway/{channel}/webhook`: Handle raw provider webhooks (Telegram, Teams).
+- `POST /api/v1/gateway/notify`: Send proactive push notification to a registered user.
+- `POST /api/v1/gateway/broadcast`: Broadcast to all recipients on a channel.
+- `GET  /api/v1/gateway/channels`: List configured communication channels.
+  - Supported channels: `telegram`, `teams`
+  - The gateway manages conversation history, session mapping, and outbound replies.
   - Setup guide: see [External Integrations](integrations.md).
-  - Telegram push requires `TELEGRAM_BOT_TOKEN` in `.env`.
+  - Telegram requires `TELEGRAM_BOT_TOKEN` in `.env`.
 
 **Example: Send a Telegram message**
 ```python
 import requests
 
 response = requests.post(
-    "http://localhost:8000/api/v1/integrations/telegram/messages",
+    "http://localhost:8000/api/v1/gateway/telegram/messages",
     json={
-        "conversation_id": "telegram:123456",
-        "message": "Was haben wir zuletzt besprochen?"
+        "conversation_id": "123456789",
+        "message": "Was haben wir zuletzt besprochen?",
+        "sender_id": "user-42"
     }
 )
 print(response.json())

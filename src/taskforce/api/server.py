@@ -1,20 +1,22 @@
 import logging
 import os
-from typing import Any, Optional
-import structlog
 from contextlib import asynccontextmanager
+from typing import Any
+
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from taskforce.api.routes import agents, execution, gateway, health, integrations, sessions, tools
-from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
+
+from taskforce.api.routes import agents, execution, gateway, health, sessions, tools
 from taskforce.application.plugin_discovery import (
-    load_all_plugins,
-    shutdown_plugins,
     get_plugin_registry,
     is_enterprise_available,
+    load_all_plugins,
+    shutdown_plugins,
 )
+from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
 
 # Configure logging based on LOGLEVEL environment variable
 loglevel = os.getenv("LOGLEVEL", "INFO").upper()
@@ -95,7 +97,7 @@ def _load_plugin_config() -> dict[str, Any]:
     return {}
 
 
-def create_app(plugin_config: Optional[dict[str, Any]] = None) -> FastAPI:
+def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     """Create and configure FastAPI application.
 
     Args:
@@ -139,9 +141,6 @@ def create_app(plugin_config: Optional[dict[str, Any]] = None) -> FastAPI:
     )
     app.include_router(
         tools.router, prefix="/api/v1", tags=["tools"]
-    )
-    app.include_router(
-        integrations.router, prefix="/api/v1", tags=["integrations"]
     )
     app.include_router(
         gateway.router, prefix="/api/v1", tags=["gateway"]
