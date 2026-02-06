@@ -15,11 +15,11 @@ default_model: "powerful-1"
 
 # Model alias mapping: short name → LiteLLM model string
 models:
-  main: "gpt-4.1"
-  fast: "gpt-4.1-mini"
-  powerful: "gpt-5"
-  powerful-1: "gpt-5-mini"
-  legacy: "gpt-4-turbo"
+  main: "azure/gpt-4.1"
+  fast: "azure/gpt-4.1"
+  powerful: "azure/gpt-4.1"
+  powerful-1: "azure/gpt-5.0-mini"
+  legacy: "azure/gpt-4.1"
 
   # ── Multi-provider examples (uncomment to use) ──────────────────────
   # claude-sonnet: "anthropic/claude-sonnet-4-20250514"
