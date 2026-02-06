@@ -23,7 +23,6 @@ Usage:
         pass
 """
 
-from taskforce.core.interfaces.communication import CommunicationProviderProtocol
 from taskforce.core.interfaces.gateway import (
     ConversationStoreProtocol,
     InboundAdapterProtocol,
@@ -51,7 +50,6 @@ __all__ = [
     "StateManagerProtocol",
     "LLMProviderProtocol",
     "MessageBusProtocol",
-    "CommunicationProviderProtocol",
     "OutboundSenderProtocol",
     "InboundAdapterProtocol",
     "ConversationStoreProtocol",

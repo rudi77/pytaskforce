@@ -93,11 +93,15 @@ during execution. Requires approval (MEDIUM risk). The tool delegates to the
     └────────────┘  └──────────┘  └──────────┘  └───────────────┘
 ```
 
-## Backward Compatibility
-- The legacy `/api/v1/integrations/{provider}/messages` route is preserved.
-- The old `CommunicationProviderProtocol`, `CommunicationService`, and provider
-  classes remain importable for backward compatibility.
-- New code should use the gateway APIs.
+## Migration
+The legacy code has been fully removed:
+- `/api/v1/integrations/{provider}/messages` route -- deleted.
+- `CommunicationProviderProtocol`, `CommunicationService`, `TelegramProvider`,
+  `TeamsProvider`, `BaseCommunicationProvider` -- deleted.
+- Legacy `conversation_store.py`, `providers.py`, `telegram_sender.py`,
+  `registry.py` -- deleted.
+
+All communication now flows through the gateway.
 
 ## Consequences
 - **Unified entry point** -- all channels go through the same gateway.
