@@ -27,7 +27,7 @@ persistence:
 # Agent configuration
 agent:
   enable_fast_path: true  # Enable fast-path for follow-up queries
-  planning_strategy: spar  # Sense-Plan-Act-Reflect for orchestration
+  planning_strategy: native_react  # Sense-Plan-Act-Reflect for orchestration
   max_parallel_tools: 3
   router:
     use_llm_classification: true  # Use LLM for better accuracy in prod
