@@ -145,7 +145,7 @@ class TestActivateSkillTool:
         mock_agent = MagicMock()
         mock_agent.skill_manager = mock_skill_manager
         mock_agent.activate_skill.return_value = True
-        mock_agent.tools = [mock_tool]
+        mock_agent.tools = {"test_tool": mock_tool}
 
         tool.set_agent_ref(mock_agent)
         result = await tool.execute(skill_name="smart-booking-auto", input={"file_path": "test.pdf"})
@@ -194,7 +194,7 @@ class TestActivateSkillTool:
         mock_agent = MagicMock()
         mock_agent.skill_manager = mock_skill_manager
         mock_agent.activate_skill.return_value = True
-        mock_agent.tools = [mock_tool]
+        mock_agent.tools = {"confidence_evaluator": mock_tool}
 
         tool.set_agent_ref(mock_agent)
         result = await tool.execute(skill_name="smart-booking-auto", input={"file_path": "test.pdf"})
@@ -230,7 +230,7 @@ class TestActivateSkillTool:
         mock_agent = MagicMock()
         mock_agent.skill_manager = mock_skill_manager
         mock_agent.activate_skill.return_value = True
-        mock_agent.tools = [mock_tool]
+        mock_agent.tools = {"failing_tool": mock_tool}
 
         tool.set_agent_ref(mock_agent)
         result = await tool.execute(skill_name="test-skill", input={"file_path": "test.pdf"})
