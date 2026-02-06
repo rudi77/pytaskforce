@@ -43,9 +43,7 @@ class FileRecipientRegistry:
             try:
                 async with aiofiles.open(temp_path, "w", encoding="utf-8") as handle:
                     await handle.write(json.dumps(payload, indent=2, ensure_ascii=False))
-                if path.exists():
-                    path.unlink()
-                temp_path.rename(path)
+                temp_path.replace(path)
             except OSError as exc:
                 self._logger.error(
                     "recipient_registry.register_failed",

@@ -231,6 +231,77 @@ async def test_broadcast(gateway_parts) -> None:
     assert len(sender.sent) == 2
 
 
+class FailingSender:
+    """Sender that raises ConnectionError to test error propagation."""
+
+    @property
+    def channel(self) -> str:
+        return "telegram"
+
+    async def send(
+        self,
+        *,
+        recipient_id: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        raise ConnectionError("Telegram API returned HTTP 403: bot blocked by user")
+
+
+@pytest.mark.asyncio
+async def test_send_notification_sender_raises_returns_failure() -> None:
+    """When the OutboundSender raises, send_notification returns failure."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": FailingSender()},
+    )
+
+    await registry.register(
+        channel="telegram",
+        user_id="user-1",
+        reference={"conversation_id": "chat-1"},
+    )
+
+    result = await gateway.send_notification(
+        NotificationRequest(
+            channel="telegram",
+            recipient_id="user-1",
+            message="This will fail",
+        )
+    )
+
+    assert not result.success
+    assert "HTTP 403" in result.error
+
+
+@pytest.mark.asyncio
+async def test_handle_message_outbound_failure_does_not_lose_response() -> None:
+    """When outbound reply fails, the gateway response is still returned."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": FailingSender()},
+    )
+
+    msg = InboundMessage(channel="telegram", conversation_id="chat-42", message="Hi")
+    response = await gateway.handle_message(msg)
+
+    # Response should still be returned even though outbound failed
+    assert response.reply == "Agent reply"
+    assert response.status == "completed"
+
+    # History should still be persisted
+    history = await store.load_history("telegram", "chat-42")
+    assert len(history) == 2
+
+
 @pytest.mark.asyncio
 async def test_supported_channels(gateway_parts) -> None:
     gateway, _, _, _ = gateway_parts

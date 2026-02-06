@@ -242,11 +242,6 @@ class CommunicationGateway:
         """Return channels that have an outbound sender configured."""
         return set(self._outbound_senders.keys())
 
-    def all_channels(self) -> set[str]:
-        """Return all channels with any component (inbound or outbound)."""
-        channels = set(self._outbound_senders.keys())
-        return channels
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
