@@ -24,6 +24,12 @@ Usage:
 """
 
 from taskforce.core.interfaces.communication import CommunicationProviderProtocol
+from taskforce.core.interfaces.gateway import (
+    ConversationStoreProtocol,
+    InboundAdapterProtocol,
+    OutboundSenderProtocol,
+    RecipientRegistryProtocol,
+)
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.messaging import MessageBusProtocol
 from taskforce.core.interfaces.runtime import (
@@ -46,6 +52,10 @@ __all__ = [
     "LLMProviderProtocol",
     "MessageBusProtocol",
     "CommunicationProviderProtocol",
+    "OutboundSenderProtocol",
+    "InboundAdapterProtocol",
+    "ConversationStoreProtocol",
+    "RecipientRegistryProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
     "HeartbeatStoreProtocol",
