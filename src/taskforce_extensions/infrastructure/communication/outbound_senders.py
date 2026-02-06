@@ -57,12 +57,16 @@ class TelegramOutboundSender:
                         response=body,
                         recipient_id=recipient_id,
                     )
+                    raise ConnectionError(
+                        f"Telegram API returned HTTP {response.status}: {body}"
+                    )
         except (TimeoutError, aiohttp.ClientError) as exc:
             self._logger.error(
                 "telegram.send_error",
                 error=str(exc),
                 recipient_id=recipient_id,
             )
+            raise ConnectionError(f"Telegram API request failed: {exc}") from exc
 
     async def close(self) -> None:
         """Close the underlying HTTP session."""
