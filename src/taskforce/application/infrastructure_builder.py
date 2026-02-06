@@ -40,7 +40,7 @@ class InfrastructureBuilder:
 
     Responsible for creating infrastructure adapters based on configuration:
     - StateManager (file or database persistence)
-    - LLMProvider (OpenAI/Azure via LiteLLM)
+    - LLMProvider (multi-provider via LiteLLM)
     - MCP tools (stdio or SSE connections)
     - ContextPolicy (conversation context management)
     """
@@ -193,9 +193,9 @@ class InfrastructureBuilder:
             config: Profile configuration dictionary
 
         Returns:
-            LLM provider implementation (OpenAI via LiteLLM)
+            LLM provider implementation (multi-provider via LiteLLM)
         """
-        from taskforce.infrastructure.llm.openai_service import OpenAIService
+        from taskforce.infrastructure.llm.litellm_service import LiteLLMService
 
         llm_config = config.get("llm", {})
         config_path = llm_config.get(
@@ -209,7 +209,6 @@ class InfrastructureBuilder:
 
             # Backward compatibility: if old path doesn't exist, try new location
             if not resolved_path.exists() and config_path.startswith("configs/"):
-                # Try new location: src/taskforce_extensions/configs/...
                 new_path = get_base_path() / "src" / "taskforce_extensions" / config_path
                 if new_path.exists():
                     resolved_path = new_path
@@ -221,7 +220,7 @@ class InfrastructureBuilder:
 
             config_path = str(resolved_path)
 
-        return OpenAIService(config_path=config_path)
+        return LiteLLMService(config_path=config_path)
 
     # -------------------------------------------------------------------------
     # MCP Tools

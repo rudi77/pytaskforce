@@ -1,10 +1,10 @@
 """
-Integration tests for OpenAIService with actual LLM API calls.
+Integration tests for LiteLLMService with actual LLM API calls.
 
 These tests require:
-- OPENAI_API_KEY environment variable set
+- OPENAI_API_KEY environment variable set (or another provider's key)
 - Active internet connection
-- OpenAI API access
+- API access for the configured provider
 
 Tests are marked with @pytest.mark.integration and can be skipped with:
     pytest -m "not integration"
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskforce.infrastructure.llm.openai_service import OpenAIService
+from taskforce.infrastructure.llm.litellm_service import LiteLLMService
 
 
 @pytest.fixture
@@ -33,17 +33,12 @@ def integration_config_file(tmp_path):
             "gpt-4.1-mini": {"temperature": 0.7, "max_tokens": 50},
         },
         "default_params": {"temperature": 0.7, "max_tokens": 100},
-        "retry_policy": {
+        "retry": {
             "max_attempts": 3,
             "backoff_multiplier": 2,
             "timeout": 30,
-            "retry_on_errors": ["RateLimitError", "Timeout"],
         },
-        "providers": {
-            "openai": {"api_key_env": "OPENAI_API_KEY"},
-            "azure": {"enabled": False},
-        },
-        "logging": {"log_token_usage": True, "log_parameter_mapping": True},
+        "logging": {"log_token_usage": True},
     }
 
     config_path = tmp_path / "integration_llm_config.yaml"
@@ -62,14 +57,14 @@ def skip_if_no_api_key():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-class TestOpenAIServiceIntegration:
-    """Integration tests with actual OpenAI API."""
+class TestLiteLLMServiceIntegration:
+    """Integration tests with actual LLM API."""
 
     async def test_actual_completion_simple(
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test actual LLM completion with simple prompt."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[
@@ -90,7 +85,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test actual completion with custom parameters."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[
@@ -116,7 +111,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test generate method with actual API."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.generate(
             prompt="What is 2+2? Answer with just the number.",
@@ -132,7 +127,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test generate method with structured context."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.generate(
             prompt="What is the sum of all numbers in the data?",
@@ -150,7 +145,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test token usage tracking in actual completion."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[{"role": "user", "content": "Hello"}],
@@ -172,7 +167,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test completion with conversation history."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[
@@ -192,7 +187,7 @@ class TestOpenAIServiceIntegration:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test latency measurement in actual completion."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[{"role": "user", "content": "Hi"}],
@@ -209,14 +204,14 @@ class TestOpenAIServiceIntegration:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-class TestOpenAIServiceErrorHandling:
+class TestLiteLLMServiceErrorHandling:
     """Integration tests for error handling."""
 
     async def test_invalid_model_name(
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test handling of invalid model name."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         # Manually set an invalid model
         result = await service.complete(
@@ -233,7 +228,7 @@ class TestOpenAIServiceErrorHandling:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test handling of empty messages list."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(messages=[], model="fast", max_tokens=10)
 
@@ -243,98 +238,14 @@ class TestOpenAIServiceErrorHandling:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.skipif(
-    not os.getenv("AZURE_OPENAI_API_KEY") or not os.getenv("AZURE_OPENAI_ENDPOINT"),
-    reason="Azure OpenAI credentials not configured",
-)
-class TestAzureOpenAIIntegration:
-    """Integration tests for Azure OpenAI provider (optional)."""
-
-    @pytest.fixture
-    def azure_integration_config(self, tmp_path):
-        """Create Azure config for integration tests."""
-        config = {
-            "default_model": "main",
-            "models": {"main": "gpt-4.1", "fast": "gpt-4.1-mini"},
-            "model_params": {
-                "gpt-4.1": {"temperature": 0.2, "max_tokens": 100},
-            },
-            "default_params": {"temperature": 0.7, "max_tokens": 100},
-            "retry_policy": {
-                "max_attempts": 3,
-                "backoff_multiplier": 2,
-                "timeout": 30,
-                "retry_on_errors": ["RateLimitError"],
-            },
-            "providers": {
-                "azure": {
-                    "enabled": True,
-                    "api_key_env": "AZURE_OPENAI_API_KEY",
-                    "endpoint_url_env": "AZURE_OPENAI_ENDPOINT",
-                    "api_version": "2024-02-15-preview",
-                    "deployment_mapping": {
-                        "main": os.getenv(
-                            "AZURE_DEPLOYMENT_MAIN", "gpt-4.1"
-                        ),  # Allow override
-                        "fast": os.getenv("AZURE_DEPLOYMENT_FAST", "gpt-4.1-mini"),
-                    },
-                }
-            },
-            "logging": {"log_token_usage": True},
-        }
-
-        config_path = tmp_path / "azure_integration_config.yaml"
-        with open(config_path, "w") as f:
-            yaml.dump(config, f)
-
-        return str(config_path)
-
-    async def test_azure_actual_completion(self, azure_integration_config):
-        """Test actual completion with Azure OpenAI."""
-        service = OpenAIService(config_path=azure_integration_config)
-
-        result = await service.complete(
-            messages=[
-                {"role": "user", "content": "Say 'azure test passed' exactly."}
-            ],
-            model="main",
-            max_tokens=10,
-        )
-
-        assert result["success"] is True
-        assert "azure test passed" in result["content"].lower()
-        assert result["model"].startswith("azure/")
-
-    async def test_azure_connection_test(self, azure_integration_config):
-        """Test Azure connection diagnostic method."""
-        service = OpenAIService(config_path=azure_integration_config)
-
-        result = await service.test_azure_connection()
-
-        assert "success" in result
-        assert "deployments_tested" in result
-        assert len(result["deployments_tested"]) > 0
-
-        if result["success"]:
-            assert len(result["deployments_available"]) > 0
-            assert result["endpoint_reachable"] is True
-            assert result["authentication_valid"] is True
-        else:
-            # If failed, should have errors and recommendations
-            assert len(result["errors"]) > 0
-            assert len(result["recommendations"]) > 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.integration
 class TestProtocolCompliance:
-    """Test that OpenAIService implements LLMProviderProtocol correctly."""
+    """Test that LiteLLMService implements LLMProviderProtocol correctly."""
 
     async def test_complete_signature_compliance(
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test complete method signature matches protocol."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         # Protocol requires: messages, model (optional), **kwargs
         result = await service.complete(
@@ -359,7 +270,7 @@ class TestProtocolCompliance:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test generate method signature matches protocol."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         # Protocol requires: prompt, context (optional), model (optional), **kwargs
         result = await service.generate(prompt="Test")
@@ -377,7 +288,7 @@ class TestProtocolCompliance:
         self, integration_config_file, skip_if_no_api_key
     ):
         """Test return value structure matches protocol."""
-        service = OpenAIService(config_path=integration_config_file)
+        service = LiteLLMService(config_path=integration_config_file)
 
         result = await service.complete(
             messages=[{"role": "user", "content": "Test"}], model="fast", max_tokens=10
@@ -395,4 +306,3 @@ class TestProtocolCompliance:
         else:
             assert "error" in result
             assert "error_type" in result
-

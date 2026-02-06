@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from taskforce.infrastructure.llm.openai_service import OpenAIService
+from taskforce.infrastructure.llm.litellm_service import LiteLLMService
 
 
 @pytest.fixture
@@ -34,65 +34,17 @@ def temp_config_file(tmp_path):
             "temperature": 0.7,
             "max_tokens": 2000,
         },
-        "retry_policy": {
+        "retry": {
             "max_attempts": 3,
             "backoff_multiplier": 2,
             "timeout": 30,
-            "retry_on_errors": ["RateLimitError", "Timeout"],
-        },
-        "providers": {
-            "openai": {"api_key_env": "OPENAI_API_KEY"},
-            "azure": {"enabled": False},
         },
         "logging": {
             "log_token_usage": True,
-            "log_parameter_mapping": True,
         },
     }
 
     config_path = tmp_path / "llm_config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-
-    return str(config_path)
-
-
-@pytest.fixture
-def temp_azure_config_file(tmp_path):
-    """Create a temporary LLM config file with Azure enabled."""
-    config = {
-        "default_model": "main",
-        "models": {
-            "main": "gpt-4.1",
-            "fast": "gpt-4.1-mini",
-        },
-        "model_params": {
-            "gpt-4.1": {"temperature": 0.2, "max_tokens": 2000},
-        },
-        "default_params": {"temperature": 0.7, "max_tokens": 2000},
-        "retry_policy": {
-            "max_attempts": 3,
-            "backoff_multiplier": 2,
-            "timeout": 30,
-            "retry_on_errors": ["RateLimitError"],
-        },
-        "providers": {
-            "openai": {"api_key_env": "OPENAI_API_KEY"},
-            "azure": {
-                "enabled": True,
-                "api_key_env": "AZURE_OPENAI_API_KEY",
-                "endpoint_url_env": "AZURE_OPENAI_ENDPOINT",
-                "api_version": "2024-02-15-preview",
-                "deployment_mapping": {
-                    "main": "gpt-4.1-deployment",
-                    "fast": "gpt-4.1-mini-deployment",
-                },
-            },
-        },
-        "logging": {"log_token_usage": True},
-    }
-
-    config_path = tmp_path / "llm_config_azure.yaml"
     with open(config_path, "w") as f:
         yaml.dump(config, f)
 
@@ -145,7 +97,7 @@ class TestCompleteStreamTokens:
 
     async def test_complete_stream_yields_tokens(self, temp_config_file):
         """Test that token chunks are yielded correctly."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         # Create mock chunks with token content
         chunks = [
@@ -179,7 +131,7 @@ class TestCompleteStreamTokens:
 
     async def test_complete_stream_empty_content_ignored(self, temp_config_file):
         """Test that empty content chunks are handled gracefully."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         chunks = [
             create_mock_chunk(content="Hello"),
@@ -212,7 +164,7 @@ class TestCompleteStreamToolCalls:
 
     async def test_complete_stream_yields_tool_calls(self, temp_config_file):
         """Test that tool calls are streamed correctly."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         # Create mock chunks with tool call
         chunks = [
@@ -276,7 +228,7 @@ class TestCompleteStreamToolCalls:
 
     async def test_complete_stream_multiple_tool_calls(self, temp_config_file):
         """Test streaming multiple parallel tool calls."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         # Create mock chunks with multiple tool calls
         chunks = [
@@ -324,7 +276,7 @@ class TestCompleteStreamDoneEvent:
 
     async def test_complete_stream_done_event_with_usage(self, temp_config_file):
         """Test that done event includes usage statistics when available."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         chunks = [
             create_mock_chunk(content="Response"),
@@ -365,7 +317,7 @@ class TestCompleteStreamDoneEvent:
 
     async def test_complete_stream_done_event_without_usage(self, temp_config_file):
         """Test that done event works even without usage data."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         chunks = [
             create_mock_chunk(content="Response"),
@@ -393,7 +345,7 @@ class TestCompleteStreamErrorHandling:
 
     async def test_complete_stream_api_error_yields_error_event(self, temp_config_file):
         """Test that API errors yield error events instead of raising."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_completion:
             mock_completion.side_effect = Exception("API Error: Rate limit exceeded")
@@ -411,34 +363,9 @@ class TestCompleteStreamErrorHandling:
             assert events[0]["type"] == "error"
             assert "Rate limit exceeded" in events[0]["message"]
 
-    async def test_complete_stream_model_resolution_error(self, temp_azure_config_file):
-        """Test that model resolution errors yield error events."""
-        import os
-
-        with patch.dict(
-            os.environ,
-            {
-                "AZURE_OPENAI_API_KEY": "test-key",
-                "AZURE_OPENAI_ENDPOINT": "https://test.openai.azure.com/",
-            },
-        ):
-            service = OpenAIService(config_path=temp_azure_config_file)
-
-            events = []
-            # Unknown model alias should fail for Azure
-            async for event in service.complete_stream(
-                messages=[{"role": "user", "content": "Test"}],
-                model="unknown-alias",
-            ):
-                events.append(event)
-
-            assert len(events) == 1
-            assert events[0]["type"] == "error"
-            assert "no deployment mapping found" in events[0]["message"]
-
     async def test_complete_stream_no_exception_propagation(self, temp_config_file):
         """Test that exceptions during streaming are caught and yielded."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         # Create generator that raises mid-stream
         async def failing_generator():
@@ -468,7 +395,7 @@ class TestCompleteStreamBackwardCompatibility:
 
     async def test_complete_still_works(self, temp_config_file):
         """Test that non-streaming complete() method works as before."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         mock_response = MagicMock()
         mock_response.choices = [
@@ -492,7 +419,7 @@ class TestCompleteStreamBackwardCompatibility:
 
     async def test_complete_with_tools_still_works(self, temp_config_file):
         """Test that complete() with native tool calling works as before."""
-        service = OpenAIService(config_path=temp_config_file)
+        service = LiteLLMService(config_path=temp_config_file)
 
         # Mock tool call response - properly configure all attributes
         mock_function = MagicMock()
@@ -542,3 +469,21 @@ class TestCompleteStreamBackwardCompatibility:
             assert len(result["tool_calls"]) == 1
             assert result["tool_calls"][0]["function"]["name"] == "get_weather"
 
+
+@pytest.mark.asyncio
+class TestBackwardCompatibleImport:
+    """Test that OpenAIService import still works."""
+
+    async def test_openai_service_alias_works(self, temp_config_file):
+        """Test that importing OpenAIService gives the same class."""
+        from taskforce.infrastructure.llm.openai_service import OpenAIService
+
+        service = OpenAIService(config_path=temp_config_file)
+        assert isinstance(service, LiteLLMService)
+
+    async def test_openai_service_via_init_works(self, temp_config_file):
+        """Test that importing from __init__ works."""
+        from taskforce.infrastructure.llm import OpenAIService
+
+        service = OpenAIService(config_path=temp_config_file)
+        assert isinstance(service, LiteLLMService)

@@ -29,9 +29,8 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
     def llm_provider(self) -> LLMProviderProtocol:
         """Lazy-load LLM provider if not provided."""
         if self._llm_provider is None:
-            # Use the same approach as AgentFactory._create_llm_provider
-            from taskforce.infrastructure.llm.openai_service import OpenAIService
-            self._llm_provider = OpenAIService(config_path="src/taskforce_extensions/configs/llm_config.yaml")
+            from taskforce.infrastructure.llm.litellm_service import LiteLLMService
+            self._llm_provider = LiteLLMService(config_path="src/taskforce_extensions/configs/llm_config.yaml")
         return self._llm_provider
 
     @property
