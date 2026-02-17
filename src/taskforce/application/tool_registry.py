@@ -17,23 +17,11 @@ Part of code simplification: Unified Tool Registry.
 from __future__ import annotations
 
 import importlib
+from typing import TYPE_CHECKING, Any
+
 import structlog
-from typing import TYPE_CHECKING, Any, Optional
 
 from taskforce.core.interfaces.tools import ToolProtocol
-from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
-from taskforce.infrastructure.tools.native.file_tools import (
-    FileReadTool,
-    FileWriteTool,
-)
-from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
-from taskforce.infrastructure.tools.native.memory_tool import MemoryTool
-from taskforce.infrastructure.tools.native.python_tool import PythonTool
-from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
-from taskforce.infrastructure.tools.native.web_tools import (
-    WebFetchTool,
-    WebSearchTool,
-)
 from taskforce.infrastructure.tools.registry import (
     get_all_tool_names,
     get_tool_definition,
@@ -52,14 +40,14 @@ class ToolRegistry:
     """
     Unified registry for tool discovery, mapping, validation, and resolution.
 
-    This service consolidates:
-    - ToolCatalog: Native tool definitions and validation
-    - ToolMapper: Name-to-definition mapping for YAML persistence
-    - ToolResolver: Name-to-instance resolution with dependency injection
+    Delegates to the infrastructure-level tool registry
+    (``infrastructure.tools.registry``) as single source of truth for tool
+    definitions, while providing dependency injection for tools that need
+    runtime context (LLM provider, user context, memory store).
 
     Example:
         >>> registry = ToolRegistry()
-        >>> # List all tools
+        >>> # List all registered tools
         >>> tools = registry.list_native_tools()
         >>> # Validate allowlist
         >>> valid, invalid = registry.validate_tools(["python", "invalid_tool"])
@@ -69,9 +57,9 @@ class ToolRegistry:
 
     def __init__(
         self,
-        llm_provider: Optional[LLMProviderProtocol] = None,
-        user_context: Optional[dict[str, Any]] = None,
-        memory_store_dir: Optional[str] = None,
+        llm_provider: LLMProviderProtocol | None = None,
+        user_context: dict[str, Any] | None = None,
+        memory_store_dir: str | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -79,33 +67,24 @@ class ToolRegistry:
         Args:
             llm_provider: LLM provider for tools that need it (e.g., LLMTool)
             user_context: User context for RAG tools (user_id, org_id, scope)
+            memory_store_dir: Directory for file-based memory storage
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
         self._memory_store_dir = memory_store_dir
         self._logger = logger.bind(component="ToolRegistry")
 
-        # Initialize native tools (for catalog functionality)
-        self._native_tools = [
-            WebSearchTool(),
-            WebFetchTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PythonTool(),
-            GitTool(),
-            GitHubTool(),
-            PowerShellTool(),
-            AskUserTool(),
-            MemoryTool(),
-        ]
-
     # -------------------------------------------------------------------------
-    # Catalog functionality (from ToolCatalog)
+    # Catalog functionality
     # -------------------------------------------------------------------------
 
     def list_native_tools(self) -> list[dict[str, Any]]:
         """
-        Get all native tool definitions.
+        Get all registered tool definitions.
+
+        Instantiates each tool from the infrastructure registry and returns
+        its metadata. This ensures the list is always in sync with the
+        single source of truth.
 
         Returns:
             List of tool definitions with name, description,
@@ -113,13 +92,17 @@ class ToolRegistry:
             and origin fields.
         """
         tools = []
-        for tool in self._native_tools:
+        for tool_name in get_all_tool_names():
+            tool = self._instantiate_tool(tool_name)
+            if tool is None:
+                continue
+            risk_level = getattr(tool, "approval_risk_level", None)
             tools.append({
                 "name": tool.name,
                 "description": tool.description,
                 "parameters_schema": tool.parameters_schema,
-                "requires_approval": tool.requires_approval,
-                "approval_risk_level": tool.approval_risk_level.value,
+                "requires_approval": getattr(tool, "requires_approval", False),
+                "approval_risk_level": risk_level.value if risk_level else "low",
                 "supports_parallelism": getattr(tool, "supports_parallelism", False),
                 "origin": "native",
             })
@@ -127,18 +110,18 @@ class ToolRegistry:
 
     def get_native_tool_names(self) -> set[str]:
         """
-        Get set of all native tool names.
+        Get set of all registered tool names.
 
         Returns:
-            Set of native tool names (case-sensitive).
+            Set of tool names (case-sensitive).
         """
-        return {tool.name for tool in self._native_tools}
+        return set(get_all_tool_names())
 
     def validate_native_tools(
         self, tool_names: list[str]
     ) -> tuple[bool, list[str]]:
         """
-        Validate that tool names are in the native catalog.
+        Validate that tool names exist in the registry.
 
         Args:
             tool_names: List of tool names to validate
@@ -252,7 +235,7 @@ class ToolRegistry:
 
         return tools
 
-    def resolve_single(self, tool_name: str) -> Optional[ToolProtocol]:
+    def resolve_single(self, tool_name: str) -> ToolProtocol | None:
         """
         Resolve a single tool name to an instance.
 
@@ -306,7 +289,7 @@ class ToolRegistry:
 
         return valid, invalid
 
-    def _instantiate_tool(self, tool_name: str) -> Optional[ToolProtocol]:
+    def _instantiate_tool(self, tool_name: str) -> ToolProtocol | None:
         """
         Instantiate a tool from its registry name.
 
@@ -386,13 +369,13 @@ class ToolRegistry:
 
 
 # Singleton instance
-_registry: Optional[ToolRegistry] = None
+_registry: ToolRegistry | None = None
 
 
 def get_tool_registry(
-    llm_provider: Optional["LLMProviderProtocol"] = None,
-    user_context: Optional[dict[str, Any]] = None,
-    memory_store_dir: Optional[str] = None,
+    llm_provider: LLMProviderProtocol | None = None,
+    user_context: dict[str, Any] | None = None,
+    memory_store_dir: str | None = None,
 ) -> ToolRegistry:
     """
     Get the tool registry instance.

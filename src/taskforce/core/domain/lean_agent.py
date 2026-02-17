@@ -20,10 +20,11 @@ Key differences from legacy Agent:
 """
 
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
+from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
 )
@@ -34,7 +35,6 @@ from taskforce.core.domain.lean_agent_components.tool_executor import (
     ToolExecutor,
     ToolResultMessageFactory,
 )
-from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
@@ -135,7 +135,6 @@ class Agent:
         self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
         self.intent_router = intent_router
-        self._skill_switch_pending = False  # Flag for skill switch during execution
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -402,7 +401,7 @@ class Agent:
         self,
         tool_name: str,
         tool_args: dict[str, Any],
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute a tool by name with given arguments.
@@ -432,8 +431,6 @@ class Agent:
                     to_skill=switch_result.to_skill,
                     trigger_tool=tool_name,
                 )
-                # Mark that prompt needs refresh
-                self._skill_switch_pending = True
 
         return result
 

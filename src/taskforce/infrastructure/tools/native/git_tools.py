@@ -8,7 +8,6 @@ Migrated from Agent V2 with full preservation of functionality.
 import asyncio
 import json
 import os
-import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -192,19 +191,36 @@ class GitTool(ToolProtocol):
             else:
                 return {"success": False, "error": f"Unknown operation: {operation}"}
 
-            # Execute command
-            result = subprocess.run(
-                cmd,
-                cwd=repo_path if operation != "clone" else ".",
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            # Execute command asynchronously to avoid blocking the event loop
+            cwd = str(repo_path) if operation != "clone" else "."
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=cwd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(), timeout=30
+                )
+            except TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                logger.error("git_execute_timeout")
+                tool_error = ToolError(
+                    f"{self.name} failed: Command timed out",
+                    tool_name=self.name,
+                    details={"operation": operation, "repo_path": str(repo_path)},
+                )
+                return tool_error_payload(tool_error)
+
+            stdout = stdout_bytes.decode("utf-8", errors="replace")
+            stderr = stderr_bytes.decode("utf-8", errors="replace")
 
             payload = {
-                "success": result.returncode == 0,
-                "output": result.stdout,
-                "error": result.stderr if result.returncode != 0 else None,
+                "success": proc.returncode == 0,
+                "output": stdout,
+                "error": stderr if proc.returncode != 0 else None,
                 "command": " ".join(cmd),
             }
             if payload["success"]:
@@ -214,15 +230,6 @@ class GitTool(ToolProtocol):
                     "git_execute_failed", command=payload["command"], error=payload["error"]
                 )
             return payload
-
-        except subprocess.TimeoutExpired:
-            logger.error("git_execute_timeout")
-            tool_error = ToolError(
-                f"{self.name} failed: Command timed out",
-                tool_name=self.name,
-                details={"operation": operation, "repo_path": str(repo_path)},
-            )
-            return tool_error_payload(tool_error)
         except Exception as e:
             logger.error("git_execute_exception", error=str(e))
             tool_error = ToolError(

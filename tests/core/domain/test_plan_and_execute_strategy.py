@@ -9,13 +9,11 @@ Tests the key functions:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.models import StreamEvent
 from taskforce.core.domain.planning_strategy import (
     PlanAndExecuteStrategy,
     _parse_plan_steps,
@@ -132,53 +130,78 @@ class TestParsePlanSteps:
         assert any("Second step" in step for step in result)
 
 
-class TestGenerateFinalResponse:
-    """Test _generate_final_response() function."""
+class TestStreamFinalResponse:
+    """Test _stream_final_response() shared helper."""
 
     @pytest.mark.asyncio
-    async def test_generate_final_response_success(
-        self, strategy: PlanAndExecuteStrategy, mock_agent: MagicMock
+    async def test_stream_final_response_success(
+        self, mock_agent: MagicMock
     ) -> None:
-        """Test successful final response generation."""
+        """Test successful final response generation via shared helper."""
+        from taskforce.core.domain.enums import EventType
+        from taskforce.core.domain.planning_strategy import _stream_final_response
+
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": "Final summary"}
         )
+        # Ensure non-streaming path is used
+        if hasattr(mock_agent.llm_provider, "complete_stream"):
+            del mock_agent.llm_provider.complete_stream
+
         messages: list[dict[str, Any]] = [{"role": "user", "content": "Mission"}]
 
-        result = await strategy._generate_final_response(mock_agent, messages)
+        events = [e async for e in _stream_final_response(mock_agent, messages)]
 
-        assert result == "Final summary"
+        assert len(events) == 1
+        assert events[0].event_type == EventType.FINAL_ANSWER
+        assert events[0].data["content"] == "Final summary"
         assert len(messages) == 2
         assert "All steps complete" in messages[1]["content"]
-        mock_agent.llm_provider.complete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_generate_final_response_failure(
-        self, strategy: PlanAndExecuteStrategy, mock_agent: MagicMock
+    async def test_stream_final_response_failure(
+        self, mock_agent: MagicMock
     ) -> None:
         """Test final response generation when LLM fails."""
+        from taskforce.core.domain.enums import EventType
+        from taskforce.core.domain.planning_strategy import _stream_final_response
+
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": False, "error": "LLM error"}
         )
+        if hasattr(mock_agent.llm_provider, "complete_stream"):
+            del mock_agent.llm_provider.complete_stream
+
         messages: list[dict[str, Any]] = []
 
-        result = await strategy._generate_final_response(mock_agent, messages)
+        events = [e async for e in _stream_final_response(mock_agent, messages)]
 
-        assert result == ""
+        # Empty content → fallback "Plan completed." message
+        assert len(events) == 1
+        assert events[0].event_type == EventType.FINAL_ANSWER
+        assert events[0].data["content"] == "Plan completed."
 
     @pytest.mark.asyncio
-    async def test_generate_final_response_empty_content(
-        self, strategy: PlanAndExecuteStrategy, mock_agent: MagicMock
+    async def test_stream_final_response_empty_content(
+        self, mock_agent: MagicMock
     ) -> None:
         """Test final response generation with empty content."""
+        from taskforce.core.domain.enums import EventType
+        from taskforce.core.domain.planning_strategy import _stream_final_response
+
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": ""}
         )
+        if hasattr(mock_agent.llm_provider, "complete_stream"):
+            del mock_agent.llm_provider.complete_stream
+
         messages: list[dict[str, Any]] = []
 
-        result = await strategy._generate_final_response(mock_agent, messages)
+        events = [e async for e in _stream_final_response(mock_agent, messages)]
 
-        assert result == ""
+        assert len(events) == 1
+        assert events[0].event_type == EventType.FINAL_ANSWER
+        assert events[0].data["content"] == "Plan completed."
 
 
 class TestStrategyParameters:
