@@ -1,12 +1,21 @@
-"""Planning strategies for Agent execution."""
+"""Planning strategies for Agent execution.
+
+The helpers in this module are shared across all concrete strategies to
+avoid code duplication.  Key shared primitives:
+
+* :func:`_ensure_event_type` — coerce ``str | EventType`` to ``EventType``
+* :func:`_resume_from_pause` — restore state after an ``ask_user`` pause
+* :func:`_stream_final_response` — stream or non-stream final answer
+* :func:`_process_tool_calls` — execute tools, emit events, update messages
+"""
 
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from taskforce.core.domain.enums import (
     EventType,
@@ -35,8 +44,8 @@ class PlanningStrategy(Protocol):
     """Protocol for planning strategies."""
     name: str
 
-    async def execute(self, agent: "Agent", mission: str, session_id: str) -> ExecutionResult: ...
-    async def execute_stream(self, agent: "Agent", mission: str, session_id: str) -> AsyncIterator[StreamEvent]: ...
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult: ...
+    async def execute_stream(self, agent: Agent, mission: str, session_id: str) -> AsyncIterator[StreamEvent]: ...
 
 
 # --- Helpers ---
@@ -57,7 +66,7 @@ def _extract_tool_output(result: dict[str, Any]) -> str:
 
 
 async def _execute_tool_calls(
-    agent: "Agent", requests: list[ToolCallRequest], session_id: str | None = None
+    agent: Agent, requests: list[ToolCallRequest], session_id: str | None = None
 ) -> list[tuple[ToolCallRequest, dict[str, Any]]]:
     """Execute tools with optional parallelism."""
     if not requests:
@@ -82,7 +91,7 @@ async def _execute_tool_calls(
 
     if tasks:
         gathered = await asyncio.gather(*(t for _, t in tasks))
-        for (req, _), res in zip(tasks, gathered):
+        for (req, _), res in zip(tasks, gathered, strict=True):
             results[req.tool_call_id] = res
 
     return [(req, results[req.tool_call_id]) for req in requests]
@@ -100,7 +109,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
     }
 
     async for e in events:
-        event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
+        event_type = _ensure_event_type(e)
         if event_type in track:
             history.append({"type": event_type.value, **e.data})
         if event_type == EventType.FINAL_ANSWER:
@@ -166,7 +175,7 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
     return steps
 
 
-async def _generate_plan(agent: "Agent", mission: str, logger: LoggerProtocol) -> list[str]:
+async def _generate_plan(agent: Agent, mission: str, logger: LoggerProtocol) -> list[str]:
     """Generate plan steps via LLM."""
     result = await agent.llm_provider.complete(
         messages=[
@@ -187,8 +196,123 @@ DEFAULT_PLAN = [
 ]
 
 
+# --- Shared helpers (extracted to eliminate cross-strategy duplication) ---
+
+def _ensure_event_type(event: StreamEvent) -> EventType:
+    """Coerce ``event.event_type`` to ``EventType`` enum.
+
+    Some code paths store event types as plain strings for backwards
+    compatibility.  This helper normalises them so callers can compare
+    via ``==`` against enum members.
+    """
+    et = event.event_type
+    return et if isinstance(et, EventType) else EventType(et)
+
+
+@dataclass
+class ResumeContext:
+    """State restored when resuming from an ``ask_user`` pause."""
+
+    messages: list[dict[str, Any]]
+    step: int
+    plan: list[str]
+    plan_step_idx: int
+    plan_iteration: int
+    phase: str
+
+
+def _resume_from_pause(
+    state: dict[str, Any],
+    mission: str,
+    logger: LoggerProtocol,
+    session_id: str,
+) -> ResumeContext | None:
+    """Try to resume from an ``ask_user`` pause.
+
+    If the *state* dict contains a ``pending_question`` key the function
+    restores messages, injects the user's answer (passed as *mission*),
+    clears the pause markers from *state* and returns a
+    :class:`ResumeContext`.  Returns ``None`` when there is nothing to
+    resume.
+    """
+    if state.get("pending_question") is None or state.get("paused_messages") is None:
+        return None
+
+    messages: list[dict[str, Any]] = state.get("paused_messages", [])
+    tool_call_id: str = state.get("paused_tool_call_id", "ask_user_call")
+    step: int = state.get("paused_step", 0)
+    plan: list[str] = state.get("paused_plan", DEFAULT_PLAN)
+    plan_step_idx: int = state.get("paused_plan_step_idx", 1)
+    plan_iteration: int = state.get("paused_plan_iteration", 1)
+    phase: str = state.get("paused_phase", "act")
+
+    user_answer = mission.strip()
+    messages.append({
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "name": "ask_user",
+        "content": json.dumps({"success": True, "output": user_answer}),
+    })
+
+    for key in [
+        "pending_question", "paused_messages", "paused_tool_call_id",
+        "paused_step", "paused_plan", "paused_plan_step_idx",
+        "paused_plan_iteration", "paused_phase",
+    ]:
+        state.pop(key, None)
+
+    logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+
+    return ResumeContext(
+        messages=messages,
+        step=step,
+        plan=plan,
+        plan_step_idx=plan_step_idx,
+        plan_iteration=plan_iteration,
+        phase=phase,
+    )
+
+
+async def _stream_final_response(
+    agent: Agent,
+    messages: list[dict[str, Any]],
+) -> AsyncIterator[StreamEvent]:
+    """Generate a final-answer LLM call, streaming when possible.
+
+    Yields :data:`EventType.LLM_TOKEN`, :data:`EventType.TOKEN_USAGE`,
+    and :data:`EventType.FINAL_ANSWER` events.
+    """
+    messages.append({
+        "role": MessageRole.USER.value,
+        "content": "All steps complete. Provide final response.",
+    })
+
+    final = ""
+    if hasattr(agent.llm_provider, "complete_stream"):
+        async for chunk in agent.llm_provider.complete_stream(
+            messages=messages, model=agent.model_alias,
+            tools=None, tool_choice="none", temperature=0.2,
+        ):
+            if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
+                yield StreamEvent(event_type=EventType.LLM_TOKEN, data={"content": chunk["content"]})
+                final += chunk["content"]
+            elif chunk.get("type") == "usage":
+                yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=chunk.get("usage", {}))
+    else:
+        r = await agent.llm_provider.complete(
+            messages=messages, model=agent.model_alias,
+            tools=None, tool_choice="none", temperature=0.2,
+        )
+        final = r.get("content", "") if r.get("success") else ""
+
+    if final:
+        yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": final})
+    else:
+        yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": "Plan completed."})
+
+
 async def _handle_ask_user(
-    agent: "Agent",
+    agent: Agent,
     args: dict,
     session_id: str,
     state: dict,
@@ -231,7 +355,7 @@ async def _handle_ask_user(
     logger.info("paused_for_user_input", session_id=session_id)
 
 
-async def _emit_tool_result(agent: "Agent", req: ToolCallRequest, result: dict) -> AsyncIterator[StreamEvent]:
+async def _emit_tool_result(agent: Agent, req: ToolCallRequest, result: dict) -> AsyncIterator[StreamEvent]:
     """Emit tool result event."""
     yield StreamEvent(event_type=EventType.TOOL_RESULT, data={
         "tool": req.tool_name, "id": req.tool_call_id, "success": result.get("success", False),
@@ -252,7 +376,7 @@ class ToolCallStatus:
 
 
 async def _process_tool_calls(
-    agent: "Agent",
+    agent: Agent,
     tool_calls: list[dict],
     session_id: str,
     step: int,
@@ -311,41 +435,20 @@ class NativeReActStrategy:
         self.max_plan_steps = max_plan_steps
         self._logger = logger
 
-    async def execute(self, agent: "Agent", mission: str, session_id: str) -> ExecutionResult:
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
         return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
-    async def execute_stream(self, agent: "Agent", mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
+    async def execute_stream(self, agent: Agent, mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
         logger = self._logger or agent.logger
         state = await agent.state_manager.load_state(session_id) or {}
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
         # Check for resume from ask_user pause
-        is_resume = state.get("pending_question") is not None and state.get("paused_messages") is not None
-        if is_resume:
-            # Resume: restore messages and inject user's response
-            messages = state.get("paused_messages", [])
-            tool_call_id = state.get("paused_tool_call_id", "ask_user_call")
-            step = state.get("paused_step", 0)
-
-            # The mission is the user's answer - add as tool result
-            user_answer = mission.strip()
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": "ask_user",
-                "content": json.dumps({"success": True, "output": user_answer}),
-            })
-
-            # Clear paused state
-            del state["pending_question"]
-            del state["paused_messages"]
-            if "paused_tool_call_id" in state:
-                del state["paused_tool_call_id"]
-            if "paused_step" in state:
-                del state["paused_step"]
-
-            logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+        resume = _resume_from_pause(state, mission, logger, session_id)
+        if resume is not None:
+            messages = resume.messages
+            step = resume.step
         else:
             # Normal start: optional plan generation
             if self.generate_plan_first:
@@ -414,7 +517,7 @@ class NativeReActStrategy:
             if tool_calls:
                 paused = False
                 async for e in _process_tool_calls(agent, tool_calls, session_id, step + 1, state, messages, logger):
-                    event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
+                    event_type = _ensure_event_type(e)
                     if event_type == EventType.ASK_USER:
                         paused = True
                     yield e
@@ -444,41 +547,23 @@ class PlanAndExecuteStrategy:
         self.max_plan_steps = max_plan_steps
         self.logger = logger
 
-    async def execute(self, agent: "Agent", mission: str, session_id: str) -> ExecutionResult:
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
         return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
-    async def execute_stream(self, agent: "Agent", mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
+    async def execute_stream(self, agent: Agent, mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
         state = await agent.state_manager.load_state(session_id) or {}
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
         # Check for resume from ask_user pause
-        is_resume = state.get("pending_question") is not None and state.get("paused_messages") is not None
-        if is_resume:
-            # Resume: restore messages and inject user's response
-            messages = state.get("paused_messages", [])
-            tool_call_id = state.get("paused_tool_call_id", "ask_user_call")
-            progress = state.get("paused_step", 0)
-            plan = state.get("paused_plan", DEFAULT_PLAN)
-            start_idx = state.get("paused_plan_step_idx", 1)
-            start_it = state.get("paused_plan_iteration", 1)
-
-            # The mission is the user's answer - add as tool result
-            user_answer = mission.strip()
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": "ask_user",
-                "content": json.dumps({"success": True, "output": user_answer}),
-            })
-
-            # Clear paused state
-            for key in ["pending_question", "paused_messages", "paused_tool_call_id", "paused_step",
-                        "paused_plan", "paused_plan_step_idx", "paused_plan_iteration"]:
-                state.pop(key, None)
-
-            logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+        resume = _resume_from_pause(state, mission, logger, session_id)
+        if resume is not None:
+            messages = resume.messages
+            progress = resume.step
+            plan = resume.plan
+            start_idx = resume.plan_step_idx
+            start_it = resume.plan_iteration
         else:
             # Normal start
             messages = agent._build_initial_messages(mission, state)
@@ -525,7 +610,7 @@ class PlanAndExecuteStrategy:
                         agent, result["tool_calls"], session_id, progress, state, messages, logger,
                         plan=plan, plan_step_idx=idx, plan_iteration=it,
                     ):
-                        event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
+                        event_type = _ensure_event_type(e)
                         if event_type == EventType.ASK_USER:
                             paused = True
                         yield e
@@ -549,34 +634,13 @@ class PlanAndExecuteStrategy:
                     messages.append({"role": MessageRole.USER.value, "content": "[Empty response. Provide answer or use tool.]"})
 
         # Final response
-        final = ""
         if progress < agent.max_steps:
-            messages.append({"role": MessageRole.USER.value, "content": "All steps complete. Provide final response."})
-            if hasattr(agent.llm_provider, "complete_stream"):
-                async for chunk in agent.llm_provider.complete_stream(messages=messages, model=agent.model_alias, tools=None, tool_choice="none", temperature=0.2):
-                    if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
-                        yield StreamEvent(event_type=EventType.LLM_TOKEN, data={"content": chunk["content"]})
-                        final += chunk["content"]
-                    elif chunk.get("type") == "usage":
-                        yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=chunk.get("usage", {}))
-            else:
-                r = await agent.llm_provider.complete(messages=messages, model=agent.model_alias, tools=None, tool_choice="none", temperature=0.2)
-                final = r.get("content", "") if r.get("success") else ""
-
-        if final:
-            yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": final})
+            async for e in _stream_final_response(agent, messages):
+                yield e
         elif progress >= agent.max_steps:
             yield StreamEvent(event_type=EventType.ERROR, data={"message": f"Exceeded max steps ({agent.max_steps})"})
-        else:
-            yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": "Plan completed."})
 
         await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
-
-    async def _generate_final_response(self, agent: "Agent", messages: list) -> str:
-        """Non-streaming final response for tests."""
-        messages.append({"role": MessageRole.USER.value, "content": "All steps complete. Provide final response."})
-        r = await agent.llm_provider.complete(messages=messages, model=agent.model_alias, tools=None, tool_choice="none", temperature=0.2)
-        return r.get("content", "") if r.get("success") else ""
 
 
 # Backwards compatibility alias
@@ -587,10 +651,10 @@ class PlanAndReactStrategy:
     def __init__(self, max_plan_steps: int = 12, logger: LoggerProtocol | None = None):
         self._delegate = NativeReActStrategy(generate_plan_first=True, max_plan_steps=max_plan_steps, logger=logger)
 
-    async def execute(self, agent: "Agent", mission: str, session_id: str) -> ExecutionResult:
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
         return await self._delegate.execute(agent, mission, session_id)
 
-    async def execute_stream(self, agent: "Agent", mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
+    async def execute_stream(self, agent: Agent, mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
         async for e in self._delegate.execute_stream(agent, mission, session_id):
             yield e
 
@@ -613,46 +677,23 @@ class SparStrategy:
         self.max_reflection_iterations = max_reflection_iterations
         self.logger = logger
 
-    async def execute(self, agent: "Agent", mission: str, session_id: str) -> ExecutionResult:
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
         return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
-    async def execute_stream(self, agent: "Agent", mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
+    async def execute_stream(self, agent: Agent, mission: str, session_id: str) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
         state = await agent.state_manager.load_state(session_id) or {}
         if agent._planner and state.get("planner_state"):
             agent._planner.set_state(state["planner_state"])
 
-        is_resume = state.get("pending_question") is not None and state.get("paused_messages") is not None
-        if is_resume:
-            messages = state.get("paused_messages", [])
-            tool_call_id = state.get("paused_tool_call_id", "ask_user_call")
-            progress = state.get("paused_step", 0)
-            plan = state.get("paused_plan", DEFAULT_PLAN)
-            start_idx = state.get("paused_plan_step_idx", 1)
-            start_it = state.get("paused_plan_iteration", 1)
-            start_phase = state.get("paused_phase", "act")
-
-            user_answer = mission.strip()
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": "ask_user",
-                "content": json.dumps({"success": True, "output": user_answer}),
-            })
-
-            for key in [
-                "pending_question",
-                "paused_messages",
-                "paused_tool_call_id",
-                "paused_step",
-                "paused_plan",
-                "paused_plan_step_idx",
-                "paused_plan_iteration",
-                "paused_phase",
-            ]:
-                state.pop(key, None)
-
-            logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+        resume = _resume_from_pause(state, mission, logger, session_id)
+        if resume is not None:
+            messages = resume.messages
+            progress = resume.step
+            plan = resume.plan
+            start_idx = resume.plan_step_idx
+            start_it = resume.plan_iteration
+            start_phase = resume.phase
         else:
             messages = agent._build_initial_messages(mission, state)
             plan = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:self.max_plan_steps]
@@ -758,32 +799,17 @@ class SparStrategy:
             if reflect_used:
                 progress += 1
 
-        final = ""
         if progress < agent.max_steps:
-            messages.append({"role": MessageRole.USER.value, "content": "All steps complete. Provide final response."})
-            if hasattr(agent.llm_provider, "complete_stream"):
-                async for chunk in agent.llm_provider.complete_stream(messages=messages, model=agent.model_alias, tools=None, tool_choice="none", temperature=0.2):
-                    if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
-                        yield StreamEvent(event_type=EventType.LLM_TOKEN, data={"content": chunk["content"]})
-                        final += chunk["content"]
-                    elif chunk.get("type") == "usage":
-                        yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=chunk.get("usage", {}))
-            else:
-                r = await agent.llm_provider.complete(messages=messages, model=agent.model_alias, tools=None, tool_choice="none", temperature=0.2)
-                final = r.get("content", "") if r.get("success") else ""
-
-        if final:
-            yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": final})
+            async for e in _stream_final_response(agent, messages):
+                yield e
         elif progress >= agent.max_steps:
             yield StreamEvent(event_type=EventType.ERROR, data={"message": f"Exceeded max steps ({agent.max_steps})"})
-        else:
-            yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": "Plan completed."})
 
         await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
 
 
 async def _run_spar_action(
-    agent: "Agent",
+    agent: Agent,
     messages: list[dict[str, Any]],
     desc: str,
     session_id: str,
@@ -829,7 +855,7 @@ async def _run_spar_action(
             plan_iteration=plan_iteration,
             paused_phase="act",
         ):
-            event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
+            event_type = _ensure_event_type(e)
             if event_type == EventType.ASK_USER:
                 paused = True
             events.append(e)
@@ -844,7 +870,7 @@ async def _run_spar_action(
 
 
 async def _run_spar_reflection(
-    agent: "Agent",
+    agent: Agent,
     messages: list[dict[str, Any]],
     desc: str,
     session_id: str,
@@ -877,7 +903,7 @@ async def _run_spar_reflection(
 
 
 async def _run_spar_final_reflection(
-    agent: "Agent",
+    agent: Agent,
     messages: list[dict[str, Any]],
     session_id: str,
     step: int,
@@ -906,7 +932,7 @@ async def _run_spar_final_reflection(
 
 
 async def _run_reflection_cycle(
-    agent: "Agent",
+    agent: Agent,
     messages: list[dict[str, Any]],
     prompt: str,
     session_id: str,
@@ -953,7 +979,7 @@ async def _run_reflection_cycle(
                 plan_iteration=plan_iteration,
                 paused_phase="reflect",
             ):
-                event_type = e.event_type if isinstance(e.event_type, EventType) else EventType(e.event_type)
+                event_type = _ensure_event_type(e)
                 if event_type == EventType.ASK_USER:
                     paused = True
                 events.append(e)

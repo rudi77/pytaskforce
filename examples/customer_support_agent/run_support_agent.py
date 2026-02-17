@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -20,10 +21,8 @@ import structlog
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from taskforce.application.factory import AgentFactory
-
-# Import custom ticket tool
-from examples.customer_support_agent.tools.ticket_tool import TicketTool
+from examples.customer_support_agent.tools.ticket_tool import TicketTool  # noqa: E402
+from taskforce.application.factory import AgentFactory  # noqa: E402
 
 # Configure logging
 structlog.configure(
@@ -89,13 +88,6 @@ async def create_support_agent():
     """
     logger.info("initializing_support_agent")
 
-    # Create custom tools
-    ticket_tool = TicketTool(tickets_dir=".taskforce_support/tickets")
-
-    # Note: In a full implementation, you would add the ticket_tool
-    # to the tools list. For this example, we'll use standard tools
-    # and show how to integrate custom tools.
-
     # Define agent configuration
     agent_definition = {
         "system_prompt": SUPPORT_SYSTEM_PROMPT,
@@ -114,10 +106,10 @@ async def create_support_agent():
 
     factory = AgentFactory()
 
-    # Create agent from definition
-    agent = await factory.create_lean_agent_from_definition(
-        agent_definition=agent_definition,
-        profile="dev",  # Use dev profile for infrastructure settings
+    # Create agent with inline parameters
+    agent = await factory.create_agent(
+        system_prompt=agent_definition["system_prompt"],
+        tools=agent_definition["tool_allowlist"],
         work_dir=".taskforce_support",
     )
 
@@ -232,7 +224,7 @@ async def demonstrate_ticket_tool():
     print(f"   Priority: {result['ticket']['priority']}")
 
     # 3. Update ticket
-    print(f"\n3. Updating ticket status and adding notes...")
+    print("\n3. Updating ticket status and adding notes...")
     result = await ticket_tool.execute(
         operation="update_ticket",
         ticket_id=ticket_id,

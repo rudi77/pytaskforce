@@ -2,13 +2,20 @@
 Skill Service
 =============
 
-Application layer service for skill management.
+Application layer service for skill discovery and management.
 
 Provides:
-- Skill discovery and listing
+- Skill discovery and listing (for CLI/API)
 - Skill activation based on relevance
-- Skill context management for agents
+- Skill context management
 - System prompt generation with skill metadata
+
+Note:
+    For **agent-internal** skill lifecycle (intent-based activation,
+    automatic switching, prompt enhancement) use
+    :class:`~taskforce.application.skill_manager.SkillManager` instead.
+    ``SkillService`` is designed for the **API / CLI layer** where
+    global skill discovery and browsing is needed.
 """
 
 import logging
@@ -20,22 +27,25 @@ from taskforce.infrastructure.skills.skill_registry import (
     create_skill_registry,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
 class SkillService:
     """
-    Application service for skill management.
+    Application service for skill discovery and management.
 
     Provides a high-level interface for working with skills,
     including discovery, activation, and context management.
+
+    For agent execution-time skill management (switching, intent-based
+    activation), use :class:`~taskforce.application.skill_manager.SkillManager`.
     """
 
     def __init__(
         self,
         skill_directories: list[str] | None = None,
         extension_directories: list[str] | None = None,
+        registry: FileSkillRegistry | None = None,
     ):
         """
         Initialize the skill service.
@@ -43,19 +53,23 @@ class SkillService:
         Args:
             skill_directories: Custom skill directories to include
             extension_directories: Extension skill directories (e.g., taskforce_extensions/skills)
+            registry: Optional pre-existing registry to share (avoids duplicate
+                      file-system discovery when a :class:`SkillManager` is
+                      already initialised).
         """
-        directories: list[str] = []
+        if registry is not None:
+            self._registry = registry
+        else:
+            directories: list[str] = []
+            if skill_directories:
+                directories.extend(skill_directories)
+            if extension_directories:
+                directories.extend(extension_directories)
 
-        if skill_directories:
-            directories.extend(skill_directories)
-
-        if extension_directories:
-            directories.extend(extension_directories)
-
-        self._registry = create_skill_registry(
-            additional_directories=directories,
-            include_defaults=True,
-        )
+            self._registry = create_skill_registry(
+                additional_directories=directories,
+                include_defaults=True,
+            )
         self._context = SkillContext()
 
     @property

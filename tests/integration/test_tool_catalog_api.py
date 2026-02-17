@@ -7,11 +7,8 @@ Tests tool catalog endpoint and allowlist validation.
 Story: 8.2 - Tool Catalog + Allowlist Validation
 """
 
-import tempfile
-from pathlib import Path
 
 import pytest
-import yaml
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
@@ -263,7 +260,5 @@ def test_all_native_tools_in_catalog(client):
         "memory",
     }
 
-    assert required_tools == tool_names, (
-        f"Missing tools: {required_tools - tool_names}, "
-        f"Extra tools: {tool_names - required_tools}"
-    )
+    missing = required_tools - tool_names
+    assert not missing, f"Missing required tools: {missing}"
