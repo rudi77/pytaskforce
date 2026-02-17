@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -16,12 +17,8 @@ from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.epic import EpicRunResult, EpicTask, EpicTaskResult
 from taskforce.core.domain.sub_agents import build_sub_agent_session_id
 from taskforce.core.interfaces.messaging import MessageBusProtocol
+from taskforce.core.utils.time import utc_now as _utc_now
 from taskforce_extensions.infrastructure.messaging import InMemoryMessageBus
-
-
-def _utc_now() -> datetime:
-    """Return the current UTC timestamp."""
-    return datetime.now(timezone.utc)
 
 
 def _build_planner_prompt(
@@ -97,14 +94,27 @@ def _extract_json_object(text: str) -> str | None:
     return inline.group(1) if inline else None
 
 
+_module_logger = structlog.get_logger(__name__)
+
+
 def _parse_task_payload(payload: str) -> list[dict[str, Any]]:
     """Parse JSON payload into task dicts."""
     try:
         data = json.loads(payload)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        _module_logger.warning(
+            "epic.task_payload_parse_failed",
+            error=str(exc),
+            payload_snippet=payload[:200],
+        )
         return []
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
+    _module_logger.warning(
+        "epic.task_payload_unexpected_type",
+        actual_type=type(data).__name__,
+        payload_snippet=payload[:200],
+    )
     return []
 
 
@@ -112,9 +122,21 @@ def _parse_json_object(payload: str) -> dict[str, Any]:
     """Parse JSON object payload."""
     try:
         data = json.loads(payload)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        _module_logger.warning(
+            "epic.json_object_parse_failed",
+            error=str(exc),
+            payload_snippet=payload[:200],
+        )
         return {}
-    return data if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        return data
+    _module_logger.warning(
+        "epic.json_object_unexpected_type",
+        actual_type=type(data).__name__,
+        payload_snippet=payload[:200],
+    )
+    return {}
 
 
 def _parse_bullet_tasks(text: str) -> list[dict[str, Any]]:
@@ -147,6 +169,24 @@ def _normalize_tasks(task_dicts: list[dict[str, Any]], source: str) -> list[Epic
     return normalized
 
 
+@dataclass
+class _EpicRunContext:
+    """Bundles the immutable parameters of an epic run to reduce arg-passing."""
+
+    run_id: str
+    mission: str
+    state_store: EpicStateStore
+    planner_profile: str
+    worker_profile: str
+    judge_profile: str
+    worker_count: int
+    max_rounds: int
+    sub_planner_scopes: list[str]
+    auto_commit: bool
+    commit_message: str | None
+    started_at: datetime
+
+
 class EpicOrchestrator:
     """Coordinate planner, worker, and judge agents for epic workflows."""
 
@@ -176,15 +216,7 @@ class EpicOrchestrator:
         run_id = uuid4().hex[:8]
         state_store = create_epic_state_store(run_id)
         state_store.initialize(mission)
-        started_at = _utc_now()
-        self._log_run_start(
-            run_id,
-            planner_profile=planner_profile,
-            worker_profile=worker_profile,
-            judge_profile=judge_profile,
-            worker_count=worker_count,
-        )
-        return await self._run_rounds(
+        ctx = _EpicRunContext(
             run_id=run_id,
             mission=mission,
             state_store=state_store,
@@ -196,96 +228,121 @@ class EpicOrchestrator:
             sub_planner_scopes=sub_planner_scopes or [],
             auto_commit=auto_commit,
             commit_message=commit_message,
-            started_at=started_at,
+            started_at=_utc_now(),
         )
+        self._log_run_start(
+            run_id,
+            planner_profile=planner_profile,
+            worker_profile=worker_profile,
+            judge_profile=judge_profile,
+            worker_count=worker_count,
+        )
+        return await self._run_rounds(ctx)
 
-    async def _run_rounds(
-        self,
-        *,
-        run_id: str,
-        mission: str,
-        state_store: EpicStateStore,
-        planner_profile: str,
-        worker_profile: str,
-        judge_profile: str,
-        worker_count: int,
-        max_rounds: int,
-        sub_planner_scopes: list[str],
-        auto_commit: bool,
-        commit_message: str | None,
-        started_at: datetime,
-    ) -> EpicRunResult:
-        tasks: list[EpicTask] = []
-        worker_results: list[EpicTaskResult] = []
-        round_summaries: list[dict[str, Any]] = []
+    async def _run_rounds(self, ctx: _EpicRunContext) -> EpicRunResult:
+        """Execute planning/worker/judge rounds until done or max reached."""
+        tasks, worker_results, round_summaries, start_round = self._restore_checkpoint(
+            ctx.state_store
+        )
         status = "completed"
 
-        for round_index in range(1, max_rounds + 1):
-            round_result = await self._run_round(
-                run_id=run_id,
-                mission=mission,
-                state_store=state_store,
-                planner_profile=planner_profile,
-                worker_profile=worker_profile,
-                judge_profile=judge_profile,
-                worker_count=worker_count,
-                sub_planner_scopes=sub_planner_scopes,
-                auto_commit=auto_commit,
-                commit_message=commit_message,
-                round_index=round_index,
-            )
+        for round_index in range(start_round, ctx.max_rounds + 1):
+            round_result = await self._run_round(ctx, round_index)
             status = self._apply_round_result(
                 round_result,
                 tasks=tasks,
                 worker_results=worker_results,
                 round_summaries=round_summaries,
                 round_index=round_index,
-                max_rounds=max_rounds,
+                max_rounds=ctx.max_rounds,
+            )
+            ctx.state_store.save_checkpoint(
+                last_completed_round=round_index,
+                tasks=tasks,
+                worker_results=worker_results,
+                round_summaries=round_summaries,
+                status=status,
             )
             if not round_result["continue"]:
                 break
 
         return self._build_run_result(
-            run_id,
-            tasks,
-            worker_results,
-            round_summaries,
-            status,
-            started_at,
+            ctx.run_id, tasks, worker_results, round_summaries, status, ctx.started_at
         )
 
-    async def _run_round(
-        self,
-        *,
-        run_id: str,
-        mission: str,
-        state_store: EpicStateStore,
-        planner_profile: str,
-        worker_profile: str,
-        judge_profile: str,
-        worker_count: int,
-        sub_planner_scopes: list[str],
-        auto_commit: bool,
-        commit_message: str | None,
-        round_index: int,
-    ) -> dict[str, Any]:
-        tasks = await self._plan_tasks(
-            run_id, mission, planner_profile, sub_planner_scopes, state_store
+    def _restore_checkpoint(
+        self, state_store: EpicStateStore
+    ) -> tuple[list[EpicTask], list[EpicTaskResult], list[dict[str, Any]], int]:
+        """Restore accumulated state from a checkpoint file if available.
+
+        Returns (tasks, worker_results, round_summaries, start_round).
+        ``start_round`` is 1 when no checkpoint exists, otherwise the
+        round after the last completed one.
+        """
+        checkpoint = state_store.load_checkpoint()
+        if checkpoint is None:
+            return [], [], [], 1
+
+        last_round = int(checkpoint.get("last_completed_round", 0))
+        tasks = [EpicTask.from_dict(t) for t in checkpoint.get("tasks", [])]
+        worker_results = [
+            EpicTaskResult(**r) for r in checkpoint.get("worker_results", [])
+        ]
+        round_summaries: list[dict[str, Any]] = checkpoint.get("round_summaries", [])
+        self._logger.info(
+            "epic.checkpoint_restored",
+            last_completed_round=last_round,
+            task_count=len(tasks),
+            result_count=len(worker_results),
         )
-        await self._publish_tasks(tasks, worker_count)
+        return tasks, worker_results, round_summaries, last_round + 1
+
+    async def _run_round(
+        self, ctx: _EpicRunContext, round_index: int
+    ) -> dict[str, Any]:
+        """Execute a single planning → workers → judge round."""
+        tasks = await self._plan_tasks(
+            ctx.run_id,
+            ctx.mission,
+            ctx.planner_profile,
+            ctx.sub_planner_scopes,
+            ctx.state_store,
+        )
+        await self._publish_tasks(tasks, ctx.worker_count)
         worker_results = await self._run_workers(
-            run_id, mission, worker_profile, worker_count
+            ctx.run_id, ctx.mission, ctx.worker_profile, ctx.worker_count
         )
         judge_summary = await self._run_judge(
-            run_id,
-            mission,
+            ctx.run_id,
+            ctx.mission,
             worker_results,
-            judge_profile,
-            auto_commit,
-            commit_message,
+            ctx.judge_profile,
+            ctx.auto_commit,
+            ctx.commit_message,
             round_index,
         )
         decision = self._parse_judge_decision(judge_summary)
+        self._persist_round_state(ctx.state_store, round_index, decision, tasks, worker_results)
+        return {
+            "tasks": tasks,
+            "worker_results": worker_results,
+            "summary": {
+                "round": round_index,
+                "summary": decision["summary"],
+                "continue": decision["continue"],
+            },
+            "continue": decision["continue"],
+        }
+
+    def _persist_round_state(
+        self,
+        state_store: EpicStateStore,
+        round_index: int,
+        decision: dict[str, Any],
+        tasks: list[EpicTask],
+        worker_results: list[EpicTaskResult],
+    ) -> None:
+        """Write round outcome to the state store and memory log."""
         state_store.update_current_state(
             round_index=round_index,
             judge_summary=decision["summary"],
@@ -298,17 +355,6 @@ class EpicOrchestrator:
             tasks=tasks,
             worker_results=worker_results,
         )
-        summary = {
-            "round": round_index,
-            "summary": decision["summary"],
-            "continue": decision["continue"],
-        }
-        return {
-            "tasks": tasks,
-            "worker_results": worker_results,
-            "summary": summary,
-            "continue": decision["continue"],
-        }
 
     async def _plan_tasks(
         self,
@@ -338,10 +384,12 @@ class EpicOrchestrator:
             mission, scope, state_store.format_state_context()
         )
         agent = await self._factory.create_agent(profile=planner_profile)
-        session_id = build_sub_agent_session_id(run_id, scope or "planner")
-        result = await agent.execute(prompt, session_id)
-        await agent.close()
-        return self._parse_tasks(result.final_message, scope or "planner")
+        try:
+            session_id = build_sub_agent_session_id(run_id, scope or "planner")
+            result = await agent.execute(prompt, session_id)
+            return self._parse_tasks(result.final_message, scope or "planner")
+        finally:
+            await agent.close()
 
     async def _run_sub_planners(
         self,
@@ -391,17 +439,19 @@ class EpicOrchestrator:
         lock: asyncio.Lock,
     ) -> None:
         agent = await self._factory.create_agent(profile=worker_profile)
-        async for message in self._bus.subscribe("epic.tasks"):
-            payload = message.payload
-            if payload.get("type") == "shutdown":
+        try:
+            async for message in self._bus.subscribe("epic.tasks"):
+                payload = message.payload
+                if payload.get("type") == "shutdown":
+                    await self._bus.ack(message.message_id)
+                    break
+                task = EpicTask.from_dict(payload)
+                result = await self._execute_worker(agent, run_id, mission, task)
+                async with lock:
+                    results.append(result)
                 await self._bus.ack(message.message_id)
-                break
-            task = EpicTask.from_dict(payload)
-            result = await self._execute_worker(agent, run_id, mission, task)
-            async with lock:
-                results.append(result)
-            await self._bus.ack(message.message_id)
-        await agent.close()
+        finally:
+            await agent.close()
 
     async def _execute_worker(
         self,
@@ -436,16 +486,29 @@ class EpicOrchestrator:
             mission, worker_results, auto_commit, commit_message, round_index
         )
         agent = await self._factory.create_agent(profile=judge_profile)
-        session_id = build_sub_agent_session_id(run_id, "judge")
-        result = await agent.execute(prompt, session_id)
-        await agent.close()
-        return result.final_message or ""
+        try:
+            session_id = build_sub_agent_session_id(run_id, "judge")
+            result = await agent.execute(prompt, session_id)
+            return result.final_message or ""
+        finally:
+            await agent.close()
 
     def _parse_tasks(self, output: str, source: str) -> list[EpicTask]:
         payload = _extract_json_payload(output)
         task_dicts = _parse_task_payload(payload) if payload else []
         if not task_dicts:
+            self._logger.info(
+                "epic.task_parse_fallback_to_bullets",
+                source=source,
+                json_payload_found=payload is not None,
+            )
             task_dicts = _parse_bullet_tasks(output)
+        if not task_dicts:
+            self._logger.warning(
+                "epic.no_tasks_parsed",
+                source=source,
+                output_snippet=output[:200],
+            )
         return _normalize_tasks(task_dicts, source)
 
     def _deduplicate_tasks(self, tasks: list[EpicTask]) -> list[EpicTask]:
