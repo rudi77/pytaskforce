@@ -312,6 +312,15 @@ class ExecuteMissionRequest(BaseModel):
         default=None,
         description="Optional parameters for the selected planning strategy.",
     )
+    auto_epic: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Auto-epic detection. null=read from profile config, "
+            "true=force enabled, false=force disabled. "
+            "When enabled, complex missions are automatically escalated "
+            "to Epic Orchestration (planner/worker/judge pipeline)."
+        ),
+    )
 
 
 class ExecuteMissionResponse(BaseModel):
@@ -485,6 +494,7 @@ async def execute_mission(
             planning_strategy=request.planning_strategy,
             planning_strategy_params=request.planning_strategy_params,
             plugin_path=None,  # Plugin resolution handled in executor via agent_id
+            auto_epic=request.auto_epic,
         )
 
         return ExecuteMissionResponse(
@@ -843,6 +853,7 @@ async def execute_mission_stream(
                 planning_strategy=request.planning_strategy,
                 planning_strategy_params=request.planning_strategy_params,
                 plugin_path=None,  # Plugin resolution handled in executor via agent_id
+                auto_epic=request.auto_epic,
             ):
                 # Serialize dataclass to JSON, handling datetime
                 # Log final_answer events for debugging

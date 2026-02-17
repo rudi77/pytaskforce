@@ -22,6 +22,24 @@ Once the server is running, you can access the interactive documentation at:
 - `POST /api/v1/execution/execute`: Run a mission synchronously.
 - `POST /api/v1/execution/execute/stream`: Run a mission with real-time SSE progress updates.
 
+Both execution endpoints accept an optional `auto_epic` field in the request body:
+
+```json
+{
+  "mission": "Build a REST API with auth, database, and tests",
+  "auto_epic": true
+}
+```
+
+| Value   | Behavior |
+|---------|----------|
+| `null`  | Read from profile configuration (`orchestration.auto_epic.enabled`) |
+| `true`  | Force auto-epic detection (escalates if mission is classified as complex) |
+| `false` | Disable auto-epic detection (always use single-agent execution) |
+
+When a mission is escalated, the streaming endpoint emits an `epic_escalation` SSE event
+before the epic execution begins. See [Epic Orchestration](architecture/epic-orchestration.md) for details.
+
 ### Communication Gateway (Telegram/MS Teams)
 - `POST /api/v1/gateway/{channel}/messages`: Handle normalized inbound messages from any channel.
 - `POST /api/v1/gateway/{channel}/webhook`: Handle raw provider webhooks (Telegram, Teams).

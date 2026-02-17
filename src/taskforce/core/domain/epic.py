@@ -4,9 +4,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from taskforce.core.utils.time import utc_now as _utc_now
+
+
+class TaskComplexity(str, Enum):
+    """Classification of task complexity for auto-epic routing."""
+
+    SIMPLE = "simple"
+    EPIC = "epic"
+
+
+@dataclass(frozen=True)
+class TaskComplexityResult:
+    """Result of the task complexity analysis.
+
+    Attributes:
+        complexity: Whether the task is simple or requires epic orchestration.
+        reasoning: LLM explanation for the classification decision.
+        confidence: Classification confidence between 0.0 and 1.0.
+        suggested_worker_count: Recommended number of worker agents (epic only).
+        suggested_scopes: Recommended sub-planner scopes (optional).
+        estimated_task_count: Estimated number of sub-tasks.
+    """
+
+    complexity: TaskComplexity
+    reasoning: str
+    confidence: float
+    suggested_worker_count: int = 1
+    suggested_scopes: list[str] = field(default_factory=list)
+    estimated_task_count: int = 1
 
 
 @dataclass(frozen=True)

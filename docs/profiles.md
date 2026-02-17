@@ -31,6 +31,27 @@ agent:
 - **`plan_and_react`**: Creates a plan, then iterates through steps with re-planning as needed.
 - **`spar`**: Sense-Plan-Act-Reflect loop with explicit reflection phases.
 
+## 🚀 Auto-Epic Orchestration
+
+Profiles can enable automatic detection of complex missions. When enabled, the
+executor classifies each mission before execution and escalates to Epic
+Orchestration (planner/worker/judge) when warranted.
+
+```yaml
+orchestration:
+  auto_epic:
+    enabled: true                 # default: false
+    confidence_threshold: 0.7     # minimum classifier confidence (0.0-1.0)
+    classifier_model: fast        # LLM model alias for classification (null = default)
+    default_worker_count: 3       # workers for epic runs (1-10)
+    default_max_rounds: 3         # max rounds (1-10)
+    planner_profile: planner      # profile for the planner agent
+    worker_profile: worker        # profile for worker agents
+    judge_profile: judge          # profile for the judge agent
+```
+
+The `--auto-epic` / `--no-auto-epic` CLI flag overrides the profile setting per invocation.
+
 ## ⏱ Runtime Tracking (Heartbeats & Checkpoints)
 
 Profiles can enable runtime tracking to support long-running, recoverable sessions:
