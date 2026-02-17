@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Callable
 from uuid import uuid4
 
@@ -15,11 +15,7 @@ from taskforce.core.interfaces.runtime import (
     CheckpointStoreProtocol,
     HeartbeatStoreProtocol,
 )
-
-
-def _utc_now() -> datetime:
-    """Return the current UTC timestamp."""
-    return datetime.now(timezone.utc)
+from taskforce.core.utils.time import utc_now as _utc_now
 
 
 class AgentRuntimeTracker(AgentRuntimeTrackerProtocol):

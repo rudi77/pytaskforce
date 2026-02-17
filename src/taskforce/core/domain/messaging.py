@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-
-def _utc_now() -> datetime:
-    """Return the current UTC timestamp."""
-    return datetime.now(timezone.utc)
+from taskforce.core.utils.time import utc_now as _utc_now
 
 
 @dataclass(frozen=True)
