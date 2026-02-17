@@ -31,6 +31,8 @@ Default profiles for the epic pipeline:
 
 ## CLI Usage
 
+### Explicit Epic
+
 ```powershell
 taskforce epic run "Implement epic: billing export overhaul" \
   --scope "backend export pipeline" \
@@ -40,3 +42,43 @@ taskforce epic run "Implement epic: billing export overhaul" \
   --auto-commit \
   --commit-message "Epic: billing export overhaul"
 ```
+
+### Auto-Epic (Automatic Detection)
+
+The agent can automatically detect complex missions and escalate to epic
+orchestration. Enable via CLI flag or profile configuration:
+
+```powershell
+# Explicit flag
+taskforce run mission "Build a REST API with auth, DB, and tests" --auto-epic --stream
+
+# Disable auto-detection (even if profile enables it)
+taskforce run mission "Fix a typo" --no-auto-epic
+```
+
+When auto-epic is enabled, the executor performs a lightweight LLM classification
+call before agent creation. If the mission is classified as complex with
+sufficient confidence, it is routed to the `EpicOrchestrator` automatically.
+
+**Profile configuration** (`orchestration.auto_epic` section):
+
+```yaml
+orchestration:
+  auto_epic:
+    enabled: true
+    confidence_threshold: 0.7   # minimum confidence to escalate
+    classifier_model: fast      # LLM model alias for classification
+    default_worker_count: 3
+    default_max_rounds: 3
+    planner_profile: planner
+    worker_profile: worker
+    judge_profile: judge
+```
+
+## Implementation
+
+- **Classifier**: `taskforce.application.task_complexity_classifier.TaskComplexityClassifier`
+- **Domain models**: `TaskComplexity` and `TaskComplexityResult` in `taskforce.core.domain.epic`
+- **Config schema**: `AutoEpicConfig` in `taskforce.core.domain.config_schema`
+- **Integration**: `AgentExecutor._classify_and_route_epic()` in `taskforce.application.executor`
+- **Event**: `EventType.EPIC_ESCALATION` is emitted when a mission is escalated

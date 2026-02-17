@@ -42,6 +42,8 @@ class EventType(str, Enum):
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Communication gateway events
     NOTIFICATION = "notification"
+    # Auto-epic orchestration events
+    EPIC_ESCALATION = "epic_escalation"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

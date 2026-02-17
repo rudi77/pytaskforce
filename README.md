@@ -174,6 +174,7 @@ Taskforce can run epic-scale workflows where a planner creates tasks, workers ex
 them in parallel, and a judge consolidates results and optionally commits changes.
 
 ```powershell
+# Explicit epic mode
 taskforce epic run "Implement epic: billing export overhaul" `
   --scope "backend export pipeline" `
   --scope "frontend export UI" `
@@ -182,6 +183,27 @@ taskforce epic run "Implement epic: billing export overhaul" `
   --auto-commit `
   --commit-message "Epic: billing export overhaul"
 ```
+
+### Auto-Epic Detection
+
+The agent can **automatically detect** complex missions and escalate to Epic
+Orchestration without explicit invocation:
+
+```powershell
+# Let the agent decide — complex missions trigger epic mode automatically
+taskforce run mission "Build a REST API with auth, database, and tests" --auto-epic --stream
+```
+
+Enable by default in your profile YAML:
+
+```yaml
+orchestration:
+  auto_epic:
+    enabled: true
+    confidence_threshold: 0.7
+```
+
+See [Epic Orchestration docs](docs/architecture/epic-orchestration.md) for full configuration options.
 
 ---
 

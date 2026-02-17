@@ -87,6 +87,24 @@ Profiles used by default:
 - `worker` (implementation)
 - `judge` (review/commit)
 
+### Auto-Epic Detection
+
+Instead of choosing the execution mode manually, let the agent decide automatically:
+
+```powershell
+# Enable auto-detection (overrides profile setting)
+taskforce run mission "Build a full user management system" --auto-epic --stream
+
+# Disable auto-detection explicitly
+taskforce run mission "Fix typo in docs" --no-auto-epic
+```
+
+When `--auto-epic` is set (or enabled in the profile via `orchestration.auto_epic.enabled`),
+the executor classifies the mission before execution. Complex missions are automatically
+routed to Epic Orchestration. Simple missions use the standard single-agent path.
+
+See [Epic Orchestration](architecture/epic-orchestration.md) for profile configuration details.
+
 ## 🔍 Inspection & Management
 
 ### Tools

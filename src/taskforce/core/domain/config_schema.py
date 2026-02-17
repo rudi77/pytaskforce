@@ -210,6 +210,55 @@ class AgentConfigSchema(BaseModel):
         return validated
 
 
+class AutoEpicConfig(BaseModel):
+    """Configuration for automatic epic orchestration detection.
+
+    Controls whether the agent automatically classifies mission complexity
+    and escalates to epic orchestration (planner/worker/judge) when needed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable automatic epic detection.",
+    )
+    confidence_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence to escalate to epic mode.",
+    )
+    classifier_model: Optional[str] = Field(
+        default=None,
+        description="LLM model alias for classifier (None = default model).",
+    )
+    default_worker_count: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Default number of worker agents for epic runs.",
+    )
+    default_max_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Default maximum rounds for epic runs.",
+    )
+    planner_profile: str = Field(
+        default="planner",
+        description="Profile for the planner agent.",
+    )
+    worker_profile: str = Field(
+        default="worker",
+        description="Profile for worker agents.",
+    )
+    judge_profile: str = Field(
+        default="judge",
+        description="Profile for the judge agent.",
+    )
+
+
 class ProfileConfigSchema(BaseModel):
     """
     Schema for profile configuration files (configs/*.yaml).

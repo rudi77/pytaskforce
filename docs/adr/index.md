@@ -11,6 +11,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 005: Epic Orchestration Pipeline](adr-005-epic-orchestration-pipeline.md)**
 - **[ADR 006: Communication Provider Architecture](adr-006-communication-providers.md)**
 - **[ADR 007: Unified Memory Service](adr-007-unified-memory-service.md)**
+- **[ADR 008: Auto-Epic Orchestration](adr-008-auto-epic-orchestration.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*

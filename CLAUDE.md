@@ -104,6 +104,7 @@ src/taskforce/
 │   ├── communication_service.py   # External communication
 │   ├── epic_orchestrator.py   # Multi-agent epic execution
 │   ├── epic_state_store.py    # Epic run state persistence
+│   ├── task_complexity_classifier.py  # Auto-epic complexity classification
 │   ├── sub_agent_spawner.py   # Sub-agent session spawning
 │   ├── tracing_facade.py      # Tracing facade
 │   └── command_loader_service.py  # Command loader
@@ -387,10 +388,13 @@ Plugins extend Taskforce with custom agents, tools, and configurations via Pytho
 Multi-agent pipeline for complex, multi-step tasks using planner/worker/judge roles:
 
 - **Orchestrator:** `src/taskforce/application/epic_orchestrator.py`
+- **Auto-Epic Classifier:** `src/taskforce/application/task_complexity_classifier.py`
 - **State:** Persisted under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, `MEMORY.md`
 - **Profiles:** Planner, worker, judge configs in `src/taskforce_extensions/configs/`
-- **CLI:** `taskforce epic` command with `--rounds` option for iterative refinement
+- **CLI:** `taskforce epic` command with `--rounds` option for iterative refinement; `taskforce run mission --auto-epic` for automatic detection
+- **Config:** `orchestration.auto_epic` section in profile YAML (see `AutoEpicConfig` in `core/domain/config_schema.py`)
 - **Docs:** `docs/architecture/epic-orchestration.md`
+- **ADR:** `docs/adr/adr-008-auto-epic-orchestration.md`
 
 ---
 
@@ -1091,6 +1095,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
 - `src/taskforce/application/communication_service.py` - External communication
 - `src/taskforce/application/epic_orchestrator.py` - Epic orchestration
+- `src/taskforce/application/task_complexity_classifier.py` - Auto-epic complexity classification
 - `src/taskforce/application/epic_state_store.py` - Epic state persistence
 - `src/taskforce/application/sub_agent_spawner.py` - Sub-agent session spawning
 - `src/taskforce/application/tracing_facade.py` - Tracing facade
