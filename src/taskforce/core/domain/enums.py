@@ -44,6 +44,11 @@ class EventType(str, Enum):
     NOTIFICATION = "notification"
     # Auto-epic orchestration events
     EPIC_ESCALATION = "epic_escalation"
+    # Butler / event-driven events
+    BUTLER_EVENT_RECEIVED = "butler_event_received"
+    BUTLER_RULE_FIRED = "butler_rule_fired"
+    BUTLER_SCHEDULE_TRIGGERED = "butler_schedule_triggered"
+    BUTLER_LEARNING_EXTRACTED = "butler_learning_extracted"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

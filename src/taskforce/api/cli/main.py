@@ -4,6 +4,7 @@ import typer
 from rich.console import Console
 
 from taskforce.api.cli.commands import (
+    butler,
     chat,
     commands,
     config,
@@ -35,6 +36,7 @@ app.add_typer(missions.app, name="missions", help="Mission management")
 app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(commands.app, name="commands", help="Manage custom slash commands")
 app.add_typer(epic.app, name="epic", help="Epic orchestration workflows")
+app.add_typer(butler.app, name="butler", help="Butler agent daemon")
 
 
 @app.callback()

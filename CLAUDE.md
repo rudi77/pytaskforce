@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.2
-**Date:** 2026-02-05
+**Version:** 1.3
+**Date:** 2026-02-18
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---
@@ -319,7 +319,7 @@ Exception types live in `src/taskforce/core/domain/errors.py` (`TaskforceError`,
 
 ## Native Tools
 
-13 built-in tools in `infrastructure/tools/native/`:
+17 built-in tools in `infrastructure/tools/native/`:
 
 | Tool | File | Description |
 |------|------|-------------|
@@ -335,6 +335,10 @@ Exception types live in `src/taskforce/core/domain/errors.py` (`TaskforceError`,
 | Multimedia | `multimedia_tool.py` | Image/media handling |
 | Ask User | `ask_user_tool.py` | Interactive user prompts |
 | Activate Skill | `activate_skill_tool.py` | Runtime skill activation |
+| Calendar | `calendar_tool.py` | Google Calendar list/create (butler) |
+| Schedule | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
+| Reminder | `reminder_tool.py` | One-shot reminder creation (butler) |
+| Rule Manager | `rule_manager_tool.py` | Event-to-action trigger rule management (butler) |
 
 Additional tool categories:
 - **RAG Tools** (`infrastructure/tools/rag/`): Azure AI Search integration (semantic search, document retrieval, global analysis)
@@ -409,6 +413,55 @@ External communication integrations (Telegram, etc.) for agent-human interaction
 - **Persistence:** Chat history in `.taskforce/conversations/`
 - **ADR:** `docs/adr/adr-006-communication-providers.md`
 - **Docs:** `docs/integrations.md`
+
+---
+
+## Butler Agent (Event-Driven Architecture)
+
+The Butler is a proactive, event-driven agent daemon that runs 24/7 and acts as a personal assistant. See **[ADR-010](docs/adr/adr-010-event-driven-butler-agent.md)** for the full architecture.
+
+### Key Components
+
+| Component | Layer | File(s) | Purpose |
+|-----------|-------|---------|---------|
+| `AgentEvent` | Core/Domain | `core/domain/agent_event.py` | Event model from external sources |
+| `ScheduleJob` | Core/Domain | `core/domain/schedule.py` | Scheduled job model (cron/interval/one-shot) |
+| `TriggerRule` | Core/Domain | `core/domain/trigger_rule.py` | Event-to-action rule model |
+| `EventSourceProtocol` | Core/Interfaces | `core/interfaces/event_source.py` | External event source contract |
+| `SchedulerProtocol` | Core/Interfaces | `core/interfaces/scheduler.py` | Job scheduling contract |
+| `RuleEngineProtocol` | Core/Interfaces | `core/interfaces/rule_engine.py` | Rule evaluation contract |
+| `LearningStrategyProtocol` | Core/Interfaces | `core/interfaces/learning.py` | Automatic learning contract |
+| `SchedulerService` | Infrastructure | `infrastructure/scheduler/scheduler_service.py` | Asyncio-based scheduler |
+| `FileJobStore` | Infrastructure | `infrastructure/scheduler/job_store.py` | Job persistence |
+| `CalendarEventSource` | Infrastructure | `infrastructure/event_sources/calendar_source.py` | Google Calendar polling |
+| `WebhookEventSource` | Infrastructure | `infrastructure/event_sources/webhook_source.py` | HTTP webhook receiver |
+| `RuleEngine` | Application | `application/rule_engine.py` | Rule evaluation and persistence |
+| `EventRouter` | Application | `application/event_router.py` | Event-to-action dispatch |
+| `ButlerService` | Application | `application/butler_service.py` | Butler lifecycle orchestration |
+| `LearningService` | Application | `application/learning_service.py` | Auto-extraction from conversations |
+| `ButlerDaemon` | API | `api/butler_daemon.py` | Top-level daemon process |
+| Butler CLI | API | `api/cli/commands/butler.py` | `taskforce butler` commands |
+
+### Running the Butler
+
+```bash
+# Start the butler daemon
+taskforce butler start --profile butler
+
+# Check butler status
+taskforce butler status
+
+# Manage trigger rules
+taskforce butler rules list
+taskforce butler rules add --name "calendar_reminder" --source calendar --type calendar.upcoming
+
+# View scheduled jobs
+taskforce butler schedules list
+```
+
+### Butler Profile
+
+The butler profile (`src/taskforce_extensions/configs/butler.yaml`) configures event sources, trigger rules, scheduler, and notification defaults.
 
 ---
 
@@ -1036,9 +1089,12 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/core/domain/models.py` - Core data models (ExecutionResult, StreamEvent, TokenUsage)
 - `src/taskforce/core/domain/errors.py` - Exception types (TaskforceError, LLMError, ToolError)
 - `src/taskforce/core/domain/config_schema.py` - Configuration schema definitions
-- `src/taskforce/core/domain/memory.py` - Memory domain models
+- `src/taskforce/core/domain/memory.py` - Memory domain models (includes PREFERENCE and LEARNED_FACT kinds)
 - `src/taskforce/core/domain/memory_service.py` - Memory service logic
 - `src/taskforce/core/domain/messaging.py` - Inter-agent messaging models
+- `src/taskforce/core/domain/agent_event.py` - Butler event model (AgentEvent, AgentEventType)
+- `src/taskforce/core/domain/schedule.py` - Schedule job models (ScheduleJob, ScheduleType, ScheduleAction)
+- `src/taskforce/core/domain/trigger_rule.py` - Trigger rule models (TriggerRule, TriggerCondition, RuleAction)
 - `src/taskforce/core/domain/sub_agents.py` - Sub-agent management
 - `src/taskforce/core/domain/skill.py` - Skill domain models
 - `src/taskforce/core/domain/skill_workflow.py` - Skill workflow orchestration
@@ -1064,6 +1120,10 @@ See `docs/architecture/section-10-deployment.md` for:
 - `sub_agents.py` - Sub-agent protocol
 - `identity_stubs.py` - Identity management stubs
 - `logging.py` - Logger protocol
+- `event_source.py` - Event source protocol (butler)
+- `scheduler.py` - Scheduler protocol (butler)
+- `rule_engine.py` - Rule engine protocol (butler)
+- `learning.py` - Learning strategy protocol (butler)
 
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
@@ -1072,9 +1132,14 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/llm/openai_service.py` - Backward-compatible alias (imports LiteLLMService)
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
-- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry
-- `src/taskforce/infrastructure/tools/native/*.py` - 13 native tools
+- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry (17 native + RAG tools)
+- `src/taskforce/infrastructure/tools/native/*.py` - 17 native tools (incl. butler tools: calendar, schedule, reminder, rule_manager)
 - `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
+- `src/taskforce/infrastructure/scheduler/scheduler_service.py` - Asyncio-based job scheduler (butler)
+- `src/taskforce/infrastructure/scheduler/job_store.py` - File-based job persistence (butler)
+- `src/taskforce/infrastructure/event_sources/base.py` - Polling event source base class (butler)
+- `src/taskforce/infrastructure/event_sources/calendar_source.py` - Google Calendar polling (butler)
+- `src/taskforce/infrastructure/event_sources/webhook_source.py` - HTTP webhook receiver (butler)
 - `src/taskforce/infrastructure/tools/rag/*.py` - RAG tools (Azure AI Search)
 - `src/taskforce/infrastructure/tools/orchestration/*.py` - Agent/sub-agent tools
 - `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry
@@ -1094,6 +1159,10 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/plugin_discovery.py` - Plugin discovery
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
 - `src/taskforce/application/communication_service.py` - External communication
+- `src/taskforce/application/rule_engine.py` - Trigger rule evaluation and persistence (butler)
+- `src/taskforce/application/event_router.py` - Event-to-action dispatch (butler)
+- `src/taskforce/application/butler_service.py` - Butler lifecycle orchestration (butler)
+- `src/taskforce/application/learning_service.py` - Auto-extraction from conversations (butler)
 - `src/taskforce/application/epic_orchestrator.py` - Epic orchestration
 - `src/taskforce/application/task_complexity_classifier.py` - Auto-epic complexity classification
 - `src/taskforce/application/epic_state_store.py` - Epic state persistence
@@ -1104,12 +1173,14 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/api/server.py` - FastAPI application
 - `src/taskforce/api/cli/main.py` - CLI entry point
 - `src/taskforce/api/cli/simple_chat.py` - Interactive chat interface
-- `src/taskforce/api/cli/commands/` - CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config)
+- `src/taskforce/api/cli/commands/` - CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config, butler)
+- `src/taskforce/api/cli/commands/butler.py` - Butler daemon CLI commands (butler)
+- `src/taskforce/api/butler_daemon.py` - Butler daemon process (butler)
 - `src/taskforce/api/routes/` - REST endpoints (execution, agents, sessions, tools, health, integrations)
 - `src/taskforce/api/schemas/` - Request/response schemas
 
 ### Extensions
-- `src/taskforce_extensions/configs/` - Profile YAML configs
+- `src/taskforce_extensions/configs/` - Profile YAML configs (incl. `butler.yaml`)
 - `src/taskforce_extensions/infrastructure/communication/` - Communication providers
 - `src/taskforce_extensions/infrastructure/messaging/` - Message bus adapters
 - `src/taskforce_extensions/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
@@ -1137,7 +1208,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - **Features:** `docs/features/` (longterm-memory, skills, enterprise)
 - **Plugin System:** `docs/plugins.md`
 - **Slash Commands:** `docs/slash-commands.md`
-- **ADRs:** `docs/adr/index.md` (7 ADRs covering uv, clean architecture, enterprise, multi-agent, epic orchestration, communication, memory)
+- **ADRs:** `docs/adr/index.md` (9 ADRs covering uv, clean architecture, enterprise, multi-agent, epic orchestration, communication, memory, communication gateway, event-driven butler)
 - **Epics:** `docs/epics/index.md` (20+ epic planning documents)
 - **PRD:** `docs/prd/index.md`
 - **Stories:** `docs/stories/`
@@ -1181,5 +1252,5 @@ See `docs/architecture/section-10-deployment.md` for:
 
 ---
 
-**Last Updated:** 2026-02-05
+**Last Updated:** 2026-02-18
 **For Questions:** See `docs/` or create an issue in the repository
