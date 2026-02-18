@@ -1,0 +1,76 @@
+@startuml C4_Component_Core
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram – Core Domain Layer
+caption src/taskforce/core/
+
+Container_Boundary(coreDomain, "Core Domain Layer") {
+
+    ' ── Domain / Agents ───────────────────────────────────────────────────
+    Component(agent,            "Agent",                        "Python class",     "Vollständiger ReAct-Loop mit nativem LLM-Tool-Calling. Verwaltet Nachrichten, Tools und Planungsstrategie.")
+    Component(leanAgent,        "LeanAgent",                    "Python class",     "Vereinfachter Agent mit PlannerTool als First-Class-Tool. Geringerer Overhead für einfache Missionen.")
+
+    ' ── Agent Components (Lean) ───────────────────────────────────────────
+    Component(msgHistMgr,       "MessageHistoryManager",        "Python class",     "Komprimiert und budgetiert Nachrichtenhistorie. Verhindert Token-Überschreitung.")
+    Component(toolExecutor,     "ToolExecutor",                 "Python class",     "Führt Tools aus, baut Result-Messages. Unterstützt Parallelausführung (max_parallel_tools).")
+    Component(promptBuilder,    "PromptBuilder",                "Python class",     "Erstellt System-Prompt dynamisch aus Profil, Skills und Planungskontext.")
+    Component(msgSanitizer,     "MessageSanitizer",             "Python class",     "Bereinigt und validiert Nachrichten vor LLM-Aufruf.")
+    Component(stateStore,       "StateStore",                   "Python class",     "Persistenz-Helfer für Session-State.")
+    Component(resourceCloser,   "ResourceCloser",               "Python class",     "Gibt MCP-Ressourcen beim Shutdown frei.")
+
+    ' ── Planning Strategies ───────────────────────────────────────────────
+    Component(nativeReact,      "NativeReActStrategy",          "Python class",     "Reiner Thought→Action→Observation-Zyklus. Standard-Strategie.")
+    Component(planAndExecute,   "PlanAndExecuteStrategy",       "Python class",     "Erstellt zuerst einen Plan, führt Schritte sequentiell aus.")
+    Component(planAndReact,     "PlanAndReactStrategy",         "Python class",     "Hybrid: Plan + ReAct innerhalb jedes Plan-Schritts.")
+    Component(spar,             "SparStrategy",                 "Python class",     "Structured Sense→Plan→Act→Reflect mit iterativer Verfeinerung.")
+
+    ' ── Domain Models ─────────────────────────────────────────────────────
+    Component(models,           "Domain Models",                "Python dataclasses / Pydantic", "ExecutionResult, StreamEvent, TokenUsage, PendingQuestion.")
+    Component(enums,            "Domain Enums",                 "Python Enum",      "ExecutionStatus, EventType, LLMStreamEventType, TaskStatus, LLMAction, MessageRole – keine Magic-Strings.")
+    Component(errors,           "Error Types",                  "Python exceptions","TaskforceError, LLMError, ToolError, PlanningError, ConfigError, ValidationError.")
+    Component(configSchema,     "Config Schema",                "Pydantic",         "AgentConfigSchema, MCPServerConfigSchema – Validierung der Konfigurationsprofile.")
+    Component(epicModels,       "Epic Models",                  "Python dataclasses","TaskComplexity, EpicTask, EpicTaskResult, EpicRunResult.")
+    Component(butlerModels,     "Butler Domain Models",         "Python dataclasses","AgentEvent (AgentEventType), ScheduleJob (ScheduleType), TriggerRule (TriggerCondition, RuleAction).")
+    Component(memoryModels,     "Memory Models",                "Python dataclasses","Memory, MemoryKind (PREFERENCE, LEARNED_FACT), MemoryService.")
+    Component(contextPolicy,    "Context Policy",               "Python class",     "Token-bewusste Filterung von Nachrichten. Konfigurierbar: max_items, max_chars, Priorität.")
+    Component(tokenBudgeter,    "TokenBudgeter",                "Python class",     "Verfolgt Input/Output-Token, triggert Kompression bei 80 % des Limits.")
+
+    ' ── Protocols (Interfaces) ────────────────────────────────────────────
+    Component(protocols,        "Protocols (15+)",              "Python Protocol",  "LLMProviderProtocol, StateManagerProtocol, ToolProtocol, MemoryStoreProtocol, MessageBusProtocol, SchedulerProtocol, RuleEngineProtocol, EventSourceProtocol, SubAgentProtocol, SkillProtocol, SlashCommandProtocol, ToolMappingProtocol, ToolResultStoreProtocol, RuntimeProtocol, LearningStrategyProtocol.")
+
+    ' ── Core Tools ────────────────────────────────────────────────────────
+    Component(plannerTool,      "PlannerTool",                  "Python class",     "TodoList-Planung als nativer LLM-Tool-Call. Aktionen: create_plan, mark_done, read_plan, update_plan.")
+    Component(toolConverter,    "ToolConverter",                "Python function",  "Konvertiert ToolProtocol-Objekte in OpenAI-Function-Calling-Format.")
+
+    ' ── Prompts ───────────────────────────────────────────────────────────
+    Component(prompts,          "System Prompts",               "Python constants", "LEAN_KERNEL_PROMPT und weitere Prompt-Templates für Agent-Typen und Planungsstrategien.")
+}
+
+' ─── Internal Relationships ───────────────────────────────────────────────
+Rel(agent,          nativeReact,    "Nutzt (Standard)")
+Rel(agent,          planAndExecute, "Nutzt")
+Rel(agent,          planAndReact,   "Nutzt")
+Rel(agent,          spar,           "Nutzt")
+Rel(agent,          msgHistMgr,     "Delegiert Kompression")
+Rel(agent,          toolExecutor,   "Delegiert Tool-Ausführung")
+Rel(agent,          promptBuilder,  "Erstellt System-Prompt")
+Rel(agent,          stateStore,     "Persistiert State")
+Rel(agent,          resourceCloser, "Ressourcen freigeben")
+
+Rel(leanAgent,      plannerTool,    "Nutzt als First-Class-Tool")
+Rel(leanAgent,      msgHistMgr,     "Delegiert Kompression")
+Rel(leanAgent,      toolExecutor,   "Delegiert Tool-Ausführung")
+Rel(leanAgent,      promptBuilder,  "Erstellt System-Prompt")
+
+Rel(msgHistMgr,     tokenBudgeter,  "Verfolgt Token-Budget")
+Rel(promptBuilder,  prompts,        "Verwendet Templates")
+Rel(agent,          protocols,      "Implementiert gegen Protokolle")
+Rel(leanAgent,      protocols,      "Implementiert gegen Protokolle")
+Rel(toolConverter,  protocols,      "Konvertiert ToolProtocol")
+Rel(agent,          models,         "Produziert ExecutionResult, StreamEvent")
+Rel(agent,          contextPolicy,  "Filtert Nachrichten")
+
+@enduml

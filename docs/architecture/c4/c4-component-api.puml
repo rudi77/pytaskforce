@@ -1,0 +1,96 @@
+@startuml C4_Component_API
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram – API Layer (CLI + REST)
+caption src/taskforce/api/
+
+Container_Boundary(apiLayer, "API Layer") {
+
+    ' ── CLI ───────────────────────────────────────────────────────────────
+    Component(cliMain,          "CLI Main (Typer App)",         "Python / Typer",       "Haupt-Einstiegspunkt für die Kommandozeile. Registriert alle Subcommands. Globale Optionen: --profile, --debug.")
+
+    Component(cmdRun,           "run Command",                  "Python / Typer",       "taskforce run mission <mission>. Optionen: --profile, --session, --max-steps, --debug, --auto-epic. Ausgabemodi: text, json, streaming.")
+    Component(cmdChat,          "chat Command",                 "Python / Typer",       "taskforce chat – interaktiver Chat-Modus mit History-Management.")
+    Component(cmdEpic,          "epic Command",                 "Python / Typer",       "taskforce epic <mission> --rounds <n> – Epic-Orchestrierung mit iterativer Verfeinerung.")
+    Component(cmdSkills,        "skills Command",               "Python / Typer",       "Skill-Verwaltung: list, activate, deactivate, info.")
+    Component(cmdTools,         "tools Command",                "Python / Typer",       "Tool-Auflistung und -Info.")
+    Component(cmdSessions,      "sessions Command",             "Python / Typer",       "Session-Verwaltung: list, show, delete, resume.")
+    Component(cmdMissions,      "missions Command",             "Python / Typer",       "Missions-Tracking.")
+    Component(cmdConfig,        "config Command",               "Python / Typer",       "Konfigurationsverwaltung: show, validate.")
+    Component(cmdButler,        "butler Command",               "Python / Typer",       "Butler-Daemon-Steuerung: start, stop, status. Regel- und Schedule-Verwaltung.")
+    Component(cmdCommands,      "commands Command",             "Python / Typer",       "Slash-Command-Verwaltung.")
+
+    Component(simpleChat,       "SimpleChatInterface",          "Python / Rich / Textual","Interaktives Chat-UI mit Streaming-Ausgabe und History.")
+    Component(outputFormatter,  "OutputFormatter",              "Python / Rich",        "Rich-formatierte Ausgabe: Progress-Bars, Banner, Tabellen, strukturierte Ergebnisse.")
+
+    ' ── REST API ──────────────────────────────────────────────────────────
+    Component(fastapiApp,       "FastAPI Application",          "Python / FastAPI",     "create_app() Fabrik. CORS-Middleware, Exception-Handler, Plugin-Router, Lifespan (startup/shutdown). OpenAPI-Docs unter /docs.")
+
+    Component(routeExecution,   "Execution Routes",             "Python / FastAPI",     "POST /api/v1/execute – synchrone Ausführung.\nPOST /api/v1/execute/stream – SSE-Streaming-Ausführung.\nPayload: mission, profile, session_id, max_steps.")
+    Component(routeSessions,    "Session Routes",               "Python / FastAPI",     "GET /api/v1/sessions – Liste.\nGET /api/v1/sessions/{id} – Session-State.\nDELETE /api/v1/sessions/{id} – Löschen.\nPOST /api/v1/sessions/{id}/resume – Fortsetzen.")
+    Component(routeAgents,      "Agent Routes",                 "Python / FastAPI",     "GET/POST/DELETE /api/v1/agents – Agenten-Registrierung und -Verwaltung.")
+    Component(routeTools,       "Tool Routes",                  "Python / FastAPI",     "GET /api/v1/tools – Tool-Discovery.\nGET /api/v1/tools/{name} – Tool-Metadaten.")
+    Component(routeHealth,      "Health Routes",                "Python / FastAPI",     "GET /health – API-Gesundheitsstatus.")
+    Component(routeGateway,     "Gateway Routes",               "Python / FastAPI",     "Kommunikations-Gateway-Endpunkte für externe Integrationen.")
+    Component(routeIntegrations,"Integration Routes",           "Python / FastAPI",     "POST /api/v1/integrations/{provider}/messages – eingehende Nachrichten (Telegram, etc.).")
+
+    Component(schemas,          "Request/Response Schemas",     "Python / Pydantic",    "Validierungsmodelle für alle API-Endpunkte. ErrorResponse mit code, message, details und X-Taskforce-Error-Header.")
+
+    ' ── Butler Daemon ─────────────────────────────────────────────────────
+    Component(butlerDaemon,     "ButlerDaemon Process",         "Python / asyncio",     "Langlebiger Daemon-Prozess. Verwaltet EventSources, RuleEngine, Scheduler. Graceful Shutdown.")
+}
+
+' ─── External (other layers) ──────────────────────────────────────────────
+Container_Ext(appLayer,     "Application Layer",    "AgentExecutor, AgentFactory, EpicOrchestrator, ButlerService, ...")
+Container_Ext(infraLayer,   "Infrastructure Layer", "LiteLLMService, ToolRegistry, ...")
+
+' ─── Users ────────────────────────────────────────────────────────────────
+Person_Ext(developer,   "Developer / End User",  "Nutzt CLI oder REST-API.")
+
+' ─── Relationships ────────────────────────────────────────────────────────
+Rel(developer,          cliMain,            "Führt aus",                "bash / Terminal")
+Rel(developer,          fastapiApp,         "Sendet HTTP-Anfragen",     "HTTP / REST")
+
+Rel(cliMain,            cmdRun,             "Registriert")
+Rel(cliMain,            cmdChat,            "Registriert")
+Rel(cliMain,            cmdEpic,            "Registriert")
+Rel(cliMain,            cmdSkills,          "Registriert")
+Rel(cliMain,            cmdTools,           "Registriert")
+Rel(cliMain,            cmdSessions,        "Registriert")
+Rel(cliMain,            cmdMissions,        "Registriert")
+Rel(cliMain,            cmdConfig,          "Registriert")
+Rel(cliMain,            cmdButler,          "Registriert")
+Rel(cliMain,            cmdCommands,        "Registriert")
+
+Rel(cmdRun,             outputFormatter,    "Formatiert Ausgabe")
+Rel(cmdChat,            simpleChat,         "Nutzt Chat-UI")
+Rel(simpleChat,         outputFormatter,    "Formatiert Ausgabe")
+
+Rel(cmdRun,             appLayer,           "Delegiert an AgentExecutor")
+Rel(cmdChat,            appLayer,           "Delegiert an AgentExecutor")
+Rel(cmdEpic,            appLayer,           "Delegiert an EpicOrchestrator")
+Rel(cmdButler,          butlerDaemon,       "Steuert Daemon")
+Rel(cmdSkills,          appLayer,           "Nutzt SkillManager")
+Rel(cmdSessions,        appLayer,           "Nutzt StateManager via App-Layer")
+
+Rel(fastapiApp,         routeExecution,     "Mountet Router")
+Rel(fastapiApp,         routeSessions,      "Mountet Router")
+Rel(fastapiApp,         routeAgents,        "Mountet Router")
+Rel(fastapiApp,         routeTools,         "Mountet Router")
+Rel(fastapiApp,         routeHealth,        "Mountet Router")
+Rel(fastapiApp,         routeGateway,       "Mountet Router")
+Rel(fastapiApp,         routeIntegrations,  "Mountet Router")
+
+Rel(routeExecution,     schemas,            "Validiert Anfrage/Antwort")
+Rel(routeExecution,     appLayer,           "Delegiert an AgentExecutor")
+Rel(routeSessions,      appLayer,           "Delegiert an StateManager")
+Rel(routeAgents,        appLayer,           "Delegiert an AgentRegistry")
+Rel(routeTools,         appLayer,           "Delegiert an ToolRegistry")
+Rel(routeIntegrations,  appLayer,           "Delegiert an CommunicationService")
+
+Rel(butlerDaemon,       appLayer,           "Nutzt ButlerService")
+
+@enduml

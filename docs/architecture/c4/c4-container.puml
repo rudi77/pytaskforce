@@ -1,0 +1,71 @@
+@startuml C4_Container
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container Diagram – Taskforce
+
+' ─── Actors ───────────────────────────────────────────────────────────────
+Person(developer,   "Developer / End User",  "Führt Agenten aus, interagiert via Chat oder API.")
+Person(admin,       "Administrator",         "Konfiguriert Profile und Deployment.")
+
+System_Boundary(taskforce, "Taskforce") {
+
+    ' ── API Layer ─────────────────────────────────────────────────────────
+    Container(cli,          "CLI Application",      "Python / Typer / Rich",    "Kommandozeilen-Interface für lokale Nutzung. Befehle: run, chat, epic, butler, skills, tools, sessions, config.")
+    Container(apiServer,    "REST API Server",      "Python / FastAPI",         "HTTP-Endpunkte für synchrone und Streaming-Ausführung von Missionen, Session-Management, Agent-Registrierung.")
+    Container(butlerDaemon, "Butler Daemon",        "Python / asyncio",         "Langlebiger Hintergrundprozess. Verarbeitet Kalender-Events, Webhooks, Trigger-Regeln und Scheduled Jobs.")
+
+    ' ── Application Layer ─────────────────────────────────────────────────
+    Container(appLayer,     "Application Layer",    "Python",                   "Use-Case-Orchestrierung: AgentFactory, AgentExecutor, EpicOrchestrator, SkillManager, PluginLoader, ButlerService, EventRouter, RuleEngine.")
+
+    ' ── Core Domain ───────────────────────────────────────────────────────
+    Container(coreDomain,   "Core Domain",          "Python (pure)",            "Reine Domänenlogik: Agent, LeanAgent, ReAct-Loop, Planungsstrategien (4), Protokoll-Definitionen (15+), Domain-Enums, Fehlertypen.")
+
+    ' ── Infrastructure Layer ──────────────────────────────────────────────
+    Container(infraLayer,   "Infrastructure Layer", "Python",                   "Externe Integrationen: LiteLLMService, FileStateManager, FileMemoryStore, ToolRegistry (17+ Tools), MCPConnectionManager, SchedulerService.")
+
+    ' ── Extensions Package ────────────────────────────────────────────────
+    Container(extensions,   "Extensions Package",   "Python / YAML",            "Konfigurationsprofile (dev, coding_agent, rag_agent, butler, ...), Plugin-Agenten (ap_poc, document_extraction), Skills, Communication-Provider.")
+
+    ' ── Persistence ───────────────────────────────────────────────────────
+    ContainerDb(fileStore,  "File System Store",    "JSON / Markdown / YAML",   "Lokale Persistenz: Sessions (.taskforce/sessions/), Memory (.taskforce/.memory/), Epic-Runs, Job-Store.")
+}
+
+' ─── External Systems ─────────────────────────────────────────────────────
+System_Ext(llmProviders,    "LLM Providers",        "OpenAI / Anthropic / Google / Azure / Ollama")
+System_Ext(azureSearch,     "Azure AI Search",      "RAG / Semantische Suche")
+System_Ext(mcpServers,      "MCP Servers",          "Model Context Protocol")
+System_Ext(googleCalendar,  "Google Calendar",      "Kalender-Events")
+System_Ext(telegram,        "Telegram",             "Messaging")
+System_Ext(postgresql,      "PostgreSQL",           "Produktive Persistenz")
+System_Ext(phoenix,         "Arize Phoenix",        "Observability / Tracing")
+System_Ext(webInternet,     "Web / Internet",       "HTTP, Suche")
+
+' ─── Relationships ────────────────────────────────────────────────────────
+Rel(developer,      cli,            "Führt aus",                    "bash / Terminal")
+Rel(developer,      apiServer,      "Sendet Anfragen",              "HTTP / REST")
+Rel(admin,          extensions,     "Konfiguriert",                 "YAML-Dateien")
+
+Rel(cli,            appLayer,       "Delegiert Ausführung",         "Python-Aufrufe")
+Rel(apiServer,      appLayer,       "Delegiert Ausführung",         "Python-Aufrufe")
+Rel(butlerDaemon,   appLayer,       "Nutzt ButlerService",          "Python-Aufrufe")
+
+Rel(appLayer,       coreDomain,     "Nutzt Domain-Logik",           "Python-Aufrufe")
+Rel(appLayer,       infraLayer,     "Nutzt Infrastruktur",          "Python-Aufrufe")
+Rel(appLayer,       extensions,     "Lädt Profile und Plugins",     "Python / Entry-Points")
+Rel(infraLayer,     coreDomain,     "Implementiert Protokolle",     "Python-Aufrufe")
+
+Rel(infraLayer,     llmProviders,   "LLM-Anfragen",                 "HTTPS / LiteLLM")
+Rel(infraLayer,     azureSearch,    "RAG-Suche",                    "HTTPS / SDK")
+Rel(infraLayer,     mcpServers,     "Tool-Aufrufe",                 "stdio / SSE")
+Rel(infraLayer,     phoenix,        "Traces exportieren",           "OTLP")
+Rel(infraLayer,     webInternet,    "Web-Fetch / Suche",            "HTTPS")
+Rel(infraLayer,     fileStore,      "Liest / Schreibt",             "Filesystem")
+Rel(infraLayer,     postgresql,     "Session-State (prod)",         "TCP / asyncpg")
+
+Rel(butlerDaemon,   googleCalendar, "Events pollen",                "HTTPS / API")
+Rel(butlerDaemon,   telegram,       "Benachrichtigungen senden",    "HTTPS / Bot-API")
+
+@enduml

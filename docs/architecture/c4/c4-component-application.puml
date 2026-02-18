@@ -1,0 +1,93 @@
+@startuml C4_Component_Application
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram – Application Layer
+caption src/taskforce/application/
+
+Container_Boundary(appLayer, "Application Layer") {
+
+    ' ── Core Orchestration ────────────────────────────────────────────────
+    Component(agentFactory,     "AgentFactory",                 "Python",       "Dependency-Injection-Fabrik. Lädt YAML-Profile, instantiiert Infrastruktur-Adapter und verdrahtet Agenten. Unterstützt config- und Inline-Modus (gegenseitig ausschließend).")
+    Component(agentExecutor,    "AgentExecutor",                "Python",       "Missions-Ausführungs-Orchestrator. execute_mission() delegiert an execute_mission_streaming(). Verwaltet Session-Lifecycle, Logging, Progress-Callbacks.")
+    Component(toolRegistry,     "ToolRegistry (App-Wrapper)",   "Python",       "Zentraler Tool-Katalog. Einzige Source of Truth. Methoden: list_native_tools(), list_rag_tools(), resolve(), list_available_tools(). Singleton via get_tool_registry().")
+    Component(infraBuilder,     "InfrastructureBuilder",        "Python",       "Baut LLM-Provider, State-Manager, Memory-Store basierend auf Profil-Konfiguration auf.")
+    Component(profileLoader,    "ProfileLoader",                "Python / YAML","Lädt YAML-Profile (dev, coding_agent, rag_agent, custom). Liefert Standard-Tool-Namen.")
+
+    ' ── Intent & Skills ───────────────────────────────────────────────────
+    Component(intentRouter,     "IntentRouter",                 "Python",       "Routet Nutzereingaben zu Skills, Agenten oder Direkt-Ausführung. create_intent_router_from_config().")
+    Component(skillManager,     "SkillManager",                 "Python",       "Skill-Lifecycle: Laden, Validieren, Aktivieren, Deaktivieren. create_skill_manager_from_manifest().")
+    Component(skillService,     "SkillService",                 "Python",       "Skill-Ausführungsservice. Führt Skills im Agenten-Kontext aus.")
+
+    ' ── Slash Commands ────────────────────────────────────────────────────
+    Component(slashCmdReg,      "SlashCommandRegistry",         "Python",       "Registrierung und Ausführung von Slash-Commands. Projekt-Ebene überschreibt User-Ebene.")
+
+    ' ── Agent Registry ────────────────────────────────────────────────────
+    Component(agentRegistry,    "AgentRegistry",                "Python",       "Programmatische Registrierung benutzerdefinierter Agenten. Methoden: register_agent(), list_agents(), get_agent(), unregister_agent().")
+
+    ' ── Plugin System ─────────────────────────────────────────────────────
+    Component(pluginLoader,     "PluginLoader",                 "Python",       "Entdeckt und lädt Plugin-Struktur (Tools, Konfiguration, Routers, Middleware).")
+    Component(pluginDiscovery,  "PluginDiscovery",              "Python / setuptools","Plugin-Discovery via Entry-Points (taskforce.plugins). Singleton: get_plugin_registry(). Lädt Factory-Extensions.")
+
+    ' ── Epic Orchestration ────────────────────────────────────────────────
+    Component(epicOrchestrator, "EpicOrchestrator",             "Python",       "Multi-Agenten-Pipeline: Planer → Worker (parallel) → Richter. Iterative Verfeinerung via Runden. Liest/Schreibt MISSION.md, CURRENT_STATE.md, MEMORY.md.")
+    Component(epicStateStore,   "EpicStateStore",               "Python",       "Persistiert Epic-Run-State unter .taskforce/epic_runs/<run_id>/.")
+    Component(complexityClass,  "TaskComplexityClassifier",     "Python / LLM", "LLM-basierte Klassifizierung: einfache Mission vs. Epic-Skala. classify_task() gibt TaskComplexityResult mit Confidence zurück.")
+    Component(subAgentSpawner,  "SubAgentSpawner",              "Python",       "Zentralisierte Sub-Agenten-Session-Erstellung. Standardisiert isolierte Sub-Agenten-Spawning.")
+
+    ' ── Butler Services ───────────────────────────────────────────────────
+    Component(butlerService,    "ButlerService",                "Python / asyncio","Butler-Lifecycle-Orchestrierung. Koordiniert Event-Sources, RuleEngine, Scheduler. Lifecycle: start(), stop(), status().")
+    Component(eventRouter,      "EventRouter",                  "Python",       "Event-zu-Action-Dispatch. Filtert Events, evaluiert Regeln, dispatcht Aktionen (notify, execute_mission, log_memory).")
+    Component(ruleEngine,       "RuleEngine",                   "Python",       "Implementiert RuleEngineProtocol. Evaluiert TriggerRules gegen Events mit JSONPath-Filterung. File-basierte Regel-Persistenz.")
+    Component(learningService,  "LearningService",              "Python / LLM", "Implementiert LearningStrategyProtocol. Extrahiert PREFERENCE und LEARNED_FACT aus Agenten-Ausführungen.")
+
+    ' ── Supporting Services ───────────────────────────────────────────────
+    Component(commService,      "CommunicationService",         "Python",       "Externes Kommunikations-Routing zu Providern (Telegram, etc.).")
+    Component(tracingFacade,    "TracingFacade",                "Python",       "Vereinheitlichtes Tracing-Interface. Verbirgt Phoenix-Implementierungsdetails.")
+    Component(sysPromptAssembler,"SystemPromptAssembler",       "Python",       "Erstellt System-Prompts aus Templates und Konfigurationen.")
+    Component(cmdLoaderSvc,     "CommandLoaderService",         "Python",       "Hilfsdienst für das Laden von Slash-Commands.")
+}
+
+' ─── External (other layers) ──────────────────────────────────────────────
+Container_Ext(coreDomain,   "Core Domain Layer",        "Agent, LeanAgent, Protocols, Models")
+Container_Ext(infraLayer,   "Infrastructure Layer",     "LiteLLMService, FileStateManager, ToolRegistry, MCP, ...")
+Container_Ext(extensions,   "Extensions Package",       "Profile-YAML, Plugins, Skills")
+
+' ─── Relationships ────────────────────────────────────────────────────────
+Rel(agentFactory,       infraBuilder,       "Nutzt zum Aufbau")
+Rel(agentFactory,       profileLoader,      "Lädt Profile")
+Rel(agentFactory,       pluginDiscovery,    "Lädt Factory-Extensions")
+Rel(agentFactory,       coreDomain,         "Erstellt Agent / LeanAgent")
+Rel(agentFactory,       infraLayer,         "Verdrahtet Adapter")
+
+Rel(agentExecutor,      agentFactory,       "Erstellt Agent")
+Rel(agentExecutor,      coreDomain,         "Führt Agent.execute_stream() aus")
+Rel(agentExecutor,      tracingFacade,      "Tracing pro Ausführung")
+
+Rel(toolRegistry,       infraLayer,         "Delegiert an Infra-ToolRegistry")
+
+Rel(epicOrchestrator,   agentFactory,       "Erstellt Planer, Worker, Richter")
+Rel(epicOrchestrator,   epicStateStore,     "Persistiert State")
+Rel(complexityClass,    agentFactory,       "Nutzt LLM zur Klassifizierung")
+Rel(subAgentSpawner,    agentFactory,       "Erstellt Sub-Agenten")
+
+Rel(butlerService,      eventRouter,        "Dispatcht Events")
+Rel(butlerService,      ruleEngine,         "Evaluiert Regeln")
+Rel(eventRouter,        ruleEngine,         "Prüft Regeln")
+Rel(eventRouter,        agentExecutor,      "Führt Aktionen aus")
+Rel(eventRouter,        commService,        "Sendet Benachrichtigungen")
+Rel(learningService,    coreDomain,         "Extrahiert Domain-Konzepte")
+
+Rel(intentRouter,       skillManager,       "Aktiviert Skills")
+Rel(skillManager,       skillService,       "Führt Skills aus")
+Rel(skillService,       agentExecutor,      "Delegiert Ausführung")
+
+Rel(pluginDiscovery,    pluginLoader,       "Lädt Plugin-Details")
+Rel(pluginDiscovery,    extensions,         "Entry-Point-Discovery")
+
+Rel(agentFactory,       extensions,         "Lädt YAML-Profile")
+Rel(slashCmdReg,        cmdLoaderSvc,       "Lädt Commands")
+
+@enduml
