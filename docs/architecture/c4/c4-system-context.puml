@@ -1,0 +1,45 @@
+@startuml C4_SystemContext
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title System Context Diagram – Taskforce
+
+' ─── Actors ───────────────────────────────────────────────────────────────
+Person(developer,       "Developer",         "Führt Agenten über CLI oder REST-API aus, testet und konfiguriert das System.")
+Person(endUser,         "End User",          "Interagiert via Chat-Interface oder empfängt Benachrichtigungen (z. B. Telegram).")
+Person(administrator,   "Administrator",     "Konfiguriert Profile, Plugins und Deployment-Einstellungen.")
+
+' ─── Taskforce System ─────────────────────────────────────────────────────
+System(taskforce, "Taskforce", "Multi-Agent-Orchestrierungsframework mit ReAct-Loop, Planungsstrategien und erweiterbaren Tools. Unterstützt CLI, REST-API und Butler-Daemon.")
+
+' ─── External Systems ─────────────────────────────────────────────────────
+System_Ext(llmProviders,    "LLM Providers",        "OpenAI, Anthropic, Google, Azure OpenAI, Ollama – bereitgestellt via LiteLLM.")
+System_Ext(azureSearch,     "Azure AI Search",      "Vektor-/Semantische Suche für RAG-Szenarien.")
+System_Ext(googleCalendar,  "Google Calendar",      "Kalenderevents für den Butler-Daemon (Event-Source).")
+System_Ext(telegram,        "Telegram",             "Ausgehende Benachrichtigungen und eingehende Nachrichten vom End User.")
+System_Ext(mcpServers,      "MCP Servers",          "Model Context Protocol – externe Tool-Server (z. B. Memory-Server, Custom).")
+System_Ext(postgresql,      "PostgreSQL",           "Produktive Persistenz für Sessions und Agenten-Registrierung.")
+System_Ext(phoenix,         "Arize Phoenix",        "Distributed Tracing und Observability.")
+System_Ext(webInternet,     "Web / Internet",       "HTTP-Anfragen, Web-Suche (Tavily, SerpAPI) durch native Web-Tools.")
+System_Ext(gitRemote,       "Git Remote",           "GitHub/GitLab für Versionskontrolle via Git-Tools.")
+System_Ext(webhook,         "Webhook Sources",      "HTTP-Webhooks als Ereignisquellen für den Butler-Daemon.")
+
+' ─── Relationships ────────────────────────────────────────────────────────
+Rel(developer,      taskforce,      "Führt Missionen aus, konfiguriert",   "CLI / REST-API / HTTP")
+Rel(endUser,        taskforce,      "Chat, Fragen beantworten",            "CLI Chat / Telegram")
+Rel(administrator,  taskforce,      "Konfiguriert Profile, Plugins",       "YAML / CLI")
+
+Rel(taskforce,      llmProviders,   "LLM-Anfragen (Completion, Streaming)", "HTTPS / LiteLLM")
+Rel(taskforce,      azureSearch,    "Semantische Suche, Dokument-Retrieval","HTTPS / SDK")
+Rel(taskforce,      googleCalendar, "Kalender-Events pollen",              "HTTPS / Google API")
+Rel(taskforce,      telegram,       "Benachrichtigungen senden/empfangen", "HTTPS / Bot-API")
+Rel(taskforce,      mcpServers,     "Tool-Aufrufe über MCP-Protokoll",     "stdio / SSE")
+Rel(taskforce,      postgresql,     "Session-State und Agenten-Daten",     "TCP / asyncpg")
+Rel(taskforce,      phoenix,        "Traces und Spans exportieren",        "OTLP / HTTP")
+Rel(taskforce,      webInternet,    "Web-Fetch, Suche",                    "HTTPS")
+Rel(taskforce,      gitRemote,      "Commit, Push, Pull",                  "SSH / HTTPS")
+Rel(webhook,        taskforce,      "Events via Webhook",                  "HTTP POST")
+
+@enduml

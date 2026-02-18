@@ -1,0 +1,111 @@
+@startuml C4_Component_Infrastructure
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram – Infrastructure Layer
+caption src/taskforce/infrastructure/
+
+Container_Boundary(infraLayer, "Infrastructure Layer") {
+
+    ' ── LLM Service ───────────────────────────────────────────────────────
+    Component(litellmSvc,       "LiteLLMService",               "Python / LiteLLM",     "Unified LLM Provider. Implementiert LLMProviderProtocol. Unterstützt OpenAI, Anthropic, Google, Azure, Ollama und weitere. Streaming, Retry-Logik, Token-Tracking, Model-Alias-Auflösung.")
+    Component(openaiAlias,      "OpenAIService (Alias)",        "Python",               "Rückwärtskompatibles Alias – importiert LiteLLMService.")
+
+    ' ── Persistence ───────────────────────────────────────────────────────
+    Component(fileStateMgr,     "FileStateManager",             "Python / aiofiles",    "Implementiert StateManagerProtocol. Speichert Sessions in .taskforce/sessions/ als JSON. Versionierung und optimistisches Locking.")
+    Component(fileAgentReg,     "FileAgentRegistry",            "Python / aiofiles",    "Persistenz für benutzerdefinierte Agenten-Definitionen.")
+
+    ' ── Memory ────────────────────────────────────────────────────────────
+    Component(fileMemory,       "FileMemoryStore",              "Python / Markdown",    "Implementiert MemoryStoreProtocol. Speichert Langzeit-Erinnerungen in .taskforce/.memory/ als Markdown. Kinds: PREFERENCE, LEARNED_FACT.")
+
+    ' ── Cache ─────────────────────────────────────────────────────────────
+    Component(toolResultStore,  "ToolResultStore",              "Python / aiofiles",    "Implementiert ToolResultStoreProtocol. Cacht große Tool-Ausgaben (> Schwellwert) in Dateien, um Token-Limit zu schonen.")
+
+    ' ── Tool Registry ─────────────────────────────────────────────────────
+    Component(toolRegistry,     "ToolRegistry",                 "Python",               "Zentrale Werkzeug-Katalog-Verwaltung. Mappt Kurzname → Implementierung. Bietet: list_native_tools(), resolve(), list_available_tools().")
+
+    ' ── Native Tools (17) ─────────────────────────────────────────────────
+    Component(fileTools,        "File Tools",                   "Python",               "FileReadTool, FileWriteTool – Dateisystem-Operationen.")
+    Component(shellTool,        "ShellTool",                    "Python / subprocess",  "Shell-Befehlsausführung. Kurzname: powershell / bash.")
+    Component(pythonTool,       "PythonTool",                   "Python",               "Isolierter Python-Code-Namespace. Kurzname: python.")
+    Component(gitTools,         "Git Tools",                    "Python / GitPython",   "GitCloneTool, GitPullTool u. a. Kurzname: git_*.")
+    Component(webTools,         "Web Tools",                    "Python / httpx",       "WebSearchTool, WebFetchTool. Kurzname: web_search, web_fetch.")
+    Component(searchTools,      "Search Tools",                 "Python / ripgrep",     "GlobTool, GrepTool. Kurzname: glob, grep.")
+    Component(editTool,         "EditTool",                     "Python",               "Gezieltes Datei-Editing. Kurzname: edit.")
+    Component(llmTool,          "LLMTool",                      "Python",               "Delegierter LLM-Aufruf. Kurzname: llm.")
+    Component(memoryTool,       "MemoryTool",                   "Python",               "Langzeit-Speicher CRUD. Kurzname: memory.")
+    Component(multimediaTool,   "MultimediaTool",               "Python / Pillow",      "Bild-/Medien-Verarbeitung. Kurzname: multimedia.")
+    Component(askUserTool,      "AskUserTool",                  "Python",               "Interaktive Nutzereingabe. Kurzname: ask_user.")
+    Component(activateSkill,    "ActivateSkillTool",            "Python",               "Runtime-Skill-Aktivierung. Kurzname: activate_skill.")
+    Component(butlerTools,      "Butler Tools (4)",             "Python",               "CalendarTool (Google Calendar), ScheduleTool (Cron/Interval), ReminderTool, RuleManagerTool.")
+
+    ' ── RAG Tools ─────────────────────────────────────────────────────────
+    Component(ragTools,         "RAG Tools",                    "Python / Azure SDK",   "SemanticSearchTool, GetDocumentTool, ListDocumentsTool, GlobalDocumentAnalysisTool. Kurzname: rag_*.")
+
+    ' ── MCP Integration ───────────────────────────────────────────────────
+    Component(mcpConnMgr,       "MCPConnectionManager",         "Python / MCP SDK",     "Verwaltet stdio und SSE MCP-Server-Verbindungen. Dynamische Tool-Discovery. Ressourcen-Cleanup bei Shutdown.")
+    Component(mcpWrapper,       "MCPToolWrapper",               "Python",               "Hüllt MCP-Tools in ToolProtocol-Interface.")
+
+    ' ── Orchestration Tools ───────────────────────────────────────────────
+    Component(agentTool,        "AgentTool",                    "Python",               "Ruft andere Agenten auf (Agent-Delegation). Kurzname: agent.")
+    Component(subAgentTool,     "SubAgentTool",                 "Python",               "Erzeugt isolierte Worker-Sub-Agenten. Kurzname: sub_agent.")
+
+    ' ── Butler Infrastructure ─────────────────────────────────────────────
+    Component(schedulerSvc,     "SchedulerService",             "Python / asyncio",     "Implementiert SchedulerProtocol. Asyncio-basierter Job-Scheduler mit Cron, Interval und One-Shot-Unterstützung.")
+    Component(fileJobStore,     "FileJobStore",                 "Python / JSON",        "File-basierte Job-Persistenz für den Scheduler.")
+    Component(calendarSrc,      "CalendarEventSource",          "Python / Google API",  "Polling-basierte Kalender-Event-Quelle. Erkennt: upcoming, started, ended, changed Events.")
+    Component(webhookSrc,       "WebhookEventSource",           "Python / FastAPI",     "HTTP-Webhook-Empfänger. Stateless Event-Source.")
+
+    ' ── Skills & Commands ─────────────────────────────────────────────────
+    Component(skillInfra,       "Skill Infrastructure",         "Python / YAML+MD",     "Skill-Lade-Engine, Parser, Registry. Unterstützt YAML-Frontmatter + Markdown-Skill-Definitionen.")
+    Component(slashCmdInfra,    "Slash Command Infrastructure", "Python / Markdown",    "Slash-Command-Lade-Engine und Parser. Typen: prompt, agent.")
+
+    ' ── Tracing ───────────────────────────────────────────────────────────
+    Component(phoenixTracer,    "PhoenixTracer",                "Python / OTEL",        "Arize-Phoenix-Tracing-Integration. OpenTelemetry-Instrumentation für verteiltes Tracing.")
+}
+
+' ─── External Dependencies ────────────────────────────────────────────────
+System_Ext(llmProviders,    "LLM Providers",    "OpenAI / Anthropic / Google / Azure / Ollama")
+System_Ext(azureSearch,     "Azure AI Search",  "Vektorsuche")
+System_Ext(mcpServers,      "MCP Servers",      "stdio / SSE")
+System_Ext(googleCalendar,  "Google Calendar",  "REST API")
+System_Ext(phoenix,         "Arize Phoenix",    "OTLP / Tracing-Backend")
+System_Ext(fileSystem,      "File System",      ".taskforce/")
+System_Ext(postgresql,      "PostgreSQL",       "Produktive DB")
+
+' ─── Relationships ────────────────────────────────────────────────────────
+Rel(toolRegistry,   fileTools,      "Registriert")
+Rel(toolRegistry,   shellTool,      "Registriert")
+Rel(toolRegistry,   pythonTool,     "Registriert")
+Rel(toolRegistry,   gitTools,       "Registriert")
+Rel(toolRegistry,   webTools,       "Registriert")
+Rel(toolRegistry,   searchTools,    "Registriert")
+Rel(toolRegistry,   editTool,       "Registriert")
+Rel(toolRegistry,   llmTool,        "Registriert")
+Rel(toolRegistry,   memoryTool,     "Registriert")
+Rel(toolRegistry,   multimediaTool, "Registriert")
+Rel(toolRegistry,   askUserTool,    "Registriert")
+Rel(toolRegistry,   activateSkill,  "Registriert")
+Rel(toolRegistry,   butlerTools,    "Registriert")
+Rel(toolRegistry,   ragTools,       "Registriert")
+Rel(toolRegistry,   agentTool,      "Registriert")
+Rel(toolRegistry,   subAgentTool,   "Registriert")
+
+Rel(mcpConnMgr,     mcpWrapper,     "Wraps entdeckte MCP-Tools")
+Rel(toolRegistry,   mcpWrapper,     "Registriert dynamisch")
+
+Rel(litellmSvc,     llmProviders,   "Sendet Anfragen",          "HTTPS")
+Rel(openaiAlias,    litellmSvc,     "Delegiert an")
+Rel(ragTools,       azureSearch,    "Sucht Dokumente",          "HTTPS")
+Rel(mcpConnMgr,     mcpServers,     "Verbindet zu",             "stdio / SSE")
+Rel(calendarSrc,    googleCalendar, "Pollt Events",             "HTTPS")
+Rel(schedulerSvc,   fileJobStore,   "Persistiert Jobs")
+Rel(fileStateMgr,   fileSystem,     "Liest / Schreibt",         "JSON")
+Rel(fileMemory,     fileSystem,     "Liest / Schreibt",         "Markdown")
+Rel(toolResultStore,fileSystem,     "Cacht Ergebnisse",         "Dateien")
+Rel(phoenixTracer,  phoenix,        "Exportiert Traces",        "OTLP")
+Rel(fileStateMgr,   postgresql,     "Alternativ (prod)",        "TCP")
+
+@enduml
