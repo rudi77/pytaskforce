@@ -10,7 +10,7 @@ The gateway provides a unified interface for:
 - **Broadcast messages** to all registered recipients on a channel
 - **Native webhook handling** with signature verification
 
-> **Architecture Decision:** See [ADR-008](adr/adr-008-communication-gateway.md)
+> **Architecture Decision:** See [ADR-009](adr/adr-009-communication-gateway.md)
 > for the full design rationale.
 
 ---
