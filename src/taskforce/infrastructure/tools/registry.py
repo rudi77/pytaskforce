@@ -136,6 +136,29 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.send_notification_tool",
         "params": {},
     },
+    # Butler tools - Calendar
+    "calendar": {
+        "type": "CalendarTool",
+        "module": "taskforce.infrastructure.tools.native.calendar_tool",
+        "params": {},
+    },
+    # Butler tools - Scheduling
+    "schedule": {
+        "type": "ScheduleTool",
+        "module": "taskforce.infrastructure.tools.native.schedule_tool",
+        "params": {},
+    },
+    "reminder": {
+        "type": "ReminderTool",
+        "module": "taskforce.infrastructure.tools.native.reminder_tool",
+        "params": {},
+    },
+    # Butler tools - Rule management
+    "rule_manager": {
+        "type": "RuleManagerTool",
+        "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
+        "params": {},
+    },
 }
 
 

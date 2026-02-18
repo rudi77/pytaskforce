@@ -25,6 +25,8 @@ class MemoryKind(str, Enum):
     LONG_TERM = "long_term"
     TOOL_RESULT = "tool_result"
     EPIC_LOG = "epic_log"
+    PREFERENCE = "preference"
+    LEARNED_FACT = "learned_fact"
 
 
 @dataclass
