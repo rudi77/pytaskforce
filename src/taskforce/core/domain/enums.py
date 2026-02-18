@@ -42,6 +42,11 @@ class EventType(str, Enum):
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Communication gateway events
     NOTIFICATION = "notification"
+    # Butler / event-driven events
+    BUTLER_EVENT_RECEIVED = "butler_event_received"
+    BUTLER_RULE_FIRED = "butler_rule_fired"
+    BUTLER_SCHEDULE_TRIGGERED = "butler_schedule_triggered"
+    BUTLER_LEARNING_EXTRACTED = "butler_learning_extracted"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

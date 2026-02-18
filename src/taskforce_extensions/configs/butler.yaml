@@ -1,0 +1,102 @@
+# Butler Agent Profile
+# Event-driven personal assistant that runs 24/7
+# See docs/adr/adr-009-event-driven-butler-agent.md
+
+profile: butler
+specialist: butler
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: spar
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: true
+  max_steps: 50
+  llm_fallback: false  # Set true to let LLM handle unmatched events
+
+llm:
+  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  default_model: main
+
+memory:
+  store_dir: .taskforce/memory
+  auto_extract: true
+  compaction_interval_hours: 24
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+# Notification defaults
+notifications:
+  default_channel: telegram
+  default_recipient_id: ""  # Set to your Telegram user ID
+
+# Scheduler settings
+scheduler:
+  enabled: true
+  store: file
+
+# Event sources (uncomment and configure as needed)
+event_sources: []
+  # - type: calendar
+  #   provider: google
+  #   poll_interval_minutes: 5
+  #   lookahead_minutes: 60
+  #   calendar_id: primary
+  #   credentials_file: ~/.taskforce/google_credentials.json
+
+  # - type: webhook
+  #   enabled: true
+
+# Trigger rules (examples - customize for your needs)
+rules: []
+  # - name: calendar_reminder_30min
+  #   trigger:
+  #     source: calendar
+  #     event_type: calendar.upcoming
+  #     filters:
+  #       minutes_until:
+  #         $lte: 30
+  #   action:
+  #     type: notify
+  #     channel: telegram
+  #     template: "Reminder: {{event.title}} in {{event.minutes_until}} minutes"
+
+  # - name: daily_briefing
+  #   schedule: "0 8 * * *"
+  #   action:
+  #     type: execute_mission
+  #     params:
+  #       mission: >
+  #         Check my calendar for today and create a brief summary
+  #         of upcoming events. Send the summary via Telegram.
+
+# Tools available to the butler agent
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - python
+  - memory
+  - send_notification
+  - calendar
+  - schedule
+  - reminder
+  - rule_manager
+  - ask_user
