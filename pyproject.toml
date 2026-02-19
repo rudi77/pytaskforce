@@ -102,6 +102,9 @@ personal-assistant = [
 rag = [
     "azure-search-documents>=11.4.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+]
 pdf = [
     "pypdf>=4.0.0",
     "pdfplumber>=0.10.0",
@@ -204,6 +207,7 @@ module = [
     "pdf2image.*",
     "reportlab.*",
     "PIL.*",
+    "playwright.*",
 ]
 ignore_missing_imports = true
 

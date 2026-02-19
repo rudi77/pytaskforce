@@ -27,6 +27,11 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.web_tools",
         "params": {},
     },
+    "browser": {
+        "type": "BrowserTool",
+        "module": "taskforce.infrastructure.tools.native.browser_tool",
+        "params": {},
+    },
     # Native tools - Code execution
     "python": {
         "type": "PythonTool",
