@@ -136,6 +136,7 @@ taskforce/
 - [Epic 3: Secure Memory Governance](epic-3-secure-memory-governance.md)
 - [Epic 4: Enterprise Operations](epic-4-enterprise-operations.md)
 - [Epic 5: Productization](epic-5-productization.md)
+- [Epic 21: Vereinheitlichung von Skills und Slash Commands](epic-21-unify-skills-slash-commands.md)
 
 ---
 
