@@ -3,12 +3,17 @@ File-based Skill Registry
 
 Implements SkillRegistryProtocol for filesystem-based skill management.
 Discovers, caches, and provides access to skills from configured directories.
+
+Extended to support:
+- Slash-name index for /name-style invocation
+- Filtering by skill type (context, prompt, agent)
 """
 
 import logging
 from pathlib import Path
 from typing import Iterator
 
+from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
 from taskforce.infrastructure.skills.skill_loader import (
     SkillLoader,
@@ -31,6 +36,7 @@ class FileSkillRegistry:
         >>> registry.refresh()  # Discover skills
         >>> skills = registry.list_skills()
         >>> skill = registry.get_skill("pdf-processing")
+        >>> skill = registry.get_skill_by_slash_name("review")  # /review
     """
 
     def __init__(
@@ -49,11 +55,14 @@ class FileSkillRegistry:
         directories = skill_directories or get_default_skill_directories()
         self._loader = SkillLoader(directories)
 
-        # Metadata cache: name -> SkillMetadataModel
+        # Metadata cache: canonical_name -> SkillMetadataModel
         self._metadata_cache: dict[str, SkillMetadataModel] = {}
 
-        # Full skill cache: name -> Skill (loaded on demand)
+        # Full skill cache: canonical_name -> Skill (loaded on demand)
         self._skill_cache: dict[str, Skill] = {}
+
+        # Slash-name index: effective_slash_name -> canonical_name
+        self._slash_name_index: dict[str, str] = {}
 
         if auto_discover:
             self.refresh()
@@ -75,7 +84,6 @@ class FileSkillRegistry:
         """
         result = self._loader.add_directory(directory)
         if result:
-            # Re-discover skills from the new directory
             self._discover_from_directory(Path(directory))
         return result
 
@@ -97,7 +105,7 @@ class FileSkillRegistry:
                     self._try_load_metadata(subdir)
 
     def _try_load_metadata(self, skill_dir: Path) -> None:
-        """Try to load metadata from a skill directory."""
+        """Try to load metadata from a skill directory and update indexes."""
         from taskforce.infrastructure.skills.skill_parser import (
             SkillParseError,
             parse_skill_metadata,
@@ -108,39 +116,31 @@ class FileSkillRegistry:
             content = skill_file.read_text(encoding="utf-8")
             metadata = parse_skill_metadata(content, str(skill_dir))
             self._metadata_cache[metadata.name] = metadata
+            self._slash_name_index[metadata.effective_slash_name] = metadata.name
             logger.debug(f"Discovered skill: {metadata.name}")
         except (OSError, UnicodeDecodeError, SkillParseError) as e:
             logger.warning(f"Failed to load skill from {skill_dir}: {e}")
 
     def discover_skills(self) -> list[SkillMetadataModel]:
-        """
-        Discover all available skills and return their metadata.
-
-        Returns:
-            List of skill metadata objects
-        """
+        """Discover all available skills and return their metadata."""
         return list(self._metadata_cache.values())
 
     def refresh(self) -> None:
-        """
-        Re-scan skill directories and refresh the registry.
-
-        Clears caches and rediscovers all skills.
-        """
+        """Re-scan skill directories and refresh the registry."""
         self._metadata_cache.clear()
         self._skill_cache.clear()
+        self._slash_name_index.clear()
 
         metadata_list = self._loader.discover_metadata()
         for metadata in metadata_list:
             self._metadata_cache[metadata.name] = metadata
+            self._slash_name_index[metadata.effective_slash_name] = metadata.name
 
         logger.info(f"Discovered {len(self._metadata_cache)} skills")
 
     def get_skill(self, name: str) -> Skill | None:
         """
-        Load a complete skill by name.
-
-        Caches the loaded skill for subsequent calls.
+        Load a complete skill by canonical name.
 
         Args:
             name: Skill identifier
@@ -148,15 +148,12 @@ class FileSkillRegistry:
         Returns:
             Full skill object, or None if not found
         """
-        # Check cache first
         if name in self._skill_cache:
             return self._skill_cache[name]
 
-        # Check if we know about this skill
         if name not in self._metadata_cache:
             return None
 
-        # Load the full skill
         metadata = self._metadata_cache[name]
         skill = self._loader.load_skill(metadata.source_path)
 
@@ -165,67 +162,64 @@ class FileSkillRegistry:
 
         return skill
 
-    def list_skills(self) -> list[str]:
+    def get_skill_by_slash_name(self, slash_name: str) -> Skill | None:
         """
-        List names of all discovered skills.
+        Find a skill by its effective slash name.
+
+        Used for /name-style invocation from the chat interface.
+        Checks the slash-name index first, then falls back to direct
+        canonical name lookup.
+
+        Args:
+            slash_name: The slash-command name (without leading /)
+
+        Returns:
+            Full skill object, or None if not found
+        """
+        canonical = self._slash_name_index.get(slash_name.lower())
+        if canonical:
+            return self.get_skill(canonical)
+        # Fallback: try as canonical name directly
+        return self.get_skill(slash_name.lower())
+
+    def list_skills(self) -> list[str]:
+        """List names of all discovered skills, sorted alphabetically."""
+        return sorted(self._metadata_cache.keys())
+
+    def list_slash_command_skills(self) -> list[str]:
+        """
+        List names of skills directly invokable via /name (PROMPT or AGENT type).
 
         Returns:
             List of skill names, sorted alphabetically
         """
-        return sorted(self._metadata_cache.keys())
+        return sorted(
+            name
+            for name, meta in self._metadata_cache.items()
+            if meta.skill_type in (SkillType.PROMPT, SkillType.AGENT)
+        )
 
     def get_skill_metadata(self, name: str) -> SkillMetadataModel | None:
-        """
-        Get metadata for a specific skill without loading instructions.
-
-        Args:
-            name: Skill identifier
-
-        Returns:
-            Skill metadata, or None if not found
-        """
+        """Get metadata for a specific skill without loading instructions."""
         return self._metadata_cache.get(name)
 
     def get_all_metadata(self) -> list[SkillMetadataModel]:
-        """
-        Get metadata for all discovered skills.
-
-        Returns:
-            List of all skill metadata, sorted by name
-        """
+        """Get metadata for all discovered skills, sorted by name."""
         return sorted(self._metadata_cache.values(), key=lambda m: m.name)
 
     def iter_skills(self) -> Iterator[Skill]:
-        """
-        Iterate over all skills, loading each one.
-
-        Yields:
-            Skill objects
-        """
+        """Iterate over all skills, loading each one."""
         for name in self.list_skills():
             skill = self.get_skill(name)
             if skill:
                 yield skill
 
     def has_skill(self, name: str) -> bool:
-        """
-        Check if a skill exists in the registry.
-
-        Args:
-            name: Skill name to check
-
-        Returns:
-            True if skill exists
-        """
+        """Check if a skill exists in the registry."""
         return name in self._metadata_cache
 
     def get_skills_for_prompt(self) -> str:
-        """
-        Generate skill metadata section for system prompt.
-
-        Returns:
-            Formatted string listing all skills with descriptions
-        """
+        """Generate skill metadata section for system prompt."""
         if not self._metadata_cache:
             return ""
 

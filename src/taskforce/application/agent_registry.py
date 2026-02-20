@@ -25,10 +25,6 @@ from taskforce.core.domain.agent_definition import (
     AgentSource,
     MCPServerConfig,
 )
-from taskforce.core.interfaces.slash_commands import (
-    CommandType,
-    SlashCommandLoaderProtocol,
-)
 from taskforce.core.utils.paths import get_base_path
 
 logger = structlog.get_logger(__name__)
@@ -67,7 +63,6 @@ class AgentRegistry:
     def __init__(
         self,
         config_dir: Path | str | None = None,
-        command_loader: Optional[SlashCommandLoaderProtocol] = None,
         base_path: Optional[Path] = None,
     ) -> None:
         """
@@ -77,7 +72,6 @@ class AgentRegistry:
             config_dir: Root directory for configuration files. If None, uses
                        'src/taskforce_extensions/configs/' relative to project root.
                        Falls back to 'configs/' for backward compatibility.
-            command_loader: Loader for slash commands (optional)
             base_path: Base path for plugin discovery (defaults to config_dir parent)
         """
         if config_dir is None:
@@ -97,7 +91,6 @@ class AgentRegistry:
         self.custom_dir = self.config_dir / "custom"
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self.base_path = base_path or self.config_dir.parent
-        self._command_loader = command_loader
         self._logger = logger.bind(component="AgentRegistry")
 
         # Cache for performance (invalidate on mutations)
@@ -332,7 +325,6 @@ class AgentRegistry:
         self._load_custom_agents()
         self._load_profile_agents()
         self._load_plugin_agents()
-        self._load_command_agents()
 
         self._cache_valid = True
 
@@ -414,30 +406,6 @@ class AgentRegistry:
                         plugin_dir=str(plugin_dir),
                         error=str(e),
                     )
-
-    def _load_command_agents(self) -> None:
-        """Load agent-type slash commands."""
-        if not self._command_loader:
-            return
-
-        try:
-            commands = self._command_loader.list_commands()
-            for cmd in commands:
-                if cmd.command_type == CommandType.AGENT and cmd.agent_config:
-                    agent = AgentDefinition.from_command(
-                        name=cmd.name,
-                        source_path=cmd.source_path,
-                        agent_config=cmd.agent_config,
-                        prompt_template=cmd.prompt_template,
-                        description=cmd.description,
-                    )
-                    if agent.agent_id not in self._cache:
-                        self._cache[agent.agent_id] = agent
-        except Exception as e:
-            self._logger.warning(
-                "command.loading.failed",
-                error=str(e),
-            )
 
     # -------------------------------------------------------------------------
     # Parsing Helpers

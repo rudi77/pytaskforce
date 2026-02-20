@@ -5,18 +5,24 @@ This module defines the protocol interfaces for skill implementations.
 Skills are modular capabilities that extend agent functionality with
 domain-specific instructions, workflows, and resources.
 
-Skills follow a progressive loading pattern:
-- Level 1 (Metadata): Name and description - always loaded
-- Level 2 (Instructions): Main SKILL.md content - loaded when triggered
-- Level 3 (Resources): Additional files and scripts - loaded as needed
+Skills support three execution types (SkillType):
+- CONTEXT: Instructions injected into the system prompt; activated by
+  the activate_skill tool or intent routing.
+- PROMPT: One-shot prompt template with $ARGUMENTS; invokable directly
+  from the chat interface via /skill-name [args].
+- AGENT: Temporarily overrides the agent configuration; invokable directly
+  from the chat interface via /skill-name [args].
 
 Protocol implementations must provide:
-- Skill metadata (name, description)
+- Skill metadata (name, description, skill_type)
 - Instruction loading
 - Resource access
+- $ARGUMENTS substitution (for PROMPT type)
 """
 
 from typing import Any, Protocol
+
+from taskforce.core.domain.enums import SkillType
 
 
 class SkillProtocol(Protocol):
@@ -31,12 +37,6 @@ class SkillProtocol(Protocol):
         1. Metadata (name, description) is loaded at discovery time
         2. Instructions are loaded when skill is triggered by relevance
         3. Resources are loaded on-demand during execution
-
-    Attributes:
-        name: Unique identifier for the skill (lowercase, hyphenated)
-        description: What the skill does and when to use it
-        instructions: Main content from SKILL.md
-        resources: Available resource files
     """
 
     @property
@@ -44,14 +44,11 @@ class SkillProtocol(Protocol):
         """
         Unique identifier for the skill.
 
-        Must be:
-        - Lowercase with hyphens (kebab-case)
-        - Descriptive and concise (e.g., "pdf-processing", "code-review")
-        - Maximum 64 characters
-        - Cannot contain reserved words: "anthropic", "claude"
+        May be hierarchical using ':' as separator, e.g.
+        'pdf-processing' or 'agents:reviewer'.
 
         Returns:
-            Skill name string
+            Skill name string (max 64 characters)
 
         Example:
             >>> skill.name
@@ -64,21 +61,8 @@ class SkillProtocol(Protocol):
         """
         Human-readable description of skill's purpose and trigger conditions.
 
-        Should include:
-        - What the skill does (1-2 sentences)
-        - When Claude should use it (trigger conditions)
-        - Key capabilities provided
-
-        This description is used by the agent to determine when to
-        activate the skill based on user requests.
-
         Returns:
             Skill description string (max 1024 characters)
-
-        Example:
-            >>> skill.description
-            'Extract text and tables from PDF files, fill forms, merge documents.
-             Use when working with PDF files or when the user mentions PDFs.'
         """
         ...
 
@@ -87,19 +71,10 @@ class SkillProtocol(Protocol):
         """
         Main instructional content from SKILL.md body.
 
-        Contains the procedural knowledge: workflows, best practices,
-        code examples, and guidance that the agent follows when using
-        this skill.
-
-        Loaded on-demand when the skill is triggered, to minimize
-        context usage when skill is not active.
+        For PROMPT-type skills, may contain the $ARGUMENTS placeholder.
 
         Returns:
             Markdown-formatted instruction text
-
-        Example:
-            >>> skill.instructions[:100]
-            '# PDF Processing\\n\\n## Quick start\\n\\nUse pdfplumber to extract...'
         """
         ...
 
@@ -108,15 +83,66 @@ class SkillProtocol(Protocol):
         """
         Path to the skill's source directory.
 
-        Points to the directory containing SKILL.md and any bundled
-        resources. Used for loading additional files on demand.
-
         Returns:
             Absolute path to skill directory
+        """
+        ...
 
-        Example:
-            >>> skill.source_path
-            '/home/user/.taskforce/skills/pdf-processing'
+    @property
+    def skill_type(self) -> SkillType:
+        """
+        Execution type determining how the skill is invoked.
+
+        Returns:
+            SkillType enum value (CONTEXT, PROMPT, or AGENT)
+        """
+        ...
+
+    @property
+    def slash_name(self) -> str | None:
+        """
+        Optional override for /name-style invocation.
+
+        If None, the skill's ``name`` is used as the slash name.
+
+        Returns:
+            Slash name override, or None
+        """
+        ...
+
+    @property
+    def agent_config(self) -> dict[str, Any] | None:
+        """
+        Agent configuration override for AGENT-type skills.
+
+        Keys: 'profile', 'tools', 'mcp_servers', 'specialist'
+
+        Returns:
+            Agent config dict, or None for non-AGENT skills
+        """
+        ...
+
+    @property
+    def effective_slash_name(self) -> str:
+        """
+        Effective name used for /name-style invocation.
+
+        Returns slash_name if set, otherwise falls back to name.
+
+        Returns:
+            The slash-command name for this skill
+        """
+        ...
+
+    def substitute_arguments(self, arguments: str) -> str:
+        """
+        Replace $ARGUMENTS placeholder in the instructions body.
+
+        Args:
+            arguments: User-provided arguments string.
+
+        Returns:
+            Instructions text with $ARGUMENTS replaced.
         """
         ...
 
@@ -124,18 +150,8 @@ class SkillProtocol(Protocol):
         """
         List available resource files in the skill directory.
 
-        Returns a mapping of relative file paths to their full paths.
-        Does not include SKILL.md itself.
-
         Returns:
             Dictionary mapping relative paths to absolute paths
-
-        Example:
-            >>> skill.get_resources()
-            {
-                'FORMS.md': '/path/to/skill/FORMS.md',
-                'scripts/fill_form.py': '/path/to/skill/scripts/fill_form.py'
-            }
         """
         ...
 
@@ -148,11 +164,6 @@ class SkillProtocol(Protocol):
 
         Returns:
             File content as string, or None if file not found
-
-        Example:
-            >>> content = skill.read_resource('FORMS.md')
-            >>> content[:50]
-            '# Form Filling Guide\\n\\n## PDF Form Fields...'
         """
         ...
 
@@ -180,6 +191,16 @@ class SkillMetadata(Protocol):
         """Path to skill directory."""
         ...
 
+    @property
+    def skill_type(self) -> SkillType:
+        """Execution type of the skill."""
+        ...
+
+    @property
+    def effective_slash_name(self) -> str:
+        """Name used for /name-style invocation."""
+        ...
+
 
 class SkillRegistryProtocol(Protocol):
     """
@@ -190,45 +211,41 @@ class SkillRegistryProtocol(Protocol):
     - Loading skill metadata at startup
     - Providing full skills on demand
     - Managing skill lifecycle
+    - Resolving skills by slash name
     """
 
     def discover_skills(self) -> list[SkillMetadata]:
         """
         Discover all available skills and return their metadata.
 
-        Scans configured skill directories for SKILL.md files and
-        extracts metadata (name, description) from YAML frontmatter.
-
         Returns:
             List of skill metadata objects (lightweight, no instructions)
-
-        Example:
-            >>> registry = FileSkillRegistry(['/home/user/.taskforce/skills'])
-            >>> skills = registry.discover_skills()
-            >>> len(skills)
-            3
-            >>> skills[0].name
-            'pdf-processing'
         """
         ...
 
     def get_skill(self, name: str) -> SkillProtocol | None:
         """
-        Load a complete skill by name.
-
-        Loads the full skill including instructions and resource access.
-        This is called when a skill is triggered.
+        Load a complete skill by canonical name.
 
         Args:
             name: Skill identifier
 
         Returns:
             Full skill object, or None if not found
+        """
+        ...
 
-        Example:
-            >>> skill = registry.get_skill('pdf-processing')
-            >>> skill.instructions[:50]
-            '# PDF Processing\\n\\nUse pdfplumber...'
+    def get_skill_by_slash_name(self, slash_name: str) -> SkillProtocol | None:
+        """
+        Find a skill by its effective slash name.
+
+        Used for /name-style invocation from the chat interface.
+
+        Args:
+            slash_name: The slash-command name (without leading /)
+
+        Returns:
+            Full skill object, or None if not found
         """
         ...
 
@@ -238,10 +255,17 @@ class SkillRegistryProtocol(Protocol):
 
         Returns:
             List of skill names
+        """
+        ...
 
-        Example:
-            >>> registry.list_skills()
-            ['code-review', 'pdf-processing', 'data-analysis']
+    def list_slash_command_skills(self) -> list[str]:
+        """
+        List names of skills that are directly invokable via /name.
+
+        Returns only PROMPT and AGENT type skills.
+
+        Returns:
+            List of skill names
         """
         ...
 
@@ -254,23 +278,12 @@ class SkillRegistryProtocol(Protocol):
 
         Returns:
             Skill metadata, or None if not found
-
-        Example:
-            >>> meta = registry.get_skill_metadata('pdf-processing')
-            >>> meta.description
-            'Extract text from PDFs...'
         """
         ...
 
     def refresh(self) -> None:
         """
         Re-scan skill directories and refresh the registry.
-
-        Call this after adding or removing skills to update
-        the registry's internal state.
-
-        Example:
-            >>> registry.refresh()  # Pick up new skills
         """
         ...
 
@@ -278,16 +291,8 @@ class SkillRegistryProtocol(Protocol):
         """
         Get metadata for all discovered skills.
 
-        Returns lightweight metadata objects suitable for
-        including in system prompts.
-
         Returns:
             List of all skill metadata
-
-        Example:
-            >>> all_meta = registry.get_all_metadata()
-            >>> for meta in all_meta:
-            ...     print(f"{meta.name}: {meta.description[:50]}...")
         """
         ...
 
@@ -303,9 +308,6 @@ class SkillContextProtocol(Protocol):
     def activate_skill(self, skill: SkillProtocol) -> None:
         """
         Activate a skill for the current execution context.
-
-        Adds the skill's instructions to the context and makes
-        its resources available.
 
         Args:
             skill: The skill to activate

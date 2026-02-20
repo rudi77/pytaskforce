@@ -1,6 +1,7 @@
 """Skills command - List and inspect available agent skills."""
 
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -10,6 +11,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 from taskforce.application.skill_service import SkillService
+from taskforce.core.domain.enums import SkillType
 
 app = typer.Typer(help="Skill management")
 console = Console()
@@ -39,10 +41,26 @@ def _get_skill_service() -> SkillService:
 @app.command("list")
 def list_skills(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full descriptions"),
+    skill_type: Optional[str] = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter by skill type: context, prompt, agent",
+    ),
 ) -> None:
     """List available skills."""
     skill_service = _get_skill_service()
     metadata_list = skill_service.get_all_metadata()
+
+    # Apply type filter
+    if skill_type is not None:
+        try:
+            filter_type = SkillType(skill_type.lower())
+        except ValueError:
+            valid = ", ".join(t.value for t in SkillType)
+            console.print(f"[red]Invalid skill type '{skill_type}'. Valid values: {valid}[/red]")
+            raise typer.Exit(1)
+        metadata_list = [m for m in metadata_list if m.skill_type == filter_type]
 
     if not metadata_list:
         console.print("[yellow]No skills found.[/yellow]")
@@ -56,13 +74,15 @@ def list_skills(
 
     table = Table(title="Available Skills")
     table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Type", style="magenta", no_wrap=True)
+    table.add_column("Slash Name", style="green", no_wrap=True)
     table.add_column("Description", style="white")
     table.add_column("Source", style="dim")
 
-    for metadata in metadata_list:
+    for metadata in sorted(metadata_list, key=lambda m: (m.skill_type.value, m.name)):
         description = metadata.description
-        if not verbose and len(description) > 80:
-            description = description[:77] + "..."
+        if not verbose and len(description) > 60:
+            description = description[:57] + "..."
 
         # Get relative source path for display
         source_path = Path(metadata.source_path)
@@ -71,7 +91,8 @@ def list_skills(
         except ValueError:
             source_display = str(source_path)
 
-        table.add_row(metadata.name, description, source_display)
+        slash = f"/{metadata.effective_slash_name}"
+        table.add_row(metadata.name, metadata.skill_type.value, slash, description, source_display)
 
     console.print(table)
     console.print(f"\n[dim]Total: {len(metadata_list)} skill(s)[/dim]")
@@ -99,6 +120,12 @@ def show_skill(
     # Metadata
     console.print("\n[bold]Description:[/bold]")
     console.print(f"  {skill.description}")
+
+    console.print("\n[bold]Type:[/bold]")
+    console.print(f"  {skill.skill_type.value}")
+
+    console.print("\n[bold]Slash Name:[/bold]")
+    console.print(f"  /{skill.effective_slash_name}")
 
     console.print("\n[bold]Source:[/bold]")
     console.print(f"  {skill.source_path}")

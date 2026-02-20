@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from typing import Any
 
 import typer
 from rich.console import Console, Group
@@ -474,11 +475,11 @@ def _parse_strategy_params(raw_params: str | None) -> dict | None:
     return data
 
 
-@app.command("command")
-def run_command(
+@app.command("skill")
+def run_skill(
     ctx: typer.Context,
-    command: str = typer.Argument(..., help="Command name (without /)"),
-    arguments: list[str] = typer.Argument(None, help="Arguments for the command"),
+    skill_name: str = typer.Argument(..., help="Skill name (without /)"),
+    arguments: list[str] = typer.Argument(None, help="Arguments for the skill"),
     profile: str | None = typer.Option(
         None, "--profile", "-p", help="Configuration profile"
     ),
@@ -488,24 +489,24 @@ def run_command(
     ),
 ) -> None:
     """
-    Execute a custom slash command.
+    Execute a skill directly.
 
-    Custom commands are loaded from:
-    - Project: .taskforce/commands/*.md
-    - User: ~/.taskforce/commands/*.md
+    Skills are loaded from:
+    - Project: .taskforce/skills/<name>/SKILL.md
+    - User: ~/.taskforce/skills/<name>/SKILL.md
 
     Examples:
-        # Run a prompt command
-        taskforce run command review path/to/file.py
+        # Run a prompt skill
+        taskforce run skill code-review path/to/file.py
 
-        # Run an agent command
-        taskforce run command refactor src/module.py
+        # Run an agent skill
+        taskforce run skill agents:refactor src/module.py
 
         # With streaming
-        taskforce run command analyze data.csv --stream
+        taskforce run skill analyze data.csv --stream
     """
-    from taskforce.application.slash_command_registry import SlashCommandRegistry
-    from taskforce.core.interfaces.slash_commands import CommandType
+    from taskforce.application.skill_service import get_skill_service
+    from taskforce.core.domain.enums import SkillType
 
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
@@ -528,35 +529,32 @@ def run_command(
         )
 
     tf_console = TaskforceConsole(debug=debug)
-    registry = SlashCommandRegistry()
+    skill_service = get_skill_service()
 
-    # Resolve command
+    # Resolve skill via /name args format
     args_str = " ".join(arguments) if arguments else ""
-    full_command = f"/{command} {args_str}".strip()
-    command_def, args = registry.resolve_command(full_command)
+    full_command = f"/{skill_name} {args_str}".strip()
+    skill, args = skill_service.resolve_slash_command(full_command)
 
-    if not command_def:
-        tf_console.print_error(f"Command not found: /{command}")
+    if not skill:
+        tf_console.print_error(f"Skill not found: /{skill_name}")
         tf_console.print_system_message(
-            "Use 'taskforce commands list' to see available commands", "info"
+            "Use 'taskforce skills list' to see available skills", "info"
         )
         raise typer.Exit(1)
 
     # Print banner and info
     tf_console.print_banner()
-    tf_console.print_system_message(f"Command: /{command_def.name}", "system")
-    tf_console.print_system_message(f"Type: {command_def.command_type.value}", "info")
+    tf_console.print_system_message(f"Skill: /{skill.effective_slash_name}", "system")
+    tf_console.print_system_message(f"Type: {skill.skill_type.value}", "info")
     tf_console.print_system_message(f"Profile: {profile}", "info")
     if args:
         tf_console.print_system_message(f"Arguments: {args}", "info")
     tf_console.print_divider()
 
-    # Prepare mission/prompt
-    mission = registry.prepare_prompt(command_def, args)
-
-    # Execute based on command type
-    if command_def.command_type == CommandType.PROMPT:
-        # Use standard execution with prepared prompt
+    # Execute based on skill type
+    if skill.skill_type == SkillType.PROMPT:
+        mission = skill_service.prepare_skill_prompt(skill, args)
         if stream:
             asyncio.run(
                 _execute_streaming_mission(
@@ -580,52 +578,59 @@ def run_command(
                 planning_strategy_params=None,
                 tf_console=tf_console,
             )
-    elif command_def.command_type == CommandType.AGENT:
-        # Create specialized agent and execute
+    elif skill.skill_type == SkillType.AGENT:
         asyncio.run(
-            _execute_agent_command(
-                command_def=command_def,
-                mission=mission,
+            _execute_skill_agent(
+                skill=skill,
+                args=args,
                 profile=profile,
                 debug=debug,
                 stream=stream,
                 tf_console=tf_console,
             )
         )
+    else:
+        tf_console.print_system_message(
+            f"Context skill '{skill.name}' activated (no direct execution)", "info"
+        )
 
 
-async def _execute_agent_command(
-    command_def,
-    mission: str,
+async def _execute_skill_agent(
+    skill: Any,
+    args: str,
     profile: str,
     debug: bool,
     stream: bool,
     tf_console: TaskforceConsole,
 ) -> None:
-    """Execute an agent-type command."""
-    from taskforce.application.slash_command_registry import SlashCommandRegistry
+    """Execute an AGENT-type skill."""
+    from taskforce.application.factory import AgentFactory
 
-    registry = SlashCommandRegistry()
+    agent_config = skill.agent_config or {}
+    skill_profile = agent_config.get("profile") or profile
+    factory = AgentFactory()
+    agent = None
 
     try:
-        agent = await registry.create_agent_for_command(command_def, profile)
-
-        # Execute with the specialized agent
+        agent = await factory.create_agent(
+            config=skill_profile,
+        )
+        mission = skill.substitute_arguments(args) if args else skill.instructions
         result = await agent.execute(mission=mission, session_id=None)
 
         tf_console.print_divider()
         if result.status == "completed":
-            tf_console.print_success("Command completed!")
+            tf_console.print_success("Skill completed!")
             tf_console.print_agent_message(result.final_message)
         else:
-            tf_console.print_error(f"Command {result.status}")
+            tf_console.print_error(f"Skill {result.status}")
             tf_console.print_agent_message(result.final_message)
 
         if result.token_usage:
             tf_console.print_token_usage(result.token_usage)
     except Exception as e:
-        tf_console.print_error(f"Failed to execute command: {str(e)}")
+        tf_console.print_error(f"Failed to execute skill: {str(e)}")
         raise typer.Exit(1)
     finally:
-        if hasattr(agent, "close"):
+        if agent and hasattr(agent, "close"):
             await agent.close()

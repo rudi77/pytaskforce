@@ -3,7 +3,13 @@ Skill Markdown Parser
 
 Parses SKILL.md files with YAML frontmatter:
 - Required: name, description in frontmatter
-- Body: Instructions and documentation
+- Optional: type, slash-name, profile, tools, mcp_servers, specialist
+- Body: Instructions and documentation (may contain $ARGUMENTS for prompt type)
+
+Supported skill types:
+- context (default): instructions injected into system prompt
+- prompt: one-shot prompt with $ARGUMENTS; invokable via /name
+- agent: temporary agent config override; invokable via /name
 """
 
 import re
@@ -12,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import (
     ALLOWED_TOOLS_PATTERN,
     MAX_COMPATIBILITY_LENGTH,
@@ -36,13 +43,17 @@ def parse_skill_markdown(
 
     Format:
         ---
-        name: skill-name
-        description: What the skill does and when to use it
+        name: skill-name          # required
+        description: What it does # required
+        type: context             # optional: context|prompt|agent (default: context)
+        slash-name: review        # optional: override /name (default: name)
+        profile: dev              # optional: for type=agent
+        tools: [python, file_read]  # optional: for type=agent
+        mcp_servers: []           # optional: for type=agent
+        specialist: null          # optional: for type=agent
         ---
 
-        # Skill Name
-
-        Instructions and documentation...
+        Instructions with optional $ARGUMENTS placeholder.
 
     Args:
         content: SKILL.md file content
@@ -76,6 +87,11 @@ def parse_skill_markdown(
     metadata = _parse_metadata_dict(frontmatter)
     allowed_tools = _parse_allowed_tools(frontmatter)
     workflow = _parse_workflow(frontmatter)
+    skill_type = _parse_skill_type(frontmatter)
+    slash_name = _parse_optional_string(
+        frontmatter, "slash-name"
+    ) or _parse_optional_string(frontmatter, "slash_name")
+    agent_config = _parse_agent_config(frontmatter)
     instructions = body.strip()
 
     # Create and return skill (validation happens in __post_init__)
@@ -90,6 +106,9 @@ def parse_skill_markdown(
             metadata=metadata,
             allowed_tools=allowed_tools,
             workflow=workflow,
+            skill_type=skill_type,
+            slash_name=slash_name,
+            agent_config=agent_config,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill validation failed: {e}") from e
@@ -134,6 +153,11 @@ def parse_skill_metadata(
     )
     metadata = _parse_metadata_dict(frontmatter)
     allowed_tools = _parse_allowed_tools(frontmatter)
+    skill_type = _parse_skill_type(frontmatter)
+    slash_name = _parse_optional_string(
+        frontmatter, "slash-name"
+    ) or _parse_optional_string(frontmatter, "slash_name")
+    agent_config = _parse_agent_config(frontmatter)
 
     try:
         return SkillMetadataModel(
@@ -144,6 +168,9 @@ def parse_skill_metadata(
             compatibility=compatibility,
             metadata=metadata,
             allowed_tools=allowed_tools,
+            skill_type=skill_type,
+            slash_name=slash_name,
+            agent_config=agent_config,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill metadata validation failed: {e}") from e
@@ -152,8 +179,6 @@ def parse_skill_metadata(
 def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """
     Extract YAML frontmatter from Markdown content.
-
-    The frontmatter is delimited by --- at the start and end.
 
     Args:
         content: Full markdown content
@@ -164,8 +189,6 @@ def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     Raises:
         SkillParseError: If frontmatter is missing or invalid
     """
-    # Match frontmatter pattern: starts with ---, ends with ---
-    # The content must start with --- (allowing for leading whitespace)
     content = content.strip()
 
     pattern = r"^---\s*\n(.*?)\n---\s*\n?(.*)$"
@@ -238,18 +261,52 @@ def _parse_allowed_tools(frontmatter: dict[str, Any]) -> str | None:
     return allowed_tools
 
 
+def _parse_skill_type(frontmatter: dict[str, Any]) -> SkillType:
+    """Parse the skill type from frontmatter, defaulting to CONTEXT."""
+    type_raw = frontmatter.get("type", "context")
+    if not isinstance(type_raw, str):
+        return SkillType.CONTEXT
+    try:
+        return SkillType(type_raw.strip().lower())
+    except ValueError:
+        return SkillType.CONTEXT
+
+
+def _parse_agent_config(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Parse agent configuration fields from frontmatter.
+
+    Only meaningful for type=agent skills. Returns None if no config
+    fields are present.
+    """
+    profile = frontmatter.get("profile")
+    tools = frontmatter.get("tools")
+    mcp_servers = frontmatter.get("mcp_servers")
+    specialist = frontmatter.get("specialist")
+
+    if not any([profile, tools, mcp_servers, specialist]):
+        return None
+
+    if tools is not None and not isinstance(tools, list):
+        raise SkillParseError("Frontmatter 'tools' must be a list")
+
+    if mcp_servers is not None and not isinstance(mcp_servers, list):
+        raise SkillParseError("Frontmatter 'mcp_servers' must be a list")
+
+    return {
+        "profile": str(profile).strip() if profile else None,
+        "tools": [str(t) for t in tools] if tools else [],
+        "mcp_servers": mcp_servers if mcp_servers else [],
+        "specialist": str(specialist).strip() if specialist else None,
+    }
+
+
 def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
     """
     Parse workflow definition from frontmatter.
 
     The workflow defines a deterministic sequence of tool calls that
     can be executed without LLM intervention.
-
-    Args:
-        frontmatter: Parsed YAML frontmatter
-
-    Returns:
-        Workflow definition dict or None if not present
     """
     if "workflow" not in frontmatter:
         return None
@@ -262,12 +319,10 @@ def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(steps, list):
         raise SkillParseError("Workflow 'steps' must be a list")
 
-    # Validate each step
     for i, step in enumerate(steps):
         if not isinstance(step, dict):
             raise SkillParseError(f"Workflow step {i} must be a dictionary")
 
-        # Either 'tool' or 'switch' must be present
         if "tool" not in step and "switch" not in step:
             raise SkillParseError(
                 f"Workflow step {i} must have 'tool' or 'switch'"
@@ -281,12 +336,20 @@ def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _validate_name_matches_directory(name: str, source_path: str) -> None:
+    """
+    Validate that the skill name's last segment matches the directory name.
+
+    For hierarchical names (e.g. "agents:reviewer"), only the last
+    segment ("reviewer") must match the skill directory name.
+    """
     if not source_path:
         return
     directory_name = Path(source_path).name
-    if directory_name != name:
+    name_last_segment = name.split(":")[-1]
+    if directory_name != name_last_segment:
         raise SkillParseError(
-            f"Skill name '{name}' does not match directory name '{directory_name}'"
+            f"Skill name last segment '{name_last_segment}' does not match "
+            f"directory name '{directory_name}'"
         )
 
 
@@ -300,8 +363,6 @@ def validate_skill_file(skill_path: str) -> tuple[bool, str | None]:
     Returns:
         Tuple of (is_valid, error_message)
     """
-    from pathlib import Path
-
     path = Path(skill_path)
 
     if not path.exists():

@@ -8,6 +8,11 @@ Skills follow a progressive loading pattern:
 - Level 1: Metadata (name, description) - always loaded
 - Level 2: Instructions (SKILL.md body) - loaded when triggered
 - Level 3: Resources (additional files) - loaded as needed
+
+Skill Types (SkillType):
+- CONTEXT: Injects instructions into the system prompt when activated.
+- PROMPT:  One-shot prompt template with $ARGUMENTS; invokable via /name.
+- AGENT:   Temporarily overrides agent configuration; invokable via /name.
 """
 
 from __future__ import annotations
@@ -17,12 +22,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from taskforce.core.domain.enums import SkillType
+
 
 # Validation constants
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_COMPATIBILITY_LENGTH = 500
-NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+# Segment pattern: kebab-case (e.g. "pdf-processing", "code-review")
+_SEGMENT_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+# Hierarchical pattern: one or more kebab-case segments separated by ":"
+# Examples: "pdf-processing", "agents:reviewer", "tools:python:helper"
+NAME_PATTERN = re.compile(
+    r"^[a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+)
 ALLOWED_TOOLS_PATTERN = re.compile(r"^[^\s]+(\s+[^\s]+)*$")
 
 
@@ -37,13 +52,14 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
     Validate a skill name.
 
     Requirements:
-    - Lowercase letters, numbers, and hyphens only (kebab-case)
-    - Cannot start or end with a hyphen
-    - No consecutive hyphens
-    - Maximum 64 characters
+    - Lowercase letters, numbers, hyphens, and colons only
+    - Each colon-separated segment must be valid kebab-case
+    - Cannot start or end with a hyphen or colon
+    - No consecutive hyphens or colons
+    - Maximum 64 characters total
 
     Args:
-        name: The skill name to validate
+        name: The skill name to validate (e.g. "pdf-processing", "agents:reviewer")
 
     Returns:
         Tuple of (is_valid, error_message)
@@ -57,8 +73,8 @@ def validate_skill_name(name: str) -> tuple[bool, str | None]:
     if not NAME_PATTERN.match(name):
         return (
             False,
-            "Skill name must be lowercase alphanumeric with hyphens only, "
-            "with no leading/trailing or consecutive hyphens",
+            "Skill name must be kebab-case segments separated by ':', "
+            "e.g. 'pdf-processing' or 'agents:reviewer'",
         )
 
     return True, None
@@ -142,13 +158,16 @@ class SkillMetadataModel:
     Level 1 (metadata) loading.
 
     Attributes:
-        name: Unique identifier (lowercase, hyphenated)
+        name: Unique identifier (kebab-case, optionally hierarchical with ':')
         description: What the skill does and when to use it
         source_path: Path to the skill directory
         license: Optional skill license identifier
         compatibility: Optional compatibility notes (max 500 chars)
         metadata: Optional freeform metadata map
         allowed_tools: Optional space-delimited tool allowlist
+        skill_type: Execution type (context, prompt, agent)
+        slash_name: Optional override for /name invocation (defaults to name)
+        agent_config: Agent configuration override for AGENT-type skills
     """
 
     name: str
@@ -158,6 +177,12 @@ class SkillMetadataModel:
     compatibility: str | None = None
     metadata: dict[str, str] | None = None
     allowed_tools: str | None = None
+    skill_type: SkillType = SkillType.CONTEXT
+    slash_name: str | None = None
+    # agent_config excluded from hash/compare because dict is unhashable
+    agent_config: dict[str, Any] | None = field(
+        default=None, hash=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate metadata after initialization."""
@@ -178,6 +203,11 @@ class SkillMetadataModel:
         _validate_metadata_dict(self.metadata)
         _validate_allowed_tools(self.allowed_tools)
 
+    @property
+    def effective_slash_name(self) -> str:
+        """Return the name used for /name-style chat invocation."""
+        return self.slash_name or self.name
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -188,11 +218,20 @@ class SkillMetadataModel:
             "compatibility": self.compatibility,
             "metadata": self.metadata,
             "allowed_tools": self.allowed_tools,
+            "skill_type": self.skill_type.value,
+            "slash_name": self.slash_name,
+            "agent_config": self.agent_config,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillMetadataModel:
         """Create from dictionary."""
+        skill_type_raw = data.get("skill_type", "context")
+        try:
+            skill_type = SkillType(skill_type_raw)
+        except ValueError:
+            skill_type = SkillType.CONTEXT
+
         return cls(
             name=data["name"],
             description=data["description"],
@@ -201,6 +240,9 @@ class SkillMetadataModel:
             compatibility=_normalize_optional_str(data.get("compatibility")),
             metadata=data.get("metadata"),
             allowed_tools=_normalize_optional_str(data.get("allowed_tools")),
+            skill_type=skill_type,
+            slash_name=_normalize_optional_str(data.get("slash_name")),
+            agent_config=data.get("agent_config"),
         )
 
 
@@ -217,7 +259,7 @@ class Skill:
     - Resource access methods
 
     Attributes:
-        name: Unique identifier (lowercase, hyphenated)
+        name: Unique identifier (kebab-case, optionally hierarchical with ':')
         description: What the skill does and when to use it
         instructions: Main instructional content from SKILL.md
         source_path: Path to the skill directory
@@ -226,6 +268,9 @@ class Skill:
         metadata: Optional freeform metadata map
         allowed_tools: Optional space-delimited tool allowlist
         workflow: Optional deterministic workflow definition
+        skill_type: Execution type (context, prompt, agent)
+        slash_name: Optional override for /name invocation (defaults to name)
+        agent_config: Agent configuration override for AGENT-type skills
         _resources_cache: Cached resource paths (internal)
     """
 
@@ -238,6 +283,9 @@ class Skill:
     metadata: dict[str, str] | None = None
     allowed_tools: str | None = None
     workflow: dict[str, Any] | None = None
+    skill_type: SkillType = SkillType.CONTEXT
+    slash_name: str | None = None
+    agent_config: dict[str, Any] | None = None
     _resources_cache: dict[str, str] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -260,6 +308,11 @@ class Skill:
         _validate_allowed_tools(self.allowed_tools)
 
     @property
+    def effective_slash_name(self) -> str:
+        """Return the name used for /name-style chat invocation."""
+        return self.slash_name or self.name
+
+    @property
     def metadata_model(self) -> SkillMetadataModel:
         """Get lightweight metadata object."""
         return SkillMetadataModel(
@@ -270,6 +323,9 @@ class Skill:
             compatibility=self.compatibility,
             metadata=self.metadata,
             allowed_tools=self.allowed_tools,
+            skill_type=self.skill_type,
+            slash_name=self.slash_name,
+            agent_config=self.agent_config,
         )
 
     @property
@@ -280,6 +336,21 @@ class Skill:
             and isinstance(self.workflow, dict)
             and len(self.workflow.get("steps", [])) > 0
         )
+
+    def substitute_arguments(self, arguments: str) -> str:
+        """
+        Replace $ARGUMENTS placeholder in the instructions body.
+
+        Used for PROMPT-type skills where the user provides arguments
+        after the slash command name.
+
+        Args:
+            arguments: User-provided arguments string after the skill name.
+
+        Returns:
+            Instructions text with $ARGUMENTS replaced by the given string.
+        """
+        return self.instructions.replace("$ARGUMENTS", arguments)
 
     def get_resources(self) -> dict[str, str]:
         """
@@ -363,11 +434,20 @@ class Skill:
             "compatibility": self.compatibility,
             "metadata": self.metadata,
             "allowed_tools": self.allowed_tools,
+            "skill_type": self.skill_type.value,
+            "slash_name": self.slash_name,
+            "agent_config": self.agent_config,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Skill:
         """Create from dictionary."""
+        skill_type_raw = data.get("skill_type", "context")
+        try:
+            skill_type = SkillType(skill_type_raw)
+        except ValueError:
+            skill_type = SkillType.CONTEXT
+
         return cls(
             name=data["name"],
             description=data["description"],
@@ -377,6 +457,9 @@ class Skill:
             compatibility=_normalize_optional_str(data.get("compatibility")),
             metadata=data.get("metadata"),
             allowed_tools=_normalize_optional_str(data.get("allowed_tools")),
+            skill_type=skill_type,
+            slash_name=_normalize_optional_str(data.get("slash_name")),
+            agent_config=data.get("agent_config"),
         )
 
     @classmethod
@@ -400,6 +483,9 @@ class Skill:
             compatibility=metadata.compatibility,
             metadata=metadata.metadata,
             allowed_tools=metadata.allowed_tools,
+            skill_type=metadata.skill_type,
+            slash_name=metadata.slash_name,
+            agent_config=metadata.agent_config,
         )
 
 
