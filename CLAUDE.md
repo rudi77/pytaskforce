@@ -21,7 +21,7 @@
   - REST API (FastAPI) for production microservices
 - **Persistence:** File-based (dev) or PostgreSQL (prod) via swappable adapters
 - **LLM Integration:** Multi-provider (OpenAI, Anthropic, Google, Azure, Ollama, etc.) via LiteLLM
-- **Extensibility:** Plugin system, skills, slash commands, MCP tool servers
+- **Extensibility:** Plugin system, skills (context/prompt/agent types), MCP tool servers
 
 ---
 
@@ -85,8 +85,7 @@ src/taskforce/
 │   │   ├── mcp/               # MCP server connections
 │   │   ├── rag/               # Azure AI Search tools
 │   │   └── orchestration/     # Agent/sub-agent tools
-│   ├── skills/                # Skill loading, parsing, registry
-│   ├── slash_commands/        # Slash command loading/parsing
+│   ├── skills/                # Skill loading, parsing, registry (context/prompt/agent types)
 │   └── tracing/               # Phoenix tracing integration
 │
 ├── application/               # LAYER 3: Use Cases & Orchestration
@@ -99,8 +98,7 @@ src/taskforce/
 │   ├── system_prompt_assembler.py # System prompt composition
 │   ├── intent_router.py       # Intent routing for chat
 │   ├── skill_manager.py       # Skill lifecycle management
-│   ├── skill_service.py       # Skill execution service
-│   ├── slash_command_registry.py  # Slash command registry
+│   ├── skill_service.py       # Skill service (discovery, slash-command resolution)
 │   ├── plugin_loader.py       # Plugin loading from entry points
 │   ├── plugin_discovery.py    # Plugin discovery
 │   ├── infrastructure_builder.py  # Infrastructure setup
@@ -108,8 +106,7 @@ src/taskforce/
 │   ├── epic_state_store.py    # Epic run state persistence
 │   ├── task_complexity_classifier.py  # Auto-epic complexity classification
 │   ├── sub_agent_spawner.py   # Sub-agent session spawning
-│   ├── tracing_facade.py      # Tracing facade
-│   └── command_loader_service.py  # Command loader
+│   └── tracing_facade.py      # Tracing facade
 │
 └── api/                       # LAYER 4: Entrypoints
     ├── server.py              # FastAPI application
@@ -117,7 +114,7 @@ src/taskforce/
     │   ├── main.py            # CLI entry point (Typer)
     │   ├── simple_chat.py     # Interactive chat interface
     │   ├── output_formatter.py # Rich output formatting
-    │   └── commands/          # CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config)
+    │   └── commands/          # CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config, butler)
     ├── routes/                # FastAPI route modules (execution, agents, sessions, tools, health, gateway)
     └── schemas/               # Pydantic request/response schemas
 ```
@@ -200,8 +197,7 @@ All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base
 | `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` | `gateway.py` | Communication Gateway contracts |
 | `MessageBusProtocol` | `messaging.py` | Inter-agent messaging |
 | `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` | `runtime.py` | Runtime tracking |
-| `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` | `skills.py` | Skill interface and lifecycle |
-| `SlashCommandLoaderProtocol` | `slash_commands.py` | Slash command loading |
+| `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` | `skills.py` | Skill interface and lifecycle (context/prompt/agent types) |
 | `ToolMapperProtocol` | `tool_mapping.py` | Tool name resolution |
 | `ToolResultStoreProtocol` | `tool_result_store.py` | Tool result caching |
 | `SubAgentSpawnerProtocol` | `sub_agents.py` | Sub-agent spawning |
@@ -364,29 +360,24 @@ Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by
 
 ---
 
-## Skills, Slash Commands, and Plugins
+## Skills and Plugins
 
 ### Skills
 
-File-based skill definitions that can be activated at runtime. Skills are YAML+Markdown files that define specialized agent behaviors with custom prompts, tools, and workflows.
+File-based skill definitions that can be activated at runtime. Skills are YAML+Markdown files that define specialized agent behaviors. Three types are supported:
 
-- **Storage:** Project-level in `.taskforce/skills/` or bundled with plugins/extensions
-- **Management:** `SkillManager` (application layer) handles lifecycle
-- **Activation:** Via `activate_skill` tool or `/skills` chat command
+| Type | Invocation | Description |
+|------|-----------|-------------|
+| `context` (default) | `activate_skill` tool or intent routing | Injects instructions into the system prompt |
+| `prompt` | `/skill-name [args]` in chat | One-shot prompt template with `$ARGUMENTS` substitution |
+| `agent` | `/skill-name [args]` in chat | Temporarily overrides agent config (profile, tools, MCP servers) |
+
+- **Storage:** Project-level in `.taskforce/skills/<name>/SKILL.md` or bundled with plugins/extensions
+- **Naming:** Hierarchical using subdirectories and `:` separator (e.g., `agents/reviewer/` → `agents:reviewer` → `/agents:reviewer`)
+- **Chat built-ins:** `/skills` lists all skills; `/skill-name [args]` invokes PROMPT/AGENT skills; `/<plugin_name>` switches to a plugin agent
+- **CLI:** `taskforce skills list [--type context|prompt|agent]`, `taskforce run skill <name> [args]`
+- **Management:** `SkillService` (application layer) handles discovery and invocation; `SkillManager` handles agent-internal lifecycle
 - **Docs:** `docs/features/skills.md`
-
-### Slash Commands
-
-Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
-
-- **Storage:** Project-wide in `.taskforce/commands/` or user-specific in `~/.taskforce/commands/`. Project-level overrides user-level.
-- **Naming:** Hierarchical based on folder structure (e.g., `agents/reviewer.md` → `/agents:reviewer`)
-- **Types:**
-  - `prompt`: Simple prompt templates where `$ARGUMENTS` is replaced by user input
-  - `agent`: Defines a specialized agent with its own `profile`, `tools`, and `system_prompt`
-- **Behavior:** An `agent`-type command temporarily overrides the current agent's configuration for that single execution
-- **Built-ins:** Chat includes `/plugins` and `/skills` for discovery, and `/<plugin_name>` switches to a plugin agent
-- **Docs:** `docs/slash-commands.md`
 
 ### Plugin System
 
@@ -1171,8 +1162,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` - Communication Gateway
 - `messaging.py` - `MessageBusProtocol` - inter-agent messaging
 - `runtime.py` - `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` - runtime tracking
-- `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle
-- `slash_commands.py` - `SlashCommandLoaderProtocol` - slash command loading
+- `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle (context/prompt/agent types)
 - `tool_mapping.py` - `ToolMapperProtocol` - tool name resolution
 - `tool_result_store.py` - `ToolResultStoreProtocol` - tool result caching
 - `sub_agents.py` - `SubAgentSpawnerProtocol` - sub-agent spawning
@@ -1200,8 +1190,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/event_sources/webhook_source.py` - HTTP webhook receiver (butler)
 - `src/taskforce/infrastructure/tools/rag/*.py` - RAG tools (Azure AI Search)
 - `src/taskforce/infrastructure/tools/orchestration/*.py` - Agent/sub-agent tools
-- `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry
-- `src/taskforce/infrastructure/slash_commands/` - Slash command loading/parsing
+- `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry (supports context/prompt/agent types)
 - `src/taskforce/infrastructure/tracing/phoenix_tracer.py` - Phoenix tracing
 
 ### Application
@@ -1214,8 +1203,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/system_prompt_assembler.py` - System prompt composition (extracted from factory)
 - `src/taskforce/application/intent_router.py` - Intent routing for chat
 - `src/taskforce/application/skill_manager.py` - Skill lifecycle management
-- `src/taskforce/application/skill_service.py` - Skill execution service
-- `src/taskforce/application/slash_command_registry.py` - Slash command registry
+- `src/taskforce/application/skill_service.py` - Skill service (discovery, slash-command resolution, prompt/agent execution)
 - `src/taskforce/application/plugin_loader.py` - Plugin loading
 - `src/taskforce/application/plugin_discovery.py` - Plugin discovery
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
@@ -1268,9 +1256,9 @@ See `docs/architecture/section-10-deployment.md` for:
 - **Integrations:** `docs/integrations.md`
 - **Features:** `docs/features/` (longterm-memory, skills, enterprise)
 - **Plugin System:** `docs/plugins.md`
-- **Slash Commands:** `docs/slash-commands.md`
+- **Skills (unified):** `docs/features/skills.md` (context/prompt/agent types, slash-name invocation)
 - **C4 Diagrams:** `docs/architecture/c4/` (PlantUML: system context, container, component-level diagrams per layer)
-- **ADRs:** `docs/adr/index.md` (10 ADRs: uv, clean architecture, enterprise, multi-agent, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler)
+- **ADRs:** `docs/adr/index.md` (11 ADRs: uv, clean architecture, enterprise, multi-agent, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler, unified skills system)
 - **Epics:** `docs/epics/index.md` (20+ epic planning documents)
 - **PRD:** `docs/prd/index.md`
 - **Stories:** `docs/stories/`

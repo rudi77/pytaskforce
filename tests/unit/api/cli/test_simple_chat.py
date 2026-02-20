@@ -1,34 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 from rich.console import Console
 
 from taskforce.api.cli.simple_chat import SimpleChatRunner
 from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
-
-
-@dataclass
-class DummySkillManager:
-    skills: list[str]
-    active: str | None = None
-
-    @property
-    def has_skills(self) -> bool:
-        return bool(self.skills)
-
-    @property
-    def active_skill_name(self) -> str | None:
-        return self.active
-
-    def list_skills(self) -> list[str]:
-        return list(self.skills)
+from taskforce.core.domain.enums import SkillType
+from taskforce.core.domain.skill import SkillMetadataModel
 
 
 class DummyAgent:
-    def __init__(self, skill_manager: DummySkillManager | None = None) -> None:
-        self.skill_manager = skill_manager
+    def __init__(self) -> None:
         self.closed = False
 
     async def close(self) -> None:
@@ -50,11 +34,20 @@ class DummyAgentRegistry:
 
 
 class DummySkillService:
-    def __init__(self, skills: list[str]) -> None:
-        self._skills = skills
+    """Minimal stub for SkillService used in chat tests."""
 
-    def list_skills(self) -> list[str]:
-        return list(self._skills)
+    def __init__(self, metadata: list[SkillMetadataModel] | None = None) -> None:
+        self._metadata = metadata or []
+        self._active: list = []
+
+    def get_all_metadata(self) -> list[SkillMetadataModel]:
+        return list(self._metadata)
+
+    def get_active_skills(self) -> list:
+        return list(self._active)
+
+    def resolve_slash_command(self, command_input: str) -> tuple[None, str]:
+        return None, ""
 
 
 class DummyFactory:
@@ -106,32 +99,40 @@ def test_list_plugins_renders_available_plugins() -> None:
     assert "Handles accounting tasks." in output
 
 
-def test_list_skills_uses_agent_skill_manager() -> None:
-    skill_manager = DummySkillManager(skills=["invoice-processing"], active="invoice-processing")
-    runner = _build_runner(DummyAgent(skill_manager=skill_manager))
-
-    runner._list_skills()
-
-    output = runner.console.export_text()
-    assert "invoice-processing" in output
-    assert "active: invoice-processing" in output
-
-
-def test_list_skills_falls_back_to_skill_service(monkeypatch) -> None:
-    runner = _build_runner(DummyAgent())
-
-    def _fake_skill_service() -> DummySkillService:
-        return DummySkillService(["pdf-review"])
-
-    monkeypatch.setattr(
-        "taskforce.api.cli.simple_chat.get_skill_service",
-        _fake_skill_service,
+def test_list_skills_shows_grouped_output() -> None:
+    """_list_skills() should show skills grouped by type via SkillService."""
+    meta_prompt = SkillMetadataModel(
+        name="code-review",
+        description="Review code quality",
+        source_path="/some/path",
+        skill_type=SkillType.PROMPT,
     )
+    meta_context = SkillMetadataModel(
+        name="pdf-processing",
+        description="Process PDF files",
+        source_path="/some/other/path",
+        skill_type=SkillType.CONTEXT,
+    )
+    runner = _build_runner(DummyAgent())
+    runner._skill_service = DummySkillService(metadata=[meta_prompt, meta_context])
 
     runner._list_skills()
 
     output = runner.console.export_text()
-    assert "pdf-review" in output
+    assert "code-review" in output
+    assert "pdf-processing" in output
+    assert "Prompt skills" in output or "prompt" in output.lower()
+
+
+def test_list_skills_shows_empty_message_when_no_skills() -> None:
+    """_list_skills() shows a helpful message when no skills are found."""
+    runner = _build_runner(DummyAgent())
+    runner._skill_service = DummySkillService(metadata=[])
+
+    runner._list_skills()
+
+    output = runner.console.export_text()
+    assert "No skills found" in output
 
 
 @pytest.mark.asyncio

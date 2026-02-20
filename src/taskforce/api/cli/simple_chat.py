@@ -13,14 +13,9 @@ from taskforce.api.cli.output_formatter import TASKFORCE_THEME
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
-from taskforce.application.slash_command_registry import SlashCommandRegistry
-from taskforce.application.skill_service import get_skill_service
+from taskforce.application.skill_service import SkillService, get_skill_service
 from taskforce.core.domain.agent_definition import AgentSource
-from taskforce.core.domain.enums import EventType, MessageRole, TaskStatus
-from taskforce.core.interfaces.slash_commands import (
-    CommandType,
-    SlashCommandDefinition,
-)
+from taskforce.core.domain.enums import EventType, MessageRole, SkillType, TaskStatus
 
 
 @dataclass
@@ -47,11 +42,18 @@ class SimpleChatRunner:
         self.user_context = user_context
         self.console = Console(theme=TASKFORCE_THEME)
         self.executor = AgentExecutor()
-        self.command_registry = SlashCommandRegistry()
         self.agent_registry = AgentRegistry()
         self.total_tokens = 0
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature: tuple[str, str] | None = None
+        self._skill_service: SkillService | None = None
+
+    @property
+    def skill_service(self) -> SkillService:
+        """Lazy-initialise the skill service."""
+        if self._skill_service is None:
+            self._skill_service = get_skill_service()
+        return self._skill_service
 
     async def run(self) -> None:
         """Run the REPL loop."""
@@ -100,16 +102,21 @@ class SimpleChatRunner:
             self._print_system("Debug mode toggling is not used in simple mode.", style="warning")
         elif cmd_name == "tokens":
             self._print_system(f"Total tokens used: {self.total_tokens:,}", style="info")
-        elif cmd_name == "commands":
-            self._list_custom_commands()
         elif cmd_name == "plugins":
             self._list_plugins()
         elif cmd_name == "skills":
             self._list_skills()
         else:
-            command_def, args = self.command_registry.resolve_command(command)
-            if command_def:
-                await self._execute_custom_command(command_def, args)
+            skill, args = self.skill_service.resolve_slash_command(command)
+            if skill is not None:
+                if skill.skill_type == SkillType.PROMPT:
+                    await self._execute_prompt_skill(skill, args)
+                elif skill.skill_type == SkillType.AGENT:
+                    await self._execute_agent_skill(skill, args)
+                else:
+                    # CONTEXT skill: activate it
+                    self.skill_service.activate_skill(skill.name)
+                    self._print_system(f"Activated context skill: {skill.name}", style="info")
             elif await self._try_switch_plugin(cmd_name):
                 return False
             else:
@@ -126,30 +133,14 @@ class SimpleChatRunner:
             "- /clear or /c\n"
             "- /export or /e\n"
             "- /tokens\n"
-            "- /commands\n"
             "- /plugins\n"
             "- /skills\n"
             "- /debug\n"
             "- /quit or /exit\n"
+            "\n**Skills (invokable via /skill-name [args]):**\n"
+            "- Run /skills to see all available skills\n"
         )
         self.console.print(Markdown(help_text))
-
-    def _list_custom_commands(self) -> None:
-        """List custom commands."""
-        commands = self.command_registry.list_commands(include_builtin=False)
-        if not commands:
-            self._print_system("No custom commands found.", style="info")
-            self._print_system(
-                "Add .md files to .taskforce/commands/ or ~/.taskforce/commands/",
-                style="info",
-            )
-            return
-
-        lines = ["**Custom Commands:**"]
-        for cmd in commands:
-            source_tag = f"[{cmd['source']}]" if cmd["source"] != "builtin" else ""
-            lines.append(f"- /{cmd['name']} — {cmd['description']} {source_tag}")
-        self.console.print(Markdown("\n".join(lines)))
 
     def _list_plugins(self) -> None:
         """List available plugin agents."""
@@ -173,23 +164,9 @@ class SimpleChatRunner:
         self.console.print(Markdown("\n".join(lines)))
 
     def _list_skills(self) -> None:
-        """List available skills."""
-        skill_manager = getattr(self.agent, "skill_manager", None)
-        if skill_manager and skill_manager.has_skills:
-            active = (
-                f" (active: {skill_manager.active_skill_name})"
-                if skill_manager.active_skill_name
-                else ""
-            )
-            lines = [f"**Skills (plugin + global){active}:**"]
-            for skill_name in skill_manager.list_skills():
-                lines.append(f"- {skill_name}")
-            self.console.print(Markdown("\n".join(lines)))
-            return
-
-        skill_service = get_skill_service()
-        skills = skill_service.list_skills()
-        if not skills:
+        """List available skills grouped by type."""
+        all_meta = self.skill_service.get_all_metadata()
+        if not all_meta:
             self._print_system("No skills found.", style="info")
             self._print_system(
                 "Add skills under .taskforce/skills/ or ~/.taskforce/skills/.",
@@ -197,10 +174,63 @@ class SimpleChatRunner:
             )
             return
 
+        active_names = {s.name for s in self.skill_service.get_active_skills()}
+
+        context_skills = [m for m in all_meta if m.skill_type == SkillType.CONTEXT]
+        prompt_skills = [m for m in all_meta if m.skill_type == SkillType.PROMPT]
+        agent_skills = [m for m in all_meta if m.skill_type == SkillType.AGENT]
+
         lines = ["**Skills:**"]
-        for skill_name in skills:
-            lines.append(f"- {skill_name}")
+
+        if prompt_skills:
+            lines.append("\n*Prompt skills (invokable via /name [args]):*")
+            for meta in sorted(prompt_skills, key=lambda m: m.name):
+                slash = f"/{meta.effective_slash_name}"
+                lines.append(f"- {slash} — {meta.description}")
+
+        if agent_skills:
+            lines.append("\n*Agent skills (invokable via /name [args]):*")
+            for meta in sorted(agent_skills, key=lambda m: m.name):
+                slash = f"/{meta.effective_slash_name}"
+                lines.append(f"- {slash} — {meta.description}")
+
+        if context_skills:
+            lines.append("\n*Context skills (activated via /name):*")
+            for meta in sorted(context_skills, key=lambda m: m.name):
+                active_marker = " ✅" if meta.name in active_names else ""
+                lines.append(f"- /{meta.effective_slash_name} — {meta.description}{active_marker}")
+
         self.console.print(Markdown("\n".join(lines)))
+
+    async def _execute_prompt_skill(self, skill: Any, arguments: str) -> None:
+        """Execute a PROMPT-type skill by substituting args and sending as chat."""
+        prompt = self.skill_service.prepare_skill_prompt(skill, arguments)
+        self._print_system(f"Executing /{skill.effective_slash_name}...", style="info")
+        await self._handle_chat_message(prompt)
+
+    async def _execute_agent_skill(self, skill: Any, arguments: str) -> None:
+        """Execute an AGENT-type skill by temporarily overriding agent config."""
+        self._print_system(
+            f"Switching to agent skill: {skill.name} (/{skill.effective_slash_name})",
+            style="info",
+        )
+        agent_config = skill.agent_config or {}
+        factory = AgentFactory()
+
+        if self.agent:
+            await self.agent.close()
+
+        skill_profile = agent_config.get("profile") or self.profile
+        self.agent = await factory.create_agent(
+            config=skill_profile,
+            user_context=self.user_context,
+        )
+        self.profile = f"skill:{skill.name}"
+        self._print_session_info()
+
+        if arguments:
+            prompt = skill.substitute_arguments(arguments)
+            await self._handle_chat_message(prompt)
 
     async def _try_switch_plugin(self, command_name: str) -> bool:
         """Switch to a plugin agent if the command matches one."""
@@ -230,31 +260,6 @@ class SimpleChatRunner:
         self.profile = f"plugin:{command_name}"
         self._print_session_info()
         return True
-
-    async def _execute_custom_command(
-        self,
-        command_def: SlashCommandDefinition,
-        arguments: str,
-    ) -> None:
-        """Execute a custom slash command."""
-        if command_def.command_type == CommandType.PROMPT:
-            prompt = self.command_registry.prepare_prompt(command_def, arguments)
-            self._print_system(f"Executing /{command_def.name}...", style="info")
-            await self._handle_chat_message(prompt)
-            return
-
-        if command_def.command_type == CommandType.AGENT:
-            self._print_system(
-                f"Switching to agent: {command_def.name} (/{command_def.name})",
-                style="info",
-            )
-            agent = await self.command_registry.create_agent_for_command(
-                command_def,
-                self.profile,
-            )
-            self.agent = agent
-            prompt = self.command_registry.prepare_prompt(command_def, arguments)
-            await self._handle_chat_message(prompt)
 
     async def _handle_chat_message(self, content: str) -> None:
         """Handle a regular chat message."""

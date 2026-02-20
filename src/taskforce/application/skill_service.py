@@ -21,6 +21,7 @@ Note:
 import logging
 from typing import Any
 
+from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillContext, SkillMetadataModel
 from taskforce.infrastructure.skills.skill_registry import (
     FileSkillRegistry,
@@ -95,6 +96,71 @@ class SkillService:
             Sorted list of skill names
         """
         return self._registry.list_skills()
+
+    def list_slash_command_skills(self) -> list[SkillMetadataModel]:
+        """
+        List metadata of skills directly invokable via /name.
+
+        Returns only PROMPT and AGENT type skills, sorted by name.
+
+        Returns:
+            List of skill metadata objects
+        """
+        return [
+            meta
+            for meta in self._registry.get_all_metadata()
+            if meta.skill_type in (SkillType.PROMPT, SkillType.AGENT)
+        ]
+
+    def resolve_slash_command(self, command_input: str) -> tuple[Skill | None, str]:
+        """
+        Resolve a /command input string to a (Skill, arguments) tuple.
+
+        Looks up skills by their effective slash name. Works for ALL skill
+        types — the caller decides what to do based on skill.skill_type.
+
+        Args:
+            command_input: Raw user input starting with "/" e.g. "/code-review def foo(): pass"
+
+        Returns:
+            Tuple of (skill, arguments). Skill is None if no matching skill found.
+
+        Raises:
+            ValueError: If command_input does not start with "/".
+        """
+        if not command_input.startswith("/"):
+            raise ValueError(
+                f"Expected command starting with '/': {command_input!r}"
+            )
+
+        stripped = command_input.lstrip("/")
+        parts = stripped.split(maxsplit=1)
+        slash_name = parts[0].lower()
+        arguments = parts[1] if len(parts) > 1 else ""
+
+        skill = self._registry.get_skill_by_slash_name(slash_name)
+        return skill, arguments
+
+    def prepare_skill_prompt(self, skill: Skill, arguments: str) -> str:
+        """
+        Prepare the prompt for a PROMPT-type skill by substituting $ARGUMENTS.
+
+        Args:
+            skill: A skill with skill_type == SkillType.PROMPT.
+            arguments: User-provided arguments after the skill name.
+
+        Returns:
+            Final prompt text with $ARGUMENTS replaced.
+
+        Raises:
+            ValueError: If skill is not of type PROMPT.
+        """
+        if skill.skill_type != SkillType.PROMPT:
+            raise ValueError(
+                f"Skill '{skill.name}' is not of type PROMPT "
+                f"(actual type: {skill.skill_type.value})"
+            )
+        return skill.substitute_arguments(arguments)
 
     def get_skill(self, name: str) -> Skill | None:
         """
@@ -255,8 +321,16 @@ class SkillService:
         Returns:
             Dictionary with skill counts and names
         """
+        all_meta = self._registry.get_all_metadata()
+        context_count = sum(1 for m in all_meta if m.skill_type == SkillType.CONTEXT)
+        prompt_count = sum(1 for m in all_meta if m.skill_type == SkillType.PROMPT)
+        agent_count = sum(1 for m in all_meta if m.skill_type == SkillType.AGENT)
+
         return {
             "total_skills": self._registry.get_skill_count(),
+            "context_skills": context_count,
+            "prompt_skills": prompt_count,
+            "agent_skills": agent_count,
             "available_skills": self.list_skills(),
             "active_skills": [s.name for s in self.get_active_skills()],
             "directories": [str(d) for d in self._registry.directories],

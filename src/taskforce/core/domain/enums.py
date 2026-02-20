@@ -88,3 +88,20 @@ class MessageRole(str, Enum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     TOOL = "tool"
+
+
+class SkillType(str, Enum):
+    """Execution type for a skill.
+
+    Determines how a skill is invoked and integrated:
+    - CONTEXT: Instructions are injected into the system prompt when the skill
+      is activated. Triggered by the activate_skill tool or intent routing.
+    - PROMPT: One-shot prompt template with $ARGUMENTS substitution. Invokable
+      directly from the chat interface via /skill-name [args].
+    - AGENT: Temporarily overrides the agent configuration (profile, tools).
+      Invokable directly from the chat interface via /skill-name [args].
+    """
+
+    CONTEXT = "context"
+    PROMPT = "prompt"
+    AGENT = "agent"

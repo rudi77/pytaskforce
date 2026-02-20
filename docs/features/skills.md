@@ -2,6 +2,8 @@
 
 Agent Skills are modular capabilities that extend agent functionality with domain-specific expertise. Each skill packages instructions, metadata, and optional resources (scripts, references, assets) that agents can use when relevant to user requests.
 
+Skills are the **unified system** for both background context injection and user-invokable chat commands (`/skill-name`). The former slash-command system has been merged into skills.
+
 ## Overview
 
 Skills provide:
@@ -9,6 +11,115 @@ Skills provide:
 - **Progressive loading**: Only load what's needed, when it's needed
 - **Resource bundling**: Include scripts, references, and asset files
 - **Easy extensibility**: Create custom skills as simple directories with SKILL.md files
+- **Direct invocation**: PROMPT and AGENT skills can be invoked via `/skill-name [args]` in chat
+
+## Skill Types
+
+Every skill has a `type` field in its YAML frontmatter that controls how it is invoked:
+
+| Type | Value | Invocation | Description |
+|------|-------|-----------|-------------|
+| **Context** | `context` | Activated via `activate_skill` tool or intent routing | Injects instructions into the system prompt. Default type. |
+| **Prompt** | `prompt` | `/skill-name [args]` in chat, or `taskforce run skill <name>` | One-shot prompt template with `$ARGUMENTS` substitution. |
+| **Agent** | `agent` | `/skill-name [args]` in chat, or `taskforce run skill <name>` | Temporarily overrides agent config (profile, tools, MCP servers). |
+
+### Context Skill (default)
+
+Activated automatically by the intent router or manually with the `activate_skill` tool. Adds instructions to the system prompt for the current conversation.
+
+```markdown
+---
+name: pdf-processing
+description: Processing PDF files with OCR and layout analysis.
+# type: context  ← this is the default, may be omitted
+---
+
+# PDF Processing
+
+Always use pdfplumber for layout-aware extraction...
+```
+
+### Prompt Skill
+
+Directly invoked by the user via `/skill-name [arguments]`. The `$ARGUMENTS` placeholder in the body is replaced by user-provided text.
+
+```markdown
+---
+name: code-review
+type: prompt
+description: Review code for bugs and style. Invoke with /code-review <file>
+---
+
+Please perform a thorough code review of the following:
+
+$ARGUMENTS
+
+Focus on bugs, security issues, and readability.
+```
+
+**Usage in chat:**
+```
+/code-review src/main.py
+```
+
+### Agent Skill
+
+Temporarily switches the agent to a specialized configuration for one execution.
+
+```markdown
+---
+name: agents/refactor
+type: agent
+description: Refactoring agent with deep editing tools.
+profile: coding_agent
+tools:
+  - file_read
+  - file_write
+  - shell
+  - python
+---
+
+You are a senior engineer focused on refactoring. Apply SOLID principles.
+
+$ARGUMENTS
+```
+
+**Usage in chat:**
+```
+/agents/refactor clean up the authentication module
+```
+
+Agent skill frontmatter supports these extra fields:
+- `profile` – profile YAML to load (e.g. `coding_agent`)
+- `tools` – list of tool short names to enable
+- `mcp_servers` – MCP server configs
+- `specialist` – optional specialist prompt override
+
+### Slash Name Override
+
+By default, the skill is invokable under `/<skill-name>`. You can override this:
+
+```yaml
+---
+name: agents/code-review
+slash-name: cr          # Invokable as /cr instead of /agents/code-review
+type: prompt
+description: Quick code review
+---
+```
+
+### Hierarchical Names
+
+Skills can be organised in subdirectories. The full name uses `:` as separator:
+
+```
+.taskforce/skills/
+└── agents/
+    ├── reviewer/
+    │   └── SKILL.md   → name: agents:reviewer  → /agents:reviewer
+    └── architect/
+        └── SKILL.md   → name: agents:architect → /agents:architect
+```
 
 ## Quick Start
 
@@ -72,6 +183,7 @@ Every skill must have a `SKILL.md` file with YAML frontmatter:
 ---
 name: skill-name           # Required: lowercase, hyphenated
 description: Description   # Required: what and when to use
+type: context              # Optional: context (default), prompt, agent
 ---
 
 # Skill Instructions
@@ -110,6 +222,24 @@ my-skill/
 ### Optional Frontmatter
 
 Skills may also include optional YAML frontmatter fields:
+
+**type:**
+- Skill execution type: `context` (default), `prompt`, or `agent`
+
+**slash-name** (or `slash_name`):
+- Override the `/name` used for chat invocation (defaults to the skill `name`)
+
+**profile:**
+- For `agent` type: profile YAML to load (e.g. `coding_agent`)
+
+**tools:**
+- For `agent` type: list of tool short names to enable
+
+**mcp_servers:**
+- For `agent` type: list of MCP server configurations
+
+**specialist:**
+- For `agent` type: optional specialist prompt override
 
 **license:**
 - Optional license identifier or short label (e.g., SPDX)
@@ -180,11 +310,14 @@ class SkillService:
     def list_skills(self) -> list[str]:
         """List all available skill names."""
 
+    def list_slash_command_skills(self) -> list[SkillMetadataModel]:
+        """List metadata of PROMPT and AGENT type skills (directly invokable)."""
+
     def get_skill(self, name: str) -> Skill | None:
         """Get a skill by name."""
 
     def activate_skill(self, name: str) -> bool:
-        """Activate a skill by name."""
+        """Activate a CONTEXT skill by name."""
 
     def deactivate_skill(self, name: str) -> None:
         """Deactivate a skill."""
@@ -195,6 +328,12 @@ class SkillService:
     def get_combined_instructions(self) -> str:
         """Get combined instructions from active skills."""
 
+    def resolve_slash_command(self, command_input: str) -> tuple[Skill | None, str]:
+        """Resolve '/name [args]' input to (skill, arguments) tuple."""
+
+    def prepare_skill_prompt(self, skill: Skill, arguments: str) -> str:
+        """Substitute $ARGUMENTS in a PROMPT-type skill."""
+
     def read_skill_resource(self, skill_name: str, path: str) -> str | None:
         """Read a resource from an active skill."""
 ```
@@ -204,10 +343,20 @@ class SkillService:
 ```python
 @dataclass
 class Skill:
-    name: str                    # Skill identifier
-    description: str             # Trigger description
-    instructions: str            # Main content from SKILL.md
-    source_path: str             # Path to skill directory
+    name: str                        # Skill identifier (may be hierarchical: agents:reviewer)
+    description: str                 # Trigger description
+    instructions: str                # Main content from SKILL.md
+    source_path: str                 # Path to skill directory
+    skill_type: SkillType            # CONTEXT | PROMPT | AGENT
+    slash_name: str | None           # Override for /name invocation
+    agent_config: dict | None        # Profile/tools for AGENT type
+
+    @property
+    def effective_slash_name(self) -> str:
+        """Returns slash_name if set, otherwise name."""
+
+    def substitute_arguments(self, arguments: str) -> str:
+        """Replace $ARGUMENTS placeholder in instructions."""
 
     def get_resources(self) -> dict[str, str]:
         """List available resource files."""
