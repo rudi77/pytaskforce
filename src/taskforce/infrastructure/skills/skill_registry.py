@@ -116,7 +116,7 @@ class FileSkillRegistry:
             content = skill_file.read_text(encoding="utf-8")
             metadata = parse_skill_metadata(content, str(skill_dir))
             self._metadata_cache[metadata.name] = metadata
-            self._slash_name_index[metadata.effective_slash_name] = metadata.name
+            self._slash_name_index[metadata.effective_slash_name.lower()] = metadata.name
             logger.debug(f"Discovered skill: {metadata.name}")
         except (OSError, UnicodeDecodeError, SkillParseError) as e:
             logger.warning(f"Failed to load skill from {skill_dir}: {e}")
@@ -134,7 +134,7 @@ class FileSkillRegistry:
         metadata_list = self._loader.discover_metadata()
         for metadata in metadata_list:
             self._metadata_cache[metadata.name] = metadata
-            self._slash_name_index[metadata.effective_slash_name] = metadata.name
+            self._slash_name_index[metadata.effective_slash_name.lower()] = metadata.name
 
         logger.info(f"Discovered {len(self._metadata_cache)} skills")
 
