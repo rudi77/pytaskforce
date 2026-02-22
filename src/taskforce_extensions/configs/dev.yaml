@@ -27,36 +27,6 @@ llm:
   config_path: src/taskforce_extensions/configs/llm_config.yaml
   default_model: main
 
-  # ── Dynamic LLM Routing (uncomment to enable) ────────────────────
-  # Routes different agent phases to different models.
-  # Phase hints emitted by planning strategies:
-  #   planning    — plan generation / task decomposition
-  #   reasoning   — ReAct main loop (tool selection + reasoning)
-  #   acting      — plan step execution (PlanAndExecute / SPAR act)
-  #   reflecting  — SPAR reflect phase / self-critique
-  #   summarizing — final answer synthesis
-  #
-  # routing:
-  #   enabled: true
-  #   default_model: main          # fallback when no rule matches
-  #   rules:
-  #     - condition: "hint:planning"
-  #       model: powerful
-  #     - condition: "hint:reasoning"
-  #       model: powerful
-  #     - condition: "hint:reflecting"
-  #       model: powerful
-  #     - condition: "hint:acting"
-  #       model: main
-  #     - condition: "hint:summarizing"
-  #       model: fast
-  #     - condition: "message_count > 20"
-  #       model: powerful
-  #     - condition: has_tools
-  #       model: main
-  #     - condition: no_tools
-  #       model: fast
-
 # Logging configuration
 logging:
   level: DEBUG

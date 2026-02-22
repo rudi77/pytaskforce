@@ -169,6 +169,9 @@ class LiteLLMService:
         # Tracing configuration
         self.tracing_config: dict[str, Any] = config.get("tracing", {})
 
+        # Routing configuration (consumed by LLMRouter wrapper)
+        self.routing_config: dict[str, Any] = config.get("routing", {})
+
     def _resolve_model(self, model_alias: str | None) -> str:
         """Resolve model alias to LiteLLM model string.
 
