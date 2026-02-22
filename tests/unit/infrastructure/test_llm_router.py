@@ -427,3 +427,74 @@ class TestBackwardCompatibility:
             resolved = mock_delegate.complete.call_args.kwargs["model"]
             # Without rules, all hints fall back to default
             assert resolved == "main", f"Hint '{hint}' resolved to '{resolved}', expected 'main'"
+
+
+# ---------------------------------------------------------------------------
+# Integration-style: routing_config from LiteLLMService
+# ---------------------------------------------------------------------------
+
+class TestRoutingConfigFromDelegate:
+    """Tests for routing config extraction from the delegate provider."""
+
+    def test_delegate_with_routing_config(self):
+        """Router uses routing_config from delegate when provided."""
+        delegate = MagicMock()
+        delegate.models = {"main": "gpt-4.1", "fast": "gpt-4.1-mini"}
+        delegate.routing_config = {
+            "enabled": True,
+            "rules": [{"condition": "hint:planning", "model": "fast"}],
+        }
+
+        router = build_llm_router(
+            delegate,
+            delegate.routing_config,
+            default_model="main",
+        )
+        assert len(router.rules) == 1
+        assert router.rules[0].model == "fast"
+
+    def test_delegate_without_routing_config_uses_empty_dict(self):
+        """Delegates without routing_config → getattr fallback to {}."""
+        delegate = MagicMock(spec=[])  # No attributes at all
+        routing_config = getattr(delegate, "routing_config", {})
+
+        router = build_llm_router(delegate, routing_config, default_model="main")
+        assert len(router.rules) == 0
+        assert router.default_model == "main"
+
+    @pytest.mark.asyncio
+    async def test_custom_provider_without_routing_config_works(self):
+        """Custom LLM provider without routing_config doesn't crash."""
+        # Use spec to limit mock attributes — a real custom provider
+        # wouldn't have routing_config or default_model attributes.
+        delegate = AsyncMock(spec=["complete", "generate", "complete_stream"])
+        delegate.complete = AsyncMock(return_value={"success": True, "content": "hi"})
+
+        # Simulate what infrastructure_builder does
+        routing_config = getattr(delegate, "routing_config", {})
+        default_model = getattr(delegate, "default_model", "main")
+
+        router = build_llm_router(delegate, routing_config, default_model)
+        assert isinstance(router, LLMRouter)
+
+        # Phase hints should fall back to default
+        await router.complete(
+            messages=[{"role": "user", "content": "test"}],
+            model="reasoning",
+        )
+        assert delegate.complete.call_args.kwargs["model"] == "main"
+
+    def test_alias_named_like_hint_takes_priority(self):
+        """If a model alias matches a hint name, the alias wins."""
+        delegate = MagicMock()
+        delegate.models = {"planning": "gpt-5", "main": "gpt-4.1"}
+
+        router = build_llm_router(
+            delegate,
+            {"enabled": True, "rules": [{"condition": "hint:planning", "model": "main"}]},
+            default_model="main",
+        )
+
+        # "planning" is a known alias → passes through, hint rule is NOT evaluated
+        result = router._select_model("planning", [], None)
+        assert result == "planning"

@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.4
-**Date:** 2026-02-20
+**Version:** 1.5
+**Date:** 2026-02-22
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---

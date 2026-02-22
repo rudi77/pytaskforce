@@ -204,6 +204,12 @@ class LLMRouter:
         so routing rules don't apply. Falls back to default or explicit alias.
         """
         resolved = model if model and model in self.known_aliases else self.default_model
+        if model and resolved != model:
+            logger.debug(
+                "llm_router.generate_fallback",
+                hint=model,
+                resolved=resolved,
+            )
         return await self.delegate.generate(
             prompt=prompt,
             context=context,
@@ -239,7 +245,7 @@ def build_llm_router(
     routing_config: dict[str, Any],
     default_model: str = "main",
 ) -> LLMRouter:
-    """Build an LLMRouter from profile routing configuration.
+    """Build an LLMRouter from ``llm_config.yaml`` routing configuration.
 
     Always returns a router. When no routing rules are configured, the
     router acts as a transparent pass-through that maps unknown hint
@@ -249,7 +255,7 @@ def build_llm_router(
 
     Args:
         delegate: The underlying LLM provider.
-        routing_config: The ``llm.routing`` section from profile YAML.
+        routing_config: The ``routing`` section from ``llm_config.yaml``.
             May be empty for default hint-only routing.
         default_model: Fallback model alias.
 

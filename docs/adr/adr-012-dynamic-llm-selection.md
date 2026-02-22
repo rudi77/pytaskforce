@@ -382,45 +382,35 @@ result = await agent.llm_provider.complete(
 | **Agent changes** | Add `model_roles` + `resolve_model()` | None | None |
 | **Strategy changes** | Replace `agent.model_alias` refs | Add `model_selector` param, use per-phase | None (can optionally pass hints) |
 | **Backward compat** | Full (empty dict = no change) | Full (no selector = no change) | Full (routing disabled = no change) |
-| **Config location** | `llm.model_roles` in profile | `planning_strategy_params.phase_models` | `llm.routing` in profile |
+| **Config location** | `llm.model_roles` in profile | `planning_strategy_params.phase_models` | `routing` in `llm_config.yaml` |
 | **Adaptivity** | Static per role | Static per phase | Runtime based on context |
 | **Testability** | Simple (dict lookup) | Simple (dataclass method) | Medium (mock delegate) |
 | **Best for** | Simple role separation | SPAR/PlanAndExecute users | Power users wanting smart routing |
 
 ---
 
-## Recommendation
+## Decision
 
-**Start with Approach 1 (Model Role Map)** for the initial implementation. It provides the highest value for the lowest complexity:
+**Approach 3 (LLM Router)** was chosen for the initial implementation:
 
-1. It covers the primary use case (strong model for reasoning, fast model for simple tasks)
-2. It requires minimal code changes and is easy to understand
-3. It's fully backward-compatible
-4. It reuses all existing infrastructure (alias system, param merging, provider abstraction)
+1. **Transparent wrapper** — no changes to the Agent class or its public interface
+2. **Future-proof** — new routing conditions can be added without touching strategies
+3. **Fully backward-compatible** — without routing rules, hints fall back to the default model
+4. **Config lives in `llm_config.yaml`** — alongside the model aliases and params it references
+5. **Strategies emit phase hints** — enabling the router to make informed decisions
 
-**Approach 2** is a natural evolution if SPAR becomes the primary strategy — the `ModelSelector` can be introduced later and coexist with Approach 1.
-
-**Approach 3** can be added as an opt-in power feature later. Since it wraps the provider transparently, it can be layered on top of either Approach 1 or 2 without conflict.
-
-### Phased Rollout
-
-1. **Phase 1:** Implement Approach 1 — `model_roles` in profile config, `resolve_model()` on agent
-2. **Phase 2 (optional):** Add `ModelSelector` to SPAR strategy for fine-grained phase control
-3. **Phase 3 (optional):** Add `LLMRouter` wrapper for runtime-adaptive selection
+Approaches 1 and 2 can still be layered on top if needed for per-agent or per-strategy overrides.
 
 ---
 
-## Implementation Checklist (Approach 1)
+## Implementation Checklist (Approach 3 — Completed)
 
-- [ ] Add `model_roles: dict[str, str]` to `Agent.__init__()` in `lean_agent.py`
-- [ ] Add `Agent.resolve_model(role: str) -> str` method
-- [ ] Update `_generate_plan()` to use `agent.resolve_model("planning")`
-- [ ] Update `NativeReActStrategy` main loop to use `agent.resolve_model("reasoning")`
-- [ ] Update `_stream_final_response()` to use `agent.resolve_model("summarizing")`
-- [ ] Update `_run_reflection_cycle()` to use `agent.resolve_model("reflecting")`
-- [ ] Update `SparStrategy` act phase to use `agent.resolve_model("acting")`
-- [ ] Wire `model_roles` in `factory.py` from `llm.model_roles` config
-- [ ] Add `model_roles` section to `dev.yaml` example (commented out)
-- [ ] Write unit tests for `resolve_model()` (with and without roles)
-- [ ] Write integration test verifying different models are passed per phase
-- [ ] Update `docs/profiles.md` with `model_roles` documentation
+- [x] Create `LLMRouter` class in `infrastructure/llm/llm_router.py`
+- [x] Create `RoutingRule` dataclass and `build_llm_router()` factory
+- [x] `LiteLLMService` stores `routing_config` from `llm_config.yaml`
+- [x] `InfrastructureBuilder.build_llm_provider()` always wraps with `LLMRouter`
+- [x] Strategies emit phase hints: `planning`, `reasoning`, `acting`, `reflecting`, `summarizing`
+- [x] Add routing config example to `llm_config.yaml` (commented out)
+- [x] Write 35 unit tests covering routing logic, protocol methods, backward compat
+- [x] Update `docs/profiles.md` with routing documentation
+- [x] Update ADR-012 to Accepted status
