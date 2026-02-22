@@ -294,7 +294,7 @@ class GetDocumentTool:
                 result_text += "\n\nContent Preview:\n"
                 # Add preview of first few chunks (or sort by page number first if needed)
                 # Simple sort by content_id usually keeps order mostly intact for basic preview
-                for i, chunk in enumerate(chunks[:5]): # Show up to 5 chunks preview
+                for _i, chunk in enumerate(chunks[:5]): # Show up to 5 chunks preview
                     content = chunk.get('content_text', '')
                     page = "Unknown"
                     lm = chunk.get('locationMetadata')

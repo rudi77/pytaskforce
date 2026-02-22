@@ -171,8 +171,12 @@ class TestSchedulerService:
         assert jobs[0].name == "persistent"
         await s2.stop()
 
+    @pytest.mark.slow
     async def test_interval_job_fires(self, scheduler_with_callback, callback) -> None:
-        """Test that a short-interval job actually fires."""
+        """Test that a short-interval job actually fires.
+
+        Note: This test uses asyncio.sleep and may flake on slow CI runners.
+        """
         await scheduler_with_callback.start()
         job = ScheduleJob(
             name="fast_interval",

@@ -3,6 +3,14 @@ Shell and PowerShell Tools
 
 Provides shell command execution with safety limits and timeout handling.
 Migrated from Agent V2 with full preservation of functionality.
+
+Security note:
+    The shell tool uses a **blocklist** approach to prevent known-dangerous
+    commands (e.g., ``rm -rf /``, fork bombs). Blocklists are inherently
+    incomplete and should only be relied upon in **development / trusted
+    execution contexts**. For production or untrusted environments, run
+    shell commands inside a sandboxed container or VM, or switch to an
+    allowlist-based approach.
 """
 
 import asyncio

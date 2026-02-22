@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import structlog
+
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol

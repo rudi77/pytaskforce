@@ -13,11 +13,11 @@ from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 class ListDocumentsTool(ToolProtocol):
     """
     List available documents from the content-blocks index.
-    
-    This tool retrieves unique documents by aggregating content blocks. It attempts to use 
-    Azure Search facets for efficiency, but automatically falls back to manual deduplication 
+
+    This tool retrieves unique documents by aggregating content blocks. It attempts to use
+    Azure Search facets for efficiency, but automatically falls back to manual deduplication
     if the document_id field is not marked as facetable in the index schema.
-    
+
     Returns document metadata including chunk counts and access control fields.
     Implements ToolProtocol for dependency injection.
     """

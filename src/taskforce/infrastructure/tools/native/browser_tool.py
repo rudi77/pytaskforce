@@ -20,6 +20,7 @@ import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.infrastructure.tools.native.url_validator import validate_url_for_ssrf
 
 logger = structlog.get_logger(__name__)
 
@@ -333,6 +334,12 @@ class BrowserTool(ToolProtocol):
         url = kwargs.get("url")
         if not url:
             return {"success": False, "error": "Action 'navigate' requires parameter: url"}
+
+        # SSRF protection: block navigation to private/internal networks
+        is_safe, ssrf_error = validate_url_for_ssrf(url)
+        if not is_safe:
+            return {"success": False, "error": ssrf_error}
+
         response = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
         return {
             "success": True,

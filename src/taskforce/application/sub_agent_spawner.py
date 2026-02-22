@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiofiles
 import structlog
@@ -17,13 +17,17 @@ from taskforce.core.domain.sub_agents import (
 )
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 
+if TYPE_CHECKING:
+    from taskforce.application.factory import AgentFactory
+    from taskforce.core.domain.lean_agent import LeanAgent as Agent
+
 
 class SubAgentSpawner(SubAgentSpawnerProtocol):
     """Spawn sub-agents using the AgentFactory."""
 
     def __init__(
         self,
-        agent_factory: AgentFactory,  # type: ignore[name-defined]
+        agent_factory: AgentFactory,
         *,
         profile: str = "dev",
         work_dir: str | None = None,
@@ -77,7 +81,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             error=None if success else result.final_message,
         )
 
-    async def _create_agent(self, spec: SubAgentSpec) -> Agent:  # type: ignore[name-defined]
+    async def _create_agent(self, spec: SubAgentSpec) -> Agent:
         custom_definition = spec.agent_definition or await self._load_custom_definition(spec)
         profile = spec.profile or self._profile
         work_dir = spec.work_dir or self._work_dir

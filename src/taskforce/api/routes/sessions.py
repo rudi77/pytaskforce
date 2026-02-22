@@ -28,13 +28,13 @@ async def list_sessions(
     """List all agent sessions."""
     try:
         agent = await factory.create_agent(profile=profile)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise _http_exception(
             status_code=404,
             code="profile_not_found",
             message=f"Profile not found: {profile}",
             details={"profile": profile},
-        )
+        ) from e
 
     try:
         sessions = await agent.state_manager.list_sessions()
@@ -70,13 +70,13 @@ async def get_session(
     """Get session details."""
     try:
         agent = await factory.create_agent(profile=profile)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise _http_exception(
             status_code=404,
             code="profile_not_found",
             message=f"Profile not found: {profile}",
             details={"profile": profile},
-        )
+        ) from e
 
     try:
         state = await agent.state_manager.load_state(session_id)
@@ -111,13 +111,13 @@ async def create_session(
     """Create a new session."""
     try:
         agent = await factory.create_agent(profile=profile)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise _http_exception(
             status_code=404,
             code="profile_not_found",
             message=f"Profile not found: {profile}",
             details={"profile": profile},
-        )
+        ) from e
 
     try:
         session_id = str(uuid.uuid4())

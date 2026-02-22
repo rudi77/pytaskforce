@@ -199,7 +199,7 @@ class LocationMetadata:
 class Chunk:
     """
     A chunk of content from a document.
-    
+
     Use Chunk.from_azure_search_result() to create instances from Azure Search API responses
     which contain @search.* fields. Use direct constructor for programmatic creation or when
     working with data that doesn't have the Azure Search specific fields.
@@ -229,12 +229,12 @@ class Chunk:
     def from_azure_search_result(cls, search_result: dict[str, Any]) -> 'Chunk':
         """
         Create a Chunk instance from Azure Search result JSON.
-        
+
         Handles the @search.* prefixed fields by mapping them to search_* attributes.
-        
+
         Args:
             search_result: Dictionary from Azure Search API response
-            
+
         Returns:
             Chunk instance with all fields populated
         """
@@ -273,9 +273,9 @@ class Chunk:
     def to_azure_search_dict(self) -> dict[str, Any]:
         """
         Convert Chunk instance back to Azure Search JSON format.
-        
+
         Maps search_* attributes back to @search.* keys and handles None values appropriately.
-        
+
         Returns:
             Dictionary in Azure Search result format
         """

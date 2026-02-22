@@ -69,11 +69,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourorg/pytaskforce"
-Repository = "https://github.com/yourorg/pytaskforce"
-Documentation = "https://github.com/yourorg/pytaskforce#readme"
-Issues = "https://github.com/yourorg/pytaskforce/issues"
-Changelog = "https://github.com/yourorg/pytaskforce/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/rudi77/pytaskforce"
+Repository = "https://github.com/rudi77/pytaskforce"
+Documentation = "https://github.com/rudi77/pytaskforce#readme"
+Issues = "https://github.com/rudi77/pytaskforce/issues"
 
 [project.scripts]
 taskforce = "taskforce.api.cli.main:app"
@@ -112,15 +111,6 @@ pdf = [
     "reportlab>=4.0.0",
     "pillow>=10.0.0",
 ]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=4.1",
-    "ruff>=0.1.0",
-    "black>=23.0",
-    "mypy>=1.7",
-    "pyinstaller>=6.0.0",
-]
 build = [
     "build>=1.0.0",
     "twine>=5.0.0",
@@ -131,9 +121,11 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.1",
+    "pytest-timeout>=2.2.0",
     "ruff>=0.1.0",
     "black>=23.0",
     "mypy>=1.7",
+    "types-PyYAML>=6.0",
     "pyinstaller>=6.0.0",
 ]
 
@@ -149,10 +141,12 @@ python_functions = ["test_*"]
 asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 addopts = [
     "--strict-markers",
     "--strict-config",
+    "--timeout=30",
     "--cov=taskforce",
     "--cov-report=term-missing",
     "--cov-report=html",
@@ -189,8 +183,8 @@ ignore = [
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
@@ -208,6 +202,13 @@ module = [
     "reportlab.*",
     "PIL.*",
     "playwright.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "taskforce.core.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
 
