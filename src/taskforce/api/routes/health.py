@@ -56,7 +56,7 @@ async def readiness_check() -> HealthResponse:
             code="not_ready",
             message="Tool registry unavailable",
             details=checks,
-        )
+        ) from e
 
     # Check config directory
     try:

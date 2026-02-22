@@ -8,6 +8,7 @@ Provides capabilities to read and extract information from multimedia files:
 """
 
 import base64
+import importlib.util
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -206,18 +207,12 @@ class MultimediaTool(ToolProtocol):
         """Read a PDF file and extract text content."""
         try:
             # Try PyPDF2 first (most common)
-            try:
-                from PyPDF2 import PdfReader
+            if importlib.util.find_spec("PyPDF2") is not None:
                 return await self._read_pdf_pypdf2(path, page_range, max_pages, metadata)
-            except ImportError:
-                pass
 
             # Try pdfplumber as fallback
-            try:
-                import pdfplumber
+            if importlib.util.find_spec("pdfplumber") is not None:
                 return await self._read_pdf_pdfplumber(path, page_range, max_pages, metadata)
-            except ImportError:
-                pass
 
             # No PDF library available
             return {

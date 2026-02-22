@@ -25,7 +25,7 @@ class SemanticSearchTool:
     1. Vector Search (Semantic meaning)
     2. Keyword Search (BM25 for exact matches)
     3. Semantic Reranking (L2 ranking for relevance)
-    
+
     It requires the index to have a vector field (e.g. 'content_embedding') and
     a semantic configuration to be set up in Azure.
     """

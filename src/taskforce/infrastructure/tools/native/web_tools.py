@@ -12,6 +12,7 @@ import aiohttp
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.infrastructure.tools.native.url_validator import validate_url_for_ssrf
 
 
 class WebSearchTool(ToolProtocol):
@@ -206,6 +207,11 @@ class WebFetchTool(ToolProtocol):
         """
         if not aiohttp:
             return {"success": False, "error": "aiohttp not installed"}
+
+        # SSRF protection: block requests to private/internal networks
+        is_safe, ssrf_error = validate_url_for_ssrf(url)
+        if not is_safe:
+            return {"success": False, "error": ssrf_error}
 
         try:
             async with aiohttp.ClientSession() as session:

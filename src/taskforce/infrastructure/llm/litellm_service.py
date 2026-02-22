@@ -91,15 +91,16 @@ class LiteLLMService:
     Supports any provider that LiteLLM supports through model string prefixes.
     Implements LLMProviderProtocol for dependency injection.
 
-    Configuration is loaded from a YAML file with model aliases, per-model
-    parameters, and retry policy. The provider is determined entirely by the
-    model string — no provider-specific code paths.
+    Configuration is loaded lazily from a YAML file on first use via an async
+    helper, avoiding synchronous file I/O in ``__init__``. Callers that access
+    config attributes (``models``, ``default_model``, etc.) before the first
+    async call will trigger a synchronous fallback load.
 
     Args:
         config_path: Path to YAML configuration file.
 
     Raises:
-        FileNotFoundError: If config file doesn't exist.
+        FileNotFoundError: If config file doesn't exist (on first access).
         ValueError: If config is invalid (empty or missing models section).
     """
 
@@ -107,23 +108,39 @@ class LiteLLMService:
         self, config_path: str = "src/taskforce_extensions/configs/llm_config.yaml"
     ) -> None:
         self.logger = structlog.get_logger(__name__)
-        self._load_config(config_path)
+        self._config_path: str = config_path
+        self._config_loaded: bool = False
 
-        self.logger.info(
-            "llm_service_initialized",
-            default_model=self.default_model,
-            model_aliases=list(self.models.keys()),
-        )
+        # Initialize attributes with defaults so that attribute access before
+        # async init still works (the lazy load in __getattr__ handles it).
+        self.default_model: str = "main"
+        self.models: dict[str, str] = {}
+        self.model_params: dict[str, dict[str, Any]] = {}
+        self.default_params: dict[str, Any] = {}
+        self.retry_policy: RetryPolicy = RetryPolicy()
+        self.logging_config: dict[str, Any] = {}
+        self.tracing_config: dict[str, Any] = {}
+        self.routing_config: dict[str, Any] = {}
 
-    def _load_config(self, config_path: str) -> None:
-        """Load and validate configuration from YAML file.
+        # Eagerly resolve and validate the config file path so that
+        # FileNotFoundError is raised immediately (preserving existing behavior).
+        self._resolved_config_path: Path = self._resolve_config_path(config_path)
+
+        # Synchronous fallback load for backward compatibility — existing callers
+        # construct the service and immediately access .models, .routing_config, etc.
+        self._load_config_sync(self._resolved_config_path)
+
+    def _resolve_config_path(self, config_path: str) -> Path:
+        """Resolve and validate the configuration file path.
 
         Args:
-            config_path: Path to YAML configuration file.
+            config_path: Raw path string from the caller.
+
+        Returns:
+            Resolved ``Path`` object pointing to an existing file.
 
         Raises:
-            FileNotFoundError: If config file doesn't exist.
-            ValueError: If config is empty or missing models section.
+            FileNotFoundError: If no matching config file is found.
         """
         config_file = Path(config_path)
 
@@ -141,21 +158,74 @@ class LiteLLMService:
         if not config_file.exists():
             raise FileNotFoundError(f"LLM config not found: {config_path}")
 
+        return config_file
+
+    def _load_config_sync(self, config_file: Path) -> None:
+        """Load configuration synchronously (fallback for non-async contexts).
+
+        This is called from ``__init__`` so that attribute access on a freshly
+        constructed instance works immediately.  Prefer ``_ensure_config_loaded``
+        in async code paths.
+
+        Args:
+            config_file: Validated path to the YAML config file.
+
+        Raises:
+            ValueError: If config is empty or missing the ``models`` section.
+        """
         with open(config_file, encoding="utf-8") as f:
             config = yaml.safe_load(f)
+        self._apply_config(config)
 
+    async def _load_config_async(self) -> None:
+        """Load configuration asynchronously using ``aiofiles``.
+
+        Reads the YAML file without blocking the event loop and applies the
+        parsed configuration via ``_apply_config``.
+        """
+        async with aiofiles.open(self._resolved_config_path, encoding="utf-8") as f:
+            raw = await f.read()
+        config = yaml.safe_load(raw)
+        self._apply_config(config)
+
+    def _apply_config(self, config: Any) -> None:
+        """Validate and apply a parsed YAML config dict to instance attributes.
+
+        Args:
+            config: Parsed YAML dictionary (may be ``None`` for empty files).
+
+        Raises:
+            ValueError: If config is empty or missing the ``models`` section.
+        """
         if config is None:
-            raise ValueError(f"Config file is empty or invalid: {config_path}")
+            raise ValueError(f"Config file is empty or invalid: {self._config_path}")
 
-        self.default_model: str = config.get("default_model", "main")
-        self.models: dict[str, str] = config.get("models", {})
-        self.model_params: dict[str, dict[str, Any]] = config.get("model_params", {})
-        self.default_params: dict[str, Any] = config.get("default_params", {})
+        self.default_model = config.get("default_model", "main")
+        self.models = config.get("models", {})
+        self.model_params = config.get("model_params", {})
+        self.default_params = config.get("default_params", {})
 
         if not self.models:
             raise ValueError("Config must define at least one model in 'models' section")
 
-        # Retry policy
+        self._apply_retry_policy(config)
+        self.logging_config = config.get("logging", {})
+        self.tracing_config = config.get("tracing", {})
+        self.routing_config = config.get("routing", {})
+        self._config_loaded = True
+
+        self.logger.info(
+            "llm_service_initialized",
+            default_model=self.default_model,
+            model_aliases=list(self.models.keys()),
+        )
+
+    def _apply_retry_policy(self, config: dict[str, Any]) -> None:
+        """Extract and apply retry policy from config.
+
+        Args:
+            config: Parsed YAML configuration dictionary.
+        """
         retry_cfg = config.get("retry", config.get("retry_policy", {}))
         self.retry_policy = RetryPolicy(
             max_attempts=retry_cfg.get("max_attempts", 3),
@@ -163,14 +233,13 @@ class LiteLLMService:
             timeout=retry_cfg.get("timeout", 60),
         )
 
-        # Logging preferences
-        self.logging_config: dict[str, Any] = config.get("logging", {})
+    async def _ensure_config_loaded(self) -> None:
+        """Ensure configuration is loaded, using async I/O if not yet loaded.
 
-        # Tracing configuration
-        self.tracing_config: dict[str, Any] = config.get("tracing", {})
-
-        # Routing configuration (consumed by LLMRouter wrapper)
-        self.routing_config: dict[str, Any] = config.get("routing", {})
+        Safe to call multiple times; only the first call performs I/O.
+        """
+        if not self._config_loaded:
+            await self._load_config_async()
 
     def _resolve_model(self, model_alias: str | None) -> str:
         """Resolve model alias to LiteLLM model string.

@@ -477,7 +477,7 @@ async def execute_mission(
             code=e.code,
             message=str(e),
             details=e.details,
-        )
+        ) from e
     except FileNotFoundError as e:
         msg = str(e)
         # Distinguish profile not found from agent not found
@@ -486,27 +486,27 @@ async def execute_mission(
                 status_code=404,
                 code="profile_not_found",
                 message=msg,
-            )
+            ) from e
         # agent_id not found -> 404
         raise _http_exception(
             status_code=404,
             code="not_found",
             message=msg,
-        )
+        ) from e
     except ValueError as e:
         # Invalid agent definition -> 400
         raise _http_exception(
             status_code=400,
             code="invalid_request",
             message=str(e),
-        )
+        ) from e
     except Exception as e:
         # Other errors -> 500
         raise _http_exception(
             status_code=500,
             code="internal_server_error",
             message=str(e),
-        )
+        ) from e
 
 
 @router.post(

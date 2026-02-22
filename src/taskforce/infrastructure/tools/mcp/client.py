@@ -22,11 +22,11 @@ except ImportError as e:
 def _patch_mcp_validation():
     """
     Monkey-patch MCP ClientSession to be more lenient with tool result validation.
-    
+
     Some MCP servers (like @modelcontextprotocol/server-memory) return structured
-    content that violates their own self-declared outputSchema (e.g., including 
+    content that violates their own self-declared outputSchema (e.g., including
     additional properties like 'type' when 'additionalProperties: false' is set).
-    
+
     This patch catches these validation errors and allows the tool execution
     to proceed, since the raw result is still available and useful.
     """

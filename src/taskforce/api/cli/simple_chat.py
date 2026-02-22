@@ -86,7 +86,7 @@ class SimpleChatRunner:
         """Handle slash commands. Returns True if we should exit."""
         parts = command.lstrip("/").split(maxsplit=1)
         cmd_name = parts[0].lower()
-        arguments = parts[1] if len(parts) > 1 else ""
+        parts[1] if len(parts) > 1 else ""
 
         if cmd_name in ["help", "h"]:
             self._show_help()
@@ -144,10 +144,7 @@ class SimpleChatRunner:
 
     def _list_plugins(self) -> None:
         """List available plugin agents."""
-        plugins = [
-            agent
-            for agent in self.agent_registry.list_all(sources=[AgentSource.PLUGIN])
-        ]
+        plugins = list(self.agent_registry.list_all(sources=[AgentSource.PLUGIN]))
         if not plugins:
             self._print_system("No plugin agents found.", style="info")
             self._print_system(
