@@ -1,12 +1,21 @@
 import os
-from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 from pydantic import BaseModel
 
-from taskforce.api.schemas.errors import ErrorResponse
+from taskforce.api.errors import http_exception as _http_exception
 
 router = APIRouter()
+
+
+def _get_version() -> str:
+    """Read version from package metadata."""
+    try:
+        from importlib.metadata import version
+
+        return version("taskforce")
+    except Exception:
+        return "0.0.0-dev"
 
 
 class HealthResponse(BaseModel):
@@ -17,23 +26,10 @@ class HealthResponse(BaseModel):
     checks: dict[str, str] | None = None
 
 
-def _http_exception(
-    status_code: int, code: str, message: str, details: dict[str, Any] | None = None
-) -> HTTPException:
-    """Build standardized HTTPException with ErrorResponse payload."""
-    return HTTPException(
-        status_code=status_code,
-        detail=ErrorResponse(
-            code=code, message=message, details=details, detail=message
-        ).model_dump(exclude_none=True),
-        headers={"X-Taskforce-Error": "1"},
-    )
-
-
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Liveness probe - is the service running?"""
-    return HealthResponse(status="healthy", version="1.0.0")
+    return HealthResponse(status="healthy", version=_get_version())
 
 
 @router.get("/health/ready", response_model=HealthResponse)
@@ -56,10 +52,10 @@ async def readiness_check() -> HealthResponse:
     except Exception as e:
         checks["tool_registry"] = f"failed: {e}"
         raise _http_exception(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "not_ready",
-            "Tool registry unavailable",
-            checks,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="not_ready",
+            message="Tool registry unavailable",
+            details=checks,
         )
 
     # Check config directory
@@ -83,5 +79,5 @@ async def readiness_check() -> HealthResponse:
     )
     checks["llm_api_key"] = "configured" if llm_key_set else "not configured"
 
-    return HealthResponse(status="ready", version="1.0.0", checks=checks)
+    return HealthResponse(status="ready", version=_get_version(), checks=checks)
 

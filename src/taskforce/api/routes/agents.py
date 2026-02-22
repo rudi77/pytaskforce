@@ -22,10 +22,11 @@ Clean Architecture Notes:
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 
 from taskforce.api.dependencies import get_agent_registry
+from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.agent_schemas import (
     AgentListResponse,
     CustomAgentCreate,
@@ -34,7 +35,6 @@ from taskforce.api.schemas.agent_schemas import (
     PluginAgentResponse,
     ProfileAgentResponse,
 )
-from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.application.tool_registry import get_tool_registry
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
@@ -43,23 +43,6 @@ from taskforce.core.domain.agent_models import (
 )
 
 router = APIRouter()
-
-
-def _http_exception(
-    *,
-    status_code: int,
-    code: str,
-    message: str,
-    details: dict[str, Any] | None = None,
-) -> HTTPException:
-    """Build standardized HTTPException with ErrorResponse payload."""
-    return HTTPException(
-        status_code=status_code,
-        detail=ErrorResponse(
-            code=code, message=message, details=details, detail=message
-        ).model_dump(exclude_none=True),
-        headers={"X-Taskforce-Error": "1"},
-    )
 
 
 def _validate_tool_allowlists(

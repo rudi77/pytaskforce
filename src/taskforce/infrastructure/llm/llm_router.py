@@ -160,13 +160,12 @@ class LLMRouter:
                     logger.warning("llm_router.invalid_rule", condition=cond)
 
         # No rule matched — use default
-        resolved = model_hint if model_hint and model_hint in self.known_aliases else self.default_model
         logger.debug(
             "llm_router.no_rule_matched",
             model_hint=model_hint,
-            fallback=resolved,
+            fallback=self.default_model,
         )
-        return resolved
+        return self.default_model
 
     # ── LLMProviderProtocol implementation ──────────────────────────────
 

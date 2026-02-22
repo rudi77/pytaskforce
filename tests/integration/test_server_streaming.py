@@ -134,7 +134,7 @@ class TestServerSSEStreaming:
         with client.stream(
             "POST",
             "/api/v1/execute/stream",
-            json={"mission": "Test", "profile": "coding_agent", "lean": True},
+            json={"mission": "Test", "profile": "coding_agent"},
         ) as response:
             events = collect_sse_events(response, max_events=len(mock_updates))
 
@@ -162,7 +162,7 @@ class TestServerSSEStreaming:
         with client.stream(
             "POST",
             "/api/v1/execute/stream",
-            json={"mission": "Search for data", "profile": "coding_agent", "lean": True},
+            json={"mission": "Search for data", "profile": "coding_agent"},
         ) as response:
             events = collect_sse_events(response, max_events=len(mock_updates))
 
@@ -193,7 +193,7 @@ class TestServerSSEStreaming:
         with client.stream(
             "POST",
             "/api/v1/execute/stream",
-            json={"mission": "Say hello", "profile": "coding_agent", "lean": True},
+            json={"mission": "Say hello", "profile": "coding_agent"},
         ) as response:
             events = collect_sse_events(response, max_events=len(mock_updates))
 
@@ -218,7 +218,7 @@ class TestServerSSEStreaming:
         with client.stream(
             "POST",
             "/api/v1/execute/stream",
-            json={"mission": "Answer question", "profile": "coding_agent", "lean": True},
+            json={"mission": "Answer question", "profile": "coding_agent"},
         ) as response:
             events = collect_sse_events(response, max_events=len(mock_updates))
 

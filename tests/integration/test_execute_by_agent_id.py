@@ -85,7 +85,7 @@ def test_execute_sync_with_agent_id_success(app, client, mock_custom_agent):
     call_kwargs = mock_executor.execute_mission.call_args.kwargs
     assert call_kwargs["agent_id"] == "invoice-extractor"
     assert call_kwargs["mission"] == "Extract invoice fields from invoice.pdf"
-    assert call_kwargs["profile"] == "dev"
+    assert call_kwargs["profile"] == "coding_agent"
 
 
 def test_execute_sync_agent_id_not_found(app, client):
@@ -152,7 +152,6 @@ def test_execute_sync_backward_compatibility_without_agent_id(app, client):
             "mission": "Test mission",
             "profile": "coding_agent",
             # No agent_id - uses legacy path
-            "lean": False,
         },
     )
 
@@ -260,8 +259,8 @@ def test_execute_stream_agent_id_not_found(app, client):
     assert error_event["details"]["status_code"] == 404
 
 
-def test_execute_with_agent_id_ignores_lean_flag(app, client, mock_custom_agent):
-    """Test that agent_id takes priority over lean flag."""
+def test_execute_with_agent_id(app, client, mock_custom_agent):
+    """Test that agent_id is passed to executor."""
     mock_executor = AsyncMock()
     mock_executor.execute_mission = AsyncMock(
         return_value=ExecutionResult(
@@ -278,13 +277,12 @@ def test_execute_with_agent_id_ignores_lean_flag(app, client, mock_custom_agent)
             "mission": "Test",
             "profile": "coding_agent",
             "agent_id": "invoice-extractor",
-            "lean": False,  # Should be ignored
         },
     )
 
     assert response.status_code == 200
 
-    # Verify agent_id was passed (lean flag ignored)
+    # Verify agent_id was passed
     call_kwargs = mock_executor.execute_mission.call_args.kwargs
     assert call_kwargs["agent_id"] == "invoice-extractor"
 

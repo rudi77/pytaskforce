@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from taskforce.api.dependencies import get_gateway, get_inbound_adapters
+from taskforce.api.errors import http_exception as _error_response
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.gateway import (
     GatewayOptions,
@@ -170,21 +171,6 @@ def _build_user_context(request: GatewayMessageRequest) -> dict[str, Any] | None
     }
 
 
-def _error_response(
-    status_code: int, code: str, message: str, details: dict[str, Any] | None = None
-) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail=ErrorResponse(
-            code=code,
-            message=message,
-            details=details,
-            detail=message,
-        ).model_dump(exclude_none=True),
-        headers={"X-Taskforce-Error": "1"},
-    )
-
-
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
@@ -208,9 +194,9 @@ async def handle_message(
     """
     if not request.message.strip():
         raise _error_response(
-            400,
-            "invalid_request",
-            "Message content must not be empty",
+            status_code=400,
+            code="invalid_request",
+            message="Message content must not be empty",
             details={"field": "message"},
         )
 
@@ -261,9 +247,9 @@ async def handle_webhook(
     adapter = inbound_adapters.get(channel)
     if not adapter:
         raise _error_response(
-            400,
-            "invalid_request",
-            f"No inbound adapter for channel '{channel}'",
+            status_code=400,
+            code="invalid_request",
+            message=f"No inbound adapter for channel '{channel}'",
             details={"channel": channel},
         )
 
@@ -272,9 +258,9 @@ async def handle_webhook(
 
     if not adapter.verify_signature(raw_body=raw_body, headers=headers):
         raise _error_response(
-            401,
-            "unauthorized",
-            "Webhook signature verification failed",
+            status_code=401,
+            code="unauthorized",
+            message="Webhook signature verification failed",
             details={"channel": channel},
         )
 
@@ -283,9 +269,9 @@ async def handle_webhook(
         extracted = adapter.extract_message(raw_payload)
     except (ValueError, KeyError) as exc:
         raise _error_response(
-            400,
-            "invalid_request",
-            f"Failed to parse webhook payload: {exc}",
+            status_code=400,
+            code="invalid_request",
+            message=f"Failed to parse webhook payload: {exc}",
             details={"channel": channel},
         ) from exc
 
@@ -319,9 +305,9 @@ async def send_notification(
     """Send a proactive push notification to a registered recipient."""
     if not request.message.strip():
         raise _error_response(
-            400,
-            "invalid_request",
-            "Notification message must not be empty",
+            status_code=400,
+            code="invalid_request",
+            message="Notification message must not be empty",
             details={"field": "message"},
         )
 
@@ -354,9 +340,9 @@ async def broadcast(
     """Broadcast a message to all registered recipients on a channel."""
     if not request.message.strip():
         raise _error_response(
-            400,
-            "invalid_request",
-            "Broadcast message must not be empty",
+            status_code=400,
+            code="invalid_request",
+            message="Broadcast message must not be empty",
             details={"field": "message"},
         )
 

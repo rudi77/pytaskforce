@@ -10,23 +10,22 @@ Endpoints:
 - POST /execute/stream - Streaming mission execution via SSE
 
 Both endpoints support:
-- Legacy Agent (ReAct loop with TodoList planning)
-- Agent (native tool calling with PlannerTool) via `lean: true`
+- Agent (native tool calling with PlannerTool)
 - RAG-enabled execution with user context filtering
 """
 
 import json
 from dataclasses import asdict
-from datetime import datetime
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Body
+import structlog
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
-from fastapi import Depends
-
 from taskforce.api.dependencies import get_executor
+from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.errors import (
@@ -37,6 +36,8 @@ from taskforce.core.domain.errors import (
     TaskforceError,
     ToolError,
 )
+
+_stream_logger = structlog.get_logger("taskforce.api.routes.execution")
 
 router = APIRouter()
 
@@ -155,7 +156,7 @@ STREAM_RESPONSE_EXAMPLES = {
             "data: {\"timestamp\":\"2025-01-02T12:00:00.123456\","
             "\"event_type\":\"started\",\"message\":\"Starting\","
             "\"details\":{\"session_id\":\"550e8400-...\","
-            "\"profile\":\"coding_agent\",\"lean\":true}}\n\n"
+            "\"profile\":\"coding_agent\"}}\n\n"
         ),
     },
     "final_answer": {
@@ -178,20 +179,6 @@ STREAM_RESPONSE_EXAMPLES = {
 }
 
 
-def _build_error_payload(
-    *,
-    code: str,
-    message: str,
-    details: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return ErrorResponse(
-        code=code,
-        message=message,
-        details=details,
-        detail=message,
-    ).model_dump(exclude_none=True)
-
-
 def _taskforce_status_code(error: TaskforceError) -> int:
     if error.status_code is not None:
         return error.status_code
@@ -208,24 +195,6 @@ def _taskforce_status_code(error: TaskforceError) -> int:
     return 500
 
 
-def _http_exception(
-    *,
-    status_code: int,
-    code: str,
-    message: str,
-    details: dict[str, Any] | None = None,
-) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail=_build_error_payload(
-            code=code,
-            message=message,
-            details=details,
-        ),
-        headers={"X-Taskforce-Error": "1"},
-    )
-
-
 class ExecuteMissionRequest(BaseModel):
     """Request body for mission execution.
 
@@ -240,7 +209,7 @@ class ExecuteMissionRequest(BaseModel):
         user_id: User identifier for RAG security filtering (optional).
         org_id: Organization identifier for RAG security filtering.
         scope: Access scope for RAG security filtering (optional).
-        lean: Deprecated. Agent is now always used.
+        profile: Agent profile to use (default: "dev").
         planning_strategy: Optional Agent planning strategy override.
         planning_strategy_params: Optional parameters for planning strategy.
 
@@ -285,11 +254,9 @@ class ExecuteMissionRequest(BaseModel):
         default=None,
         description="Access scope for RAG security filtering."
     )
-    lean: bool = Field(
-        default=True,
-        description=(
-            "Deprecated: Agent is now always used. This field is ignored."
-        ),
+    profile: str = Field(
+        default="dev",
+        description="Agent profile to use (e.g., dev, coding_agent, rag_agent).",
     )
     agent_id: Optional[str] = Field(
         default=None,
@@ -488,7 +455,7 @@ async def execute_mission(
         # when agent_id is provided. We pass agent_id and let the executor handle it.
         result = await executor.execute_mission(
             mission=request.mission,
-            profile="dev",
+            profile=request.profile,
             session_id=request.session_id,
             conversation_history=request.conversation_history,
             user_context=user_context,
@@ -779,7 +746,7 @@ async def execute_mission_stream(
         const response = await fetch('/api/v1/execute/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: 'Find AI news', lean: true })
+            body: JSON.stringify({ mission: 'Find AI news' })
         });
 
         const reader = response.body.getReader();
@@ -826,7 +793,7 @@ async def execute_mission_stream(
             async with client.stream(
                 'POST',
                 'http://localhost:8000/api/v1/execute/stream',
-                json={'mission': 'Find AI news', 'lean': True}
+                json={'mission': 'Find AI news'}
             ) as response:
                 async for line in response.aiter_lines():
                     if line.startswith('data: '):
@@ -848,7 +815,7 @@ async def execute_mission_stream(
         try:
             async for update in executor.execute_mission_streaming(
                 mission=request.mission,
-                profile="dev",
+                profile=request.profile,
                 session_id=request.session_id,
                 conversation_history=request.conversation_history,
                 user_context=user_context,
@@ -861,9 +828,7 @@ async def execute_mission_stream(
                 # Serialize dataclass to JSON, handling datetime
                 # Log final_answer events for debugging
                 if update.event_type == EventType.FINAL_ANSWER.value:
-                    import structlog
-                    logger = structlog.get_logger()
-                    logger.info(
+                    _stream_logger.info(
                         "api.final_answer_event",
                         event_type=update.event_type,
                         message=update.message,
@@ -875,7 +840,7 @@ async def execute_mission_stream(
             # Structured Taskforce errors (LLMError, ToolError, etc.)
             error_data = json.dumps(
                 {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "event_type": EventType.ERROR.value,
                     "message": f"Execution failed: {e}",
                     "details": {
@@ -893,7 +858,7 @@ async def execute_mission_stream(
             if msg.startswith("Profile not found:"):
                 error_data = json.dumps(
                     {
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                         "event_type": EventType.ERROR.value,
                         "message": f"Profile not found: {msg}",
                         "details": {
@@ -908,7 +873,7 @@ async def execute_mission_stream(
                 # agent_id not found -> send error event
                 error_data = json.dumps(
                     {
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                         "event_type": EventType.ERROR.value,
                         "message": f"Agent not found: {msg}",
                         "details": {
@@ -923,7 +888,7 @@ async def execute_mission_stream(
             # Invalid agent definition -> send error event
             error_data = json.dumps(
                 {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "event_type": EventType.ERROR.value,
                     "message": f"Invalid agent definition: {str(e)}",
                     "details": {
@@ -938,7 +903,7 @@ async def execute_mission_stream(
             # Other errors -> send error event
             error_data = json.dumps(
                 {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "event_type": EventType.ERROR.value,
                     "message": f"Execution failed: {str(e)}",
                     "details": {
