@@ -225,14 +225,15 @@ class InfrastructureBuilder:
 
             config_path = str(resolved_path)
 
-        provider: LLMProviderProtocol = LiteLLMService(config_path=config_path)
+        provider = LiteLLMService(config_path=config_path)
 
         # Wrap with LLMRouter for dynamic model routing.
+        # Routing config lives in llm_config.yaml (alongside model aliases).
         # Always wraps: when no routing rules are configured the router
         # acts as a transparent pass-through that maps strategy phase
         # hints (e.g. "reasoning", "planning") back to the default model.
-        routing_config = llm_config.get("routing", {})
-        default_model = llm_config.get("default_model", "main")
+        routing_config = provider.routing_config
+        default_model = llm_config.get("default_model", provider.default_model)
         return build_llm_router(provider, routing_config, default_model)
 
     # -------------------------------------------------------------------------

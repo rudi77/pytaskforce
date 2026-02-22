@@ -76,7 +76,7 @@ src/taskforce/
 │   └── utils/                 # Path and time utilities
 │
 ├── infrastructure/            # LAYER 2: External Integrations
-│   ├── llm/                   # LiteLLM service (multi-provider: OpenAI, Anthropic, Google, Azure, etc.)
+│   ├── llm/                   # LiteLLM service + LLM Router (multi-provider, dynamic model routing)
 │   ├── persistence/           # File state manager, agent registry
 │   ├── memory/                # File-based memory store
 │   ├── cache/                 # Tool result caching
@@ -321,6 +321,39 @@ All status values, event types, and action constants are defined in `core/domain
 Execution API errors use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header.
 
 Exception types live in `src/taskforce/core/domain/errors.py` (`TaskforceError`, `LLMError`, `ToolError`, etc.). Infrastructure tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
+
+### 7. Dynamic LLM Routing
+
+The **LLM Router** (`infrastructure/llm/llm_router.py`) wraps `LLMProviderProtocol` and routes each LLM call to a different model based on configurable rules. Planning strategies emit **phase hints** as the `model` parameter:
+
+| Phase Hint | Emitted By | Typical Model |
+|------------|-----------|---------------|
+| `planning` | `_generate_plan()` | Strong reasoning model |
+| `reasoning` | `NativeReActStrategy` main loop | Strong reasoning model |
+| `acting` | `PlanAndExecuteStrategy`, `SparStrategy` act phase | Standard model |
+| `reflecting` | `SparStrategy` reflect / `_run_reflection_cycle()` | Strong reasoning model |
+| `summarizing` | `_stream_final_response()` | Fast/cheap model |
+
+Routing rules are configured in `llm_config.yaml` (alongside model aliases):
+
+```yaml
+routing:
+  enabled: true
+  default_model: main
+  rules:
+    - condition: "hint:planning"
+      model: powerful
+    - condition: "hint:summarizing"
+      model: fast
+    - condition: has_tools
+      model: main
+```
+
+When routing is disabled (default), the router transparently maps all hints back to `default_model` — fully backward-compatible.
+
+**Implementation:** `LLMRouter` (Decorator pattern) → `LiteLLMService` → LiteLLM → Provider APIs
+
+**ADR:** `docs/adr/adr-012-dynamic-llm-selection.md`
 
 ---
 
@@ -1177,6 +1210,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
 - `src/taskforce/infrastructure/persistence/file_agent_registry.py` - File-based agent registry
 - `src/taskforce/infrastructure/llm/litellm_service.py` - Unified LLM service (multi-provider via LiteLLM)
+- `src/taskforce/infrastructure/llm/llm_router.py` - LLM Router for dynamic per-call model selection (Decorator pattern)
 - `src/taskforce/infrastructure/llm/openai_service.py` - Backward-compatible alias (imports LiteLLMService)
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
@@ -1258,7 +1292,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - **Plugin System:** `docs/plugins.md`
 - **Skills (unified):** `docs/features/skills.md` (context/prompt/agent types, slash-name invocation)
 - **C4 Diagrams:** `docs/architecture/c4/` (PlantUML: system context, container, component-level diagrams per layer)
-- **ADRs:** `docs/adr/index.md` (11 ADRs: uv, clean architecture, enterprise, multi-agent, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler, unified skills system)
+- **ADRs:** `docs/adr/index.md` (12 ADRs: uv, clean architecture, enterprise, multi-agent, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler, unified skills system, dynamic LLM selection)
 - **Epics:** `docs/epics/index.md` (20+ epic planning documents)
 - **PRD:** `docs/prd/index.md`
 - **Stories:** `docs/stories/`
