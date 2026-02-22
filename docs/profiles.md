@@ -52,6 +52,64 @@ orchestration:
 
 The `--auto-epic` / `--no-auto-epic` CLI flag overrides the profile setting per invocation.
 
+## Dynamic LLM Routing
+
+Profiles can configure dynamic LLM routing to use different models for
+different agent phases. For example, use a powerful reasoning model for
+planning and reflection, and a fast/cheap model for summarization.
+
+The LLM Router wraps the LLM provider and intercepts each call, selecting
+the appropriate model based on configurable rules. Planning strategies emit
+phase hints (`planning`, `reasoning`, `acting`, `reflecting`, `summarizing`)
+that the router matches against.
+
+```yaml
+llm:
+  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  default_model: main
+
+  routing:
+    enabled: true
+    default_model: main          # fallback when no rule matches
+    rules:
+      # Phase-hint rules (emitted by planning strategies)
+      - condition: "hint:planning"
+        model: powerful           # strong model for task decomposition
+      - condition: "hint:reasoning"
+        model: powerful           # strong model for ReAct loop reasoning
+      - condition: "hint:reflecting"
+        model: powerful           # strong model for SPAR self-critique
+      - condition: "hint:acting"
+        model: main               # standard model for plan step execution
+      - condition: "hint:summarizing"
+        model: fast               # cheap model for final answer synthesis
+
+      # Context-based rules
+      - condition: "message_count > 20"
+        model: powerful           # use strong model for long conversations
+      - condition: has_tools
+        model: main               # tool-calling steps
+      - condition: no_tools
+        model: fast               # no-tool calls (simple generation)
+```
+
+**Rule evaluation order:** First matching rule wins. Rules are evaluated
+top-to-bottom. If no rule matches, `routing.default_model` is used.
+
+**Supported conditions:**
+
+| Condition | Matches when |
+|-----------|-------------|
+| `hint:<name>` | Strategy passes `<name>` as the model parameter |
+| `has_tools` | Tools list is non-empty |
+| `no_tools` | Tools list is empty or None |
+| `message_count > N` | Conversation has more than N messages |
+
+**Without routing:** When `routing.enabled` is `false` or omitted, phase
+hints are silently mapped back to `default_model`. No behavior change.
+
+**See:** [ADR-012](adr/adr-012-dynamic-llm-selection.md) for design rationale.
+
 ## ⏱ Runtime Tracking (Heartbeats & Checkpoints)
 
 Profiles can enable runtime tracking to support long-running, recoverable sessions:

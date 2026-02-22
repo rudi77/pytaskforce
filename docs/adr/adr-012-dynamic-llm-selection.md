@@ -1,6 +1,6 @@
 # ADR-012: Dynamic LLM Selection per Agent Step
 
-**Status:** Proposed
+**Status:** Accepted (Approach 3 implemented)
 **Date:** 2026-02-22
 **Deciders:** Team
 **Context:** Taskforce multi-agent orchestration framework

@@ -176,13 +176,17 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
 
 
 async def _generate_plan(agent: Agent, mission: str, logger: LoggerProtocol) -> list[str]:
-    """Generate plan steps via LLM."""
+    """Generate plan steps via LLM.
+
+    Passes ``"planning"`` as the model hint so that an LLMRouter (if active)
+    can route this call to a model suited for task decomposition.
+    """
     result = await agent.llm_provider.complete(
         messages=[
             {"role": MessageRole.SYSTEM.value, "content": agent.system_prompt},
             {"role": MessageRole.USER.value, "content": f"{mission}\n\nCreate a concise step-by-step plan. Return ONLY a JSON array."},
         ],
-        model=agent.model_alias, tools=None, tool_choice="none", temperature=0.1,
+        model="planning", tools=None, tool_choice="none", temperature=0.1,
     )
     if not result.get("success"):
         return []
@@ -279,6 +283,9 @@ async def _stream_final_response(
 ) -> AsyncIterator[StreamEvent]:
     """Generate a final-answer LLM call, streaming when possible.
 
+    Passes ``"summarizing"`` as the model hint so that an LLMRouter
+    can route this to a fast/cheap model.
+
     Yields :data:`EventType.LLM_TOKEN`, :data:`EventType.TOKEN_USAGE`,
     and :data:`EventType.FINAL_ANSWER` events.
     """
@@ -290,7 +297,7 @@ async def _stream_final_response(
     final = ""
     if hasattr(agent.llm_provider, "complete_stream"):
         async for chunk in agent.llm_provider.complete_stream(
-            messages=messages, model=agent.model_alias,
+            messages=messages, model="summarizing",
             tools=None, tool_choice="none", temperature=0.2,
         ):
             if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
@@ -300,7 +307,7 @@ async def _stream_final_response(
                 yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=chunk.get("usage", {}))
     else:
         r = await agent.llm_provider.complete(
-            messages=messages, model=agent.model_alias,
+            messages=messages, model="summarizing",
             tools=None, tool_choice="none", temperature=0.2,
         )
         final = r.get("content", "") if r.get("success") else ""
@@ -481,7 +488,7 @@ class NativeReActStrategy:
                 tc_acc, content_acc = {}, ""
                 try:
                     async for chunk in agent.llm_provider.complete_stream(
-                        messages=messages, model=agent.model_alias, tools=agent._openai_tools, tool_choice="auto", temperature=0.2
+                        messages=messages, model="reasoning", tools=agent._openai_tools, tool_choice="auto", temperature=0.2
                     ):
                         t = chunk.get("type")
                         if t == LLMStreamEventType.TOKEN.value and chunk.get("content"):
@@ -506,7 +513,7 @@ class NativeReActStrategy:
                 else:
                     content = content_acc
             else:
-                result = await agent.llm_provider.complete(messages=messages, model=agent.model_alias, tools=agent._openai_tools, tool_choice="auto", temperature=0.2)
+                result = await agent.llm_provider.complete(messages=messages, model="reasoning", tools=agent._openai_tools, tool_choice="auto", temperature=0.2)
                 if result.get("usage"):
                     yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"])
                 if not result.get("success"):
@@ -595,7 +602,7 @@ class PlanAndExecuteStrategy:
                 messages[0] = {"role": MessageRole.SYSTEM.value, "content": agent._build_system_prompt(mission=mission, state=state, messages=messages)}
                 messages.append({"role": MessageRole.USER.value, "content": f"Execute step {idx}: {desc}\nCall tools or respond when done."})
 
-                result = await agent.llm_provider.complete(messages=messages, model=agent.model_alias, tools=agent._openai_tools, tool_choice="auto", temperature=0.2)
+                result = await agent.llm_provider.complete(messages=messages, model="acting", tools=agent._openai_tools, tool_choice="auto", temperature=0.2)
                 if result.get("usage"):
                     yield StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"])
 
@@ -820,7 +827,10 @@ async def _run_spar_action(
     plan_step_idx: int,
     plan_iteration: int,
 ) -> tuple[bool, bool, bool, list[StreamEvent]]:
-    """Run the Act phase for a single plan step."""
+    """Run the Act phase for a single plan step.
+
+    Passes ``"acting"`` as the model hint for LLMRouter routing.
+    """
     events: list[StreamEvent] = []
     messages.append({
         "role": MessageRole.USER.value,
@@ -828,7 +838,7 @@ async def _run_spar_action(
     })
     result = await agent.llm_provider.complete(
         messages=messages,
-        model=agent.model_alias,
+        model="acting",
         tools=agent._openai_tools,
         tool_choice="auto",
         temperature=0.2,
@@ -944,14 +954,18 @@ async def _run_reflection_cycle(
     plan_iteration: int | None,
     max_reflections: int,
 ) -> tuple[bool, bool, list[StreamEvent]]:
-    """Execute reflection with optional tool calls."""
+    """Execute reflection with optional tool calls.
+
+    Passes ``"reflecting"`` as the model hint so that an LLMRouter
+    can route reflection calls to a strong reasoning model.
+    """
     events: list[StreamEvent] = []
     used_tools = False
     for _ in range(max_reflections):
         messages.append({"role": MessageRole.USER.value, "content": prompt})
         result = await agent.llm_provider.complete(
             messages=messages,
-            model=agent.model_alias,
+            model="reflecting",
             tools=agent._openai_tools,
             tool_choice="auto",
             temperature=0.2,
