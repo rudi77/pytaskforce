@@ -1,10 +1,11 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
+from taskforce.api.dependencies import get_executor
 from taskforce.api.server import create_app
 from taskforce.core.domain.errors import (
     CancelledError,
@@ -16,8 +17,14 @@ from taskforce.core.domain.errors import (
 
 
 @pytest.fixture
-def client():
-    app = create_app()
+def app():
+    application = create_app()
+    yield application
+    application.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(app):
     return TestClient(app)
 
 
@@ -92,19 +99,21 @@ def _assert_error_response(
     ],
 )
 def test_execute_returns_standard_error_schema(
+    app,
     client,
     error,
     status_code,
     code,
     details,
 ):
-    with patch("taskforce.api.routes.execution.executor") as mock_executor:
-        mock_executor.execute_mission = AsyncMock(side_effect=error)
+    mock_executor = AsyncMock()
+    mock_executor.execute_mission = AsyncMock(side_effect=error)
+    app.dependency_overrides[get_executor] = lambda: mock_executor
 
-        response = client.post(
-            "/api/v1/execute",
-            json={"mission": "Test", "profile": "coding_agent"},
-        )
+    response = client.post(
+        "/api/v1/execute",
+        json={"mission": "Test", "profile": "coding_agent"},
+    )
 
     _assert_error_response(
         response,
@@ -117,16 +126,17 @@ def test_execute_returns_standard_error_schema(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("lean", [False, True])
-def test_execute_unknown_error_preserves_detail(client, lean):
-    with patch("taskforce.api.routes.execution.executor") as mock_executor:
-        mock_executor.execute_mission = AsyncMock(
-            side_effect=RuntimeError("Unexpected failure")
-        )
+def test_execute_unknown_error_preserves_detail(app, client, lean):
+    mock_executor = AsyncMock()
+    mock_executor.execute_mission = AsyncMock(
+        side_effect=RuntimeError("Unexpected failure")
+    )
+    app.dependency_overrides[get_executor] = lambda: mock_executor
 
-        response = client.post(
-            "/api/v1/execute",
-            json={"mission": "Test", "profile": "coding_agent", "lean": lean},
-        )
+    response = client.post(
+        "/api/v1/execute",
+        json={"mission": "Test", "profile": "coding_agent", "lean": lean},
+    )
 
     _assert_error_response(
         response,

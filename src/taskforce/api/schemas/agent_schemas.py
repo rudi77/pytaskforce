@@ -45,16 +45,25 @@ class CustomAgentCreate(BaseModel):
         ..., min_length=1, description="Agent purpose/capabilities"
     )
     system_prompt: str = Field(
-        ..., min_length=1, description="LLM system prompt"
+        ...,
+        min_length=1,
+        max_length=100_000,
+        description="LLM system prompt",
     )
     tool_allowlist: list[str] = Field(
-        default_factory=list, description="List of allowed tool names"
+        default_factory=list,
+        max_length=50,
+        description="List of allowed tool names",
     )
     mcp_servers: list[dict[str, Any]] = Field(
-        default_factory=list, description="MCP server configurations"
+        default_factory=list,
+        max_length=20,
+        description="MCP server configurations",
     )
     mcp_tool_allowlist: list[str] = Field(
-        default_factory=list, description="List of allowed MCP tool names"
+        default_factory=list,
+        max_length=100,
+        description="List of allowed MCP tool names",
     )
 
     @field_validator("agent_id")
@@ -91,16 +100,25 @@ class CustomAgentUpdate(BaseModel):
         ..., min_length=1, description="Agent purpose/capabilities"
     )
     system_prompt: str = Field(
-        ..., min_length=1, description="LLM system prompt"
+        ...,
+        min_length=1,
+        max_length=100_000,
+        description="LLM system prompt",
     )
     tool_allowlist: list[str] = Field(
-        default_factory=list, description="List of allowed tool names"
+        default_factory=list,
+        max_length=50,
+        description="List of allowed tool names",
     )
     mcp_servers: list[dict[str, Any]] = Field(
-        default_factory=list, description="MCP server configurations"
+        default_factory=list,
+        max_length=20,
+        description="MCP server configurations",
     )
     mcp_tool_allowlist: list[str] = Field(
-        default_factory=list, description="List of allowed MCP tool names"
+        default_factory=list,
+        max_length=100,
+        description="List of allowed MCP tool names",
     )
 
     def to_domain(self) -> CustomAgentUpdateInput:

@@ -12,38 +12,20 @@ replacing the previous per-provider integration routes. Supports:
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from taskforce.api.dependencies import get_gateway, get_inbound_adapters
 from taskforce.api.schemas.errors import ErrorResponse
-from taskforce.application.executor import AgentExecutor
-from taskforce.application.gateway import CommunicationGateway
 from taskforce.core.domain.gateway import (
     GatewayOptions,
     InboundMessage,
     NotificationRequest,
 )
-from taskforce_extensions.infrastructure.communication.gateway_registry import (
-    build_gateway_components,
-)
 
 router = APIRouter(prefix="/gateway")
-
-# --- Module-level wiring ---
-_components = build_gateway_components(
-    work_dir=os.getenv("TASKFORCE_WORK_DIR", ".taskforce"),
-)
-_executor = AgentExecutor()
-_gateway = CommunicationGateway(
-    executor=_executor,
-    conversation_store=_components.conversation_store,
-    recipient_registry=_components.recipient_registry,
-    outbound_senders=_components.outbound_senders,
-)
-_inbound_adapters = _components.inbound_adapters
 
 
 # ------------------------------------------------------------------
@@ -61,6 +43,7 @@ class GatewayMessageRequest(BaseModel):
     )
     message: str = Field(
         ...,
+        max_length=32_000,
         description="User message content.",
         examples=["Wie ist der aktuelle Status?"],
     )
@@ -215,6 +198,7 @@ def _error_response(
 async def handle_message(
     channel: str,
     request: GatewayMessageRequest,
+    gateway=Depends(get_gateway),
 ) -> GatewayMessageResponse:
     """Handle an inbound message from any channel.
 
@@ -248,7 +232,7 @@ async def handle_message(
         plugin_path=request.plugin_path,
     )
 
-    response = await _gateway.handle_message(inbound, options)
+    response = await gateway.handle_message(inbound, options)
 
     return GatewayMessageResponse(
         session_id=response.session_id,
@@ -266,13 +250,15 @@ async def handle_message(
 async def handle_webhook(
     channel: str,
     request: Request,
+    gateway=Depends(get_gateway),
+    inbound_adapters=Depends(get_inbound_adapters),
 ) -> GatewayMessageResponse:
     """Handle a raw webhook payload from an external channel.
 
     Uses the channel's InboundAdapter to normalize the raw payload,
     verify its signature, and then process it through the gateway.
     """
-    adapter = _inbound_adapters.get(channel)
+    adapter = inbound_adapters.get(channel)
     if not adapter:
         raise _error_response(
             400,
@@ -311,7 +297,7 @@ async def handle_webhook(
         metadata=extracted.get("metadata", {}),
     )
 
-    response = await _gateway.handle_message(inbound)
+    response = await gateway.handle_message(inbound)
 
     return GatewayMessageResponse(
         session_id=response.session_id,
@@ -328,6 +314,7 @@ async def handle_webhook(
 )
 async def send_notification(
     request: NotificationRequestSchema,
+    gateway=Depends(get_gateway),
 ) -> NotificationResponseSchema:
     """Send a proactive push notification to a registered recipient."""
     if not request.message.strip():
@@ -338,7 +325,7 @@ async def send_notification(
             details={"field": "message"},
         )
 
-    result = await _gateway.send_notification(
+    result = await gateway.send_notification(
         NotificationRequest(
             channel=request.channel,
             recipient_id=request.recipient_id,
@@ -362,6 +349,7 @@ async def send_notification(
 )
 async def broadcast(
     request: BroadcastRequestSchema,
+    gateway=Depends(get_gateway),
 ) -> BroadcastResponseSchema:
     """Broadcast a message to all registered recipients on a channel."""
     if not request.message.strip():
@@ -372,7 +360,7 @@ async def broadcast(
             details={"field": "message"},
         )
 
-    results = await _gateway.broadcast(
+    results = await gateway.broadcast(
         channel=request.channel,
         message=request.message,
         metadata=request.metadata,
@@ -398,8 +386,10 @@ async def broadcast(
     "/channels",
     response_model=ChannelsResponseSchema,
 )
-async def list_channels() -> ChannelsResponseSchema:
+async def list_channels(
+    gateway=Depends(get_gateway),
+) -> ChannelsResponseSchema:
     """List all communication channels with outbound senders configured."""
     return ChannelsResponseSchema(
-        channels=sorted(_gateway.supported_channels()),
+        channels=sorted(gateway.supported_channels()),
     )

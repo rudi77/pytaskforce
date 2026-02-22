@@ -17,6 +17,7 @@ import yaml
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
+from taskforce.api.dependencies import get_agent_registry
 from taskforce.api.server import create_app
 from taskforce.infrastructure.persistence.file_agent_registry import (
     FileAgentRegistry,
@@ -59,18 +60,18 @@ def registry(temp_configs_dir):
 
 
 @pytest.fixture
-def client(temp_configs_dir, monkeypatch):
-    """Create test client with mocked registry."""
-    # Patch the registry to use temp directory
-    from taskforce.api.routes import agents
+def app(temp_configs_dir):
+    """Create FastAPI app with mocked registry using dependency overrides."""
+    application = create_app()
+    test_registry = FileAgentRegistry(configs_dir=str(temp_configs_dir))
+    application.dependency_overrides[get_agent_registry] = lambda: test_registry
+    yield application
+    application.dependency_overrides.clear()
 
-    monkeypatch.setattr(
-        agents,
-        "_registry",
-        FileAgentRegistry(configs_dir=str(temp_configs_dir)),
-    )
 
-    app = create_app()
+@pytest.fixture
+def client(app):
+    """Create test client."""
     return TestClient(app)
 
 
@@ -119,7 +120,8 @@ def test_create_agent_conflict(client):
     # Create second time (conflict)
     response2 = client.post("/api/v1/agents", json=payload)
     assert response2.status_code == 409
-    assert "already exists" in response2.json()["detail"]
+    body = response2.json()
+    assert "already exists" in body.get("detail", "") or "already exists" in body.get("message", "")
 
 
 def test_create_agent_invalid_id(client):
@@ -163,7 +165,8 @@ def test_get_agent_not_found(client):
     """Test retrieving non-existent agent returns 404."""
     response = client.get("/api/v1/agents/nonexistent")
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"]
+    body = response.json()
+    assert "not found" in body.get("detail", "") or "not found" in body.get("message", "")
 
 
 def test_get_profile_agent(client):
@@ -304,7 +307,7 @@ def test_delete_agent_not_found(client):
 
 
 def test_crud_workflow(client):
-    """Test complete CRUD workflow: Create → Get → List → Update → Get → Delete → Get(404)."""
+    """Test complete CRUD workflow: Create -> Get -> List -> Update -> Get -> Delete -> Get(404)."""
     agent_id = "workflow-test"
 
     # 1. Create

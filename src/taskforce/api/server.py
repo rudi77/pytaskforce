@@ -120,11 +120,15 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
 
     app.add_exception_handler(HTTPException, taskforce_http_exception_handler)
 
-    # CORS middleware
+    # CORS middleware - origins configurable via CORS_ORIGINS env var
+    cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+    # allow_credentials=True is only safe with explicit origins
+    allow_creds = cors_origins != ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure based on environment
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=allow_creds,
         allow_methods=["*"],
         allow_headers=["*"],
     )
