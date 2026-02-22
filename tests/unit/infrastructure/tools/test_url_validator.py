@@ -156,9 +156,11 @@ class TestValidateUrlForSsrf:
         The validator lets the actual HTTP client handle DNS failures
         rather than blocking the request.
         """
+        import socket as _socket
+
         with patch(
             "taskforce.infrastructure.tools.native.url_validator.socket.getaddrinfo",
-            side_effect=OSError("Name resolution failed"),
+            side_effect=_socket.gaierror("Name resolution failed"),
         ):
             is_safe, error = validate_url_for_ssrf("https://nonexistent.example.invalid")
             assert is_safe is True

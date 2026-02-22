@@ -314,9 +314,11 @@ class AgentExecutor:
             )
 
         except Exception as e:
-            yield self._handle_streaming_failure(
+            error_update, wrapped_error = self._handle_streaming_failure(
                 e, resolved_session_id, agent_id, plugin_path
             )
+            yield error_update
+            raise wrapped_error from e
 
         finally:
             if agent and owns_agent:
@@ -414,8 +416,8 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
         plugin_path: str | None,
-    ) -> ProgressUpdate:
-        """Log failure, build error update, and re-raise as TaskforceError.
+    ) -> tuple[ProgressUpdate, Exception]:
+        """Log failure, build error update and wrapped exception.
 
         Args:
             error: The exception that was caught.
@@ -424,10 +426,7 @@ class AgentExecutor:
             plugin_path: Optional plugin path.
 
         Returns:
-            ProgressUpdate with ERROR event type.
-
-        Raises:
-            TaskforceError: Always re-raised with context.
+            Tuple of (ProgressUpdate with ERROR event, wrapped exception).
         """
         self._log_execution_failure(
             event_name="mission.streaming.failed",
@@ -444,14 +443,14 @@ class AgentExecutor:
             details={"error": str(error), "error_type": type(error).__name__},
         )
 
-        raise self._wrap_exception(
+        wrapped = self._wrap_exception(
             error,
             context="Mission streaming failed",
             session_id=session_id,
             agent_id=agent_id,
-        ) from error
+        )
 
-        return update  # noqa: B012 - unreachable but satisfies type checker
+        return update, wrapped
 
     # ------------------------------------------------------------------
     # Agent creation (broken into focused helpers)
@@ -1061,12 +1060,10 @@ class AgentExecutor:
             AutoEpicConfig if the profile has orchestration.auto_epic settings,
             otherwise None.
 
-        Raises:
-            ConfigError: If profile loading fails unexpectedly.
         """
         try:
             config = self.factory.profile_loader.load_safe(profile)
-        except FileNotFoundError:
+        except (FileNotFoundError, AttributeError):
             self.logger.debug(
                 "auto_epic.profile_not_found",
                 profile=profile,
@@ -1079,10 +1076,7 @@ class AgentExecutor:
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            raise ConfigError(
-                f"Failed to load profile '{profile}' for auto-epic config: {e}",
-                details={"profile": profile},
-            ) from e
+            return None
 
         return self._parse_auto_epic_from_config(config, profile)
 
@@ -1097,9 +1091,6 @@ class AgentExecutor:
 
         Returns:
             AutoEpicConfig if valid auto_epic settings exist, None otherwise.
-
-        Raises:
-            ConfigError: If the auto_epic config values are malformed.
         """
         orchestration = config.get("orchestration", {}) or {}
         auto_epic_raw = orchestration.get("auto_epic")
@@ -1116,10 +1107,7 @@ class AgentExecutor:
                 error_type=type(e).__name__,
                 raw_config=auto_epic_raw,
             )
-            raise ConfigError(
-                f"Invalid auto_epic configuration in profile '{profile}': {e}",
-                details={"profile": profile, "raw_config": auto_epic_raw},
-            ) from e
+            return None
 
     async def _classify_and_route_epic(
         self,
