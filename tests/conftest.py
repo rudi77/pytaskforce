@@ -175,3 +175,113 @@ def _install_litellm_stub() -> None:
 
 
 _install_litellm_stub()
+
+
+# ---------------------------------------------------------------------------
+# Centralized test fixtures
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+import pytest  # noqa: E402
+
+from taskforce.core.interfaces.logging import LoggerProtocol  # noqa: E402
+
+
+class MockLogger(LoggerProtocol):
+    """Protocol-compliant mock logger that captures log entries.
+
+    Stores logs as (level, {event, **kwargs}) tuples for easy assertion.
+    """
+
+    def __init__(self) -> None:
+        self.logs: list[tuple[str, dict[str, Any]]] = []
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        self.logs.append(("info", {"event": event, **kwargs}))
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.logs.append(("warning", {"event": event, **kwargs}))
+
+    def error(self, event: str, **kwargs: Any) -> None:
+        self.logs.append(("error", {"event": event, **kwargs}))
+
+    def debug(self, event: str, **kwargs: Any) -> None:
+        self.logs.append(("debug", {"event": event, **kwargs}))
+
+    def bind(self, **kwargs: Any) -> MockLogger:
+        """Support structlog-style bind chaining."""
+        return self
+
+
+@pytest.fixture
+def mock_logger() -> MockLogger:
+    """Create a protocol-compliant mock logger."""
+    return MockLogger()
+
+
+@pytest.fixture
+def mock_state_manager() -> AsyncMock:
+    """Create a mock StateManagerProtocol."""
+    mock = AsyncMock()
+    mock.load_state.return_value = None
+    mock.save_state.return_value = True
+    return mock
+
+
+@pytest.fixture
+def mock_tool() -> MagicMock:
+    """Create a mock ToolProtocol."""
+    tool = MagicMock()
+    tool.name = "test_tool"
+    tool.description = "A test tool for unit tests"
+    tool.parameters_schema = {
+        "type": "object",
+        "properties": {"param": {"type": "string"}},
+    }
+    tool.execute = AsyncMock(return_value={"success": True, "output": "test result"})
+    return tool
+
+
+@pytest.fixture
+def mock_llm_provider() -> AsyncMock:
+    """Create a mock LLMProviderProtocol."""
+
+    async def _mock_complete(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "success": True,
+            "content": "Mock LLM response",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+    provider = AsyncMock()
+    provider.complete = AsyncMock(side_effect=_mock_complete)
+    return provider
+
+
+@pytest.fixture
+def mock_agent(mock_logger: MockLogger) -> MagicMock:
+    """Create a mock agent with all attributes needed by planning strategies."""
+    agent = MagicMock()
+    agent.logger = mock_logger
+    agent._planner = None
+    agent.max_steps = 10
+    agent.max_parallel_tools = 4
+    agent.model_alias = "gpt-4"
+    agent.system_prompt = "You are a helpful assistant."
+    agent._openai_tools = []
+    agent._build_system_prompt = MagicMock(return_value="System prompt")
+    agent._build_initial_messages = MagicMock(
+        return_value=[{"role": "system", "content": "System prompt"}]
+    )
+    agent._create_tool_message = AsyncMock(
+        return_value={"role": "tool", "content": "Tool result"}
+    )
+    agent._truncate_output = MagicMock(side_effect=lambda x: x[:100])
+    agent._execute_tool = AsyncMock(return_value={"success": True, "output": "Done"})
+    agent.llm_provider = AsyncMock()
+    agent.state_manager = AsyncMock()
+    agent.state_manager.load_state = AsyncMock(return_value=None)
+    agent.state_store = AsyncMock()
+    agent.record_heartbeat = AsyncMock()
+    return agent

@@ -10,57 +10,12 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.planning_strategy import SparStrategy
-from taskforce.core.interfaces.logging import LoggerProtocol
 
-
-class MockLogger(LoggerProtocol):
-    """Mock logger for testing."""
-
-    def __init__(self) -> None:
-        self.logs: list[tuple[str, dict[str, Any]]] = []
-
-    def info(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("info", {"event": event, **kwargs}))
-
-    def warning(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("warning", {"event": event, **kwargs}))
-
-    def error(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("error", {"event": event, **kwargs}))
-
-    def debug(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("debug", {"event": event, **kwargs}))
-
-
-@pytest.fixture
-def mock_agent() -> MagicMock:
-    """Create a mock agent with required attributes."""
-    agent = MagicMock()
-    agent.logger = MockLogger()
-    agent._planner = None
-    agent.max_steps = 10
-    agent.max_parallel_tools = 4
-    agent.model_alias = "gpt-4"
-    agent.system_prompt = "You are a helpful assistant."
-    agent._openai_tools = []
-    agent._build_system_prompt = MagicMock(return_value="System prompt")
-    agent._build_initial_messages = MagicMock(
-        return_value=[{"role": "system", "content": "System prompt"}]
-    )
-    agent._truncate_output = MagicMock(side_effect=lambda x: x[:100])
-    agent.llm_provider = AsyncMock()
-    agent.state_manager = AsyncMock()
-    agent.state_manager.load_state = AsyncMock(return_value=None)
-    agent.state_store = AsyncMock()
-    agent.record_heartbeat = AsyncMock()
-    return agent
+# mock_agent fixture is provided by tests/conftest.py
 
 
 def test_spar_executes_reflection(mock_agent: MagicMock) -> None:
