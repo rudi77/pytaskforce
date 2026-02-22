@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import structlog
 import yaml
 
+from taskforce.application.tool_registry import get_tool_registry
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
@@ -133,6 +134,28 @@ class InfrastructureBuilder:
         except FileNotFoundError:
             self._logger.debug("profile_not_found_using_defaults", profile=profile_name)
             return {}
+
+    # -------------------------------------------------------------------------
+    # Agent Registry
+    # -------------------------------------------------------------------------
+
+    def build_agent_registry(self):
+        """Build a FileAgentRegistry instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not need to reference infrastructure directly.
+
+        Returns:
+            FileAgentRegistry wired with the tool registry and base path.
+        """
+        from taskforce.infrastructure.persistence.file_agent_registry import (
+            FileAgentRegistry,
+        )
+
+        return FileAgentRegistry(
+            tool_mapper=get_tool_registry(),
+            base_path=get_base_path(),
+        )
 
     # -------------------------------------------------------------------------
     # State Manager
@@ -297,6 +320,28 @@ class InfrastructureBuilder:
         else:
             self._logger.debug("using_conservative_default_context_policy")
             return ContextPolicy.conservative_default()
+
+    # -------------------------------------------------------------------------
+    # Communication Gateway
+    # -------------------------------------------------------------------------
+
+    def build_gateway_components(self, work_dir: str = ".taskforce"):
+        """Build Communication Gateway infrastructure components.
+
+        Centralises the extensions-infrastructure import so that API-layer
+        code does not reference infrastructure directly.
+
+        Args:
+            work_dir: Working directory for conversation persistence.
+
+        Returns:
+            GatewayComponents dataclass with stores, senders, and adapters.
+        """
+        from taskforce_extensions.infrastructure.communication.gateway_registry import (
+            build_gateway_components,
+        )
+
+        return build_gateway_components(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
     # Combined Infrastructure

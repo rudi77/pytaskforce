@@ -20,7 +20,9 @@ def test_liveness_returns_healthy(client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "healthy"
-    assert body["version"] == "1.0.0"
+    # version is dynamic (from package metadata or "0.0.0-dev")
+    assert "version" in body
+    assert isinstance(body["version"], str)
 
 
 def test_readiness_returns_ready(client):
@@ -28,7 +30,7 @@ def test_readiness_returns_ready(client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ready"
-    assert body["version"] == "1.0.0"
+    assert "version" in body
     assert "checks" in body
     assert "tool_registry" in body["checks"]
     assert body["checks"]["tool_registry"].startswith("ok")

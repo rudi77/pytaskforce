@@ -1,27 +1,14 @@
 import uuid
 from datetime import datetime
-from typing import Any, List
+from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from taskforce.api.dependencies import get_factory
-from taskforce.api.schemas.errors import ErrorResponse
+from taskforce.api.errors import http_exception as _http_exception
 
 router = APIRouter()
-
-
-def _http_exception(
-    status_code: int, code: str, message: str, details: dict[str, Any] | None = None
-) -> HTTPException:
-    """Build standardized HTTPException with ErrorResponse payload."""
-    return HTTPException(
-        status_code=status_code,
-        detail=ErrorResponse(
-            code=code, message=message, details=details, detail=message
-        ).model_dump(exclude_none=True),
-        headers={"X-Taskforce-Error": "1"},
-    )
 
 
 class SessionResponse(BaseModel):
@@ -44,10 +31,10 @@ async def list_sessions(
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError:
         raise _http_exception(
-            404,
-            "profile_not_found",
-            f"Profile not found: {profile}",
-            {"profile": profile},
+            status_code=404,
+            code="profile_not_found",
+            message=f"Profile not found: {profile}",
+            details={"profile": profile},
         )
 
     try:
@@ -86,10 +73,10 @@ async def get_session(
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError:
         raise _http_exception(
-            404,
-            "profile_not_found",
-            f"Profile not found: {profile}",
-            {"profile": profile},
+            status_code=404,
+            code="profile_not_found",
+            message=f"Profile not found: {profile}",
+            details={"profile": profile},
         )
 
     try:
@@ -97,10 +84,10 @@ async def get_session(
 
         if not state:
             raise _http_exception(
-                404,
-                "session_not_found",
-                f"Session '{session_id}' not found",
-                {"session_id": session_id},
+                status_code=404,
+                code="session_not_found",
+                message=f"Session '{session_id}' not found",
+                details={"session_id": session_id},
             )
 
         return SessionResponse(
@@ -127,10 +114,10 @@ async def create_session(
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError:
         raise _http_exception(
-            404,
-            "profile_not_found",
-            f"Profile not found: {profile}",
-            {"profile": profile},
+            status_code=404,
+            code="profile_not_found",
+            message=f"Profile not found: {profile}",
+            details={"profile": profile},
         )
 
     try:

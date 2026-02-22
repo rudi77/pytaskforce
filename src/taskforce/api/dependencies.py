@@ -16,8 +16,6 @@ from typing import Any
 
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
-from taskforce.application.tool_registry import get_tool_registry
-from taskforce.core.utils.paths import get_base_path
 
 
 # ---------------------------------------------------------------------------
@@ -48,24 +46,22 @@ def get_factory() -> AgentFactory:
 
 
 # ---------------------------------------------------------------------------
-# FileAgentRegistry (via application layer)
+# AgentRegistry (via application layer)
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1)
 def get_agent_registry():
-    """Provide a FileAgentRegistry wired through the application layer.
+    """Provide a shared FileAgentRegistry instance.
 
-    Imports infrastructure lazily so the API layer module itself does not
-    have a top-level dependency on infrastructure.
+    Uses ``lru_cache`` so the registry is created once and reused across
+    requests.  The infrastructure import is lazy (inside the function body)
+    so the API-layer module has no top-level dependency on infrastructure.
     """
-    from taskforce.infrastructure.persistence.file_agent_registry import (
-        FileAgentRegistry,
-    )
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-    return FileAgentRegistry(
-        tool_mapper=get_tool_registry(),
-        base_path=get_base_path(),
-    )
+    builder = InfrastructureBuilder()
+    return builder.build_agent_registry()
 
 
 # ---------------------------------------------------------------------------
@@ -77,14 +73,13 @@ def get_agent_registry():
 def get_gateway_components():
     """Provide Communication Gateway components.
 
-    Lazily imports extension infrastructure so the API layer module itself
-    does not have a top-level dependency on extensions.
+    Routes through the application-layer InfrastructureBuilder so that
+    the API layer has no direct dependency on extensions/infrastructure.
     """
-    from taskforce_extensions.infrastructure.communication.gateway_registry import (
-        build_gateway_components,
-    )
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-    return build_gateway_components(
+    builder = InfrastructureBuilder()
+    return builder.build_gateway_components(
         work_dir=os.getenv("TASKFORCE_WORK_DIR", ".taskforce"),
     )
 
