@@ -15,8 +15,8 @@ Skill Directory Structure:
 """
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
 from taskforce.infrastructure.skills.skill_parser import (
@@ -24,7 +24,6 @@ from taskforce.infrastructure.skills.skill_parser import (
     parse_skill_markdown,
     parse_skill_metadata,
 )
-
 
 logger = logging.getLogger(__name__)
 

@@ -10,9 +10,10 @@ Endpoints:
 Story: 8.2 - Tool Catalog + Allowlist Validation
 """
 
+from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Any, Dict, List
 
 from taskforce.application.tool_registry import get_tool_registry
 
@@ -22,7 +23,7 @@ router = APIRouter()
 class ToolCatalogResponse(BaseModel):
     """Response schema for tool catalog endpoint."""
 
-    tools: List[Dict[str, Any]]
+    tools: list[dict[str, Any]]
 
 
 @router.get(

@@ -59,7 +59,7 @@ class EpicTask:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "EpicTask":
+    def from_dict(cls, payload: dict[str, Any]) -> EpicTask:
         """Create task from payload."""
         return cls(
             task_id=str(payload.get("task_id", "")),

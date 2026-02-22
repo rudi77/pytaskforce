@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 from taskforce.core.domain.config_schema import AutoEpicConfig
 from taskforce.core.domain.enums import EventType

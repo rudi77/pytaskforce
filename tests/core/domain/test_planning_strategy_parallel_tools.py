@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import time
-
 import sys
+import time
 import types
 from typing import Any
-
-import pytest
 
 
 def _install_structlog_stub() -> None:
@@ -24,7 +21,7 @@ def _install_structlog_stub() -> None:
     structlog_module = types.ModuleType("structlog")
 
     class _StubLogger:
-        def bind(self, **kwargs: Any) -> "_StubLogger":
+        def bind(self, **kwargs: Any) -> _StubLogger:
             return self
 
         def warning(self, *args: Any, **kwargs: Any) -> None:

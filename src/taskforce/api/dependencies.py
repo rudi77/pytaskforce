@@ -17,7 +17,6 @@ from typing import Any
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 
-
 # ---------------------------------------------------------------------------
 # AgentExecutor
 # ---------------------------------------------------------------------------

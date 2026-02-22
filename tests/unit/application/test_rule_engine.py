@@ -2,6 +2,7 @@
 
 import pytest
 
+from taskforce.application.rule_engine import RuleEngine, _match_filter, _matches_event
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.domain.trigger_rule import (
     RuleAction,
@@ -9,7 +10,6 @@ from taskforce.core.domain.trigger_rule import (
     TriggerCondition,
     TriggerRule,
 )
-from taskforce.application.rule_engine import RuleEngine, _match_filter, _matches_event
 
 
 class TestMatchFilter:

@@ -1,6 +1,5 @@
 """Unit tests for the execution routes."""
 
-import json
 from datetime import datetime
 from unittest.mock import AsyncMock
 

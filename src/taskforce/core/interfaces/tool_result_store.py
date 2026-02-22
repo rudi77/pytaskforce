@@ -14,13 +14,13 @@ Key Concepts:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Optional, List
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 
 def _utcnow_str() -> str:
     """Return current UTC time as ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -50,8 +50,8 @@ class ToolResultHandle:
     metadata: dict[str, Any] | None = None
     # Lineage tracking fields (Story 2.2)
     used_in_answer: bool = False
-    reasoning_step: Optional[int] = None
-    evidence_id: Optional[str] = None
+    reasoning_step: int | None = None
+    evidence_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert handle to dictionary for JSON serialization."""
@@ -68,7 +68,7 @@ class ToolResultHandle:
             "evidence_id": self.evidence_id,
         }
 
-    def mark_used_in_answer(self, evidence_id: Optional[str] = None) -> None:
+    def mark_used_in_answer(self, evidence_id: str | None = None) -> None:
         """Mark this result as used in the final answer.
 
         Args:
@@ -267,9 +267,9 @@ class LineageNode:
 
     handle: ToolResultHandle
     step_number: int
-    parent_handles: List[str] = field(default_factory=list)
-    child_handles: List[str] = field(default_factory=list)
-    reasoning_context: Optional[str] = None
+    parent_handles: list[str] = field(default_factory=list)
+    child_handles: list[str] = field(default_factory=list)
+    reasoning_context: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -298,15 +298,15 @@ class LineageGraph:
 
     session_id: str
     nodes: dict[str, LineageNode] = field(default_factory=dict)
-    final_answer_handles: List[str] = field(default_factory=list)
+    final_answer_handles: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_str)
 
     def add_node(
         self,
         handle: ToolResultHandle,
         step_number: int,
-        parent_handles: Optional[List[str]] = None,
-        reasoning_context: Optional[str] = None,
+        parent_handles: list[str] | None = None,
+        reasoning_context: str | None = None,
     ) -> LineageNode:
         """Add a node to the lineage graph.
 
@@ -334,7 +334,7 @@ class LineageGraph:
 
         return node
 
-    def mark_used_in_answer(self, handle_ids: List[str]) -> None:
+    def mark_used_in_answer(self, handle_ids: list[str]) -> None:
         """Mark handles as used in the final answer.
 
         Args:
@@ -345,7 +345,7 @@ class LineageGraph:
             if handle_id in self.nodes:
                 self.nodes[handle_id].handle.mark_used_in_answer()
 
-    def get_answer_lineage(self) -> List[LineageNode]:
+    def get_answer_lineage(self) -> list[LineageNode]:
         """Get all nodes that contributed to the final answer.
 
         Returns:

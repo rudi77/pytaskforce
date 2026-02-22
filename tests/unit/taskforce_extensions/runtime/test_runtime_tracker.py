@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -11,7 +11,7 @@ from taskforce_extensions.infrastructure.runtime import (
 
 @pytest.mark.asyncio
 async def test_runtime_tracker_records_heartbeat_and_checkpoint() -> None:
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2025, 1, 1, tzinfo=UTC)
 
     def time_provider() -> datetime:
         return now
@@ -39,7 +39,7 @@ async def test_runtime_tracker_records_heartbeat_and_checkpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_tracker_lists_stale_sessions() -> None:
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2025, 1, 1, tzinfo=UTC)
 
     def time_provider() -> datetime:
         return now

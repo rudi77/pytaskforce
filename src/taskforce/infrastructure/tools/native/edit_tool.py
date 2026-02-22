@@ -156,7 +156,7 @@ class EditTool(ToolProtocol):
             if occurrences == 0:
                 return {
                     "success": False,
-                    "error": f"old_string not found in file. Make sure you're using the exact text including whitespace and indentation.",
+                    "error": "old_string not found in file. Make sure you're using the exact text including whitespace and indentation.",
                     "file_path": file_path,
                     "occurrences_found": 0,
                 }

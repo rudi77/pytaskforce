@@ -24,6 +24,11 @@ import structlog
 
 from taskforce.application.factory import AgentFactory
 from taskforce.application.task_complexity_classifier import TaskComplexityClassifier
+from taskforce.core.domain.agent import Agent
+from taskforce.core.domain.agent_models import (
+    CustomAgentDefinition,
+    PluginAgentDefinition,
+)
 from taskforce.core.domain.config_schema import AutoEpicConfig
 from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.epic import TaskComplexity
@@ -34,11 +39,6 @@ from taskforce.core.domain.errors import (
     ValidationError,
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
-from taskforce.core.domain.agent import Agent
-from taskforce.core.domain.agent_models import (
-    CustomAgentDefinition,
-    PluginAgentDefinition,
-)
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 logger = structlog.get_logger()
@@ -416,10 +416,10 @@ class AgentExecutor:
                     details={"agent_id": agent_id},
                 )
 
+            from taskforce.application.factory import get_base_path
             from taskforce.infrastructure.persistence.file_agent_registry import (
                 FileAgentRegistry,
             )
-            from taskforce.application.factory import get_base_path
 
             registry = FileAgentRegistry(base_path=get_base_path())
             agent_response = registry.get_agent(agent_id)
@@ -477,10 +477,10 @@ class AgentExecutor:
 
         # Standard Agent creation - but first check if profile name matches a plugin agent
         # This allows using profile="accounting_agent" instead of agent_id="accounting_agent"
+        from taskforce.application.factory import get_base_path
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
         )
-        from taskforce.application.factory import get_base_path
 
         registry = FileAgentRegistry(base_path=get_base_path())
         agent_response = registry.get_agent(profile)
@@ -599,27 +599,39 @@ class AgentExecutor:
 
             # Yield updates based on execution history
             for event in result.execution_history:
-                event_type_str = event.get("type", "unknown")
-                step = event.get("step", "?")
+                # execution_history items are dicts
+                if isinstance(event, dict):
+                    event_type_str = event.get("type", "unknown")
+                    step = event.get("step", "?")
+                    data: dict[str, Any] = event.get("data", {})
+                else:
+                    et = event.event_type
+                    event_type_str = et.value if isinstance(et, EventType) else str(et)
+                    step = "?"
+                    data = event.data
 
                 if event_type_str == "thought":
-                    data = event.get("data", {})
-                    rationale = data.get("rationale", "")
+                    rationale = data.get("rationale", "") if isinstance(data, dict) else ""
                     yield ProgressUpdate(
                         timestamp=datetime.now(),
-                        event_type="thought",  # Keep as string for legacy event types
+                        event_type="thought",
                         message=f"Step {step}: {rationale[:80]}",
                         details=data,
                     )
 
                 elif event_type_str == "observation":
-                    data = event.get("data", {})
-                    success = data.get("success", False)
-                    status = ExecutionStatus.COMPLETED.value if success else ExecutionStatus.FAILED.value
+                    success = (
+                        data.get("success", False) if isinstance(data, dict) else False
+                    )
+                    obs_status = (
+                        ExecutionStatus.COMPLETED.value
+                        if success
+                        else ExecutionStatus.FAILED.value
+                    )
                     yield ProgressUpdate(
                         timestamp=datetime.now(),
-                        event_type="observation",  # Keep as string for legacy event types
-                        message=f"Step {step}: {status}",
+                        event_type="observation",
+                        message=f"Step {step}: {obs_status}",
                         details=data,
                     )
 

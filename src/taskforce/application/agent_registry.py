@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 import yaml
@@ -63,7 +63,7 @@ class AgentRegistry:
     def __init__(
         self,
         config_dir: Path | str | None = None,
-        base_path: Optional[Path] = None,
+        base_path: Path | None = None,
     ) -> None:
         """
         Initialize the unified agent registry.
@@ -121,7 +121,7 @@ class AgentRegistry:
         self._logger.debug("agents.listed", count=len(agents), sources=sources)
         return agents
 
-    def get(self, agent_id: str) -> Optional[AgentDefinition]:
+    def get(self, agent_id: str) -> AgentDefinition | None:
         """
         Get an agent by ID.
 
@@ -172,7 +172,7 @@ class AgentRegistry:
         is_update = path.exists()
 
         # Update timestamps
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if is_update:
             definition = definition.copy_with(updated_at=now)
         else:
@@ -413,9 +413,9 @@ class AgentRegistry:
 
     def _parse_custom_agent_file(
         self, yaml_file: Path, agent_id: str
-    ) -> Optional[AgentDefinition]:
+    ) -> AgentDefinition | None:
         """Parse a custom agent YAML file."""
-        with open(yaml_file, "r", encoding="utf-8") as f:
+        with open(yaml_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         # Extract tools as string list
@@ -462,18 +462,17 @@ class AgentRegistry:
 
     def _parse_profile_agent_file(
         self, yaml_file: Path, profile_name: str
-    ) -> Optional[AgentDefinition]:
+    ) -> AgentDefinition | None:
         """Parse a profile agent YAML file."""
-        with open(yaml_file, "r", encoding="utf-8") as f:
+        with open(yaml_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         return AgentDefinition.from_profile(profile_name, data)
 
-    def _parse_plugin_agent(self, plugin_dir: Path) -> Optional[AgentDefinition]:
+    def _parse_plugin_agent(self, plugin_dir: Path) -> AgentDefinition | None:
         """Parse a plugin agent from directory."""
         try:
             from taskforce.application.plugin_loader import PluginLoader
-            from taskforce.core.domain.errors import PluginError
 
             loader = PluginLoader()
             manifest = loader.discover_plugin(str(plugin_dir))

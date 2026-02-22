@@ -3,9 +3,9 @@
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 import typer
@@ -75,7 +75,7 @@ def _run_chat(
     # Configure logging to file to avoid interfering with console output
     log_dir = Path.home() / ".taskforce" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"taskforce_chat_{timestamp}.log"
 
     logging.captureWarnings(True)

@@ -2,10 +2,10 @@
 Tests for the refactoring: unified agent definition, registry, and factory.
 """
 
-import pytest
-from datetime import datetime
-from pathlib import Path
 
+import pytest
+
+from taskforce.application.tool_registry import ToolRegistry
 from taskforce.core.domain.agent_definition import (
     AgentDefinition,
     AgentDefinitionInput,
@@ -14,13 +14,10 @@ from taskforce.core.domain.agent_definition import (
     MCPServerConfig,
 )
 from taskforce.core.domain.config_schema import (
-    AgentConfigSchema,
     MCPServerConfigSchema,
-    ProfileConfigSchema,
-    validate_agent_config,
     extract_tool_names,
+    validate_agent_config,
 )
-from taskforce.application.tool_registry import ToolRegistry
 from taskforce.infrastructure.tools.registry import (
     get_all_tool_names,
     is_registered,

@@ -4,10 +4,10 @@ Tests for Skill Loader
 Tests the SkillLoader filesystem-based skill loading.
 """
 
-import pytest
-from pathlib import Path
 
-from taskforce.core.domain.skill import Skill, SkillMetadataModel
+import pytest
+
+from taskforce.core.domain.skill import Skill
 from taskforce.infrastructure.skills.skill_loader import (
     SkillLoader,
     get_default_skill_directories,

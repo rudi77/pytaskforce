@@ -4,7 +4,7 @@ Unit tests for ActivateSkillTool
 Tests skill activation and workflow execution functionality.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

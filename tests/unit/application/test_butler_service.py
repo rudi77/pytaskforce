@@ -1,11 +1,12 @@
 """Tests for ButlerService."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
+import pytest
+
+from taskforce.application.butler_service import ButlerService
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.domain.gateway import NotificationResult
-from taskforce.application.butler_service import ButlerService
 
 
 class TestButlerService:

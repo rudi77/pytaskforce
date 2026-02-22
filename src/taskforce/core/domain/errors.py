@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 
 @dataclass
@@ -12,7 +12,7 @@ class TaskforceError(Exception):
 
     message: str
     code: str = "taskforce_error"
-    details: Dict[str, Any] | None = None
+    details: dict[str, Any] | None = None
     status_code: int | None = None
 
     def __post_init__(self) -> None:
@@ -24,7 +24,7 @@ class TaskforceError(Exception):
 class LLMError(TaskforceError):
     """Error raised for LLM invocation failures."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="llm_error", details=details)
 
 
@@ -36,7 +36,7 @@ class ToolError(TaskforceError):
         message: str,
         *,
         tool_name: str | None = None,
-        details: Dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = dict(details or {})
         if tool_name:
@@ -48,35 +48,35 @@ class ToolError(TaskforceError):
 class PlanningError(TaskforceError):
     """Error raised for planning failures."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="planning_error", details=details)
 
 
 class ConfigError(TaskforceError):
     """Error raised for configuration failures."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="config_error", details=details)
 
 
 class CancelledError(TaskforceError):
     """Error raised when execution is cancelled."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="cancelled", details=details)
 
 
 class NotFoundError(TaskforceError):
     """Error raised when a resource is not found."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="not_found", details=details)
 
 
 class ValidationError(TaskforceError):
     """Error raised for validation failures."""
 
-    def __init__(self, message: str, *, details: Dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message=message, code="validation_error", details=details)
 
 
@@ -88,7 +88,7 @@ class PluginError(TaskforceError):
         message: str,
         *,
         plugin_path: str | None = None,
-        details: Dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = dict(details or {})
         if plugin_path:
@@ -98,8 +98,8 @@ class PluginError(TaskforceError):
 
 
 def tool_error_payload(
-    error: ToolError, extra: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
+    error: ToolError, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Convert a ToolError into a standardized tool response payload."""
     payload = {
         "success": False,

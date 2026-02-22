@@ -32,7 +32,7 @@ def _build_planner_prompt(
     return (
         "You are a planner. Produce a JSON array of tasks with fields: "
         "task_id (optional), title, description, acceptance_criteria (list of strings). "
-        "Keep each task independent and assignable to a worker." 
+        "Keep each task independent and assignable to a worker."
         f"\n\nEpic mission: {mission}{scope_text}{state_text}"
     )
 
@@ -440,7 +440,7 @@ class EpicOrchestrator:
     ) -> None:
         agent = await self._factory.create_agent(profile=worker_profile)
         try:
-            async for message in self._bus.subscribe("epic.tasks"):
+            async for message in await self._bus.subscribe("epic.tasks"):
                 payload = message.payload
                 if payload.get("type") == "shutdown":
                     await self._bus.ack(message.message_id)

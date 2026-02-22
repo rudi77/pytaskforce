@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import yaml
 

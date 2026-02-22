@@ -88,7 +88,7 @@ async def test_orchestrator_has_agent_tool(orchestrator_config, tmp_path):
     assert agent_tool.requires_approval is True
 
     # Cleanup
-    
+
 
 
 @pytest.mark.asyncio
@@ -116,7 +116,7 @@ async def test_orchestrator_without_flag_has_no_agent_tool(tmp_path):
     assert "call_agent" not in tool_names, "AgentTool should NOT be added when orchestration.enabled is missing/false"
 
     # Cleanup
-    
+
 
 
 @pytest.mark.asyncio
@@ -166,7 +166,7 @@ async def test_agent_tool_generates_hierarchical_session_ids(orchestrator_config
         assert "parent-123--sub_coding_" in result["session_id"]
 
     # Cleanup
-    
+
 
 
 @pytest.mark.asyncio
@@ -245,7 +245,7 @@ persistence:
         assert result["result"] == "Custom agent completed"
 
     # Cleanup
-    
+
 
 
 @pytest.mark.asyncio
@@ -318,4 +318,4 @@ async def test_agent_tool_handles_sub_agent_failure(orchestrator_config, tmp_pat
         assert "error" in result or "result" in result
 
     # Cleanup
-    
+

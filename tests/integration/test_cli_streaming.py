@@ -5,9 +5,8 @@ Tests the CLI streaming integration including the --stream flag
 and Rich Live Display functionality.
 """
 
-import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from rich.console import Console
@@ -53,7 +52,7 @@ class TestCLIStreamingFlag:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             # Execute streaming mission - should not raise
             await _execute_streaming_mission(
                 mission="Test mission",
@@ -89,7 +88,7 @@ class TestCLIStreamingFlag:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Search and analyze",
                 profile="dev",
@@ -117,7 +116,7 @@ class TestCLIStreamingFlag:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Say hello",
                 profile="dev",
@@ -142,7 +141,7 @@ class TestCLIStreamingFlag:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             # Should complete without raising
             await _execute_streaming_mission(
                 mission="Test error handling",
@@ -167,7 +166,7 @@ class TestCLIStreamingFlag:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Create a plan",
                 profile="dev",
@@ -204,7 +203,7 @@ class TestCLIStreamingMultipleToolCalls:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Multi-step task",
                 profile="dev",
@@ -235,7 +234,7 @@ class TestCLIStreamingMultipleToolCalls:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Fetch data",
                 profile="dev",
@@ -264,7 +263,7 @@ class TestCLIStreamingBackwardCompatibility:
             mock_stream.return_value = mock_streaming_generator(mock_updates)
 
             console = Console(force_terminal=True, width=120)
-            
+
             await _execute_streaming_mission(
                 mission="Legacy test",
                 profile="dev",

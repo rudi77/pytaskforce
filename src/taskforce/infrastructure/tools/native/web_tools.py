@@ -5,9 +5,8 @@ Provides web search (DuckDuckGo) and URL content fetching capabilities.
 Migrated from Agent V2 with full preservation of functionality.
 """
 
-import asyncio
 import re
-from typing import Any, Dict
+from typing import Any
 
 import aiohttp
 
@@ -27,7 +26,7 @@ class WebSearchTool(ToolProtocol):
         return "Search the web using DuckDuckGo"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -62,7 +61,7 @@ class WebSearchTool(ToolProtocol):
 
     async def execute(
         self, query: str, num_results: int = 5, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search the web using DuckDuckGo.
 
@@ -160,7 +159,7 @@ class WebFetchTool(ToolProtocol):
         return "Fetch and extract content from a URL"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -188,7 +187,7 @@ class WebFetchTool(ToolProtocol):
         url = kwargs.get("url", "")
         return f"Tool: {self.name}\nOperation: Fetch URL content\nURL: {url}"
 
-    async def execute(self, url: str, **kwargs) -> Dict[str, Any]:
+    async def execute(self, url: str, **kwargs) -> dict[str, Any]:
         """
         Fetch and extract content from a URL.
 
@@ -238,7 +237,7 @@ class WebFetchTool(ToolProtocol):
                         "length": len(content),
                     }
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             tool_error = ToolError(
                 f"{self.name} failed: Request timed out",
                 tool_name=self.name,

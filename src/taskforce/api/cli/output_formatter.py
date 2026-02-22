@@ -4,7 +4,6 @@ Provides beautiful, eye-catching console output with clear visual separation
 between agent and user messages.
 """
 
-from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -55,7 +54,7 @@ class TaskforceConsole:
         self.console.print(banner)
         self.console.print()
 
-    def print_agent_message(self, message: str, thought: Optional[str] = None):
+    def print_agent_message(self, message: str, thought: str | None = None):
         """Print agent message with distinctive styling.
 
         Args:
@@ -109,7 +108,7 @@ class TaskforceConsole:
         """
         self.console.print(f"[{style}][i] {message}[/{style}]")
 
-    def print_error(self, message: str, exception: Optional[Exception] = None):
+    def print_error(self, message: str, exception: Exception | None = None):
         """Print error message with optional exception details.
 
         Args:
@@ -200,7 +199,7 @@ class TaskforceConsole:
         self,
         session_id: str,
         profile: str,
-        user_context: Optional[dict] = None,
+        user_context: dict | None = None,
     ):
         """Print session information.
 
@@ -230,7 +229,7 @@ class TaskforceConsole:
         self.console.print(info_panel)
         self.console.print()
 
-    def print_divider(self, text: Optional[str] = None):
+    def print_divider(self, text: str | None = None):
         """Print a visual divider.
 
         Args:

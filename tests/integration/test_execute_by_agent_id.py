@@ -5,7 +5,7 @@ Tests the complete flow from API endpoint through executor to agent creation.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,8 +13,8 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from taskforce.api.dependencies import get_executor
-from taskforce.api.server import create_app
 from taskforce.api.schemas.agent_schemas import CustomAgentResponse
+from taskforce.api.server import create_app
 from taskforce.core.domain.models import ExecutionResult
 
 
@@ -167,6 +167,7 @@ def test_execute_sync_backward_compatibility_without_agent_id(app, client):
 def test_execute_stream_with_agent_id_success(app, client, mock_custom_agent):
     """Test streaming execution with agent_id yields events."""
     from datetime import datetime
+
     from taskforce.application.executor import ProgressUpdate
 
     async def mock_streaming_generator(*args, **kwargs):

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -36,7 +36,7 @@ class MCPServerConfigSchema(BaseModel):
         description="Server type: 'stdio' or 'sse'",
         pattern="^(stdio|sse)$",
     )
-    command: Optional[str] = Field(
+    command: str | None = Field(
         None,
         description="For stdio: command to run (e.g., 'npx')",
     )
@@ -44,7 +44,7 @@ class MCPServerConfigSchema(BaseModel):
         default_factory=list,
         description="For stdio: command arguments",
     )
-    url: Optional[str] = Field(
+    url: str | None = Field(
         None,
         description="For sse: server URL",
     )
@@ -58,7 +58,7 @@ class MCPServerConfigSchema(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_server_config(self) -> "MCPServerConfigSchema":
+    def validate_server_config(self) -> MCPServerConfigSchema:
         """Validate that stdio has command and sse has url."""
         if self.type == "stdio" and not self.command:
             raise ValueError("stdio server requires 'command' field")
@@ -109,7 +109,7 @@ class AgentConfigSchema(BaseModel):
         max_length=65536,
         description="Custom system prompt",
     )
-    specialist: Optional[str] = Field(
+    specialist: str | None = Field(
         None,
         description="Specialist type (coding, rag, wiki, or None)",
         pattern="^(coding|rag|wiki)$",
@@ -123,7 +123,7 @@ class AgentConfigSchema(BaseModel):
         default_factory=dict,
         description="Parameters for the planning strategy",
     )
-    max_steps: Optional[int] = Field(
+    max_steps: int | None = Field(
         None,
         gt=0,
         le=1000,
@@ -141,7 +141,7 @@ class AgentConfigSchema(BaseModel):
         default_factory=list,
         description="MCP server configurations",
     )
-    mcp_tool_filter: Optional[list[str]] = Field(
+    mcp_tool_filter: list[str] | None = Field(
         None,
         description="List of allowed MCP tool names (None = all allowed)",
     )
@@ -151,13 +151,13 @@ class AgentConfigSchema(BaseModel):
         "dev",
         description="Base profile for LLM/persistence settings",
     )
-    work_dir: Optional[str] = Field(
+    work_dir: str | None = Field(
         None,
         description="Override working directory",
     )
 
     # Plugin-specific fields
-    plugin_path: Optional[str] = Field(
+    plugin_path: str | None = Field(
         None,
         description="Path to plugin directory (for source=PLUGIN)",
     )
@@ -167,21 +167,21 @@ class AgentConfigSchema(BaseModel):
     )
 
     # Command-specific fields
-    source_path: Optional[str] = Field(
+    source_path: str | None = Field(
         None,
         description="Path to source file (for source=COMMAND)",
     )
-    prompt_template: Optional[str] = Field(
+    prompt_template: str | None = Field(
         None,
         description="Prompt template with $ARGUMENTS (for source=COMMAND)",
     )
 
     # Timestamps (for CUSTOM agents)
-    created_at: Optional[datetime] = Field(
+    created_at: datetime | None = Field(
         None,
         description="Creation timestamp",
     )
-    updated_at: Optional[datetime] = Field(
+    updated_at: datetime | None = Field(
         None,
         description="Last update timestamp",
     )
@@ -229,7 +229,7 @@ class AutoEpicConfig(BaseModel):
         le=1.0,
         description="Minimum confidence to escalate to epic mode.",
     )
-    classifier_model: Optional[str] = Field(
+    classifier_model: str | None = Field(
         default=None,
         description="LLM model alias for classifier (None = default model).",
     )
@@ -269,11 +269,11 @@ class ProfileConfigSchema(BaseModel):
     model_config = ConfigDict(extra="allow")  # Allow extra fields in profiles
 
     # Agent settings
-    agent: Optional[dict[str, Any]] = Field(
+    agent: dict[str, Any] | None = Field(
         None,
         description="Agent configuration section",
     )
-    specialist: Optional[str] = Field(
+    specialist: str | None = Field(
         None,
         description="Specialist type",
     )
@@ -291,23 +291,23 @@ class ProfileConfigSchema(BaseModel):
     )
 
     # Infrastructure
-    persistence: Optional[dict[str, Any]] = Field(
+    persistence: dict[str, Any] | None = Field(
         None,
         description="Persistence configuration",
     )
-    llm: Optional[dict[str, Any]] = Field(
+    llm: dict[str, Any] | None = Field(
         None,
         description="LLM configuration",
     )
-    logging: Optional[dict[str, Any]] = Field(
+    logging: dict[str, Any] | None = Field(
         None,
         description="Logging configuration",
     )
-    context_policy: Optional[dict[str, Any]] = Field(
+    context_policy: dict[str, Any] | None = Field(
         None,
         description="Context policy configuration",
     )
-    orchestration: Optional[dict[str, Any]] = Field(
+    orchestration: dict[str, Any] | None = Field(
         None,
         description="Orchestration configuration",
     )
@@ -323,8 +323,8 @@ class ConfigValidationError(Exception):
     def __init__(
         self,
         message: str,
-        file_path: Optional[Path] = None,
-        field_path: Optional[str] = None,
+        file_path: Path | None = None,
+        field_path: str | None = None,
     ):
         self.file_path = file_path
         self.field_path = field_path
@@ -342,7 +342,7 @@ class ConfigValidationError(Exception):
 
 def validate_agent_config(
     data: dict[str, Any],
-    file_path: Optional[Path] = None,
+    file_path: Path | None = None,
 ) -> AgentConfigSchema:
     """
     Validate agent configuration data.
@@ -368,7 +368,7 @@ def validate_agent_config(
 
 def validate_profile_config(
     data: dict[str, Any],
-    file_path: Optional[Path] = None,
+    file_path: Path | None = None,
 ) -> ProfileConfigSchema:
     """
     Validate profile configuration data.

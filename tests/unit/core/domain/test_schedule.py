@@ -1,7 +1,5 @@
 """Tests for Schedule domain models."""
 
-import pytest
-from datetime import datetime, timezone
 
 from taskforce.core.domain.schedule import (
     ScheduleAction,

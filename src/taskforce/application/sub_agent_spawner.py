@@ -23,7 +23,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
 
     def __init__(
         self,
-        agent_factory: "AgentFactory",  # type: ignore[name-defined]
+        agent_factory: AgentFactory,  # type: ignore[name-defined]
         *,
         profile: str = "dev",
         work_dir: str | None = None,
@@ -77,7 +77,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             error=None if success else result.final_message,
         )
 
-    async def _create_agent(self, spec: SubAgentSpec) -> "Agent":  # type: ignore[name-defined]
+    async def _create_agent(self, spec: SubAgentSpec) -> Agent:  # type: ignore[name-defined]
         custom_definition = spec.agent_definition or await self._load_custom_definition(spec)
         profile = spec.profile or self._profile
         work_dir = spec.work_dir or self._work_dir

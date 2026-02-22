@@ -1,11 +1,12 @@
 """Get document metadata tool for Azure AI Search."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any
+
 import structlog
 
 from taskforce.core.domain.errors import ToolError
-from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
+from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 
 
@@ -18,7 +19,7 @@ class GetDocumentTool:
     Implements ToolProtocol for dependency injection.
     """
 
-    def __init__(self, user_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, user_context: dict[str, Any] | None = None):
         """
         Initialize the get document tool.
 
@@ -47,7 +48,7 @@ class GetDocumentTool:
         )
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         """
         JSON schema for tool parameters.
 
@@ -108,19 +109,19 @@ class GetDocumentTool:
         """Validate parameters before execution."""
         if "document_id" not in kwargs:
             return False, "Missing required parameter: document_id"
-        
+
         if not isinstance(kwargs["document_id"], str):
             return False, "Parameter 'document_id' must be a string"
-        
+
         return True, None
 
     async def execute(
         self,
         document_id: str,
         include_chunk_content: bool = False,
-        user_context: Optional[Dict[str, Any]] = None,
+        user_context: dict[str, Any] | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute document metadata retrieval from content-blocks index.
 
@@ -156,7 +157,7 @@ class GetDocumentTool:
 
             # Build document filter - Allow search by ID (primary) OR Title (fallback)
             sanitized_val = self.azure_base._sanitize_filter_value(document_id)
-            
+
             # Updated Logic: Check both document_id and document_title fields
             document_filter = f"(document_id eq '{sanitized_val}' or document_title eq '{sanitized_val}')"
 
@@ -205,7 +206,7 @@ class GetDocumentTool:
 
                 async for chunk in search_results:
                     chunk_data = dict(chunk)
-                    
+
                     # Remove polygons from locationMetadata
                     location_metadata = chunk_data.get("locationMetadata")
                     if location_metadata and isinstance(location_metadata, dict):
@@ -215,7 +216,7 @@ class GetDocumentTool:
                             if k not in ["polygon", "polygons", "boundingRegions"]
                         }
                         chunk_data["locationMetadata"] = cleaned_metadata
-                    
+
                     chunks.append(chunk_data)
                     chunk_ids.append(chunk_data.get("content_id"))
 
@@ -288,7 +289,7 @@ class GetDocumentTool:
                 f"Chunks: {document['chunk_count']}\n"
                 f"Content Types: {'Text' if has_text else ''} {'Images' if has_images else ''}"
             )
-            
+
             if include_chunk_content and chunks:
                 result_text += "\n\nContent Preview:\n"
                 # Add preview of first few chunks (or sort by page number first if needed)
@@ -299,7 +300,7 @@ class GetDocumentTool:
                     lm = chunk.get('locationMetadata')
                     if lm and isinstance(lm, dict):
                         page = lm.get('pageNumber', 'Unknown')
-                        
+
                     if content:
                         result_text += f"--- Page {page} ---\n{content[:500]}...\n\n"
 
@@ -317,14 +318,12 @@ class GetDocumentTool:
         exception: Exception,
         document_id: str,
         elapsed_time: float
-    ) -> Dict[str, Any]:
-        # (Fehlerbehandlung bleibt gleich wie in deiner Originaldatei, 
+    ) -> dict[str, Any]:
+        # (Fehlerbehandlung bleibt gleich wie in deiner Originaldatei,
         # da sie hier nicht das Problem war)
-        from azure.core.exceptions import (
-            HttpResponseError,
-            ServiceRequestError
-        )
         import traceback
+
+        from azure.core.exceptions import HttpResponseError, ServiceRequestError
 
         latency_ms = int(elapsed_time * 1000)
 

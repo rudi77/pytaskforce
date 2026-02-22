@@ -12,7 +12,6 @@ from ap_poc_agent.tools import (  # noqa: E402
     TaxWizardTool,
 )
 
-
 BASE_DIR = Path("src/taskforce_extensions/plugins/ap_poc_agent/configs/data")
 
 

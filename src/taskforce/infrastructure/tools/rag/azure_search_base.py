@@ -7,11 +7,12 @@ that integrate with Azure AI Search.
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from taskforce.core.domain.errors import ToolError
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents.aio import SearchClient
+
+from taskforce.core.domain.errors import ToolError
 
 
 class AzureSearchBase:
@@ -56,7 +57,7 @@ class AzureSearchBase:
             credential=AzureKeyCredential(self.api_key)
         )
 
-    def build_security_filter(self, user_context: Optional[Dict[str, Any]] = None) -> str:
+    def build_security_filter(self, user_context: dict[str, Any] | None = None) -> str:
         """
         Build OData filter for row-level security based on user context.
 
@@ -92,17 +93,17 @@ class AzureSearchBase:
             return ""  # No filter for testing scenarios
 
         filters = []
-        
+
         # Organization filter (required if provided)
         org_id = user_context.get("org_id")
         if org_id:
             sanitized_org = self._sanitize_filter_value(org_id)
             filters.append(f"org_id eq '{sanitized_org}'")
-        
+
         # User/Scope access filter (OR logic)
         user_id = user_context.get("user_id")
         scope = user_context.get("scope")
-        
+
         access_filters = []
         if user_id:
             sanitized_user = self._sanitize_filter_value(user_id)
@@ -110,14 +111,14 @@ class AzureSearchBase:
         if scope:
             sanitized_scope = self._sanitize_filter_value(scope)
             access_filters.append(f"scope eq '{sanitized_scope}'")
-        
+
         # Combine access filters with OR
         if access_filters:
             if len(access_filters) == 1:
                 filters.append(access_filters[0])
             else:
                 filters.append(f"({' or '.join(access_filters)})")
-        
+
         if not filters:
             return ""
 
@@ -171,7 +172,7 @@ class LocationMetadata:
     The location metadata for a chunk of content.
     """
     pageNumber: int
-    boundingPolygons: Optional[str] = None
+    boundingPolygons: str | None = None
 
 """
         {
@@ -206,26 +207,26 @@ class Chunk:
     document_id: str
     content_id: str
     scope: str
-    document_type: Optional[str]
+    document_type: str | None
     content_path: str
     org_id: str
     content_text: str
     document_title: str
     user_id: str
-    locationMetadata: Optional[LocationMetadata] = None
+    locationMetadata: LocationMetadata | None = None
     # Azure Search specific fields (prefixed with @search)
-    search_score: Optional[float] = None
-    search_reranker_score: Optional[float] = None
-    search_highlights: Optional[Dict[str, List[str]]] = None
-    search_captions: Optional[Dict[str, Any]] = None
+    search_score: float | None = None
+    search_reranker_score: float | None = None
+    search_highlights: dict[str, list[str]] | None = None
+    search_captions: dict[str, Any] | None = None
     # Additional optional fields
-    hash: Optional[str] = None
-    image_document_id: Optional[str] = None
-    conversation_id: Optional[str] = None
-    content_embedding: Optional[List[float]] = None
+    hash: str | None = None
+    image_document_id: str | None = None
+    conversation_id: str | None = None
+    content_embedding: list[float] | None = None
 
     @classmethod
-    def from_azure_search_result(cls, search_result: Dict[str, Any]) -> 'Chunk':
+    def from_azure_search_result(cls, search_result: dict[str, Any]) -> 'Chunk':
         """
         Create a Chunk instance from Azure Search result JSON.
         
@@ -245,7 +246,7 @@ class Chunk:
                 pageNumber=location_meta.get("pageNumber", 0),
                 boundingPolygons=location_meta.get("boundingPolygons")
             )
-        
+
         return cls(
             document_id=search_result.get("document_id", ""),
             content_id=search_result.get("content_id", ""),
@@ -268,8 +269,8 @@ class Chunk:
             conversation_id=search_result.get("conversation_id"),
             content_embedding=search_result.get("content_embedding")
         )
-    
-    def to_azure_search_dict(self) -> Dict[str, Any]:
+
+    def to_azure_search_dict(self) -> dict[str, Any]:
         """
         Convert Chunk instance back to Azure Search JSON format.
         
@@ -289,14 +290,14 @@ class Chunk:
             "document_title": self.document_title,
             "user_id": self.user_id
         }
-        
+
         # Add location metadata if present
         if self.locationMetadata:
             result["locationMetadata"] = {
                 "pageNumber": self.locationMetadata.pageNumber,
                 "boundingPolygons": self.locationMetadata.boundingPolygons
             }
-        
+
         # Add Azure Search specific fields with @search prefix
         if self.search_score is not None:
             result["@search.score"] = self.search_score
@@ -306,7 +307,7 @@ class Chunk:
             result["@search.highlights"] = self.search_highlights
         if self.search_captions is not None:
             result["@search.captions"] = self.search_captions
-            
+
         # Add optional fields if present
         if self.hash is not None:
             result["hash"] = self.hash
@@ -316,7 +317,7 @@ class Chunk:
             result["conversation_id"] = self.conversation_id
         if self.content_embedding is not None:
             result["content_embedding"] = self.content_embedding
-            
+
         return result
 
 @dataclass
@@ -334,9 +335,9 @@ class Document:
     page_count: int
     has_images: bool
     has_text: bool
-    chunks: Optional[List[Chunk]] = None
+    chunks: list[Chunk] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert Document dataclass to dictionary."""
         return {
             "document_id": self.document_id,
@@ -351,26 +352,26 @@ class Document:
             "has_text": self.has_text,
             "chunks": [chunk.__dict__ for chunk in self.chunks] if self.chunks else []
         }
-    
+
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'Document':
+    def from_dict(data: dict[str, Any]) -> 'Document':
         """Convert dictionary to Document dataclass with robust error handling."""
         try:
             chunks_data = data.get("chunks", [])
             chunks = []
-            
+
             for chunk_item in chunks_data:
                 # Use from_azure_search_result to handle @search.* fields properly
                 chunks.append(Chunk.from_azure_search_result(chunk_item))
                 # Handle cases where chunk might be a string or unexpected format
-                                    
+
             return Document(
                 document_id=data["document_id"],
                 document_title=data["document_title"],
                 document_type=data["document_type"],
                 org_id=data["org_id"],
                 user_id=data["user_id"],
-                scope=data["scope"],            
+                scope=data["scope"],
                 chunk_count=data["chunk_count"],
                 page_count=data["page_count"],
                 has_images=data["has_images"],

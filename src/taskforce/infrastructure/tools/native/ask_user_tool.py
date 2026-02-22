@@ -5,7 +5,7 @@ Allows the agent to request missing information from the user.
 Migrated from Agent V2 with full preservation of functionality.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
@@ -22,7 +22,7 @@ class AskUserTool(ToolProtocol):
         return "Ask the user for missing info to proceed. Returns a structured question payload."
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -47,13 +47,17 @@ class AskUserTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         question = kwargs.get("question", "")
         return f"Tool: {self.name}\nOperation: Ask user\nQuestion: {question}"
 
     async def execute(
-        self, question: str, missing: Optional[List[str]] = None, **kwargs
-    ) -> Dict[str, Any]:
+        self, question: str, missing: list[str] | None = None, **kwargs
+    ) -> dict[str, Any]:
         """
         Ask the user for missing information.
 

@@ -6,11 +6,9 @@ Verifies orchestration logic, progress tracking, error handling, and logging.
 """
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import structlog
-from structlog.testing import LogCapture
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory

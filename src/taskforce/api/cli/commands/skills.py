@@ -1,7 +1,6 @@
 """Skills command - List and inspect available agent skills."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -41,7 +40,7 @@ def _get_skill_service() -> SkillService:
 @app.command("list")
 def list_skills(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full descriptions"),
-    skill_type: Optional[str] = typer.Option(
+    skill_type: str | None = typer.Option(
         None,
         "--type",
         "-t",
@@ -56,10 +55,10 @@ def list_skills(
     if skill_type is not None:
         try:
             filter_type = SkillType(skill_type.lower())
-        except ValueError:
+        except ValueError as exc:
             valid = ", ".join(t.value for t in SkillType)
             console.print(f"[red]Invalid skill type '{skill_type}'. Valid values: {valid}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
         metadata_list = [m for m in metadata_list if m.skill_type == filter_type]
 
     if not metadata_list:

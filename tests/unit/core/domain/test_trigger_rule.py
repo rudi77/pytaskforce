@@ -1,6 +1,5 @@
 """Tests for TriggerRule domain models."""
 
-import pytest
 
 from taskforce.core.domain.trigger_rule import (
     RuleAction,

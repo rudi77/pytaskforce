@@ -91,6 +91,10 @@ class GitTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.HIGH
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         operation = kwargs.get("operation")
         if operation == "push":
@@ -298,6 +302,10 @@ class GitHubTool(ToolProtocol):
     @property
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.HIGH
+
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
 
     def get_approval_preview(self, **kwargs: Any) -> str:
         action = kwargs.get("action")

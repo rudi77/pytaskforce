@@ -161,7 +161,6 @@ class TestHandleWebhook:
             adapter.verify_signature = MagicMock(return_value=False)
             return {"telegram": adapter}
 
-        from taskforce.api.dependencies import get_gateway
 
         app = client.app
         app.dependency_overrides[get_inbound_adapters] = bad_adapters

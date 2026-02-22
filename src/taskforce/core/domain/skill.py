@@ -24,7 +24,6 @@ from typing import Any
 
 from taskforce.core.domain.enums import SkillType
 
-
 # Validation constants
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024

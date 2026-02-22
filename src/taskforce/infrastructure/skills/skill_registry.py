@@ -10,8 +10,8 @@ Extended to support:
 """
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
@@ -19,7 +19,6 @@ from taskforce.infrastructure.skills.skill_loader import (
     SkillLoader,
     get_default_skill_directories,
 )
-
 
 logger = logging.getLogger(__name__)
 

@@ -20,9 +20,9 @@ Clean Architecture Notes:
 
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 import yaml
@@ -69,9 +69,9 @@ class FileAgentRegistry:
 
     def __init__(
         self,
-        configs_dir: Optional[str] = None,
-        tool_mapper: Optional[ToolMapperProtocol] = None,
-        base_path: Optional[Path] = None,
+        configs_dir: str | None = None,
+        tool_mapper: ToolMapperProtocol | None = None,
+        base_path: Path | None = None,
     ):
         """
         Initialize the agent registry.
@@ -158,7 +158,7 @@ class FileAgentRegistry:
 
     def _load_custom_agent(
         self, agent_id: str
-    ) -> Optional[CustomAgentDefinition]:
+    ) -> CustomAgentDefinition | None:
         """
         Load a custom agent from YAML file.
 
@@ -173,7 +173,7 @@ class FileAgentRegistry:
             return None
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             return self._parse_custom_agent_yaml(data, agent_id)
@@ -232,7 +232,7 @@ class FileAgentRegistry:
 
     def _load_profile_agent(
         self, profile_path: Path
-    ) -> Optional[ProfileAgentDefinition]:
+    ) -> ProfileAgentDefinition | None:
         """
         Load a profile agent from YAML config file.
 
@@ -243,7 +243,7 @@ class FileAgentRegistry:
             ProfileAgentDefinition if valid, None if corrupt
         """
         try:
-            with open(profile_path, "r", encoding="utf-8") as f:
+            with open(profile_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             # Extract profile name from filename (without .yaml)
@@ -290,7 +290,7 @@ class FileAgentRegistry:
             )
 
         # Add timestamps
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         data = self._build_agent_yaml(
             agent_id=agent_input.agent_id,
             name=agent_input.name,
@@ -323,9 +323,7 @@ class FileAgentRegistry:
 
     def get_agent(
         self, agent_id: str
-    ) -> Optional[
-        CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition
-    ]:
+    ) -> CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition | None:
         """
         Get an agent by ID.
 
@@ -433,7 +431,7 @@ class FileAgentRegistry:
             raise FileNotFoundError(f"Agent '{agent_id}' is corrupt")
 
         # Update with new data
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         data = self._build_agent_yaml(
             agent_id=agent_id,
             name=update_input.name,
@@ -533,7 +531,7 @@ class FileAgentRegistry:
 
     def _load_plugin_agent(
         self, plugin_dir: Path, plugin_base_dir: Path
-    ) -> Optional[PluginAgentDefinition]:
+    ) -> PluginAgentDefinition | None:
         """
         Load a plugin agent from a plugin directory.
 
@@ -614,7 +612,7 @@ class FileAgentRegistry:
 
     def _find_plugin_agent(
         self, agent_id: str
-    ) -> Optional[PluginAgentDefinition]:
+    ) -> PluginAgentDefinition | None:
         """
         Find a plugin agent by agent_id.
 

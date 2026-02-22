@@ -1,6 +1,5 @@
 """Config command - Configuration management."""
 
-import sys
 from pathlib import Path
 
 import typer
@@ -17,17 +16,17 @@ def _get_config_dir() -> Path:
     # Try to find project root (similar to get_base_path in factory.py)
     # This is a CLI command, so we're likely running from project root
     project_root = Path.cwd()
-    
+
     # Try new location first
     new_config_dir = project_root / "src" / "taskforce_extensions" / "configs"
     if new_config_dir.exists():
         return new_config_dir
-    
+
     # Fall back to old location
     old_config_dir = project_root / "configs"
     if old_config_dir.exists():
         return old_config_dir
-    
+
     # Default to new location even if it doesn't exist
     return new_config_dir
 

@@ -5,13 +5,12 @@ Tests that token usage is properly tracked and emitted as events during
 agent execution, and that ExecutionResult contains aggregated token statistics.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from taskforce.core.domain.agent import Agent
-from taskforce.core.domain.models import StreamEvent, ExecutionResult
+from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_strategy import _collect_result
 
 

@@ -25,7 +25,6 @@ Usage:
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 import structlog
 
@@ -51,7 +50,7 @@ class TracingConfig:
     enabled: bool = True
     project_name: str = "taskforce"
     collector_endpoint: str = "http://localhost:6006/v1/traces"
-    grpc_endpoint: Optional[str] = "http://localhost:4317"
+    grpc_endpoint: str | None = "http://localhost:4317"
 
     @classmethod
     def from_env(cls) -> "TracingConfig":
@@ -78,7 +77,7 @@ class TracingConfig:
         )
 
 
-def init_tracing(config: Optional[TracingConfig] = None) -> None:
+def init_tracing(config: TracingConfig | None = None) -> None:
     """
     Initialize OpenTelemetry tracing with Phoenix collector.
 

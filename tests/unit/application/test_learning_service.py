@@ -1,10 +1,11 @@
 """Tests for LearningService."""
 
-import pytest
 from unittest.mock import AsyncMock
 
-from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+import pytest
+
 from taskforce.application.learning_service import LearningService
+from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
 
 
 class TestLearningService:

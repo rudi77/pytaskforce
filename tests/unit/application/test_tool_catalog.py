@@ -7,7 +7,6 @@ Tests the ToolRegistry service for tool validation and catalog generation.
 Story: 8.2 - Tool Catalog + Allowlist Validation
 """
 
-import pytest
 
 from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
 

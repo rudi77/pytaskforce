@@ -30,9 +30,9 @@ def list_sessions(
         factory = AgentFactory()
         try:
             agent = await factory.create_agent(profile=profile)
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             console.print(f"[red]Profile not found: {profile}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
         try:
             sessions = await agent.state_manager.list_sessions()
@@ -72,9 +72,9 @@ def show_session(
         factory = AgentFactory()
         try:
             agent = await factory.create_agent(profile=profile)
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             console.print(f"[red]Profile not found: {profile}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
         try:
             state = await agent.state_manager.load_state(session_id)

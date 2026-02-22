@@ -12,9 +12,9 @@ Clean Architecture Notes:
 - Provides to_domain() and from_domain() conversion methods
 """
 
-from typing import Any, Literal, Optional
-
 import re
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from taskforce.core.domain.agent_models import (
@@ -170,7 +170,7 @@ class ProfileAgentResponse(BaseModel):
 
     source: Literal["profile"] = "profile"
     profile: str
-    specialist: Optional[str] = None
+    specialist: str | None = None
     tools: list[str | dict[str, Any]]
     mcp_servers: list[dict[str, Any]]
     llm: dict[str, Any]
@@ -200,7 +200,7 @@ class PluginAgentResponse(BaseModel):
     description: str
     plugin_path: str
     tool_classes: list[str]
-    specialist: Optional[str] = None
+    specialist: str | None = None
     mcp_servers: list[dict[str, Any]]
 
     @classmethod

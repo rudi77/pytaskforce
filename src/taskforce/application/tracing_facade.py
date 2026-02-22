@@ -9,8 +9,14 @@ API layer should import from here instead of directly from infrastructure.
 
 from taskforce.infrastructure.tracing import (
     TracingConfig,
+)
+from taskforce.infrastructure.tracing import (
     get_tracer as _get_tracer,
+)
+from taskforce.infrastructure.tracing import (
     init_tracing as _init_tracing,
+)
+from taskforce.infrastructure.tracing import (
     shutdown_tracing as _shutdown_tracing,
 )
 

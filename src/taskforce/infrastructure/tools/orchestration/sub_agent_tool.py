@@ -7,9 +7,9 @@ Each instance represents one specialist, exposing a simple mission-only interfac
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.orchestration.agent_tool import AgentTool
 
 
@@ -21,8 +21,8 @@ class SubAgentTool:
         agent_tool: AgentTool,
         specialist: str,
         name: str,
-        description: Optional[str] = None,
-        planning_strategy: Optional[str] = None,
+        description: str | None = None,
+        planning_strategy: str | None = None,
     ) -> None:
         self._agent_tool = agent_tool
         self._specialist = specialist

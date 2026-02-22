@@ -121,6 +121,11 @@ class PlannerTool(ToolProtocol):
         """Planner tool has low risk (internal state only)."""
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        """Planner tool should not run in parallel (modifies shared plan state)."""
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         """Generate preview for approval prompt."""
         action = kwargs.get("action", "unknown")

@@ -11,7 +11,6 @@ from taskforce_extensions.infrastructure.communication.recipient_registry import
     InMemoryRecipientRegistry,
 )
 
-
 # ------------------------------------------------------------------
 # ConversationStore tests
 # ------------------------------------------------------------------
