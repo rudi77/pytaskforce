@@ -40,9 +40,7 @@ def atomic_write_yaml(path: Path, data: dict[str, Any]) -> None:
     Raises:
         OSError: If file operations fail.
     """
-    temp_fd, temp_path = tempfile.mkstemp(
-        dir=path.parent, suffix=".tmp", prefix=".agent_"
-    )
+    temp_fd, temp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=".agent_")
     try:
         with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
             yaml.safe_dump(

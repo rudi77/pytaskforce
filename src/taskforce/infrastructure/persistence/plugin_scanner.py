@@ -96,7 +96,6 @@ def load_plugin_agent(
     """
     try:
         from taskforce.application.plugin_loader import PluginLoader
-        from taskforce.core.domain.errors import PluginError
 
         loader = PluginLoader()
         manifest = loader.discover_plugin(str(plugin_dir))
