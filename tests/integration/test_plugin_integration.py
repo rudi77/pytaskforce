@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.core.domain.errors import PluginError
-
 
 # Get the path to accounting_agent example
 EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"

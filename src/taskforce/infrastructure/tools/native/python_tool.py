@@ -8,7 +8,7 @@ Migrated from Agent V2 with full preservation of execution semantics.
 import contextlib
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
@@ -35,7 +35,7 @@ class PythonTool(ToolProtocol):
         )
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -63,6 +63,10 @@ class PythonTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.HIGH
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         code = kwargs.get("code", "")
         code_preview = code[:200] + "..." if len(code) > 200 else code
@@ -72,10 +76,10 @@ class PythonTool(ToolProtocol):
     async def execute(
         self,
         code: str,
-        context: Optional[Dict[str, Any]] = None,
-        cwd: Optional[str] = None,
+        context: dict[str, Any] | None = None,
+        cwd: str | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute Python code in controlled namespace.
 
@@ -332,16 +336,16 @@ except ImportError:
                 var_name = error_msg.split("'")[1] if "'" in error_msg else "unknown"
                 hints.append(f"Variable '{var_name}' is not defined.")
                 hints.append(
-                    f"REMEMBER: Each Python call has an ISOLATED namespace!"
+                    "REMEMBER: Each Python call has an ISOLATED namespace!"
                 )
                 hints.append(f"  1. If '{var_name}' is from a previous step, you must:")
-                hints.append(f"     → Re-read the source data (CSV, JSON, etc.), OR")
-                hints.append(f"     → Request it via 'context' parameter")
+                hints.append("     → Re-read the source data (CSV, JSON, etc.), OR")
+                hints.append("     → Request it via 'context' parameter")
                 hints.append(
                     f"  2. If '{var_name}' should be created here, define it in your code"
                 )
                 hints.append(
-                    f"  3. Check the file path and make sure the data source exists"
+                    "  3. Check the file path and make sure the data source exists"
                 )
 
             elif error_type == "KeyError":

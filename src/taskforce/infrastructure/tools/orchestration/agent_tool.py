@@ -10,13 +10,13 @@ allowing parallel execution of sub-agents and hierarchical session management.
 
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
 from taskforce.core.domain.sub_agents import SubAgentSpec
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
-from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.core.interfaces.tools import ApprovalRiskLevel
 
 
 class AgentTool:
@@ -50,8 +50,8 @@ class AgentTool:
         agent_factory: "AgentFactory",  # type: ignore # noqa: F821
         sub_agent_spawner: SubAgentSpawnerProtocol | None = None,
         profile: str = "dev",
-        work_dir: Optional[str] = None,
-        max_steps: Optional[int] = None,
+        work_dir: str | None = None,
+        max_steps: int | None = None,
         summarize_results: bool = False,
         summary_max_length: int = 2000,
     ):
@@ -222,7 +222,7 @@ class AgentTool:
             if project_root_plugins.parent == project_root_plugins:  # Reached filesystem root
                 break
             project_root_plugins = project_root_plugins.parent
-        
+
         for plugins_dir in plugins_dirs:
             if plugins_dir.exists():
                 for plugin_dir in plugins_dir.iterdir():
@@ -242,8 +242,8 @@ class AgentTool:
     async def execute(
         self,
         mission: str,
-        specialist: Optional[str] = None,
-        planning_strategy: Optional[str] = None,
+        specialist: str | None = None,
+        planning_strategy: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """

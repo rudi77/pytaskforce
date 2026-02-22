@@ -17,12 +17,12 @@ Both endpoints support:
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 
 from taskforce.api.dependencies import get_executor
 from taskforce.api.errors import http_exception as _http_exception
@@ -229,12 +229,12 @@ class ExecuteMissionRequest(BaseModel):
         description="The task description for the agent to execute.",
         examples=["Search for recent news about AI and summarize findings"]
     )
-    session_id: Optional[str] = Field(
+    session_id: str | None = Field(
         default=None,
         description="Session ID to resume. Auto-generated if omitted.",
         examples=["550e8400-e29b-41d4-a716-446655440000"]
     )
-    conversation_history: Optional[List[Dict[str, Any]]] = Field(
+    conversation_history: list[dict[str, Any]] | None = Field(
         default=None,
         description="Optional conversation history for chat context.",
         examples=[[
@@ -242,15 +242,15 @@ class ExecuteMissionRequest(BaseModel):
             {"role": "assistant", "content": "Previous assistant response"}
         ]]
     )
-    user_id: Optional[str] = Field(
+    user_id: str | None = Field(
         default=None,
         description="User ID for RAG security filtering."
     )
-    org_id: Optional[str] = Field(
+    org_id: str | None = Field(
         default=None,
         description="Organization ID for RAG security filtering."
     )
-    scope: Optional[str] = Field(
+    scope: str | None = Field(
         default=None,
         description="Access scope for RAG security filtering."
     )
@@ -258,7 +258,7 @@ class ExecuteMissionRequest(BaseModel):
         default="dev",
         description="Agent profile to use (e.g., dev, coding_agent, rag_agent).",
     )
-    agent_id: Optional[str] = Field(
+    agent_id: str | None = Field(
         default=None,
         description=(
             "Agent ID to use. Can be: "
@@ -269,18 +269,18 @@ class ExecuteMissionRequest(BaseModel):
         ),
         examples=["web-agent", "accounting_agent"],
     )
-    planning_strategy: Optional[str] = Field(
+    planning_strategy: str | None = Field(
         default=None,
         description=(
             "Agent planning strategy override "
             "(native_react, plan_and_execute, plan_and_react, or spar)."
         ),
     )
-    planning_strategy_params: Optional[Dict[str, Any]] = Field(
+    planning_strategy_params: dict[str, Any] | None = Field(
         default=None,
         description="Optional parameters for the selected planning strategy.",
     )
-    auto_epic: Optional[bool] = Field(
+    auto_epic: bool | None = Field(
         default=None,
         description=(
             "Auto-epic detection. null=read from profile config, "

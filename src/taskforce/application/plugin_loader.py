@@ -525,7 +525,7 @@ class PluginLoader:
                 return False, f"'{method}' is not callable"
 
         # Verify execute is async
-        execute_method = getattr(tool, "execute")
+        execute_method = tool.execute
         if not inspect.iscoroutinefunction(execute_method):
             return False, "execute() must be an async method"
 

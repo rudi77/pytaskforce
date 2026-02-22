@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from taskforce.core.domain.context_builder import ContextBuilder
-from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.domain.context_policy import ContextPolicy
+from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.tools.planner_tool import PlannerTool
 
 

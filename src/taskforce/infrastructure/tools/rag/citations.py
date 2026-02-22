@@ -4,10 +4,10 @@ This module provides utilities for extracting citations from RAG tool results
 and formatting them for use in agent responses.
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List, Literal
-from enum import Enum
 import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
 
 
 class CitationStyle(Enum):
@@ -34,15 +34,15 @@ class RAGCitation:
     """
 
     document_id: str
-    chunk_id: Optional[str] = None
+    chunk_id: str | None = None
     title: str = ""
     score: float = 0.0
-    page_number: Optional[int] = None
-    section: Optional[str] = None
+    page_number: int | None = None
+    section: str | None = None
     snippet: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "document_id": self.document_id,
@@ -56,7 +56,7 @@ class RAGCitation:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RAGCitation":
+    def from_dict(cls, data: dict[str, Any]) -> "RAGCitation":
         """Create from dictionary."""
         return cls(
             document_id=data.get("document_id", ""),
@@ -82,8 +82,8 @@ class CitationResult:
     """
 
     formatted_text: str
-    citations: List[RAGCitation]
-    references: List[str]
+    citations: list[RAGCitation]
+    references: list[str]
     style: CitationStyle
 
 
@@ -91,7 +91,7 @@ class RAGCitationExtractor:
     """Extracts citation information from RAG tool results."""
 
     @staticmethod
-    def extract_from_semantic_search(result: Dict[str, Any]) -> List[RAGCitation]:
+    def extract_from_semantic_search(result: dict[str, Any]) -> list[RAGCitation]:
         """Extract citations from semantic search results.
 
         Args:
@@ -125,7 +125,7 @@ class RAGCitationExtractor:
         return citations
 
     @staticmethod
-    def extract_from_get_document(result: Dict[str, Any]) -> List[RAGCitation]:
+    def extract_from_get_document(result: dict[str, Any]) -> list[RAGCitation]:
         """Extract citations from get document results.
 
         Args:
@@ -154,8 +154,8 @@ class RAGCitationExtractor:
 
     @staticmethod
     def extract_from_result(
-        tool_name: str, result: Dict[str, Any]
-    ) -> List[RAGCitation]:
+        tool_name: str, result: dict[str, Any]
+    ) -> list[RAGCitation]:
         """Extract citations from any RAG tool result.
 
         Args:
@@ -177,7 +177,7 @@ class RAGCitationExtractor:
             return RAGCitationExtractor._extract_generic(result)
 
     @staticmethod
-    def _extract_generic(result: Dict[str, Any]) -> List[RAGCitation]:
+    def _extract_generic(result: dict[str, Any]) -> list[RAGCitation]:
         """Generic extraction for unknown RAG tool formats.
 
         Args:
@@ -252,7 +252,7 @@ class CitationFormatter:
     def format_citations(
         self,
         text: str,
-        citations: List[RAGCitation],
+        citations: list[RAGCitation],
     ) -> CitationResult:
         """Format citations for a response text.
 
@@ -322,7 +322,7 @@ class CitationFormatter:
         return " ".join(parts)
 
     def _add_inline_markers(
-        self, text: str, citations: List[RAGCitation]
+        self, text: str, citations: list[RAGCitation]
     ) -> str:
         """Add inline citation markers to text.
 
@@ -369,7 +369,7 @@ class CitationFormatter:
 
         return " ".join(annotated_sentences)
 
-    def _extract_keywords(self, citation: RAGCitation) -> List[str]:
+    def _extract_keywords(self, citation: RAGCitation) -> list[str]:
         """Extract keywords from a citation for matching.
 
         Args:
@@ -406,7 +406,7 @@ class CitationFormatter:
         return f"[{num}]"
 
     def format_citation_block(
-        self, citations: List[RAGCitation], header: str = "Sources"
+        self, citations: list[RAGCitation], header: str = "Sources"
     ) -> str:
         """Format a block of citations for display.
 
@@ -440,7 +440,7 @@ class CitationFormatter:
 
 
 def create_citation_formatter(
-    config: Dict[str, Any]
+    config: dict[str, Any]
 ) -> CitationFormatter:
     """Create a citation formatter from configuration.
 

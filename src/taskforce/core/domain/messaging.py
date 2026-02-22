@@ -30,7 +30,7 @@ class MessageEnvelope:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MessageEnvelope":
+    def from_dict(cls, data: dict[str, Any]) -> MessageEnvelope:
         """Deserialize a stored envelope."""
         created_at_raw = data.get("created_at")
         created_at = (

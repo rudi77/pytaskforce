@@ -1,11 +1,12 @@
 """List documents tool for Azure AI Search document metadata retrieval."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any
+
 import structlog
 
 from taskforce.core.domain.errors import ToolError
-from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
+from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 
 
@@ -21,7 +22,7 @@ class ListDocumentsTool(ToolProtocol):
     Implements ToolProtocol for dependency injection.
     """
 
-    def __init__(self, user_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, user_context: dict[str, Any] | None = None):
         """
         Initialize the list documents tool.
 
@@ -50,7 +51,7 @@ class ListDocumentsTool(ToolProtocol):
         )
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         """
         JSON schema for tool parameters.
 
@@ -105,16 +106,16 @@ class ListDocumentsTool(ToolProtocol):
             limit = kwargs["limit"]
             if not isinstance(limit, int) or limit < 1 or limit > 100:
                 return False, "Parameter 'limit' must be an integer between 1 and 100"
-        
+
         return True, None
 
     async def execute(
         self,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 20,
-        user_context: Optional[Dict[str, Any]] = None,
+        user_context: dict[str, Any] | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute document listing from content-blocks index using facets.
 
@@ -178,7 +179,7 @@ class ListDocumentsTool(ToolProtocol):
             # Execute search to get unique document_ids
             async with client:
                 document_ids = []
-                
+
                 # Try faceting approach first (most efficient)
                 try:
                     search_results = await client.search(
@@ -190,14 +191,14 @@ class ListDocumentsTool(ToolProtocol):
 
                     # Extract unique document IDs from facets (async call)
                     facets = await search_results.get_facets()
-                    
+
                     if facets and "document_id" in facets:
                         # Limit to requested number of documents
                         document_ids = [
-                            facet["value"] 
+                            facet["value"]
                             for facet in facets["document_id"][:limit]
                         ]
-                    
+
                     self.logger.info(
                         "faceting_success",
                         unique_documents=len(document_ids),
@@ -213,21 +214,21 @@ class ListDocumentsTool(ToolProtocol):
                             message="document_id field not facetable, using fallback approach",
                             original_error=str(facet_error)[:200]
                         )
-                        
+
                         # Fallback: Use regular search and manually deduplicate
                         self.logger.info(
                             "fallback_search_starting",
                             filter=combined_filter,
                             limit=limit
                         )
-                        
+
                         search_results = await client.search(
                             search_text="*",
                             filter=combined_filter if combined_filter else None,
                             select=["document_id"],
                             top=1000  # Get enough results to find unique documents
                         )
-                        
+
                         seen_ids = set()
                         chunk_count = 0
                         async for chunk in search_results:
@@ -238,7 +239,7 @@ class ListDocumentsTool(ToolProtocol):
                                 document_ids.append(doc_id)
                                 if len(document_ids) >= limit:
                                     break
-                        
+
                         self.logger.info(
                             "fallback_success",
                             unique_documents=len(document_ids),
@@ -309,7 +310,7 @@ class ListDocumentsTool(ToolProtocol):
                 result_text = f"Found {count} documents:\n"
                 for i, doc in enumerate(documents[:10], 1):
                     result_text += f"{i}. {doc.get('document_title', 'Unknown')} (ID: {doc.get('document_id')})\n"
-                
+
                 if count > 10:
                     result_text += f"... and {count - 10} more.\n"
 
@@ -329,7 +330,7 @@ class ListDocumentsTool(ToolProtocol):
     def _combine_filters(
         self,
         security_filter: str,
-        additional_filters: Optional[Dict[str, Any]]
+        additional_filters: dict[str, Any] | None
     ) -> str:
         """
         Combine security filter with additional user filters.
@@ -356,7 +357,7 @@ class ListDocumentsTool(ToolProtocol):
                         valid_fields=list(self.VALID_FILTER_FIELDS)
                     )
                     continue
-                    
+
                 # Sanitize the value
                 sanitized_value = self.azure_base._sanitize_filter_value(str(value))
                 if isinstance(value, str):
@@ -373,7 +374,7 @@ class ListDocumentsTool(ToolProtocol):
         self,
         exception: Exception,
         elapsed_time: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Handle errors and return structured error response.
 
@@ -384,8 +385,9 @@ class ListDocumentsTool(ToolProtocol):
         Returns:
             Structured error dict matching agent's expected format
         """
-        from azure.core.exceptions import HttpResponseError, ServiceRequestError
         import traceback
+
+        from azure.core.exceptions import HttpResponseError, ServiceRequestError
 
         latency_ms = int(elapsed_time * 1000)
 

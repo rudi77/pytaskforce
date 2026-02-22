@@ -8,11 +8,11 @@ planning for well-defined intents in the accounting domain.
 import pytest
 
 from taskforce.application.intent_router import (
+    DEFAULT_INTENT_PATTERNS,
     FastIntentRouter,
     IntentMatch,
     IntentPattern,
     create_intent_router_from_config,
-    DEFAULT_INTENT_PATTERNS,
 )
 
 

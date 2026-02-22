@@ -4,8 +4,8 @@ Tests for Skill Registry
 Tests the FileSkillRegistry implementation.
 """
 
+
 import pytest
-from pathlib import Path
 
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
 from taskforce.infrastructure.skills.skill_registry import (

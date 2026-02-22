@@ -1,8 +1,11 @@
 """Tests for EventRouter."""
 
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
+
+from taskforce.application.event_router import EventRouter
+from taskforce.application.rule_engine import RuleEngine
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.domain.trigger_rule import (
     RuleAction,
@@ -10,8 +13,6 @@ from taskforce.core.domain.trigger_rule import (
     TriggerCondition,
     TriggerRule,
 )
-from taskforce.application.event_router import EventRouter
-from taskforce.application.rule_engine import RuleEngine
 
 
 class TestEventRouter:

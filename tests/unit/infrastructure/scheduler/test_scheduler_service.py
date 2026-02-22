@@ -1,8 +1,10 @@
 """Tests for SchedulerService."""
 
 import asyncio
-import pytest
+from datetime import UTC
 from unittest.mock import AsyncMock
+
+import pytest
 
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.domain.schedule import (
@@ -13,8 +15,8 @@ from taskforce.core.domain.schedule import (
 )
 from taskforce.infrastructure.scheduler.scheduler_service import (
     SchedulerService,
-    _parse_interval,
     _next_cron_occurrence,
+    _parse_interval,
 )
 
 
@@ -46,25 +48,25 @@ class TestNextCronOccurrence:
     """Tests for cron expression evaluation."""
 
     def test_every_minute(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        after = datetime(2026, 2, 18, 10, 30, 0, tzinfo=timezone.utc)
+        after = datetime(2026, 2, 18, 10, 30, 0, tzinfo=UTC)
         result = _next_cron_occurrence("* * * * *", after)
         assert result.minute == 31
         assert result.hour == 10
 
     def test_specific_hour(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        after = datetime(2026, 2, 18, 7, 0, 0, tzinfo=timezone.utc)
+        after = datetime(2026, 2, 18, 7, 0, 0, tzinfo=UTC)
         result = _next_cron_occurrence("0 8 * * *", after)
         assert result.hour == 8
         assert result.minute == 0
 
     def test_invalid_expression(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        after = datetime(2026, 2, 18, 10, 0, 0, tzinfo=timezone.utc)
+        after = datetime(2026, 2, 18, 10, 0, 0, tzinfo=UTC)
         with pytest.raises(ValueError, match="expected 5 fields"):
             _next_cron_occurrence("invalid", after)
 

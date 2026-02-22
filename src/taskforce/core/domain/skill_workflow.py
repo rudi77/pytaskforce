@@ -10,8 +10,9 @@ This enables efficient, deterministic execution of multi-step tasks.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass

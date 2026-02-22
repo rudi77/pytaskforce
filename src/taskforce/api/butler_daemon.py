@@ -113,7 +113,7 @@ class ButlerDaemon:
         config_path = factory.config_dir / f"{self._profile}.yaml"
 
         if config_path.exists():
-            import yaml
+            import yaml  # type: ignore[import-untyped]
 
             with open(config_path) as f:
                 return yaml.safe_load(f) or {}
@@ -127,6 +127,9 @@ class ButlerDaemon:
 
     async def _setup_gateway(self, config: dict[str, Any]) -> None:
         """Set up the communication gateway if configured."""
+        if self._butler is None:
+            return
+
         try:
             from taskforce.application.executor import AgentExecutor
             from taskforce.application.gateway import CommunicationGateway
@@ -142,7 +145,6 @@ class ButlerDaemon:
                     conversation_store=components.conversation_store,
                     recipient_registry=components.recipient_registry,
                     outbound_senders=components.outbound_senders,
-                    inbound_adapters=components.inbound_adapters,
                 )
                 self._butler.set_gateway(gateway)
                 logger.info(
@@ -154,6 +156,9 @@ class ButlerDaemon:
 
     async def _setup_executor(self, config: dict[str, Any]) -> None:
         """Set up the agent executor."""
+        if self._butler is None:
+            return
+
         try:
             from taskforce.application.executor import AgentExecutor
 
@@ -165,6 +170,9 @@ class ButlerDaemon:
 
     async def _setup_event_sources(self, config: dict[str, Any]) -> None:
         """Set up event sources from configuration."""
+        if self._butler is None:
+            return
+
         sources_config = config.get("event_sources", [])
 
         for source_cfg in sources_config:
@@ -176,13 +184,13 @@ class ButlerDaemon:
                         CalendarEventSource,
                     )
 
-                    source = CalendarEventSource(
+                    cal_source = CalendarEventSource(
                         poll_interval_seconds=source_cfg.get("poll_interval_minutes", 5) * 60,
                         lookahead_minutes=source_cfg.get("lookahead_minutes", 60),
                         calendar_id=source_cfg.get("calendar_id", "primary"),
                         credentials_file=source_cfg.get("credentials_file"),
                     )
-                    self._butler.add_event_source(source)
+                    self._butler.add_event_source(cal_source)
                     logger.info("butler_daemon.calendar_source_added")
                 except Exception as exc:
                     logger.warning("butler_daemon.calendar_source_failed", error=str(exc))
@@ -193,8 +201,8 @@ class ButlerDaemon:
                         WebhookEventSource,
                     )
 
-                    source = WebhookEventSource()
-                    self._butler.add_event_source(source)
+                    webhook_source = WebhookEventSource()
+                    self._butler.add_event_source(webhook_source)
                     logger.info("butler_daemon.webhook_source_added")
                 except Exception as exc:
                     logger.warning("butler_daemon.webhook_source_failed", error=str(exc))
@@ -204,6 +212,9 @@ class ButlerDaemon:
 
     async def _load_rules(self, config: dict[str, Any]) -> None:
         """Load trigger rules from configuration."""
+        if self._butler is None:
+            return
+
         rules_config = config.get("rules", [])
         for rule_cfg in rules_config:
             try:

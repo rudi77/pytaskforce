@@ -35,7 +35,7 @@ class HeartbeatRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "HeartbeatRecord":
+    def from_dict(cls, data: dict[str, Any]) -> HeartbeatRecord:
         """Deserialize a heartbeat record."""
         return cls(
             session_id=str(data["session_id"]),
@@ -64,7 +64,7 @@ class CheckpointRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CheckpointRecord":
+    def from_dict(cls, data: dict[str, Any]) -> CheckpointRecord:
         """Deserialize a checkpoint record."""
         return cls(
             session_id=str(data["session_id"]),

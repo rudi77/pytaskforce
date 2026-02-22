@@ -14,8 +14,9 @@ Example plugin registration in pyproject.toml:
     enterprise = "taskforce_enterprise.integration.plugin:EnterprisePlugin"
 """
 
-from typing import Any, Callable, Optional, Protocol, runtime_checkable
 from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
+
 import structlog
 
 try:
@@ -92,10 +93,10 @@ class PluginInfo:
 
     name: str
     entry_point: str
-    plugin_class: Optional[type] = None
-    instance: Optional[PluginProtocol] = None
+    plugin_class: type | None = None
+    instance: PluginProtocol | None = None
     initialized: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -114,7 +115,7 @@ class PluginRegistry:
 
 
 # Global plugin registry
-_plugin_registry: Optional[PluginRegistry] = None
+_plugin_registry: PluginRegistry | None = None
 
 
 def get_plugin_registry() -> PluginRegistry:
@@ -181,7 +182,7 @@ def discover_plugins(group: str = "taskforce.plugins") -> list[PluginInfo]:
     return discovered
 
 
-def load_plugin(plugin_info: PluginInfo, config: Optional[dict[str, Any]] = None) -> bool:
+def load_plugin(plugin_info: PluginInfo, config: dict[str, Any] | None = None) -> bool:
     """Load and initialize a discovered plugin.
 
     Args:
@@ -236,7 +237,7 @@ def load_plugin(plugin_info: PluginInfo, config: Optional[dict[str, Any]] = None
         return False
 
 
-def load_all_plugins(config: Optional[dict[str, Any]] = None) -> PluginRegistry:
+def load_all_plugins(config: dict[str, Any] | None = None) -> PluginRegistry:
     """Discover and load all plugins.
 
     Args:
@@ -300,7 +301,7 @@ def get_loaded_plugins() -> list[PluginProtocol]:
     ]
 
 
-def get_plugin(name: str) -> Optional[PluginProtocol]:
+def get_plugin(name: str) -> PluginProtocol | None:
     """Get a specific plugin by name.
 
     Args:

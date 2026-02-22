@@ -9,7 +9,7 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
@@ -27,7 +27,7 @@ class ShellTool(ToolProtocol):
         return "Execute shell commands with timeout and safety limits"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -55,6 +55,10 @@ class ShellTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.HIGH
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         command = kwargs.get("command", "")
         cwd = kwargs.get("cwd", "current directory")
@@ -62,8 +66,8 @@ class ShellTool(ToolProtocol):
         return f"⚠️ SHELL COMMAND EXECUTION\nTool: {self.name}\nCommand: {command}\nWorking Directory: {cwd}\nTimeout: {timeout}s"
 
     async def execute(
-        self, command: str, timeout: int = 30, cwd: Optional[str] = None, **kwargs
-    ) -> Dict[str, Any]:
+        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs
+    ) -> dict[str, Any]:
         """
         Execute shell command with safety checks and timeout.
 
@@ -127,7 +131,7 @@ class ShellTool(ToolProtocol):
                         stderr_text or f"Command failed with code {process.returncode}"
                     )
                 return resp
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 return {
                     "success": False,
@@ -163,7 +167,7 @@ class PowerShellTool(ToolProtocol):
         return "Execute PowerShell commands with timeout and safety limits"
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -191,6 +195,10 @@ class PowerShellTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.HIGH
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         command = kwargs.get("command", "")
         cwd = kwargs.get("cwd", "current directory")
@@ -198,8 +206,8 @@ class PowerShellTool(ToolProtocol):
         return f"⚠️ POWERSHELL COMMAND EXECUTION\nTool: {self.name}\nCommand: {command}\nWorking Directory: {cwd}\nTimeout: {timeout}s"
 
     async def execute(
-        self, command: str, timeout: int = 30, cwd: Optional[str] = None, **kwargs
-    ) -> Dict[str, Any]:
+        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs
+    ) -> dict[str, Any]:
         """
         Execute PowerShell command with safety checks and timeout.
 
@@ -248,7 +256,7 @@ class PowerShellTool(ToolProtocol):
                 }
 
         # Sanitize and validate cwd
-        cwd_path: Optional[str] = None
+        cwd_path: str | None = None
         if cwd is not None:
             if not isinstance(cwd, str):
                 return {"success": False, "error": "cwd must be a string path"}
@@ -299,7 +307,7 @@ class PowerShellTool(ToolProtocol):
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             try:
                 process.kill()
             except Exception:

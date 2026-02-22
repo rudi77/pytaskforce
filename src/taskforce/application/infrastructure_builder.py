@@ -14,9 +14,8 @@ Part of Phase 4 refactoring: Simplified AgentFactory.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import structlog
 import yaml
@@ -164,7 +163,7 @@ class InfrastructureBuilder:
     def build_state_manager(
         self,
         config: dict[str, Any],
-        work_dir_override: Optional[str] = None,
+        work_dir_override: str | None = None,
     ) -> StateManagerProtocol:
         """
         Build state manager based on configuration.

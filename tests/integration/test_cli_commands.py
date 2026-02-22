@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from taskforce.api.cli.main import app
 from taskforce.api.cli.commands import chat as chat_commands
+from taskforce.api.cli.main import app
 from taskforce.core.domain.models import ExecutionResult
 
 runner = CliRunner()

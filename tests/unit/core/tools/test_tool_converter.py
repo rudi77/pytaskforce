@@ -10,7 +10,6 @@ from taskforce.core.tools.tool_converter import (
     _truncate_tool_result,
     assistant_tool_calls_to_message,
     tool_result_to_message,
-    tools_to_openai_format,
 )
 
 

@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -18,7 +17,7 @@ class SessionResponse(BaseModel):
     created_at: str
 
 
-@router.get("/sessions", response_model=List[SessionResponse])
+@router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(
     profile: str = Query(
         ...,

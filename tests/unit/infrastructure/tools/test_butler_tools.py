@@ -1,13 +1,14 @@
 """Tests for butler-specific tools (schedule, reminder, rule_manager)."""
 
-import pytest
 from unittest.mock import AsyncMock
 
-from taskforce.core.domain.schedule import ScheduleJob, ScheduleType
+import pytest
+
+from taskforce.core.domain.schedule import ScheduleJob
 from taskforce.core.domain.trigger_rule import TriggerRule
-from taskforce.infrastructure.tools.native.schedule_tool import ScheduleTool
 from taskforce.infrastructure.tools.native.reminder_tool import ReminderTool
 from taskforce.infrastructure.tools.native.rule_manager_tool import RuleManagerTool
+from taskforce.infrastructure.tools.native.schedule_tool import ScheduleTool
 
 
 class TestScheduleTool:

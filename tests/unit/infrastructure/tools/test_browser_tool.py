@@ -8,15 +8,13 @@ so no real browser installation is required to run the test suite.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import taskforce.infrastructure.tools.native.browser_tool as browser_module
-from taskforce.infrastructure.tools.native.browser_tool import BrowserTool
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
-
+from taskforce.infrastructure.tools.native.browser_tool import BrowserTool
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures

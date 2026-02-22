@@ -6,7 +6,6 @@ Provides powerful file searching capabilities similar to Claude Code:
 - GlobTool: Find files by name patterns (like find with glob syntax)
 """
 
-import fnmatch
 import re
 from pathlib import Path
 from typing import Any

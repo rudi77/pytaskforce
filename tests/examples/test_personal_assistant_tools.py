@@ -1,7 +1,7 @@
 """Tests for personal assistant tool validation helpers."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
 sys.path.append(str(root / "examples" / "personal_assistant"))

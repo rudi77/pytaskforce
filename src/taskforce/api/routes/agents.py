@@ -20,7 +20,6 @@ Clean Architecture Notes:
 - No direct infrastructure imports (registry provided via dependencies.py)
 """
 
-from typing import Any
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response

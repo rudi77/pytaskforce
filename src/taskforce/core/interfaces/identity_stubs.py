@@ -17,8 +17,7 @@ Usage:
             print(f"Processing for user {user.user_id}")
 """
 
-from typing import Protocol, Optional, Any, Set, runtime_checkable
-from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -52,8 +51,8 @@ class UserContextProtocol(Protocol):
     user_id: str
     tenant_id: str
     username: str
-    email: Optional[str]
-    roles: Set[str]
+    email: str | None
+    roles: set[str]
 
     def has_permission(self, permission: Any) -> bool:
         """Check if user has a specific permission."""
@@ -75,15 +74,15 @@ class IdentityProviderProtocol(Protocol):
     This defines the minimum interface for validating credentials.
     """
 
-    async def validate_token(self, token: str) -> Optional[UserContextProtocol]:
+    async def validate_token(self, token: str) -> UserContextProtocol | None:
         """Validate a token and return user context."""
         ...
 
-    async def validate_api_key(self, api_key: str) -> Optional[UserContextProtocol]:
+    async def validate_api_key(self, api_key: str) -> UserContextProtocol | None:
         """Validate an API key and return user context."""
         ...
 
-    async def get_tenant(self, tenant_id: str) -> Optional[TenantContextProtocol]:
+    async def get_tenant(self, tenant_id: str) -> TenantContextProtocol | None:
         """Get tenant by ID."""
         ...
 
@@ -100,8 +99,8 @@ class PolicyEngineProtocol(Protocol):
         user: UserContextProtocol,
         action: Any,
         resource_type: Any,
-        resource_id: Optional[str] = None,
-        context: Optional[dict[str, Any]] = None,
+        resource_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> Any:
         """Evaluate a policy decision."""
         ...
@@ -121,7 +120,7 @@ class AnonymousUser:
         self.tenant_id = tenant_id
         self.username = "anonymous"
         self.email = None
-        self.roles: Set[str] = {"viewer"}
+        self.roles: set[str] = {"viewer"}
         self._is_anonymous = True
 
     def has_permission(self, permission: Any) -> bool:

@@ -1,9 +1,10 @@
 import json
-from typing import Any, Dict
+from typing import Any
 
 from taskforce.core.domain.errors import ToolError
 
-def simplify_wiki_list_output(result: Dict[str, Any]) -> Dict[str, Any]:
+
+def simplify_wiki_list_output(result: dict[str, Any]) -> dict[str, Any]:
     """
     Reduces the massive Azure DevOps Wiki JSON to just Name and ID.
     Drastically reduces token usage (from ~18k to ~500 tokens).
@@ -32,18 +33,18 @@ def simplify_wiki_list_output(result: Dict[str, Any]) -> Dict[str, Any]:
             # THE FILTERING MAGIC: Keep only what matters
             lean_data = [
                 {
-                    "name": wiki.get("name"), 
+                    "name": wiki.get("name"),
                     "id": wiki.get("id"),
                     # Optional: "remoteUrl" if needed, but 'id' is key
-                } 
+                }
                 for wiki in data
                 if isinstance(wiki, dict) # Safety check
             ]
-            
+
             # Overwrite the output with the lean version
             # Always return string as output is expected to be string
             result["output"] = json.dumps(lean_data, indent=2)
-            
+
     except Exception as e:
         tool_error = ToolError(
             f"output_filter failed: {e}",

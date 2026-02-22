@@ -198,7 +198,7 @@ class FileToolResultStore:
             return None
 
         try:
-            async with aiofiles.open(result_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(result_path, encoding="utf-8") as f:
                 content = await f.read()
 
             result = json.loads(content)
@@ -320,7 +320,7 @@ class FileToolResultStore:
         for handle_path in handle_files:
             try:
                 async with aiofiles.open(
-                    handle_path, "r", encoding="utf-8"
+                    handle_path, encoding="utf-8"
                 ) as f:
                     handle_data = json.loads(await f.read())
 
@@ -371,7 +371,7 @@ class FileToolResultStore:
         for handle_path in handle_files:
             try:
                 async with aiofiles.open(
-                    handle_path, "r", encoding="utf-8"
+                    handle_path, encoding="utf-8"
                 ) as f:
                     handle_data = json.loads(await f.read())
                     timestamps.append(handle_data.get("created_at", ""))

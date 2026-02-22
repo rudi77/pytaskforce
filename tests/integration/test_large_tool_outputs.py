@@ -11,15 +11,12 @@ Test Scenario:
 4. Verify that agent can complete the mission successfully
 """
 
-import tempfile
-from pathlib import Path
 
 import pytest
 import structlog
 
 from taskforce.core.domain.agent import Agent
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
-from taskforce.infrastructure.llm.litellm_service import LiteLLMService
 from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
 from taskforce.infrastructure.tools.native.python_tool import PythonTool
 

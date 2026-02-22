@@ -1,19 +1,19 @@
 """Semantic search tool for multimodal content blocks using Azure AI Search."""
 
-import time
 import os
-from typing import Any, Dict, Optional
-import structlog
+import time
+from typing import Any
 
+import structlog
 from azure.search.documents.models import (
-    VectorizableTextQuery,
-    QueryType,
+    QueryAnswerType,
     QueryCaptionType,
-    QueryAnswerType
+    QueryType,
+    VectorizableTextQuery,
 )
 
 from taskforce.core.domain.errors import ToolError
-from taskforce.core.interfaces.tools import ToolProtocol, ApprovalRiskLevel
+from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.rag.azure_search_base import AzureSearchBase
 
 
@@ -30,7 +30,7 @@ class SemanticSearchTool:
     a semantic configuration to be set up in Azure.
     """
 
-    def __init__(self, user_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, user_context: dict[str, Any] | None = None):
         """
         Initialize the semantic search tool.
 
@@ -40,7 +40,7 @@ class SemanticSearchTool:
         self.azure_base = AzureSearchBase()
         self.user_context = user_context or {}
         self.logger = structlog.get_logger().bind(tool="rag_semantic_search")
-        
+
         # Load semantic configuration name from env or default
         self.semantic_config = os.getenv("AZURE_SEARCH_SEMANTIC_CONFIG", "default")
 
@@ -59,7 +59,7 @@ class SemanticSearchTool:
         )
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -108,9 +108,9 @@ class SemanticSearchTool:
         self,
         query: str,
         top_k: int = 10,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute Hybrid Search (Vector + Text) with Semantic Reranking.
         """
@@ -127,8 +127,8 @@ class SemanticSearchTool:
             # 2. Prepare Vector Query (Server-side embedding)
             # Assuming the index field for vectors is named 'content_embedding'
             vector_query = VectorizableTextQuery(
-                text=query, 
-                k_nearest_neighbors=top_k, 
+                text=query,
+                k_nearest_neighbors=top_k,
                 fields="content_embedding",
                 exhaustive=True
             )
@@ -143,13 +143,13 @@ class SemanticSearchTool:
                     vector_queries=[vector_query],      # Vector Search
                     filter=combined_filter if combined_filter else None,
                     top=top_k,
-                    
+
                     # Semantic Reranking Configuration
                     query_type=QueryType.SEMANTIC,
                     semantic_configuration_name=self.semantic_config,
                     query_caption=QueryCaptionType.EXTRACTIVE,
                     query_answer=QueryAnswerType.EXTRACTIVE,
-                    
+
                     select=[
                         "content_id",
                         "content_text",
@@ -171,7 +171,7 @@ class SemanticSearchTool:
                     # @search.score is the BM25/Vector score
                     reranker_score = result.get("@search.rerankerScore", 0.0)
                     base_score = result.get("@search.score", 0.0)
-                    
+
                     # Normalize semantic score roughly to 0-1 for consistency
                     normalized_score = min(reranker_score / 4.0, 1.0) if reranker_score else base_score
 
@@ -179,7 +179,7 @@ class SemanticSearchTool:
                     captions = []
                     if result.get("@search.captions"):
                         captions = [c.text for c in result["@search.captions"]]
-                    
+
                     # Fallback to content text if no captions
                     content_preview = " ".join(captions) if captions else result.get("content_text", "")
 
@@ -203,11 +203,11 @@ class SemanticSearchTool:
 
             # 6. Format Output for Agent
             latency_ms = int((time.time() - start_time) * 1000)
-            
+
             if not results:
                 return {
-                    "success": True, 
-                    "result_count": 0, 
+                    "success": True,
+                    "result_count": 0,
                     "result": "No relevant documents found."
                 }
 
@@ -216,7 +216,7 @@ class SemanticSearchTool:
             for i, res in enumerate(results, 1):
                 res_type = "🖼️ [IMAGE]" if res.get('image_path') else "📄 [TEXT]"
                 page_info = f", p. {res['page_number']}" if res['page_number'] else ""
-                
+
                 result_text += (
                     f"{i}. {res_type} {res['document_title']} {page_info}\n"
                     f"   Relevance: {res['score']:.2f} ({res['relevance_reason']})\n"
@@ -235,12 +235,12 @@ class SemanticSearchTool:
         except Exception as e:
             return self._handle_error(e, query, time.time() - start_time)
 
-    def _combine_filters(self, security_filter: str, additional_filters: Optional[Dict[str, Any]]) -> str:
+    def _combine_filters(self, security_filter: str, additional_filters: dict[str, Any] | None) -> str:
         # Same logic as before
         filters = []
         if security_filter:
             filters.append(f"({security_filter})")
-        
+
         if additional_filters:
             for key, value in additional_filters.items():
                 sanitized_value = self.azure_base._sanitize_filter_value(str(value))
@@ -248,16 +248,16 @@ class SemanticSearchTool:
                     filters.append(f"{key} eq '{sanitized_value}'")
                 else:
                     filters.append(f"{key} eq {value}")
-        
+
         return " and ".join(filters) if filters else ""
 
-    def _handle_error(self, exception: Exception, query: str, elapsed_time: float) -> Dict[str, Any]:
+    def _handle_error(self, exception: Exception, query: str, elapsed_time: float) -> dict[str, Any]:
         # Same error handling logic as before, just ensuring imports are there
         from azure.core.exceptions import HttpResponseError
-        
+
         error_msg = str(exception)
         hints = []
-        
+
         if isinstance(exception, HttpResponseError):
             if "Semantic search is not enabled" in error_msg:
                 hints.append("Your Azure Search tier does not support Semantic Search or it is disabled.")
@@ -266,7 +266,7 @@ class SemanticSearchTool:
                 hints.append("The index is missing the 'content_embedding' vector field.")
 
         self.logger.error("search_failed", error=error_msg)
-        
+
         tool_error = ToolError(
             f"{self.name} failed: {error_msg}",
             tool_name=self.name,

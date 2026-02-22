@@ -7,9 +7,6 @@ Tests all CRUD endpoints for custom agent management.
 Story: 8.1 - Custom Agent Registry (CRUD + YAML Persistence)
 """
 
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 import yaml
@@ -422,7 +419,7 @@ def test_atomic_write_windows_safe(registry):
     agent_path = registry._get_agent_path("atomic-test")
     assert agent_path.exists()
 
-    with open(agent_path, "r") as f:
+    with open(agent_path) as f:
         data = yaml.safe_load(f)
     assert data["name"] == "Updated Atomic Test"
     assert data["created_at"] == created.created_at

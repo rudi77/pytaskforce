@@ -5,7 +5,7 @@ Tool registry for resolving tool names and types to module specifications.
 from __future__ import annotations
 
 import copy
-from typing import Any, Optional
+from typing import Any
 
 ToolSpec = dict[str, Any]
 
@@ -167,7 +167,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
 }
 
 
-def get_tool_definition(tool_name: str) -> Optional[ToolSpec]:
+def get_tool_definition(tool_name: str) -> ToolSpec | None:
     """Return a deep-copied tool definition by short name."""
     definition = _TOOL_REGISTRY.get(tool_name)
     if not definition:
@@ -175,7 +175,7 @@ def get_tool_definition(tool_name: str) -> Optional[ToolSpec]:
     return copy.deepcopy(definition)
 
 
-def get_tool_name_for_type(tool_type: str) -> Optional[str]:
+def get_tool_name_for_type(tool_type: str) -> str | None:
     """Return the short tool name for a given tool class name."""
     for name, definition in _TOOL_REGISTRY.items():
         if definition["type"] == tool_type:
@@ -183,7 +183,7 @@ def get_tool_name_for_type(tool_type: str) -> Optional[str]:
     return None
 
 
-def get_tool_definition_by_type(tool_type: str) -> Optional[ToolSpec]:
+def get_tool_definition_by_type(tool_type: str) -> ToolSpec | None:
     """Return a deep-copied tool definition by tool class name."""
     tool_name = get_tool_name_for_type(tool_type)
     if not tool_name:
@@ -191,7 +191,7 @@ def get_tool_definition_by_type(tool_type: str) -> Optional[ToolSpec]:
     return get_tool_definition(tool_name)
 
 
-def resolve_tool_spec(tool_spec: str | ToolSpec) -> Optional[ToolSpec]:
+def resolve_tool_spec(tool_spec: str | ToolSpec) -> ToolSpec | None:
     """
     Resolve a tool spec into a full definition with type, module, and params.
 
@@ -218,7 +218,7 @@ def _resolve_partial_spec(
     tool_type: str | None,
     tool_module: str | None,
     tool_params: dict[str, Any],
-) -> Optional[ToolSpec]:
+) -> ToolSpec | None:
     """Resolve a partial spec using registry defaults."""
     if not tool_type:
         return None
@@ -237,7 +237,7 @@ def _resolve_partial_spec(
 
 
 def _merge_params(
-    defaults: Optional[ToolSpec],
+    defaults: ToolSpec | None,
     overrides: dict[str, Any],
 ) -> dict[str, Any]:
     """Merge default params with overrides, preferring overrides."""

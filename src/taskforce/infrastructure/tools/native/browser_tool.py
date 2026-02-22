@@ -24,7 +24,7 @@ from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 logger = structlog.get_logger(__name__)
 
 # Module-level browser session – shared across tool calls within a process
-_session: "_BrowserSession | None" = None
+_session: _BrowserSession | None = None
 
 
 class _BrowserSession:

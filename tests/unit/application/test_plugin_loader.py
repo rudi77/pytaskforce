@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from taskforce.application.plugin_loader import PluginLoader, PluginManifest
 from taskforce.core.domain.errors import PluginError

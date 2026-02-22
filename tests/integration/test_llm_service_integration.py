@@ -11,7 +11,6 @@ Tests are marked with @pytest.mark.integration and can be skipped with:
 """
 
 import os
-from pathlib import Path
 
 import pytest
 import yaml

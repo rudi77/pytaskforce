@@ -6,10 +6,10 @@ Follows hexagonal architecture by keeping observability concerns in infrastructu
 """
 
 from taskforce.infrastructure.tracing.phoenix_tracer import (
+    TracingConfig,
+    get_tracer,
     init_tracing,
     shutdown_tracing,
-    get_tracer,
-    TracingConfig,
 )
 
 __all__ = [

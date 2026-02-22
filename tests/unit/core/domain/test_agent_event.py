@@ -1,7 +1,8 @@
 """Tests for AgentEvent domain model."""
 
+from datetime import datetime
+
 import pytest
-from datetime import datetime, timezone
 
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 

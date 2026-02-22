@@ -5,7 +5,7 @@ Generic LLM tool for natural language text generation.
 Migrated from Agent V2 with adaptation for Taskforce LLM service integration.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import structlog
 
@@ -41,7 +41,7 @@ class LLMTool(ToolProtocol):
         )
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         """Override to provide detailed parameter descriptions."""
         return {
             "type": "object",
@@ -74,6 +74,10 @@ class LLMTool(ToolProtocol):
     def approval_risk_level(self) -> ApprovalRiskLevel:
         return ApprovalRiskLevel.LOW
 
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
     def get_approval_preview(self, **kwargs: Any) -> str:
         prompt = kwargs.get("prompt", "")
         prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
@@ -82,11 +86,11 @@ class LLMTool(ToolProtocol):
     async def execute(
         self,
         prompt: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         max_tokens: int = 500,
         temperature: float = 0.7,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute LLM text generation using LLM service.
 

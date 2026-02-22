@@ -515,6 +515,7 @@ def run_skill(
 
     # Configure logging
     import logging
+
     import structlog
 
     if debug:
@@ -630,7 +631,7 @@ async def _execute_skill_agent(
             tf_console.print_token_usage(result.token_usage)
     except Exception as e:
         tf_console.print_error(f"Failed to execute skill: {str(e)}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     finally:
         if agent and hasattr(agent, "close"):
             await agent.close()

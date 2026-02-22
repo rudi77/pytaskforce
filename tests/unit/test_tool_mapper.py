@@ -5,7 +5,6 @@ Unit tests for ToolRegistry (Mapper Functionality)
 Tests the tool name to full tool definition mapping.
 """
 
-import pytest
 
 from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
 

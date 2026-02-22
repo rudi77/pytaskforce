@@ -1,7 +1,8 @@
 """Tests for WebhookEventSource."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from taskforce.core.domain.agent_event import AgentEventType
 from taskforce.infrastructure.event_sources.webhook_source import WebhookEventSource

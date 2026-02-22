@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 
@@ -16,7 +17,7 @@ class OutputFilteringTool:
     def __init__(
         self,
         original_tool: ToolProtocol,
-        filter_func: Callable[[Dict[str, Any]], Dict[str, Any]],
+        filter_func: Callable[[dict[str, Any]], dict[str, Any]],
     ):
         self._original = original_tool
         self._filter_func = filter_func
@@ -32,7 +33,7 @@ class OutputFilteringTool:
         return self._original.description
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return self._original.parameters_schema
 
     @property
@@ -53,7 +54,7 @@ class OutputFilteringTool:
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         return self._original.validate_params(**kwargs)
 
-    async def execute(self, **kwargs: Any) -> Dict[str, Any]:
+    async def execute(self, **kwargs: Any) -> dict[str, Any]:
         # 1. Execute the real MCP tool
         raw_result = await self._original.execute(**kwargs)
 

@@ -7,8 +7,8 @@ This package provides infrastructure implementations for skills:
 - FileSkillRegistry: File-based skill registry implementation
 """
 
-from taskforce.infrastructure.skills.skill_parser import parse_skill_markdown
 from taskforce.infrastructure.skills.skill_loader import SkillLoader
+from taskforce.infrastructure.skills.skill_parser import parse_skill_markdown
 from taskforce.infrastructure.skills.skill_registry import FileSkillRegistry
 
 __all__ = [

@@ -15,15 +15,14 @@ Skill metadata is included in the prompt to enable skill discovery and
 activation based on user requests.
 """
 
-from typing import Optional
 
 
 def build_system_prompt(
     base_prompt: str,
-    mission: Optional[str] = None,
-    tools_description: Optional[str] = None,
-    skills_metadata: Optional[str] = None,
-    active_skills: Optional[str] = None,
+    mission: str | None = None,
+    tools_description: str | None = None,
+    skills_metadata: str | None = None,
+    active_skills: str | None = None,
 ) -> str:
     """
     Build the system prompt from base, mission, tools, and skills.
