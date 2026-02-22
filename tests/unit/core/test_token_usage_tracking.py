@@ -11,7 +11,7 @@ import pytest
 
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
-from taskforce.core.domain.planning_strategy import _collect_result
+from taskforce.core.domain.planning_helpers import _collect_result
 
 
 @pytest.fixture

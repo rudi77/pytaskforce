@@ -14,7 +14,6 @@ Key Responsibilities:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +26,7 @@ import yaml
 from taskforce.application.intent_router import (
     create_intent_router_from_config,
 )
+from taskforce.application.planning_strategy_factory import select_planning_strategy
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.application.profile_loader import DEFAULT_TOOL_NAMES, ProfileLoader
 from taskforce.application.skill_manager import (
@@ -34,15 +34,10 @@ from taskforce.application.skill_manager import (
     create_skill_manager_from_manifest,
 )
 from taskforce.application.system_prompt_assembler import SystemPromptAssembler
+from taskforce.application.tool_builder import ToolBuilder
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.context_policy import ContextPolicy
-from taskforce.core.domain.planning_strategy import (
-    NativeReActStrategy,
-    PlanAndExecuteStrategy,
-    PlanAndReactStrategy,
-    PlanningStrategy,
-    SparStrategy,
-)
+from taskforce.core.domain.planning_strategy import PlanningStrategy
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
@@ -136,6 +131,7 @@ class AgentFactory:
         self.logger = structlog.get_logger().bind(component="agent_factory")
         self.profile_loader = ProfileLoader(self.config_dir)
         self.prompt_assembler = SystemPromptAssembler()
+        self._tool_builder = ToolBuilder(self)
 
     def _apply_extensions(self, config: dict, agent: Agent) -> Agent:
         """Apply registered factory extensions to the agent.
@@ -240,7 +236,7 @@ class AgentFactory:
             tool_filter=definition.mcp_tool_filter,
         )
 
-        memory_store_dir = self._resolve_memory_store_dir(
+        memory_store_dir = ToolBuilder.resolve_memory_store_dir(
             base_config, work_dir_override=definition.work_dir
         )
 
@@ -251,7 +247,7 @@ class AgentFactory:
             memory_store_dir=memory_store_dir,
         )
         native_tools = tool_registry.resolve(definition.tools)
-        orchestration_tool = self._build_orchestration_tool(base_config)
+        orchestration_tool = self._tool_builder.build_orchestration_tool(base_config)
         if orchestration_tool and not any(
             tool.name == orchestration_tool.name for tool in native_tools
         ):
@@ -259,7 +255,7 @@ class AgentFactory:
 
         # Instantiate sub-agent tools from definition specs
         for sub_agent_spec in definition.sub_agent_specs:
-            sub_agent_tool = self._instantiate_sub_agent_tool(sub_agent_spec)
+            sub_agent_tool = self._tool_builder.instantiate_sub_agent_tool(sub_agent_spec)
             if sub_agent_tool:
                 native_tools.append(sub_agent_tool)
 
@@ -293,7 +289,7 @@ class AgentFactory:
         strategy_params = definition.planning_strategy_params or agent_config.get(
             "planning_strategy_params"
         )
-        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
+        selected_strategy = select_planning_strategy(strategy_name, strategy_params)
 
         self.logger.debug(
             "agent_created",
@@ -987,7 +983,7 @@ class AgentFactory:
             if planning_strategy_params is not None
             else agent_config.get("planning_strategy_params")
         )
-        selected_strategy = self._select_planning_strategy(strategy_name, strategy_params)
+        selected_strategy = select_planning_strategy(strategy_name, strategy_params)
 
         self.logger.debug(
             "plugin_agent_created",
@@ -1124,72 +1120,12 @@ class AgentFactory:
     def _select_planning_strategy(
         self, strategy_name: str | None, params: dict[str, Any] | None
     ) -> PlanningStrategy:
-        """
-        Select and instantiate planning strategy for Agent.
+        """Delegates to :func:`select_planning_strategy`."""
+        return select_planning_strategy(strategy_name, params)
 
-        Args:
-            strategy_name: Strategy name (native_react, plan_and_execute, plan_and_react, spar)
-            params: Optional strategy parameters
-
-        Returns:
-            PlanningStrategy instance
-
-        Raises:
-            ValueError: If strategy name is invalid or params are malformed
-        """
-        normalized = (strategy_name or "native_react").strip().lower().replace("-", "_")
-        params = params or {}
-        if not isinstance(params, dict):
-            raise ValueError("planning_strategy_params must be a dictionary")
-
-        # Create logger for strategy injection
-        logger = structlog.get_logger().bind(component=f"{normalized}_strategy")
-
-        if normalized == "native_react":
-            return NativeReActStrategy()
-        if normalized == "plan_and_execute":
-            max_step_iterations_value = params.get("max_step_iterations")
-            max_plan_steps_value = params.get("max_plan_steps")
-            return PlanAndExecuteStrategy(
-                max_step_iterations=(
-                    int(max_step_iterations_value) if max_step_iterations_value is not None else 4
-                ),
-                max_plan_steps=(
-                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
-                ),
-                logger=logger,
-            )
-        if normalized == "plan_and_react":
-            max_plan_steps_value = params.get("max_plan_steps")
-            return PlanAndReactStrategy(
-                max_plan_steps=(
-                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
-                ),
-                logger=logger,
-            )
-        if normalized == "spar":
-            max_step_iterations_value = params.get("max_step_iterations")
-            max_plan_steps_value = params.get("max_plan_steps")
-            reflect_every_step_value = params.get("reflect_every_step")
-            max_reflection_iterations_value = params.get("max_reflection_iterations")
-            return SparStrategy(
-                max_step_iterations=(
-                    int(max_step_iterations_value) if max_step_iterations_value is not None else 3
-                ),
-                max_plan_steps=(
-                    int(max_plan_steps_value) if max_plan_steps_value is not None else 12
-                ),
-                reflect_every_step=_coerce_bool(reflect_every_step_value, True),
-                max_reflection_iterations=(
-                    int(max_reflection_iterations_value) if max_reflection_iterations_value is not None else 2
-                ),
-                logger=logger,
-            )
-
-        raise ValueError(
-            "Invalid planning_strategy. Supported values: native_react, plan_and_execute, "
-            "plan_and_react, spar"
-        )
+    # -------------------------------------------------------------------------
+    # Tool methods - delegate to ToolBuilder
+    # -------------------------------------------------------------------------
 
     async def _create_tools_from_allowlist(
         self,
@@ -1198,163 +1134,46 @@ class AgentFactory:
         mcp_tool_allowlist: list[str],
         llm_provider: LLMProviderProtocol,
     ) -> list[ToolProtocol]:
-        """
-        Create tools filtered by allowlist.
-
-        Creates native tools and MCP tools, filtering by their respective allowlists.
-
-        Args:
-            tool_allowlist: List of allowed native tool names
-            mcp_servers: MCP server configurations
-            mcp_tool_allowlist: List of allowed MCP tool names (empty = all allowed)
-            llm_provider: LLM provider for tools that need it
-
-        Returns:
-            List of tool instances matching allowlists
-        """
-        tools = []
-
-        # Create native tools filtered by allowlist
-        if tool_allowlist:
-            available_native_tools = self._get_all_native_tools(llm_provider)
-            for tool in available_native_tools:
-                if tool.name in tool_allowlist:
-                    tools.append(tool)
-                    self.logger.debug(
-                        "native_tool_added",
-                        tool_name=tool.name,
-                        reason="in_tool_allowlist",
-                    )
-
-        # Create MCP tools if configured
-        if mcp_servers:
-            # Temporarily inject mcp_servers into a config dict
-            temp_config = {"mcp_servers": mcp_servers}
-            mcp_tools, mcp_contexts = await self._create_mcp_tools(temp_config)
-
-            # Filter MCP tools by allowlist if specified
-            if mcp_tool_allowlist:
-                filtered_mcp_tools = [t for t in mcp_tools if t.name in mcp_tool_allowlist]
-                self.logger.debug(
-                    "mcp_tools_filtered",
-                    original_count=len(mcp_tools),
-                    filtered_count=len(filtered_mcp_tools),
-                    allowlist=mcp_tool_allowlist,
-                )
-                tools.extend(filtered_mcp_tools)
-            else:
-                # No allowlist = all MCP tools allowed
-                tools.extend(mcp_tools)
-
-        return tools
-
-    def _get_all_native_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
-        """
-        Get all available native tools.
-
-        Returns the complete set of native tools that can be filtered
-        by allowlist.
-
-        Args:
-            llm_provider: LLM provider (unused but kept for consistency)
-
-        Returns:
-            List of all native tool instances
-        """
-        from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
-        from taskforce.infrastructure.tools.native.file_tools import (
-            FileReadTool,
-            FileWriteTool,
-        )
-        from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
-        from taskforce.infrastructure.tools.native.python_tool import PythonTool
-        from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
-        from taskforce.infrastructure.tools.native.web_tools import (
-            WebFetchTool,
-            WebSearchTool,
+        """Delegates to :meth:`ToolBuilder.create_tools_from_allowlist`."""
+        return await self._tool_builder.create_tools_from_allowlist(
+            tool_allowlist, mcp_servers, mcp_tool_allowlist, llm_provider
         )
 
-        return [
-            WebSearchTool(),
-            WebFetchTool(),
-            PythonTool(),
-            GitHubTool(),
-            GitTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PowerShellTool(),
-            AskUserTool(),
-        ]
+    def _get_all_native_tools(
+        self, llm_provider: LLMProviderProtocol
+    ) -> list[ToolProtocol]:
+        """Delegates to :meth:`ToolBuilder.get_all_native_tools`."""
+        return self._tool_builder.get_all_native_tools(llm_provider)
 
-    def _load_profile(self, profile: str) -> dict:
-        """Load configuration profile from YAML file.
-
-        Delegates to :class:`ProfileLoader`.
-        """
+    def _load_profile(self, profile: str) -> dict[str, Any]:
+        """Delegates to :class:`ProfileLoader`."""
         return self.profile_loader.load(profile)
 
-    def _create_context_policy(self, config: dict) -> ContextPolicy:
-        """
-        Create ContextPolicy from configuration.
-
-        Reads context_policy section from config YAML and creates a
-        ContextPolicy instance. Falls back to conservative default if
-        no policy is configured.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            ContextPolicy instance
-        """
+    def _create_context_policy(self, config: dict[str, Any]) -> ContextPolicy:
+        """Create ContextPolicy from configuration."""
         context_config = config.get("context_policy")
-
         if context_config:
-            self.logger.debug("creating_context_policy_from_config", config=context_config)
             return ContextPolicy.from_dict(context_config)
-        else:
-            self.logger.debug("using_conservative_default_context_policy")
-            return ContextPolicy.conservative_default()
+        return ContextPolicy.conservative_default()
 
-    def _create_state_manager(self, config: dict) -> StateManagerProtocol:
-        """
-        Create state manager based on configuration.
+    def _create_state_manager(
+        self, config: dict[str, Any]
+    ) -> StateManagerProtocol:
+        """Create state manager based on configuration."""
+        from taskforce.application.infrastructure_builder import (
+            InfrastructureBuilder,
+        )
 
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            StateManager implementation (file-based or database)
-        """
-        persistence_config = config.get("persistence", {})
-        persistence_type = persistence_config.get("type", "file")
-
-        if persistence_type == "file":
-            from taskforce.infrastructure.persistence.file_state_manager import FileStateManager
-
-            work_dir = persistence_config.get("work_dir", ".taskforce")
-            return FileStateManager(work_dir=work_dir)
-
-        elif persistence_type == "database":
-            from taskforce.infrastructure.persistence.db_state import DbStateManager
-
-            # Get database URL from config or environment
-            db_url_env = persistence_config.get("db_url_env", "DATABASE_URL")
-            db_url = os.getenv(db_url_env)
-
-            if not db_url:
-                raise ValueError(f"Database URL not found in environment variable: {db_url_env}")
-
-            return DbStateManager(db_url=db_url)
-
-        else:
-            raise ValueError(f"Unknown persistence type: {persistence_type}")
+        return InfrastructureBuilder(self.config_dir).build_state_manager(
+            config
+        )
 
     def _create_runtime_tracker(
         self,
-        config: dict,
+        config: dict[str, Any],
         work_dir_override: str | None = None,
     ) -> AgentRuntimeTrackerProtocol | None:
+        """Create runtime tracker based on configuration."""
         runtime_config = config.get("runtime", {})
         enabled = runtime_config.get("enabled", False)
         if not enabled:
@@ -1364,7 +1183,9 @@ class AgentFactory:
         if not runtime_work_dir:
             runtime_work_dir = work_dir_override
         if not runtime_work_dir:
-            runtime_work_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
+            runtime_work_dir = config.get("persistence", {}).get(
+                "work_dir", ".taskforce"
+            )
 
         store_type = runtime_config.get("store", "file")
         if store_type == "memory":
@@ -1392,358 +1213,92 @@ class AgentFactory:
 
         raise ValueError(f"Unknown runtime store type: {store_type}")
 
-    def _create_llm_provider(self, config: dict) -> LLMProviderProtocol:
-        """
-        Create LLM provider based on configuration.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            LLM provider implementation (OpenAI)
-        """
-        from taskforce.infrastructure.llm.litellm_service import LiteLLMService
-
-        llm_config = config.get("llm", {})
-        config_path = llm_config.get(
-            "config_path", "src/taskforce_extensions/configs/llm_config.yaml"
+    def _create_llm_provider(
+        self, config: dict[str, Any]
+    ) -> LLMProviderProtocol:
+        """Create LLM provider based on configuration."""
+        from taskforce.application.infrastructure_builder import (
+            InfrastructureBuilder,
         )
 
-        # Resolve relative paths against base path (handles frozen executables)
-        config_path_obj = Path(config_path)
-        if not config_path_obj.is_absolute():
-            resolved_path = get_base_path() / config_path
-
-            # Backward compatibility: if old path doesn't exist, try new location
-            if not resolved_path.exists() and config_path.startswith("configs/"):
-                new_path = get_base_path() / "src" / "taskforce_extensions" / config_path
-                if new_path.exists():
-                    resolved_path = new_path
-                    self.logger.debug(
-                        "llm_config_path_migrated",
-                        old_path=config_path,
-                        new_path=str(new_path),
-                    )
-
-            config_path = str(resolved_path)
-
-        return LiteLLMService(config_path=config_path)
+        return InfrastructureBuilder(self.config_dir).build_llm_provider(
+            config
+        )
 
     def _create_native_tools(
         self,
-        config: dict,
+        config: dict[str, Any],
         llm_provider: LLMProviderProtocol,
         user_context: dict[str, Any] | None = None,
     ) -> list[ToolProtocol]:
-        """
-        Create native tools from configuration.
-
-        Args:
-            config: Configuration dictionary
-            llm_provider: LLM provider for LLMTool
-            user_context: Optional user context for RAG tools
-
-        Returns:
-            List of native tool instances
-
-        Note:
-            LLMTool (llm_generate) is filtered out unless `agent.include_llm_generate: true`
-            is set in the config. This is intentional - the agent should use its internal
-            LLM capabilities for text generation rather than calling a tool.
-        """
-        tools_config = config.get("tools", [])
-
-        if not tools_config:
-            # Fallback to default tool set if no config provided
-            return self._create_default_tools(llm_provider)
-
-        tools = []
-        for tool_spec in tools_config:
-            resolved_spec = self._hydrate_memory_tool_spec(tool_spec, config)
-            tool = self._instantiate_tool(
-                resolved_spec, llm_provider, user_context=user_context
-            )
-            if tool:
-                tools.append(tool)
-
-        orchestration_tool = self._build_orchestration_tool(config)
-        if orchestration_tool:
-            tools.append(orchestration_tool)
-
-        # Filter out LLMTool unless explicitly enabled in config
-        include_llm_generate = config.get("agent", {}).get("include_llm_generate", False)
-        if not include_llm_generate:
-            original_count = len(tools)
-            tools = [t for t in tools if t.name != "llm_generate"]
-            if len(tools) < original_count:
-                self.logger.debug(
-                    "llm_generate_filtered",
-                    reason="include_llm_generate is False (default)",
-                    remaining_tools=[t.name for t in tools],
-                )
-
-        return tools
-
-    def _build_orchestration_tool(self, config: dict) -> ToolProtocol | None:
-        """Build AgentTool when orchestration is enabled."""
-        orchestration_config = config.get("orchestration", {})
-        if not orchestration_config.get("enabled", False):
-            return None
-
-        from taskforce.application.sub_agent_spawner import SubAgentSpawner
-        from taskforce.infrastructure.tools.orchestration import AgentTool
-
-        sub_agent_spawner = SubAgentSpawner(
-            agent_factory=self,
-            profile=orchestration_config.get("sub_agent_profile", "dev"),
-            work_dir=orchestration_config.get("sub_agent_work_dir"),
-            max_steps=orchestration_config.get("sub_agent_max_steps"),
-        )
-        agent_tool = AgentTool(
-            agent_factory=self,
-            sub_agent_spawner=sub_agent_spawner,
-            profile=orchestration_config.get("sub_agent_profile", "dev"),
-            work_dir=orchestration_config.get("sub_agent_work_dir"),
-            max_steps=orchestration_config.get("sub_agent_max_steps"),
-            summarize_results=orchestration_config.get("summarize_results", False),
-            summary_max_length=orchestration_config.get("summary_max_length", 2000),
+        """Delegates to :meth:`ToolBuilder.create_native_tools`."""
+        return self._tool_builder.create_native_tools(
+            config, llm_provider, user_context=user_context
         )
 
-        self.logger.info(
-            "orchestration_enabled",
-            agent_tool_added=True,
-            sub_agent_profile=orchestration_config.get("sub_agent_profile", "dev"),
-            sub_agent_max_steps=orchestration_config.get("sub_agent_max_steps"),
-        )
-        return agent_tool
+    def _build_orchestration_tool(
+        self, config: dict[str, Any]
+    ) -> ToolProtocol | None:
+        """Delegates to :meth:`ToolBuilder.build_orchestration_tool`."""
+        return self._tool_builder.build_orchestration_tool(config)
 
     def _hydrate_memory_tool_spec(
         self, tool_spec: str | dict[str, Any], config: dict[str, Any]
     ) -> str | dict[str, Any]:
-        if tool_spec != "memory":
-            return tool_spec
-
-        memory_config = config.get("memory", {})
-        store_dir = memory_config.get("store_dir")
-        if not store_dir:
-            persistence_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
-            store_dir = str(Path(persistence_dir) / "memory")
-        return {"type": "MemoryTool", "params": {"store_dir": store_dir}}
+        """Delegates to :meth:`ToolBuilder.hydrate_memory_tool_spec`."""
+        return ToolBuilder.hydrate_memory_tool_spec(tool_spec, config)
 
     def _resolve_memory_store_dir(
         self, config: dict[str, Any], work_dir_override: str | None = None
     ) -> str:
-        memory_config = config.get("memory", {})
-        store_dir = memory_config.get("store_dir")
-        if store_dir:
-            return str(store_dir)
-        persistence_dir = work_dir_override or config.get("persistence", {}).get(
-            "work_dir", ".taskforce"
-        )
-        return str(Path(persistence_dir) / "memory")
-
-    async def _create_mcp_tools(self, config: dict) -> tuple[list[ToolProtocol], list[Any]]:
-        """
-        Create MCP tools from configuration.
-
-        Connects to configured MCP servers (stdio or SSE), fetches available tools,
-        and wraps them in MCPToolWrapper to conform to ToolProtocol.
-
-        IMPORTANT: Returns both tools and client context managers that must be kept alive.
-        The caller is responsible for managing the lifecycle of these connections.
-
-        Args:
-            config: Configuration dictionary containing mcp_servers list
-
-        Returns:
-            Tuple of (list of MCP tool wrappers, list of client context managers)
-
-        Example config:
-            mcp_servers:
-              - type: stdio
-                command: python
-                args: ["server.py"]
-                env: {"API_KEY": "value"}
-              - type: sse
-                url: http://localhost:8000/sse
-        """
-        from taskforce.core.domain.agent_definition import MCPServerConfig
-        from taskforce.infrastructure.tools.mcp.connection_manager import (
-            create_default_connection_manager,
+        """Delegates to :meth:`ToolBuilder.resolve_memory_store_dir`."""
+        return ToolBuilder.resolve_memory_store_dir(
+            config, work_dir_override=work_dir_override
         )
 
-        mcp_servers_config = config.get("mcp_servers", [])
-
-        if not mcp_servers_config:
-            self.logger.debug("no_mcp_servers_configured")
-            return [], []
-
-        # Convert dict configs to MCPServerConfig objects
-        server_configs = [
-            MCPServerConfig.from_dict(s) if isinstance(s, dict) else s for s in mcp_servers_config
-        ]
-
-        # Use centralized connection manager
-        manager = create_default_connection_manager()
-        return await manager.connect_all(server_configs)
+    async def _create_mcp_tools(
+        self, config: dict[str, Any]
+    ) -> tuple[list[ToolProtocol], list[Any]]:
+        """Delegates to :meth:`ToolBuilder.create_mcp_tools`."""
+        return await self._tool_builder.create_mcp_tools(config)
 
     async def _build_tools(
         self,
         *,
-        config: dict,
+        config: dict[str, Any],
         llm_provider: LLMProviderProtocol,
         user_context: dict[str, Any] | None = None,
         specialist: str | None = None,
         use_specialist_defaults: bool = False,
         include_mcp: bool = True,
     ) -> tuple[list[ToolProtocol], list[Any]]:
-        """Build tool list and MCP contexts based on configuration."""
-        tools_config = config.get("tools", [])
-        has_config_tools = bool(tools_config)
-
-        if has_config_tools:
-            self.logger.debug(
-                "using_config_tools",
-                specialist=specialist,
-                tool_count=len(tools_config),
-            )
-            tools = self._create_native_tools(config, llm_provider, user_context=user_context)
-        elif use_specialist_defaults and specialist in ("coding", "rag"):
-            self.logger.debug("using_specialist_defaults", specialist=specialist)
-            tools = self._create_specialist_tools(
-                specialist, config, llm_provider, user_context=user_context
-            )
-        else:
-            tools = self._create_default_tools(llm_provider)
-
-        if not include_mcp:
-            return tools, []
-
-        mcp_tools, mcp_contexts = await self._create_mcp_tools(config)
-        tools.extend(mcp_tools)
-        return tools, mcp_contexts
-
-    def _create_default_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
-        """
-        Create default tool set (fallback when no config provided).
-
-        NOTE: LLMTool is intentionally EXCLUDED from default tools.
-        The agent's internal LLM capabilities should be used for text generation.
-        LLMTool can be added explicitly via config if needed for specialized use cases.
-
-        Args:
-            llm_provider: LLM provider (unused - kept for API compatibility)
-
-        Returns:
-            List of default tool instances
-        """
-        from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
-        from taskforce.infrastructure.tools.native.file_tools import (
-            FileReadTool,
-            FileWriteTool,
-        )
-        from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
-
-        # REMOVED: LLMTool - Agent uses internal LLM for text generation
-        from taskforce.infrastructure.tools.native.python_tool import PythonTool
-        from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
-        from taskforce.infrastructure.tools.native.web_tools import (
-            WebFetchTool,
-            WebSearchTool,
+        """Delegates to :meth:`ToolBuilder.build_tools`."""
+        return await self._tool_builder.build_tools(
+            config=config,
+            llm_provider=llm_provider,
+            user_context=user_context,
+            specialist=specialist,
+            use_specialist_defaults=use_specialist_defaults,
+            include_mcp=include_mcp,
         )
 
-        # Standard tool set - LLMTool intentionally excluded for efficiency
-        return [
-            WebSearchTool(),
-            WebFetchTool(),
-            PythonTool(),
-            GitHubTool(),
-            GitTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PowerShellTool(),
-            # LLMTool excluded - Agent uses internal LLM capabilities
-            AskUserTool(),
-        ]
+    def _create_default_tools(
+        self, llm_provider: LLMProviderProtocol
+    ) -> list[ToolProtocol]:
+        """Delegates to :meth:`ToolBuilder.create_default_tools`."""
+        return self._tool_builder.create_default_tools(llm_provider)
 
     def _create_specialist_tools(
         self,
         specialist: str,
-        config: dict,
+        config: dict[str, Any],
         llm_provider: LLMProviderProtocol,
         user_context: dict[str, Any] | None = None,
     ) -> list[ToolProtocol]:
-        """
-        Create tools specific to a specialist profile.
-
-        Each specialist profile has a focused toolset:
-        - coding: FileReadTool, FileWriteTool, PowerShellTool, AskUserTool
-        - rag: SemanticSearchTool, ListDocumentsTool, GetDocumentTool, AskUserTool
-
-        Args:
-            specialist: Specialist profile ("coding" or "rag")
-            config: Configuration dictionary (for RAG tools configuration)
-            llm_provider: LLM provider (unused for specialist tools currently)
-            user_context: Optional user context for RAG tools
-
-        Returns:
-            List of specialist tool instances
-
-        Raises:
-            ValueError: If specialist profile is unknown
-        """
-        from taskforce.infrastructure.tools.native.ask_user_tool import AskUserTool
-
-        if specialist == "coding":
-            from taskforce.infrastructure.tools.native.file_tools import (
-                FileReadTool,
-                FileWriteTool,
-            )
-            from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool
-
-            self.logger.debug(
-                "creating_specialist_tools",
-                specialist="coding",
-                tools=["FileReadTool", "FileWriteTool", "PowerShellTool", "AskUserTool"],
-            )
-
-            return [
-                FileReadTool(),
-                FileWriteTool(),
-                PowerShellTool(),
-                AskUserTool(),
-            ]
-
-        elif specialist == "rag":
-            from taskforce.infrastructure.tools.rag.get_document_tool import GetDocumentTool
-            from taskforce.infrastructure.tools.rag.list_documents_tool import (
-                ListDocumentsTool,
-            )
-            from taskforce.infrastructure.tools.rag.semantic_search_tool import (
-                SemanticSearchTool,
-            )
-
-            self.logger.debug(
-                "creating_specialist_tools",
-                specialist="rag",
-                tools=[
-                    "SemanticSearchTool",
-                    "ListDocumentsTool",
-                    "GetDocumentTool",
-                    "AskUserTool",
-                ],
-                has_user_context=user_context is not None,
-            )
-
-            return [
-                SemanticSearchTool(user_context=user_context),
-                ListDocumentsTool(user_context=user_context),
-                GetDocumentTool(user_context=user_context),
-                AskUserTool(),
-            ]
-
-        else:
-            raise ValueError(f"Unknown specialist profile: {specialist}")
+        """Delegates to :meth:`ToolBuilder.create_specialist_tools`."""
+        return self._tool_builder.create_specialist_tools(
+            specialist, config, llm_provider, user_context=user_context
+        )
 
     def _instantiate_tool(
         self,
@@ -1751,122 +1306,15 @@ class AgentFactory:
         llm_provider: LLMProviderProtocol,
         user_context: dict[str, Any] | None = None,
     ) -> ToolProtocol | None:
-        """
-        Instantiate a tool from configuration specification.
-
-        Args:
-            tool_spec: Tool specification dict or short tool name
-            llm_provider: LLM provider for tools that need it
-            user_context: Optional user context for RAG tools
-
-        Returns:
-            Tool instance or None if instantiation fails
-        """
-        import importlib
-
-        from taskforce.infrastructure.tools.registry import resolve_tool_spec
-
-        if isinstance(tool_spec, dict) and tool_spec.get("type") in {
-            "sub_agent",
-            "agent",
-        }:
-            return self._instantiate_sub_agent_tool(tool_spec)
-
-        resolved_spec = resolve_tool_spec(tool_spec)
-        if not resolved_spec:
-            self.logger.warning(
-                "invalid_tool_spec",
-                tool_spec=tool_spec,
-                hint="Tool spec must include 'type' or be a known tool name",
-            )
-            return None
-
-        tool_type = resolved_spec.get("type")
-        tool_module = resolved_spec.get("module")
-        tool_params = resolved_spec.get("params", {}).copy()
-
-        try:
-            # Import the module
-            module = importlib.import_module(tool_module)
-
-            # Get the tool class
-            tool_class = getattr(module, tool_type)
-
-            # Special handling for LLMTool - inject llm_service
-            if tool_type == "LLMTool":
-                tool_params["llm_service"] = llm_provider
-
-            # Special handling for RAG tools - inject user_context
-            if tool_type in ["SemanticSearchTool", "ListDocumentsTool", "GetDocumentTool"]:
-                if user_context:
-                    tool_params["user_context"] = user_context
-
-            # Instantiate the tool with params
-            tool_instance = tool_class(**tool_params)
-
-            self.logger.debug(
-                "tool_instantiated",
-                tool_type=tool_type,
-                tool_name=tool_instance.name,
-            )
-
-            return tool_instance
-
-        except Exception as e:
-            self.logger.error(
-                "tool_instantiation_failed",
-                tool_type=tool_type,
-                tool_module=tool_module,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            return None
+        """Delegates to :meth:`ToolBuilder.instantiate_tool`."""
+        return self._tool_builder.instantiate_tool(
+            tool_spec, llm_provider, user_context=user_context
+        )
 
     def _instantiate_sub_agent_tool(
         self,
         tool_spec: dict[str, Any],
     ) -> ToolProtocol | None:
-        """Instantiate a sub-agent tool from configuration."""
-        from taskforce.application.sub_agent_spawner import SubAgentSpawner
-        from taskforce.infrastructure.tools.orchestration import AgentTool
-        from taskforce.infrastructure.tools.orchestration.sub_agent_tool import (
-            SubAgentTool,
-        )
-
-        tool_name = tool_spec.get("name")
-        specialist = tool_spec.get("specialist") or tool_name
-        if not tool_name:
-            self.logger.warning(
-                "invalid_sub_agent_tool_spec",
-                tool_spec=tool_spec,
-                hint="Sub-agent tool spec requires 'name'",
-            )
-            return None
-
-        profile = tool_spec.get("profile", "dev")
-        work_dir = tool_spec.get("work_dir")
-        max_steps = tool_spec.get("max_steps")
-        planning_strategy = tool_spec.get("planning_strategy")
-
-        sub_agent_spawner = SubAgentSpawner(
-            agent_factory=self,
-            profile=profile,
-            work_dir=work_dir,
-            max_steps=max_steps,
-        )
-        agent_tool = AgentTool(
-            agent_factory=self,
-            sub_agent_spawner=sub_agent_spawner,
-            profile=profile,
-            work_dir=work_dir,
-            max_steps=max_steps,
-        )
-
-        return SubAgentTool(
-            agent_tool=agent_tool,
-            specialist=specialist,
-            name=tool_name,
-            description=tool_spec.get("description"),
-            planning_strategy=planning_strategy,
-        )
+        """Delegates to :meth:`ToolBuilder.instantiate_sub_agent_tool`."""
+        return self._tool_builder.instantiate_sub_agent_tool(tool_spec)
 

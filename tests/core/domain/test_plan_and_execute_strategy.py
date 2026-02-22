@@ -14,67 +14,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.planning_strategy import (
-    PlanAndExecuteStrategy,
-    _parse_plan_steps,
-)
-from taskforce.core.interfaces.logging import LoggerProtocol
+from taskforce.core.domain.planning_helpers import _parse_plan_steps
+from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
 
-
-class MockLogger(LoggerProtocol):
-    """Mock logger for testing."""
-
-    def __init__(self) -> None:
-        self.logs: list[tuple[str, dict[str, Any]]] = []
-
-    def info(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("info", {"event": event, **kwargs}))
-
-    def warning(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("warning", {"event": event, **kwargs}))
-
-    def error(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("error", {"event": event, **kwargs}))
-
-    def debug(self, event: str, **kwargs: Any) -> None:
-        self.logs.append(("debug", {"event": event, **kwargs}))
+# mock_logger, mock_agent fixtures are provided by tests/conftest.py
 
 
 @pytest.fixture
-def mock_logger() -> MockLogger:
-    """Create a mock logger."""
-    return MockLogger()
-
-
-@pytest.fixture
-def mock_agent() -> MagicMock:
-    """Create a mock agent with required attributes."""
-    agent = MagicMock()
-    agent.logger = MockLogger()
-    agent._planner = None
-    agent.max_steps = 10
-    agent.max_parallel_tools = 4
-    agent.model_alias = "gpt-4"
-    agent.system_prompt = "You are a helpful assistant."
-    agent._openai_tools = []
-    agent._build_system_prompt = MagicMock(return_value="System prompt")
-    agent._build_initial_messages = MagicMock(
-        return_value=[{"role": "system", "content": "System prompt"}]
-    )
-    agent._create_tool_message = AsyncMock(
-        return_value={"role": "tool", "content": "Tool result"}
-    )
-    agent._truncate_output = MagicMock(side_effect=lambda x: x[:100])
-    agent._execute_tool = AsyncMock(return_value={"success": True, "output": "Done"})
-    agent.llm_provider = AsyncMock()
-    agent.state_manager = AsyncMock()
-    agent.state_store = AsyncMock()
-    agent.record_heartbeat = AsyncMock()
-    return agent
-
-
-@pytest.fixture
-def strategy(mock_logger: MockLogger) -> PlanAndExecuteStrategy:
+def strategy(mock_logger: Any) -> PlanAndExecuteStrategy:
     """Create PlanAndExecuteStrategy instance."""
     return PlanAndExecuteStrategy(
         max_step_iterations=3, max_plan_steps=5, logger=mock_logger
@@ -84,13 +31,13 @@ def strategy(mock_logger: MockLogger) -> PlanAndExecuteStrategy:
 class TestParsePlanSteps:
     """Test _parse_plan_steps exception handling."""
 
-    def test_parse_valid_json_array(self, mock_logger: MockLogger) -> None:
+    def test_parse_valid_json_array(self, mock_logger: Any) -> None:
         """Test parsing valid JSON array."""
         content = '```json\n["Step 1", "Step 2", "Step 3"]\n```'
         result = _parse_plan_steps(content, mock_logger)
         assert result == ["Step 1", "Step 2", "Step 3"]
 
-    def test_parse_json_without_code_block(self, mock_logger: MockLogger) -> None:
+    def test_parse_json_without_code_block(self, mock_logger: Any) -> None:
         """Test parsing JSON without code block markers falls back to line parsing."""
         content = '["Step 1", "Step 2"]'
         result = _parse_plan_steps(content, mock_logger)
@@ -98,7 +45,7 @@ class TestParsePlanSteps:
         assert result == ["Step 1", "Step 2"]
 
     def test_parse_malformed_json_falls_back_to_lines(
-        self, mock_logger: MockLogger
+        self, mock_logger: Any
     ) -> None:
         """Test malformed JSON falls back to line-based parsing."""
         content = "```json\n{invalid json}\n```\n1. Step one\n2. Step two"
@@ -107,7 +54,7 @@ class TestParsePlanSteps:
         assert any("Step one" in step for step in result)
         assert any("Step two" in step for step in result)
 
-    def test_parse_invalid_type_falls_back(self, mock_logger: MockLogger) -> None:
+    def test_parse_invalid_type_falls_back(self, mock_logger: Any) -> None:
         """Test invalid type (not a list) falls back to line parsing."""
         content = '```json\n{"not": "a list"}\n```\n- Step one'
         result = _parse_plan_steps(content, mock_logger)
@@ -115,13 +62,13 @@ class TestParsePlanSteps:
         assert any("Step one" in step for step in result)
 
     def test_parse_empty_content_returns_empty_list(
-        self, mock_logger: MockLogger
+        self, mock_logger: Any
     ) -> None:
         """Test empty content returns empty list."""
         result = _parse_plan_steps("", mock_logger)
         assert result == []
 
-    def test_parse_line_based_format(self, mock_logger: MockLogger) -> None:
+    def test_parse_line_based_format(self, mock_logger: Any) -> None:
         """Test parsing line-based format."""
         content = "1. First step\n2. Second step\n- Third step"
         result = _parse_plan_steps(content, mock_logger)
@@ -139,7 +86,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test successful final response generation via shared helper."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_strategy import _stream_final_response
+        from taskforce.core.domain.planning_helpers import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": "Final summary"}
@@ -164,7 +111,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test final response generation when LLM fails."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_strategy import _stream_final_response
+        from taskforce.core.domain.planning_helpers import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": False, "error": "LLM error"}
@@ -187,7 +134,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test final response generation with empty content."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_strategy import _stream_final_response
+        from taskforce.core.domain.planning_helpers import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": ""}
@@ -214,7 +161,7 @@ class TestStrategyParameters:
         assert strategy.max_plan_steps == 12
         assert strategy.logger is None
 
-    def test_custom_parameters(self, mock_logger: MockLogger) -> None:
+    def test_custom_parameters(self, mock_logger: Any) -> None:
         """Test custom strategy parameters."""
         strategy = PlanAndExecuteStrategy(
             max_step_iterations=2,
