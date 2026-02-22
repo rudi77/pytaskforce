@@ -107,6 +107,10 @@ tracing:
 # Planning strategies emit phase hints that the LLMRouter matches
 # against these rules. First matching rule wins.
 #
+# IMPORTANT: Do not use the following names as model aliases above,
+# as they are reserved phase hints and will bypass routing rules:
+#   planning, reasoning, acting, reflecting, summarizing
+#
 # Phase hints emitted by planning strategies:
 #   planning    — plan generation / task decomposition
 #   reasoning   — ReAct main loop (tool selection + reasoning)
