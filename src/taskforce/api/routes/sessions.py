@@ -2,14 +2,13 @@ import uuid
 from datetime import datetime
 from typing import Any, List
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from taskforce.api.dependencies import get_factory
 from taskforce.api.schemas.errors import ErrorResponse
-from taskforce.application.factory import AgentFactory
 
 router = APIRouter()
-factory = AgentFactory()
 
 
 def _http_exception(
@@ -37,7 +36,8 @@ async def list_sessions(
     profile: str = Query(
         ...,
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
-    )
+    ),
+    factory=Depends(get_factory),
 ):
     """List all agent sessions."""
     try:
@@ -79,6 +79,7 @@ async def get_session(
         ...,
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
+    factory=Depends(get_factory),
 ):
     """Get session details."""
     try:
@@ -95,7 +96,12 @@ async def get_session(
         state = await agent.state_manager.load_state(session_id)
 
         if not state:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise _http_exception(
+                404,
+                "session_not_found",
+                f"Session '{session_id}' not found",
+                {"session_id": session_id},
+            )
 
         return SessionResponse(
             session_id=session_id,
@@ -114,6 +120,7 @@ async def create_session(
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
     mission: str = "",
+    factory=Depends(get_factory),
 ):
     """Create a new session."""
     try:

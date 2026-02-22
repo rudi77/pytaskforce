@@ -16,12 +16,16 @@ Story: 8.1 - Custom Agent Registry (CRUD + YAML Persistence)
 Clean Architecture Notes:
 - Uses Domain Models from core/domain/agent_models.py
 - Converts between API schemas and Domain models
-- Injects ToolRegistry into FileAgentRegistry
+- Uses Depends() for dependency injection (no module-level singletons)
+- No direct infrastructure imports (registry provided via dependencies.py)
 """
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 
+from taskforce.api.dependencies import get_agent_registry
 from taskforce.api.schemas.agent_schemas import (
     AgentListResponse,
     CustomAgentCreate,
@@ -30,24 +34,32 @@ from taskforce.api.schemas.agent_schemas import (
     PluginAgentResponse,
     ProfileAgentResponse,
 )
+from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.application.tool_registry import get_tool_registry
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     PluginAgentDefinition,
     ProfileAgentDefinition,
 )
-from taskforce.infrastructure.persistence.file_agent_registry import (
-    FileAgentRegistry,
-)
-from taskforce.application.factory import get_base_path
 
 router = APIRouter()
 
-# Singleton registry instance with injected tool mapper and base path
-_registry = FileAgentRegistry(
-    tool_mapper=get_tool_registry(),
-    base_path=get_base_path(),
-)
+
+def _http_exception(
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> HTTPException:
+    """Build standardized HTTPException with ErrorResponse payload."""
+    return HTTPException(
+        status_code=status_code,
+        detail=ErrorResponse(
+            code=code, message=message, details=details, detail=message
+        ).model_dump(exclude_none=True),
+        headers={"X-Taskforce-Error": "1"},
+    )
 
 
 def _validate_tool_allowlists(
@@ -75,11 +87,11 @@ def _validate_tool_allowlists(
         )
         if not is_valid:
             available_tools = sorted(catalog.get_native_tool_names())
-            raise HTTPException(
+            raise _http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "invalid_tools",
-                    "message": "Unknown tool(s) in tool_allowlist",
+                code="invalid_tools",
+                message="Unknown tool(s) in tool_allowlist",
+                details={
                     "invalid_tools": invalid_tools,
                     "available_tools": available_tools,
                 },
@@ -113,12 +125,16 @@ def _domain_to_response(
     summary="Create custom agent",
     description="Create a new custom agent definition and persist as YAML",
 )
-def create_agent(agent_def: CustomAgentCreate) -> CustomAgentResponse:
+def create_agent(
+    agent_def: CustomAgentCreate,
+    registry=Depends(get_agent_registry),
+) -> CustomAgentResponse:
     """
     Create a new custom agent.
 
     Args:
         agent_def: Agent definition with required fields
+        registry: Injected agent registry
 
     Returns:
         Created agent with timestamps
@@ -138,18 +154,20 @@ def create_agent(agent_def: CustomAgentCreate) -> CustomAgentResponse:
         # Convert API schema to domain input
         domain_input = agent_def.to_domain()
         # Create via registry (returns domain model)
-        domain_result = _registry.create_agent(domain_input)
+        domain_result = registry.create_agent(domain_input)
         # Convert domain model to API response
         return CustomAgentResponse.from_domain(domain_result)
     except FileExistsError as e:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
+            code="agent_exists",
+            message=str(e),
         )
     except Exception as e:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create agent: {str(e)}",
+            code="create_failed",
+            message=f"Failed to create agent: {str(e)}",
         )
 
 
@@ -162,17 +180,22 @@ def create_agent(agent_def: CustomAgentCreate) -> CustomAgentResponse:
         "Corrupt YAML files are skipped."
     ),
 )
-def list_agents() -> AgentListResponse:
+def list_agents(
+    registry=Depends(get_agent_registry),
+) -> AgentListResponse:
     """
     List all available agents.
 
     Returns custom agents from configs/custom/*.yaml and profile agents
     from configs/*.yaml (excluding llm_config.yaml).
 
+    Args:
+        registry: Injected agent registry
+
     Returns:
         List of all agent definitions with discriminator field 'source'
     """
-    domain_agents = _registry.list_agents()
+    domain_agents = registry.list_agents()
     # Convert domain models to API responses
     api_agents = [_domain_to_response(agent) for agent in domain_agents]
     return AgentListResponse(agents=api_agents)
@@ -186,6 +209,7 @@ def list_agents() -> AgentListResponse:
 )
 def get_agent(
     agent_id: str,
+    registry=Depends(get_agent_registry),
 ) -> CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse:
     """
     Get an agent by ID.
@@ -194,6 +218,7 @@ def get_agent(
 
     Args:
         agent_id: Agent identifier
+        registry: Injected agent registry
 
     Returns:
         Agent definition
@@ -201,11 +226,12 @@ def get_agent(
     Raises:
         HTTPException 404: If agent not found
     """
-    domain_agent = _registry.get_agent(agent_id)
+    domain_agent = registry.get_agent(agent_id)
     if not domain_agent:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent '{agent_id}' not found",
+            code="not_found",
+            message=f"Agent '{agent_id}' not found",
         )
     return _domain_to_response(domain_agent)
 
@@ -217,7 +243,9 @@ def get_agent(
     description="Update an existing custom agent definition",
 )
 def update_agent(
-    agent_id: str, agent_def: CustomAgentUpdate
+    agent_id: str,
+    agent_def: CustomAgentUpdate,
+    registry=Depends(get_agent_registry),
 ) -> CustomAgentResponse:
     """
     Update an existing custom agent.
@@ -225,6 +253,7 @@ def update_agent(
     Args:
         agent_id: Agent identifier to update
         agent_def: New agent definition
+        registry: Injected agent registry
 
     Returns:
         Updated agent with new updated_at timestamp
@@ -244,18 +273,20 @@ def update_agent(
         # Convert API schema to domain input
         domain_input = agent_def.to_domain()
         # Update via registry (returns domain model)
-        domain_result = _registry.update_agent(agent_id, domain_input)
+        domain_result = registry.update_agent(agent_id, domain_input)
         # Convert domain model to API response
         return CustomAgentResponse.from_domain(domain_result)
     except FileNotFoundError as e:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            code="not_found",
+            message=str(e),
         )
     except Exception as e:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update agent: {str(e)}",
+            code="update_failed",
+            message=f"Failed to update agent: {str(e)}",
         )
 
 
@@ -265,12 +296,16 @@ def update_agent(
     summary="Delete custom agent",
     description="Delete a custom agent definition",
 )
-def delete_agent(agent_id: str) -> Response:
+def delete_agent(
+    agent_id: str,
+    registry=Depends(get_agent_registry),
+) -> Response:
     """
     Delete a custom agent.
 
     Args:
         agent_id: Agent identifier to delete
+        registry: Injected agent registry
 
     Returns:
         204 No Content on success
@@ -279,10 +314,11 @@ def delete_agent(agent_id: str) -> Response:
         HTTPException 404: If agent not found
     """
     try:
-        _registry.delete_agent(agent_id)
+        registry.delete_agent(agent_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except FileNotFoundError as e:
-        raise HTTPException(
+        raise _http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            code="not_found",
+            message=str(e),
         )

@@ -30,18 +30,15 @@ def temp_configs_dir(tmp_path):
 
 
 @pytest.fixture
-def client(temp_configs_dir, monkeypatch):
+def client(temp_configs_dir):
     """Create test client with mocked registry."""
-    from taskforce.api.routes import agents
+    from taskforce.api.dependencies import get_agent_registry
 
-    monkeypatch.setattr(
-        agents,
-        "_registry",
-        FileAgentRegistry(configs_dir=str(temp_configs_dir)),
-    )
-
+    registry = FileAgentRegistry(configs_dir=str(temp_configs_dir))
     app = create_app()
-    return TestClient(app)
+    app.dependency_overrides[get_agent_registry] = lambda: registry
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
 def test_get_tools_catalog_success(client):
@@ -123,13 +120,11 @@ def test_create_agent_with_invalid_tools(client):
 
     assert response.status_code == 400
     data = response.json()
-    assert "detail" in data
-    detail = data["detail"]
-    assert detail["error"] == "invalid_tools"
-    assert "invalid_tool" in detail["invalid_tools"]
-    assert "another_bad_tool" in detail["invalid_tools"]
-    assert "available_tools" in detail
-    assert isinstance(detail["available_tools"], list)
+    assert data["code"] == "invalid_tools"
+    assert "invalid_tool" in data["details"]["invalid_tools"]
+    assert "another_bad_tool" in data["details"]["invalid_tools"]
+    assert "available_tools" in data["details"]
+    assert isinstance(data["details"]["available_tools"], list)
 
 
 def test_create_agent_with_empty_allowlist(client):
@@ -210,10 +205,8 @@ def test_update_agent_with_invalid_tools(client):
 
     assert response.status_code == 400
     data = response.json()
-    assert "detail" in data
-    detail = data["detail"]
-    assert detail["error"] == "invalid_tools"
-    assert "fake_tool" in detail["invalid_tools"]
+    assert data["code"] == "invalid_tools"
+    assert "fake_tool" in data["details"]["invalid_tools"]
 
 
 def test_tool_names_are_case_sensitive(client):
@@ -232,10 +225,9 @@ def test_tool_names_are_case_sensitive(client):
 
     assert response.status_code == 400
     data = response.json()
-    detail = data["detail"]
-    assert detail["error"] == "invalid_tools"
-    assert "Web_Search" in detail["invalid_tools"]
-    assert "FILE_READ" in detail["invalid_tools"]
+    assert data["code"] == "invalid_tools"
+    assert "Web_Search" in data["details"]["invalid_tools"]
+    assert "FILE_READ" in data["details"]["invalid_tools"]
 
 
 def test_all_native_tools_in_catalog(client):

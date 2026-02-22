@@ -24,7 +24,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
-from taskforce.application.executor import AgentExecutor
+from fastapi import Depends
+
+from taskforce.api.dependencies import get_executor
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.errors import (
@@ -37,7 +39,6 @@ from taskforce.core.domain.errors import (
 )
 
 router = APIRouter()
-executor = AgentExecutor()
 
 REQUEST_EXAMPLES = {
     "basic": {
@@ -449,6 +450,7 @@ class ExecuteMissionResponse(BaseModel):
 )
 async def execute_mission(
     request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
+    executor=Depends(get_executor),
 ):
     """Execute agent mission synchronously.
 
@@ -553,6 +555,7 @@ async def execute_mission(
 )
 async def execute_mission_stream(
     request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
+    executor=Depends(get_executor),
 ):
     """Execute mission with streaming progress via Server-Sent Events.
 
@@ -868,6 +871,22 @@ async def execute_mission_stream(
                     )
                 data = json.dumps(asdict(update), default=str)
                 yield f"data: {data}\n\n"
+        except TaskforceError as e:
+            # Structured Taskforce errors (LLMError, ToolError, etc.)
+            error_data = json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "event_type": EventType.ERROR.value,
+                    "message": f"Execution failed: {e}",
+                    "details": {
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "error_code": e.code,
+                        "status_code": _taskforce_status_code(e),
+                    },
+                }
+            )
+            yield f"data: {error_data}\n\n"
         except FileNotFoundError as e:
             msg = str(e)
             # Distinguish profile not found from agent not found
