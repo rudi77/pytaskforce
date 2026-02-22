@@ -292,6 +292,163 @@ class LiteLLMService:
         params.update({k: v for k, v in kwargs.items() if v is not None})
         return params
 
+    def _prepare_request(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None,
+        tools: list[dict[str, Any]] | None,
+        tool_choice: str | dict[str, Any] | None,
+        **kwargs: Any,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """Build LiteLLM request kwargs from caller arguments.
+
+        Returns:
+            Tuple of (alias, resolved_model, litellm_kwargs).
+        """
+        alias = model or self.default_model
+        resolved_model = self._resolve_model(model)
+        params = self._get_params(alias, **kwargs)
+
+        litellm_kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+            "timeout": self.retry_policy.timeout,
+            "drop_params": True,
+            **params,
+        }
+
+        if tools:
+            litellm_kwargs["tools"] = tools
+            litellm_kwargs["tool_choice"] = tool_choice or "auto"
+
+        return alias, resolved_model, litellm_kwargs
+
+    async def _attempt_completion(
+        self,
+        litellm_kwargs: dict[str, Any],
+        resolved_model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        attempt: int,
+    ) -> dict[str, Any]:
+        """Execute a single LLM completion attempt.
+
+        Args:
+            litellm_kwargs: Prepared kwargs for ``litellm.acompletion``.
+            resolved_model: Resolved model string for logging.
+            messages: Original messages for tracing.
+            tools: Original tools list for logging.
+            attempt: Current attempt number (1-based).
+
+        Returns:
+            Normalized response dict on success.
+        """
+        start_time = time.time()
+
+        self.logger.info(
+            "llm_completion_started",
+            model=resolved_model,
+            attempt=attempt,
+            message_count=len(messages),
+            tools_count=len(tools) if tools else 0,
+        )
+
+        response = await litellm.acompletion(**litellm_kwargs)
+        latency_ms = int((time.time() - start_time) * 1000)
+        result = self._parse_response(response, resolved_model, latency_ms)
+
+        self._log_completion_success(result, resolved_model, latency_ms)
+        self._trace_success(messages, result, resolved_model, latency_ms)
+
+        return result
+
+    def _log_completion_success(self, result: dict[str, Any], model: str, latency_ms: int) -> None:
+        """Log successful completion metrics if token logging is enabled."""
+        if self.logging_config.get("log_token_usage", True):
+            self.logger.info(
+                "llm_completion_success",
+                model=model,
+                tokens=result.get("usage", {}).get("total_tokens", 0),
+                latency_ms=latency_ms,
+                tool_calls_count=len(result.get("tool_calls") or []),
+            )
+
+    def _trace_success(
+        self,
+        messages: list[dict[str, Any]],
+        result: dict[str, Any],
+        model: str,
+        latency_ms: int,
+    ) -> None:
+        """Fire-and-forget trace of a successful completion."""
+        asyncio.create_task(
+            self._trace_interaction(
+                messages=messages,
+                response_content=result.get("content"),
+                model=model,
+                token_stats=result.get("usage", {}),
+                latency_ms=latency_ms,
+                success=True,
+            )
+        )
+
+    def _trace_failure(
+        self,
+        messages: list[dict[str, Any]],
+        model: str,
+        latency_ms: int,
+        error: str,
+    ) -> None:
+        """Fire-and-forget trace of a failed completion."""
+        asyncio.create_task(
+            self._trace_interaction(
+                messages=messages,
+                response_content=None,
+                model=model,
+                token_stats={},
+                latency_ms=latency_ms,
+                success=False,
+                error=error,
+            )
+        )
+
+    async def _handle_retry_or_fail(
+        self,
+        error: Exception,
+        attempt: int,
+        resolved_model: str,
+        messages: list[dict[str, Any]],
+        start_time: float,
+    ) -> bool:
+        """Decide whether to retry or record failure after an exception.
+
+        Returns:
+            True if the caller should retry, False if it should break.
+        """
+        is_last = attempt >= self.retry_policy.max_attempts - 1
+        if not is_last and self._should_retry(error):
+            backoff_time = self.retry_policy.backoff_multiplier**attempt
+            self.logger.warning(
+                "llm_completion_retry",
+                model=resolved_model,
+                error_type=type(error).__name__,
+                attempt=attempt + 1,
+                backoff_seconds=backoff_time,
+            )
+            await asyncio.sleep(backoff_time)
+            return True
+
+        self.logger.error(
+            "llm_completion_failed",
+            model=resolved_model,
+            error_type=type(error).__name__,
+            error=str(error)[:200],
+            attempts=attempt + 1,
+        )
+        latency_ms = int((time.time() - start_time) * 1000)
+        self._trace_failure(messages, resolved_model, latency_ms, str(error))
+        return False
+
     async def complete(
         self,
         messages: list[dict[str, Any]],
@@ -313,95 +470,24 @@ class LiteLLMService:
             Dict with success, content, tool_calls, usage, model, latency_ms.
             On failure: success=False, error, error_type.
         """
-        alias = model or self.default_model
-        resolved_model = self._resolve_model(model)
-        params = self._get_params(alias, **kwargs)
-
-        litellm_kwargs: dict[str, Any] = {
-            "model": resolved_model,
-            "messages": messages,
-            "timeout": self.retry_policy.timeout,
-            "drop_params": True,
-            **params,
-        }
-
-        if tools:
-            litellm_kwargs["tools"] = tools
-            litellm_kwargs["tool_choice"] = tool_choice or "auto"
+        await self._ensure_config_loaded()
+        _, resolved_model, litellm_kwargs = self._prepare_request(
+            messages, model, tools, tool_choice, **kwargs
+        )
 
         last_error: Exception | None = None
         for attempt in range(self.retry_policy.max_attempts):
+            start_time = time.time()
             try:
-                start_time = time.time()
-
-                self.logger.info(
-                    "llm_completion_started",
-                    model=resolved_model,
-                    attempt=attempt + 1,
-                    message_count=len(messages),
-                    tools_count=len(tools) if tools else 0,
+                return await self._attempt_completion(
+                    litellm_kwargs, resolved_model, messages, tools, attempt + 1
                 )
-
-                response = await litellm.acompletion(**litellm_kwargs)
-                latency_ms = int((time.time() - start_time) * 1000)
-                result = self._parse_response(response, resolved_model, latency_ms)
-
-                if self.logging_config.get("log_token_usage", True):
-                    self.logger.info(
-                        "llm_completion_success",
-                        model=resolved_model,
-                        tokens=result.get("usage", {}).get("total_tokens", 0),
-                        latency_ms=latency_ms,
-                        tool_calls_count=len(result.get("tool_calls") or []),
-                    )
-
-                # Trace interaction asynchronously
-                asyncio.create_task(
-                    self._trace_interaction(
-                        messages=messages,
-                        response_content=result.get("content"),
-                        model=resolved_model,
-                        token_stats=result.get("usage", {}),
-                        latency_ms=latency_ms,
-                        success=True,
-                    )
-                )
-
-                return result
-
             except Exception as e:
                 last_error = e
-                if attempt < self.retry_policy.max_attempts - 1 and self._should_retry(e):
-                    backoff_time = self.retry_policy.backoff_multiplier**attempt
-                    self.logger.warning(
-                        "llm_completion_retry",
-                        model=resolved_model,
-                        error_type=type(e).__name__,
-                        attempt=attempt + 1,
-                        backoff_seconds=backoff_time,
-                    )
-                    await asyncio.sleep(backoff_time)
-                else:
-                    self.logger.error(
-                        "llm_completion_failed",
-                        model=resolved_model,
-                        error_type=type(e).__name__,
-                        error=str(e)[:200],
-                        attempts=attempt + 1,
-                    )
-
-                    # Trace failure
-                    asyncio.create_task(
-                        self._trace_interaction(
-                            messages=messages,
-                            response_content=None,
-                            model=resolved_model,
-                            token_stats={},
-                            latency_ms=int((time.time() - start_time) * 1000),
-                            success=False,
-                            error=str(e),
-                        )
-                    )
+                should_retry = await self._handle_retry_or_fail(
+                    e, attempt, resolved_model, messages, start_time
+                )
+                if not should_retry:
                     break
 
         return {
@@ -510,6 +596,119 @@ class LiteLLMService:
 
         return result
 
+    def _prepare_stream_request(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None,
+        tools: list[dict[str, Any]] | None,
+        tool_choice: str | dict[str, Any] | None,
+        **kwargs: Any,
+    ) -> tuple[str, dict[str, Any]]:
+        """Build LiteLLM streaming request kwargs.
+
+        Returns:
+            Tuple of (resolved_model, litellm_kwargs) with ``stream=True``.
+        """
+        _, resolved_model, litellm_kwargs = self._prepare_request(
+            messages, model, tools, tool_choice, **kwargs
+        )
+        litellm_kwargs["stream"] = True
+        return resolved_model, litellm_kwargs
+
+    @staticmethod
+    def _init_tool_call_entry(tc: Any) -> dict[str, Any]:
+        """Create an initial tool-call accumulator from a streaming delta.
+
+        Args:
+            tc: A single tool-call delta object from the stream chunk.
+
+        Returns:
+            Dict with ``id``, ``name``, and empty ``arguments`` string.
+        """
+        tool_id = getattr(tc, "id", None) or ""
+        tool_name = ""
+        if hasattr(tc, "function") and tc.function:
+            tool_name = getattr(tc.function, "name", None) or ""
+        return {"id": tool_id, "name": tool_name, "arguments": ""}
+
+    @staticmethod
+    def _update_tool_call_metadata(tc: Any, entry: dict[str, Any]) -> None:
+        """Update tool-call id/name from later streaming chunks.
+
+        Args:
+            tc: Tool-call delta with potentially updated id/name.
+            entry: The accumulator dict to update in place.
+        """
+        if hasattr(tc, "id") and tc.id:
+            entry["id"] = tc.id
+        if hasattr(tc, "function") and tc.function:
+            if hasattr(tc.function, "name") and tc.function.name:
+                entry["name"] = tc.function.name
+
+    @staticmethod
+    def _extract_arguments_delta(tc: Any) -> str | None:
+        """Extract the arguments delta string from a tool-call chunk.
+
+        Returns:
+            The arguments fragment, or ``None`` if not present.
+        """
+        if hasattr(tc, "function") and tc.function:
+            return getattr(tc.function, "arguments", None) or None
+        return None
+
+    def _build_stream_done_event(
+        self,
+        response: Any,
+        resolved_model: str,
+        messages: list[dict[str, Any]],
+        content_accumulated: str,
+        current_tool_calls: dict[int, dict[str, Any]],
+        start_time: float,
+    ) -> dict[str, Any]:
+        """Build the final ``done`` event and fire tracing task.
+
+        Returns:
+            The ``done`` event dict with ``usage``.
+        """
+        latency_ms = int((time.time() - start_time) * 1000)
+        usage = self._extract_usage(response) if hasattr(response, "usage") else {}
+
+        self.logger.info(
+            "llm_stream_completed",
+            model=resolved_model,
+            latency_ms=latency_ms,
+            tool_calls_count=len(current_tool_calls),
+        )
+
+        self._trace_success(
+            messages,
+            {"content": content_accumulated or None, "usage": usage},
+            resolved_model,
+            latency_ms,
+        )
+
+        return {"type": "done", "usage": usage}
+
+    def _handle_stream_error(
+        self,
+        error: Exception,
+        resolved_model: str,
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Log and trace a stream-level error, returning the error event.
+
+        Returns:
+            An ``error`` event dict.
+        """
+        self.logger.error(
+            "llm_stream_failed",
+            model=resolved_model,
+            error_type=type(error).__name__,
+            error=str(error)[:200],
+        )
+        self._trace_failure(messages, resolved_model, 0, str(error))
+        return {"type": "error", "message": str(error)}
+
     async def complete_stream(
         self,
         messages: list[dict[str, Any]],
@@ -534,22 +733,10 @@ class LiteLLMService:
             Event dicts: token, tool_call_start, tool_call_delta,
             tool_call_end, done, error.
         """
-        alias = model or self.default_model
-        resolved_model = self._resolve_model(model)
-        params = self._get_params(alias, **kwargs)
-
-        litellm_kwargs: dict[str, Any] = {
-            "model": resolved_model,
-            "messages": messages,
-            "stream": True,
-            "timeout": self.retry_policy.timeout,
-            "drop_params": True,
-            **params,
-        }
-
-        if tools:
-            litellm_kwargs["tools"] = tools
-            litellm_kwargs["tool_choice"] = tool_choice or "auto"
+        await self._ensure_config_loaded()
+        resolved_model, litellm_kwargs = self._prepare_stream_request(
+            messages, model, tools, tool_choice, **kwargs
+        )
 
         self.logger.debug(
             "llm_stream_started",
@@ -572,54 +759,16 @@ class LiteLLMService:
                 delta = chunk.choices[0].delta
                 finish_reason = chunk.choices[0].finish_reason
 
-                # Token content
+                # Yield token content
                 if hasattr(delta, "content") and delta.content:
                     content_accumulated += delta.content
                     yield {"type": "token", "content": delta.content}
 
-                # Tool calls
+                # Process tool-call deltas
                 if hasattr(delta, "tool_calls") and delta.tool_calls:
                     for tc in delta.tool_calls:
-                        idx = tc.index
-
-                        if idx not in current_tool_calls:
-                            tool_id = getattr(tc, "id", None) or ""
-                            tool_name = ""
-                            if hasattr(tc, "function") and tc.function:
-                                tool_name = getattr(tc.function, "name", None) or ""
-
-                            current_tool_calls[idx] = {
-                                "id": tool_id,
-                                "name": tool_name,
-                                "arguments": "",
-                            }
-
-                            if tool_id or tool_name:
-                                yield {
-                                    "type": "tool_call_start",
-                                    "id": tool_id,
-                                    "name": tool_name,
-                                    "index": idx,
-                                }
-
-                        # Update id/name if provided in later chunks
-                        if hasattr(tc, "id") and tc.id:
-                            current_tool_calls[idx]["id"] = tc.id
-                        if hasattr(tc, "function") and tc.function:
-                            if hasattr(tc.function, "name") and tc.function.name:
-                                current_tool_calls[idx]["name"] = tc.function.name
-
-                        # Argument delta
-                        if hasattr(tc, "function") and tc.function:
-                            args_delta = getattr(tc.function, "arguments", None)
-                            if args_delta:
-                                current_tool_calls[idx]["arguments"] += args_delta
-                                yield {
-                                    "type": "tool_call_delta",
-                                    "id": current_tool_calls[idx]["id"],
-                                    "arguments_delta": args_delta,
-                                    "index": idx,
-                                }
+                        async for evt in self._process_tool_call_delta(tc, current_tool_calls):
+                            yield evt
 
                 # Finish: emit tool_call_end for all accumulated tool calls
                 if finish_reason:
@@ -632,51 +781,59 @@ class LiteLLMService:
                             "index": tc_idx,
                         }
 
-            # Done event
-            latency_ms = int((time.time() - start_time) * 1000)
-            usage = self._extract_usage(response) if hasattr(response, "usage") else {}
-
-            self.logger.info(
-                "llm_stream_completed",
-                model=resolved_model,
-                latency_ms=latency_ms,
-                tool_calls_count=len(current_tool_calls),
+            yield self._build_stream_done_event(
+                response,
+                resolved_model,
+                messages,
+                content_accumulated,
+                current_tool_calls,
+                start_time,
             )
-
-            asyncio.create_task(
-                self._trace_interaction(
-                    messages=messages,
-                    response_content=content_accumulated or None,
-                    model=resolved_model,
-                    token_stats=usage,
-                    latency_ms=latency_ms,
-                    success=True,
-                )
-            )
-
-            yield {"type": "done", "usage": usage}
 
         except Exception as e:
-            self.logger.error(
-                "llm_stream_failed",
-                model=resolved_model,
-                error_type=type(e).__name__,
-                error=str(e)[:200],
-            )
+            yield self._handle_stream_error(e, resolved_model, messages)
 
-            asyncio.create_task(
-                self._trace_interaction(
-                    messages=messages,
-                    response_content=None,
-                    model=resolved_model,
-                    token_stats={},
-                    latency_ms=0,
-                    success=False,
-                    error=str(e),
-                )
-            )
+    async def _process_tool_call_delta(
+        self,
+        tc: Any,
+        current_tool_calls: dict[int, dict[str, Any]],
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Process a single tool-call delta from a stream chunk.
 
-            yield {"type": "error", "message": str(e)}
+        Initializes the tool-call accumulator on first sight, updates metadata,
+        and yields ``tool_call_start`` and ``tool_call_delta`` events.
+
+        Args:
+            tc: A tool-call delta object from the stream.
+            current_tool_calls: Mutable accumulator dict (index -> tool data).
+
+        Yields:
+            ``tool_call_start`` and/or ``tool_call_delta`` event dicts.
+        """
+        idx = tc.index
+
+        if idx not in current_tool_calls:
+            entry = self._init_tool_call_entry(tc)
+            current_tool_calls[idx] = entry
+            if entry["id"] or entry["name"]:
+                yield {
+                    "type": "tool_call_start",
+                    "id": entry["id"],
+                    "name": entry["name"],
+                    "index": idx,
+                }
+
+        self._update_tool_call_metadata(tc, current_tool_calls[idx])
+
+        args_delta = self._extract_arguments_delta(tc)
+        if args_delta:
+            current_tool_calls[idx]["arguments"] += args_delta
+            yield {
+                "type": "tool_call_delta",
+                "id": current_tool_calls[idx]["id"],
+                "arguments_delta": args_delta,
+                "index": idx,
+            }
 
     @staticmethod
     def _should_retry(error: Exception) -> bool:

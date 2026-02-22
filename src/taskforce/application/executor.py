@@ -34,6 +34,7 @@ from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.epic import TaskComplexity
 from taskforce.core.domain.errors import (
     CancelledError,
+    ConfigError,
     NotFoundError,
     TaskforceError,
     ValidationError,
@@ -141,7 +142,7 @@ class AgentExecutor:
             ExecutionResult with completion status and history
 
         Raises:
-            Exception: If agent creation or execution fails
+            AgentExecutionError: If agent creation or execution fails
         """
         # Delegate to streaming implementation and collect result
         result: ExecutionResult | None = None
@@ -162,15 +163,7 @@ class AgentExecutor:
                 progress_callback(update)
 
             # Extract result from complete event
-            event_type = update.event_type if isinstance(update.event_type, EventType) else update.event_type
-            if event_type == EventType.COMPLETE or event_type == EventType.COMPLETE.value:
-                result = ExecutionResult(
-                    status=update.details.get("status", ExecutionStatus.COMPLETED.value),
-                    final_message=update.message,
-                    session_id=update.details.get("session_id", ""),
-                    todolist_id=update.details.get("todolist_id"),
-                    execution_history=[],
-                )
+            result = self._extract_result_from_update(update) or result
 
         if result is None:
             raise AgentExecutionError(
@@ -179,6 +172,33 @@ class AgentExecutor:
             )
 
         return result
+
+    def _extract_result_from_update(
+        self, update: ProgressUpdate
+    ) -> ExecutionResult | None:
+        """Extract an ExecutionResult from a COMPLETE progress update.
+
+        Args:
+            update: A ProgressUpdate to inspect.
+
+        Returns:
+            ExecutionResult if the update is a COMPLETE event, None otherwise.
+        """
+        event_type = update.event_type
+        is_complete = (
+            event_type == EventType.COMPLETE
+            or event_type == EventType.COMPLETE.value
+        )
+        if not is_complete:
+            return None
+
+        return ExecutionResult(
+            status=update.details.get("status", ExecutionStatus.COMPLETED.value),
+            final_message=update.message,
+            session_id=update.details.get("session_id", ""),
+            todolist_id=update.details.get("todolist_id"),
+            execution_history=[],
+        )
 
     async def execute_mission_streaming(
         self,
@@ -224,21 +244,14 @@ class AgentExecutor:
             ProgressUpdate objects for each execution event
 
         Raises:
-            Exception: If agent creation or execution fails
+            AgentExecutionError: If agent creation or execution fails
+            CancelledError: If the execution is cancelled
         """
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
-        yield ProgressUpdate(
-            timestamp=datetime.now(),
-            event_type=EventType.STARTED,
-            message=f"Starting mission: {mission[:80]}",
-            details={
-                "session_id": resolved_session_id,
-                "profile": profile,
-                "agent_id": agent_id,
-                "plugin_path": plugin_path,
-            },
+        yield self._build_started_update(
+            mission, resolved_session_id, profile, agent_id, plugin_path
         )
 
         self.logger.info(
@@ -252,18 +265,12 @@ class AgentExecutor:
         )
 
         # --- Auto-epic classification ---
-        # Only classify when no pre-created agent is passed (avoids
-        # double-classification when called from epic orchestrator itself).
         if agent is None and auto_epic is not False:
-            epic_update = await self._classify_and_route_epic(
-                mission=mission,
-                profile=profile,
-                auto_epic=auto_epic,
+            escalated = await self._try_epic_escalation(
+                mission, profile, auto_epic
             )
-            if epic_update is not None:
-                # Mission classified as epic — yield escalation event,
-                # then delegate to epic orchestrator.
-                yield epic_update
+            if escalated is not None:
+                yield escalated
                 async for update in self._execute_epic_streaming(
                     mission=mission,
                     profile=profile,
@@ -302,53 +309,153 @@ class AgentExecutor:
             )
 
         except asyncio.CancelledError as e:
-            self.logger.warning(
-                "mission.streaming.cancelled",
-                session_id=resolved_session_id,
-                error=str(e),
-                agent_id=agent_id,
-                plugin_path=plugin_path,
+            yield self._handle_cancellation(
+                e, resolved_session_id, agent_id, plugin_path
             )
 
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type=EventType.ERROR,
-                message=f"Execution cancelled: {str(e)}",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-
-            raise CancelledError(
-                f"Mission streaming cancelled: {str(e)}",
-                details={"session_id": resolved_session_id},
-            ) from e
         except Exception as e:
-            self._log_execution_failure(
-                event_name="mission.streaming.failed",
-                error=e,
-                session_id=resolved_session_id,
-                agent_id=agent_id,
-                plugin_path=plugin_path,
+            yield self._handle_streaming_failure(
+                e, resolved_session_id, agent_id, plugin_path
             )
-
-            # Yield error event
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type=EventType.ERROR,
-                message=f"Execution failed: {str(e)}",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-
-            raise self._wrap_exception(
-                e,
-                context="Mission streaming failed",
-                session_id=resolved_session_id,
-                agent_id=agent_id,
-            ) from e
 
         finally:
-            # Clean up MCP connections if we created the agent
             if agent and owns_agent:
                 await agent.close()
+
+    def _build_started_update(
+        self,
+        mission: str,
+        session_id: str,
+        profile: str,
+        agent_id: str | None,
+        plugin_path: str | None,
+    ) -> ProgressUpdate:
+        """Build the initial STARTED progress update."""
+        return ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.STARTED,
+            message=f"Starting mission: {mission[:80]}",
+            details={
+                "session_id": session_id,
+                "profile": profile,
+                "agent_id": agent_id,
+                "plugin_path": plugin_path,
+            },
+        )
+
+    async def _try_epic_escalation(
+        self,
+        mission: str,
+        profile: str,
+        auto_epic: bool | None,
+    ) -> ProgressUpdate | None:
+        """Attempt auto-epic classification and return escalation update if warranted.
+
+        Args:
+            mission: The mission text.
+            profile: Active profile name.
+            auto_epic: Explicit override (True=force, False=skip, None=from config).
+
+        Returns:
+            ProgressUpdate with EPIC_ESCALATION event, or None for standard execution.
+        """
+        return await self._classify_and_route_epic(
+            mission=mission,
+            profile=profile,
+            auto_epic=auto_epic,
+        )
+
+    def _handle_cancellation(
+        self,
+        error: asyncio.CancelledError,
+        session_id: str,
+        agent_id: str | None,
+        plugin_path: str | None,
+    ) -> ProgressUpdate:
+        """Log cancellation and build error update. Re-raises as CancelledError.
+
+        Args:
+            error: The CancelledError that was caught.
+            session_id: Session identifier.
+            agent_id: Optional agent identifier.
+            plugin_path: Optional plugin path.
+
+        Returns:
+            ProgressUpdate with ERROR event type.
+
+        Raises:
+            CancelledError: Always re-raised with context.
+        """
+        self.logger.warning(
+            "mission.streaming.cancelled",
+            session_id=session_id,
+            error=str(error),
+            agent_id=agent_id,
+            plugin_path=plugin_path,
+        )
+
+        update = ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.ERROR,
+            message=f"Execution cancelled: {error!s}",
+            details={"error": str(error), "error_type": type(error).__name__},
+        )
+
+        raise CancelledError(
+            f"Mission streaming cancelled: {error!s}",
+            details={"session_id": session_id},
+        ) from error
+
+        return update  # noqa: B012 - unreachable but satisfies type checker
+
+    def _handle_streaming_failure(
+        self,
+        error: Exception,
+        session_id: str,
+        agent_id: str | None,
+        plugin_path: str | None,
+    ) -> ProgressUpdate:
+        """Log failure, build error update, and re-raise as TaskforceError.
+
+        Args:
+            error: The exception that was caught.
+            session_id: Session identifier.
+            agent_id: Optional agent identifier.
+            plugin_path: Optional plugin path.
+
+        Returns:
+            ProgressUpdate with ERROR event type.
+
+        Raises:
+            TaskforceError: Always re-raised with context.
+        """
+        self._log_execution_failure(
+            event_name="mission.streaming.failed",
+            error=error,
+            session_id=session_id,
+            agent_id=agent_id,
+            plugin_path=plugin_path,
+        )
+
+        update = ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.ERROR,
+            message=f"Execution failed: {error!s}",
+            details={"error": str(error), "error_type": type(error).__name__},
+        )
+
+        raise self._wrap_exception(
+            error,
+            context="Mission streaming failed",
+            session_id=session_id,
+            agent_id=agent_id,
+        ) from error
+
+        return update  # noqa: B012 - unreachable but satisfies type checker
+
+    # ------------------------------------------------------------------
+    # Agent creation (broken into focused helpers)
+    # ------------------------------------------------------------------
 
     async def _create_agent(
         self,
@@ -361,10 +468,8 @@ class AgentExecutor:
     ) -> Agent:
         """Create Agent using factory.
 
-        Creates Agent instance using native tool calling and PlannerTool:
-        - plugin_path provided: Creates agent with plugin tools
-        - agent_id provided: Loads custom agent definition from registry
-        - Otherwise: Creates standard Agent with optional user_context for RAG
+        Dispatches to the appropriate creation strategy based on the
+        combination of plugin_path, agent_id, and profile arguments.
 
         Args:
             profile: Configuration profile name
@@ -378,8 +483,8 @@ class AgentExecutor:
             Agent instance with injected dependencies
 
         Raises:
-            FileNotFoundError: If agent_id provided but not found (404)
-            ValueError: If agent definition is invalid/corrupt (400)
+            NotFoundError: If agent_id provided but not found
+            ValidationError: If agent definition is invalid
         """
         self.logger.debug(
             "creating_lean_agent",
@@ -390,133 +495,302 @@ class AgentExecutor:
             plugin_path=plugin_path,
         )
 
-        # plugin_path takes highest priority - create agent with plugin
         if plugin_path:
-            self.logger.info(
-                "creating_agent_with_plugin",
-                plugin_path=plugin_path,
-                profile=profile,
-            )
-            return await self.factory.create_agent_with_plugin(
-                plugin_path=plugin_path,
-                profile=profile,
-                user_context=user_context,
-                planning_strategy=planning_strategy,
-                planning_strategy_params=planning_strategy_params,
+            return await self._create_agent_from_plugin_path(
+                plugin_path, profile, user_context,
+                planning_strategy, planning_strategy_params,
             )
 
-        # agent_id takes second priority - load agent definition from registry
         if agent_id:
-            # Validate agent_id format: reject slashes
-            if "/" in agent_id:
-                raise ValidationError(
-                    f"Invalid agent_id format: '{agent_id}'. "
-                    f"Agent IDs cannot contain slashes. "
-                    f"Use 'profile' parameter instead (e.g., profile='{agent_id.split('/')[0]}').",
-                    details={"agent_id": agent_id},
-                )
-
-            from taskforce.application.factory import get_base_path
-            from taskforce.infrastructure.persistence.file_agent_registry import (
-                FileAgentRegistry,
+            return await self._create_agent_from_agent_id(
+                agent_id, profile, user_context,
+                planning_strategy, planning_strategy_params,
             )
 
-            registry = FileAgentRegistry(base_path=get_base_path())
-            agent_response = registry.get_agent(agent_id)
+        return await self._create_agent_from_profile(
+            profile, user_context,
+            planning_strategy, planning_strategy_params,
+        )
 
-            if not agent_response:
-                raise NotFoundError(
-                    f"Agent '{agent_id}' not found",
-                    details={"agent_id": agent_id},
-                )
+    async def _create_agent_from_plugin_path(
+        self,
+        plugin_path: str,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create agent from an explicit plugin directory path.
 
-            # Handle plugin agents
-            if isinstance(agent_response, PluginAgentDefinition):
-                # Resolve relative plugin_path to absolute path
-                base_path = get_base_path()
-                plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
+        Args:
+            plugin_path: Path to the external plugin directory.
+            profile: Configuration profile name.
+            user_context: Optional user context for RAG filtering.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
 
-                self.logger.info(
-                    "loading_plugin_agent",
-                    agent_id=agent_id,
-                    plugin_path=str(plugin_path_abs),
-                )
+        Returns:
+            Agent instance configured from the plugin.
+        """
+        self.logger.info(
+            "creating_agent_with_plugin",
+            plugin_path=plugin_path,
+            profile=profile,
+        )
+        return await self.factory.create_agent_with_plugin(
+            plugin_path=plugin_path,
+            profile=profile,
+            user_context=user_context,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
 
-                return await self.factory.create_agent_with_plugin(
-                    plugin_path=str(plugin_path_abs),
-                    profile=profile,
-                    user_context=user_context,
-                    planning_strategy=planning_strategy,
-                    planning_strategy_params=planning_strategy_params,
-                )
+    async def _create_agent_from_agent_id(
+        self,
+        agent_id: str,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create agent from a registered agent ID.
 
-            # Handle custom agents
-            if isinstance(agent_response, CustomAgentDefinition):
-                self.logger.info(
-                    "loading_custom_agent",
-                    agent_id=agent_id,
-                    agent_name=agent_response.name,
-                    tool_count=len(agent_response.tool_allowlist),
-                )
+        Looks up the agent definition in the registry and dispatches
+        to the appropriate creation method (plugin, custom, or profile).
 
-                # Use new unified API with inline parameters
-                return await self.factory.create_agent(
-                    system_prompt=agent_response.system_prompt,
-                    tools=agent_response.tool_allowlist,
-                    mcp_servers=agent_response.mcp_servers,
-                    planning_strategy=planning_strategy,
-                    planning_strategy_params=planning_strategy_params,
-                )
+        Args:
+            agent_id: Registered agent identifier.
+            profile: Configuration profile name.
+            user_context: Optional user context for RAG filtering.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
 
-            # Profile agents should use profile parameter
+        Returns:
+            Agent instance.
+
+        Raises:
+            ValidationError: If agent_id format is invalid or is a profile agent.
+            NotFoundError: If agent_id is not found in the registry.
+        """
+        self._validate_agent_id_format(agent_id)
+
+        agent_response = self._lookup_agent_definition(agent_id)
+        if not agent_response:
+            raise NotFoundError(
+                f"Agent '{agent_id}' not found",
+                details={"agent_id": agent_id},
+            )
+
+        if isinstance(agent_response, PluginAgentDefinition):
+            return await self._create_plugin_agent_from_definition(
+                agent_response, agent_id, profile, user_context,
+                planning_strategy, planning_strategy_params,
+            )
+
+        if isinstance(agent_response, CustomAgentDefinition):
+            return await self._create_custom_agent_from_definition(
+                agent_response, agent_id,
+                planning_strategy, planning_strategy_params,
+            )
+
+        raise ValidationError(
+            f"Agent '{agent_id}' is a profile agent, not a custom or plugin agent. "
+            "Use 'profile' parameter for profile agents.",
+            details={"agent_id": agent_id, "source": agent_response.source},
+        )
+
+    def _validate_agent_id_format(self, agent_id: str) -> None:
+        """Validate that agent_id does not contain slashes.
+
+        Args:
+            agent_id: The agent identifier to validate.
+
+        Raises:
+            ValidationError: If agent_id contains slashes.
+        """
+        if "/" in agent_id:
             raise ValidationError(
-                f"Agent '{agent_id}' is a profile agent, not a custom or plugin agent. "
-                "Use 'profile' parameter for profile agents.",
-                details={"agent_id": agent_id, "source": agent_response.source},
+                f"Invalid agent_id format: '{agent_id}'. "
+                f"Agent IDs cannot contain slashes. "
+                f"Use 'profile' parameter instead "
+                f"(e.g., profile='{agent_id.split('/')[0]}').",
+                details={"agent_id": agent_id},
             )
 
-        # Standard Agent creation - but first check if profile name matches a plugin agent
-        # This allows using profile="accounting_agent" instead of agent_id="accounting_agent"
+    def _lookup_agent_definition(self, agent_id: str) -> Any:
+        """Look up an agent definition from the file-based registry.
+
+        Args:
+            agent_id: The agent identifier to look up.
+
+        Returns:
+            Agent definition (PluginAgentDefinition, CustomAgentDefinition, etc.)
+            or None if not found.
+        """
         from taskforce.application.factory import get_base_path
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
         )
 
         registry = FileAgentRegistry(base_path=get_base_path())
-        agent_response = registry.get_agent(profile)
+        return registry.get_agent(agent_id)
 
-        # If profile name matches a plugin agent, use it as plugin
+    async def _create_plugin_agent_from_definition(
+        self,
+        definition: PluginAgentDefinition,
+        agent_id: str,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create agent from a PluginAgentDefinition.
+
+        Args:
+            definition: The plugin agent definition.
+            agent_id: The agent identifier (for logging).
+            profile: Configuration profile name.
+            user_context: Optional user context for RAG filtering.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
+
+        Returns:
+            Agent instance configured from the plugin definition.
+        """
+        from taskforce.application.factory import get_base_path
+
+        base_path = get_base_path()
+        plugin_path_abs = (base_path / definition.plugin_path).resolve()
+
+        self.logger.info(
+            "loading_plugin_agent",
+            agent_id=agent_id,
+            plugin_path=str(plugin_path_abs),
+        )
+
+        return await self.factory.create_agent_with_plugin(
+            plugin_path=str(plugin_path_abs),
+            profile=profile,
+            user_context=user_context,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+
+    async def _create_custom_agent_from_definition(
+        self,
+        definition: CustomAgentDefinition,
+        agent_id: str,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create agent from a CustomAgentDefinition.
+
+        Args:
+            definition: The custom agent definition.
+            agent_id: The agent identifier (for logging).
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
+
+        Returns:
+            Agent instance configured from the custom definition.
+        """
+        self.logger.info(
+            "loading_custom_agent",
+            agent_id=agent_id,
+            agent_name=definition.name,
+            tool_count=len(definition.tool_allowlist),
+        )
+
+        return await self.factory.create_agent(
+            system_prompt=definition.system_prompt,
+            tools=definition.tool_allowlist,
+            mcp_servers=definition.mcp_servers,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+
+    async def _create_agent_from_profile(
+        self,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create agent from a profile, checking for plugin agent match first.
+
+        If the profile name matches a registered plugin agent, the plugin
+        agent is used instead of loading a YAML profile.
+
+        Args:
+            profile: Configuration profile name.
+            user_context: Optional user context for RAG filtering.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
+
+        Returns:
+            Agent instance.
+        """
+        agent_response = self._lookup_agent_definition(profile)
+
         if isinstance(agent_response, PluginAgentDefinition):
-            base_path = get_base_path()
-            plugin_path_abs = (base_path / agent_response.plugin_path).resolve()
-
-            self.logger.info(
-                "profile_matches_plugin_agent",
-                profile=profile,
-                plugin_path=str(plugin_path_abs),
-                hint=(
-                    "Using profile name as plugin agent. "
-                    "Consider using agent_id parameter instead."
-                ),
+            return await self._create_plugin_agent_via_profile_name(
+                agent_response, profile, user_context,
+                planning_strategy, planning_strategy_params,
             )
 
-            # Use "dev" as infrastructure profile since the plugin name
-            # doesn't correspond to a real profile
-            return await self.factory.create_agent_with_plugin(
-                plugin_path=str(plugin_path_abs),
-                profile="dev",  # Use default profile for infrastructure
-                user_context=user_context,
-                planning_strategy=planning_strategy,
-                planning_strategy_params=planning_strategy_params,
-            )
-
-        # Standard Agent creation with config file
         return await self.factory.create_agent(
             config=profile,
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
         )
+
+    async def _create_plugin_agent_via_profile_name(
+        self,
+        definition: PluginAgentDefinition,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Create a plugin agent when the profile name matched a plugin.
+
+        Args:
+            definition: The plugin agent definition.
+            profile: The profile name that matched the plugin.
+            user_context: Optional user context for RAG filtering.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
+
+        Returns:
+            Agent instance configured from the plugin.
+        """
+        from taskforce.application.factory import get_base_path
+
+        base_path = get_base_path()
+        plugin_path_abs = (base_path / definition.plugin_path).resolve()
+
+        self.logger.info(
+            "profile_matches_plugin_agent",
+            profile=profile,
+            plugin_path=str(plugin_path_abs),
+            hint=(
+                "Using profile name as plugin agent. "
+                "Consider using agent_id parameter instead."
+            ),
+        )
+
+        return await self.factory.create_agent_with_plugin(
+            plugin_path=str(plugin_path_abs),
+            profile="dev",
+            user_context=user_context,
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+        )
+
+    # ------------------------------------------------------------------
+    # Execution helpers
+    # ------------------------------------------------------------------
 
     async def _execute_with_progress(
         self,
@@ -539,23 +813,22 @@ class AgentExecutor:
         Returns:
             ExecutionResult from agent execution
         """
-        # If no callback provided, execute directly
         if not progress_callback:
             return await agent.execute(mission=mission, session_id=session_id)
 
-        # Execute agent and track progress
-        # Note: Current Agent implementation doesn't support event_callback
-        # For now, we execute directly and send completion update
         result = await agent.execute(mission=mission, session_id=session_id)
 
-        # Send completion update
         progress_callback(
             ProgressUpdate(
                 timestamp=datetime.now(),
                 event_type=EventType.COMPLETE,
                 message=result.final_message,
                 details={
-                    "status": result.status_value if hasattr(result, "status_value") else result.status,
+                    "status": (
+                        result.status_value
+                        if hasattr(result, "status_value")
+                        else result.status
+                    ),
                     "session_id": result.session_id,
                     "todolist_id": result.todolist_id,
                 },
@@ -580,77 +853,149 @@ class AgentExecutor:
         Yields:
             ProgressUpdate objects for execution events
         """
-        # Check if agent supports streaming (Agent has execute_stream)
-        # Also verify it's a real method, not a Mock attribute
-        execute_stream_method = getattr(agent, "execute_stream", None)
-        is_real_method = (
-            execute_stream_method is not None
-            and callable(execute_stream_method)
-            and not str(type(execute_stream_method).__module__).startswith("unittest.mock")
-        )
-
-        if is_real_method:
-            # True streaming: yield events as they happen
+        if self._agent_supports_streaming(agent):
             async for event in agent.execute_stream(mission, session_id):
                 yield self._stream_event_to_progress_update(event)
         else:
-            # Fallback: post-hoc streaming from execution history
             result = await agent.execute(mission=mission, session_id=session_id)
+            async for update in self._yield_history_updates(result):
+                yield update
 
-            # Yield updates based on execution history
-            for event in result.execution_history:
-                # execution_history items are dicts
-                if isinstance(event, dict):
-                    event_type_str = event.get("type", "unknown")
-                    step = event.get("step", "?")
-                    data: dict[str, Any] = event.get("data", {})
-                else:
-                    et = event.event_type
-                    event_type_str = et.value if isinstance(et, EventType) else str(et)
-                    step = "?"
-                    data = event.data
+    def _agent_supports_streaming(self, agent: Agent) -> bool:
+        """Check if the agent has a real execute_stream method.
 
-                if event_type_str == "thought":
-                    rationale = data.get("rationale", "") if isinstance(data, dict) else ""
-                    yield ProgressUpdate(
-                        timestamp=datetime.now(),
-                        event_type="thought",
-                        message=f"Step {step}: {rationale[:80]}",
-                        details=data,
-                    )
+        Args:
+            agent: Agent instance to inspect.
 
-                elif event_type_str == "observation":
-                    success = (
-                        data.get("success", False) if isinstance(data, dict) else False
-                    )
-                    obs_status = (
-                        ExecutionStatus.COMPLETED.value
-                        if success
-                        else ExecutionStatus.FAILED.value
-                    )
-                    yield ProgressUpdate(
-                        timestamp=datetime.now(),
-                        event_type="observation",
-                        message=f"Step {step}: {obs_status}",
-                        details=data,
-                    )
-
-            # Yield final completion update
-            status_value = (
-                result.status_value
-                if hasattr(result, "status_value")
-                else result.status
+        Returns:
+            True if agent supports streaming, False otherwise.
+        """
+        execute_stream_method = getattr(agent, "execute_stream", None)
+        return (
+            execute_stream_method is not None
+            and callable(execute_stream_method)
+            and not str(type(execute_stream_method).__module__).startswith(
+                "unittest.mock"
             )
-            yield ProgressUpdate(
+        )
+
+    async def _yield_history_updates(
+        self, result: ExecutionResult
+    ) -> AsyncIterator[ProgressUpdate]:
+        """Yield ProgressUpdate events from a completed execution result.
+
+        Converts execution_history entries into streaming-compatible
+        progress updates, followed by a final COMPLETE event.
+
+        Args:
+            result: The completed execution result.
+
+        Yields:
+            ProgressUpdate objects for each history event and completion.
+        """
+        for event in result.execution_history:
+            update = self._history_entry_to_update(event)
+            if update is not None:
+                yield update
+
+        yield self._build_completion_update(result)
+
+    def _history_entry_to_update(self, event: Any) -> ProgressUpdate | None:
+        """Convert a single execution history entry to a ProgressUpdate.
+
+        Args:
+            event: A history entry (dict or StreamEvent-like object).
+
+        Returns:
+            ProgressUpdate for thought/observation events, None otherwise.
+        """
+        event_type_str, step, data = self._parse_history_event(event)
+
+        if event_type_str == "thought":
+            rationale = data.get("rationale", "") if isinstance(data, dict) else ""
+            return ProgressUpdate(
                 timestamp=datetime.now(),
-                event_type=EventType.COMPLETE,
-                message=result.final_message,
-                details={
-                    "status": status_value,
-                    "session_id": result.session_id,
-                    "todolist_id": result.todolist_id,
-                },
+                event_type="thought",
+                message=f"Step {step}: {rationale[:80]}",
+                details=data,
             )
+
+        if event_type_str == "observation":
+            return self._build_observation_update(step, data)
+
+        return None
+
+    def _parse_history_event(
+        self, event: Any
+    ) -> tuple[str, str | int, dict[str, Any]]:
+        """Parse a history event into its type, step, and data components.
+
+        Args:
+            event: A history entry (dict or object with event_type/data).
+
+        Returns:
+            Tuple of (event_type_str, step, data).
+        """
+        if isinstance(event, dict):
+            event_type_str = event.get("type", "unknown")
+            step = event.get("step", "?")
+            data: dict[str, Any] = event.get("data", {})
+        else:
+            et = event.event_type
+            event_type_str = et.value if isinstance(et, EventType) else str(et)
+            step = "?"
+            data = event.data
+        return event_type_str, step, data
+
+    def _build_observation_update(
+        self, step: str | int, data: dict[str, Any]
+    ) -> ProgressUpdate:
+        """Build a ProgressUpdate for an observation event.
+
+        Args:
+            step: The step number or identifier.
+            data: The observation data.
+
+        Returns:
+            ProgressUpdate with observation details.
+        """
+        success = data.get("success", False) if isinstance(data, dict) else False
+        obs_status = (
+            ExecutionStatus.COMPLETED.value
+            if success
+            else ExecutionStatus.FAILED.value
+        )
+        return ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type="observation",
+            message=f"Step {step}: {obs_status}",
+            details=data,
+        )
+
+    def _build_completion_update(self, result: ExecutionResult) -> ProgressUpdate:
+        """Build the final COMPLETE progress update from an execution result.
+
+        Args:
+            result: The completed execution result.
+
+        Returns:
+            ProgressUpdate with COMPLETE event type.
+        """
+        status_value = (
+            result.status_value
+            if hasattr(result, "status_value")
+            else result.status
+        )
+        return ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.COMPLETE,
+            message=result.final_message,
+            details={
+                "status": status_value,
+                "session_id": result.session_id,
+                "todolist_id": result.todolist_id,
+            },
+        )
 
     def _stream_event_to_progress_update(self, event: StreamEvent) -> ProgressUpdate:
         """Convert StreamEvent to ProgressUpdate for API consumers.
@@ -667,19 +1012,25 @@ class AgentExecutor:
         message_map = {
             EventType.STEP_START.value: lambda d: f"Step {d.get('step', '?')} starting...",
             EventType.LLM_TOKEN.value: lambda d: d.get("content", ""),
-            EventType.TOOL_CALL.value: lambda d: f"🔧 Calling: {d.get('tool', 'unknown')}",
+            EventType.TOOL_CALL.value: lambda d: f"Calling: {d.get('tool', 'unknown')}",
             EventType.TOOL_RESULT.value: lambda d: (
-                f"{'✅' if d.get('success') else '❌'} "
+                f"{'OK' if d.get('success') else 'FAIL'} "
                 f"{d.get('tool', 'unknown')}: {str(d.get('output', ''))[:50]}"
             ),
-            EventType.ASK_USER.value: lambda d: f"❓ {d.get('question', 'User input required')}",
-            EventType.PLAN_UPDATED.value: lambda d: f"📋 Plan updated ({d.get('action', 'unknown')})",
-            EventType.TOKEN_USAGE.value: lambda d: f"🎯 Tokens: {d.get('total_tokens', 0)}",
+            EventType.ASK_USER.value: lambda d: (
+                f"Question: {d.get('question', 'User input required')}"
+            ),
+            EventType.PLAN_UPDATED.value: lambda d: (
+                f"Plan updated ({d.get('action', 'unknown')})"
+            ),
+            EventType.TOKEN_USAGE.value: lambda d: (
+                f"Tokens: {d.get('total_tokens', 0)}"
+            ),
             EventType.FINAL_ANSWER.value: lambda d: d.get("content", ""),
             EventType.COMPLETE.value: lambda d: (
-                f"✅ Execution completed. Status: {d.get('status', 'unknown')}"
+                f"Execution completed. Status: {d.get('status', 'unknown')}"
             ),
-            EventType.ERROR.value: lambda d: f"⚠️ Error: {d.get('message', 'unknown')}",
+            EventType.ERROR.value: lambda d: f"Error: {d.get('message', 'unknown')}",
         }
 
         event_type_value = (
@@ -709,12 +1060,47 @@ class AgentExecutor:
         Returns:
             AutoEpicConfig if the profile has orchestration.auto_epic settings,
             otherwise None.
+
+        Raises:
+            ConfigError: If profile loading fails unexpectedly.
         """
         try:
             config = self.factory.profile_loader.load_safe(profile)
-        except Exception:
+        except FileNotFoundError:
+            self.logger.debug(
+                "auto_epic.profile_not_found",
+                profile=profile,
+            )
             return None
+        except Exception as e:
+            self.logger.error(
+                "auto_epic.profile_load_failed",
+                profile=profile,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise ConfigError(
+                f"Failed to load profile '{profile}' for auto-epic config: {e}",
+                details={"profile": profile},
+            ) from e
 
+        return self._parse_auto_epic_from_config(config, profile)
+
+    def _parse_auto_epic_from_config(
+        self, config: dict[str, Any], profile: str
+    ) -> AutoEpicConfig | None:
+        """Parse AutoEpicConfig from a loaded profile configuration dict.
+
+        Args:
+            config: The loaded profile configuration.
+            profile: Profile name (for logging context).
+
+        Returns:
+            AutoEpicConfig if valid auto_epic settings exist, None otherwise.
+
+        Raises:
+            ConfigError: If the auto_epic config values are malformed.
+        """
         orchestration = config.get("orchestration", {}) or {}
         auto_epic_raw = orchestration.get("auto_epic")
         if not auto_epic_raw or not isinstance(auto_epic_raw, dict):
@@ -722,9 +1108,18 @@ class AgentExecutor:
 
         try:
             return AutoEpicConfig(**auto_epic_raw)
-        except Exception:
-            self.logger.warning("auto_epic.config_parse_error", profile=profile)
-            return None
+        except Exception as e:
+            self.logger.error(
+                "auto_epic.config_parse_error",
+                profile=profile,
+                error=str(e),
+                error_type=type(e).__name__,
+                raw_config=auto_epic_raw,
+            )
+            raise ConfigError(
+                f"Invalid auto_epic configuration in profile '{profile}': {e}",
+                details={"profile": profile, "raw_config": auto_epic_raw},
+            ) from e
 
     async def _classify_and_route_epic(
         self,
@@ -743,24 +1138,79 @@ class AgentExecutor:
             A ProgressUpdate with EPIC_ESCALATION event if escalation is warranted,
             or None to continue with standard execution.
         """
+        epic_config = self._resolve_effective_epic_config(profile, auto_epic)
+        if epic_config is None:
+            return None
+
+        llm_provider = self._create_classification_llm_provider(profile)
+        if llm_provider is None:
+            return None
+
+        classification = await self._run_classification(
+            mission, llm_provider, epic_config
+        )
+        if classification is None:
+            return None
+
+        return self._build_escalation_update(classification, epic_config)
+
+    def _resolve_effective_epic_config(
+        self, profile: str, auto_epic: bool | None
+    ) -> AutoEpicConfig | None:
+        """Determine the effective auto-epic config based on override and profile.
+
+        Args:
+            profile: Active profile name.
+            auto_epic: Explicit override (True=force, None=from config).
+
+        Returns:
+            AutoEpicConfig if epic classification should proceed, None otherwise.
+        """
         epic_config = self._resolve_auto_epic_config(profile)
 
-        # Determine effective enabled state
         if auto_epic is True:
-            # Forced on — use defaults if no config present
             if epic_config is None:
                 epic_config = AutoEpicConfig(enabled=True)
         elif epic_config is None or not epic_config.enabled:
             return None
 
-        # Create a lightweight LLM provider for classification
+        return epic_config
+
+    def _create_classification_llm_provider(self, profile: str) -> Any | None:
+        """Create a lightweight LLM provider for complexity classification.
+
+        Args:
+            profile: Profile name to load LLM configuration from.
+
+        Returns:
+            LLM provider instance, or None if creation fails.
+        """
         try:
             profile_config = self.factory.profile_loader.load_safe(profile)
-            llm_provider = self.factory._create_llm_provider(profile_config)
-        except Exception:
-            self.logger.warning("auto_epic.llm_creation_failed", profile=profile)
+            return self.factory._create_llm_provider(profile_config)
+        except Exception as e:
+            self.logger.error(
+                "auto_epic.llm_creation_failed",
+                profile=profile,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return None
 
+    async def _run_classification(
+        self, mission: str, llm_provider: Any, epic_config: AutoEpicConfig
+    ) -> Any | None:
+        """Run the complexity classifier and return the classification result.
+
+        Args:
+            mission: The mission text.
+            llm_provider: LLM provider for the classifier.
+            epic_config: The auto-epic configuration.
+
+        Returns:
+            Classification result if classified as EPIC with sufficient
+            confidence, None otherwise.
+        """
         classifier = TaskComplexityClassifier(
             llm_provider=llm_provider,
             model=epic_config.classifier_model,
@@ -781,8 +1231,23 @@ class AgentExecutor:
         ):
             return None
 
-        worker_count = classification.suggested_worker_count or epic_config.default_worker_count
+        return classification
 
+    def _build_escalation_update(
+        self, classification: Any, epic_config: AutoEpicConfig
+    ) -> ProgressUpdate:
+        """Build the EPIC_ESCALATION progress update from classification results.
+
+        Args:
+            classification: The classification result.
+            epic_config: The auto-epic configuration.
+
+        Returns:
+            ProgressUpdate with EPIC_ESCALATION event type.
+        """
+        worker_count = (
+            classification.suggested_worker_count or epic_config.default_worker_count
+        )
         return ProgressUpdate(
             timestamp=datetime.now(),
             event_type=EventType.EPIC_ESCALATION,
@@ -857,6 +1322,10 @@ class AgentExecutor:
                 details={"error": str(e), "error_type": type(e).__name__},
             )
 
+    # ------------------------------------------------------------------
+    # Error and logging helpers
+    # ------------------------------------------------------------------
+
     def _log_execution_failure(
         self,
         event_name: str,
@@ -866,6 +1335,16 @@ class AgentExecutor:
         duration_seconds: float | None = None,
         plugin_path: str | None = None,
     ) -> None:
+        """Log a structured execution failure event.
+
+        Args:
+            event_name: The structlog event name.
+            error: The exception that caused the failure.
+            session_id: Session identifier.
+            agent_id: Optional agent identifier.
+            duration_seconds: Optional execution duration.
+            plugin_path: Optional plugin path.
+        """
         error_context = self._extract_error_context(
             error=error, session_id=session_id, agent_id=agent_id
         )
@@ -892,6 +1371,16 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
     ) -> dict[str, str | None]:
+        """Extract structured context from an exception for logging.
+
+        Args:
+            error: The exception to extract context from.
+            session_id: Fallback session identifier.
+            agent_id: Fallback agent identifier.
+
+        Returns:
+            Dict with session_id, agent_id, tool_name, and error_code.
+        """
         return {
             "session_id": getattr(error, "session_id", None) or session_id,
             "agent_id": getattr(error, "agent_id", None) or agent_id,
@@ -908,7 +1397,14 @@ class AgentExecutor:
         return str(uuid.uuid4())
 
     def _resolve_session_id(self, session_id: str | None) -> str:
-        """Return an existing session ID or generate a new one."""
+        """Return an existing session ID or generate a new one.
+
+        Args:
+            session_id: Optional existing session ID.
+
+        Returns:
+            The provided session ID or a newly generated one.
+        """
         if session_id is not None:
             return session_id
         return self._generate_session_id()
@@ -919,7 +1415,13 @@ class AgentExecutor:
         session_id: str,
         conversation_history: list[dict[str, Any]] | None,
     ) -> None:
-        """Store conversation history in agent state when provided."""
+        """Store conversation history in agent state when provided.
+
+        Args:
+            agent: Agent whose state manager to use.
+            session_id: Session identifier.
+            conversation_history: Optional conversation history to persist.
+        """
         if not conversation_history:
             return
 
@@ -935,12 +1437,22 @@ class AgentExecutor:
         session_id: str,
         agent_id: str | None,
     ) -> TaskforceError:
-        """Wrap unknown exceptions into AgentExecutionError."""
+        """Wrap unknown exceptions into AgentExecutionError.
+
+        Args:
+            error: The original exception.
+            context: Description of what was happening when the error occurred.
+            session_id: Session identifier.
+            agent_id: Optional agent identifier.
+
+        Returns:
+            TaskforceError (passthrough) or AgentExecutionError wrapper.
+        """
         if isinstance(error, TaskforceError):
             return error
         if isinstance(error, asyncio.CancelledError):
             return CancelledError(
-                f"{context}: {str(error)}",
+                f"{context}: {error!s}",
                 details={"session_id": session_id},
             )
         error_context = self._extract_error_context(
@@ -953,9 +1465,8 @@ class AgentExecutor:
             "error_code": error_context["error_code"],
             "error_type": type(error).__name__,
         }
-        # Always return AgentExecutionError for the Agent flow
         return AgentExecutionError(
-            f"{context}: {str(error)}",
+            f"{context}: {error!s}",
             session_id=error_context["session_id"],
             agent_id=error_context["agent_id"] or agent_id,
             tool_name=error_context["tool_name"],
