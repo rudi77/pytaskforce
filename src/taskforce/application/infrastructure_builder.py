@@ -189,13 +189,18 @@ class InfrastructureBuilder:
         """
         Build LLM provider based on configuration.
 
+        If ``llm.routing.enabled`` is set in the profile, wraps the provider
+        with an ``LLMRouter`` for dynamic per-call model selection.
+
         Args:
             config: Profile configuration dictionary
 
         Returns:
-            LLM provider implementation (multi-provider via LiteLLM)
+            LLM provider implementation (multi-provider via LiteLLM),
+            optionally wrapped with an LLMRouter.
         """
         from taskforce.infrastructure.llm.litellm_service import LiteLLMService
+        from taskforce.infrastructure.llm.llm_router import build_llm_router
 
         llm_config = config.get("llm", {})
         config_path = llm_config.get(
@@ -220,7 +225,15 @@ class InfrastructureBuilder:
 
             config_path = str(resolved_path)
 
-        return LiteLLMService(config_path=config_path)
+        provider: LLMProviderProtocol = LiteLLMService(config_path=config_path)
+
+        # Wrap with LLMRouter for dynamic model routing.
+        # Always wraps: when no routing rules are configured the router
+        # acts as a transparent pass-through that maps strategy phase
+        # hints (e.g. "reasoning", "planning") back to the default model.
+        routing_config = llm_config.get("routing", {})
+        default_model = llm_config.get("default_model", "main")
+        return build_llm_router(provider, routing_config, default_model)
 
     # -------------------------------------------------------------------------
     # MCP Tools
