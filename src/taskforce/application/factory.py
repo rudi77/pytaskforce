@@ -38,17 +38,6 @@ from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.utils.paths import get_base_path
 
 
-def _coerce_bool(value: Any, default: bool) -> bool:
-    """Coerce config values into booleans with sane defaults."""
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y"}
-    return bool(value)
-
-
 def _set_mcp_contexts(agent: Agent, mcp_contexts: list[Any]) -> None:
     """Store MCP contexts on an agent for lifecycle management.
 
@@ -75,23 +64,12 @@ _factory_extensions: list[FactoryExtensionCallback] = []
 
 
 def register_factory_extension(extension: FactoryExtensionCallback) -> None:
-    """Register a factory extension callback.
-
-    Extensions are called after agent creation to allow plugins to
-    modify or enhance agents.
-
-    Args:
-        extension: Callback function(factory, config, agent) -> agent
-    """
+    """Register a factory extension callback (called after agent creation)."""
     _factory_extensions.append(extension)
 
 
 def unregister_factory_extension(extension: FactoryExtensionCallback) -> None:
-    """Unregister a factory extension callback.
-
-    Args:
-        extension: The extension callback to remove
-    """
+    """Unregister a factory extension callback."""
     if extension in _factory_extensions:
         _factory_extensions.remove(extension)
 
@@ -102,28 +80,18 @@ def clear_factory_extensions() -> None:
 
 
 class AgentFactory:
-    """
-    Factory for creating Agent instances with dependency injection.
+    """Factory for creating Agent instances with dependency injection.
 
     Wires core domain objects with infrastructure adapters based on
     configuration profiles (dev/staging/prod).
-
-    The factory follows Clean Architecture principles:
-    - Reads YAML configuration profiles
-    - Instantiates appropriate infrastructure adapters
-    - Injects dependencies into Agent
-    - Supports specialist profiles (coding, rag) and custom agent definitions
     """
 
     def __init__(self, config_dir: str | None = None):
-        """
-        Initialize AgentFactory with configuration directory.
+        """Initialize AgentFactory.
 
         Args:
             config_dir: Path to directory containing profile YAML files.
-                       If None, uses 'src/taskforce_extensions/configs/' relative to project root
-                       (or _MEIPASS for frozen executables).
-                       Falls back to 'configs/' for backward compatibility.
+                       Defaults to ``src/taskforce_extensions/configs/``.
         """
         self.config_dir = self._resolve_config_dir(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
@@ -1059,15 +1027,6 @@ class AgentFactory:
             "skill_switch_conditions_configured",
             pattern="smart-booking",
         )
-
-    def _merge_plugin_config(
-        self, base_config: dict[str, Any], plugin_config: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Merge plugin config with base profile config.
-
-        Delegates to :meth:`ProfileLoader.merge_plugin_config`.
-        """
-        return self.profile_loader.merge_plugin_config(base_config, plugin_config)
 
     def _load_profile(self, profile: str) -> dict[str, Any]:
         """Delegates to :class:`ProfileLoader`."""
