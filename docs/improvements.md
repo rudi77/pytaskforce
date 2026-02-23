@@ -31,6 +31,8 @@ This creates concrete duplication:
 
 **Recommendation:** Complete the migration to `AgentDefinition` as the single domain model. Retire `agent_models.py` entirely. Keep Pydantic validation schemas only in the API layer (`api/schemas/`) for request/response validation — not as core domain models.
 
+Additionally, within `agent_definition.py` itself, the factory methods `from_custom()`, `from_profile()`, and `from_plugin()` (lines 264-376) each duplicate identical tool-extraction and MCP-server-extraction logic — the same list comprehension appears 3 times.
+
 **Estimated reduction:** ~700 lines, 1 file removed, clearer single source of truth.
 
 ---
@@ -149,7 +151,13 @@ async def execute(self, agent, mission, session_id):
     return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 ```
 
-The streaming implementations share the same core ReAct loop (call LLM → process tool calls → check completion → repeat), varying only in whether they generate a plan upfront and whether they add a reflection step.
+The streaming implementations share the same core ReAct loop (call LLM → process tool calls → check completion → repeat), varying only in whether they generate a plan upfront and whether they add a reflection step. Specific large methods:
+
+- `NativeReActStrategy.execute_stream()`: ~216 lines
+- `SparStrategy.execute_stream()`: ~172 lines
+- `PlanAndExecuteStrategy.execute_stream()`: ~163 lines
+
+All three duplicate the system-prompt rebuild pattern (`messages[0] = {"role": ..., "content": agent._build_system_prompt(...)}`) and share identical state loading/resumption and error handling logic.
 
 **Recommendation:** Extract a shared `_react_loop()` async generator that strategies compose with optional pre/post phases. For example:
 
@@ -219,7 +227,9 @@ __all__ = ["Agent"]
 | `tool_mapping.py` | 42 | 3 | 1 |
 | `memory_store.py` | 45 | 4 | 1 |
 
-**Recommendation:** `LoggerProtocol` that mirrors `structlog` exactly adds no abstraction value — use `structlog.stdlib.BoundLogger` directly. The single-method `SubAgentSpawnerProtocol` could be inlined or merged with related protocols. This is a minor cleanup but reduces the number of files to navigate.
+Additionally, in `skills.py` (355 lines, 4 protocols), `SkillMetadata` is a pure subset of `SkillProtocol` — it defines `name`, `description`, `source_path`, `skill_type` which `SkillProtocol` already includes. It can be removed entirely.
+
+**Recommendation:** Remove `SkillMetadata` (use `SkillProtocol` directly). `LoggerProtocol` that mirrors `structlog` exactly adds no abstraction value — use `structlog.stdlib.BoundLogger` directly. The single-method `SubAgentSpawnerProtocol` could be inlined or merged with related protocols. This is a minor cleanup but reduces the number of files to navigate.
 
 ---
 
