@@ -1,289 +1,271 @@
-# Recommended Improvements for Taskforce
+# Codebase Improvement & Simplification Recommendations
 
 **Date:** 2026-02-22
-**Scope:** Full codebase analysis covering architecture, code quality, test coverage, error handling, and security.
+**Scope:** Full codebase review across all four architectural layers (186 source files, ~41k lines)
 
 ---
 
 ## Executive Summary
 
-| Area | Status | Key Metric |
-|------|--------|------------|
-| Architecture | Strong | 0 layer violations |
-| Lint (ruff) | Needs work | 46 errors |
-| Type safety (mypy) | Needs work | 138 errors in 58 files |
-| Test coverage | Below target | 62% overall (target: 80%) |
-| Core domain tests | Critical gap | ~3% of core domain files tested |
-| Security | Minor hardening | 1 blocking (SSRF), 1 advisory |
-| Function size | Needs refactoring | 10+ functions exceed 30-line limit |
+The pytaskforce codebase has strong architectural foundations — Clean Architecture with protocol-based design, async-first I/O, and well-structured layering. However, several areas of accumulated complexity would benefit from simplification. The highest-impact changes are consolidating duplicated agent model definitions, reducing the factory's surface area, and eliminating unused abstractions.
+
+Recommendations are ordered by **impact** (highest first).
 
 ---
 
-## 1. Test Coverage (Priority: CRITICAL)
+## 1. Consolidate Agent Definition Models (HIGH IMPACT)
 
-Overall coverage is **62%**, well below the project's stated 80% target. More importantly, coverage is *inverted* -- critical core business logic is nearly untested while less critical API plumbing has good coverage.
+**Problem:** There are **three parallel sets** of agent definition models with significant overlap:
 
-### 1.1 Core Domain: Near-Zero Coverage
+| File | Classes | Lines |
+|------|---------|-------|
+| `core/domain/agent_definition.py` | `AgentDefinition`, `AgentDefinitionInput`, `AgentDefinitionUpdate`, `MCPServerConfig`, `AgentSource` | 573 |
+| `core/domain/agent_models.py` | `CustomAgentDefinition`, `ProfileAgentDefinition`, `PluginAgentDefinition`, `CustomAgentInput`, `CustomAgentUpdateInput` | 121 |
+| `core/domain/config_schema.py` | `AgentConfigSchema`, `MCPServerConfigSchema`, `AgentSourceType` | 445 |
 
-The following core domain files have **no dedicated unit tests**:
+This creates concrete duplication:
+- `AgentSource` (enum in `agent_definition.py`) vs `AgentSourceType` (enum in `config_schema.py`) — identical values, different types
+- `MCPServerConfig` (dataclass) vs `MCPServerConfigSchema` (Pydantic) — identical structure, different classes
+- `CustomAgentDefinition` still actively imported in **6 files** despite `AgentDefinition` being the stated "unified" replacement
+- Three different classes (`CustomAgentInput`, `AgentDefinitionInput`, `AgentConfigSchema`) all represent "create an agent" input
 
-| File | Risk | Why It Matters |
-|------|------|----------------|
-| `core/domain/agent.py` | Critical | ReAct loop -- the central execution engine |
-| `core/domain/lean_agent.py` | Critical | Simplified agent variant used in production |
-| `core/domain/planning_strategy.py` | Critical | All 4 planning strategies (native_react, plan_and_execute, plan_and_react, spar) |
-| `core/domain/planning_helpers.py` | High | Shared planning utilities |
-| `core/domain/context_builder.py` | High | Context construction for all prompts |
-| `core/domain/token_budgeter.py` | High | Token cost control |
-| `core/domain/models.py` | Medium | Core data models (ExecutionResult, StreamEvent, TokenUsage) |
-| `core/domain/config_schema.py` | Medium | Configuration validation |
-| `core/domain/memory_service.py` | Medium | Memory service logic |
+**Recommendation:** Complete the migration to `AgentDefinition` as the single domain model. Retire `agent_models.py` entirely. Keep Pydantic validation schemas only in the API layer (`api/schemas/`) for request/response validation — not as core domain models.
 
-**Lean agent components** also lack dedicated tests:
-- `message_history_manager.py` (39% coverage, only via integration)
-- `message_sanitizer.py` (41% coverage)
-- `prompt_builder.py` (84% -- better but still gaps)
-- `resource_closer.py` (69%)
-
-**Recommendation:** Prioritize tests for `agent.py`, `lean_agent.py`, and `planning_strategy.py` first. These are the heart of the framework and should have >90% coverage per the project's own standards.
-
-### 1.2 Infrastructure Tools: 12 of 19 Native Tools Untested
-
-| Untested Tool | Coverage | Risk |
-|---------------|----------|------|
-| `shell_tool.py` | 34% | High -- security-sensitive |
-| `git_tools.py` | 22% | High -- complex multi-operation tool |
-| `web_tools.py` | 49% | High -- commonly used |
-| `search_tools.py` | 30% | Medium -- commonly used |
-| `edit_tool.py` | 32% | Medium |
-| `llm_tool.py` | 43% | Medium |
-| `multimedia_tool.py` | 20% | Low |
-| `calendar_tool.py` | 33% | Low |
-
-The tested tools (`browser_tool.py` at 80%, `file_tools.py` at 83%) demonstrate good patterns to follow.
-
-### 1.3 Application Layer Gaps
-
-| File | Coverage | Impact |
-|------|----------|--------|
-| `factory.py` | 49% | Critical -- central dependency injection |
-| `agent_registry.py` | 18% | High -- custom agent API |
-| `skill_manager.py` | 33% | High -- skill lifecycle |
-| `skill_service.py` | 36% | High -- skill discovery |
-| `plugin_discovery.py` | 41% | Medium |
-
-### 1.4 Test Quality Issues
-
-- **Trivial assertions over behavior testing:** Several test files (e.g., `test_tool_catalog.py`) only verify metadata (`tool.name == "ask_user"`) rather than actual tool behavior.
-- **Timing-dependent tests:** `test_scheduler_service.py` uses `await asyncio.sleep(1.5)` which can flake on slow CI runners. Use `freezegun` or mock the clock.
-- **Missing test infrastructure:** No `@pytest.mark.slow` markers, no `--maxfail` configuration, no timeout settings for hanging tests.
+**Estimated reduction:** ~700 lines, 1 file removed, clearer single source of truth.
 
 ---
 
-## 2. Type Safety (Priority: HIGH)
+## 2. Shrink `factory.py` — Too Many Responsibilities (HIGH IMPACT)
 
-**138 mypy errors across 58 files.** Key categories:
+**Problem:** `factory.py` is **1,644 lines** with **75 methods** on `AgentFactory`. It is the largest file in the project and has several structural issues:
 
-### 2.1 Attribute Access on Wrong Types
+### 2a. ~215 lines of pure delegation stubs (lines 1430-1644)
 
-```
-factory.py:320: "Agent" has no attribute "_mcp_contexts"
-factory.py:807: "Agent" has no attribute "_mcp_contexts"
-factory.py:1059: "Agent" has no attribute "_mcp_contexts"
-factory.py:1060: "Agent" has no attribute "_plugin_manifest"
-```
-
-These suggest `Agent` and `LeanAgent` have diverged in their interfaces. The factory accesses attributes that exist on one but not the other.
-
-### 2.2 Incompatible Types
-
-```
-tool_builder.py:485: Argument "specialist" has incompatible type "Any | None"; expected "str"
-tool_builder.py:536: Incompatible return value type (got "AgentTool", expected "ToolProtocol | None")
-executor.py:601: expression has type "dict[str, Any]", variable has type "StreamEvent"
-```
-
-### 2.3 Missing Library Stubs
-
-```
-factory.py:24: Library stubs not installed for "yaml"
-server.py:92: Library stubs not installed for "yaml"
-```
-
-**Recommendation:**
-- Install `types-PyYAML` to resolve yaml stub errors.
-- Set `disallow_untyped_defs = true` in mypy config (currently `false`) and fix incrementally.
-- Fix the `Agent`/`LeanAgent` attribute access issues in `factory.py` -- these are potential runtime errors.
-
----
-
-## 3. Linting (Priority: MEDIUM)
-
-**46 ruff errors**, breaking down as:
-
-| Error Code | Count | Description |
-|------------|-------|-------------|
-| W293 | 20 | Blank line contains whitespace |
-| B904 | 14 | Missing `raise ... from err` in except clauses |
-| W291 | 4 | Trailing whitespace |
-| F821 | 3 | Undefined names (`structlog`, `Agent`, `AgentFactory`) |
-| F841 | 1 | Unused variable |
-| F401 | 2 | Unused imports |
-| C416 | 1 | Unnecessary list comprehension |
-| B007 | 1 | Unused loop variable |
-
-### 3.1 B904: Missing Exception Chaining (14 occurrences)
-
-All 14 are in API route handlers (`agents.py`, `execution.py`, etc.) where exceptions are caught and re-raised as `HTTPException` without `from err`. This loses the original traceback:
+Twelve methods do nothing but forward to `self._tool_builder`:
 
 ```python
-# Current (loses context):
-except FileExistsError as e:
-    raise _http_exception(status_code=409, code="agent_exists", message=str(e))
+def _create_tools_from_allowlist(self, ...):
+    return await self._tool_builder.create_tools_from_allowlist(...)
 
-# Fixed (preserves chain):
-except FileExistsError as e:
-    raise _http_exception(status_code=409, code="agent_exists", message=str(e)) from e
+def _get_all_native_tools(self, ...):
+    return self._tool_builder.get_all_native_tools(...)
+# ... 10 more like this
 ```
 
-### 3.2 F821: Undefined Names (3 occurrences)
+**Fix:** Delete these. Callers should use `self._tool_builder` directly.
 
-These indicate references to names that aren't imported -- potential runtime `NameError` exceptions.
+### 2b. `InfrastructureBuilder` instantiated 5 times
 
-**Recommendation:** Run `uv run ruff check --fix src/taskforce/` to auto-fix 19 of the 46 issues (whitespace). The B904 and F821 issues need manual fixes.
-
----
-
-## 4. Function Size (Priority: HIGH)
-
-The project's own coding standard mandates max 30 lines per function. 10+ functions significantly exceed this:
-
-### 4.1 Critical (>200 lines)
-
-| File | Function | Lines |
-|------|----------|-------|
-| `factory.py` | `_build_definition_from_config()` | ~271 |
-| `factory.py` | `_assemble_lean_system_prompt()` | ~250 |
-| `factory.py` | `_apply_extensions()` | ~216 |
-
-### 4.2 High (100-200 lines)
-
-| File | Function | Lines |
-|------|----------|-------|
-| `executor.py` | `execute_mission_streaming()` | ~170 |
-| `executor.py` | `_create_agent()` | ~168 |
-| `litellm_service.py` | `complete_stream()` | ~169 |
-| `litellm_service.py` | `complete()` | ~119 |
-| `factory.py` | `_build_system_prompt_for_definition()` | ~165 |
-
-**Recommendation:** Extract cohesive blocks into well-named private methods. For example, `_build_definition_from_config()` likely handles tool resolution, prompt assembly, persistence setup, and LLM configuration -- each could be a separate method.
-
----
-
-## 5. Security Hardening (Priority: MEDIUM)
-
-### 5.1 SSRF Risk in Web and Browser Tools
-
-`web_tools.py` (`web_fetch`) and `browser_tool.py` accept arbitrary URLs with no validation. An agent could be instructed to fetch:
-- `http://127.0.0.1:8080/admin` (localhost services)
-- `http://169.254.169.254/latest/meta-data/` (cloud metadata endpoint)
-- `http://10.0.0.1/internal-api` (internal network)
-
-**Recommendation:** Add a URL validator that blocks private/reserved IP ranges (RFC 1918, link-local, loopback) before making requests. This is standard for any tool that fetches user-controlled URLs.
-
-### 5.2 Python Tool Sandbox
-
-The `python_tool.py` sandbox exposes `__import__`, allowing dynamic imports including `os`, `subprocess`, etc. While the tool has an approval gate (`requires_approval`), this is defense-in-depth concern.
-
-**Recommendation:** Document this as an accepted risk in the tool's docstring and in security documentation. Consider restricting `__builtins__` more aggressively for untrusted execution contexts.
-
-### 5.3 Shell Tool Blocklist
-
-The shell tool uses a blocklist approach (blocking known-dangerous commands like `rm -rf /`). Blocklists are inherently incomplete.
-
-**Recommendation:** For production deployments, consider switching to an allowlist approach or running shell commands in a sandboxed environment (container, VM). Document the current blocklist-based approach as suitable for development/trusted contexts only.
-
----
-
-## 6. Error Handling (Priority: MEDIUM)
-
-### 6.1 Silent Failures in Executor and Factory
+The same `InfrastructureBuilder(self.config_dir)` is created as a local variable in 5 different methods, each with a local import:
 
 ```python
-# executor.py (lines ~715, 725, 760)
-except Exception:
-    return None  # Silent failure -- caller gets None with no context
+# Line 286, 302, 328, 996, 1022 — same pattern repeated
+from taskforce.application.infrastructure_builder import InfrastructureBuilder
+infra_builder = InfrastructureBuilder(self.config_dir)
 ```
 
-When the executor fails to create an agent or load state, it returns `None` silently. The caller must then handle `None` defensively, often without knowing *why* the operation failed.
+**Fix:** Create once in `__init__` as `self._infra_builder`.
 
-**Recommendation:** Either re-raise with context or return a typed error result (e.g., `Result[Agent, CreateError]`).
+### 2c. Legacy API alongside unified API
 
-### 6.2 Blocking I/O in Async Context
+The file contains both:
+- The "new unified API" (`create()` method, lines 200-481)
+- The "legacy API" (`create_agent()`, `create_agent_with_plugin()`, lines 486-1405)
 
-Two locations use synchronous `open()` + `yaml.safe_load()` inside async code paths:
+Both are actively used, but the legacy methods already delegate to `create()` internally.
 
-| File | Location | Issue |
-|------|----------|-------|
-| `litellm_service.py` | `__init__` (~line 144) | Blocking file read in constructor |
-| `factory.py` | `_create_agent_from_config_file()` (~line 643) | Blocking YAML load |
+**Fix:** Mark legacy methods `@deprecated` and migrate callers over time. Or, if no external consumers depend on the legacy signatures, remove them.
 
-**Recommendation:** Replace with `aiofiles.open()` + async YAML loading, or move to a synchronous initialization phase that runs before the event loop starts.
+### 2d. Hardcoded business logic
+
+Lines 1383-1405 contain hardcoded skill-switch conditions for `smart-booking-auto`/`smart-booking-hitl` — a specific use-case embedded in the generic factory.
+
+**Fix:** Move to configuration (YAML) or a plugin-level registration.
+
+**Estimated reduction:** 1,644 → ~800 lines, 75 → ~35 methods.
 
 ---
 
-## 7. Dependency and Configuration (Priority: LOW)
+## 3. Replace Internal `dict[str, Any]` with Typed Structures (MEDIUM IMPACT)
 
-### 7.1 Duplicate Dev Dependencies
+**Problem:** The factory and infrastructure builder use `dict[str, Any]` as the primary data carrier between internal methods. Example from `_build_infrastructure()`:
 
-`pyproject.toml` defines dev dependencies in both `[project.optional-dependencies].dev` and `[dependency-groups].dev` with identical content. This is redundant and could lead to drift.
-
-**Recommendation:** Keep only `[dependency-groups].dev` (the modern `uv`-native approach) and remove the `[project.optional-dependencies].dev` section.
-
-### 7.2 Mypy Configuration Too Lenient
-
-```toml
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+```python
+return {
+    "state_manager": ...,
+    "llm_provider": ...,
+    "context_policy": ...,
+    "runtime_tracker": ...,
+    "model_alias": ...,
+    "mcp_contexts": [],
+}
 ```
 
-With these set to `false`, mypy won't flag functions missing type annotations at all. This undermines the project's stated requirement of "type annotations required on ALL function signatures."
+There are **104 `dict[str, Any]` usages** in `factory.py` alone. These are accessed by string keys in downstream methods with no type checking, violating the project's own coding standard: *"Use `dataclass`, `NamedTuple`, or Pydantic `BaseModel` instead of `dict`."*
 
-**Recommendation:** Enable `disallow_untyped_defs = true` and `disallow_incomplete_defs = true`. Fix violations incrementally, starting with the core domain layer.
+**Recommendation:** Replace with named dataclasses:
 
-### 7.3 Large File: `file_agent_registry.py`
+```python
+@dataclass
+class InfraBundle:
+    state_manager: StateManagerProtocol
+    llm_provider: LLMProviderProtocol
+    context_policy: ContextPolicy
+    runtime_tracker: AgentRuntimeTrackerProtocol | None
+    model_alias: str
+    mcp_contexts: list[Any]
 
-At 600+ lines, this file handles multiple concerns (agent CRUD, file I/O, serialization, validation). Consider splitting into focused modules.
+@dataclass
+class AgentSettings:
+    max_steps: int | None
+    max_parallel_tools: int | None
+    planning_strategy: PlanningStrategy
+    model_alias: str
+```
 
 ---
 
-## 8. Documentation Consistency (Priority: LOW)
+## 4. Simplify `tool_result_store.py` Interface File (MEDIUM IMPACT)
 
-### 8.1 Stale Project URLs
+**Problem:** `core/interfaces/tool_result_store.py` is **409 lines** — the largest interface file by far. Only ~100 lines are the actual `ToolResultStoreProtocol`. The rest is concrete implementation:
 
-```toml
-Homepage = "https://github.com/yourorg/pytaskforce"
-```
+- `ToolResultHandle` — dataclass with serialization and lineage tracking (95 lines)
+- `ToolResultPreview` — dataclass (32 lines)
+- `LineageNode` — dataclass (27 lines)
+- `LineageGraph` — full graph implementation with DFS traversal and Mermaid diagram rendering (125 lines)
 
-The `yourorg` placeholder in `pyproject.toml` URLs should be updated to the actual organization.
+A `LineageGraph` with `to_mermaid()` is application-level visualization logic, not a protocol concern.
 
-### 8.2 Missing CHANGELOG
-
-`pyproject.toml` references `Changelog = ".../CHANGELOG.md"` but no `CHANGELOG.md` file exists in the repository.
+**Recommendation:** Move `ToolResultHandle`, `ToolResultPreview`, `LineageNode`, and `LineageGraph` to `core/domain/tool_result.py` (which already exists as a thin file). Keep only the protocol definition in the interface file.
 
 ---
 
-## Summary: Top 10 Improvements by Impact
+## 5. Reduce Planning Strategy Duplication (MEDIUM IMPACT)
 
-| # | Improvement | Impact | Effort |
-|---|-------------|--------|--------|
-| 1 | Add unit tests for `agent.py`, `lean_agent.py`, `planning_strategy.py` | Critical -- core logic untested | Large |
-| 2 | Add unit tests for `factory.py` | Critical -- DI wiring untested | Large |
-| 3 | Fix 138 mypy errors (especially `Agent` attribute access in factory) | High -- potential runtime errors | Medium |
-| 4 | Refactor oversized functions in `factory.py` (3 functions >200 lines) | High -- maintainability | Medium |
-| 5 | Refactor oversized functions in `executor.py` and `litellm_service.py` | High -- maintainability | Medium |
-| 6 | Add SSRF validation to `web_tools.py` and `browser_tool.py` | High -- security | Small |
-| 7 | Fix 46 ruff lint errors (especially B904 exception chaining) | Medium -- code quality | Small |
-| 8 | Add tests for high-risk tools (`shell_tool`, `git_tools`, `web_tools`) | Medium -- safety | Medium |
-| 9 | Replace blocking I/O with async in `litellm_service.py` and `factory.py` | Medium -- event loop safety | Small |
-| 10 | Enable strict mypy settings (`disallow_untyped_defs = true`) | Medium -- long-term type safety | Large (incremental) |
+**Problem:** `planning_strategy.py` (951 lines) + `planning_helpers.py` (529 lines) = **1,480 lines** for planning. All four strategy classes share an almost identical pattern:
+
+```python
+async def execute(self, agent, mission, session_id):
+    return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
+```
+
+The streaming implementations share the same core ReAct loop (call LLM → process tool calls → check completion → repeat), varying only in whether they generate a plan upfront and whether they add a reflection step.
+
+**Recommendation:** Extract a shared `_react_loop()` async generator that strategies compose with optional pre/post phases. For example:
+
+```python
+class SparStrategy:
+    async def execute_stream(self, agent, mission, session_id):
+        plan = await _generate_plan(agent, mission)   # Sense + Plan
+        async for event in _react_loop(agent, ...):    # Act (shared)
+            yield event
+        yield from _reflect(agent, ...)                # Reflect (SPAR-specific)
+```
+
+**Estimated reduction:** 200-300 lines of near-duplicate code.
+
+---
+
+## 6. Unify `executor.py` Entry Points (MEDIUM IMPACT)
+
+**Problem:** `executor.py` at **1,464 lines** is the second-largest file. It provides **6+ entry methods** that share 80%+ of their logic:
+
+- `execute_mission()` / `execute_mission_streaming()`
+- `execute_with_agent()` / `execute_with_agent_streaming()`
+- `execute_mission_with_custom_agent()`
+- `execute_mission_with_plugin()`
+
+Each duplicates session ID generation, error handling, event emission, and logging. Additionally, `ProgressUpdate` is nearly identical to the existing `StreamEvent` dataclass.
+
+**Recommendations:**
+
+a. **Eliminate `ProgressUpdate`** and standardize on `StreamEvent` everywhere.
+
+b. **Consolidate to a single `execute()` method** that accepts a discriminated config:
+
+```python
+async def execute(self, config: ExecutionConfig) -> AsyncIterator[StreamEvent]:
+    # Single implementation handling all modes
+```
+
+Where `ExecutionConfig` is a union of `ProfileExecution`, `CustomAgentExecution`, and `PluginExecution`.
+
+---
+
+## 7. Clean Up `agent.py` / `lean_agent.py` Naming (LOW IMPACT, EASY WIN)
+
+**Problem:** `core/domain/agent.py` is a 5-line re-export shim:
+
+```python
+from taskforce.core.domain.lean_agent import Agent
+__all__ = ["Agent"]
+```
+
+`lean_agent.py` still carries a docstring referencing "Key differences from legacy Agent" for a class that has been removed. The "lean" prefix suggests a transitional state that appears complete.
+
+**Recommendation:** Rename `lean_agent.py` → `agent.py` (updating all imports) and remove the legacy references from the docstring. Alternatively, if the rename is too disruptive, just clean up the docstring.
+
+---
+
+## 8. Reduce Interface Proliferation for Single-Implementation Protocols (LOW IMPACT)
+
+**Problem:** 18 interface files define ~30 protocols. Several are very thin with exactly one implementation:
+
+| Interface File | Lines | Methods | Implementations |
+|----------------|-------|---------|-----------------|
+| `sub_agents.py` | 15 | 1 | 1 |
+| `logging.py` | 29 | 5 | mirrors `structlog` exactly |
+| `messaging.py` | 35 | 3 | 1 (InMemoryMessageBus) |
+| `tool_mapping.py` | 42 | 3 | 1 |
+| `memory_store.py` | 45 | 4 | 1 |
+
+**Recommendation:** `LoggerProtocol` that mirrors `structlog` exactly adds no abstraction value — use `structlog.stdlib.BoundLogger` directly. The single-method `SubAgentSpawnerProtocol` could be inlined or merged with related protocols. This is a minor cleanup but reduces the number of files to navigate.
+
+---
+
+## 9. Butler Subsystem Is Over-Abstracted for Its Maturity (LOW IMPACT)
+
+**Problem:** The Butler subsystem spans:
+- 6 domain model files (`agent_event.py`, `schedule.py`, `trigger_rule.py`, etc.)
+- 6 interface files (`event_source.py`, `scheduler.py`, `rule_engine.py`, `learning.py`, etc.)
+- 8+ implementation files
+
+Each interface has exactly one implementation. The full Protocol → Implementation → Service layering is premature for a subsystem at this stage.
+
+**Recommendation:** Start with concrete classes and extract protocols only when a second implementation appears. Python's duck typing and structural subtyping make this easy to do later without breaking changes.
+
+---
+
+## 10. Remove Backward-Compatibility Aliases (LOW IMPACT, EASY WIN)
+
+**Problem:** Several files exist solely as compatibility shims:
+- `infrastructure/llm/openai_service.py` — re-exports `LiteLLMService` under the old name
+- `core/domain/agent.py` — re-exports from `lean_agent.py`
+
+**Recommendation:** If these are internal (not consumed by external packages), delete them and update imports. If external, add `warnings.warn("Deprecated, use X instead", DeprecationWarning)`.
+
+---
+
+## 11. `plugin_loader.py` Does Too Much (LOW IMPACT)
+
+**Problem:** `application/plugin_loader.py` at **646 lines** handles plugin discovery, manifest creation, config loading, tool validation, tool instantiation, skill path resolution, and more. A separate `plugin_discovery.py` (100 lines) already exists but duplicates some of this logic.
+
+**Recommendation:** Consolidate the discovery logic into `plugin_discovery.py` and keep `plugin_loader.py` focused on loading/instantiation only.
+
+---
+
+## Summary Table
+
+| # | Area | Impact | Effort | Key Metric |
+|---|------|--------|--------|------------|
+| 1 | Consolidate agent definition models | High | Medium | 3 overlapping files → 1 |
+| 2 | Shrink `factory.py` | High | Medium | 1,644 → ~800 lines, 75 → ~35 methods |
+| 3 | Replace `dict[str, Any]` internally | Medium | Low | Type safety for ~104 usages |
+| 4 | Move concrete types out of interface file | Medium | Low | 409 → ~100 lines in protocol file |
+| 5 | Reduce planning strategy duplication | Medium | Medium | ~200-300 lines eliminated |
+| 6 | Unify executor entry points | Medium | Medium | 6 methods → 1, eliminate `ProgressUpdate` |
+| 7 | Clean up agent.py / lean_agent.py | Low | Low | Remove dead shim |
+| 8 | Consolidate thin interfaces | Low | Low | Fewer files to navigate |
+| 9 | Simplify Butler abstractions | Low | Medium | Less premature abstraction |
+| 10 | Remove compat aliases | Low | Low | Cleaner import graph |
+| 11 | Consolidate plugin loader | Low | Low | Better separation of concerns |
