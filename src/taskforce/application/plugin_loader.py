@@ -257,9 +257,7 @@ class PluginLoader:
                 ) from e
 
             # Build tool name to class name mapping by instantiating temporarily
-            tool_name_to_class = self._build_tool_name_mapping(
-                tools_module, manifest.tool_classes
-            )
+            tool_name_to_class = self._build_tool_name_mapping(tools_module, manifest.tool_classes)
 
             # Instantiate each tool class
             for class_name in manifest.tool_classes:
@@ -446,9 +444,7 @@ class PluginLoader:
 
         return None
 
-    def _resolve_params(
-        self, params: dict[str, Any], manifest: PluginManifest
-    ) -> dict[str, Any]:
+    def _resolve_params(self, params: dict[str, Any], manifest: PluginManifest) -> dict[str, Any]:
         """
         Resolve variables in parameter values.
 
@@ -863,7 +859,7 @@ def load_plugin(plugin_info: PluginInfo, config: dict[str, Any] | None = None) -
         plugin_info.instance = instance
 
         # Initialize with config
-        if hasattr(instance, 'initialize'):
+        if hasattr(instance, "initialize"):
             instance.initialize(config or {})
 
         plugin_info.initialized = True
@@ -871,7 +867,7 @@ def load_plugin(plugin_info: PluginInfo, config: dict[str, Any] | None = None) -
         logger.info(
             "plugin.loaded",
             plugin_name=plugin_info.name,
-            version=getattr(instance, 'version', 'unknown'),
+            version=getattr(instance, "version", "unknown"),
         )
 
         return True
@@ -907,7 +903,7 @@ def load_all_plugins(config: dict[str, Any] | None = None) -> PluginRegistry:
         if load_plugin(plugin_info, plugin_config):
             # Collect middleware and routers from loaded plugin
             if plugin_info.instance:
-                if hasattr(plugin_info.instance, 'get_middleware'):
+                if hasattr(plugin_info.instance, "get_middleware"):
                     middleware = plugin_info.instance.get_middleware()
                     if middleware:
                         registry.middleware.extend(middleware)
@@ -917,7 +913,7 @@ def load_all_plugins(config: dict[str, Any] | None = None) -> PluginRegistry:
                             middleware_count=len(middleware),
                         )
 
-                if hasattr(plugin_info.instance, 'get_routers'):
+                if hasattr(plugin_info.instance, "get_routers"):
                     routers = plugin_info.instance.get_routers()
                     if routers:
                         registry.routers.extend(routers)
@@ -974,7 +970,7 @@ def shutdown_plugins() -> None:
     for name, info in registry.plugins.items():
         if info.instance and info.initialized:
             try:
-                if hasattr(info.instance, 'shutdown'):
+                if hasattr(info.instance, "shutdown"):
                     info.instance.shutdown()
                 logger.debug("plugin.shutdown", plugin_name=name)
             except Exception as e:
