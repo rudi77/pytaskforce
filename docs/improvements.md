@@ -319,6 +319,39 @@ The `tool_result_store.py` version correctly uses a master lock for protection. 
 
 ---
 
+## 16. Remove Unused Dependencies from `pyproject.toml` (MEDIUM IMPACT, EASY WIN)
+
+**Problem:** At least 5 dependencies in `pyproject.toml` have **zero imports** anywhere in the source tree:
+
+| Dependency | Status | Recommendation |
+|-----------|--------|----------------|
+| `textual>=7.0.0` | No imports found | Remove (likely leftover from TUI exploration) |
+| `sqlalchemy>=2.0` | No imports found | Move to optional `postgres` group |
+| `alembic>=1.13` | No imports found | Move to optional `postgres` group |
+| `asyncpg>=0.29` | No imports found | Move to optional `postgres` group |
+| `pyperclip>=1.8.2` | No imports found | Remove |
+
+Additionally, tracing dependencies (`arize-phoenix-otel`, `openinference-instrumentation-litellm`) are core deps but only used when tracing is enabled — these should be an optional `tracing` group.
+
+**Recommendation:** Remove dead dependencies; create `postgres` and `tracing` optional groups for the rest. Reduces install footprint for basic usage.
+
+---
+
+## 17. Shrink `execution.py` API Routes (MEDIUM IMPACT)
+
+**Problem:** `api/routes/execution.py` at **921 lines** is the largest route file. Over 300 lines are embedded documentation constants (request examples, error examples, JavaScript/Python client code in docstrings). The `execute_mission_stream` endpoint has a 246-line docstring.
+
+Additionally, two concrete code blocks are duplicated:
+- User context building (identical 8-line block at lines 445-452 and 803-810)
+- Error handler logic (7 identical exception handlers in both sync and streaming endpoints)
+
+**Recommendation:**
+- Move client examples to `docs/api/streaming-examples.md`
+- Extract `_build_user_context(request)` helper
+- Extract shared error transformation logic
+
+---
+
 ## Summary Table
 
 | # | Area | Impact | Effort | Key Metric |
@@ -338,3 +371,5 @@ The `tool_result_store.py` version correctly uses a master lock for protection. 
 | 13 | Reduce tool boilerplate | Medium | Medium | ~300 lines eliminated across 18 tools |
 | 14 | Delete deprecated LLM files | Low | Low | 2 dead files removed |
 | 15 | Fix state manager race condition | Low | Low | Thread-safety bug fix |
+| 16 | Remove unused dependencies | Medium | Low | 5 dead deps, lighter install |
+| 17 | Shrink execution.py routes | Medium | Low | 921 lines, 300+ lines of embedded docs |
