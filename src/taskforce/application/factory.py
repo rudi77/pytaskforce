@@ -1,15 +1,7 @@
-"""
-Application Layer - Agent Factory
+"""Application Layer - Agent Factory.
 
-This module provides dependency injection factory for creating Agent instances
-with different infrastructure adapters based on configuration profiles.
-
-Key Responsibilities:
-- Load configuration profiles (dev/staging/prod)
-- Instantiate infrastructure adapters (state managers, LLM providers, tools)
-- Wire dependencies into core domain Agent
-- Support specialist profiles (coding, rag) with layered prompts
-- Inject appropriate toolsets based on specialist profile
+Dependency injection factory for creating Agent instances with infrastructure
+adapters based on configuration profiles (dev/staging/prod).
 """
 
 from __future__ import annotations
@@ -39,7 +31,6 @@ from taskforce.application.tool_builder import ToolBuilder
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.errors import ConfigError
-from taskforce.core.domain.planning_strategy import PlanningStrategy
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
@@ -142,14 +133,7 @@ class AgentFactory:
 
     @staticmethod
     def _resolve_config_dir(config_dir: str | None) -> Path:
-        """Resolve the configuration directory path.
-
-        Args:
-            config_dir: Explicit path or None for auto-detection.
-
-        Returns:
-            Resolved Path to the configuration directory.
-        """
+        """Resolve the configuration directory path."""
         if config_dir is not None:
             return Path(config_dir)
 
@@ -163,18 +147,7 @@ class AgentFactory:
         return new_config_dir
 
     def _apply_extensions(self, config: dict[str, Any], agent: Agent) -> Agent:
-        """Apply registered factory extensions to the agent.
-
-        Extensions from plugins can modify or enhance agents after creation.
-        Extension failures are logged but do not prevent agent creation.
-
-        Args:
-            config: The configuration used to create the agent
-            agent: The created agent instance
-
-        Returns:
-            The potentially modified agent
-        """
+        """Apply registered factory extensions to the agent."""
         for extension in _factory_extensions:
             try:
                 result = extension(self, config, agent)
@@ -462,40 +435,26 @@ class AgentFactory:
         user_context: dict[str, Any] | None = None,
         specialist: str | None = None,
     ) -> Agent:
-        """
-        Create an Agent instance.
+        """Create an Agent instance.
 
-        Supports two mutually exclusive modes:
-
-        **Option 1: Config file** - Load all settings from a YAML file:
-            agent = await factory.create_agent(config="configs/dev.yaml")
-
-        **Option 2: Inline parameters** - Specify settings programmatically:
-            agent = await factory.create_agent(
-                system_prompt="You are a helpful assistant.",
-                tools=["python", "file_read"],
-                persistence={"type": "file", "work_dir": ".taskforce"},
-            )
+        Supports two mutually exclusive modes: config file (``config`` or
+        ``profile``) **or** inline parameters.  Mixing both raises ``ValueError``.
 
         Args:
-            config: Path to YAML configuration file. If provided, all other
-                   agent settings are loaded from this file.
             profile: Profile name to load from configs/{profile}.yaml.
-
+            config: Path to YAML configuration file.
             system_prompt: Custom system prompt for the agent.
-            tools: List of tool names to enable (e.g., ["python", "file_read"]).
-            llm: LLM configuration dict (e.g., {"config_path": "...", "default_model": "main"}).
-            persistence: Persistence configuration (e.g., {"type": "file", "work_dir": ".taskforce"}).
+            tools: List of tool names to enable.
+            llm: LLM configuration dict.
+            persistence: Persistence configuration.
             mcp_servers: List of MCP server configurations.
             max_steps: Maximum execution steps for the agent.
-            planning_strategy: Planning strategy ("native_react", "plan_and_execute", "plan_and_react", "spar").
+            planning_strategy: Planning strategy name.
             planning_strategy_params: Parameters for the planning strategy.
             context_policy: Context policy configuration dict.
-
             work_dir: Override for work directory (applies to both modes).
-            user_context: User context for RAG tools (user_id, org_id, scope).
-            specialist: Specialist profile ("coding", "rag", "wiki") - only used
-                       when no system_prompt is provided.
+            user_context: User context for RAG tools.
+            specialist: Specialist profile.
 
         Returns:
             Agent instance with injected dependencies.
@@ -503,25 +462,6 @@ class AgentFactory:
         Raises:
             ValueError: If both config and inline parameters are provided.
             FileNotFoundError: If config file not found.
-
-        Examples:
-            # Option 1: From config file
-            agent = await factory.create_agent(config="configs/dev.yaml")
-
-            # Option 1b: From profile name
-            agent = await factory.create_agent(profile="dev")
-
-            # Option 2: Inline parameters
-            agent = await factory.create_agent(
-                system_prompt="You are a coding assistant.",
-                tools=["python", "file_read", "file_write"],
-                persistence={"type": "file", "work_dir": ".taskforce_coding"},
-            )
-
-            # Minimal inline (uses defaults)
-            agent = await factory.create_agent(
-                tools=["python", "web_search"],
-            )
         """
         self._validate_create_agent_params(profile, config, system_prompt, tools,
                                            llm, persistence, mcp_servers, max_steps,
@@ -720,23 +660,7 @@ class AgentFactory:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> Agent:
-        """
-        Create Agent from a YAML configuration file.
-
-        Args:
-            config_path: Path to the YAML config file.
-            work_dir: Optional override for work directory.
-            user_context: Optional user context for RAG tools.
-            planning_strategy: Optional planning strategy override.
-            planning_strategy_params: Optional planning strategy parameters.
-
-        Returns:
-            Agent instance.
-
-        Raises:
-            FileNotFoundError: If config file cannot be found.
-            ConfigError: If YAML parsing fails.
-        """
+        """Create Agent from a YAML configuration file."""
         config_path_obj = self._resolve_config_path(config_path)
         config = await self._load_yaml_config(config_path_obj)
 
@@ -756,54 +680,24 @@ class AgentFactory:
         return await self.create(definition, user_context=user_context)
 
     def _resolve_config_path(self, config_path: str) -> Path:
-        """Resolve a config path to an absolute file path.
-
-        Tries relative to config_dir first, then current directory,
-        with and without .yaml extension.
-
-        Args:
-            config_path: Relative or absolute path to config file.
-
-        Returns:
-            Resolved Path object.
-
-        Raises:
-            FileNotFoundError: If the config file cannot be found.
-        """
+        """Resolve a config path to an absolute file path."""
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
-            config_path_obj = self._try_resolve_relative_config(config_path, config_path_obj)
+            for candidate in [
+                self.config_dir / config_path,
+                self.config_dir / f"{config_path}.yaml",
+                Path(f"{config_path}.yaml"),
+            ]:
+                if candidate.exists():
+                    config_path_obj = candidate
+                    break
 
         if not config_path_obj.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
         return config_path_obj
 
-    def _try_resolve_relative_config(
-        self, config_path: str, config_path_obj: Path
-    ) -> Path:
-        """Try to resolve a relative config path against known directories."""
-        candidates = [
-            self.config_dir / config_path,
-            self.config_dir / f"{config_path}.yaml",
-            Path(f"{config_path}.yaml"),
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        return config_path_obj
-
     async def _load_yaml_config(self, path: Path) -> dict[str, Any]:
-        """Load and parse a YAML config file asynchronously.
-
-        Args:
-            path: Path to the YAML file.
-
-        Returns:
-            Parsed configuration dictionary.
-
-        Raises:
-            ConfigError: If YAML parsing fails.
-        """
+        """Load and parse a YAML config file asynchronously."""
         try:
             async with aiofiles.open(path, mode="r") as f:
                 content = await f.read()
@@ -1135,13 +1029,7 @@ class AgentFactory:
     def _configure_skill_switch_conditions(
         self, skill_manager: SkillManager, skill_names: list[str]
     ) -> None:
-        """
-        Configure default skill switch conditions based on available skills.
-
-        Args:
-            skill_manager: The skill manager to configure
-            skill_names: List of available skill names
-        """
+        """Configure default skill switch conditions for smart-booking skills."""
         from taskforce.application.skill_manager import SkillSwitchCondition
 
         if "smart-booking-auto" not in skill_names:
