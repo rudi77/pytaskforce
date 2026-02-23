@@ -254,6 +254,61 @@ Each interface has exactly one implementation. The full Protocol → Implementat
 
 ---
 
+## 12. Split `litellm_service.py` — Monolithic LLM Class (MEDIUM IMPACT)
+
+**Problem:** `infrastructure/llm/litellm_service.py` at **908 lines** is a single class handling 6 distinct jobs: config loading, model resolution, request preparation, completion with retry logic, response parsing, streaming, and tracing. Each concern is interleaved.
+
+**Recommendation:** Extract into focused classes:
+- `LiteLLMService` — completion + streaming only (~300 lines)
+- `LLMConfigLoader` — config management (~100 lines)
+- `ResponseParser` — response normalization (~100 lines)
+- `RetryStrategy` — retry logic (~60 lines)
+
+---
+
+## 13. Tool Boilerplate Across 18 Native Tools (MEDIUM IMPACT)
+
+**Problem:** All 18 native tools implement identical property stubs (`name`, `description`, `parameters_schema`, `requires_approval`, `approval_risk_level`, `supports_parallelism`, `get_approval_preview`, `validate_params`). Each tool has 30-50 lines of boilerplate before actual logic begins. Additionally, all tools share the same error-handling wrapper pattern:
+
+```python
+try:
+    # tool logic
+except Exception as e:
+    tool_error = ToolError(f"{self.name} failed: {e}", ...)
+    return tool_error_payload(tool_error)
+```
+
+**Recommendation:** Create a `BaseTool` dataclass or decorator that provides defaults for metadata properties and an error-handling wrapper. Each tool would only declare its unique metadata and implement `execute()`. Estimated reduction: ~15-20 lines per tool × 18 tools = ~300 lines total.
+
+---
+
+## 14. Delete Deprecated Infrastructure Files (LOW IMPACT, EASY WIN)
+
+**Problem:** Two files are explicitly marked deprecated and confirmed unused via grep:
+- `infrastructure/llm/parameter_mapper.py` (23 lines) — "Deprecated: Parameter mapping is no longer needed"
+- `infrastructure/llm/error_handler.py` (42 lines) — "Deprecated: Error handling is now simplified"
+
+**Recommendation:** Delete both. Zero callers.
+
+---
+
+## 15. Fix `file_state_manager._get_lock()` Race Condition (LOW IMPACT)
+
+**Problem:** `infrastructure/persistence/file_state_manager.py` line 147 has a non-async `_get_lock()` method that modifies a shared dict without thread safety:
+
+```python
+def _get_lock(self, session_id: str) -> asyncio.Lock:  # NOT async
+    if session_id not in self.locks:
+        self.locks[session_id] = asyncio.Lock()
+    return self.locks[session_id]
+```
+
+The `tool_result_store.py` version correctly uses a master lock for protection. The inconsistency is a latent race condition.
+
+**Recommendation:** Align `file_state_manager` with the `tool_result_store` pattern using `async with self._locks_lock`.
+
+---
+
 ## Summary Table
 
 | # | Area | Impact | Effort | Key Metric |
@@ -269,3 +324,7 @@ Each interface has exactly one implementation. The full Protocol → Implementat
 | 9 | Simplify Butler abstractions | Low | Medium | Less premature abstraction |
 | 10 | Remove compat aliases | Low | Low | Cleaner import graph |
 | 11 | Consolidate plugin loader | Low | Low | Better separation of concerns |
+| 12 | Split `litellm_service.py` | Medium | Medium | 908 → ~300 lines main class |
+| 13 | Reduce tool boilerplate | Medium | Medium | ~300 lines eliminated across 18 tools |
+| 14 | Delete deprecated LLM files | Low | Low | 2 dead files removed |
+| 15 | Fix state manager race condition | Low | Low | Thread-safety bug fix |
