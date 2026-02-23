@@ -203,64 +203,16 @@ class AgentFactory:
         user_context: dict[str, Any] | None = None,
         base_config_override: dict[str, Any] | None = None,
     ) -> Agent:
-        """
-        Create an Agent from a unified AgentDefinition.
-
-        This is the new unified factory method that replaces:
-        - create_agent() - for profile-based agents
-        - create_agent_from_definition() - for custom agents
-        - create_agent_with_plugin() - for plugin agents
-        - create_agent_for_command() - for slash command agents
-
-        The AgentDefinition provides all configuration in a unified format.
+        """Create an Agent from a unified AgentDefinition.
 
         Args:
-            definition: Unified agent definition containing all configuration
-            user_context: Optional user context for RAG tools (user_id, org_id, scope)
+            definition: Unified agent definition containing all configuration.
+            user_context: Optional user context for RAG tools.
             base_config_override: Optional pre-loaded base profile config.
 
         Returns:
-            Agent instance with injected dependencies
-
-        Example:
-            >>> from taskforce.core.domain.agent_definition import AgentDefinition
-            >>> factory = AgentFactory()
-            >>> definition = AgentDefinition(
-            ...     agent_id="my-agent",
-            ...     name="My Agent",
-            ...     tools=["web_search", "python"],
-            ...     base_profile="dev",
-            ... )
-            >>> agent = await factory.create(definition)
-            >>> result = await agent.execute("Do something", "session-123")
+            Agent instance with injected dependencies.
         """
-        self._log_definition_creation(definition)
-
-        base_config = await self._resolve_base_config(definition, base_config_override)
-        infra = self._build_infrastructure(base_config, definition)
-        all_tools = await self._collect_tools_for_definition(
-            definition, base_config, infra, user_context
-        )
-
-        system_prompt = self._build_system_prompt_for_definition(definition, all_tools)
-        agent_settings = self._extract_agent_settings(
-            base_config, definition, definition.planning_strategy, definition.planning_strategy_params
-        )
-
-        self._log_agent_created(definition.agent_id, all_tools, agent_settings)
-
-        agent = self._instantiate_agent(
-            infra=infra,
-            all_tools=all_tools,
-            system_prompt=system_prompt,
-            settings=agent_settings,
-        )
-
-        _set_mcp_contexts(agent, infra["mcp_contexts"])
-        return self._apply_extensions(base_config, agent)
-
-    def _log_definition_creation(self, definition: AgentDefinition) -> None:
-        """Log the start of agent creation from a definition."""
         self.logger.info(
             "creating_agent_from_definition",
             agent_id=definition.agent_id,
@@ -271,6 +223,40 @@ class AgentFactory:
             has_mcp_servers=definition.has_mcp_servers,
             has_custom_prompt=definition.has_custom_prompt,
         )
+
+        base_config = await self._resolve_base_config(definition, base_config_override)
+        infra = self._build_infrastructure(base_config, definition)
+        all_tools = await self._collect_tools_for_definition(
+            definition, base_config, infra, user_context
+        )
+
+        system_prompt = self.prompt_assembler.assemble(
+            all_tools,
+            specialist=definition.specialist,
+            custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
+        )
+        agent_settings = self._extract_agent_settings(
+            base_config, definition, definition.planning_strategy, definition.planning_strategy_params
+        )
+
+        self.logger.debug(
+            "agent_created",
+            agent_id=definition.agent_id,
+            tools_count=len(all_tools),
+            tool_names=[t.name for t in all_tools],
+            model_alias=agent_settings["model_alias"],
+            planning_strategy=agent_settings["planning_strategy"].name,
+        )
+
+        agent = self._instantiate_agent(
+            infra=infra,
+            all_tools=all_tools,
+            system_prompt=system_prompt,
+            settings=agent_settings,
+        )
+
+        _set_mcp_contexts(agent, infra["mcp_contexts"])
+        return self._apply_extensions(base_config, agent)
 
     async def _resolve_base_config(
         self,
@@ -396,22 +382,6 @@ class AgentFactory:
             "model_alias": config.get("llm", {}).get("default_model", "main"),
         }
 
-    def _log_agent_created(
-        self,
-        agent_id: str,
-        all_tools: list[ToolProtocol],
-        settings: dict[str, Any],
-    ) -> None:
-        """Log successful agent creation details."""
-        self.logger.debug(
-            "agent_created",
-            agent_id=agent_id,
-            tools_count=len(all_tools),
-            tool_names=[t.name for t in all_tools],
-            model_alias=settings["model_alias"],
-            planning_strategy=settings["planning_strategy"].name,
-        )
-
     def _instantiate_agent(
         self,
         *,
@@ -466,18 +436,6 @@ class AgentFactory:
             tools=[t.name for t in plugin_tools],
         )
         return plugin_tools
-
-    def _build_system_prompt_for_definition(
-        self,
-        definition: AgentDefinition,
-        tools: list[ToolProtocol],
-    ) -> str:
-        """Build system prompt for an agent definition."""
-        return self.prompt_assembler.assemble(
-            tools,
-            specialist=definition.specialist,
-            custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
-        )
 
     # -------------------------------------------------------------------------
     # Legacy API (maintained for backwards compatibility)
@@ -893,26 +851,11 @@ class AgentFactory:
         user_context: dict[str, Any] | None = None,
         specialist: str | None = None,
     ) -> Agent:
-        """
-        Create Agent from inline parameters.
+        """Create Agent from inline parameters."""
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
+        from taskforce.application.tool_registry import ToolRegistry
+        from taskforce.core.domain.agent_definition import MCPServerConfig
 
-        Args:
-            system_prompt: Custom system prompt.
-            tools: List of tool names.
-            llm: LLM configuration.
-            persistence: Persistence configuration.
-            mcp_servers: MCP server configurations.
-            max_steps: Maximum execution steps.
-            planning_strategy: Planning strategy.
-            planning_strategy_params: Planning strategy parameters.
-            context_policy: Context policy configuration.
-            work_dir: Work directory override.
-            user_context: User context for RAG tools.
-            specialist: Specialist profile.
-
-        Returns:
-            Agent instance.
-        """
         self.logger.info(
             "creating_agent_from_inline_params",
             has_system_prompt=system_prompt is not None,
@@ -920,25 +863,69 @@ class AgentFactory:
             specialist=specialist,
         )
 
-        merged_config = self._build_inline_merged_config(
-            llm=llm, persistence=persistence,
-            context_policy=context_policy, mcp_servers=mcp_servers,
-            work_dir=work_dir,
+        # Build merged config from inline params and defaults
+        default_config = self.profile_loader.get_defaults()
+
+        effective_persistence = persistence or default_config.get(
+            "persistence", {"type": "file", "work_dir": ".taskforce"}
         )
-        infra = self._build_inline_infrastructure(merged_config, work_dir)
-        all_tools = await self._collect_inline_tools(
-            merged_config, infra, mcp_servers, tools, user_context
+        if work_dir:
+            effective_persistence = {**effective_persistence, "work_dir": work_dir}
+
+        effective_llm = llm or default_config.get("llm", {
+            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+            "default_model": "main",
+        })
+
+        merged_config: dict[str, Any] = {
+            "persistence": effective_persistence,
+            "llm": effective_llm,
+            "context_policy": context_policy or default_config.get("context_policy"),
+            "mcp_servers": mcp_servers or [],
+        }
+
+        # Build infrastructure
+        infra_builder = InfrastructureBuilder(self.config_dir)
+        infra: dict[str, Any] = {
+            "state_manager": infra_builder.build_state_manager(
+                merged_config, work_dir_override=work_dir
+            ),
+            "llm_provider": infra_builder.build_llm_provider(merged_config),
+            "context_policy": self._create_context_policy(merged_config),
+            "runtime_tracker": self._create_runtime_tracker(
+                merged_config, work_dir_override=work_dir
+            ),
+            "mcp_contexts": [],
+        }
+
+        # Collect tools
+        llm_provider = infra["llm_provider"]
+        mcp_tools_list, mcp_contexts = await infra_builder.build_mcp_tools(
+            [MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
+            tool_filter=None,
         )
+        infra["mcp_contexts"] = mcp_contexts
+
+        tool_registry = ToolRegistry(
+            llm_provider=llm_provider, user_context=user_context,
+        )
+        effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
+        all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
 
         final_system_prompt = self.prompt_assembler.assemble(
             all_tools, specialist=specialist, custom_prompt=system_prompt,
         )
 
-        default_config = self._get_default_config()
-        settings = self._build_inline_agent_settings(
-            default_config, merged_config, max_steps, planning_strategy,
-            planning_strategy_params,
-        )
+        # Build agent settings
+        agent_defaults = default_config.get("agent", {})
+        settings: dict[str, Any] = {
+            "max_steps": max_steps or agent_defaults.get("max_steps", 30),
+            "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
+            "planning_strategy": select_planning_strategy(
+                planning_strategy, planning_strategy_params
+            ),
+            "model_alias": effective_llm.get("default_model", "main"),
+        }
 
         self.logger.debug(
             "agent_created_from_inline",
@@ -955,124 +942,6 @@ class AgentFactory:
         _set_mcp_contexts(agent, infra["mcp_contexts"])
         return self._apply_extensions(merged_config, agent)
 
-    def _build_inline_merged_config(
-        self,
-        *,
-        llm: dict[str, Any] | None,
-        persistence: dict[str, Any] | None,
-        context_policy: dict[str, Any] | None,
-        mcp_servers: list[dict[str, Any]] | None,
-        work_dir: str | None,
-    ) -> dict[str, Any]:
-        """Build a merged config dict from inline params and defaults."""
-        default_config = self._get_default_config()
-
-        effective_persistence = persistence or default_config.get(
-            "persistence", {"type": "file", "work_dir": ".taskforce"}
-        )
-        if work_dir:
-            effective_persistence = {**effective_persistence, "work_dir": work_dir}
-
-        effective_llm = llm or default_config.get("llm", {
-            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
-            "default_model": "main",
-        })
-
-        return {
-            "persistence": effective_persistence,
-            "llm": effective_llm,
-            "context_policy": context_policy or default_config.get("context_policy"),
-            "mcp_servers": mcp_servers or [],
-        }
-
-    def _build_inline_infrastructure(
-        self,
-        merged_config: dict[str, Any],
-        work_dir: str | None,
-    ) -> dict[str, Any]:
-        """Build infrastructure components from merged inline config."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        infra_builder = InfrastructureBuilder(self.config_dir)
-        return {
-            "state_manager": infra_builder.build_state_manager(
-                merged_config, work_dir_override=work_dir
-            ),
-            "llm_provider": infra_builder.build_llm_provider(merged_config),
-            "context_policy": self._create_context_policy(merged_config),
-            "runtime_tracker": self._create_runtime_tracker(
-                merged_config, work_dir_override=work_dir
-            ),
-            "mcp_contexts": [],
-        }
-
-    async def _collect_inline_tools(
-        self,
-        merged_config: dict[str, Any],
-        infra: dict[str, Any],
-        mcp_servers: list[dict[str, Any]] | None,
-        tools: list[str] | None,
-        user_context: dict[str, Any] | None,
-    ) -> list[ToolProtocol]:
-        """Collect native and MCP tools for inline-param agent creation."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-        from taskforce.application.tool_registry import ToolRegistry
-        from taskforce.core.domain.agent_definition import MCPServerConfig
-
-        infra_builder = InfrastructureBuilder(self.config_dir)
-        llm_provider = infra["llm_provider"]
-
-        mcp_tools_list, mcp_contexts = await infra_builder.build_mcp_tools(
-            [MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
-            tool_filter=None,
-        )
-        infra["mcp_contexts"] = mcp_contexts
-
-        tool_registry = ToolRegistry(
-            llm_provider=llm_provider, user_context=user_context,
-        )
-        effective_tools = tools if tools is not None else self._get_default_tool_names()
-        native_tools = tool_registry.resolve(effective_tools)
-
-        return native_tools + mcp_tools_list
-
-    def _build_inline_agent_settings(
-        self,
-        default_config: dict[str, Any],
-        merged_config: dict[str, Any],
-        max_steps: int | None,
-        planning_strategy: str | None,
-        planning_strategy_params: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Build agent settings dict from inline params and defaults."""
-        effective_llm = merged_config.get("llm", {})
-        agent_defaults = default_config.get("agent", {})
-        return {
-            "max_steps": max_steps or agent_defaults.get("max_steps", 30),
-            "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
-            "planning_strategy": self._select_planning_strategy(
-                planning_strategy, planning_strategy_params
-            ),
-            "model_alias": effective_llm.get("default_model", "main"),
-        }
-
-    def _get_default_config(self) -> dict[str, Any]:
-        """Get default configuration for inline agent creation."""
-        return self.profile_loader.get_defaults()
-
-    def _get_default_tool_names(self) -> list[str]:
-        """Get default tool names for inline agent creation."""
-        return list(DEFAULT_TOOL_NAMES)
-
-    def _assemble_lean_system_prompt(
-        self, specialist: str | None, tools: list[ToolProtocol]
-    ) -> str:
-        """Assemble system prompt for Agent.
-
-        Delegates to :class:`SystemPromptAssembler`.
-        """
-        return self.prompt_assembler.assemble(tools, specialist=specialist)
-
     async def create_agent_with_plugin(
         self,
         plugin_path: str,
@@ -1081,81 +950,105 @@ class AgentFactory:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> Agent:
-        """
-        Create Agent with external plugin tools.
-
-        Loads tools from an external plugin directory and creates an agent
-        with those tools. The plugin must follow the expected structure:
-
-            {plugin_path}/
-            |-- {package_name}/
-            |   |-- __init__.py
-            |   +-- tools/
-            |       +-- __init__.py    # Exports tools via __all__
-            |-- configs/
-            |   +-- {package_name}.yaml
-            +-- requirements.txt
-
-        The base profile provides infrastructure settings (LLM, persistence),
-        while the plugin config provides agent-specific settings (tools, specialist).
+        """Create Agent with external plugin tools.
 
         Args:
-            plugin_path: Path to plugin directory (relative or absolute)
-            profile: Base profile for infrastructure settings (dev/staging/prod)
-            user_context: Optional user context for RAG tools
-            planning_strategy: Optional planning strategy override
-            planning_strategy_params: Optional planning strategy parameters
+            plugin_path: Path to plugin directory (relative or absolute).
+            profile: Base profile for infrastructure settings.
+            user_context: Optional user context for RAG tools.
+            planning_strategy: Optional planning strategy override.
+            planning_strategy_params: Optional planning strategy parameters.
 
         Returns:
-            Agent instance with plugin tools loaded
+            Agent instance with plugin tools loaded.
 
         Raises:
-            FileNotFoundError: If plugin path doesn't exist
-            PluginError: If plugin structure is invalid or tools fail validation
-
-        Example:
-            >>> factory = AgentFactory()
-            >>> agent = await factory.create_agent_with_plugin(
-            ...     plugin_path="examples/accounting_agent",
-            ...     profile="dev"
-            ... )
-            >>> result = await agent.execute("Check this invoice", "session-123")
+            FileNotFoundError: If plugin path doesn't exist.
+            PluginError: If plugin structure is invalid or tools fail validation.
         """
         plugin_loader = PluginLoader()
         manifest = plugin_loader.discover_plugin(plugin_path)
-        base_config, plugin_config, merged_config = self._load_plugin_configs(
-            plugin_loader, manifest, profile
+
+        # Load and merge configs
+        base_config = self.profile_loader.load_safe(profile)
+        plugin_config = plugin_loader.load_config(manifest)
+        merged_config = self.profile_loader.merge_plugin_config(base_config, plugin_config)
+
+        self.logger.info(
+            "creating_agent_with_plugin",
+            plugin=manifest.name,
+            plugin_path=str(manifest.path),
+            profile=profile,
+            tool_classes=manifest.tool_classes,
+            has_plugin_config=bool(plugin_config),
         )
-        self._log_plugin_creation(manifest, profile, plugin_config)
 
         state_manager = self._create_state_manager(merged_config)
         llm_provider = self._create_llm_provider(merged_config)
-        tool_configs = plugin_config.get("tools", [])
 
-        all_tools = self._build_plugin_tool_list(
-            plugin_loader, manifest, tool_configs, llm_provider
+        # Build tools: plugin + native + MCP
+        tool_configs = plugin_config.get("tools", [])
+        plugin_tools = plugin_loader.load_tools(
+            manifest, tool_configs=tool_configs, llm_provider=llm_provider
         )
-        mcp_tools, mcp_contexts = await self._create_mcp_tools(merged_config)
+        native_tools = self._resolve_plugin_native_tools(tool_configs, llm_provider)
+        all_tools = plugin_tools + native_tools
+
+        mcp_tools, mcp_contexts = await self._tool_builder.create_mcp_tools(merged_config)
         all_tools.extend(mcp_tools)
 
         activate_skill_tool = self._maybe_add_skill_tool(manifest, all_tools)
 
-        system_prompt = self._build_plugin_system_prompt(plugin_config, all_tools)
-        settings = self._build_plugin_agent_settings(
-            merged_config, planning_strategy, planning_strategy_params
+        # Build system prompt and agent settings
+        system_prompt = self.prompt_assembler.assemble(
+            all_tools,
+            specialist=plugin_config.get("specialist"),
+            custom_prompt=plugin_config.get("system_prompt"),
         )
-        infra = self._build_plugin_infra(
-            state_manager, llm_provider, merged_config
+        agent_config = merged_config.get("agent", {})
+        strategy_name = planning_strategy or agent_config.get("planning_strategy")
+        strategy_params = planning_strategy_params or agent_config.get(
+            "planning_strategy_params"
+        )
+        settings = {
+            "max_steps": agent_config.get("max_steps"),
+            "max_parallel_tools": agent_config.get("max_parallel_tools"),
+            "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
+            "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
+        }
+        infra = {
+            "state_manager": state_manager,
+            "llm_provider": llm_provider,
+            "context_policy": self._create_context_policy(merged_config),
+            "runtime_tracker": self._create_runtime_tracker(
+                merged_config,
+                work_dir_override=merged_config.get("persistence", {}).get("work_dir"),
+            ),
+            "mcp_contexts": [],
+        }
+
+        self.logger.debug(
+            "plugin_agent_created",
+            plugin=manifest.name,
+            tools_count=len(all_tools),
+            tool_names=[t.name for t in all_tools],
+            mcp_tools=[t.name for t in mcp_tools],
+            model_alias=settings["model_alias"],
+            planning_strategy=settings["planning_strategy"].name,
         )
 
-        self._log_plugin_agent_created(manifest, all_tools, mcp_tools, settings)
-
+        # Build skill manager and intent router
         skill_manager = self._build_plugin_skill_manager(manifest, plugin_config)
-        intent_router = self._build_plugin_intent_router(
-            skill_manager, manifest, plugin_config
-        )
-        context_mgmt = merged_config.get("context_management", {})
+        intent_router = None
+        if skill_manager and skill_manager.has_skills:
+            intent_router = create_intent_router_from_config(plugin_config)
+            self.logger.info(
+                "intent_router_created",
+                plugin=manifest.name,
+                intents=intent_router.list_intents(),
+            )
 
+        context_mgmt = merged_config.get("context_management", {})
         agent = self._instantiate_agent(
             infra=infra, all_tools=all_tools, system_prompt=system_prompt,
             settings=settings, skill_manager=skill_manager,
@@ -1174,45 +1067,6 @@ class AgentFactory:
 
         return self._apply_extensions(merged_config, agent)
 
-    def _load_plugin_configs(
-        self,
-        plugin_loader: PluginLoader,
-        manifest: Any,
-        profile: str,
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        """Load base, plugin, and merged configs for plugin agent creation."""
-        base_config = self.profile_loader.load_safe(profile)
-        plugin_config = plugin_loader.load_config(manifest)
-        merged_config = self._merge_plugin_config(base_config, plugin_config)
-        return base_config, plugin_config, merged_config
-
-    def _log_plugin_creation(
-        self, manifest: Any, profile: str, plugin_config: dict[str, Any]
-    ) -> None:
-        """Log start of plugin agent creation."""
-        self.logger.info(
-            "creating_agent_with_plugin",
-            plugin=manifest.name,
-            plugin_path=str(manifest.path),
-            profile=profile,
-            tool_classes=manifest.tool_classes,
-            has_plugin_config=bool(plugin_config),
-        )
-
-    def _build_plugin_tool_list(
-        self,
-        plugin_loader: PluginLoader,
-        manifest: Any,
-        tool_configs: list[Any],
-        llm_provider: LLMProviderProtocol,
-    ) -> list[ToolProtocol]:
-        """Build combined plugin + native tool list."""
-        plugin_tools = plugin_loader.load_tools(
-            manifest, tool_configs=tool_configs, llm_provider=llm_provider
-        )
-        native_tools = self._resolve_plugin_native_tools(tool_configs, llm_provider)
-        return plugin_tools + native_tools
-
     def _resolve_plugin_native_tools(
         self,
         tool_configs: list[Any],
@@ -1230,8 +1084,7 @@ class AgentFactory:
             return []
 
         native_tools: list[ToolProtocol] = []
-        available_native = self._get_all_native_tools(llm_provider)
-        for tool in available_native:
+        for tool in self._tool_builder.get_all_native_tools(llm_provider):
             if tool.name in native_tool_names:
                 native_tools.append(tool)
                 self.logger.debug("native_tool_added_for_plugin", tool_name=tool.name)
@@ -1252,77 +1105,6 @@ class AgentFactory:
         all_tools.append(activate_skill_tool)
         self.logger.debug("activate_skill_tool_added", plugin=manifest.name)
         return activate_skill_tool
-
-    def _build_plugin_system_prompt(
-        self,
-        plugin_config: dict[str, Any],
-        all_tools: list[ToolProtocol],
-    ) -> str:
-        """Build system prompt for a plugin agent."""
-        return self.prompt_assembler.assemble(
-            all_tools,
-            specialist=plugin_config.get("specialist"),
-            custom_prompt=plugin_config.get("system_prompt"),
-        )
-
-    def _build_plugin_agent_settings(
-        self,
-        merged_config: dict[str, Any],
-        planning_strategy: str | None,
-        planning_strategy_params: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Build agent settings dict for a plugin agent."""
-        agent_config = merged_config.get("agent", {})
-        strategy_name = (
-            planning_strategy if planning_strategy is not None
-            else agent_config.get("planning_strategy")
-        )
-        strategy_params = (
-            planning_strategy_params if planning_strategy_params is not None
-            else agent_config.get("planning_strategy_params")
-        )
-        return {
-            "max_steps": agent_config.get("max_steps"),
-            "max_parallel_tools": agent_config.get("max_parallel_tools"),
-            "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
-            "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
-        }
-
-    def _build_plugin_infra(
-        self,
-        state_manager: StateManagerProtocol,
-        llm_provider: LLMProviderProtocol,
-        merged_config: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Build infrastructure dict for a plugin agent."""
-        return {
-            "state_manager": state_manager,
-            "llm_provider": llm_provider,
-            "context_policy": self._create_context_policy(merged_config),
-            "runtime_tracker": self._create_runtime_tracker(
-                merged_config,
-                work_dir_override=merged_config.get("persistence", {}).get("work_dir"),
-            ),
-            "mcp_contexts": [],
-        }
-
-    def _log_plugin_agent_created(
-        self,
-        manifest: Any,
-        all_tools: list[ToolProtocol],
-        mcp_tools: list[ToolProtocol],
-        settings: dict[str, Any],
-    ) -> None:
-        """Log final plugin agent tool and strategy details."""
-        self.logger.debug(
-            "plugin_agent_created",
-            plugin=manifest.name,
-            tools_count=len(all_tools),
-            tool_names=[t.name for t in all_tools],
-            mcp_tools=[t.name for t in mcp_tools],
-            model_alias=settings["model_alias"],
-            planning_strategy=settings["planning_strategy"].name,
-        )
 
     def _build_plugin_skill_manager(
         self, manifest: Any, plugin_config: dict[str, Any]
@@ -1349,24 +1131,6 @@ class AgentFactory:
                 skill_manager, manifest.skill_names
             )
         return skill_manager
-
-    def _build_plugin_intent_router(
-        self,
-        skill_manager: SkillManager | None,
-        manifest: Any,
-        plugin_config: dict[str, Any],
-    ) -> Any:
-        """Build an intent router for a plugin if it has active skills."""
-        if not (skill_manager and skill_manager.has_skills):
-            return None
-
-        intent_router = create_intent_router_from_config(plugin_config)
-        self.logger.info(
-            "intent_router_created",
-            plugin=manifest.name,
-            intents=intent_router.list_intents(),
-        )
-        return intent_router
 
     def _configure_skill_switch_conditions(
         self, skill_manager: SkillManager, skill_names: list[str]
@@ -1417,34 +1181,6 @@ class AgentFactory:
         """
         return self.profile_loader.merge_plugin_config(base_config, plugin_config)
 
-    def _select_planning_strategy(
-        self, strategy_name: str | None, params: dict[str, Any] | None
-    ) -> PlanningStrategy:
-        """Delegates to :func:`select_planning_strategy`."""
-        return select_planning_strategy(strategy_name, params)
-
-    # -------------------------------------------------------------------------
-    # Tool methods - delegate to ToolBuilder
-    # -------------------------------------------------------------------------
-
-    async def _create_tools_from_allowlist(
-        self,
-        tool_allowlist: list[str],
-        mcp_servers: list[dict[str, Any]],
-        mcp_tool_allowlist: list[str],
-        llm_provider: LLMProviderProtocol,
-    ) -> list[ToolProtocol]:
-        """Delegates to :meth:`ToolBuilder.create_tools_from_allowlist`."""
-        return await self._tool_builder.create_tools_from_allowlist(
-            tool_allowlist, mcp_servers, mcp_tool_allowlist, llm_provider
-        )
-
-    def _get_all_native_tools(
-        self, llm_provider: LLMProviderProtocol
-    ) -> list[ToolProtocol]:
-        """Delegates to :meth:`ToolBuilder.get_all_native_tools`."""
-        return self._tool_builder.get_all_native_tools(llm_provider)
-
     def _load_profile(self, profile: str) -> dict[str, Any]:
         """Delegates to :class:`ProfileLoader`."""
         return self.profile_loader.load(profile)
@@ -1456,17 +1192,11 @@ class AgentFactory:
             return ContextPolicy.from_dict(context_config)
         return ContextPolicy.conservative_default()
 
-    def _create_state_manager(
-        self, config: dict[str, Any]
-    ) -> StateManagerProtocol:
+    def _create_state_manager(self, config: dict[str, Any]) -> StateManagerProtocol:
         """Create state manager based on configuration."""
-        from taskforce.application.infrastructure_builder import (
-            InfrastructureBuilder,
-        )
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-        return InfrastructureBuilder(self.config_dir).build_state_manager(
-            config
-        )
+        return InfrastructureBuilder(self.config_dir).build_state_manager(config)
 
     def _create_runtime_tracker(
         self,
@@ -1478,44 +1208,13 @@ class AgentFactory:
         if not runtime_config.get("enabled", False):
             return None
 
-        runtime_work_dir = self._resolve_runtime_work_dir(
-            runtime_config, config, work_dir_override
+        runtime_work_dir = (
+            runtime_config.get("work_dir")
+            or work_dir_override
+            or config.get("persistence", {}).get("work_dir", ".taskforce")
         )
         store_type = runtime_config.get("store", "file")
-        return self._build_runtime_tracker_for_store(store_type, runtime_work_dir)
 
-    @staticmethod
-    def _resolve_runtime_work_dir(
-        runtime_config: dict[str, Any],
-        config: dict[str, Any],
-        work_dir_override: str | None,
-    ) -> str:
-        """Resolve the work directory for the runtime tracker."""
-        runtime_work_dir = runtime_config.get("work_dir")
-        if not runtime_work_dir:
-            runtime_work_dir = work_dir_override
-        if not runtime_work_dir:
-            runtime_work_dir = config.get("persistence", {}).get(
-                "work_dir", ".taskforce"
-            )
-        return runtime_work_dir
-
-    @staticmethod
-    def _build_runtime_tracker_for_store(
-        store_type: str, work_dir: str
-    ) -> AgentRuntimeTrackerProtocol:
-        """Build a runtime tracker for the given store type.
-
-        Args:
-            store_type: "memory" or "file".
-            work_dir: Work directory for file-based stores.
-
-        Returns:
-            AgentRuntimeTracker instance.
-
-        Raises:
-            ValueError: If store_type is unknown.
-        """
         if store_type == "memory":
             from taskforce_extensions.infrastructure.runtime import (
                 AgentRuntimeTracker,
@@ -1533,112 +1232,13 @@ class AgentFactory:
                 FileHeartbeatStore,
             )
             return AgentRuntimeTracker(
-                heartbeat_store=FileHeartbeatStore(work_dir),
-                checkpoint_store=FileCheckpointStore(work_dir),
+                heartbeat_store=FileHeartbeatStore(runtime_work_dir),
+                checkpoint_store=FileCheckpointStore(runtime_work_dir),
             )
         raise ValueError(f"Unknown runtime store type: {store_type}")
 
-    def _create_llm_provider(
-        self, config: dict[str, Any]
-    ) -> LLMProviderProtocol:
+    def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""
-        from taskforce.application.infrastructure_builder import (
-            InfrastructureBuilder,
-        )
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-        return InfrastructureBuilder(self.config_dir).build_llm_provider(
-            config
-        )
-
-    def _create_native_tools(
-        self,
-        config: dict[str, Any],
-        llm_provider: LLMProviderProtocol,
-        user_context: dict[str, Any] | None = None,
-    ) -> list[ToolProtocol]:
-        """Delegates to :meth:`ToolBuilder.create_native_tools`."""
-        return self._tool_builder.create_native_tools(
-            config, llm_provider, user_context=user_context
-        )
-
-    def _build_orchestration_tool(
-        self, config: dict[str, Any]
-    ) -> ToolProtocol | None:
-        """Delegates to :meth:`ToolBuilder.build_orchestration_tool`."""
-        return self._tool_builder.build_orchestration_tool(config)
-
-    def _hydrate_memory_tool_spec(
-        self, tool_spec: str | dict[str, Any], config: dict[str, Any]
-    ) -> str | dict[str, Any]:
-        """Delegates to :meth:`ToolBuilder.hydrate_memory_tool_spec`."""
-        return ToolBuilder.hydrate_memory_tool_spec(tool_spec, config)
-
-    def _resolve_memory_store_dir(
-        self, config: dict[str, Any], work_dir_override: str | None = None
-    ) -> str:
-        """Delegates to :meth:`ToolBuilder.resolve_memory_store_dir`."""
-        return ToolBuilder.resolve_memory_store_dir(
-            config, work_dir_override=work_dir_override
-        )
-
-    async def _create_mcp_tools(
-        self, config: dict[str, Any]
-    ) -> tuple[list[ToolProtocol], list[Any]]:
-        """Delegates to :meth:`ToolBuilder.create_mcp_tools`."""
-        return await self._tool_builder.create_mcp_tools(config)
-
-    async def _build_tools(
-        self,
-        *,
-        config: dict[str, Any],
-        llm_provider: LLMProviderProtocol,
-        user_context: dict[str, Any] | None = None,
-        specialist: str | None = None,
-        use_specialist_defaults: bool = False,
-        include_mcp: bool = True,
-    ) -> tuple[list[ToolProtocol], list[Any]]:
-        """Delegates to :meth:`ToolBuilder.build_tools`."""
-        return await self._tool_builder.build_tools(
-            config=config,
-            llm_provider=llm_provider,
-            user_context=user_context,
-            specialist=specialist,
-            use_specialist_defaults=use_specialist_defaults,
-            include_mcp=include_mcp,
-        )
-
-    def _create_default_tools(
-        self, llm_provider: LLMProviderProtocol
-    ) -> list[ToolProtocol]:
-        """Delegates to :meth:`ToolBuilder.create_default_tools`."""
-        return self._tool_builder.create_default_tools(llm_provider)
-
-    def _create_specialist_tools(
-        self,
-        specialist: str,
-        config: dict[str, Any],
-        llm_provider: LLMProviderProtocol,
-        user_context: dict[str, Any] | None = None,
-    ) -> list[ToolProtocol]:
-        """Delegates to :meth:`ToolBuilder.create_specialist_tools`."""
-        return self._tool_builder.create_specialist_tools(
-            specialist, config, llm_provider, user_context=user_context
-        )
-
-    def _instantiate_tool(
-        self,
-        tool_spec: str | dict[str, Any],
-        llm_provider: LLMProviderProtocol,
-        user_context: dict[str, Any] | None = None,
-    ) -> ToolProtocol | None:
-        """Delegates to :meth:`ToolBuilder.instantiate_tool`."""
-        return self._tool_builder.instantiate_tool(
-            tool_spec, llm_provider, user_context=user_context
-        )
-
-    def _instantiate_sub_agent_tool(
-        self,
-        tool_spec: dict[str, Any],
-    ) -> ToolProtocol | None:
-        """Delegates to :meth:`ToolBuilder.instantiate_sub_agent_tool`."""
-        return self._tool_builder.instantiate_sub_agent_tool(tool_spec)
+        return InfrastructureBuilder(self.config_dir).build_llm_provider(config)
