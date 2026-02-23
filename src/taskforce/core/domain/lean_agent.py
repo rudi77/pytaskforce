@@ -1,7 +1,7 @@
 """
-Lean Agent - Simplified ReAct Agent with Native Tool Calling
+Agent - ReAct Agent with Native Tool Calling
 
-A lightweight agent implementing a single execution loop using native LLM
+An agent implementing a single execution loop using native LLM
 tool calling capabilities (OpenAI/Anthropic function calling).
 
 Key features:
@@ -10,13 +10,6 @@ Key features:
 - Dynamic context injection: plan status injected into system prompt each loop
 - Robust error handling with automatic retry context
 - Clean message history management
-
-Key differences from legacy Agent:
-- No TodoListManager dependency
-- No QueryRouter or fast-path logic
-- No ReplanStrategy
-- No JSON parsing for action extraction
-- Native function calling for tool invocation
 """
 
 from collections.abc import AsyncIterator

@@ -19,7 +19,7 @@ from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 
 if TYPE_CHECKING:
     from taskforce.application.factory import AgentFactory
-    from taskforce.core.domain.lean_agent import LeanAgent as Agent
+    from taskforce.core.domain.agent import Agent
 
 
 class SubAgentSpawner(SubAgentSpawnerProtocol):
