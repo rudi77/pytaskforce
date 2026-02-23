@@ -99,8 +99,8 @@ src/taskforce/
 │   ├── intent_router.py       # Intent routing for chat
 │   ├── skill_manager.py       # Skill lifecycle management
 │   ├── skill_service.py       # Skill service (discovery, slash-command resolution)
-│   ├── plugin_loader.py       # Plugin loading from entry points
-│   ├── plugin_discovery.py    # Plugin discovery
+│   ├── plugin_loader.py       # Plugin loading and discovery (consolidated)
+│   ├── plugin_discovery.py    # Backward-compatible shim (re-exports from plugin_loader)
 │   ├── infrastructure_builder.py  # Infrastructure setup
 │   ├── epic_orchestrator.py   # Multi-agent epic execution
 │   ├── epic_state_store.py    # Epic run state persistence
@@ -922,44 +922,36 @@ mcp_servers:
 
 ### Adding a New Tool
 
-1. **Create tool in infrastructure layer:**
+1. **Create tool in infrastructure layer** (prefer `BaseTool` to reduce boilerplate):
 
 ```python
 # infrastructure/tools/native/my_tool.py
-from typing import Dict, Any
-from taskforce.core.interfaces.tools import ToolProtocol
+from taskforce.infrastructure.tools.base_tool import BaseTool
 
-class MyTool:
-    """Description of what the tool does."""
+class MyTool(BaseTool):
+    """Performs X operation on Y input."""
 
-    @property
-    def name(self) -> str:
-        return "my_tool"
+    tool_name = "my_tool"
+    tool_description = "Performs X operation on Y input"
+    tool_parameters_schema = {
+        "type": "object",
+        "properties": {
+            "input": {"type": "string", "description": "Input data"}
+        },
+        "required": ["input"],
+    }
 
-    @property
-    def description(self) -> str:
-        return "Performs X operation on Y input"
-
-    @property
-    def parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "input": {"type": "string", "description": "Input data"}
-            },
-            "required": ["input"]
-        }
-
-    async def execute(self, **params) -> Dict[str, Any]:
+    async def _execute(self, **params) -> dict:
         """Execute the tool."""
         input_data = params["input"]
         # Tool logic here...
         return {"result": "...", "success": True}
-
-    def validate_parameters(self, params: Dict[str, Any]) -> bool:
-        """Validate parameters match schema."""
-        return "input" in params
 ```
+
+> `BaseTool` (in `infrastructure/tools/base_tool.py`) provides default implementations
+> for `name`, `description`, `parameters_schema`, `validate_params`, `requires_approval`,
+> `approval_risk_level`, `supports_parallelism`, and error-safe execution wrapping.
+> Existing tools implementing `ToolProtocol` directly continue to work unchanged.
 
 2. **Register in tool registry** (`infrastructure/tools/registry.py`): Add the short name → class mapping.
 
@@ -1211,9 +1203,11 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/persistence/file_agent_registry.py` - File-based agent registry
 - `src/taskforce/infrastructure/llm/litellm_service.py` - Unified LLM service (multi-provider via LiteLLM)
 - `src/taskforce/infrastructure/llm/llm_router.py` - LLM Router for dynamic per-call model selection (Decorator pattern)
-- `src/taskforce/infrastructure/llm/openai_service.py` - Backward-compatible alias (imports LiteLLMService)
+- `src/taskforce/infrastructure/llm/llm_config_loader.py` - LLM configuration loading and model alias resolution (extracted from litellm_service)
+- `src/taskforce/infrastructure/llm/llm_response_parser.py` - LLM streaming response parsing (extracted from litellm_service)
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
+- `src/taskforce/infrastructure/tools/base_tool.py` - `BaseTool` convenience base class (reduces boilerplate for new tools)
 - `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry (19 native + RAG tools)
 - `src/taskforce/infrastructure/tools/native/*.py` - 19 native tools (incl. browser, send_notification, butler tools)
 - `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
@@ -1238,8 +1232,8 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/intent_router.py` - Intent routing for chat
 - `src/taskforce/application/skill_manager.py` - Skill lifecycle management
 - `src/taskforce/application/skill_service.py` - Skill service (discovery, slash-command resolution, prompt/agent execution)
-- `src/taskforce/application/plugin_loader.py` - Plugin loading
-- `src/taskforce/application/plugin_discovery.py` - Plugin discovery
+- `src/taskforce/application/plugin_loader.py` - Plugin loading and discovery (consolidated)
+- `src/taskforce/application/plugin_discovery.py` - Backward-compatible shim (re-exports from plugin_loader)
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
 - `src/taskforce/application/rule_engine.py` - Trigger rule evaluation and persistence (butler)
 - `src/taskforce/application/event_router.py` - Event-to-action dispatch (butler)
