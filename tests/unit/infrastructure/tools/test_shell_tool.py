@@ -16,7 +16,6 @@ import pytest
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool, ShellTool
 
-
 # ---------------------------------------------------------------------------
 # ShellTool tests
 # ---------------------------------------------------------------------------

@@ -9,9 +9,10 @@ Extended to support:
 - Filtering by skill type (context, prompt, agent)
 """
 
-import logging
 from collections.abc import Iterator
 from pathlib import Path
+
+import structlog
 
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
@@ -20,7 +21,7 @@ from taskforce.infrastructure.skills.skill_loader import (
     get_default_skill_directories,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class FileSkillRegistry:
@@ -116,9 +117,9 @@ class FileSkillRegistry:
             metadata = parse_skill_metadata(content, str(skill_dir))
             self._metadata_cache[metadata.name] = metadata
             self._slash_name_index[metadata.effective_slash_name] = metadata.name
-            logger.debug(f"Discovered skill: {metadata.name}")
+            logger.debug("skill.discovered", skill_name=metadata.name, path=str(skill_dir))
         except (OSError, UnicodeDecodeError, SkillParseError) as e:
-            logger.warning(f"Failed to load skill from {skill_dir}: {e}")
+            logger.warning("skill.metadata_load_failed", path=str(skill_dir), error=str(e))
 
     def discover_skills(self) -> list[SkillMetadataModel]:
         """Discover all available skills and return their metadata."""
@@ -135,7 +136,7 @@ class FileSkillRegistry:
             self._metadata_cache[metadata.name] = metadata
             self._slash_name_index[metadata.effective_slash_name] = metadata.name
 
-        logger.info(f"Discovered {len(self._metadata_cache)} skills")
+        logger.info("skill.registry_refreshed", skill_count=len(self._metadata_cache))
 
     def get_skill(self, name: str) -> Skill | None:
         """

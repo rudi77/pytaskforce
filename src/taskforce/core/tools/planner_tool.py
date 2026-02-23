@@ -152,18 +152,19 @@ class PlannerTool(ToolProtocol):
             )
         return f"Tool: {self.name}\nOperation: {action}"
 
-    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
+    async def execute(self, **kwargs: Any) -> dict[str, Any]:
         """
         Execute a planner action.
 
         Args:
-            action: One of 'create_plan', 'mark_done', 'read_plan',
-                'update_plan'
-            **kwargs: Action-specific parameters
+            **kwargs: Must include 'action' key with one of 'create_plan',
+                'mark_done', 'read_plan', 'update_plan'. Other keys are
+                action-specific parameters.
 
         Returns:
             Dict with success status and result/error message.
         """
+        action: str = kwargs.pop("action", "")
         action_map = {
             PlannerAction.CREATE_PLAN.value: self._create_plan,
             PlannerAction.MARK_DONE.value: self._mark_done,
@@ -177,10 +178,12 @@ class PlannerTool(ToolProtocol):
                 error=f"Unknown action: {action}. Valid: {valid_actions}"
             ).to_dict()
 
-        handler = action_map[action]
+        handler = action_map.get(action)
+        if handler is None:
+            return ToolResult.error_result(error=f"No handler for: {action}").to_dict()
         try:
-            result = handler(**kwargs)
-            return result.to_dict()
+            tool_result = handler(**kwargs)  # type: ignore[operator]
+            return dict(tool_result.to_dict())
         except Exception as e:
             return ToolResult.error_result(
                 error=f"Execution error: {str(e)}",

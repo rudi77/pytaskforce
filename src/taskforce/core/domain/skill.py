@@ -144,7 +144,7 @@ def _normalize_optional_str(value: Any) -> str | None:
     if isinstance(value, str):
         stripped = value.strip()
         return stripped or None
-    return value
+    return str(value)
 
 
 @dataclass(frozen=True)

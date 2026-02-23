@@ -58,11 +58,11 @@ def _install_structlog_stub() -> None:
 
 _install_structlog_stub()
 
-from taskforce.core.domain.planning_helpers import (
+from taskforce.core.domain.planning_helpers import (  # noqa: E402
     ToolCallRequest,
     _execute_tool_calls,
 )
-from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol  # noqa: E402
 
 
 class FakeAgent:

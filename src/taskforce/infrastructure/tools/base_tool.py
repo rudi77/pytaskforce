@@ -19,8 +19,9 @@ This class lives in the **infrastructure** layer and does NOT modify
 
 from __future__ import annotations
 
-import structlog
 from typing import Any
+
+import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel

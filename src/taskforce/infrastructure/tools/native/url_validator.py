@@ -14,7 +14,6 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-
 # Well-known cloud metadata endpoints that should always be blocked
 _BLOCKED_HOSTS = frozenset(
     {
@@ -59,7 +58,7 @@ def validate_url_for_ssrf(url: str) -> tuple[bool, str | None]:
         # DNS resolution failed — let the actual HTTP client handle this
         return True, None
 
-    for family, _type, _proto, _canonname, sockaddr in addr_infos:
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         ip_str = sockaddr[0]
         try:
             ip = ipaddress.ip_address(ip_str)

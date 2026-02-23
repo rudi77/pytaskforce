@@ -18,7 +18,6 @@ from taskforce.core.domain.epic import EpicRunResult, EpicTask, EpicTaskResult
 from taskforce.core.domain.sub_agents import build_sub_agent_session_id
 from taskforce.core.interfaces.messaging import MessageBusProtocol
 from taskforce.core.utils.time import utc_now as _utc_now
-from taskforce_extensions.infrastructure.messaging import InMemoryMessageBus
 
 
 def _build_planner_prompt(
@@ -196,7 +195,11 @@ class EpicOrchestrator:
         message_bus: MessageBusProtocol | None = None,
     ) -> None:
         self._factory = factory or AgentFactory()
-        self._bus = message_bus or InMemoryMessageBus()
+        if message_bus is None:
+            from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+            message_bus = InfrastructureBuilder().build_message_bus()
+        self._bus = message_bus
         self._logger = structlog.get_logger().bind(component="epic_orchestrator")
 
     async def run_epic(

@@ -7,8 +7,6 @@ private/internal network addresses, cloud metadata endpoints, etc.
 
 from unittest.mock import patch
 
-import pytest
-
 from taskforce.infrastructure.tools.native.url_validator import validate_url_for_ssrf
 
 

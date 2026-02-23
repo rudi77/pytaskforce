@@ -185,8 +185,8 @@ class AgentRegistry:
         # Invalidate cache
         self._invalidate_cache()
 
-        action = "updated" if is_update else "created"
-        self._logger.info(f"agent.{action}", agent_id=definition.agent_id, path=str(path))
+        event = "agent.updated" if is_update else "agent.created"
+        self._logger.info(event, agent_id=definition.agent_id, path=str(path))
 
         return definition
 

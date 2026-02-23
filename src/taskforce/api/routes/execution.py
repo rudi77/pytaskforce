@@ -28,7 +28,6 @@ from taskforce.api.dependencies import get_executor
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
-from taskforce.core.domain.models import UserContext
 from taskforce.core.domain.errors import (
     CancelledError,
     ConfigError,
@@ -37,6 +36,7 @@ from taskforce.core.domain.errors import (
     TaskforceError,
     ToolError,
 )
+from taskforce.core.domain.models import UserContext
 
 _stream_logger = structlog.get_logger("taskforce.api.routes.execution")
 

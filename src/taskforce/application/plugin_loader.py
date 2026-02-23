@@ -390,7 +390,7 @@ class PluginLoader:
                     else:
                         # It's a class attribute
                         mapping[tool_class.name] = class_name
-            except Exception:
+            except (AttributeError, TypeError, RuntimeError):
                 # Skip if we can't determine the name
                 pass
 
@@ -536,7 +536,7 @@ class PluginLoader:
             # Check it's accessible (not raising)
             try:
                 getattr(tool, prop)
-            except Exception as e:
+            except (AttributeError, TypeError) as e:
                 return False, f"Property '{prop}' raised exception: {e}"
 
         # Check required methods
@@ -812,7 +812,7 @@ def discover_plugins(group: str = "taskforce.plugins") -> list[PluginInfo]:
                 entry_point=ep.value,
             )
 
-        except Exception as e:
+        except (ImportError, AttributeError, ModuleNotFoundError) as e:
             plugin_info.error = str(e)
             logger.warning(
                 "plugin.discovery_failed",
@@ -872,7 +872,7 @@ def load_plugin(plugin_info: PluginInfo, config: dict[str, Any] | None = None) -
 
         return True
 
-    except Exception as e:
+    except (ImportError, AttributeError, TypeError, ModuleNotFoundError) as e:
         plugin_info.error = str(e)
         logger.error(
             "plugin.load_failed",
@@ -973,7 +973,7 @@ def shutdown_plugins() -> None:
                 if hasattr(info.instance, "shutdown"):
                     info.instance.shutdown()
                 logger.debug("plugin.shutdown", plugin_name=name)
-            except Exception as e:
+            except Exception as e:  # Broad catch intentional: shutdown must not propagate any error
                 logger.warning(
                     "plugin.shutdown_failed",
                     plugin_name=name,

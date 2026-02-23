@@ -102,6 +102,7 @@ class CustomAgentDefinition:
         from taskforce.core.domain.agent_definition import (
             AgentDefinition,
             AgentSource,
+            MCPServerConfig,
         )
 
         return AgentDefinition(
@@ -111,7 +112,7 @@ class CustomAgentDefinition:
             source=AgentSource.CUSTOM,
             system_prompt=self.system_prompt,
             tools=list(self.tool_allowlist),
-            mcp_servers=[dict(s) for s in self.mcp_servers],
+            mcp_servers=[MCPServerConfig.from_dict(s) for s in self.mcp_servers],
             mcp_tool_filter=list(self.mcp_tool_allowlist) if self.mcp_tool_allowlist else None,
             created_at=_parse_iso_timestamp(self.created_at),
             updated_at=_parse_iso_timestamp(self.updated_at),
@@ -154,6 +155,7 @@ class ProfileAgentDefinition:
         from taskforce.core.domain.agent_definition import (
             AgentDefinition,
             AgentSource,
+            MCPServerConfig,
         )
 
         # Extract string tool names, skipping dict-style tool definitions
@@ -169,7 +171,7 @@ class ProfileAgentDefinition:
             source=AgentSource.PROFILE,
             specialist=self.specialist,
             tools=tool_names,
-            mcp_servers=[dict(s) for s in self.mcp_servers],
+            mcp_servers=[MCPServerConfig.from_dict(s) for s in self.mcp_servers],
             base_profile=self.profile,
         )
 
@@ -221,6 +223,7 @@ class PluginAgentDefinition:
         from taskforce.core.domain.agent_definition import (
             AgentDefinition,
             AgentSource,
+            MCPServerConfig,
         )
 
         return AgentDefinition(
@@ -229,7 +232,7 @@ class PluginAgentDefinition:
             description=self.description,
             source=AgentSource.PLUGIN,
             specialist=self.specialist,
-            mcp_servers=[dict(s) for s in self.mcp_servers],
+            mcp_servers=[MCPServerConfig.from_dict(s) for s in self.mcp_servers],
             plugin_path=self.plugin_path,
             tool_classes=list(self.tool_classes),
         )

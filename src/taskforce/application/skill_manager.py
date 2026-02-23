@@ -18,16 +18,17 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from taskforce.core.domain.skill import Skill, SkillContext
 from taskforce.infrastructure.skills.skill_registry import FileSkillRegistry
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -126,15 +127,16 @@ class SkillManager:
             )
             self._skill_context = SkillContext()
             logger.info(
-                f"SkillManager initialized with {self._registry.get_skill_count()} skills "
-                f"from {len(skill_directories)} directories"
+                "skill_manager.initialized",
+                skill_count=self._registry.get_skill_count(),
+                directory_count=len(skill_directories),
             )
             if self._registry.get_skill_count() > 0:
-                logger.debug(f"Available skills: {self._registry.list_skills()}")
+                logger.debug("skill_manager.available_skills", skills=self._registry.list_skills())
         else:
             self._registry = None
             self._skill_context = SkillContext()
-            logger.debug("SkillManager initialized without skills")
+            logger.debug("skill_manager.initialized_empty")
 
     def _build_skill_directories(self) -> list[str]:
         """
@@ -221,7 +223,7 @@ class SkillManager:
 
         skill = self._registry.get_skill(skill_name)
         if not skill:
-            logger.warning(f"Skill not found: {skill_name}")
+            logger.warning("skill.not_found", skill_name=skill_name)
             return None
 
         # Deactivate current skill if different
@@ -232,7 +234,7 @@ class SkillManager:
         # Activate new skill
         self._skill_context.activate_skill(skill)
         self._active_skill_name = skill_name
-        logger.info(f"Activated skill: {skill_name}")
+        logger.info("skill.activated", skill_name=skill_name)
 
         return skill
 
@@ -260,7 +262,7 @@ class SkillManager:
             if intent_lower in skill_name:
                 return self.activate_skill(skill_name)
 
-        logger.debug(f"No skill found for intent: {intent}")
+        logger.debug("skill.no_match_for_intent", intent=intent)
         return None
 
     def deactivate_current(self) -> None:
@@ -313,8 +315,11 @@ class SkillManager:
 
                 if new_skill:
                     logger.info(
-                        f"Skill switched: {old_skill} → {condition.to_skill} "
-                        f"(triggered by {tool_name}.{condition.condition_key})"
+                        "skill.switched",
+                        from_skill=old_skill,
+                        to_skill=condition.to_skill,
+                        trigger_tool=tool_name,
+                        condition_key=condition.condition_key,
                     )
                     return SkillSwitchResult(
                         switched=True,

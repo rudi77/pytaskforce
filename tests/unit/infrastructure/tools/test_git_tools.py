@@ -16,7 +16,6 @@ import pytest
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.native.git_tools import GitHubTool, GitTool
 
-
 # ---------------------------------------------------------------------------
 # GitTool tests
 # ---------------------------------------------------------------------------

@@ -343,6 +343,153 @@ class InfrastructureBuilder:
         return build_gateway_components(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
+    # Event Sources (Butler)
+    # -------------------------------------------------------------------------
+
+    def build_calendar_event_source(
+        self,
+        poll_interval_seconds: int = 300,
+        lookahead_minutes: int = 60,
+        calendar_id: str = "primary",
+        credentials_file: str | None = None,
+    ) -> Any:
+        """Build a CalendarEventSource instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not reference infrastructure directly.
+
+        Args:
+            poll_interval_seconds: Polling interval in seconds.
+            lookahead_minutes: How far ahead to look for events.
+            calendar_id: Google Calendar ID to poll.
+            credentials_file: Path to Google credentials file.
+
+        Returns:
+            CalendarEventSource instance implementing EventSourceProtocol.
+        """
+        from taskforce.infrastructure.event_sources.calendar_source import (
+            CalendarEventSource,
+        )
+
+        return CalendarEventSource(
+            poll_interval_seconds=poll_interval_seconds,
+            lookahead_minutes=lookahead_minutes,
+            calendar_id=calendar_id,
+            credentials_file=credentials_file,
+        )
+
+    def build_webhook_event_source(self) -> Any:
+        """Build a WebhookEventSource instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not reference infrastructure directly.
+
+        Returns:
+            WebhookEventSource instance implementing EventSourceProtocol.
+        """
+        from taskforce.infrastructure.event_sources.webhook_source import (
+            WebhookEventSource,
+        )
+
+        return WebhookEventSource()
+
+    # -------------------------------------------------------------------------
+    # Scheduler / Job Store (Butler)
+    # -------------------------------------------------------------------------
+
+    def build_job_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileJobStore instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not reference infrastructure directly.
+
+        Args:
+            work_dir: Working directory for job persistence.
+
+        Returns:
+            FileJobStore instance.
+        """
+        from taskforce.infrastructure.scheduler.job_store import FileJobStore
+
+        return FileJobStore(work_dir=work_dir)
+
+    # -------------------------------------------------------------------------
+    # Runtime Tracker
+    # -------------------------------------------------------------------------
+
+    def build_runtime_tracker(
+        self,
+        config: dict[str, Any],
+        work_dir_override: str | None = None,
+    ) -> Any:
+        """Build runtime tracker based on configuration.
+
+        Centralises the extensions-infrastructure import so that callers
+        do not reference taskforce_extensions.infrastructure directly.
+
+        Args:
+            config: Profile configuration dictionary.
+            work_dir_override: Optional override for work directory.
+
+        Returns:
+            AgentRuntimeTracker or None if runtime tracking is disabled.
+
+        Raises:
+            ValueError: If store type is unknown.
+        """
+        runtime_config = config.get("runtime", {})
+        if not runtime_config.get("enabled", False):
+            return None
+
+        runtime_work_dir = (
+            runtime_config.get("work_dir")
+            or work_dir_override
+            or config.get("persistence", {}).get("work_dir", ".taskforce")
+        )
+        store_type = runtime_config.get("store", "file")
+
+        if store_type == "memory":
+            from taskforce_extensions.infrastructure.runtime import (
+                AgentRuntimeTracker,
+                InMemoryCheckpointStore,
+                InMemoryHeartbeatStore,
+            )
+
+            return AgentRuntimeTracker(
+                heartbeat_store=InMemoryHeartbeatStore(),
+                checkpoint_store=InMemoryCheckpointStore(),
+            )
+        if store_type == "file":
+            from taskforce_extensions.infrastructure.runtime import (
+                AgentRuntimeTracker,
+                FileCheckpointStore,
+                FileHeartbeatStore,
+            )
+
+            return AgentRuntimeTracker(
+                heartbeat_store=FileHeartbeatStore(runtime_work_dir),
+                checkpoint_store=FileCheckpointStore(runtime_work_dir),
+            )
+        raise ValueError(f"Unknown runtime store type: {store_type}")
+
+    # -------------------------------------------------------------------------
+    # Message Bus
+    # -------------------------------------------------------------------------
+
+    def build_message_bus(self) -> Any:
+        """Build an InMemoryMessageBus instance.
+
+        Centralises the extensions-infrastructure import so that
+        application-layer code does not reference extensions directly.
+
+        Returns:
+            InMemoryMessageBus instance implementing MessageBusProtocol.
+        """
+        from taskforce_extensions.infrastructure.messaging import InMemoryMessageBus
+
+        return InMemoryMessageBus()
+
+    # -------------------------------------------------------------------------
     # Combined Infrastructure
     # -------------------------------------------------------------------------
 
