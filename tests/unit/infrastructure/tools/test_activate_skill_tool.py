@@ -32,17 +32,26 @@ class TestActivateSkillTool:
         assert "input" in schema["properties"]
         assert "skill_name" in schema["required"]
 
-    def test_validate_parameters_with_skill_name(self, tool):
-        """Test parameter validation with valid skill name."""
-        assert tool.validate_parameters({"skill_name": "smart-booking-auto"}) is True
+    def test_validate_params_with_skill_name(self, tool):
+        """Test parameter validation with valid skill name and input."""
+        valid, err = tool.validate_params(
+            skill_name="smart-booking-auto",
+            input={"file_path": "test.pdf"},
+        )
+        assert valid is True
+        assert err is None
 
-    def test_validate_parameters_empty_skill_name(self, tool):
-        """Test parameter validation with empty skill name."""
-        assert tool.validate_parameters({"skill_name": ""}) is False
+    def test_validate_params_missing_skill_name(self, tool):
+        """Test parameter validation without required skill_name."""
+        valid, err = tool.validate_params(input={"file_path": "test.pdf"})
+        assert valid is False
+        assert err is not None
 
-    def test_validate_parameters_missing_skill_name(self, tool):
-        """Test parameter validation without skill name."""
-        assert tool.validate_parameters({}) is False
+    def test_validate_params_missing_input(self, tool):
+        """Test parameter validation without required input."""
+        valid, err = tool.validate_params(skill_name="smart-booking-auto")
+        assert valid is False
+        assert err is not None
 
     @pytest.mark.asyncio
     async def test_execute_no_agent_ref(self, tool):

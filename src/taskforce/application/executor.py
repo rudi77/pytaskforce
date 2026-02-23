@@ -616,7 +616,11 @@ class AgentExecutor:
             )
 
     def _lookup_agent_definition(self, agent_id: str) -> Any:
-        """Look up an agent definition from the file-based registry.
+        """Look up an agent definition from the agent registry.
+
+        Uses ``InfrastructureBuilder`` to obtain a properly wired registry
+        instance, avoiding a direct infrastructure import in the application
+        layer.
 
         Args:
             agent_id: The agent identifier to look up.
@@ -625,12 +629,9 @@ class AgentExecutor:
             Agent definition (PluginAgentDefinition, CustomAgentDefinition, etc.)
             or None if not found.
         """
-        from taskforce.application.factory import get_base_path
-        from taskforce.infrastructure.persistence.file_agent_registry import (
-            FileAgentRegistry,
-        )
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-        registry = FileAgentRegistry(base_path=get_base_path())
+        registry = InfrastructureBuilder().build_agent_registry()
         return registry.get_agent(agent_id)
 
     async def _create_plugin_agent_from_definition(

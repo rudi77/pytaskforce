@@ -310,6 +310,29 @@ tests/
 
 ---
 
+## Fix Status (2026-02-23)
+
+The following findings have been addressed:
+
+| # | Finding | Status | Details |
+|---|---------|--------|---------|
+| 1 | Import violation in `plugin_scanner.py` | **FIXED** | Refactored to accept `plugin_loader_factory` callable; lazy-import default preserves backward compatibility |
+| 2 | Replace `dict[str, Any]` in protocols | Deferred | Incremental; requires cascade through all callers |
+| 3 | Move `config_schema.py` out of domain | **FIXED** | Moved to `application/config_schema.py` with re-export shim in `core/domain/config_schema.py` |
+| 4 | Inject `FileAgentRegistry` in executor | **FIXED** | Now uses `InfrastructureBuilder.build_agent_registry()` |
+| 5 | Consolidate `ToolBuilder` to use `ToolRegistry` | **FIXED** | `create_default_tools` and `get_all_native_tools` now delegate to `ToolRegistry.resolve()` |
+| 6 | Extract skill transition logic to domain | Deferred | Requires careful separation of orchestration and domain logic |
+| 7 | Cache `InfrastructureBuilder` in factory | **FIXED** | Added lazy `infra_builder` property; all 11 call sites updated |
+| 8 | Standardize CRUD naming across protocols | Deferred | Low-risk incremental improvement |
+| 9 | Replace global `_registry` singleton | **FIXED** | `get_tool_registry()` now returns fresh instances with DI params; shared catalog-only instance for parameterless calls |
+| 10 | Make Skills protocol methods async | Documented | Added migration note to `SkillRegistryProtocol`; deferred due to 15+ call-site cascade |
+| 11 | Enrich anemic domain models | **FIXED** | `TokenUsage` gained `exceeds_budget()`, `remaining()`, and `__add__()` |
+| 12 | Ensure tools inherit from `BaseTool` | **FIXED** | `ActivateSkillTool` now extends `BaseTool` with `_execute()` pattern |
+| 13 | Standardize error handling in protocols | Deferred | Incremental improvement |
+| 14 | Add protocol compliance tests | **FIXED** | 13 new tests in `tests/unit/core/interfaces/test_protocol_compliance.py` |
+
+---
+
 ## Conclusion
 
 The Taskforce codebase is a **well-architected system** that takes hexagonal/clean architecture seriously. The four-layer separation is consistently enforced, protocol-based design is the norm rather than the exception, and the dependency direction is correct in 99%+ of the code.

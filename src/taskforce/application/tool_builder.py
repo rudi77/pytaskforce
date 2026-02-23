@@ -189,10 +189,26 @@ class ToolBuilder:
 
         return tools
 
+    # Default tool names used by ``create_default_tools``.
+    _DEFAULT_TOOL_NAMES: list[str] = [
+        "web_search",
+        "web_fetch",
+        "python",
+        "github",
+        "git",
+        "file_read",
+        "file_write",
+        "powershell",
+        "ask_user",
+    ]
+
     def create_default_tools(
         self, llm_provider: LLMProviderProtocol
     ) -> list[ToolProtocol]:
         """Create default tool set (fallback when no config provided).
+
+        Delegates to ``ToolRegistry.resolve()`` to avoid duplicating
+        tool instantiation logic.
 
         Args:
             llm_provider: LLM provider (unused - kept for API compatibility).
@@ -200,44 +216,18 @@ class ToolBuilder:
         Returns:
             List of default tool instances.
         """
-        from taskforce.infrastructure.tools.native.ask_user_tool import (
-            AskUserTool,
-        )
-        from taskforce.infrastructure.tools.native.file_tools import (
-            FileReadTool,
-            FileWriteTool,
-        )
-        from taskforce.infrastructure.tools.native.git_tools import (
-            GitHubTool,
-            GitTool,
-        )
-        from taskforce.infrastructure.tools.native.python_tool import (
-            PythonTool,
-        )
-        from taskforce.infrastructure.tools.native.shell_tool import (
-            PowerShellTool,
-        )
-        from taskforce.infrastructure.tools.native.web_tools import (
-            WebFetchTool,
-            WebSearchTool,
-        )
+        from taskforce.application.tool_registry import ToolRegistry
 
-        return [
-            WebSearchTool(),
-            WebFetchTool(),
-            PythonTool(),
-            GitHubTool(),
-            GitTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PowerShellTool(),
-            AskUserTool(),
-        ]
+        registry = ToolRegistry(llm_provider=llm_provider)
+        return registry.resolve(self._DEFAULT_TOOL_NAMES)
 
     def get_all_native_tools(
         self, llm_provider: LLMProviderProtocol
     ) -> list[ToolProtocol]:
         """Get all available native tools.
+
+        Delegates to ``ToolRegistry.resolve()`` to avoid duplicating
+        tool instantiation logic.
 
         Args:
             llm_provider: LLM provider (unused but kept for consistency).
@@ -245,39 +235,11 @@ class ToolBuilder:
         Returns:
             List of all native tool instances.
         """
-        from taskforce.infrastructure.tools.native.ask_user_tool import (
-            AskUserTool,
-        )
-        from taskforce.infrastructure.tools.native.file_tools import (
-            FileReadTool,
-            FileWriteTool,
-        )
-        from taskforce.infrastructure.tools.native.git_tools import (
-            GitHubTool,
-            GitTool,
-        )
-        from taskforce.infrastructure.tools.native.python_tool import (
-            PythonTool,
-        )
-        from taskforce.infrastructure.tools.native.shell_tool import (
-            PowerShellTool,
-        )
-        from taskforce.infrastructure.tools.native.web_tools import (
-            WebFetchTool,
-            WebSearchTool,
-        )
+        from taskforce.application.tool_registry import ToolRegistry
 
-        return [
-            WebSearchTool(),
-            WebFetchTool(),
-            PythonTool(),
-            GitHubTool(),
-            GitTool(),
-            FileReadTool(),
-            FileWriteTool(),
-            PowerShellTool(),
-            AskUserTool(),
-        ]
+        registry = ToolRegistry(llm_provider=llm_provider)
+        all_names = registry.get_available_tools()
+        return registry.resolve(all_names)
 
     def create_specialist_tools(
         self,

@@ -368,8 +368,10 @@ class ToolRegistry:
             return None
 
 
-# Singleton instance
-_registry: ToolRegistry | None = None
+# Lightweight catalog-only instance (no LLM/user context required).
+# Lazily created on first call to ``get_tool_registry()`` *without*
+# parameters and reused for catalog/mapper lookups.
+_catalog_registry: ToolRegistry | None = None
 
 
 def get_tool_registry(
@@ -377,29 +379,44 @@ def get_tool_registry(
     user_context: dict[str, Any] | None = None,
     memory_store_dir: str | None = None,
 ) -> ToolRegistry:
-    """
-    Get the tool registry instance.
+    """Get a tool registry instance.
 
-    For simple catalog/mapper operations, use without arguments.
-    For resolver operations requiring dependency injection, pass the providers.
+    **Without arguments** — returns a shared, lightweight registry suitable
+    for catalog/mapper operations (listing tools, validating names, etc.).
+
+    **With arguments** — returns a *new* registry wired with the provided
+    dependencies. This avoids the previous issue where passing parameters
+    mutated shared global state and leaked context across requests.
 
     Args:
-        llm_provider: Optional LLM provider for tool instantiation
-        user_context: Optional user context for RAG tools
+        llm_provider: Optional LLM provider for tool instantiation.
+        user_context: Optional user context for RAG tools.
+        memory_store_dir: Optional memory store directory.
 
     Returns:
-        ToolRegistry instance
+        ToolRegistry instance.
     """
-    global _registry
-    if (
-        _registry is None
-        or llm_provider is not None
+    has_params = (
+        llm_provider is not None
         or user_context is not None
         or memory_store_dir is not None
-    ):
-        _registry = ToolRegistry(
+    )
+    if has_params:
+        # Always return a fresh, request-scoped instance when DI params given.
+        return ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
             memory_store_dir=memory_store_dir,
         )
-    return _registry
+
+    # Catalog-only path: reuse a shared lightweight instance.
+    global _catalog_registry
+    if _catalog_registry is None:
+        _catalog_registry = ToolRegistry()
+    return _catalog_registry
+
+
+def reset_tool_registry() -> None:
+    """Reset the cached catalog registry (useful in tests)."""
+    global _catalog_registry
+    _catalog_registry = None

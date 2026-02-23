@@ -11,10 +11,16 @@ into ``PluginAgentDefinition`` domain objects.
 Clean Architecture Notes:
 - Infrastructure layer: performs filesystem I/O and plugin discovery
 - Depends on core/domain/agent_models.py for PluginAgentDefinition
-- Uses application/plugin_loader.py via lazy import to avoid circular deps
+- Accepts a ``plugin_loader_factory`` callable to avoid importing from the
+  application layer. Callers in the application layer supply the real
+  ``PluginLoader``; infrastructure never imports it directly.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -23,11 +29,26 @@ from taskforce.core.domain.agent_models import PluginAgentDefinition
 logger = structlog.get_logger()
 
 
+def _default_plugin_loader_factory() -> Any:
+    """Lazy-import PluginLoader at call time.
+
+    This function exists as a **default** so that existing callers that
+    do not pass an explicit factory still work.  It performs a lazy import
+    to break the static import-time dependency from infrastructure to
+    application.  New call-sites should prefer passing the factory
+    explicitly.
+    """
+    from taskforce.application.plugin_loader import PluginLoader
+
+    return PluginLoader()
+
+
 def discover_plugin_agents(
     base_path: Path,
+    *,
+    plugin_loader_factory: Callable[[], Any] | None = None,
 ) -> list[PluginAgentDefinition]:
-    """
-    Discover plugin agents from standard plugin directories.
+    """Discover plugin agents from standard plugin directories.
 
     Scans the following directories (in order):
     - ``<base_path>/src/taskforce_extensions/plugins/``
@@ -38,10 +59,15 @@ def discover_plugin_agents(
 
     Args:
         base_path: Project root path used to locate plugin directories.
+        plugin_loader_factory: Optional callable that returns a plugin
+            loader instance (must expose ``discover_plugin`` and
+            ``load_config`` methods). When *None*, a default lazy-import
+            factory is used for backward compatibility.
 
     Returns:
         List of PluginAgentDefinition objects for all valid plugins found.
     """
+    factory = plugin_loader_factory or _default_plugin_loader_factory
     plugins: list[PluginAgentDefinition] = []
 
     plugin_dirs = [
@@ -62,7 +88,12 @@ def discover_plugin_agents(
                 continue
 
             try:
-                plugin_agent = load_plugin_agent(plugin_dir, plugin_base_dir, base_path)
+                plugin_agent = load_plugin_agent(
+                    plugin_dir,
+                    plugin_base_dir,
+                    base_path,
+                    plugin_loader_factory=factory,
+                )
                 if plugin_agent:
                     plugins.append(plugin_agent)
             except Exception as e:
@@ -79,25 +110,23 @@ def load_plugin_agent(
     plugin_dir: Path,
     plugin_base_dir: Path,
     base_path: Path,
+    *,
+    plugin_loader_factory: Callable[[], Any] | None = None,
 ) -> PluginAgentDefinition | None:
-    """
-    Load a single plugin agent from a plugin directory.
-
-    Uses ``PluginLoader`` to discover and validate the plugin manifest,
-    then extracts metadata into a ``PluginAgentDefinition``.
+    """Load a single plugin agent from a plugin directory.
 
     Args:
         plugin_dir: Path to the individual plugin directory.
         plugin_base_dir: Parent directory that contains multiple plugins.
         base_path: Project root for computing relative paths.
+        plugin_loader_factory: Callable returning a plugin loader instance.
 
     Returns:
         PluginAgentDefinition if a valid plugin was found, None otherwise.
     """
     try:
-        from taskforce.application.plugin_loader import PluginLoader
-
-        loader = PluginLoader()
+        factory = plugin_loader_factory or _default_plugin_loader_factory
+        loader = factory()
         manifest = loader.discover_plugin(str(plugin_dir))
 
         plugin_config = loader.load_config(manifest)
@@ -158,9 +187,10 @@ def load_plugin_agent(
 def find_plugin_agent(
     agent_id: str,
     base_path: Path,
+    *,
+    plugin_loader_factory: Callable[[], Any] | None = None,
 ) -> PluginAgentDefinition | None:
-    """
-    Find a specific plugin agent by its identifier.
+    """Find a specific plugin agent by its identifier.
 
     Looks for a directory named ``agent_id`` under ``examples/`` and
     ``plugins/`` directories relative to ``base_path``.
@@ -168,6 +198,7 @@ def find_plugin_agent(
     Args:
         agent_id: Agent identifier (matches plugin directory name).
         base_path: Project root path.
+        plugin_loader_factory: Callable returning a plugin loader instance.
 
     Returns:
         PluginAgentDefinition if found, None otherwise.
@@ -183,6 +214,11 @@ def find_plugin_agent(
 
         plugin_dir = plugin_base_dir / agent_id
         if plugin_dir.exists() and plugin_dir.is_dir():
-            return load_plugin_agent(plugin_dir, plugin_base_dir, base_path)
+            return load_plugin_agent(
+                plugin_dir,
+                plugin_base_dir,
+                base_path,
+                plugin_loader_factory=plugin_loader_factory,
+            )
 
     return None
