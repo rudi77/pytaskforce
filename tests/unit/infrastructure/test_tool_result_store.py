@@ -13,7 +13,7 @@ import tempfile
 
 import pytest
 
-from taskforce.core.interfaces.tool_result_store import ToolResultHandle
+from taskforce.core.domain.tool_result import ToolResultHandle
 from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
 
 

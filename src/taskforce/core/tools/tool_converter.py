@@ -11,7 +11,7 @@ from large tool results to keep message history small.
 import json
 from typing import Any
 
-from taskforce.core.interfaces.tool_result_store import (
+from taskforce.core.domain.tool_result import (
     ToolResultHandle,
     ToolResultPreview,
 )

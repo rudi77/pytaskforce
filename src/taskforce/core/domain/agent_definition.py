@@ -273,9 +273,7 @@ class AgentDefinition:
         tool_names = [t for t in tool_names if t]  # Remove empty
 
         # Extract MCP servers
-        mcp_servers = [
-            MCPServerConfig.from_dict(s) for s in config.get("mcp_servers", [])
-        ]
+        mcp_servers = [MCPServerConfig.from_dict(s) for s in config.get("mcp_servers", [])]
 
         return cls(
             agent_id=profile_name,
@@ -324,9 +322,7 @@ class AgentDefinition:
         tool_names = [t for t in tool_names if t]
 
         # Extract MCP servers
-        mcp_servers = [
-            MCPServerConfig.from_dict(s) for s in manifest.get("mcp_servers", [])
-        ]
+        mcp_servers = [MCPServerConfig.from_dict(s) for s in manifest.get("mcp_servers", [])]
 
         return cls(
             agent_id=agent_id,
@@ -376,9 +372,7 @@ class AgentDefinition:
         tool_names = [t for t in tool_names if t]
 
         # Extract MCP servers
-        mcp_servers = [
-            MCPServerConfig.from_dict(s) for s in agent_config.get("mcp_servers", [])
-        ]
+        mcp_servers = [MCPServerConfig.from_dict(s) for s in agent_config.get("mcp_servers", [])]
 
         return cls(
             agent_id=f"cmd:{name}",
@@ -516,6 +510,120 @@ class AgentDefinition:
         data = self.to_dict()
         data.update(updates)
         return AgentDefinition.from_dict(data)
+
+    # ------------------------------------------------------------------
+    # Legacy conversion helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_legacy_custom(
+        cls,
+        legacy: Any,
+    ) -> AgentDefinition:
+        """
+        Create an AgentDefinition from a legacy ``CustomAgentDefinition``.
+
+        This factory method bridges the old ``agent_models.CustomAgentDefinition``
+        to the unified model, handling the field-name differences
+        (``tool_allowlist`` -> ``tools``, ``mcp_tool_allowlist`` -> ``mcp_tool_filter``,
+        ``created_at``/``updated_at`` str -> datetime).
+
+        Args:
+            legacy: A ``CustomAgentDefinition`` instance (from ``agent_models``).
+
+        Returns:
+            An ``AgentDefinition`` with ``source=AgentSource.CUSTOM``.
+        """
+        created_at = _parse_iso_timestamp(legacy.created_at) if legacy.created_at else None
+        updated_at = _parse_iso_timestamp(legacy.updated_at) if legacy.updated_at else None
+
+        return cls(
+            agent_id=legacy.agent_id,
+            name=legacy.name,
+            description=legacy.description,
+            source=AgentSource.CUSTOM,
+            system_prompt=legacy.system_prompt,
+            tools=list(legacy.tool_allowlist),
+            mcp_servers=list(legacy.mcp_servers),
+            mcp_tool_filter=list(legacy.mcp_tool_allowlist) if legacy.mcp_tool_allowlist else None,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+    @classmethod
+    def from_legacy_profile(
+        cls,
+        legacy: Any,
+    ) -> AgentDefinition:
+        """
+        Create an AgentDefinition from a legacy ``ProfileAgentDefinition``.
+
+        Note:
+            The ``llm`` and ``persistence`` dicts from the legacy model have
+            no direct equivalent in ``AgentDefinition``.  These settings are
+            inherited at agent-creation time through ``base_profile``.
+
+        Args:
+            legacy: A ``ProfileAgentDefinition`` instance (from ``agent_models``).
+
+        Returns:
+            An ``AgentDefinition`` with ``source=AgentSource.PROFILE``.
+        """
+        # Extract string tool names only; dict-style tool defs are skipped
+        tool_names: list[str] = [t for t in legacy.tools if isinstance(t, str)]
+
+        return cls(
+            agent_id=legacy.profile,
+            name=legacy.profile.replace("_", " ").title(),
+            description=f"Agent from {legacy.profile} profile",
+            source=AgentSource.PROFILE,
+            specialist=legacy.specialist,
+            tools=tool_names,
+            mcp_servers=list(legacy.mcp_servers),
+            base_profile=legacy.profile,
+        )
+
+    @classmethod
+    def from_legacy_plugin(
+        cls,
+        legacy: Any,
+    ) -> AgentDefinition:
+        """
+        Create an AgentDefinition from a legacy ``PluginAgentDefinition``.
+
+        Args:
+            legacy: A ``PluginAgentDefinition`` instance (from ``agent_models``).
+
+        Returns:
+            An ``AgentDefinition`` with ``source=AgentSource.PLUGIN``.
+        """
+        return cls(
+            agent_id=legacy.agent_id,
+            name=legacy.name,
+            description=legacy.description,
+            source=AgentSource.PLUGIN,
+            specialist=legacy.specialist,
+            mcp_servers=list(legacy.mcp_servers),
+            plugin_path=legacy.plugin_path,
+            tool_classes=list(legacy.tool_classes),
+        )
+
+
+def _parse_iso_timestamp(value: str) -> datetime | None:
+    """Parse an ISO-8601 timestamp string, returning None for empty strings.
+
+    Args:
+        value: ISO-8601 timestamp string.
+
+    Returns:
+        Parsed datetime or None if the input is empty or unparseable.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
 
 
 @dataclass

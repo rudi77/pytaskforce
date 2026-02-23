@@ -23,6 +23,7 @@ Protocol implementations must provide:
 from typing import Any, Protocol
 
 from taskforce.core.domain.enums import SkillType
+from taskforce.core.domain.skill import SkillMetadataModel
 
 
 class SkillProtocol(Protocol):
@@ -168,40 +169,6 @@ class SkillProtocol(Protocol):
         ...
 
 
-class SkillMetadata(Protocol):
-    """
-    Lightweight metadata for skill discovery.
-
-    Contains only the information needed for skill matching
-    without loading the full instructions.
-    """
-
-    @property
-    def name(self) -> str:
-        """Skill identifier."""
-        ...
-
-    @property
-    def description(self) -> str:
-        """Skill description for trigger matching."""
-        ...
-
-    @property
-    def source_path(self) -> str:
-        """Path to skill directory."""
-        ...
-
-    @property
-    def skill_type(self) -> SkillType:
-        """Execution type of the skill."""
-        ...
-
-    @property
-    def effective_slash_name(self) -> str:
-        """Name used for /name-style invocation."""
-        ...
-
-
 class SkillRegistryProtocol(Protocol):
     """
     Protocol for skill discovery and management.
@@ -214,7 +181,7 @@ class SkillRegistryProtocol(Protocol):
     - Resolving skills by slash name
     """
 
-    def discover_skills(self) -> list[SkillMetadata]:
+    def discover_skills(self) -> list[SkillMetadataModel]:
         """
         Discover all available skills and return their metadata.
 
@@ -269,7 +236,7 @@ class SkillRegistryProtocol(Protocol):
         """
         ...
 
-    def get_skill_metadata(self, name: str) -> SkillMetadata | None:
+    def get_skill_metadata(self, name: str) -> SkillMetadataModel | None:
         """
         Get metadata for a specific skill without loading instructions.
 
@@ -287,7 +254,7 @@ class SkillRegistryProtocol(Protocol):
         """
         ...
 
-    def get_all_metadata(self) -> list[SkillMetadata]:
+    def get_all_metadata(self) -> list[SkillMetadataModel]:
         """
         Get metadata for all discovered skills.
 

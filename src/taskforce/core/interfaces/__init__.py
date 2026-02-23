@@ -38,7 +38,6 @@ from taskforce.core.interfaces.runtime import (
 )
 from taskforce.core.interfaces.skills import (
     SkillContextProtocol,
-    SkillMetadata,
     SkillProtocol,
     SkillRegistryProtocol,
 )
@@ -62,6 +61,5 @@ __all__ = [
     "SubAgentSpawnerProtocol",
     "SkillProtocol",
     "SkillRegistryProtocol",
-    "SkillMetadata",
     "SkillContextProtocol",
 ]
