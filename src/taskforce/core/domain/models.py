@@ -12,6 +12,43 @@ from typing import Any
 from taskforce.core.domain.enums import EventType, ExecutionStatus
 
 
+@dataclass(frozen=True)
+class UserContext:
+    """RAG security filtering context.
+
+    Passed through executor → factory → agent to enable
+    document-level security filtering in RAG operations.
+
+    Attributes:
+        user_id: User identifier for access control.
+        org_id: Organization identifier for tenancy filtering.
+        scope: Access scope (e.g., "read", "admin").
+    """
+
+    user_id: str | None = None
+    org_id: str | None = None
+    scope: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for backward compatibility."""
+        return {
+            "user_id": self.user_id,
+            "org_id": self.org_id,
+            "scope": self.scope,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "UserContext | None":
+        """Create from dictionary, returning None if data is None/empty."""
+        if not data:
+            return None
+        return cls(
+            user_id=data.get("user_id"),
+            org_id=data.get("org_id"),
+            scope=data.get("scope"),
+        )
+
+
 @dataclass
 class StreamEvent:
     """

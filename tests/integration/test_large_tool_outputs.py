@@ -134,7 +134,7 @@ async def test_large_tool_output_stays_small_in_messages(integration_setup):
     # truncated may be True or False depending on output format
 
     # Assert - full result is in store
-    from taskforce.core.interfaces.tool_result_store import ToolResultHandle
+    from taskforce.core.domain.tool_result import ToolResultHandle
 
     handle = ToolResultHandle.from_dict(tool_content["handle"])
     stored_result = await integration_setup["tool_result_store"].fetch(handle)

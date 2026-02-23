@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 from taskforce.core.domain.enums import (
     EventType,
     ExecutionStatus,
-    LLMStreamEventType,
     MessageRole,
     PlannerAction,
 )
@@ -28,10 +27,12 @@ from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_helpers import (
     DEFAULT_PLAN,
     _collect_result,
-    _ensure_event_type,
-    _generate_plan,
-    _process_tool_calls,
-    _resume_from_pause,
+    _generate_and_register_plan,
+    _llm_call_and_process,
+    _load_and_resume_state,
+    _react_loop,
+    _rebuild_system_prompt,
+    _save_and_emit_max_steps,
     _stream_final_response,
 )
 from taskforce.core.interfaces.logging import LoggerProtocol
@@ -85,207 +86,30 @@ class NativeReActStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self._logger or agent.logger
-        state = await agent.state_manager.load_state(session_id) or {}
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
+        state, resume = await _load_and_resume_state(
+            agent, mission, session_id, logger
+        )
 
-        resume = _resume_from_pause(state, mission, logger, session_id)
         if resume is not None:
             messages = resume.messages
             step = resume.step
         else:
             if self.generate_plan_first:
-                steps = (
-                    await _generate_plan(agent, mission, logger) or DEFAULT_PLAN
-                )[: self.max_plan_steps]
-                if agent._planner:
-                    await agent._planner.execute(
-                        action=PlannerAction.CREATE_PLAN.value, tasks=steps
-                    )
-                    yield StreamEvent(
-                        event_type=EventType.PLAN_UPDATED,
-                        data={
-                            "action": PlannerAction.CREATE_PLAN.value,
-                            "steps": steps,
-                            "plan": agent._planner.get_plan_summary(),
-                        },
-                    )
-                await agent.state_store.save(
-                    session_id=session_id, state=state, planner=agent.planner
-                )
+                async for item in _generate_and_register_plan(
+                    agent, mission, logger, self.max_plan_steps,
+                    session_id=session_id, state=state,
+                ):
+                    if isinstance(item, StreamEvent):
+                        yield item
 
             messages = agent._build_initial_messages(mission, state)
             step = 0
 
-        use_stream = hasattr(agent.llm_provider, "complete_stream")
-        final = ""
-
-        while step < agent.max_steps:
-            await agent.record_heartbeat(
-                session_id, ExecutionStatus.PENDING.value, {"step": step}
-            )
-            messages[0] = {
-                "role": MessageRole.SYSTEM.value,
-                "content": agent._build_system_prompt(
-                    mission=mission, state=state, messages=messages
-                ),
-            }
-
-            if use_stream:
-                messages = await agent.message_history_manager.compress_messages(
-                    messages
-                )
-                messages = agent.message_history_manager.preflight_budget_check(
-                    messages
-                )
-
-            tool_calls: list[dict[str, Any]] = []
-            content = ""
-
-            if use_stream:
-                tc_acc: dict[int, dict[str, str]] = {}
-                content_acc = ""
-                try:
-                    async for chunk in agent.llm_provider.complete_stream(
-                        messages=messages,
-                        model="reasoning",
-                        tools=agent._openai_tools,
-                        tool_choice="auto",
-                        temperature=0.2,
-                    ):
-                        t = chunk.get("type")
-                        if (
-                            t == LLMStreamEventType.TOKEN.value
-                            and chunk.get("content")
-                        ):
-                            yield StreamEvent(
-                                event_type=EventType.LLM_TOKEN,
-                                data={"content": chunk["content"]},
-                            )
-                            content_acc += chunk["content"]
-                        elif t == LLMStreamEventType.TOOL_CALL_START.value:
-                            tc_acc[chunk.get("index", 0)] = {
-                                "id": chunk.get("id", ""),
-                                "name": chunk.get("name", ""),
-                                "arguments": "",
-                            }
-                        elif (
-                            t == LLMStreamEventType.TOOL_CALL_DELTA.value
-                            and chunk.get("index", 0) in tc_acc
-                        ):
-                            tc_acc[chunk["index"]]["arguments"] += chunk.get(
-                                "arguments_delta", ""
-                            )
-                        elif (
-                            t == LLMStreamEventType.TOOL_CALL_END.value
-                            and chunk.get("index", 0) in tc_acc
-                        ):
-                            tc_acc[chunk["index"]]["arguments"] = chunk.get(
-                                "arguments",
-                                tc_acc[chunk["index"]]["arguments"],
-                            )
-                        elif (
-                            t == LLMStreamEventType.DONE.value
-                            and chunk.get("usage")
-                        ):
-                            yield StreamEvent(
-                                event_type=EventType.TOKEN_USAGE,
-                                data=chunk["usage"],
-                            )
-                        elif t == "error":
-                            yield StreamEvent(
-                                event_type=EventType.ERROR,
-                                data={
-                                    "message": chunk.get("message", "Error")
-                                },
-                            )
-                except Exception as e:
-                    yield StreamEvent(
-                        event_type=EventType.ERROR,
-                        data={"message": str(e)},
-                    )
-                    continue
-
-                if tc_acc:
-                    tool_calls = [
-                        {
-                            "id": v["id"],
-                            "type": "function",
-                            "function": {
-                                "name": v["name"],
-                                "arguments": v["arguments"],
-                            },
-                        }
-                        for v in tc_acc.values()
-                    ]
-                else:
-                    content = content_acc
-            else:
-                result = await agent.llm_provider.complete(
-                    messages=messages,
-                    model="reasoning",
-                    tools=agent._openai_tools,
-                    tool_choice="auto",
-                    temperature=0.2,
-                )
-                if result.get("usage"):
-                    yield StreamEvent(
-                        event_type=EventType.TOKEN_USAGE,
-                        data=result["usage"],
-                    )
-                if not result.get("success"):
-                    messages.append(
-                        {
-                            "role": MessageRole.USER.value,
-                            "content": (
-                                f"[System Error: {result.get('error')}. "
-                                "Try again.]"
-                            ),
-                        }
-                    )
-                    continue
-                tool_calls = result.get("tool_calls") or []
-                content = result.get("content", "")
-
-            if tool_calls:
-                paused = False
-                async for e in _process_tool_calls(
-                    agent, tool_calls, session_id, step + 1,
-                    state, messages, logger,
-                ):
-                    event_type = _ensure_event_type(e)
-                    if event_type == EventType.ASK_USER:
-                        paused = True
-                    yield e
-                if paused:
-                    return
-                step += 1
-            elif content:
-                step += 1
-                final = content
-                yield StreamEvent(
-                    event_type=EventType.FINAL_ANSWER,
-                    data={"content": content},
-                )
-                break
-            else:
-                messages.append(
-                    {
-                        "role": MessageRole.USER.value,
-                        "content": (
-                            "[System: Empty response. "
-                            "Provide answer or use tool.]"
-                        ),
-                    }
-                )
-
-        if step >= agent.max_steps and not final:
-            yield StreamEvent(
-                event_type=EventType.ERROR,
-                data={
-                    "message": f"Exceeded max steps ({agent.max_steps})"
-                },
-            )
+        async for e in _react_loop(
+            agent, mission, session_id, messages, state,
+            start_step=step, logger=logger,
+        ):
+            yield e
 
         await agent.state_store.save(
             session_id=session_id, state=state, planner=agent.planner
@@ -323,11 +147,10 @@ class PlanAndExecuteStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state = await agent.state_manager.load_state(session_id) or {}
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
+        state, resume = await _load_and_resume_state(
+            agent, mission, session_id, logger
+        )
 
-        resume = _resume_from_pause(state, mission, logger, session_id)
         if resume is not None:
             messages = resume.messages
             progress = resume.step
@@ -336,25 +159,17 @@ class PlanAndExecuteStrategy:
             start_it = resume.plan_iteration
         else:
             messages = agent._build_initial_messages(mission, state)
-            plan = (
-                await _generate_plan(agent, mission, logger) or DEFAULT_PLAN
-            )[: self.max_plan_steps]
+            plan = DEFAULT_PLAN
+            async for item in _generate_and_register_plan(
+                agent, mission, logger, self.max_plan_steps,
+            ):
+                if isinstance(item, list):
+                    plan = item
+                elif isinstance(item, StreamEvent):
+                    yield item
             progress = 0
             start_idx = 1
             start_it = 1
-
-            if agent._planner:
-                await agent._planner.execute(
-                    action=PlannerAction.CREATE_PLAN.value, tasks=plan
-                )
-                yield StreamEvent(
-                    event_type=EventType.PLAN_UPDATED,
-                    data={
-                        "action": PlannerAction.CREATE_PLAN.value,
-                        "steps": plan,
-                        "plan": agent._planner.get_plan_summary(),
-                    },
-                )
 
         for idx, desc in enumerate(plan, 1):
             if idx < start_idx:
@@ -373,12 +188,7 @@ class PlanAndExecuteStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                messages[0] = {
-                    "role": MessageRole.SYSTEM.value,
-                    "content": agent._build_system_prompt(
-                        mission=mission, state=state, messages=messages
-                    ),
-                }
+                _rebuild_system_prompt(agent, messages, mission, state)
                 messages.append(
                     {
                         "role": MessageRole.USER.value,
@@ -389,92 +199,45 @@ class PlanAndExecuteStrategy:
                     }
                 )
 
-                result = await agent.llm_provider.complete(
-                    messages=messages,
-                    model="acting",
-                    tools=agent._openai_tools,
-                    tool_choice="auto",
-                    temperature=0.2,
-                )
-                if result.get("usage"):
-                    yield StreamEvent(
-                        event_type=EventType.TOKEN_USAGE,
-                        data=result["usage"],
-                    )
+                async for outcome, events in _llm_call_and_process(
+                    agent, messages, session_id, progress + 1,
+                    state, logger, model_hint="acting",
+                    plan=plan, plan_step_idx=idx,
+                    plan_iteration=it,
+                ):
+                    for event in events:
+                        yield event
 
-                if not result.get("success"):
-                    messages.append(
-                        {
-                            "role": MessageRole.USER.value,
-                            "content": (
-                                f"[Error: {result.get('error')}. Try again.]"
-                            ),
-                        }
-                    )
-                    continue
-
-                if result.get("tool_calls"):
-                    progress += 1
-                    paused = False
-                    async for e in _process_tool_calls(
-                        agent, result["tool_calls"], session_id,
-                        progress, state, messages, logger,
-                        plan=plan, plan_step_idx=idx,
-                        plan_iteration=it,
-                    ):
-                        event_type = _ensure_event_type(e)
-                        if event_type == EventType.ASK_USER:
-                            paused = True
-                        yield e
-                    if paused:
+                    if outcome == "paused":
                         return
-                elif result.get("content"):
-                    messages.append(
-                        {
-                            "role": MessageRole.ASSISTANT.value,
-                            "content": result["content"],
-                        }
-                    )
-                    if agent._planner:
-                        await agent._planner.execute(
-                            action=PlannerAction.MARK_DONE.value,
-                            step_index=idx,
-                        )
-                        yield StreamEvent(
-                            event_type=EventType.PLAN_UPDATED,
-                            data={
-                                "action": PlannerAction.MARK_DONE.value,
-                                "step": idx,
-                                "status": ExecutionStatus.COMPLETED.value,
-                                "plan": agent._planner.get_plan_summary(),
-                            },
-                        )
-                    break
-                else:
-                    messages.append(
-                        {
-                            "role": MessageRole.USER.value,
-                            "content": (
-                                "[Empty response. "
-                                "Provide answer or use tool.]"
-                            ),
-                        }
-                    )
+                    if outcome == "tool_calls":
+                        progress += 1
+                    elif outcome == "content":
+                        if agent._planner:
+                            await agent._planner.execute(
+                                action=PlannerAction.MARK_DONE.value,
+                                step_index=idx,
+                            )
+                            yield StreamEvent(
+                                event_type=EventType.PLAN_UPDATED,
+                                data={
+                                    "action": PlannerAction.MARK_DONE.value,
+                                    "step": idx,
+                                    "status": ExecutionStatus.COMPLETED.value,
+                                    "plan": agent._planner.get_plan_summary(),
+                                },
+                            )
+                        break
+                    # "error" and "empty" fall through to next iteration
 
         if progress < agent.max_steps:
             async for e in _stream_final_response(agent, messages):
                 yield e
-        elif progress >= agent.max_steps:
-            yield StreamEvent(
-                event_type=EventType.ERROR,
-                data={
-                    "message": f"Exceeded max steps ({agent.max_steps})"
-                },
-            )
 
-        await agent.state_store.save(
-            session_id=session_id, state=state, planner=agent.planner
-        )
+        async for e in _save_and_emit_max_steps(
+            agent, session_id, state, progress
+        ):
+            yield e
 
 
 # ---------------------------------------------------------------------------
@@ -547,11 +310,10 @@ class SparStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state = await agent.state_manager.load_state(session_id) or {}
-        if agent._planner and state.get("planner_state"):
-            agent._planner.set_state(state["planner_state"])
+        state, resume = await _load_and_resume_state(
+            agent, mission, session_id, logger
+        )
 
-        resume = _resume_from_pause(state, mission, logger, session_id)
         if resume is not None:
             messages = resume.messages
             progress = resume.step
@@ -561,26 +323,18 @@ class SparStrategy:
             start_phase = resume.phase
         else:
             messages = agent._build_initial_messages(mission, state)
-            plan = (
-                await _generate_plan(agent, mission, logger) or DEFAULT_PLAN
-            )[: self.max_plan_steps]
+            plan = DEFAULT_PLAN
+            async for item in _generate_and_register_plan(
+                agent, mission, logger, self.max_plan_steps,
+            ):
+                if isinstance(item, list):
+                    plan = item
+                elif isinstance(item, StreamEvent):
+                    yield item
             progress = 0
             start_idx = 1
             start_it = 1
             start_phase = "act"
-
-            if agent._planner:
-                await agent._planner.execute(
-                    action=PlannerAction.CREATE_PLAN.value, tasks=plan
-                )
-                yield StreamEvent(
-                    event_type=EventType.PLAN_UPDATED,
-                    data={
-                        "action": PlannerAction.CREATE_PLAN.value,
-                        "steps": plan,
-                        "plan": agent._planner.get_plan_summary(),
-                    },
-                )
 
         for idx, desc in enumerate(plan, 1):
             if idx < start_idx:
@@ -599,12 +353,7 @@ class SparStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                messages[0] = {
-                    "role": MessageRole.SYSTEM.value,
-                    "content": agent._build_system_prompt(
-                        mission=mission, state=state, messages=messages
-                    ),
-                }
+                _rebuild_system_prompt(agent, messages, mission, state)
 
                 reflect_only = (
                     idx == start_idx
@@ -652,10 +401,16 @@ class SparStrategy:
 
                 if self.reflect_every_step:
                     reflect_used, paused, events = (
-                        await _run_spar_reflection(
+                        await _run_reflection_cycle(
                             agent=agent,
                             messages=messages,
-                            desc=desc,
+                            prompt=(
+                                "REFLECT: Review the result of the last "
+                                "action step. Check correctness, edge cases, "
+                                "tests, and security. If more info is needed, "
+                                "ask_user. If validation tools should be "
+                                "used, call them."
+                            ),
                             session_id=session_id,
                             step=progress + 1,
                             state=state,
@@ -677,13 +432,22 @@ class SparStrategy:
 
         if progress < agent.max_steps:
             reflect_used, paused, events = (
-                await _run_spar_final_reflection(
+                await _run_reflection_cycle(
                     agent=agent,
                     messages=messages,
+                    prompt=(
+                        "REFLECT: Review the overall outcome for the "
+                        "mission. Verify quality, tests, and completeness. "
+                        "If anything is missing, ask_user or call tools "
+                        "to validate."
+                    ),
                     session_id=session_id,
                     step=progress + 1,
                     state=state,
                     logger=logger,
+                    plan=None,
+                    plan_step_idx=None,
+                    plan_iteration=None,
                     max_reflections=self.max_reflection_iterations,
                 )
             )
@@ -697,17 +461,11 @@ class SparStrategy:
         if progress < agent.max_steps:
             async for e in _stream_final_response(agent, messages):
                 yield e
-        elif progress >= agent.max_steps:
-            yield StreamEvent(
-                event_type=EventType.ERROR,
-                data={
-                    "message": f"Exceeded max steps ({agent.max_steps})"
-                },
-            )
 
-        await agent.state_store.save(
-            session_id=session_id, state=state, planner=agent.planner
-        )
+        async for e in _save_and_emit_max_steps(
+            agent, session_id, state, progress
+        ):
+            yield e
 
 
 # ---------------------------------------------------------------------------
@@ -730,11 +488,11 @@ async def _run_spar_action(
     """Run the Act phase for a single plan step.
 
     Passes ``"acting"`` as the model hint for LLMRouter routing.
+    Delegates to :func:`_llm_call_and_process` for the LLM call.
 
     Returns:
         Tuple of (action_done, used_tools, paused, events).
     """
-    events: list[StreamEvent] = []
     messages.append(
         {
             "role": MessageRole.USER.value,
@@ -744,119 +502,23 @@ async def _run_spar_action(
             ),
         }
     )
-    result = await agent.llm_provider.complete(
-        messages=messages,
-        model="acting",
-        tools=agent._openai_tools,
-        tool_choice="auto",
-        temperature=0.2,
-    )
-    if result.get("usage"):
-        events.append(
-            StreamEvent(
-                event_type=EventType.TOKEN_USAGE, data=result["usage"]
-            )
-        )
-
-    if not result.get("success"):
-        messages.append(
-            {
-                "role": MessageRole.USER.value,
-                "content": f"[Error: {result.get('error')}. Try again.]",
-            }
-        )
+    async for outcome, events in _llm_call_and_process(
+        agent, messages, session_id, step,
+        state, logger, model_hint="acting",
+        plan=plan, plan_step_idx=plan_step_idx,
+        plan_iteration=plan_iteration, paused_phase="act",
+    ):
+        if outcome == "paused":
+            return False, True, True, events
+        if outcome == "tool_calls":
+            return False, True, False, events
+        if outcome == "content":
+            return True, False, False, events
+        # "error" or "empty"
         return False, False, False, events
 
-    if result.get("tool_calls"):
-        paused = False
-        async for e in _process_tool_calls(
-            agent, result["tool_calls"], session_id, step,
-            state, messages, logger,
-            plan=plan, plan_step_idx=plan_step_idx,
-            plan_iteration=plan_iteration, paused_phase="act",
-        ):
-            event_type = _ensure_event_type(e)
-            if event_type == EventType.ASK_USER:
-                paused = True
-            events.append(e)
-        return False, True, paused, events
-
-    if result.get("content"):
-        messages.append(
-            {"role": MessageRole.ASSISTANT.value, "content": result["content"]}
-        )
-        return True, False, False, events
-
-    messages.append(
-        {
-            "role": MessageRole.USER.value,
-            "content": "[Empty response. Provide answer or use tool.]",
-        }
-    )
-    return False, False, False, events
-
-
-async def _run_spar_reflection(
-    agent: Agent,
-    messages: list[dict[str, Any]],
-    desc: str,
-    session_id: str,
-    step: int,
-    state: dict[str, Any],
-    logger: LoggerProtocol,
-    plan: list[str],
-    plan_step_idx: int,
-    plan_iteration: int,
-    max_reflections: int,
-) -> tuple[bool, bool, list[StreamEvent]]:
-    """Run the Reflect phase for a single plan step."""
-    return await _run_reflection_cycle(
-        agent=agent,
-        messages=messages,
-        prompt=(
-            "REFLECT: Review the result of the last action step. "
-            "Check correctness, edge cases, tests, and security. "
-            "If more info is needed, ask_user. "
-            "If validation tools should be used, call them."
-        ),
-        session_id=session_id,
-        step=step,
-        state=state,
-        logger=logger,
-        plan=plan,
-        plan_step_idx=plan_step_idx,
-        plan_iteration=plan_iteration,
-        max_reflections=max_reflections,
-    )
-
-
-async def _run_spar_final_reflection(
-    agent: Agent,
-    messages: list[dict[str, Any]],
-    session_id: str,
-    step: int,
-    state: dict[str, Any],
-    logger: LoggerProtocol,
-    max_reflections: int,
-) -> tuple[bool, bool, list[StreamEvent]]:
-    """Run a final reflection after all steps."""
-    return await _run_reflection_cycle(
-        agent=agent,
-        messages=messages,
-        prompt=(
-            "REFLECT: Review the overall outcome for the mission. "
-            "Verify quality, tests, and completeness. "
-            "If anything is missing, ask_user or call tools to validate."
-        ),
-        session_id=session_id,
-        step=step,
-        state=state,
-        logger=logger,
-        plan=None,
-        plan_step_idx=None,
-        plan_iteration=None,
-        max_reflections=max_reflections,
-    )
+    # Should not be reached, but satisfy type checker
+    return False, False, False, []
 
 
 async def _run_reflection_cycle(
@@ -876,76 +538,32 @@ async def _run_reflection_cycle(
 
     Passes ``"reflecting"`` as the model hint so that an LLMRouter
     can route reflection calls to a strong reasoning model.
+    Delegates to :func:`_llm_call_and_process` for each LLM call.
 
     Returns:
         Tuple of (used_tools, paused, events).
     """
-    events: list[StreamEvent] = []
+    all_events: list[StreamEvent] = []
     used_tools = False
     for _ in range(max_reflections):
         messages.append(
             {"role": MessageRole.USER.value, "content": prompt}
         )
-        result = await agent.llm_provider.complete(
-            messages=messages,
-            model="reflecting",
-            tools=agent._openai_tools,
-            tool_choice="auto",
-            temperature=0.2,
-        )
-        if result.get("usage"):
-            events.append(
-                StreamEvent(
-                    event_type=EventType.TOKEN_USAGE,
-                    data=result["usage"],
-                )
-            )
+        async for outcome, events in _llm_call_and_process(
+            agent, messages, session_id, step,
+            state, logger, model_hint="reflecting",
+            plan=plan, plan_step_idx=plan_step_idx,
+            plan_iteration=plan_iteration, paused_phase="reflect",
+        ):
+            all_events.extend(events)
 
-        if not result.get("success"):
-            messages.append(
-                {
-                    "role": MessageRole.USER.value,
-                    "content": (
-                        f"[Error: {result.get('error')}. Try again.]"
-                    ),
-                }
-            )
-            continue
+            if outcome == "paused":
+                return True, True, all_events
+            if outcome == "tool_calls":
+                used_tools = True
+                continue
+            if outcome == "content":
+                return used_tools, False, all_events
+            # "error" or "empty" → continue to next reflection iteration
 
-        if result.get("tool_calls"):
-            used_tools = True
-            paused = False
-            async for e in _process_tool_calls(
-                agent, result["tool_calls"], session_id, step,
-                state, messages, logger,
-                plan=plan, plan_step_idx=plan_step_idx,
-                plan_iteration=plan_iteration,
-                paused_phase="reflect",
-            ):
-                event_type = _ensure_event_type(e)
-                if event_type == EventType.ASK_USER:
-                    paused = True
-                events.append(e)
-            if paused:
-                return used_tools, True, events
-            continue
-
-        if result.get("content"):
-            messages.append(
-                {
-                    "role": MessageRole.ASSISTANT.value,
-                    "content": result["content"],
-                }
-            )
-            return used_tools, False, events
-
-        messages.append(
-            {
-                "role": MessageRole.USER.value,
-                "content": (
-                    "[Empty response. Provide answer or use tool.]"
-                ),
-            }
-        )
-
-    return used_tools, False, events
+    return used_tools, False, all_events

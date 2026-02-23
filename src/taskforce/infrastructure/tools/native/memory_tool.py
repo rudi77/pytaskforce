@@ -4,103 +4,81 @@ from __future__ import annotations
 
 from typing import Any
 
-from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
-from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
-from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+from taskforce.infrastructure.tools.base_tool import BaseTool
 
 
-class MemoryTool(ToolProtocol):
+class MemoryTool(BaseTool):
     """Tool for managing unified memory records."""
 
+    tool_name = "memory"
+    tool_description = (
+        "Create, read, search, update, and delete memory records stored as Markdown."
+    )
+    tool_parameters_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["add", "get", "list", "search", "update", "delete"],
+                "description": "Memory action to perform",
+            },
+            "record_id": {
+                "type": "string",
+                "description": "Memory record id for get/update/delete",
+            },
+            "scope": {
+                "type": "string",
+                "enum": [scope.value for scope in MemoryScope],
+                "description": "Memory scope",
+            },
+            "kind": {
+                "type": "string",
+                "enum": [kind.value for kind in MemoryKind],
+                "description": "Memory kind",
+            },
+            "content": {"type": "string", "description": "Memory content"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "metadata": {"type": "object"},
+            "query": {"type": "string", "description": "Search query"},
+            "limit": {
+                "type": "integer",
+                "description": "Maximum results to return (default: 10)",
+            },
+        },
+        "required": ["action"],
+    }
+    tool_requires_approval = False
+    tool_supports_parallelism = False
+
     def __init__(self, store_dir: str = ".taskforce/memory") -> None:
+        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+
         self._store = FileMemoryStore(store_dir)
 
-    @property
-    def name(self) -> str:
-        return "memory"
+    async def _execute(self, **kwargs: Any) -> dict[str, Any]:
+        """Dispatch to the appropriate action handler.
 
-    @property
-    def description(self) -> str:
-        return (
-            "Create, read, search, update, and delete memory records stored as Markdown."
-        )
+        Args:
+            **kwargs: Tool parameters including ``action``.
 
-    @property
-    def parameters_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["add", "get", "list", "search", "update", "delete"],
-                    "description": "Memory action to perform",
-                },
-                "record_id": {
-                    "type": "string",
-                    "description": "Memory record id for get/update/delete",
-                },
-                "scope": {
-                    "type": "string",
-                    "enum": [scope.value for scope in MemoryScope],
-                    "description": "Memory scope",
-                },
-                "kind": {
-                    "type": "string",
-                    "enum": [kind.value for kind in MemoryKind],
-                    "description": "Memory kind",
-                },
-                "content": {"type": "string", "description": "Memory content"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "metadata": {"type": "object"},
-                "query": {"type": "string", "description": "Search query"},
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum results to return (default: 10)",
-                },
-            },
-            "required": ["action"],
-        }
-
-    @property
-    def requires_approval(self) -> bool:
-        return False
-
-    @property
-    def approval_risk_level(self) -> ApprovalRiskLevel:
-        return ApprovalRiskLevel.LOW
-
-    @property
-    def supports_parallelism(self) -> bool:
-        return False
-
-    def get_approval_preview(self, **kwargs: Any) -> str:
-        action = kwargs.get("action", "")
-        return f"Tool: {self.name}\nOperation: {action}"
-
-    async def execute(self, **kwargs: Any) -> dict[str, Any]:
+        Returns:
+            Result dictionary with memory operation outcome.
+        """
         action = kwargs.get("action")
-        try:
-            if action == "add":
-                return await self._add_record(**kwargs)
-            if action == "get":
-                return await self._get_record(**kwargs)
-            if action == "list":
-                return await self._list_records(**kwargs)
-            if action == "search":
-                return await self._search_records(**kwargs)
-            if action == "update":
-                return await self._update_record(**kwargs)
-            if action == "delete":
-                return await self._delete_record(**kwargs)
-            return {"success": False, "error": f"Unknown action: {action}"}
-        except Exception as exc:
-            tool_error = ToolError(
-                f"{self.name} failed: {exc}",
-                tool_name=self.name,
-                details={"action": action},
-            )
-            return tool_error_payload(tool_error)
+        if action == "add":
+            return await self._add_record(**kwargs)
+        if action == "get":
+            return await self._get_record(**kwargs)
+        if action == "list":
+            return await self._list_records(**kwargs)
+        if action == "search":
+            return await self._search_records(**kwargs)
+        if action == "update":
+            return await self._update_record(**kwargs)
+        if action == "delete":
+            return await self._delete_record(**kwargs)
+        return {"success": False, "error": f"Unknown action: {action}"}
 
     async def _add_record(self, **kwargs: Any) -> dict[str, Any]:
         record = self._build_record(kwargs)

@@ -7,77 +7,48 @@ Migrated from Agent V2 with full preservation of functionality.
 
 from typing import Any
 
-from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.infrastructure.tools.base_tool import BaseTool
 
 
-class AskUserTool(ToolProtocol):
+class AskUserTool(BaseTool):
     """Model-invoked prompt to request missing info from a human."""
 
-    @property
-    def name(self) -> str:
-        return "ask_user"
-
-    @property
-    def description(self) -> str:
-        return "Ask the user for missing info to proceed. Returns a structured question payload."
-
-    @property
-    def parameters_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "question": {
-                    "type": "string",
-                    "description": "One clear question to ask the user",
-                },
-                "missing": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of missing information items",
-                },
+    tool_name = "ask_user"
+    tool_description = (
+        "Ask the user for missing info to proceed. Returns a structured question payload."
+    )
+    tool_parameters_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "question": {
+                "type": "string",
+                "description": "One clear question to ask the user",
             },
-            "required": ["question"],
-        }
-
-    @property
-    def requires_approval(self) -> bool:
-        return False
-
-    @property
-    def approval_risk_level(self) -> ApprovalRiskLevel:
-        return ApprovalRiskLevel.LOW
-
-    @property
-    def supports_parallelism(self) -> bool:
-        return False
+            "missing": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of missing information items",
+            },
+        },
+        "required": ["question"],
+    }
+    tool_requires_approval = False
+    tool_supports_parallelism = False
 
     def get_approval_preview(self, **kwargs: Any) -> str:
         question = kwargs.get("question", "")
         return f"Tool: {self.name}\nOperation: Ask user\nQuestion: {question}"
 
-    async def execute(
-        self, question: str, missing: list[str] | None = None, **kwargs
+    async def _execute(
+        self, question: str = "", missing: list[str] | None = None, **kwargs: Any
     ) -> dict[str, Any]:
-        """
-        Ask the user for missing information.
+        """Ask the user for missing information.
 
         Args:
-            question: One clear question to ask the user
-            missing: Optional list of missing information items
+            question: One clear question to ask the user.
+            missing: Optional list of missing information items.
 
         Returns:
-            Dictionary with:
-            - success: True (always succeeds)
-            - question: The question to ask
-            - missing: List of missing information items
+            Dictionary with the question and missing information items.
         """
         return {"success": True, "question": question, "missing": missing or []}
-
-    def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
-        """Validate parameters before execution."""
-        if "question" not in kwargs:
-            return False, "Missing required parameter: question"
-        if not isinstance(kwargs["question"], str):
-            return False, "Parameter 'question' must be a string"
-        return True, None
-

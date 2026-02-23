@@ -28,6 +28,7 @@ from taskforce.api.dependencies import get_executor
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
+from taskforce.core.domain.models import UserContext
 from taskforce.core.domain.errors import (
     CancelledError,
     ConfigError,
@@ -193,6 +194,55 @@ def _taskforce_status_code(error: TaskforceError) -> int:
     if isinstance(error, LLMError):
         return 502
     return 500
+
+
+def _build_user_context(request: "ExecuteMissionRequest") -> UserContext | None:
+    """Extract RAG user context from request, or None if not provided."""
+    if request.user_id or request.org_id or request.scope:
+        return UserContext(
+            user_id=request.user_id,
+            org_id=request.org_id,
+            scope=request.scope,
+        )
+    return None
+
+
+def _make_sse_error(error: Exception) -> str:
+    """Build an SSE error event payload from an exception."""
+    if isinstance(error, TaskforceError):
+        details = {
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "error_code": error.code,
+            "status_code": _taskforce_status_code(error),
+        }
+    elif isinstance(error, FileNotFoundError):
+        msg = str(error)
+        code = "profile_not_found" if msg.startswith("Profile not found:") else "not_found"
+        details = {
+            "error": msg,
+            "error_type": "FileNotFoundError",
+            "error_code": code,
+            "status_code": 404,
+        }
+    elif isinstance(error, ValueError):
+        details = {
+            "error": str(error),
+            "error_type": "ValueError",
+            "status_code": 400,
+        }
+    else:
+        details = {
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "status_code": 500,
+        }
+    return json.dumps({
+        "timestamp": datetime.now(UTC).isoformat(),
+        "event_type": EventType.ERROR.value,
+        "message": f"Execution failed: {error}",
+        "details": details,
+    })
 
 
 class ExecuteMissionRequest(BaseModel):
@@ -442,17 +492,7 @@ async def execute_mission(
     - Returns HTTP 500 with error details on execution failure
     """
     try:
-        # Build user_context if any RAG parameters provided
-        user_context = None
-        if request.user_id or request.org_id or request.scope:
-            user_context = {
-                "user_id": request.user_id,
-                "org_id": request.org_id,
-                "scope": request.scope,
-            }
-
-        # Note: plugin_path resolution is now handled in AgentExecutor._create_agent
-        # when agent_id is provided. We pass agent_id and let the executor handle it.
+        user_context = _build_user_context(request)
         result = await executor.execute_mission(
             mission=request.mission,
             profile=request.profile,
@@ -526,291 +566,21 @@ async def execute_mission_stream(
 ):
     """Execute mission with streaming progress via Server-Sent Events.
 
-    Streams execution progress as SSE events for real-time UI updates.
-    Each event is a JSON-encoded `ProgressUpdate` object.
+    Streams execution progress as SSE events. Each event is a JSON-encoded
+    ProgressUpdate: ``{"timestamp", "event_type", "message", "details"}``.
 
-    **SSE Format:**
+    Event types: started, step_start, llm_token, tool_call, tool_result,
+    plan_updated, ask_user, thought, observation, final_answer, complete, error.
 
-    Each event follows the SSE standard format::
-
-        data: {"timestamp": "...", "event_type": "...", ...}
-
-        data: {"timestamp": "...", "event_type": "...", ...}
-
-    **ProgressUpdate Structure:**
-
-    All events share this base structure::
-
-        {
-            "timestamp": "2024-01-15T10:30:00.123456",
-            "event_type": "<event_type>",
-            "message": "Human-readable description",
-            "details": { ... event-specific data ... }
-        }
-
-    **Event Types:**
-
-    The following event types can be emitted during execution:
-
-    **1. started**
-
-    Emitted once at the beginning of execution::
-
-        {
-            "event_type": "started",
-            "message": "Starting mission: Search for...",
-            "details": {
-                "session_id": "550e8400-...",
-                "profile": "coding_agent",
-                "lean": true
-            }
-        }
-
-    **2. step_start**
-
-    New execution loop iteration begins::
-
-        {
-            "event_type": "step_start",
-            "message": "Step 1 starting...",
-            "details": {"step": 1}
-        }
-
-    **3. llm_token**
-
-    Real-time token from LLM response (Agent streaming only).
-    Accumulate `details.content` to build the full response::
-
-        {
-            "event_type": "llm_token",
-            "message": "The",
-            "details": {"content": "The"}
-        }
-
-    **4. tool_call**
-
-    Tool invocation starting (before execution)::
-
-        {
-            "event_type": "tool_call",
-            "message": "Calling: web_search",
-            "details": {
-                "tool": "web_search",
-                "input": {"query": "recent AI news 2024"}
-            }
-        }
-
-    **5. tool_result**
-
-    Tool execution completed (after execution).
-
-    Success::
-
-        {
-            "event_type": "tool_result",
-            "message": "web_search: Found 10 results...",
-            "details": {
-                "tool": "web_search",
-                "success": true,
-                "output": {"results": [...], "count": 10}
-            }
-        }
-
-    Failure::
-
-        {
-            "event_type": "tool_result",
-            "message": "web_search: Connection timeout",
-            "details": {
-                "tool": "web_search",
-                "success": false,
-                "error": "Connection timeout after 30s"
-            }
-        }
-
-    **6. plan_updated**
-
-    PlannerTool modified the execution plan (Agent only).
-    Possible actions: add_step, mark_complete, mark_failed, skip_step::
-
-        {
-            "event_type": "plan_updated",
-            "message": "Plan updated (add_step)",
-            "details": {
-                "action": "add_step",
-                "description": "Added step to verify results",
-                "plan_summary": "3 steps total, 1 completed"
-            }
-        }
-
-    **7. ask_user**
-
-    Agent requires human input to proceed (execution pauses).
-    The stream ends after emitting this event.
-    Resume by calling the endpoint again
-    with the same
-    `session_id` and the user's answer in `mission` (or included in
-    `conversation_history`)::
-
-        {
-            "event_type": "ask_user",
-            "message": "❓ Which org?",
-            "details": {
-                "question": "Which org?",
-                "missing": ["organization"]
-            }
-        }
-
-    **8. thought**
-
-    Agent's reasoning (legacy Agent, post-hoc streaming)::
-
-        {
-            "event_type": "thought",
-            "message": "Step 1: Searching for recent AI news",
-            "details": {
-                "rationale": "Searching for recent AI news articles",
-                "step_ref": 1,
-                "action": {"type": "tool_call", "tool": "web_search"}
-            }
-        }
-
-    **9. observation**
-
-    Action result (legacy Agent, post-hoc streaming)::
-
-        {
-            "event_type": "observation",
-            "message": "Step 1: success",
-            "details": {"success": true, "data": {...}}
-        }
-
-    **10. final_answer**
-
-    Agent completed with final response::
-
-        {
-            "event_type": "final_answer",
-            "message": "Based on my research...",
-            "details": {"content": "Based on my research..."}
-        }
-
-    **11. complete**
-
-    Execution finished (final event)::
-
-        {
-            "event_type": "complete",
-            "message": "Mission completed successfully.",
-            "details": {
-                "status": "completed",
-                "session_id": "550e8400-...",
-                "todolist_id": "plan-abc123"
-            }
-        }
-
-    **12. error**
-
-    Error occurred during execution::
-
-        {
-            "event_type": "error",
-            "message": "Error: Rate limit exceeded",
-            "details": {
-                "error": "Rate limit exceeded",
-                "error_type": "RateLimitError"
-            }
-        }
-
-    **Event Sequence Examples:**
-
-    Successful Agent execution::
+    Typical sequence::
 
         started -> step_start -> tool_call -> tool_result
                 -> step_start -> llm_token* -> final_answer -> complete
 
-    Legacy Agent execution::
-
-        started -> thought -> observation -> thought
-                -> observation -> complete
-
-    Execution with error::
-
-        started -> step_start -> tool_call
-                -> tool_result(success=false) -> error
-
-    **Client Integration (JavaScript):**
-
-    EventSource doesn't support POST, use fetch with ReadableStream::
-
-        const response = await fetch('/api/v1/execute/stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: 'Find AI news' })
-        });
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            for (const line of chunk.split('\\n\\n')) {
-                if (line.startsWith('data: ')) {
-                    const event = JSON.parse(line.slice(6));
-                    console.log(event.event_type, event.message);
-
-                    switch (event.event_type) {
-                        case 'started': showSpinner(); break;
-                        case 'tool_call':
-                            showToolProgress(event.details.tool);
-                            break;
-                        case 'llm_token':
-                            appendToResponse(event.details.content);
-                            break;
-                        case 'complete':
-                        case 'final_answer':
-                            hideSpinner();
-                            break;
-                        case 'error':
-                            showError(event.details.error);
-                            break;
-                    }
-                }
-            }
-        }
-
-    **Client Integration (Python):**
-
-    Using httpx for async streaming::
-
-        import httpx
-        import json
-
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                'POST',
-                'http://localhost:8000/api/v1/execute/stream',
-                json={'mission': 'Find AI news'}
-            ) as response:
-                async for line in response.aiter_lines():
-                    if line.startswith('data: '):
-                        event = json.loads(line[6:])
-                        print(f"[{event['event_type']}] {event['message']}")
+    See ``docs/api.md`` for full SSE event reference and client examples.
     """
-    # Build user_context if any RAG parameters provided
-    user_context = None
-    if request.user_id or request.org_id or request.scope:
-        user_context = {
-            "user_id": request.user_id,
-            "org_id": request.org_id,
-            "scope": request.scope,
-        }
+    user_context = _build_user_context(request)
 
-    # Note: plugin_path resolution is now handled in AgentExecutor._create_agent
-    # when agent_id is provided. We pass agent_id and let the executor handle it.
     async def event_generator():
         try:
             async for update in executor.execute_mission_streaming(
@@ -822,11 +592,9 @@ async def execute_mission_stream(
                 agent_id=request.agent_id,
                 planning_strategy=request.planning_strategy,
                 planning_strategy_params=request.planning_strategy_params,
-                plugin_path=None,  # Plugin resolution handled in executor via agent_id
+                plugin_path=None,
                 auto_epic=request.auto_epic,
             ):
-                # Serialize dataclass to JSON, handling datetime
-                # Log final_answer events for debugging
                 if update.event_type == EventType.FINAL_ANSWER.value:
                     _stream_logger.info(
                         "api.final_answer_event",
@@ -836,84 +604,8 @@ async def execute_mission_stream(
                     )
                 data = json.dumps(asdict(update), default=str)
                 yield f"data: {data}\n\n"
-        except TaskforceError as e:
-            # Structured Taskforce errors (LLMError, ToolError, etc.)
-            error_data = json.dumps(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "event_type": EventType.ERROR.value,
-                    "message": f"Execution failed: {e}",
-                    "details": {
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                        "error_code": e.code,
-                        "status_code": _taskforce_status_code(e),
-                    },
-                }
-            )
-            yield f"data: {error_data}\n\n"
-        except FileNotFoundError as e:
-            msg = str(e)
-            # Distinguish profile not found from agent not found
-            if msg.startswith("Profile not found:"):
-                error_data = json.dumps(
-                    {
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "event_type": EventType.ERROR.value,
-                        "message": f"Profile not found: {msg}",
-                        "details": {
-                            "error": msg,
-                            "error_type": "FileNotFoundError",
-                            "error_code": "profile_not_found",
-                            "status_code": 404,
-                        },
-                    }
-                )
-            else:
-                # agent_id not found -> send error event
-                error_data = json.dumps(
-                    {
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "event_type": EventType.ERROR.value,
-                        "message": f"Agent not found: {msg}",
-                        "details": {
-                            "error": msg,
-                            "error_type": "FileNotFoundError",
-                            "status_code": 404,
-                        },
-                    }
-                )
-            yield f"data: {error_data}\n\n"
-        except ValueError as e:
-            # Invalid agent definition -> send error event
-            error_data = json.dumps(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "event_type": EventType.ERROR.value,
-                    "message": f"Invalid agent definition: {str(e)}",
-                    "details": {
-                        "error": str(e),
-                        "error_type": "ValueError",
-                        "status_code": 400,
-                    },
-                }
-            )
-            yield f"data: {error_data}\n\n"
         except Exception as e:
-            # Other errors -> send error event
-            error_data = json.dumps(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "event_type": EventType.ERROR.value,
-                    "message": f"Execution failed: {str(e)}",
-                    "details": {
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                        "status_code": 500,
-                    },
-                }
-            )
-            yield f"data: {error_data}\n\n"
+            yield f"data: {_make_sse_error(e)}\n\n"
 
     return StreamingResponse(
         event_generator(),
