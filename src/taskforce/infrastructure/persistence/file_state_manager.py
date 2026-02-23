@@ -67,7 +67,8 @@ class FileStateManager(StateManagerProtocol):
         self.work_dir = Path(work_dir)
         self.states_dir = self.work_dir / "states"
         self.states_dir.mkdir(parents=True, exist_ok=True)
-        self.locks: dict[str, asyncio.Lock] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()
         self.logger = structlog.get_logger()
         self._time_provider = time_provider or datetime.now
 
@@ -144,9 +145,10 @@ class FileStateManager(StateManagerProtocol):
             state_file.unlink()
         temp_file.rename(state_file)
 
-    def _get_lock(self, session_id: str) -> asyncio.Lock:
-        """
-        Get or create a lock for a session.
+    async def _get_lock(self, session_id: str) -> asyncio.Lock:
+        """Get or create a lock for a session.
+
+        Thread-safe: uses a master lock to protect the lock dict.
 
         Args:
             session_id: Session identifier
@@ -154,9 +156,10 @@ class FileStateManager(StateManagerProtocol):
         Returns:
             asyncio.Lock instance for the session
         """
-        if session_id not in self.locks:
-            self.locks[session_id] = asyncio.Lock()
-        return self.locks[session_id]
+        async with self._locks_lock:
+            if session_id not in self._locks:
+                self._locks[session_id] = asyncio.Lock()
+            return self._locks[session_id]
 
     async def save_state(self, session_id: str, state_data: dict[str, Any]) -> bool:
         """
@@ -175,7 +178,7 @@ class FileStateManager(StateManagerProtocol):
         Returns:
             True if state was saved successfully, False otherwise
         """
-        async with self._get_lock(session_id):
+        async with await self._get_lock(session_id):
             state_file = self.states_dir / f"{session_id}.json"
             temp_file = self.states_dir / f"{session_id}.json.tmp"
 
@@ -261,8 +264,8 @@ class FileStateManager(StateManagerProtocol):
             )
             return
 
-        if session_id in self.locks:
-            del self.locks[session_id]
+        if session_id in self._locks:
+            del self._locks[session_id]
 
     async def list_sessions(self) -> list[str]:
         """

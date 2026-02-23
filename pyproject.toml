@@ -39,17 +39,12 @@ dependencies = [
     # CLI
     "typer>=0.9.0",
     "rich>=13.0.0",
-    "textual>=7.0.0",
     # Web API
     "fastapi>=0.116.1",
     "uvicorn>=0.25",
     # Data validation
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    # Database
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
-    "asyncpg>=0.29",
     # Async I/O
     "aiofiles>=23.2.1",
     "aiohttp>=3.9",
@@ -57,15 +52,8 @@ dependencies = [
     "pyyaml>=6.0",
     # Logging
     "structlog>=24.2.0",
-    # Azure AI Search (RAG)
-    "azure-search-documents>=11.6.0",
     # MCP integration
     "mcp>=1.0.0",
-    # Clipboard
-    "pyperclip>=1.8.2",
-    # Tracing (Arize Phoenix)
-    "arize-phoenix-otel>=0.6.0",
-    "openinference-instrumentation-litellm>=0.1.0",
 ]
 
 [project.urls]
@@ -110,6 +98,15 @@ pdf = [
     "pdf2image>=1.16.0",
     "reportlab>=4.0.0",
     "pillow>=10.0.0",
+]
+postgres = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+]
+tracing = [
+    "arize-phoenix-otel>=0.6.0",
+    "openinference-instrumentation-litellm>=0.1.0",
 ]
 build = [
     "build>=1.0.0",

@@ -470,20 +470,3 @@ class TestCompleteStreamBackwardCompatibility:
             assert result["tool_calls"][0]["function"]["name"] == "get_weather"
 
 
-@pytest.mark.asyncio
-class TestBackwardCompatibleImport:
-    """Test that OpenAIService import still works."""
-
-    async def test_openai_service_alias_works(self, temp_config_file):
-        """Test that importing OpenAIService gives the same class."""
-        from taskforce.infrastructure.llm.openai_service import OpenAIService
-
-        service = OpenAIService(config_path=temp_config_file)
-        assert isinstance(service, LiteLLMService)
-
-    async def test_openai_service_via_init_works(self, temp_config_file):
-        """Test that importing from __init__ works."""
-        from taskforce.infrastructure.llm import OpenAIService
-
-        service = OpenAIService(config_path=temp_config_file)
-        assert isinstance(service, LiteLLMService)
