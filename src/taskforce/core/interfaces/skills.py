@@ -170,8 +170,7 @@ class SkillProtocol(Protocol):
 
 
 class SkillRegistryProtocol(Protocol):
-    """
-    Protocol for skill discovery and management.
+    """Protocol for skill discovery and management.
 
     Implementations are responsible for:
     - Discovering skills from configured locations
@@ -179,6 +178,13 @@ class SkillRegistryProtocol(Protocol):
     - Providing full skills on demand
     - Managing skill lifecycle
     - Resolving skills by slash name
+
+    .. note::
+        Methods in this protocol are currently **synchronous** because the
+        underlying ``FileSkillRegistry`` reads from the local filesystem
+        using synchronous I/O.  If a future implementation needs network
+        or database access, these methods should be migrated to ``async``
+        (see hexagonal architecture review, finding #10).
     """
 
     def discover_skills(self) -> list[SkillMetadataModel]:

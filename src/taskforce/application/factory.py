@@ -98,6 +98,19 @@ class AgentFactory:
         self.profile_loader = ProfileLoader(self.config_dir)
         self.prompt_assembler = SystemPromptAssembler()
         self._tool_builder = ToolBuilder(self)
+        self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
+
+    @property
+    def infra_builder(self) -> Any:
+        """Cached ``InfrastructureBuilder`` instance.
+
+        Lazily created on first access to avoid import-time overhead.
+        """
+        if self._infra_builder is None:
+            from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+            self._infra_builder = InfrastructureBuilder(self.config_dir)
+        return self._infra_builder
 
     @staticmethod
     def _resolve_config_dir(config_dir: str | None) -> Path:
@@ -208,10 +221,7 @@ class AgentFactory:
         if base_config_override:
             return base_config_override
 
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        infra_builder = InfrastructureBuilder(self.config_dir)
-        return infra_builder.load_profile_safe(definition.base_profile)
+        return self.infra_builder.load_profile_safe(definition.base_profile)
 
     def _build_infrastructure(
         self,
@@ -224,15 +234,13 @@ class AgentFactory:
             Dict with keys: state_manager, llm_provider, context_policy,
             runtime_tracker, mcp_contexts (populated later).
         """
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        infra_builder = InfrastructureBuilder(self.config_dir)
+        ib = self.infra_builder
         return {
-            "state_manager": infra_builder.build_state_manager(
+            "state_manager": ib.build_state_manager(
                 base_config, work_dir_override=definition.work_dir
             ),
-            "llm_provider": infra_builder.build_llm_provider(base_config),
-            "context_policy": infra_builder.build_context_policy(base_config),
+            "llm_provider": ib.build_llm_provider(base_config),
+            "context_policy": ib.build_context_policy(base_config),
             "runtime_tracker": self._create_runtime_tracker(
                 base_config, work_dir_override=definition.work_dir
             ),
@@ -248,11 +256,10 @@ class AgentFactory:
         user_context: dict[str, Any] | None,
     ) -> list[ToolProtocol]:
         """Collect all tools (native, plugin, MCP, sub-agent) for a definition."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
         from taskforce.application.tool_registry import ToolRegistry
         from taskforce.core.domain.agent_definition import AgentSource
 
-        infra_builder = InfrastructureBuilder(self.config_dir)
+        infra_builder = self.infra_builder
         llm_provider = infra["llm_provider"]
 
         mcp_tools, mcp_contexts = await infra_builder.build_mcp_tools(
@@ -714,7 +721,6 @@ class AgentFactory:
         specialist: str | None = None,
     ) -> Agent:
         """Create Agent from inline parameters."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
         from taskforce.application.tool_registry import ToolRegistry
         from taskforce.core.domain.agent_definition import MCPServerConfig
 
@@ -747,12 +753,12 @@ class AgentFactory:
         }
 
         # Build infrastructure
-        infra_builder = InfrastructureBuilder(self.config_dir)
+        ib = self.infra_builder
         infra: dict[str, Any] = {
-            "state_manager": infra_builder.build_state_manager(
+            "state_manager": ib.build_state_manager(
                 merged_config, work_dir_override=work_dir
             ),
-            "llm_provider": infra_builder.build_llm_provider(merged_config),
+            "llm_provider": ib.build_llm_provider(merged_config),
             "context_policy": self._create_context_policy(merged_config),
             "runtime_tracker": self._create_runtime_tracker(
                 merged_config, work_dir_override=work_dir
@@ -762,7 +768,7 @@ class AgentFactory:
 
         # Collect tools
         llm_provider = infra["llm_provider"]
-        mcp_tools_list, mcp_contexts = await infra_builder.build_mcp_tools(
+        mcp_tools_list, mcp_contexts = await self.infra_builder.build_mcp_tools(
             [MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
             tool_filter=None,
         )
@@ -1041,9 +1047,7 @@ class AgentFactory:
 
     def _create_state_manager(self, config: dict[str, Any]) -> StateManagerProtocol:
         """Create state manager based on configuration."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        return InfrastructureBuilder(self.config_dir).build_state_manager(config)
+        return self.infra_builder.build_state_manager(config)
 
     def _create_runtime_tracker(
         self,
@@ -1051,14 +1055,8 @@ class AgentFactory:
         work_dir_override: str | None = None,
     ) -> AgentRuntimeTrackerProtocol | None:
         """Create runtime tracker based on configuration."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        return InfrastructureBuilder(self.config_dir).build_runtime_tracker(
-            config, work_dir_override
-        )
+        return self.infra_builder.build_runtime_tracker(config, work_dir_override)
 
     def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        return InfrastructureBuilder(self.config_dir).build_llm_provider(config)
+        return self.infra_builder.build_llm_provider(config)

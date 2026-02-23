@@ -14,13 +14,17 @@ from taskforce.core.domain.skill_workflow import (
     SkillWorkflowExecutor,
     WorkflowContext,
 )
+from taskforce.infrastructure.tools.base_tool import BaseTool
 
 logger = structlog.get_logger(__name__)
 
 
-class ActivateSkillTool:
-    """
-    Tool that activates a skill and optionally executes its workflow.
+class ActivateSkillTool(BaseTool):
+    """Tool that activates a skill and optionally executes its workflow.
+
+    Inherits from ``BaseTool`` to get default implementations for
+    ``requires_approval``, ``approval_risk_level``, ``supports_parallelism``,
+    ``get_approval_preview``, and ``validate_params``.
 
     When a skill with a workflow is activated:
     - The workflow is executed directly (no LLM calls per step)
@@ -32,43 +36,43 @@ class ActivateSkillTool:
     - The LLM continues with the next steps
     """
 
-    @property
-    def name(self) -> str:
-        return "activate_skill"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Activate a skill by name to execute its COMPLETE workflow automatically. "
-            "IMPORTANT: The workflow runs ALL steps without further LLM interaction. "
-            "For invoice processing, use skill_name='smart-booking-auto' with "
-            "input={'file_path': '<path to PDF>'}. The workflow handles extraction, "
-            "compliance check, accounting rules, and confidence evaluation automatically."
-        )
-
-    @property
-    def parameters_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "skill_name": {
-                    "type": "string",
-                    "description": "Name of the skill to activate. Use 'smart-booking-auto' for invoice processing.",
-                },
-                "input": {
-                    "type": "object",
-                    "description": "Input variables for the workflow. For invoices: {'file_path': '<path to PDF>'}",
-                    "additionalProperties": True,
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "Path to the invoice file (PDF or image)"
-                        }
+    tool_name = "activate_skill"
+    tool_description = (
+        "Activate a skill by name to execute its COMPLETE workflow automatically. "
+        "IMPORTANT: The workflow runs ALL steps without further LLM interaction. "
+        "For invoice processing, use skill_name='smart-booking-auto' with "
+        "input={'file_path': '<path to PDF>'}. The workflow handles extraction, "
+        "compliance check, accounting rules, and confidence evaluation automatically."
+    )
+    tool_parameters_schema = {
+        "type": "object",
+        "properties": {
+            "skill_name": {
+                "type": "string",
+                "description": (
+                    "Name of the skill to activate. "
+                    "Use 'smart-booking-auto' for invoice processing."
+                ),
+            },
+            "input": {
+                "type": "object",
+                "description": (
+                    "Input variables for the workflow. "
+                    "For invoices: {'file_path': '<path to PDF>'}"
+                ),
+                "additionalProperties": True,
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the invoice file (PDF or image)",
                     }
                 },
             },
-            "required": ["skill_name", "input"],
-        }
+        },
+        "required": ["skill_name", "input"],
+    }
+    tool_requires_approval = False
+    tool_supports_parallelism = False
 
     def __init__(self, agent_ref: Any = None):
         """Initialize with optional agent reference.
@@ -87,7 +91,7 @@ class ActivateSkillTool:
         """
         self._agent_ref = agent
 
-    async def execute(self, **params: Any) -> dict[str, Any]:
+    async def _execute(self, **params: Any) -> dict[str, Any]:
         """Execute skill activation and workflow.
 
         Args:
@@ -105,14 +109,14 @@ class ActivateSkillTool:
                 "success": False,
                 "error": "Missing required parameter 'skill_name'. "
                 "Example: activate_skill(skill_name='smart-booking-auto', "
-                "input={'file_path': '/path/to/invoice.pdf'})"
+                "input={'file_path': '/path/to/invoice.pdf'})",
             }
 
         if not input_vars:
             return {
                 "success": False,
                 "error": f"Missing required parameter 'input' for skill '{skill_name}'. "
-                "For invoice processing, provide: input={'file_path': '<path to PDF>'}"
+                "For invoice processing, provide: input={'file_path': '<path to PDF>'}",
             }
 
         if not self._agent_ref:
@@ -225,7 +229,10 @@ class ActivateSkillTool:
 
         # Add clear message for auto-book case
         if result.get("recommendation") == "auto_book" and result.get("workflow_completed"):
-            result["message"] = "AUTO_BOOK: Buchung kann automatisch durchgeführt werden (bekannte Regel mit hoher Confidence)"
+            result["message"] = (
+                "AUTO_BOOK: Buchung kann automatisch durchgeführt werden "
+                "(bekannte Regel mit hoher Confidence)"
+            )
 
         return result
 
@@ -272,11 +279,13 @@ class ActivateSkillTool:
 
     def _on_step_complete(self, tool_name: str, result: Any) -> None:
         """Callback when a workflow step completes."""
-        self._workflow_results.append({
-            "tool": tool_name,
-            "success": result.get("success", True) if isinstance(result, dict) else True,
-            "result_summary": self._summarize_result(result),
-        })
+        self._workflow_results.append(
+            {
+                "tool": tool_name,
+                "success": result.get("success", True) if isinstance(result, dict) else True,
+                "result_summary": self._summarize_result(result),
+            }
+        )
 
     def _on_switch_skill(self, skill_name: str, context: WorkflowContext) -> None:
         """Callback when workflow switches to another skill."""
@@ -295,7 +304,3 @@ class ActivateSkillTool:
                 return "Success" if result["success"] else "Failed"
             return f"Keys: {', '.join(list(result.keys())[:5])}"
         return str(result)[:100]
-
-    def validate_parameters(self, params: dict[str, Any]) -> bool:
-        """Validate that skill_name is provided."""
-        return bool(params.get("skill_name"))

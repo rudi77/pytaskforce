@@ -105,6 +105,36 @@ class TokenUsage:
     completion_tokens: int = 0
     total_tokens: int = 0
 
+    def exceeds_budget(self, limit: int) -> bool:
+        """Check whether total token usage exceeds a budget limit.
+
+        Args:
+            limit: Maximum allowed total tokens.
+
+        Returns:
+            True if ``total_tokens`` exceeds *limit*.
+        """
+        return self.total_tokens > limit
+
+    def remaining(self, budget: int) -> int:
+        """Return the number of tokens remaining within a budget.
+
+        Args:
+            budget: Total token budget.
+
+        Returns:
+            Non-negative remaining tokens (clamped to 0).
+        """
+        return max(0, budget - self.total_tokens)
+
+    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+        """Combine two TokenUsage instances (e.g. across multiple LLM calls)."""
+        return TokenUsage(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+        )
+
     def to_dict(self) -> dict[str, int]:
         """Convert to dictionary."""
         return {
