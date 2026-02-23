@@ -44,7 +44,7 @@ def _set_mcp_contexts(agent: Agent, mcp_contexts: list[Any]) -> None:
     Uses setattr to avoid mypy errors since _mcp_contexts is a
     dynamic attribute consumed via getattr in LeanAgent.close().
     """
-    setattr(agent, "_mcp_contexts", mcp_contexts)
+    agent._mcp_contexts = mcp_contexts
 
 
 def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
@@ -53,7 +53,7 @@ def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
     Uses setattr to avoid mypy errors since _plugin_manifest is a
     dynamic attribute consumed via getattr in CLI commands.
     """
-    setattr(agent, "_plugin_manifest", manifest)
+    agent._plugin_manifest = manifest
 
 
 # Type for factory extension callbacks
@@ -667,7 +667,7 @@ class AgentFactory:
     async def _load_yaml_config(self, path: Path) -> dict[str, Any]:
         """Load and parse a YAML config file asynchronously."""
         try:
-            async with aiofiles.open(path, mode="r") as f:
+            async with aiofiles.open(path) as f:
                 content = await f.read()
             config = yaml.safe_load(content)
         except yaml.YAMLError as e:
@@ -1051,38 +1051,11 @@ class AgentFactory:
         work_dir_override: str | None = None,
     ) -> AgentRuntimeTrackerProtocol | None:
         """Create runtime tracker based on configuration."""
-        runtime_config = config.get("runtime", {})
-        if not runtime_config.get("enabled", False):
-            return None
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-        runtime_work_dir = (
-            runtime_config.get("work_dir")
-            or work_dir_override
-            or config.get("persistence", {}).get("work_dir", ".taskforce")
+        return InfrastructureBuilder(self.config_dir).build_runtime_tracker(
+            config, work_dir_override
         )
-        store_type = runtime_config.get("store", "file")
-
-        if store_type == "memory":
-            from taskforce_extensions.infrastructure.runtime import (
-                AgentRuntimeTracker,
-                InMemoryCheckpointStore,
-                InMemoryHeartbeatStore,
-            )
-            return AgentRuntimeTracker(
-                heartbeat_store=InMemoryHeartbeatStore(),
-                checkpoint_store=InMemoryCheckpointStore(),
-            )
-        if store_type == "file":
-            from taskforce_extensions.infrastructure.runtime import (
-                AgentRuntimeTracker,
-                FileCheckpointStore,
-                FileHeartbeatStore,
-            )
-            return AgentRuntimeTracker(
-                heartbeat_store=FileHeartbeatStore(runtime_work_dir),
-                checkpoint_store=FileCheckpointStore(runtime_work_dir),
-            )
-        raise ValueError(f"Unknown runtime store type: {store_type}")
 
     def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""

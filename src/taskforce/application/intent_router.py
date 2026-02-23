@@ -20,12 +20,13 @@ Performance:
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -159,7 +160,8 @@ class FastIntentRouter:
             ]
 
         logger.debug(
-            f"FastIntentRouter initialized with {len(self._patterns)} intent patterns"
+            "intent_router.initialized",
+            pattern_count=len(self._patterns),
         )
 
     def _parse_custom_patterns(
@@ -220,7 +222,7 @@ class FastIntentRouter:
                     )
 
         if not matches:
-            logger.debug(f"No intent match for message: {message[:50]}...")
+            logger.debug("intent.no_match", message_prefix=message[:50])
             return None
 
         # Sort by confidence descending
@@ -232,15 +234,20 @@ class FastIntentRouter:
             second_confidence = matches[1].confidence
             if abs(top_confidence - second_confidence) < 0.15:
                 logger.debug(
-                    f"Ambiguous intent: {matches[0].intent} ({top_confidence:.2f}) "
-                    f"vs {matches[1].intent} ({second_confidence:.2f})"
+                    "intent.ambiguous",
+                    intent_a=matches[0].intent,
+                    confidence_a=round(top_confidence, 2),
+                    intent_b=matches[1].intent,
+                    confidence_b=round(second_confidence, 2),
                 )
                 return None
 
         best_match = matches[0]
         logger.info(
-            f"Intent classified: {best_match.intent} "
-            f"(confidence={best_match.confidence:.2f}, skill={best_match.skill_name})"
+            "intent.classified",
+            intent=best_match.intent,
+            confidence=round(best_match.confidence, 2),
+            skill_name=best_match.skill_name,
         )
         return best_match
 

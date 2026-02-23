@@ -649,13 +649,14 @@ class AgentDefinitionInput:
 
     def to_definition(self) -> AgentDefinition:
         """Convert input to a full AgentDefinition."""
+        servers: list[dict[str, Any] | MCPServerConfig] = list(self.mcp_servers)
         return AgentDefinition.from_custom(
             agent_id=self.agent_id,
             name=self.name,
             description=self.description,
             system_prompt=self.system_prompt,
             tools=self.tools,
-            mcp_servers=self.mcp_servers,
+            mcp_servers=servers,
             mcp_tool_filter=self.mcp_tool_filter,
             base_profile=self.base_profile,
         )

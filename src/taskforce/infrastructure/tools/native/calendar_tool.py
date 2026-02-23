@@ -120,10 +120,10 @@ class CalendarTool:
                 ),
             }
 
-        action = kwargs.get("action")
+        action = kwargs.pop("action", None)
         try:
             service = self._build_service(build, Credentials)
-            calendar_id = kwargs.get("calendar_id", "primary")
+            calendar_id = kwargs.pop("calendar_id", "primary")
 
             if action == "list":
                 return await self._list_events(service, calendar_id, **kwargs)

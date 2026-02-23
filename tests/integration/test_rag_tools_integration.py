@@ -186,7 +186,7 @@ async def test_error_handling_invalid_index():
 @pytest.mark.asyncio
 async def test_comparison_with_agent_v2():
     """Test that Taskforce RAG tools produce similar results to Agent V2.
-    
+
     This test verifies Integration Verification requirement IV2:
     Taskforce RAG tools produce identical search results for identical queries.
     """

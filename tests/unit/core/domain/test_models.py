@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.models import (
     ExecutionResult,

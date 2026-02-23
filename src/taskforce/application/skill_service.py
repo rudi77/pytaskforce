@@ -18,8 +18,9 @@ Note:
     global skill discovery and browsing is needed.
 """
 
-import logging
 from typing import Any
+
+import structlog
 
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillContext, SkillMetadataModel
@@ -28,7 +29,7 @@ from taskforce.infrastructure.skills.skill_registry import (
     create_skill_registry,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class SkillService:
@@ -86,7 +87,7 @@ class SkillService:
     def refresh(self) -> None:
         """Refresh skill discovery from all directories."""
         self._registry.refresh()
-        logger.info(f"Refreshed skills, found {self._registry.get_skill_count()}")
+        logger.info("skill.registry_refreshed", skill_count=self._registry.get_skill_count())
 
     def list_skills(self) -> list[str]:
         """
@@ -221,11 +222,11 @@ class SkillService:
         """
         skill = self._registry.get_skill(name)
         if not skill:
-            logger.warning(f"Cannot activate skill '{name}': not found")
+            logger.warning("skill.activation_failed", skill_name=name, reason="not found")
             return False
 
         self._context.activate_skill(skill)
-        logger.info(f"Activated skill: {name}")
+        logger.info("skill.activated", skill_name=name)
         return True
 
     def deactivate_skill(self, name: str) -> None:
@@ -236,7 +237,7 @@ class SkillService:
             name: Skill identifier
         """
         self._context.deactivate_skill(name)
-        logger.debug(f"Deactivated skill: {name}")
+        logger.debug("skill.deactivated", skill_name=name)
 
     def get_active_skills(self) -> list[Skill]:
         """
@@ -271,7 +272,7 @@ class SkillService:
     def clear_active_skills(self) -> None:
         """Deactivate all skills."""
         self._context.clear()
-        logger.debug("Cleared all active skills")
+        logger.debug("skill.all_deactivated")
 
     def get_skill_prompt_section(self) -> str:
         """

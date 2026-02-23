@@ -211,7 +211,7 @@ class FileToolResultStore:
             self.logger.debug("tool_result_fetched", handle_id=handle.id)
             return result
 
-        except Exception as e:
+        except (OSError, FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError) as e:
             self.logger.error(
                 "tool_result_fetch_failed",
                 handle_id=handle.id,
@@ -331,7 +331,7 @@ class FileToolResultStore:
                     if await self.delete(handle):
                         count += 1
 
-            except Exception as e:
+            except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
                 self.logger.warning(
                     "cleanup_handle_failed",
                     handle_path=str(handle_path),
@@ -375,7 +375,7 @@ class FileToolResultStore:
                 ) as f:
                     handle_data = json.loads(await f.read())
                     timestamps.append(handle_data.get("created_at", ""))
-            except Exception:
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
                 pass
 
         timestamps.sort()

@@ -335,9 +335,8 @@ class Agent:
 
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
-        async for event in self.planning_strategy.execute_stream(
-            self, mission, session_id
-        ):
+        stream = self.planning_strategy.execute_stream(self, mission, session_id)
+        async for event in stream:  # type: ignore[union-attr]
             yield event
             # Track final answer content for COMPLETE event
             if event.event_type == EventType.FINAL_ANSWER:
@@ -440,7 +439,7 @@ class Agent:
         if not self.skill_manager:
             return self._base_system_prompt
 
-        return self.skill_manager.enhance_prompt(self._base_system_prompt)
+        return str(self.skill_manager.enhance_prompt(self._base_system_prompt))
 
     def activate_skill_by_intent(self, intent: str) -> bool:
         """
@@ -491,7 +490,8 @@ class Agent:
         """Get the name of the currently active skill."""
         if not self.skill_manager:
             return None
-        return self.skill_manager.active_skill_name
+        name: str | None = self.skill_manager.active_skill_name
+        return name
 
     async def _save_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Save state including PlannerTool state."""

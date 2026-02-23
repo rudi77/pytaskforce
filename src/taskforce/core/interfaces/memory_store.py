@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from typing import Protocol
 
 from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
@@ -32,7 +33,7 @@ class MemoryStoreProtocol(Protocol):
         scope: MemoryScope | None = None,
         kind: MemoryKind | None = None,
         limit: int = 10,
-    ) -> list[MemoryRecord]:
+    ) -> builtins.list[MemoryRecord]:
         """Search memory records by query."""
         ...
 

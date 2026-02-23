@@ -142,7 +142,7 @@ class DefaultTenant:
     This provides a minimal tenant context for single-tenant mode.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tenant_id = "default"
         self.name = "Default Tenant"
         self._settings: dict[str, Any] = {

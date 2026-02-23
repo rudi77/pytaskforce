@@ -18,8 +18,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from taskforce.application.skill_manager import (
     SkillConfig,
     SkillManager,
@@ -29,7 +27,6 @@ from taskforce.application.skill_manager import (
 )
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -7,7 +7,6 @@ prompt preparation, and singleton management.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +18,6 @@ from taskforce.application.skill_service import (
 )
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
-
 
 # ---------------------------------------------------------------------------
 # Helpers

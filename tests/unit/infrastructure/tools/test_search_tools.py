@@ -10,7 +10,6 @@ import pytest
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.native.search_tools import GlobTool, GrepTool
 
-
 # ---------------------------------------------------------------------------
 # GrepTool tests
 # ---------------------------------------------------------------------------

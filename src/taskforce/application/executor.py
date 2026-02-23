@@ -34,7 +34,6 @@ from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.epic import TaskComplexity
 from taskforce.core.domain.errors import (
     CancelledError,
-    ConfigError,
     NotFoundError,
     TaskforceError,
     ValidationError,

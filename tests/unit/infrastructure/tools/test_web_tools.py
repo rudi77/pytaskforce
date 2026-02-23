@@ -12,7 +12,6 @@ import pytest
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.native.web_tools import WebFetchTool, WebSearchTool
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

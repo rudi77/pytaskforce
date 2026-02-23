@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from taskforce.api.dependencies import get_executor
 from taskforce.api.schemas.agent_schemas import CustomAgentResponse
 from taskforce.api.server import create_app
-from taskforce.core.domain.models import ExecutionResult
+from taskforce.core.domain.models import ExecutionResult, UserContext
 
 
 @pytest.fixture
@@ -317,8 +317,8 @@ def test_execute_with_agent_id_and_user_context(app, client, mock_custom_agent):
     # Verify user_context was passed
     call_kwargs = mock_executor.execute_mission.call_args.kwargs
     assert call_kwargs["agent_id"] == "invoice-extractor"
-    assert call_kwargs["user_context"] == {
-        "user_id": "user123",
-        "org_id": "org456",
-        "scope": "private",
-    }
+    assert call_kwargs["user_context"] == UserContext(
+        user_id="user123",
+        org_id="org456",
+        scope="private",
+    )

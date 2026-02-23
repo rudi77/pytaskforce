@@ -57,7 +57,7 @@ class ToolResultMessageFactory:
         *,
         tool_result_store: ToolResultStoreProtocol | None,
         result_store_threshold: int,
-        logger: structlog.stdlib.BoundLogger,
+        logger: LoggerProtocol | structlog.stdlib.BoundLogger,
     ) -> None:
         self._tool_result_store = tool_result_store
         self._result_store_threshold = result_store_threshold

@@ -133,11 +133,11 @@ class ButlerDaemon:
         try:
             from taskforce.application.executor import AgentExecutor
             from taskforce.application.gateway import CommunicationGateway
-            from taskforce_extensions.infrastructure.communication.gateway_registry import (
-                build_gateway_components,
-            )
+            from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-            components = build_gateway_components(work_dir=self._work_dir)
+            components = InfrastructureBuilder().build_gateway_components(
+                work_dir=self._work_dir
+            )
             if components.outbound_senders:
                 executor = AgentExecutor()
                 gateway = CommunicationGateway(
@@ -180,11 +180,9 @@ class ButlerDaemon:
 
             if source_type == "calendar":
                 try:
-                    from taskforce.infrastructure.event_sources.calendar_source import (
-                        CalendarEventSource,
-                    )
+                    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-                    cal_source = CalendarEventSource(
+                    cal_source = InfrastructureBuilder().build_calendar_event_source(
                         poll_interval_seconds=source_cfg.get("poll_interval_minutes", 5) * 60,
                         lookahead_minutes=source_cfg.get("lookahead_minutes", 60),
                         calendar_id=source_cfg.get("calendar_id", "primary"),
@@ -197,11 +195,9 @@ class ButlerDaemon:
 
             elif source_type == "webhook":
                 try:
-                    from taskforce.infrastructure.event_sources.webhook_source import (
-                        WebhookEventSource,
-                    )
+                    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-                    webhook_source = WebhookEventSource()
+                    webhook_source = InfrastructureBuilder().build_webhook_event_source()
                     self._butler.add_event_source(webhook_source)
                     logger.info("butler_daemon.webhook_source_added")
                 except Exception as exc:

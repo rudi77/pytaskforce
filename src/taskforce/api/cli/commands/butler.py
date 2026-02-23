@@ -229,9 +229,9 @@ def butler_schedules(
 
 async def _list_schedules() -> None:
     """List all scheduled jobs from the file store."""
-    from taskforce.infrastructure.scheduler.job_store import FileJobStore
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-    store = FileJobStore(work_dir=".taskforce")
+    store = InfrastructureBuilder().build_job_store(work_dir=".taskforce")
     jobs = await store.load_all()
 
     if not jobs:

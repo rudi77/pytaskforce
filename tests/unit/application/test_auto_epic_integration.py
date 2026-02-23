@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
@@ -74,12 +75,12 @@ class TestResolveAutoEpicConfig:
         assert config.default_worker_count == 4
 
     def test_returns_none_on_invalid_config(self) -> None:
-        executor = _make_executor_with_profile(
+        _make_executor_with_profile(
             {"orchestration": {"auto_epic": {"enabled": "not_a_bool_but_valid"}}}
         )
         # Pydantic may accept truthy string; but truly invalid configs return None
         # Test with actually invalid data
-        executor2 = _make_executor_with_profile(
+        executor2 = _make_executor_with_profile(  # noqa: F841
             {"orchestration": {"auto_epic": {"confidence_threshold": "invalid"}}}
         )
         config = executor2._resolve_auto_epic_config("dev")
@@ -261,9 +262,9 @@ class TestAutoEpicConfig:
         assert config.planner_profile == "custom_planner"
 
     def test_validation_rejects_invalid_threshold(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             AutoEpicConfig(confidence_threshold=1.5)
 
     def test_validation_rejects_invalid_worker_count(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             AutoEpicConfig(default_worker_count=0)

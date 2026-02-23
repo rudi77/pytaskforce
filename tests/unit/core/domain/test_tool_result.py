@@ -1,6 +1,5 @@
 """Tests for ToolResult and PlanTask dataclasses."""
 
-import pytest
 
 from taskforce.core.domain.tool_result import PlanTask, ToolResult
 

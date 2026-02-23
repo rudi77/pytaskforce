@@ -100,7 +100,8 @@ def _parse_tool_args(
 ) -> dict[str, Any]:
     """Parse tool call arguments from JSON string."""
     try:
-        return json.loads(tool_call["function"]["arguments"])
+        result: dict[str, Any] = json.loads(tool_call["function"]["arguments"])
+        return result
     except json.JSONDecodeError:
         logger.warning("tool_args_parse_failed", tool=tool_call["function"]["name"])
         return {}
@@ -775,14 +776,14 @@ async def _react_loop(
 
         if tool_calls:
             paused = False
-            async for e in _process_tool_calls(
+            async for evt in _process_tool_calls(
                 agent, tool_calls, session_id, step + 1,
                 state, messages, logger,
             ):
-                event_type = _ensure_event_type(e)
+                event_type = _ensure_event_type(evt)
                 if event_type == EventType.ASK_USER:
                     paused = True
-                yield e
+                yield evt
             if paused:
                 return
             step += 1

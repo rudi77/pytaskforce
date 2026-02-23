@@ -14,9 +14,10 @@ Skill Directory Structure:
         └── report.html
 """
 
-import logging
 from collections.abc import Iterator
 from pathlib import Path
+
+import structlog
 
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
 from taskforce.infrastructure.skills.skill_parser import (
@@ -25,7 +26,7 @@ from taskforce.infrastructure.skills.skill_parser import (
     parse_skill_metadata,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class SkillLoader:
@@ -54,7 +55,7 @@ class SkillLoader:
                 if path.exists() and path.is_dir():
                     self._directories.append(path)
                 else:
-                    logger.warning(f"Skill directory does not exist: {directory}")
+                    logger.warning("skill.directory_not_found", directory=directory)
 
     @property
     def directories(self) -> list[Path]:
@@ -116,11 +117,11 @@ class SkillLoader:
                 content = skill_file.read_text(encoding="utf-8")
                 metadata = parse_skill_metadata(content, str(skill_dir))
                 metadata_list.append(metadata)
-                logger.debug(f"Discovered skill: {metadata.name} at {skill_dir}")
+                logger.debug("skill.discovered", skill_name=metadata.name, path=str(skill_dir))
             except (OSError, UnicodeDecodeError) as e:
-                logger.warning(f"Cannot read skill file {skill_file}: {e}")
+                logger.warning("skill.file_read_error", skill_file=str(skill_file), error=str(e))
             except SkillParseError as e:
-                logger.warning(f"Invalid skill at {skill_dir}: {e}")
+                logger.warning("skill.parse_error", path=str(skill_dir), error=str(e))
 
         return metadata_list
 
@@ -138,19 +139,19 @@ class SkillLoader:
         skill_file = path / self.SKILL_FILE
 
         if not skill_file.exists():
-            logger.warning(f"No SKILL.md found in {path}")
+            logger.warning("skill.missing_skill_md", path=str(path))
             return None
 
         try:
             content = skill_file.read_text(encoding="utf-8")
             skill = parse_skill_markdown(content, str(path))
-            logger.debug(f"Loaded skill: {skill.name} from {path}")
+            logger.debug("skill.loaded", skill_name=skill.name, path=str(path))
             return skill
         except (OSError, UnicodeDecodeError) as e:
-            logger.error(f"Cannot read skill file {skill_file}: {e}")
+            logger.error("skill.file_read_error", skill_file=str(skill_file), error=str(e))
             return None
         except SkillParseError as e:
-            logger.error(f"Failed to parse skill at {path}: {e}")
+            logger.error("skill.parse_failed", path=str(path), error=str(e))
             return None
 
     def load_skill_by_name(self, name: str) -> Skill | None:

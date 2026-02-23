@@ -68,7 +68,7 @@ class WorkflowSwitch:
     def from_dict(cls, data: dict[str, Any]) -> WorkflowSwitch:
         """Create from dictionary."""
         # Handle YAML quirk where 'on' is parsed as boolean True
-        on_value = data.get("on") or data.get(True)
+        on_value = data.get("on") or data.get(True)  # type: ignore[call-overload]  # YAML parses 'on' as bool True
         if on_value is None:
             raise ValueError(
                 f"WorkflowSwitch missing 'on' key. Got keys: {list(data.keys())}, data: {data}"
@@ -98,7 +98,7 @@ class SkillWorkflow:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillWorkflow:
         """Create from dictionary."""
-        steps = []
+        steps: list[WorkflowStep | WorkflowSwitch] = []
         for step_data in data.get("steps", []):
             if "switch" in step_data:
                 steps.append(WorkflowSwitch.from_dict(step_data["switch"]))
@@ -154,7 +154,7 @@ class WorkflowContext:
     def _get_nested(self, data: dict[str, Any], path: str) -> Any:
         """Get a nested value from a dict using dot notation and array indices."""
         parts = path.split(".")
-        current = data
+        current: Any = data
 
         for part in parts:
             if current is None:
