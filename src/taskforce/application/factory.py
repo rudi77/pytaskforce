@@ -6,6 +6,7 @@ adapters based on configuration profiles (dev/staging/prod).
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -282,7 +283,7 @@ class AgentFactory:
         plugin_tools: list[ToolProtocol] = []
         if definition.source == AgentSource.PLUGIN and definition.plugin_path:
             plugin_tools = await self._load_plugin_tools_for_definition(
-                definition, llm_provider
+                definition, llm_provider, base_config
             )
 
         return plugin_tools + native_tools + mcp_tools
@@ -368,6 +369,7 @@ class AgentFactory:
         self,
         definition: AgentDefinition,
         llm_provider: LLMProviderProtocol,
+        base_config: dict[str, Any] | None = None,
     ) -> list[ToolProtocol]:
         """Load plugin tools for a plugin-source agent definition."""
         if not definition.plugin_path:
@@ -375,13 +377,27 @@ class AgentFactory:
 
         plugin_loader = PluginLoader()
         manifest = plugin_loader.discover_plugin(definition.plugin_path)
+
+        # Load plugin config for tool params and embedding service
+        plugin_config = plugin_loader.load_config(manifest)
+        tool_configs = plugin_config.get("tools", [])
+
+        # Create embedding service from plugin config if available
+        embedding_service = self._create_embedding_service(
+            plugin_config.get("embeddings"), manifest
+        )
+
         plugin_tools = plugin_loader.load_tools(
-            manifest, tool_configs=[], llm_provider=llm_provider
+            manifest,
+            tool_configs=tool_configs,
+            llm_provider=llm_provider,
+            embedding_service=embedding_service,
         )
         self.logger.debug(
             "plugin_tools_loaded",
             plugin_path=definition.plugin_path,
             tools=[t.name for t in plugin_tools],
+            has_embedding_service=embedding_service is not None,
         )
         return plugin_tools
 
@@ -856,8 +872,14 @@ class AgentFactory:
 
         # Build tools: plugin + native + MCP
         tool_configs = plugin_config.get("tools", [])
+        embedding_service = self._create_embedding_service(
+            plugin_config.get("embeddings"), manifest
+        )
         plugin_tools = plugin_loader.load_tools(
-            manifest, tool_configs=tool_configs, llm_provider=llm_provider
+            manifest,
+            tool_configs=tool_configs,
+            llm_provider=llm_provider,
+            embedding_service=embedding_service,
         )
         native_tools = self._resolve_plugin_native_tools(tool_configs, llm_provider)
         all_tools = plugin_tools + native_tools
@@ -1060,3 +1082,96 @@ class AgentFactory:
     def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""
         return self.infra_builder.build_llm_provider(config)
+
+    def _create_embedding_service(
+        self,
+        embeddings_config: dict[str, Any] | None,
+        manifest: "PluginManifest | None" = None,
+    ) -> Any | None:
+        """Create embedding service from config using dynamic plugin imports.
+
+        Uses the plugin's manifest to resolve embedding service classes
+        without hardcoding imports from plugin-specific packages.
+
+        Args:
+            embeddings_config: Embeddings section from plugin/profile config.
+                Expected keys: provider, model, cache_enabled, cache_max_size.
+            manifest: Plugin manifest for resolving import paths.
+
+        Returns:
+            Embedding service instance, or None if not configured.
+        """
+        if not embeddings_config:
+            return None
+
+        provider = embeddings_config.get("provider", "")
+        if not provider:
+            return None
+
+        # Map provider names to module paths within the plugin package
+        provider_modules = {
+            "litellm": (".infrastructure.embeddings.litellm_embeddings", "LiteLLMEmbeddingService"),
+            "azure": (".infrastructure.embeddings.azure_embeddings", "AzureEmbeddingService"),
+        }
+
+        if provider not in provider_modules:
+            self.logger.warning("embedding_service_unknown_provider", provider=provider)
+            return None
+
+        module_suffix, class_name = provider_modules[provider]
+
+        # Resolve the full module name from the plugin's package
+        if manifest is None:
+            self.logger.warning(
+                "embedding_service_no_manifest",
+                provider=provider,
+                hint="Cannot resolve embedding service without plugin manifest",
+            )
+            return None
+
+        package_name = manifest.package_path.name
+        module_name = f"{package_name}{module_suffix}"
+
+        # Temporarily add plugin path to sys.path for import
+        import importlib
+        plugin_path_str = str(manifest.path)
+        added_to_path = False
+        if plugin_path_str not in sys.path:
+            sys.path.insert(0, plugin_path_str)
+            added_to_path = True
+
+        try:
+            module = importlib.import_module(module_name)
+            service_class = getattr(module, class_name)
+
+            # Build kwargs based on provider type
+            kwargs: dict[str, Any] = {
+                "cache_enabled": embeddings_config.get("cache_enabled", True),
+                "cache_max_size": embeddings_config.get("cache_max_size", 1000),
+            }
+            if provider == "litellm":
+                kwargs["model"] = embeddings_config.get("model", "text-embedding-3-small")
+            elif provider == "azure":
+                kwargs["deployment_name"] = embeddings_config.get("deployment_name")
+                kwargs["api_version"] = embeddings_config.get("api_version", "2024-02-01")
+
+            service = service_class(**kwargs)
+            self.logger.info(
+                "embedding_service_created",
+                provider=provider,
+                module=module_name,
+            )
+            return service
+
+        except (ImportError, AttributeError) as e:
+            self.logger.warning(
+                "embedding_service_import_failed",
+                provider=provider,
+                module=module_name,
+                error=str(e),
+            )
+            return None
+
+        finally:
+            if added_to_path and plugin_path_str in sys.path:
+                sys.path.remove(plugin_path_str)

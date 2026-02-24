@@ -248,6 +248,7 @@ class MatchType(str, Enum):
 
     EXACT = "exact"  # Exact string match
     SEMANTIC = "semantic"  # Semantic similarity match
+    VENDOR_GENERALIZED = "vendor_generalized"  # Inferred from vendor-level rule pattern
 
 
 class ConfidenceRecommendation(str, Enum):
@@ -255,6 +256,32 @@ class ConfidenceRecommendation(str, Enum):
 
     AUTO_BOOK = "auto_book"  # Confidence high enough for automatic booking
     HITL_REVIEW = "hitl_review"  # Requires human-in-the-loop review
+
+
+@dataclass
+class VendorAccountProfile:
+    """Vendor-level account distribution derived from learned rules.
+
+    When a vendor has enough learned rules pointing to the same account,
+    this profile enables generalization to new, unseen items from the same vendor.
+
+    Attributes:
+        vendor_pattern: The vendor pattern these rules share
+        dominant_account: Most frequently assigned account number
+        dominant_account_name: Human-readable account name
+        total_rules: Total number of learned rules for this vendor
+        rules_for_dominant: How many rules point to dominant_account
+        dominance_ratio: rules_for_dominant / total_rules (0.0-1.0)
+        all_item_patterns: All known item patterns from this vendor's rules
+    """
+
+    vendor_pattern: str
+    dominant_account: str
+    dominant_account_name: Optional[str]
+    total_rules: int
+    rules_for_dominant: int
+    dominance_ratio: float
+    all_item_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass

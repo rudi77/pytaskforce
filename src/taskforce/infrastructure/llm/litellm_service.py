@@ -46,6 +46,18 @@ os.environ.setdefault("LITELLM_LOG_LEVEL", "ERROR")
 os.environ.setdefault("LITELLM_LOGGING", "off")
 os.environ.setdefault("HTTPX_LOG_LEVEL", "warning")
 
+# Map AZURE_OPENAI_* to AZURE_* for LiteLLM compatibility.
+# LiteLLM expects AZURE_API_KEY, AZURE_API_BASE, AZURE_API_VERSION.
+# Many projects use AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT (Microsoft convention).
+# Without this, api_base=None causes: "argument of type 'NoneType' is not iterable".
+if not os.environ.get("AZURE_API_KEY") and os.environ.get("AZURE_OPENAI_API_KEY"):
+    os.environ["AZURE_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
+if not os.environ.get("AZURE_API_BASE") and os.environ.get("AZURE_OPENAI_ENDPOINT"):
+    endpoint = os.environ["AZURE_OPENAI_ENDPOINT"].rstrip("/")
+    os.environ["AZURE_API_BASE"] = f"{endpoint}/"
+if not os.environ.get("AZURE_API_VERSION") and os.environ.get("AZURE_OPENAI_API_VERSION"):
+    os.environ["AZURE_API_VERSION"] = os.environ["AZURE_OPENAI_API_VERSION"]
+
 for _ln in ["LiteLLM", "litellm", "httpcore", "httpx", "aiohttp", "openai"]:
     logging.getLogger(_ln).setLevel(logging.ERROR)
 

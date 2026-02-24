@@ -205,6 +205,7 @@ class PluginLoader:
         manifest: PluginManifest,
         tool_configs: list[str | dict[str, Any]] | None = None,
         llm_provider: Any | None = None,
+        embedding_service: Any | None = None,
     ) -> list[ToolProtocol]:
         """
         Load and instantiate tools from a plugin.
@@ -220,6 +221,8 @@ class PluginLoader:
                     ]
             llm_provider: Optional LLM provider to inject into tools that require it.
                 Tools with 'llm_provider' in their __init__ signature will receive this.
+            embedding_service: Optional embedding service to inject into tools that require it.
+                Tools with 'embedding_service' in their __init__ signature will receive this.
 
         Returns:
             List of instantiated tool objects
@@ -287,6 +290,16 @@ class PluginLoader:
                             tool_params["llm_provider"] = llm_provider
                             logger.debug(
                                 "plugin.tool_llm_provider_injected",
+                                class_name=class_name,
+                            )
+
+                    # Check if tool requires embedding_service and inject it
+                    if embedding_service is not None:
+                        sig = inspect.signature(tool_class.__init__)
+                        if "embedding_service" in sig.parameters:
+                            tool_params["embedding_service"] = embedding_service
+                            logger.debug(
+                                "plugin.tool_embedding_service_injected",
                                 class_name=class_name,
                             )
 

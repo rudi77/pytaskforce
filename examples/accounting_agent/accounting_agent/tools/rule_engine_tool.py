@@ -5,6 +5,7 @@ This tool applies accounting rules from YAML configuration files
 to determine account assignments (Kontierung) for invoice line items.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -239,7 +240,14 @@ class RuleEngineTool:
 
             # Check if any keyword matches
             for keyword in keywords:
-                if keyword.lower() in description:
+                kw_lower = keyword.lower()
+                # For short keywords (< 4 chars like "DB", "PC"), require word
+                # boundary matching to avoid false positives (e.g. "DB" in "Goldbräu")
+                if len(kw_lower) < 4:
+                    kw_match = bool(re.search(r"\b" + re.escape(kw_lower) + r"\b", description))
+                else:
+                    kw_match = kw_lower in description
+                if kw_match:
                     # Found a match - determine account based on conditions
                     conditions = category_config.get("conditions", [])
 

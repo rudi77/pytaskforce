@@ -58,6 +58,7 @@ class ConfidenceEvaluatorTool:
             booking_history: BookingHistoryProtocol for vendor lookup
         """
         hard_gate_config = {
+            "no_rule_match": True,
             "new_vendor": True,
             "high_amount_threshold": Decimal(str(high_amount_threshold)),
             "critical_accounts": critical_accounts or ["1800", "2100"],
@@ -249,7 +250,16 @@ class ConfidenceEvaluatorTool:
                     is_exact=is_exact_match,
                 )
 
-                if is_confirmed_rule and is_exact_match:
+                if match_type == "vendor_generalized":
+                    # Vendor generalization: reasonable confidence, but not auto-book
+                    historical_hit_rate = 0.85
+                    # Do NOT force_auto_book - this is an inference, needs HITL review
+                    logger.debug(
+                        "confidence_evaluator.vendor_generalized",
+                        rule_id=rule_id,
+                        similarity=similarity,
+                    )
+                elif is_confirmed_rule and is_exact_match:
                     # Confirmed rules with exact match - TRUST THEM!
                     # These were previously approved by the user
                     historical_hit_rate = 0.99
@@ -402,6 +412,7 @@ class ConfidenceEvaluatorTool:
 
         if high_amount_threshold is not None or critical_accounts is not None:
             current_config = {
+                "no_rule_match": True,
                 "new_vendor": True,
                 "high_amount_threshold": Decimal(str(high_amount_threshold or 5000.0)),
                 "critical_accounts": critical_accounts or ["1800", "2100"],

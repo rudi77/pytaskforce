@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.markdown import Markdown
 
@@ -16,6 +18,21 @@ from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
 from taskforce.core.domain.agent_definition import AgentSource
 from taskforce.core.domain.enums import EventType, MessageRole, SkillType, TaskStatus
+
+
+def _build_key_bindings() -> KeyBindings:
+    """Build key bindings: Enter submits, Alt+Enter inserts newline."""
+    kb = KeyBindings()
+
+    @kb.add(Keys.Enter)
+    def _submit(event: Any) -> None:
+        event.current_buffer.validate_and_handle()
+
+    @kb.add(Keys.Escape, Keys.Enter)
+    def _newline(event: Any) -> None:
+        event.current_buffer.insert_text("\n")
+
+    return kb
 
 
 @dataclass
@@ -47,6 +64,17 @@ class SimpleChatRunner:
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature: tuple[str, str] | None = None
         self._skill_service: SkillService | None = None
+        self._prompt_session: PromptSession[str] | None = None
+
+    @property
+    def prompt_session(self) -> PromptSession[str]:
+        """Lazy-initialise the prompt session (requires a real terminal)."""
+        if self._prompt_session is None:
+            self._prompt_session = PromptSession(
+                multiline=True,
+                key_bindings=_build_key_bindings(),
+            )
+        return self._prompt_session
 
     @property
     def skill_service(self) -> SkillService:
@@ -74,10 +102,9 @@ class SimpleChatRunner:
             await self._handle_chat_message(message)
 
     async def _read_input(self) -> str:
-        """Read input from the user without blocking the event loop."""
-        prompt = "[user]👤 You >[/user] "
+        """Read input from the user with multi-line paste support."""
         try:
-            value = await asyncio.to_thread(self.console.input, prompt)
+            value = await self.prompt_session.prompt_async("👤 You > ")
         except (EOFError, KeyboardInterrupt):
             return "/quit"
         return value.strip()
@@ -137,6 +164,10 @@ class SimpleChatRunner:
             "- /skills\n"
             "- /debug\n"
             "- /quit or /exit\n"
+            "\n**Input:**\n"
+            "- **Enter** — send message\n"
+            "- **Alt+Enter** — insert newline\n"
+            "- Multi-line paste is supported automatically\n"
             "\n**Skills (invokable via /skill-name [args]):**\n"
             "- Run /skills to see all available skills\n"
         )
@@ -430,6 +461,7 @@ class SimpleChatRunner:
 
     def _print_banner(self) -> None:
         self.console.print("[info]💬 Taskforce Chat (Simple)[/info]")
+        self.console.print("[info]Enter to send, Alt+Enter for newline, /help for commands[/info]")
 
     def _print_session_info(self) -> None:
         self.console.print(

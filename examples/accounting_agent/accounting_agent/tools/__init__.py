@@ -41,9 +41,8 @@ __all__ = [
     "ComplianceCheckerTool",
     "DoclingTool",
     "InvoiceExtractionTool",
-    "RuleEngineTool",
     "TaxCalculatorTool",
-    # Semantic Rules Engine tools
+    # Semantic Rules Engine tools (supersedes legacy RuleEngineTool)
     "SemanticRuleEngineTool",
     "ConfidenceEvaluatorTool",
     "RAGFallbackTool",

@@ -323,13 +323,12 @@ workflow:
   learn_from_hitl: true
 
 # =============================================================================
-# EMBEDDINGS CONFIGURATION (Azure OpenAI)
+# EMBEDDINGS CONFIGURATION (LiteLLM - provider-agnostic)
 # =============================================================================
 
 embeddings:
-  provider: azure
-  deployment_name: text-embedding-ada-002
-  api_version: "2024-02-01"
+  provider: litellm
+  model: azure/text-embedding-3-small  # Azure OpenAI deployment name
   cache_enabled: true
   cache_max_size: 1000
 

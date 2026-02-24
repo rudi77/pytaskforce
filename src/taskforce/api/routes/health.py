@@ -74,6 +74,7 @@ async def readiness_check() -> HealthResponse:
     # Check LLM API key availability (without making a call)
     llm_key_set = bool(
         os.getenv("OPENAI_API_KEY")
+        or os.getenv("AZURE_API_KEY")
         or os.getenv("AZURE_OPENAI_API_KEY")
         or os.getenv("ANTHROPIC_API_KEY")
     )

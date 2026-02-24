@@ -203,8 +203,11 @@ class ConfidenceCalculator:
             if rule_type == "vendor_only":
                 rule_type_score = 1.0
             elif rule_type == "vendor_item":
-                # Boost confirmed learned rules with exact match to near vendor_only level
-                if is_confirmed_rule and is_exact_match:
+                if match_type == "vendor_generalized":
+                    # Vendor generalization: between vendor_item (0.8) and RAG (0.5)
+                    rule_type_score = 0.70
+                elif is_confirmed_rule and is_exact_match:
+                    # Boost confirmed learned rules with exact match to near vendor_only level
                     rule_type_score = 0.98  # Almost as trusted as vendor_only
                 else:
                     rule_type_score = 0.8

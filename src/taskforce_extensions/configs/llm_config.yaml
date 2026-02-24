@@ -152,10 +152,15 @@ tracing:
 # Google Gemini:
 #   export GEMINI_API_KEY="..."
 #
-# Azure OpenAI:
+# Azure OpenAI (LiteLLM convention):
 #   export AZURE_API_KEY="..."
 #   export AZURE_API_BASE="https://your-resource.openai.azure.com/"
 #   export AZURE_API_VERSION="2024-02-15-preview"
+#
+# Alternative (Microsoft convention) - auto-mapped by taskforce:
+#   export AZURE_OPENAI_API_KEY="..."
+#   export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com"
+#   export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
 #
 # Ollama (local):
 #   No key needed – just run `ollama serve`

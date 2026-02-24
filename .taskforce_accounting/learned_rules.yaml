@@ -1,6 +1,6 @@
 version: '2.0'
 description: Auto-generated rules from high-confidence bookings and HITL corrections
-updated_at: '2026-02-05T16:29:59.737100+00:00'
+updated_at: '2026-02-24T14:45:26.883541+00:00'
 semantic_rules:
 - rule_id: HITL-CONF-20260205162959-1
   vendor_pattern: Experten GmbH
@@ -26,3 +26,115 @@ semantic_rules:
   - Briketts "Immerzünd" (5 kg)
   created_at: '2026-02-05T16:29:59.737100+00:00'
   updated_at: '2026-02-05T16:29:59.737100+00:00'
+- rule_id: HITL-CONF-20260224115834-1
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Gerolsteiner Mineralwasser Medium Kasten 12 x 0,75
+  created_at: '2026-02-24T11:58:34.455431+00:00'
+  updated_at: '2026-02-24T11:58:34.455431+00:00'
+- rule_id: HITL-CONF-20260224115834-2
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Bitburger Pils Kasten Kasten 20 x 0,5 lMW
+  created_at: '2026-02-24T11:58:34.459467+00:00'
+  updated_at: '2026-02-24T11:58:34.459467+00:00'
+- rule_id: HITL-CONF-20260224115834-3
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Warsteiner Radler Zitrone Kasten 4 x 6 x 0,33 l Gl
+  created_at: '2026-02-24T11:58:34.463467+00:00'
+  updated_at: '2026-02-24T11:58:34.463467+00:00'
+- rule_id: HITL-CONF-20260224115834-4
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Coca Cola Kasten 24 x 0,33 l GlasMW
+  created_at: '2026-02-24T11:58:34.467467+00:00'
+  updated_at: '2026-02-24T11:58:34.467467+00:00'
+- rule_id: HITL-CONF-20260224115834-5
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Landliebe Frische Landmilch 3,8% Fett 1 l GlasMW
+  created_at: '2026-02-24T11:58:34.472068+00:00'
+  updated_at: '2026-02-24T11:58:34.472068+00:00'
+- rule_id: AUTO-20260224120106
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 2
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Gerolsteiner Mineralwasser Medium Kasten 12 x 0,75
+  - Bitburger Pils Kasten Kasten 20 x 0,5 lMW
+  - Warsteiner Radler Zitrone Kasten 4 x 6 x 0,33 l Gl
+  - Coca Cola Kasten 24 x 0,33 l GlasMW
+  - Landliebe Frische Landmilch 3,8% Fett 1 l GlasMW
+  created_at: '2026-02-24T12:01:06.673840+00:00'
+  updated_at: '2026-02-24T12:02:37.281807+00:00'
+- rule_id: AUTO-20260224124316
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 2
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Stiegl Goldbräu Kasten 12 x 0,75 l GlasMW
+  created_at: '2026-02-24T12:43:16.194757+00:00'
+  updated_at: '2026-02-24T12:43:16.209757+00:00'
+- rule_id: HITL-CONF-20260224144525-1
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Kaiser Bier
+  created_at: '2026-02-24T14:45:25.556152+00:00'
+  updated_at: '2026-02-24T14:45:25.556152+00:00'
+- rule_id: AUTO-20260224144526
+  vendor_pattern: Musterbetrieb
+  target_account: '4900'
+  priority: 75
+  source: auto_high_confidence
+  version: 1
+  is_active: true
+  target_account_name: Sonstige betriebliche Aufwendungen
+  item_patterns:
+  - Kaiser Bier Kasten 12 x 0,75 l GlasMW
+  created_at: '2026-02-24T14:45:26.883541+00:00'
+  updated_at: '2026-02-24T14:45:26.883541+00:00'

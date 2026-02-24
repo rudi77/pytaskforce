@@ -243,6 +243,21 @@ class TestConfidenceSignals:
 
         assert result.signals.rule_type_score == 0.8
 
+    def test_vendor_generalized_rule_type_score(self):
+        """Vendor generalized matches should have rule_type_score of 0.70."""
+        calc = ConfidenceCalculator()
+
+        result = calc.calculate(
+            rule_match={
+                "rule_type": "vendor_item",
+                "match_type": "vendor_generalized",
+                "similarity_score": 0.85,
+            },
+            is_new_vendor=False,
+        )
+
+        assert result.signals.rule_type_score == 0.70
+
     def test_ambiguous_match_reduces_uniqueness(self):
         """Ambiguous matches should reduce uniqueness score."""
         calc = ConfidenceCalculator()

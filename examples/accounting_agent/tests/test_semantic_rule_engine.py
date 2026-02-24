@@ -174,6 +174,15 @@ class TestSemanticRuleEngineAsync:
         assert len(result["unmatched_items"]) == 1
 
 
+class TestMatchTypeEnum:
+    """Tests for MatchType enum values."""
+
+    def test_vendor_generalized_exists(self):
+        """MatchType should include VENDOR_GENERALIZED."""
+        assert MatchType.VENDOR_GENERALIZED == "vendor_generalized"
+        assert MatchType.VENDOR_GENERALIZED.value == "vendor_generalized"
+
+
 class TestRuleMatching:
     """Tests for rule matching algorithm."""
 

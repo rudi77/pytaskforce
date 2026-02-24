@@ -27,6 +27,7 @@ from accounting_agent.domain.models import (
     RuleSource,
     RuleMatch,
     MatchType,
+    VendorAccountProfile,
 )
 from accounting_agent.domain.invoice_utils import (
     extract_supplier_name,
@@ -48,9 +49,16 @@ class SemanticRuleEngineTool:
     Combines deterministic rule matching with semantic similarity:
     - Vendor-Only rules: Direct vendor → account mapping
     - Vendor + Item rules: Vendor match + item embedding similarity
+    - Vendor Generalization: Infer account from vendor's dominant booking pattern
 
     No LLM involvement - embeddings are used for similarity only.
     """
+
+    # Vendor generalization configuration
+    MIN_RULES_FOR_GENERALIZATION = 3
+    MIN_DOMINANCE_RATIO = 0.6
+    VENDOR_GENERALIZATION_BASE_SCORE = 0.85
+    VENDOR_GENERALIZATION_PRIORITY = 60
 
     def __init__(
         self,
@@ -77,6 +85,7 @@ class SemanticRuleEngineTool:
         self._rules_loaded = False
         self._raw_rules: dict[str, Any] = {}
         self._learned_rules_mtime: float = 0.0  # Track file modification time
+        self._vendor_profiles: dict[str, VendorAccountProfile] = {}
 
     async def _load_rules(self) -> None:
         """Load rules from YAML files and precompute embeddings."""
@@ -237,6 +246,9 @@ class SemanticRuleEngineTool:
         # Precompute embeddings for item patterns if embedding service available
         if self._embedding_service:
             await self._precompute_embeddings()
+
+        # Build vendor account profiles for generalization
+        self._build_vendor_account_profiles()
 
         self._rules_loaded = True
         logger.info(
@@ -811,10 +823,27 @@ class SemanticRuleEngineTool:
                 )
 
                 # First try exact/keyword match (with normalized quotes)
-                is_match = pattern_normalized in description_normalized
-                # Fallback: try stripped version (without quotes)
-                if not is_match:
-                    is_match = pattern_stripped in description_stripped
+                # For short patterns (< 4 chars like "DB", "PC"), require word
+                # boundary matching to avoid false positives (e.g. "DB" in "Goldbräu")
+                if len(pattern_stripped) < 4:
+                    is_match = bool(
+                        re.search(
+                            r"\b" + re.escape(pattern_normalized) + r"\b",
+                            description_normalized,
+                        )
+                    )
+                    if not is_match:
+                        is_match = bool(
+                            re.search(
+                                r"\b" + re.escape(pattern_stripped) + r"\b",
+                                description_stripped,
+                            )
+                        )
+                else:
+                    is_match = pattern_normalized in description_normalized
+                    # Fallback: try stripped version (without quotes)
+                    if not is_match:
+                        is_match = pattern_stripped in description_stripped
 
                 if is_match:
                     if 1.0 > best_similarity:
@@ -858,6 +887,10 @@ class SemanticRuleEngineTool:
                 )
 
         if not matches:
+            # Phase 2.5: Try vendor generalization
+            generalized = self._try_vendor_generalization(supplier_name, description)
+            if generalized:
+                return generalized
             return None
 
         # Sort matches by: priority (desc), then similarity (desc)
@@ -1025,7 +1058,7 @@ class SemanticRuleEngineTool:
             debit_account = self._get_skr04_account(debit_account)
             vat_account = self._get_skr04_account(vat_account)
 
-        return {
+        proposal = {
             "type": "debit",
             "line_item_index": idx,
             "debit_account": debit_account,
@@ -1041,6 +1074,154 @@ class SemanticRuleEngineTool:
             "similarity_score": match_result.similarity_score,
             "confidence": match_result.similarity_score,  # Use similarity as initial confidence
         }
+
+        # Add generalization info for vendor_generalized matches
+        if match_result.match_type == MatchType.VENDOR_GENERALIZED:
+            vendor_pattern = rule.vendor_pattern
+            profile = self._vendor_profiles.get(vendor_pattern.lower())
+            if profile:
+                proposal["generalization_info"] = {
+                    "vendor_pattern": profile.vendor_pattern,
+                    "dominance_ratio": profile.dominance_ratio,
+                    "known_items_count": len(profile.all_item_patterns),
+                    "total_rules": profile.total_rules,
+                    "reason": (
+                        f"Vendor '{profile.vendor_pattern}' hat {profile.total_rules} "
+                        f"gelernte Regeln, {profile.rules_for_dominant} davon "
+                        f"({profile.dominance_ratio:.0%}) auf Konto {profile.dominant_account}"
+                    ),
+                }
+
+        return proposal
+
+    def _build_vendor_account_profiles(self) -> None:
+        """Build vendor account profiles from learned VENDOR_ITEM rules.
+
+        Analyzes rules from auto_high_confidence and hitl_correction sources,
+        groups them by vendor pattern, and creates a VendorAccountProfile when
+        a vendor has enough rules with a dominant target account.
+        """
+        self._vendor_profiles.clear()
+
+        # Group learned VENDOR_ITEM rules by vendor pattern
+        vendor_rules: dict[str, list[AccountingRule]] = {}
+        for rule in self._rules:
+            if rule.rule_type != RuleType.VENDOR_ITEM:
+                continue
+            if rule.source not in (RuleSource.AUTO_HIGH_CONFIDENCE, RuleSource.HITL_CORRECTION):
+                continue
+            vendor_key = rule.vendor_pattern.lower()
+            vendor_rules.setdefault(vendor_key, []).append(rule)
+
+        for vendor_key, rules in vendor_rules.items():
+            if len(rules) < self.MIN_RULES_FOR_GENERALIZATION:
+                continue
+
+            # Count target accounts
+            account_counts: dict[str, int] = {}
+            account_names: dict[str, Optional[str]] = {}
+            all_patterns: list[str] = []
+            for rule in rules:
+                account_counts[rule.target_account] = (
+                    account_counts.get(rule.target_account, 0) + 1
+                )
+                if rule.target_account_name:
+                    account_names[rule.target_account] = rule.target_account_name
+                for p in rule.item_patterns:
+                    if p not in all_patterns:
+                        all_patterns.append(p)
+
+            # Find dominant account
+            dominant_account = max(account_counts, key=account_counts.get)  # type: ignore[arg-type]
+            rules_for_dominant = account_counts[dominant_account]
+            dominance_ratio = rules_for_dominant / len(rules)
+
+            if dominance_ratio < self.MIN_DOMINANCE_RATIO:
+                continue
+
+            # Use original casing from first rule
+            vendor_pattern = rules[0].vendor_pattern
+
+            profile = VendorAccountProfile(
+                vendor_pattern=vendor_pattern,
+                dominant_account=dominant_account,
+                dominant_account_name=account_names.get(dominant_account),
+                total_rules=len(rules),
+                rules_for_dominant=rules_for_dominant,
+                dominance_ratio=dominance_ratio,
+                all_item_patterns=all_patterns,
+            )
+            self._vendor_profiles[vendor_pattern.lower()] = profile
+
+            logger.info(
+                "semantic_rule_engine.vendor_profile_created",
+                vendor=vendor_pattern,
+                dominant_account=dominant_account,
+                total_rules=len(rules),
+                dominance_ratio=f"{dominance_ratio:.0%}",
+            )
+
+        logger.info(
+            "semantic_rule_engine.vendor_profiles_built",
+            profile_count=len(self._vendor_profiles),
+            vendors=list(self._vendor_profiles.keys()),
+        )
+
+    def _try_vendor_generalization(
+        self, supplier_name: str, description: str
+    ) -> Optional[RuleMatch]:
+        """Try to match via vendor-level generalization.
+
+        When an item has no exact or semantic match, check if the vendor has
+        a dominant account profile. If so, return a generalized match.
+
+        Args:
+            supplier_name: Invoice supplier name
+            description: Line item description
+
+        Returns:
+            RuleMatch with VENDOR_GENERALIZED type, or None
+        """
+        if not self._vendor_profiles:
+            return None
+
+        for vendor_key, profile in self._vendor_profiles.items():
+            if not self._matches_vendor_pattern(supplier_name, profile.vendor_pattern):
+                continue
+
+            # Create synthetic rule for the generalized match
+            synthetic_rule = AccountingRule(
+                rule_id=f"VENDOR-GEN-{profile.vendor_pattern}",
+                rule_type=RuleType.VENDOR_ITEM,
+                vendor_pattern=profile.vendor_pattern,
+                item_patterns=profile.all_item_patterns,
+                target_account=profile.dominant_account,
+                target_account_name=profile.dominant_account_name,
+                priority=self.VENDOR_GENERALIZATION_PRIORITY,
+                source=RuleSource.AUTO_HIGH_CONFIDENCE,
+                is_active=True,
+            )
+
+            similarity = self.VENDOR_GENERALIZATION_BASE_SCORE * profile.dominance_ratio
+
+            logger.info(
+                "semantic_rule_engine.vendor_generalization_match",
+                supplier=supplier_name,
+                description=description[:50],
+                vendor_pattern=profile.vendor_pattern,
+                dominant_account=profile.dominant_account,
+                dominance_ratio=f"{profile.dominance_ratio:.0%}",
+                similarity=f"{similarity:.2f}",
+            )
+
+            return RuleMatch(
+                rule=synthetic_rule,
+                match_type=MatchType.VENDOR_GENERALIZED,
+                similarity_score=similarity,
+                matched_item_pattern=None,
+            )
+
+        return None
 
     def set_embedding_service(self, embedding_service: Any) -> None:
         """
