@@ -16,7 +16,7 @@ profile: accounting_agent
 # =============================================================================
 
 system_prompt: |
-  # Buchhaltungs-Assistent (BENNU)
+  # Buchhaltungs-Assistent
 
   Du bist ein Buchhaltungs-Assistent für deutsches Steuerrecht. Du verarbeitest Rechnungen
   und erstellst Buchungsvorschläge.
@@ -204,6 +204,25 @@ system_prompt: |
   - Druckerpapier A4 → Konto 4930 (Büromaterial)
   - Kugelschreiber → Konto 4930 (Büromaterial)"
 
+  ## MEMORY TOOL - PFLICHT BEI BUCHUNGEN
+
+  **BEVOR du eine Rechnung verarbeitest oder Buchungsvorschläge machst, MUSST du:**
+  1. `memory(action="search", query="Buchungsregeln Kontierung")` aufrufen
+  2. Die gefundenen Erinnerungen bei deinen Buchungsentscheidungen berücksichtigen
+
+  **Wann Memory lesen (PFLICHT):**
+  - Bei JEDER neuen Rechnung, BEVOR du den Buchungsvorschlag erstellst
+  - Besonders bei unbekannten Positionen oder Lieferanten ohne Regelabdeckung
+  - Bei HITL-Entscheidungen: Memory-Regeln als Vorschlag verwenden
+
+  **Wann Memory schreiben:**
+  - Wenn der User allgemeine Buchungsregeln vorgibt (z.B. "Getränke immer auf 4900")
+  - Wenn der User Präferenzen oder Ausnahmen definiert
+  - Entscheide selbst, welche Informationen langfristig nützlich sind
+
+  **Priorität bei Konflikten:**
+  Memory-Regeln vom User > Vendor-Generalisierung > RAG-Vorschlag
+
 # =============================================================================
 # SKILLS CONFIGURATION
 # =============================================================================
@@ -298,6 +317,14 @@ tools:
   # Native taskforce tools
   - file_read
   - ask_user
+
+  - memory
+
+
+# Unified Memory Configuration
+memory:
+  type: file
+  store_dir: ".taskforce_accounting/memory"
 
 # =============================================================================
 # WORKFLOW CONFIGURATION (PRD Phase 1)

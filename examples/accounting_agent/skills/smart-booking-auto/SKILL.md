@@ -5,7 +5,7 @@ description: |
   Aktivieren wenn: INVOICE_PROCESSING Intent erkannt wurde.
   Dieser Skill führt den deterministischen Workflow aus und wechselt automatisch
   zu smart-booking-hitl wenn Confidence <95% oder Hard Gates ausgelöst werden.
-allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user
+allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user memory
 
 workflow:
   steps:
