@@ -44,7 +44,7 @@ def _run_chat(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
-):
+) -> None:
     """Start interactive chat session with agent in a simple console.
 
     The chat interface features:
@@ -110,7 +110,7 @@ def _run_chat(
     # Generate session ID
     session_id = str(uuid.uuid4())
 
-    async def run_chat_ui():
+    async def run_chat_ui() -> None:
         """Run the chat session."""
         # Create agent using Agent (the standard agent implementation)
         factory = AgentFactory()
@@ -187,7 +187,7 @@ def chat(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
-):
+) -> None:
     """Run chat when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
         return
@@ -232,7 +232,7 @@ def chat_command(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
-):
+) -> None:
     """Backwards-compatible subcommand for chat."""
     _run_chat(
         ctx=ctx,

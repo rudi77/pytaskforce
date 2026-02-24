@@ -108,7 +108,7 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
         question = kwargs.get("question", "")
         return f"Tool: {self.name}\nOperation: Global document analysis\nDocument: {document_id}\nQuestion: {question}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         document_id: str,
         question: str,

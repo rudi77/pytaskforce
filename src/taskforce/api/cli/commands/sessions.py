@@ -21,12 +21,12 @@ def list_sessions(
         "-p",
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
-):
+) -> None:
     """List all agent sessions."""
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
-    async def _list_sessions():
+    async def _list_sessions() -> None:
         factory = AgentFactory()
         try:
             agent = await factory.create_agent(profile=profile)
@@ -63,12 +63,12 @@ def show_session(
         "-p",
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
-):
+) -> None:
     """Show session details."""
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
-    async def _show_session():
+    async def _show_session() -> None:
         factory = AgentFactory()
         try:
             agent = await factory.create_agent(profile=profile)

@@ -29,10 +29,12 @@ def mock_store() -> AsyncMock:
 def tool(mock_store: AsyncMock, tmp_path) -> MemoryTool:
     """Create a MemoryTool with a mocked store."""
     with patch(
-        "taskforce.infrastructure.tools.native.memory_tool.FileMemoryStore",
+        "taskforce.infrastructure.memory.file_memory_store.FileMemoryStore",
         return_value=mock_store,
     ):
         t = MemoryTool(store_dir=str(tmp_path / "memory"))
+    # Directly assign mock store in case the patch target differs
+    t._store = mock_store
     return t
 
 
@@ -102,8 +104,9 @@ class TestMemoryToolAddAction:
         mock_store.add.assert_called_once()
 
     async def test_add_missing_required_field(self, tool: MemoryTool) -> None:
-        with pytest.raises(ValueError, match="scope"):
-            await tool.execute(action="add", kind="long_term", content="no scope")
+        result = await tool.execute(action="add", kind="long_term", content="no scope")
+        assert result["success"] is False
+        assert "scope" in result.get("error", "")
 
 
 class TestMemoryToolGetAction:

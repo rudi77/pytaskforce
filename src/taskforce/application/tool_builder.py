@@ -317,9 +317,9 @@ class ToolBuilder:
             )
 
             return [
-                SemanticSearchTool(user_context=user_context),
+                SemanticSearchTool(user_context=user_context),  # type: ignore[list-item]
                 ListDocumentsTool(user_context=user_context),
-                GetDocumentTool(user_context=user_context),
+                GetDocumentTool(user_context=user_context),  # type: ignore[list-item]
                 AskUserTool(),
             ]
 
@@ -368,8 +368,8 @@ class ToolBuilder:
         tool_params: dict[str, Any] = resolved_spec.get("params", {}).copy()
 
         try:
-            module = importlib.import_module(tool_module)
-            tool_class = getattr(module, tool_type)
+            module = importlib.import_module(str(tool_module))
+            tool_class = getattr(module, str(tool_type))
 
             if tool_type == "LLMTool":
                 tool_params["llm_service"] = llm_provider
@@ -390,7 +390,7 @@ class ToolBuilder:
                 tool_name=tool_instance.name,
             )
 
-            return tool_instance
+            return tool_instance  # type: ignore[no-any-return]
 
         except Exception as e:
             self._logger.error(
@@ -442,9 +442,9 @@ class ToolBuilder:
             max_steps=max_steps,
         )
 
-        return SubAgentTool(
+        return SubAgentTool(  # type: ignore[return-value]
             agent_tool=agent_tool,
-            specialist=specialist,
+            specialist=str(specialist),
             name=tool_name,
             description=tool_spec.get("description"),
             planning_strategy=planning_strategy,
@@ -495,7 +495,7 @@ class ToolBuilder:
                 "sub_agent_max_steps"
             ),
         )
-        return agent_tool
+        return agent_tool  # type: ignore[return-value]
 
     async def create_mcp_tools(
         self, config: dict[str, Any]

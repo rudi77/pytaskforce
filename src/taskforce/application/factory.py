@@ -44,7 +44,7 @@ def _set_mcp_contexts(agent: Agent, mcp_contexts: list[Any]) -> None:
     Uses setattr to avoid mypy errors since _mcp_contexts is a
     dynamic attribute consumed via getattr in LeanAgent.close().
     """
-    agent._mcp_contexts = mcp_contexts
+    agent._mcp_contexts = mcp_contexts  # type: ignore[attr-defined]
 
 
 def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
@@ -53,7 +53,7 @@ def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
     Uses setattr to avoid mypy errors since _plugin_manifest is a
     dynamic attribute consumed via getattr in CLI commands.
     """
-    agent._plugin_manifest = manifest
+    agent._plugin_manifest = manifest  # type: ignore[attr-defined]
 
 
 # Type for factory extension callbacks
@@ -221,7 +221,7 @@ class AgentFactory:
         if base_config_override:
             return base_config_override
 
-        return self.infra_builder.load_profile_safe(definition.base_profile)
+        return self.infra_builder.load_profile_safe(definition.base_profile)  # type: ignore[no-any-return]
 
     def _build_infrastructure(
         self,
@@ -285,7 +285,7 @@ class AgentFactory:
                 definition, llm_provider
             )
 
-        return plugin_tools + native_tools + mcp_tools
+        return plugin_tools + native_tools + mcp_tools  # type: ignore[no-any-return]
 
     def _add_orchestration_tool(
         self, tools: list[ToolProtocol], config: dict[str, Any]
@@ -600,7 +600,7 @@ class AgentFactory:
                 planning_strategy_params or agent_config.get("planning_strategy_params")
             ),
             max_steps=agent_config.get("max_steps"),
-            system_prompt=config.get("system_prompt"),
+            system_prompt=config.get("system_prompt", ""),
         )
 
     async def _create_agent_from_profile_config(
@@ -1047,7 +1047,7 @@ class AgentFactory:
 
     def _create_state_manager(self, config: dict[str, Any]) -> StateManagerProtocol:
         """Create state manager based on configuration."""
-        return self.infra_builder.build_state_manager(config)
+        return self.infra_builder.build_state_manager(config)  # type: ignore[no-any-return]
 
     def _create_runtime_tracker(
         self,
@@ -1055,8 +1055,8 @@ class AgentFactory:
         work_dir_override: str | None = None,
     ) -> AgentRuntimeTrackerProtocol | None:
         """Create runtime tracker based on configuration."""
-        return self.infra_builder.build_runtime_tracker(config, work_dir_override)
+        return self.infra_builder.build_runtime_tracker(config, work_dir_override)  # type: ignore[no-any-return]
 
     def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""
-        return self.infra_builder.build_llm_provider(config)
+        return self.infra_builder.build_llm_provider(config)  # type: ignore[no-any-return]

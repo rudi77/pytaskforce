@@ -113,7 +113,7 @@ class ButlerDaemon:
         config_path = factory.config_dir / f"{self._profile}.yaml"
 
         if config_path.exists():
-            import yaml  # type: ignore[import-untyped]
+            import yaml
 
             with open(config_path) as f:
                 return yaml.safe_load(f) or {}

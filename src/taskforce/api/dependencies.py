@@ -50,7 +50,7 @@ def get_factory() -> AgentFactory:
 
 
 @lru_cache(maxsize=1)
-def get_agent_registry():
+def get_agent_registry() -> Any:
     """Provide a shared FileAgentRegistry instance.
 
     Uses ``lru_cache`` so the registry is created once and reused across
@@ -69,7 +69,7 @@ def get_agent_registry():
 
 
 @lru_cache(maxsize=1)
-def get_gateway_components():
+def get_gateway_components() -> Any:
     """Provide Communication Gateway components.
 
     Routes through the application-layer InfrastructureBuilder so that
@@ -83,7 +83,7 @@ def get_gateway_components():
     )
 
 
-def get_gateway():
+def get_gateway() -> Any:
     """Provide a CommunicationGateway instance."""
     from taskforce.application.gateway import CommunicationGateway
 
@@ -98,4 +98,4 @@ def get_gateway():
 
 def get_inbound_adapters() -> dict[str, Any]:
     """Provide inbound adapters from gateway components."""
-    return get_gateway_components().inbound_adapters
+    return get_gateway_components().inbound_adapters  # type: ignore[no-any-return]

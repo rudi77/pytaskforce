@@ -56,7 +56,7 @@ def run_mission(
             "(planner/worker/judge). Default: from profile config."
         ),
     ),
-):
+) -> None:
     """Execute an agent mission.
 
     Examples:
@@ -181,7 +181,7 @@ def _execute_standard_mission(
     ) as progress:
         task = progress.add_task("[>] Executing mission...", total=None)
 
-        def progress_callback(update):
+        def progress_callback(update: Any) -> None:
             if debug:
                 progress.update(task, description=f"[>] {update.message}")
             else:
@@ -268,7 +268,7 @@ async def _execute_streaming_mission(
 
     def build_display() -> Group:
         """Build Rich display group for current state."""
-        elements = []
+        elements: list[Any] = []
 
         # Header
         mission_display = mission[:60] + "..." if len(mission) > 60 else mission
@@ -395,7 +395,7 @@ async def _execute_streaming_mission(
                     plan_text = update.details.get("plan")
                     plan_steps = []
                 if update.details.get("step") and update.details.get("status"):
-                    step_index = update.details.get("step") - 1
+                    step_index = int(update.details.get("step", 0)) - 1
                     if 0 <= step_index < len(plan_steps):
                         plan_steps[step_index]["status"] = update.details.get(
                             "status", "PENDING"
@@ -617,7 +617,7 @@ async def _execute_skill_agent(
             config=skill_profile,
         )
         mission = skill.substitute_arguments(args) if args else skill.instructions
-        result = await agent.execute(mission=mission, session_id=None)
+        result = await agent.execute(mission=mission, session_id=None)  # type: ignore[arg-type]
 
         tf_console.print_divider()
         if result.status == "completed":
@@ -628,7 +628,7 @@ async def _execute_skill_agent(
             tf_console.print_agent_message(result.final_message)
 
         if result.token_usage:
-            tf_console.print_token_usage(result.token_usage)
+            tf_console.print_token_usage(result.token_usage)  # type: ignore[arg-type]
     except Exception as e:
         tf_console.print_error(f"Failed to execute skill: {str(e)}")
         raise typer.Exit(1) from e

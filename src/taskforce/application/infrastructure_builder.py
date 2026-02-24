@@ -138,7 +138,7 @@ class InfrastructureBuilder:
     # Agent Registry
     # -------------------------------------------------------------------------
 
-    def build_agent_registry(self):
+    def build_agent_registry(self) -> Any:
         """Build a FileAgentRegistry instance.
 
         Centralises the infrastructure import so that API-layer code
@@ -190,7 +190,7 @@ class InfrastructureBuilder:
             return FileStateManager(work_dir=work_dir)
 
         elif persistence_type == "database":
-            from taskforce.infrastructure.persistence.db_state import DbStateManager
+            from taskforce.infrastructure.persistence.db_state import DbStateManager  # type: ignore[import-untyped]
 
             db_url_env = persistence_config.get("db_url_env", "DATABASE_URL")
             db_url = os.getenv(db_url_env)
@@ -198,7 +198,7 @@ class InfrastructureBuilder:
             if not db_url:
                 raise ValueError(f"Database URL not found in environment variable: {db_url_env}")
 
-            return DbStateManager(db_url=db_url)
+            return DbStateManager(db_url=db_url)  # type: ignore[no-any-return]
 
         else:
             raise ValueError(f"Unknown persistence type: {persistence_type}")
@@ -324,7 +324,7 @@ class InfrastructureBuilder:
     # Communication Gateway
     # -------------------------------------------------------------------------
 
-    def build_gateway_components(self, work_dir: str = ".taskforce"):
+    def build_gateway_components(self, work_dir: str = ".taskforce") -> Any:
         """Build Communication Gateway infrastructure components.
 
         Centralises the extensions-infrastructure import so that API-layer

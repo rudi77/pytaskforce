@@ -16,13 +16,13 @@ console = Console()
 def list_tools(
     ctx: typer.Context,
     profile: str = typer.Option(None, "--profile", "-p", help="Configuration profile (overrides global --profile)")
-):
+) -> None:
     """List available tools."""
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
-    async def _list_tools():
+    async def _list_tools() -> None:
         factory = AgentFactory()
         agent = await factory.create_agent(profile=profile)
 
@@ -47,13 +47,13 @@ def inspect_tool(
     ctx: typer.Context,
     tool_name: str = typer.Argument(..., help="Tool name to inspect"),
     profile: str = typer.Option(None, "--profile", "-p", help="Configuration profile (overrides global --profile)"),
-):
+) -> None:
     """Inspect tool details and parameters."""
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
-    async def _inspect_tool():
+    async def _inspect_tool() -> None:
         factory = AgentFactory()
         agent = await factory.create_agent(profile=profile)
 

@@ -408,7 +408,7 @@ class SimpleChatRunner:
             self.plan_state.text = update.details.get("plan")
             self.plan_state.steps = []
         if update.details.get("step") and update.details.get("status"):
-            step_index = update.details.get("step") - 1
+            step_index = int(update.details.get("step", 0)) - 1
             if 0 <= step_index < len(self.plan_state.steps):
                 self.plan_state.steps[step_index]["status"] = update.details.get(
                     "status",
