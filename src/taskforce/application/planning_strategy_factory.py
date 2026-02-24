@@ -60,12 +60,12 @@ def select_planning_strategy(
     )
 
     if normalized == "native_react":
-        return NativeReActStrategy()
+        return NativeReActStrategy()  # type: ignore[return-value]
 
     if normalized == "plan_and_execute":
         max_step = params.get("max_step_iterations")
         max_plan = params.get("max_plan_steps")
-        return PlanAndExecuteStrategy(
+        return PlanAndExecuteStrategy(  # type: ignore[return-value]
             max_step_iterations=int(max_step) if max_step is not None else 4,
             max_plan_steps=int(max_plan) if max_plan is not None else 12,
             logger=logger,
@@ -73,7 +73,7 @@ def select_planning_strategy(
 
     if normalized == "plan_and_react":
         max_plan = params.get("max_plan_steps")
-        return PlanAndReactStrategy(
+        return PlanAndReactStrategy(  # type: ignore[return-value]
             max_plan_steps=int(max_plan) if max_plan is not None else 12,
             logger=logger,
         )
@@ -83,7 +83,7 @@ def select_planning_strategy(
         max_plan = params.get("max_plan_steps")
         reflect_val = params.get("reflect_every_step")
         max_reflect = params.get("max_reflection_iterations")
-        return SparStrategy(
+        return SparStrategy(  # type: ignore[return-value]
             max_step_iterations=(
                 int(max_step) if max_step is not None else 3
             ),

@@ -120,6 +120,7 @@ class SkillManager:
         skill_directories = self._build_skill_directories()
 
         # Initialize registry with all skill directories
+        self._registry: FileSkillRegistry | None
         if skill_directories:
             self._registry = FileSkillRegistry(
                 skill_directories=skill_directories,

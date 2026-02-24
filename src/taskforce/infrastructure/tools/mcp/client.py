@@ -6,6 +6,7 @@ Provides connection management for Model Context Protocol servers via:
 - SSE: Remote servers via Server-Sent Events
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -19,7 +20,7 @@ except ImportError as e:
     raise ImportError("MCP library not installed. Install with: uv add mcp") from e
 
 
-def _patch_mcp_validation():
+def _patch_mcp_validation() -> None:
     """
     Monkey-patch MCP ClientSession to be more lenient with tool result validation.
 
@@ -34,7 +35,7 @@ def _patch_mcp_validation():
     if not original_validate:
         return
 
-    async def lenient_validate(self, name, result):
+    async def lenient_validate(self: Any, name: Any, result: Any) -> None:
         try:
             await original_validate(self, name, result)
         except RuntimeError as e:
@@ -53,7 +54,7 @@ def _patch_mcp_validation():
             else:
                 raise
 
-    ClientSession._validate_tool_result = lenient_validate
+    ClientSession._validate_tool_result = lenient_validate  # type: ignore[method-assign]
 
 
 # Apply the patch on import
@@ -98,7 +99,7 @@ class MCPClient:
         command: str,
         args: list[str],
         env: dict[str, str] | None = None,
-    ):
+    ) -> AsyncIterator["MCPClient"]:
         """
         Create a client connected to a local stdio MCP server.
 
@@ -126,7 +127,7 @@ class MCPClient:
 
     @classmethod
     @asynccontextmanager
-    async def create_sse(cls, url: str):
+    async def create_sse(cls, url: str) -> AsyncIterator["MCPClient"]:
         """
         Create a client connected to a remote SSE MCP server.
 
@@ -231,7 +232,7 @@ class MCPClient:
             )
             return tool_error_payload(tool_error)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the connection to the MCP server."""
         # Context managers handle cleanup automatically
         pass

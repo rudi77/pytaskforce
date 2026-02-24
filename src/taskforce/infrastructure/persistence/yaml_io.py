@@ -83,7 +83,7 @@ def safe_load_yaml(path: Path) -> dict[str, Any] | None:
 
     try:
         with open(path, encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            return yaml.safe_load(f)  # type: ignore[no-any-return]
     except Exception as e:
         logger.warning(
             "yaml.load.failed",

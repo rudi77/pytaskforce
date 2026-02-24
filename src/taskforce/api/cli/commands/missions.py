@@ -11,7 +11,7 @@ console = Console()
 
 
 @app.command("list")
-def list_missions():
+def list_missions() -> None:
     """List available mission templates."""
     missions_dir = Path("missions")
 
@@ -38,7 +38,7 @@ def list_missions():
 
 
 @app.command("show")
-def show_mission(name: str = typer.Argument(..., help="Mission template name")):
+def show_mission(name: str = typer.Argument(..., help="Mission template name")) -> None:
     """Show mission template content."""
     mission_path = Path(f"missions/{name}.txt")
 

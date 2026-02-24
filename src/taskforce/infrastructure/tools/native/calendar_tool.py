@@ -109,8 +109,8 @@ class CalendarTool:
     async def execute(self, **kwargs: Any) -> dict[str, Any]:
         """Execute a calendar action."""
         try:
-            from google.oauth2.credentials import Credentials
-            from googleapiclient.discovery import build
+            from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
+            from googleapiclient.discovery import build  # type: ignore[import-not-found]
         except ImportError:
             return {
                 "success": False,

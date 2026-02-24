@@ -103,7 +103,9 @@ class GitTool(ToolProtocol):
             return f"⚠️ GIT PUSH OPERATION\nTool: {self.name}\nOperation: push\nRemote: {remote}\nBranch: {branch}"
         return f"Tool: {self.name}\nOperation: {operation}\nParameters: {kwargs}"
 
-    async def execute(self, operation: str, repo_path: str = ".", **kwargs) -> dict[str, Any]:
+    async def execute(  # type: ignore[override]
+        self, operation: str, repo_path: str = ".", **kwargs: Any
+    ) -> dict[str, Any]:
         """
         Execute git operations.
 
@@ -121,14 +123,14 @@ class GitTool(ToolProtocol):
         """
         logger = structlog.get_logger().bind(tool=self.name, operation=operation)
         try:
-            repo_path = Path(repo_path)
+            resolved_path = Path(repo_path)
 
             # Ensure a valid working directory is used across operations
             if operation == "init":
                 # For init, create the directory if it doesn't exist
                 try:
-                    if not repo_path.exists():
-                        repo_path.mkdir(parents=True, exist_ok=True)
+                    if not resolved_path.exists():
+                        resolved_path.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
                     logger.error("git_execute_exception", error=str(e))
                     tool_error = ToolError(
@@ -136,20 +138,20 @@ class GitTool(ToolProtocol):
                         tool_name=self.name,
                         details={
                             "operation": operation,
-                            "repo_path": str(repo_path),
+                            "repo_path": str(resolved_path),
                             "stage": "prepare_repo",
                         },
                     )
                     return tool_error_payload(tool_error)
             elif operation != "clone":
-                # For all other operations that use cwd=repo_path, ensure it exists
-                if not repo_path.exists():
+                # For all other operations that use cwd=resolved_path, ensure it exists
+                if not resolved_path.exists():
                     return {
                         "success": False,
-                        "error": f"Repository path does not exist: {repo_path}",
+                        "error": f"Repository path does not exist: {resolved_path}",
                     }
 
-            logger.info("git_execute_start", cwd=str(repo_path), args=kwargs)
+            logger.info("git_execute_start", cwd=str(resolved_path), args=kwargs)
 
             # Build command based on operation
             if operation == "init":
@@ -170,7 +172,7 @@ class GitTool(ToolProtocol):
                 url = kwargs.get("url")
                 if not url:
                     return {"success": False, "error": "URL required for clone"}
-                cmd = ["git", "clone", url, str(repo_path)]
+                cmd = ["git", "clone", url, str(resolved_path)]
             elif operation == "remote":
                 action = kwargs.get("action", "add")
                 remote_name = kwargs.get("name", "origin")
@@ -196,7 +198,7 @@ class GitTool(ToolProtocol):
                 return {"success": False, "error": f"Unknown operation: {operation}"}
 
             # Execute command asynchronously to avoid blocking the event loop
-            cwd = str(repo_path) if operation != "clone" else "."
+            cwd = str(resolved_path) if operation != "clone" else "."
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
@@ -214,7 +216,7 @@ class GitTool(ToolProtocol):
                 tool_error = ToolError(
                     f"{self.name} failed: Command timed out",
                     tool_name=self.name,
-                    details={"operation": operation, "repo_path": str(repo_path)},
+                    details={"operation": operation, "repo_path": str(resolved_path)},
                 )
                 return tool_error_payload(tool_error)
 
@@ -239,7 +241,7 @@ class GitTool(ToolProtocol):
             tool_error = ToolError(
                 f"{self.name} failed: {e}",
                 tool_name=self.name,
-                details={"operation": operation, "repo_path": str(repo_path)},
+                details={"operation": operation, "repo_path": str(resolved_path)},
             )
             return tool_error_payload(tool_error)
 
@@ -312,7 +314,7 @@ class GitHubTool(ToolProtocol):
         name = kwargs.get("name", "")
         return f"⚠️ GITHUB API OPERATION\nTool: {self.name}\nAction: {action}\nRepository: {name}"
 
-    async def execute(self, action: str, **kwargs) -> dict[str, Any]:
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
         """
         Execute GitHub API operations.
 
@@ -387,7 +389,7 @@ class GitHubTool(ToolProtocol):
                         break
                     await asyncio.sleep(1)
                 ok = status in (200, 201)
-                payload = {}
+                payload: dict[str, Any] = {}
                 try:
                     payload = json.loads(text) if text else {}
                 except Exception:

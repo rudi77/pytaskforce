@@ -187,7 +187,7 @@ def is_enterprise_identity_available() -> bool:
         True if taskforce-enterprise identity is installed
     """
     try:
-        from taskforce.core.interfaces.identity import UserContext  # noqa: F401
+        from taskforce.core.interfaces.identity import UserContext  # type: ignore[import-untyped]  # noqa: F401
         return True
     except ImportError:
         return False

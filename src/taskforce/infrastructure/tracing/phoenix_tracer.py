@@ -25,6 +25,7 @@ Usage:
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 import structlog
 
@@ -113,7 +114,7 @@ def init_tracing(config: TracingConfig | None = None) -> None:
 
     try:
         # Import Phoenix OTEL and register tracer
-        from phoenix.otel import register
+        from phoenix.otel import register  # type: ignore[import-not-found]
 
         logger.info(
             "tracing_initializing",
@@ -172,7 +173,7 @@ def _instrument_litellm() -> None:
     - Latency
     """
     try:
-        from openinference.instrumentation.litellm import LiteLLMInstrumentor
+        from openinference.instrumentation.litellm import LiteLLMInstrumentor  # type: ignore[import-not-found]
 
         # Check if already instrumented
         instrumentor = LiteLLMInstrumentor()
@@ -227,7 +228,7 @@ def shutdown_tracing() -> None:
         _tracer = None
 
 
-def get_tracer():
+def get_tracer() -> Any:
     """
     Get the global tracer instance for creating custom spans.
 

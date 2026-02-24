@@ -120,7 +120,7 @@ class GetDocumentTool:
         document_id: str,
         include_chunk_content: bool = False,
         user_context: dict[str, Any] | None = None,
-        **kwargs
+        **kwargs: Any
     ) -> dict[str, Any]:
         """
         Execute document metadata retrieval from content-blocks index.
@@ -260,7 +260,7 @@ class GetDocumentTool:
 
                 # Build final document object
                 document = {
-                    **document_metadata,
+                    **(document_metadata or {}),
                     "chunk_count": len(chunks),
                     "page_count": max_page if max_page > 0 else None,
                     "has_images": has_images,

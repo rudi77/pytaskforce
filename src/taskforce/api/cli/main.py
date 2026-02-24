@@ -47,14 +47,14 @@ def main(
         "-d",
         help="Enable debug output (shows agent thoughts, actions, observations)",
     ),
-):
+) -> None:
     """Taskforce Agent CLI."""
     # Store global options in context for subcommands
     ctx.obj = {"profile": profile, "debug": debug}
 
 
 @app.command()
-def version():
+def version() -> None:
     """Show Taskforce version."""
     from taskforce import __version__
     from taskforce.api.cli.output_formatter import TaskforceConsole

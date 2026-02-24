@@ -114,7 +114,7 @@ class ListDocumentsTool(ToolProtocol):
         filters: dict[str, Any] | None = None,
         limit: int = 20,
         user_context: dict[str, Any] | None = None,
-        **kwargs
+        **kwargs: Any
     ) -> dict[str, Any]:
         """
         Execute document listing from content-blocks index using facets.

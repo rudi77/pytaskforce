@@ -26,7 +26,7 @@ def _match_filter(value: Any, condition: Any) -> bool:
     If condition is a plain value (not a dict), uses equality check.
     """
     if not isinstance(condition, dict):
-        return value == condition
+        return value == condition  # type: ignore[no-any-return]
 
     for op, expected in condition.items():
         if op == "$eq" and value != expected:

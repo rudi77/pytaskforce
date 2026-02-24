@@ -90,13 +90,13 @@ class MultimediaTool(ToolProtocol):
         file_path = kwargs.get("file_path", "")
         return f"Tool: {self.name}\nOperation: Read multimedia file\nPath: {file_path}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         file_path: str,
         page_range: str | None = None,
         max_pages: int = 50,
         include_metadata: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Read and extract content from multimedia files.
@@ -232,7 +232,7 @@ class MultimediaTool(ToolProtocol):
         metadata: dict[str, Any],
     ) -> dict[str, Any]:
         """Read PDF using PyPDF2."""
-        from PyPDF2 import PdfReader
+        from PyPDF2 import PdfReader  # type: ignore[import-not-found]
 
         reader = PdfReader(str(path))
         total_pages = len(reader.pages)

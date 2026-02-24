@@ -32,7 +32,7 @@ def _get_config_dir() -> Path:
 
 
 @app.command("list")
-def list_profiles():
+def list_profiles() -> None:
     """List available configuration profiles."""
     config_dir = _get_config_dir()
 
@@ -58,7 +58,7 @@ def list_profiles():
 
 
 @app.command("show")
-def show_profile(profile: str = typer.Argument(..., help="Profile name")):
+def show_profile(profile: str = typer.Argument(..., help="Profile name")) -> None:
     """Show configuration profile details."""
     config_dir = _get_config_dir()
     config_path = config_dir / f"{profile}.yaml"

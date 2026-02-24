@@ -57,8 +57,8 @@ class CalendarEventSource(PollingEventSource):
     async def _poll_once(self) -> list[AgentEvent]:
         """Poll Google Calendar for upcoming events."""
         try:
-            from google.oauth2.credentials import Credentials
-            from googleapiclient.discovery import build
+            from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
+            from googleapiclient.discovery import build  # type: ignore[import-not-found]
         except ImportError:
             logger.debug(
                 "calendar_source.google_api_not_installed",

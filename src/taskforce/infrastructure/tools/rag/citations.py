@@ -100,7 +100,7 @@ class RAGCitationExtractor:
         Returns:
             List of extracted RAG citations
         """
-        citations = []
+        citations: list[RAGCitation] = []
 
         if not result.get("success"):
             return citations
@@ -134,7 +134,7 @@ class RAGCitationExtractor:
         Returns:
             List of extracted RAG citations (typically one)
         """
-        citations = []
+        citations: list[RAGCitation] = []
 
         if not result.get("success"):
             return citations
@@ -193,13 +193,15 @@ class RAGCitationExtractor:
         if isinstance(results, list):
             for item in results:
                 if isinstance(item, dict):
+                    doc_id: str = item.get("document_id", item.get("id", ""))
+                    snippet_text: str = item.get("snippet", item.get("content", ""))
                     citation = RAGCitation(
-                        document_id=item.get("document_id", item.get("id", "")),
+                        document_id=doc_id,
                         chunk_id=item.get("chunk_id", item.get("content_id")),
                         title=item.get("title", item.get("document_title", "")),
                         score=item.get("score", item.get("relevance", 0.0)),
                         page_number=item.get("page_number", item.get("page")),
-                        snippet=item.get("snippet", item.get("content", ""))[:500],
+                        snippet=snippet_text[:500],
                         metadata={
                             k: v
                             for k, v in item.items()
@@ -337,7 +339,7 @@ class CitationFormatter:
             Text with inline markers
         """
         # Build a mapping of citation keywords to numbers
-        citation_map = {}
+        citation_map: dict[str, list[int]] = {}
         for i, citation in enumerate(citations, 1):
             # Extract key terms from citation
             keywords = self._extract_keywords(citation)

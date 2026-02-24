@@ -61,8 +61,8 @@ class FileReadTool(ToolProtocol):
         path = kwargs.get("path", "")
         return f"Tool: {self.name}\nOperation: Read file\nPath: {path}"
 
-    async def execute(
-        self, path: str, encoding: str = "utf-8", max_size_mb: int = 10, **kwargs
+    async def execute(  # type: ignore[override]
+        self, path: str, encoding: str = "utf-8", max_size_mb: int = 10, **kwargs: Any
     ) -> dict[str, Any]:
         """
         Read file contents safely with size limits and encoding detection.
@@ -168,8 +168,8 @@ class FileWriteTool(ToolProtocol):
         backup = kwargs.get("backup", True)
         return f"⚠️ FILE WRITE OPERATION\nTool: {self.name}\nPath: {path}\nBackup: {backup}\nContent Preview:\n{content_preview}"
 
-    async def execute(
-        self, path: str, content: str, backup: bool = True, **kwargs
+    async def execute(  # type: ignore[override]
+        self, path: str, content: str, backup: bool = True, **kwargs: Any
     ) -> dict[str, Any]:
         """
         Write content to file with backup and safety checks.

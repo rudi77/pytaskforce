@@ -7,6 +7,8 @@ maintaining clean architecture boundaries.
 API layer should import from here instead of directly from infrastructure.
 """
 
+from typing import Any
+
 from taskforce.infrastructure.tracing import (
     TracingConfig,
 )
@@ -31,7 +33,7 @@ def shutdown_tracing() -> None:
     _shutdown_tracing()
 
 
-def get_tracer():
+def get_tracer() -> Any:
     """Get the global tracer instance for creating custom spans."""
     return _get_tracer()
 

@@ -109,7 +109,7 @@ class SemanticSearchTool:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
-        **kwargs
+        **kwargs: Any
     ) -> dict[str, Any]:
         """
         Execute Hybrid Search (Vector + Text) with Semantic Reranking.

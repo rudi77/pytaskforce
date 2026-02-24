@@ -209,7 +209,7 @@ class FileToolResultStore:
                 result = self._truncate_result(result, max_chars)
 
             self.logger.debug("tool_result_fetched", handle_id=handle.id)
-            return result
+            return result  # type: ignore[no-any-return]
 
         except (OSError, FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError) as e:
             self.logger.error(

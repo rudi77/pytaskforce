@@ -194,7 +194,7 @@ class AgentTool:
                 return custom_dir_path
             # Fallback: return first .yaml file found
             for yaml_file in custom_dir.glob("*.yaml"):
-                return yaml_file
+                return Path(yaml_file)
 
         # 3. Check plugins/*/configs/agents/{specialist}.yaml
         # Try new location first: src/taskforce_extensions/plugins

@@ -238,7 +238,7 @@ class FileStateManager(StateManagerProtocol):
             return None
 
         self.logger.info("state_loaded", session_id=session_id)
-        return state.get("state_data", {})
+        return state.get("state_data", {})  # type: ignore[no-any-return]
 
     async def delete_state(self, session_id: str) -> None:
         """

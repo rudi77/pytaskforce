@@ -458,7 +458,7 @@ class PluginLoader:
         Returns:
             Resolved parameters
         """
-        resolved = {}
+        resolved: dict[str, Any] = {}
         for key, value in params.items():
             if isinstance(value, str):
                 resolved[key] = self._resolve_path_variables(value, manifest)
@@ -793,7 +793,7 @@ def discover_plugins(group: str = "taskforce.plugins") -> list[PluginInfo]:
     except TypeError:
         # Python < 3.10 compatibility
         all_eps = entry_points()
-        eps = all_eps.get(group, [])
+        eps = all_eps.get(group, [])  # type: ignore[assignment]
 
     for ep in eps:
         plugin_info = PluginInfo(

@@ -29,12 +29,12 @@ class FileMemoryStore(MemoryStoreProtocol):
             return self._read_record(path)
         return None
 
-    async def list(
+    async def list(  # type: ignore[valid-type]
         self,
         scope: MemoryScope | None = None,
         kind: MemoryKind | None = None,
     ) -> list[MemoryRecord]:
-        paths = list(self._iter_paths(scope=scope, kind=kind))
+        paths: list[Path] = self._iter_paths(scope=scope, kind=kind)
         return [self._read_record(path) for path in paths]
 
     async def search(
@@ -46,7 +46,7 @@ class FileMemoryStore(MemoryStoreProtocol):
     ) -> list[MemoryRecord]:
         query_lower = query.lower()
         matches: list[MemoryRecord] = []
-        for path in self._iter_paths(scope=scope, kind=kind):
+        for path in self._iter_paths(scope=scope, kind=kind):  # type: ignore[attr-defined]
             record = self._read_record(path)
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
             if query_lower in haystack:
@@ -66,7 +66,7 @@ class FileMemoryStore(MemoryStoreProtocol):
             return True
         return False
 
-    def _iter_paths(
+    def _iter_paths(  # type: ignore[valid-type]
         self,
         scope: MemoryScope | None,
         kind: MemoryKind | None,

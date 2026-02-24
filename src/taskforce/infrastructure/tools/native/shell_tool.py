@@ -73,8 +73,8 @@ class ShellTool(ToolProtocol):
         timeout = kwargs.get("timeout", 30)
         return f"⚠️ SHELL COMMAND EXECUTION\nTool: {self.name}\nCommand: {command}\nWorking Directory: {cwd}\nTimeout: {timeout}s"
 
-    async def execute(
-        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs
+    async def execute(  # type: ignore[override]
+        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """
         Execute shell command with safety checks and timeout.
@@ -213,8 +213,8 @@ class PowerShellTool(ToolProtocol):
         timeout = kwargs.get("timeout", 30)
         return f"⚠️ POWERSHELL COMMAND EXECUTION\nTool: {self.name}\nCommand: {command}\nWorking Directory: {cwd}\nTimeout: {timeout}s"
 
-    async def execute(
-        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs
+    async def execute(  # type: ignore[override]
+        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """
         Execute PowerShell command with safety checks and timeout.

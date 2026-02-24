@@ -60,8 +60,8 @@ class WebSearchTool(ToolProtocol):
         num_results = kwargs.get("num_results", 5)
         return f"Tool: {self.name}\nOperation: Web search\nQuery: {query}\nResults: {num_results}"
 
-    async def execute(
-        self, query: str, num_results: int = 5, **kwargs
+    async def execute(  # type: ignore[override]
+        self, query: str, num_results: int = 5, **kwargs: Any
     ) -> dict[str, Any]:
         """
         Search the web using DuckDuckGo.
@@ -188,7 +188,7 @@ class WebFetchTool(ToolProtocol):
         url = kwargs.get("url", "")
         return f"Tool: {self.name}\nOperation: Fetch URL content\nURL: {url}"
 
-    async def execute(self, url: str, **kwargs) -> dict[str, Any]:
+    async def execute(self, url: str, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
         """
         Fetch and extract content from a URL.
 

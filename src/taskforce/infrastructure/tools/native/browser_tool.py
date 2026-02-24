@@ -39,7 +39,7 @@ class _BrowserSession:
 
     async def start(self, headless: bool = True) -> None:
         """Launch the browser and open an initial page."""
-        from playwright.async_api import async_playwright  # type: ignore[import]
+        from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=headless)
@@ -299,11 +299,11 @@ class BrowserTool(ToolProtocol):
                 return {"success": False, "error": f"Unknown action: '{action}'"}
 
             if action == "screenshot":
-                return await handler(page, kwargs)
+                return await handler(page, kwargs)  # type: ignore[no-any-return]
             elif action in ("evaluate", "scroll"):
-                return await handler(page, kwargs)
+                return await handler(page, kwargs)  # type: ignore[no-any-return]
             else:
-                return await handler(page, kwargs, timeout)
+                return await handler(page, kwargs, timeout)  # type: ignore[no-any-return]
 
         except ImportError:
             return {

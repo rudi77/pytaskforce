@@ -99,14 +99,14 @@ class EditTool(ToolProtocol):
             f"---NEW TEXT---\n{new_preview}"
         )
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         file_path: str,
         old_string: str,
         new_string: str,
         replace_all: bool = False,
         backup: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Perform exact string replacement in a file.

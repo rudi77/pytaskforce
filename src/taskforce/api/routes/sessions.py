@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -106,8 +107,8 @@ async def create_session(
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
     mission: str = "",
-    factory=Depends(get_factory),
-):
+    factory: Any = Depends(get_factory),
+) -> SessionResponse:
     """Create a new session."""
     try:
         agent = await factory.create_agent(profile=profile)

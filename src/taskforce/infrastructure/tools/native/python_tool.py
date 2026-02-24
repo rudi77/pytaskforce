@@ -7,6 +7,7 @@ Migrated from Agent V2 with full preservation of execution semantics.
 
 import contextlib
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -73,12 +74,12 @@ class PythonTool(ToolProtocol):
         cwd = kwargs.get("cwd", "current directory")
         return f"⚠️ PYTHON CODE EXECUTION\nTool: {self.name}\nWorking Directory: {cwd}\nCode Preview:\n{code_preview}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         code: str,
         context: dict[str, Any] | None = None,
         cwd: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Execute Python code in controlled namespace.
@@ -102,7 +103,7 @@ class PythonTool(ToolProtocol):
 
         # CWD context manager
         @contextlib.contextmanager
-        def safe_chdir(path):
+        def safe_chdir(path: str | None) -> Iterator[None]:
             original = os.getcwd()
             try:
                 if path:
@@ -257,7 +258,7 @@ except ImportError:
                 }
 
             # Sanitize outputs to ensure they are pickle/JSON safe
-            def _sanitize(value, depth: int = 0):
+            def _sanitize(value: Any, depth: int = 0) -> Any:
                 if depth > 4:
                     return repr(value)
                 if value is None or isinstance(value, (bool, int, float, str)):

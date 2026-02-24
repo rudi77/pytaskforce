@@ -61,12 +61,12 @@ class MCPToolWrapper(ToolProtocol):
     @property
     def name(self) -> str:
         """Return the MCP tool name."""
-        return self._name
+        return self._name  # type: ignore[no-any-return]
 
     @property
     def description(self) -> str:
         """Return the MCP tool description."""
-        return self._description
+        return self._description  # type: ignore[no-any-return]
 
     @property
     def parameters_schema(self) -> dict[str, Any]:

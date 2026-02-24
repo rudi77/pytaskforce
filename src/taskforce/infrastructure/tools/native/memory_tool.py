@@ -106,9 +106,10 @@ class MemoryTool(BaseTool):
         scope = self._parse_scope(kwargs.get("scope"))
         kind = self._parse_kind(kwargs.get("kind"))
         limit = int(kwargs.get("limit", 10))
-        records = await self._store.search(
+        records_result = await self._store.search(
             query=query, scope=scope, kind=kind, limit=limit
         )
+        records: list[MemoryRecord] = records_result if records_result is not None else []
         return {
             "success": True,
             "records": [self._record_payload(record) for record in records],

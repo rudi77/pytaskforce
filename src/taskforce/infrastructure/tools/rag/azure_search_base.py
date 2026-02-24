@@ -18,7 +18,7 @@ from taskforce.core.domain.errors import ToolError
 class AzureSearchBase:
     """Base class for Azure AI Search integration providing shared connection and security logic."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Azure Search base configuration from environment variables."""
         self.endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
         self.api_key = os.getenv("AZURE_SEARCH_API_KEY")
@@ -156,11 +156,11 @@ class AzureSearchBase:
 
         return sanitized
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AzureSearchBase":
         """Support async context manager pattern."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any) -> None:
         """Cleanup on context exit."""
         # No cleanup needed for SearchClient (handled per-use)
         pass
@@ -279,7 +279,7 @@ class Chunk:
         Returns:
             Dictionary in Azure Search result format
         """
-        result = {
+        result: dict[str, Any] = {
             "document_id": self.document_id,
             "content_id": self.content_id,
             "scope": self.scope,

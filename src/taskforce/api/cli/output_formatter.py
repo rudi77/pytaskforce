@@ -40,7 +40,7 @@ class TaskforceConsole:
         self.console = Console(theme=TASKFORCE_THEME)
         self.debug_mode = debug
 
-    def print_banner(self):
+    def print_banner(self) -> None:
         """Print Taskforce startup banner."""
         banner = Text()
         banner.append("\n")
@@ -54,7 +54,7 @@ class TaskforceConsole:
         self.console.print(banner)
         self.console.print()
 
-    def print_agent_message(self, message: str, thought: str | None = None):
+    def print_agent_message(self, message: str, thought: str | None = None) -> None:
         """Print agent message with distinctive styling.
 
         Args:
@@ -83,7 +83,7 @@ class TaskforceConsole:
         self.console.print(agent_panel)
         self.console.print()
 
-    def print_user_message(self, message: str):
+    def print_user_message(self, message: str) -> None:
         """Print user message with distinctive styling.
 
         Args:
@@ -99,7 +99,7 @@ class TaskforceConsole:
         self.console.print(user_panel)
         self.console.print()
 
-    def print_system_message(self, message: str, style: str = "system"):
+    def print_system_message(self, message: str, style: str = "system") -> None:
         """Print system message.
 
         Args:
@@ -108,7 +108,7 @@ class TaskforceConsole:
         """
         self.console.print(f"[{style}][i] {message}[/{style}]")
 
-    def print_error(self, message: str, exception: Exception | None = None):
+    def print_error(self, message: str, exception: Exception | None = None) -> None:
         """Print error message with optional exception details.
 
         Args:
@@ -129,7 +129,7 @@ class TaskforceConsole:
 
             self.console.print("[debug]" + traceback.format_exc() + "[/debug]")
 
-    def print_success(self, message: str):
+    def print_success(self, message: str) -> None:
         """Print success message.
 
         Args:
@@ -144,7 +144,7 @@ class TaskforceConsole:
         )
         self.console.print(success_panel)
 
-    def print_warning(self, message: str):
+    def print_warning(self, message: str) -> None:
         """Print warning message.
 
         Args:
@@ -152,7 +152,7 @@ class TaskforceConsole:
         """
         self.console.print(f"[warning][!] {message}[/warning]")
 
-    def print_debug(self, message: str):
+    def print_debug(self, message: str) -> None:
         """Print debug message (only if debug mode enabled).
 
         Args:
@@ -161,7 +161,7 @@ class TaskforceConsole:
         if self.debug_mode:
             self.console.print(f"[debug][DEBUG] {message}[/debug]")
 
-    def print_action(self, action_type: str, details: str):
+    def print_action(self, action_type: str, details: str) -> None:
         """Print agent action with details.
 
         Args:
@@ -179,7 +179,7 @@ class TaskforceConsole:
             )
             self.console.print(action_panel)
 
-    def print_observation(self, observation: str):
+    def print_observation(self, observation: str) -> None:
         """Print observation result.
 
         Args:
@@ -200,7 +200,7 @@ class TaskforceConsole:
         session_id: str,
         profile: str,
         user_context: dict | None = None,
-    ):
+    ) -> None:
         """Print session information.
 
         Args:
@@ -229,7 +229,7 @@ class TaskforceConsole:
         self.console.print(info_panel)
         self.console.print()
 
-    def print_divider(self, text: str | None = None):
+    def print_divider(self, text: str | None = None) -> None:
         """Print a visual divider.
 
         Args:
@@ -253,7 +253,7 @@ class TaskforceConsole:
 
         return Prompt.ask(f"[user]> {message}[/user]")
 
-    def print_token_usage(self, token_usage: dict[str, int]):
+    def print_token_usage(self, token_usage: dict[str, int]) -> None:
         """Print token usage statistics.
 
         Args:

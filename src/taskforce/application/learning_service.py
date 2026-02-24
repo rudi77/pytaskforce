@@ -274,7 +274,7 @@ class LearningService:
         if start == -1 or end == -1:
             return []
         try:
-            return json.loads(content[start : end + 1])
+            return json.loads(content[start : end + 1])  # type: ignore[no-any-return]
         except json.JSONDecodeError:
             return []
 

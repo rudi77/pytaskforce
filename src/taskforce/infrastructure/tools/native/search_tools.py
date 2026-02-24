@@ -104,7 +104,7 @@ class GrepTool(ToolProtocol):
         path = kwargs.get("path", ".")
         return f"Tool: {self.name}\nOperation: Search for pattern\nPattern: {pattern}\nPath: {path}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         pattern: str,
         path: str = ".",
@@ -116,7 +116,7 @@ class GrepTool(ToolProtocol):
         context_after: int = 0,
         max_results: int = 100,
         include_line_numbers: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Search file contents using regular expressions.
@@ -400,7 +400,7 @@ class GlobTool(ToolProtocol):
         path = kwargs.get("path", ".")
         return f"Tool: {self.name}\nOperation: Find files\nPattern: {pattern}\nPath: {path}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         pattern: str,
         path: str = ".",
@@ -408,7 +408,7 @@ class GlobTool(ToolProtocol):
         sort_by_mtime: bool = True,
         include_hidden: bool = False,
         files_only: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Find files by name patterns using glob syntax.

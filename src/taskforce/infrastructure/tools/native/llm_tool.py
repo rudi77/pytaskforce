@@ -83,13 +83,13 @@ class LLMTool(ToolProtocol):
         prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
         return f"Tool: {self.name}\nOperation: Generate text\nPrompt: {prompt_preview}"
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self,
         prompt: str,
         context: dict[str, Any] | None = None,
         max_tokens: int = 500,
         temperature: float = 0.7,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Execute LLM text generation using LLM service.
