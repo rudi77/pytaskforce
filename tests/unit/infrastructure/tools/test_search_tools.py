@@ -499,10 +499,13 @@ class TestGlobToolExecution:
 
     async def test_sort_by_mtime(self, tool, tmp_path):
         """Test that results are sorted by modification time."""
-        import time
+        import os
 
         (tmp_path / "old.txt").write_text("old")
-        time.sleep(0.05)
+        # Set old.txt mtime to 100 seconds in the past for deterministic ordering
+        old_path = tmp_path / "old.txt"
+        old_stat = old_path.stat()
+        os.utime(old_path, (old_stat.st_atime, old_stat.st_mtime - 100))
         (tmp_path / "new.txt").write_text("new")
 
         result = await tool.execute(

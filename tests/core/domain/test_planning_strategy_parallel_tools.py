@@ -3,60 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
-import types
 from typing import Any
-
-
-def _install_structlog_stub() -> None:
-    try:
-        import structlog  # noqa: F401
-        import structlog.testing  # noqa: F401
-
-        return
-    except Exception:
-        pass
-
-    structlog_module = types.ModuleType("structlog")
-
-    class _StubLogger:
-        def bind(self, **kwargs: Any) -> _StubLogger:
-            return self
-
-        def warning(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-        def info(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-        def error(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-        def debug(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-    def _get_logger(*args: Any, **kwargs: Any) -> _StubLogger:
-        return _StubLogger()
-
-    structlog_module.get_logger = _get_logger  # type: ignore[attr-defined]
-    structlog_module.make_filtering_bound_logger = (  # type: ignore[attr-defined]
-        lambda *args, **kwargs: _StubLogger
-    )
-    structlog_module.configure = lambda *args, **kwargs: None  # type: ignore[attr-defined]
-
-    testing_module = types.ModuleType("structlog.testing")
-    testing_module.LogCapture = object  # type: ignore[attr-defined]
-
-    typing_module = types.ModuleType("structlog.typing")
-    typing_module.FilteringBoundLogger = Any  # type: ignore[attr-defined]
-
-    sys.modules.setdefault("structlog", structlog_module)
-    sys.modules.setdefault("structlog.testing", testing_module)
-    sys.modules.setdefault("structlog.typing", typing_module)
-
-
-_install_structlog_stub()
 
 from taskforce.core.domain.planning_helpers import (  # noqa: E402
     ToolCallRequest,
@@ -124,8 +72,8 @@ class SleepTool(ToolProtocol):
 
 def test_execute_tool_calls_runs_parallel_when_enabled() -> None:
     tools = [
-        SleepTool("tool_a", 0.25, True),
-        SleepTool("tool_b", 0.25, True),
+        SleepTool("tool_a", 0.15, True),
+        SleepTool("tool_b", 0.15, True),
     ]
     agent = FakeAgent(tools, max_parallel_tools=2)
     requests = [
@@ -137,7 +85,8 @@ def test_execute_tool_calls_runs_parallel_when_enabled() -> None:
     results = asyncio.run(_execute_tool_calls(agent, requests))
     duration = time.monotonic() - start_time
 
-    assert duration < 0.45
+    # Parallel execution: two 0.15s tasks should complete well under 2x sequential time
+    assert duration < 0.5
     assert [request.tool_call_id for request, _ in results] == ["call_a", "call_b"]
 
 

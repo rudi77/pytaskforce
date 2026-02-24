@@ -175,7 +175,7 @@ class TestSchedulerService:
     async def test_interval_job_fires(self, scheduler_with_callback, callback) -> None:
         """Test that a short-interval job actually fires.
 
-        Note: This test uses asyncio.sleep and may flake on slow CI runners.
+        Uses polling instead of a fixed sleep to avoid flakiness on slow CI runners.
         """
         await scheduler_with_callback.start()
         job = ScheduleJob(
@@ -189,8 +189,12 @@ class TestSchedulerService:
         )
         await scheduler_with_callback.add_job(job)
 
-        # Wait for the job to fire at least once
-        await asyncio.sleep(1.5)
+        # Poll until the callback fires, with a generous timeout
+        for _ in range(50):  # 50 * 0.1s = 5s max
+            if callback.call_count >= 1:
+                break
+            await asyncio.sleep(0.1)
+
         await scheduler_with_callback.stop()
 
         assert callback.call_count >= 1
