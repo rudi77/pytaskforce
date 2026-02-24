@@ -193,13 +193,13 @@ class RAGCitationExtractor:
         if isinstance(results, list):
             for item in results:
                 if isinstance(item, dict):
-                    doc_id: str = item.get("document_id", item.get("id", ""))
-                    snippet_text: str = item.get("snippet", item.get("content", ""))
+                    doc_id = str(item.get("document_id") or item.get("id") or "")
+                    snippet_text = str(item.get("snippet") or item.get("content") or "")
                     citation = RAGCitation(
                         document_id=doc_id,
                         chunk_id=item.get("chunk_id", item.get("content_id")),
-                        title=item.get("title", item.get("document_title", "")),
-                        score=item.get("score", item.get("relevance", 0.0)),
+                        title=str(item.get("title") or item.get("document_title") or ""),
+                        score=float(item.get("score") or item.get("relevance") or 0.0),
                         page_number=item.get("page_number", item.get("page")),
                         snippet=snippet_text[:500],
                         metadata={

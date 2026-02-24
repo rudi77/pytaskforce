@@ -21,6 +21,8 @@ Clean Architecture Notes:
 """
 
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 
@@ -109,7 +111,7 @@ def _domain_to_response(
 )
 def create_agent(
     agent_def: CustomAgentCreate,
-    registry=Depends(get_agent_registry),
+    registry: Any = Depends(get_agent_registry),
 ) -> CustomAgentResponse:
     """
     Create a new custom agent.
@@ -163,7 +165,7 @@ def create_agent(
     ),
 )
 def list_agents(
-    registry=Depends(get_agent_registry),
+    registry: Any = Depends(get_agent_registry),
 ) -> AgentListResponse:
     """
     List all available agents.
@@ -191,7 +193,7 @@ def list_agents(
 )
 def get_agent(
     agent_id: str,
-    registry=Depends(get_agent_registry),
+    registry: Any = Depends(get_agent_registry),
 ) -> CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse:
     """
     Get an agent by ID.
@@ -227,7 +229,7 @@ def get_agent(
 def update_agent(
     agent_id: str,
     agent_def: CustomAgentUpdate,
-    registry=Depends(get_agent_registry),
+    registry: Any = Depends(get_agent_registry),
 ) -> CustomAgentResponse:
     """
     Update an existing custom agent.
@@ -280,7 +282,7 @@ def update_agent(
 )
 def delete_agent(
     agent_id: str,
-    registry=Depends(get_agent_registry),
+    registry: Any = Depends(get_agent_registry),
 ) -> Response:
     """
     Delete a custom agent.

@@ -178,7 +178,7 @@ class AgentTool:
         Returns:
             Path to config file if found, None otherwise.
         """
-        config_dir = self._factory.config_dir
+        config_dir: Path = Path(self._factory.config_dir)
 
         # 1. Check configs/custom/{specialist}.yaml
         custom_path = config_dir / "custom" / f"{specialist}.yaml"

@@ -1,5 +1,6 @@
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -51,11 +52,11 @@ async def taskforce_http_exception_handler(
         and isinstance(exc.detail, dict)
     ):
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
-    return await http_exception_handler(request, exc)
+    return await http_exception_handler(request, exc)  # type: ignore[return-value]
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan context manager for FastAPI startup/shutdown events."""
     # Initialize tracing first (before any LLM calls)
     init_tracing()
@@ -118,7 +119,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.add_exception_handler(HTTPException, taskforce_http_exception_handler)
+    app.add_exception_handler(HTTPException, taskforce_http_exception_handler)  # type: ignore[arg-type]
 
     # CORS middleware - origins configurable via CORS_ORIGINS env var
     cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
@@ -181,10 +182,10 @@ def _register_plugins(app: FastAPI) -> None:
                 # Check if it's a class (needs instantiation) or instance
                 if isinstance(middleware, type):
                     # It's a class - will be instantiated by add_middleware
-                    app.add_middleware(middleware)
+                    app.add_middleware(middleware)  # type: ignore[arg-type]
                 else:
                     # It's already an instance or a middleware factory
-                    app.add_middleware(type(middleware), dispatch=middleware)
+                    app.add_middleware(type(middleware), dispatch=middleware)  # type: ignore[arg-type]
             logger.debug(
                 "plugin.middleware.added",
                 middleware=str(middleware),

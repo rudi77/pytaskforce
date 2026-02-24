@@ -24,8 +24,8 @@ async def list_sessions(
         ...,
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
-    factory=Depends(get_factory),
-):
+    factory: Any = Depends(get_factory),
+) -> list[SessionResponse]:
     """List all agent sessions."""
     try:
         agent = await factory.create_agent(profile=profile)
@@ -66,8 +66,8 @@ async def get_session(
         ...,
         description="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
-    factory=Depends(get_factory),
-):
+    factory: Any = Depends(get_factory),
+) -> SessionResponse:
     """Get session details."""
     try:
         agent = await factory.create_agent(profile=profile)

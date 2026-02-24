@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -29,12 +30,12 @@ class FileMemoryStore(MemoryStoreProtocol):
             return self._read_record(path)
         return None
 
-    async def list(  # type: ignore[valid-type]
+    async def list(
         self,
         scope: MemoryScope | None = None,
         kind: MemoryKind | None = None,
-    ) -> list[MemoryRecord]:
-        paths: list[Path] = self._iter_paths(scope=scope, kind=kind)
+    ) -> builtins.list[MemoryRecord]:
+        paths: builtins.list[Path] = self._iter_paths(scope=scope, kind=kind)
         return [self._read_record(path) for path in paths]
 
     async def search(
@@ -43,10 +44,10 @@ class FileMemoryStore(MemoryStoreProtocol):
         scope: MemoryScope | None = None,
         kind: MemoryKind | None = None,
         limit: int = 10,
-    ) -> list[MemoryRecord]:
+    ) -> builtins.list[MemoryRecord]:
         query_lower = query.lower()
-        matches: list[MemoryRecord] = []
-        for path in self._iter_paths(scope=scope, kind=kind):  # type: ignore[attr-defined]
+        matches: builtins.list[MemoryRecord] = []
+        for path in self._iter_paths(scope=scope, kind=kind):
             record = self._read_record(path)
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
             if query_lower in haystack:
@@ -66,11 +67,11 @@ class FileMemoryStore(MemoryStoreProtocol):
             return True
         return False
 
-    def _iter_paths(  # type: ignore[valid-type]
+    def _iter_paths(
         self,
         scope: MemoryScope | None,
         kind: MemoryKind | None,
-    ) -> list[Path]:
+    ) -> builtins.list[Path]:
         base = self._base_dir
         if scope:
             base = base / scope.value

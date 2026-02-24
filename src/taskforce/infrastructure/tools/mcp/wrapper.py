@@ -98,7 +98,7 @@ class MCPToolWrapper(ToolProtocol):
         if "required" not in schema:
             schema["required"] = []
 
-        return schema
+        return schema  # type: ignore[no-any-return]
 
     @property
     def requires_approval(self) -> bool:
@@ -224,7 +224,7 @@ class MCPToolWrapper(ToolProtocol):
                     }
                     expected_python_type = type_map.get(expected_type)
                     if expected_python_type and not isinstance(
-                        param_value, expected_python_type
+                        param_value, expected_python_type  # type: ignore[arg-type]
                     ):
                         return (
                             False,

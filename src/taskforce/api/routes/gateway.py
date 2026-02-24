@@ -184,7 +184,7 @@ def _build_user_context(request: GatewayMessageRequest) -> dict[str, Any] | None
 async def handle_message(
     channel: str,
     request: GatewayMessageRequest,
-    gateway=Depends(get_gateway),
+    gateway: Any = Depends(get_gateway),
 ) -> GatewayMessageResponse:
     """Handle an inbound message from any channel.
 
@@ -236,8 +236,8 @@ async def handle_message(
 async def handle_webhook(
     channel: str,
     request: Request,
-    gateway=Depends(get_gateway),
-    inbound_adapters=Depends(get_inbound_adapters),
+    gateway: Any = Depends(get_gateway),
+    inbound_adapters: Any = Depends(get_inbound_adapters),
 ) -> GatewayMessageResponse:
     """Handle a raw webhook payload from an external channel.
 
@@ -300,7 +300,7 @@ async def handle_webhook(
 )
 async def send_notification(
     request: NotificationRequestSchema,
-    gateway=Depends(get_gateway),
+    gateway: Any = Depends(get_gateway),
 ) -> NotificationResponseSchema:
     """Send a proactive push notification to a registered recipient."""
     if not request.message.strip():
@@ -335,7 +335,7 @@ async def send_notification(
 )
 async def broadcast(
     request: BroadcastRequestSchema,
-    gateway=Depends(get_gateway),
+    gateway: Any = Depends(get_gateway),
 ) -> BroadcastResponseSchema:
     """Broadcast a message to all registered recipients on a channel."""
     if not request.message.strip():
@@ -373,7 +373,7 @@ async def broadcast(
     response_model=ChannelsResponseSchema,
 )
 async def list_channels(
-    gateway=Depends(get_gateway),
+    gateway: Any = Depends(get_gateway),
 ) -> ChannelsResponseSchema:
     """List all communication channels with outbound senders configured."""
     return ChannelsResponseSchema(

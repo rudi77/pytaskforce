@@ -793,7 +793,7 @@ def discover_plugins(group: str = "taskforce.plugins") -> list[PluginInfo]:
     except TypeError:
         # Python < 3.10 compatibility
         all_eps = entry_points()
-        eps = all_eps.get(group, [])  # type: ignore[assignment]
+        eps = all_eps.get(group, [])  # type: ignore[arg-type]
 
     for ep in eps:
         plugin_info = PluginInfo(

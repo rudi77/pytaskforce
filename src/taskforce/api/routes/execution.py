@@ -15,6 +15,7 @@ Both endpoints support:
 """
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -466,9 +467,9 @@ class ExecuteMissionResponse(BaseModel):
     },
 )
 async def execute_mission(
-    request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
-    executor=Depends(get_executor),
-):
+    request: ExecuteMissionRequest = Body(..., examples=list(REQUEST_EXAMPLES.values())),
+    executor: Any = Depends(get_executor),
+) -> ExecuteMissionResponse:
     """Execute agent mission synchronously.
 
     Executes the given mission and returns the final result when complete.
@@ -561,9 +562,9 @@ async def execute_mission(
     },
 )
 async def execute_mission_stream(
-    request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
-    executor=Depends(get_executor),
-):
+    request: ExecuteMissionRequest = Body(..., examples=list(REQUEST_EXAMPLES.values())),
+    executor: Any = Depends(get_executor),
+) -> StreamingResponse:
     """Execute mission with streaming progress via Server-Sent Events.
 
     Streams execution progress as SSE events. Each event is a JSON-encoded
@@ -581,7 +582,7 @@ async def execute_mission_stream(
     """
     user_context = _build_user_context(request)
 
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[str]:
         try:
             async for update in executor.execute_mission_streaming(
                 mission=request.mission,
