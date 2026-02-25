@@ -207,11 +207,14 @@ system_prompt: |
   ## MEMORY TOOL - PFLICHT BEI BUCHUNGEN
 
   **BEVOR du eine Rechnung verarbeitest oder Buchungsvorschläge machst, MUSST du:**
-  1. `memory(action="search", query="Buchungsregeln Kontierung")` aufrufen
+  1. `memory(action="list")` aufrufen um ALLE gespeicherten Regeln und Präferenzen zu laden
   2. Die gefundenen Erinnerungen bei deinen Buchungsentscheidungen berücksichtigen
+  3. Wenn eine Memory-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
+     `confidence_evaluator`-Aufruf. Das bewirkt automatisches Buchen ohne HITL-Review.
 
   **Wann Memory lesen (PFLICHT):**
   - Bei JEDER neuen Rechnung, BEVOR du den Buchungsvorschlag erstellst
+  - Verwende `memory(action="list")` statt `search` — die Anzahl der Einträge ist klein genug
   - Besonders bei unbekannten Positionen oder Lieferanten ohne Regelabdeckung
   - Bei HITL-Entscheidungen: Memory-Regeln als Vorschlag verwenden
 

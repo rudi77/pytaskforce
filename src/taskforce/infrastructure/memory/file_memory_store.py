@@ -6,10 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 import yaml
 
 from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
+
+logger = structlog.get_logger(__name__)
 
 
 class FileMemoryStore(MemoryStoreProtocol):
@@ -71,19 +74,57 @@ class FileMemoryStore(MemoryStoreProtocol):
         kind: MemoryKind | None = None,
         limit: int = 10,
     ) -> list[MemoryRecord]:
-        query_lower = query.lower()
-        matches: list[MemoryRecord] = []
-        for record in self._load_all():
+        """Search memory records using word-based matching with relevance scoring.
+
+        The query is split into individual words.  A record matches when
+        **at least one** query word is found in the record's content or tags.
+        Results are ranked by the number of matching words (most relevant
+        first).  Words longer than 4 characters also match by prefix
+        (dropping the last character) to handle common morphological
+        variants such as German plural forms (e.g. "Buchungsregeln"
+        matches "Buchungsregel").
+        """
+        query_words = query.lower().split()
+        if not query_words:
+            return []
+        all_records = self._load_all()
+        logger.debug(
+            "memory.search",
+            query=query,
+            query_words=query_words,
+            total_records=len(all_records),
+        )
+        scored: list[tuple[int, MemoryRecord]] = []
+        for record in all_records:
             if scope and record.scope != scope:
                 continue
             if kind and record.kind != kind:
                 continue
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
-            if query_lower in haystack:
-                matches.append(record)
-            if len(matches) >= limit:
-                break
+            hits = sum(1 for w in query_words if self._word_matches(w, haystack))
+            if hits > 0:
+                scored.append((hits, record))
+        # Sort by number of matching words descending (most relevant first)
+        scored.sort(key=lambda item: item[0], reverse=True)
+        matches = [record for _, record in scored[:limit]]
+        logger.debug("memory.search.results", query=query, matched=len(matches))
         return matches
+
+    @staticmethod
+    def _word_matches(word: str, haystack: str) -> bool:
+        """Check whether *word* occurs in *haystack*.
+
+        For words longer than 4 characters a prefix match (dropping the
+        last character) is also accepted.  This handles common inflection
+        differences like singular/plural in German without requiring a
+        full stemmer.
+        """
+        if word in haystack:
+            return True
+        if len(word) > 4:
+            prefix = word[: len(word) - 1]
+            return prefix in haystack
+        return False
 
     async def update(self, record: MemoryRecord) -> MemoryRecord:
         record.touch()

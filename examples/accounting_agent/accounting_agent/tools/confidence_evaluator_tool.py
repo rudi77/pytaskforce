@@ -133,6 +133,13 @@ class ConfidenceEvaluatorTool:
                     "minimum": 0.0,
                     "maximum": 1.0,
                 },
+                "memory_confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "True if a user-defined memory rule confirms this booking "
+                        "(e.g. 'Getränke immer auf 4900'). Forces auto-book when set."
+                    ),
+                },
             },
             "required": ["invoice_data"],
         }
@@ -176,6 +183,7 @@ class ConfidenceEvaluatorTool:
         is_new_vendor: Optional[bool] = None,
         is_rag_suggestion: bool = False,
         rag_confidence: float = 0.0,
+        memory_confirmed: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """
@@ -189,6 +197,7 @@ class ConfidenceEvaluatorTool:
             is_new_vendor: True for first-time vendors (auto-detected if None)
             is_rag_suggestion: True for RAG fallback suggestions
             rag_confidence: RAG confidence score
+            memory_confirmed: True if a user-defined memory rule confirms this booking
 
         Returns:
             Dictionary with:
@@ -288,6 +297,15 @@ class ConfidenceEvaluatorTool:
             else:
                 historical_hit_rate = 0.8  # Default assumption
                 logger.debug("confidence_evaluator.no_rule_match_provided")
+
+            # Memory-confirmed bookings: user explicitly stored this rule
+            if memory_confirmed and not force_auto_book:
+                force_auto_book = True
+                historical_hit_rate = 1.0
+                logger.info(
+                    "confidence_evaluator.memory_confirmed_auto_book",
+                    reason="user_memory_rule_matches_booking",
+                )
 
             # Calculate confidence
             result = self._calculator.calculate(

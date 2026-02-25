@@ -357,7 +357,7 @@ class SimpleChatRunner:
 
             elif event_type == EventType.TOOL_CALL.value:
                 tool = update.details.get("tool", "unknown")
-                params = update.details.get("params", {})
+                params = update.details.get("args", update.details.get("params", {}))
                 signature = (event_type, f"{tool}:{params}")
                 if signature != self._last_event_signature:
                     self.console.print(

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import structlog
 from typing import Any
 
 from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
 from taskforce.infrastructure.tools.base_tool import BaseTool
+
+logger = structlog.get_logger(__name__)
 
 
 class MemoryTool(BaseTool):
@@ -53,21 +56,25 @@ class MemoryTool(BaseTool):
     tool_requires_approval = False
     tool_supports_parallelism = False
 
-    def __init__(self, store_dir: str = ".taskforce/memory") -> None:
+    def __init__(self, store_dir: str = ".taskforce/memory.md") -> None:
         from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
         self._store = FileMemoryStore(store_dir)
+        logger.info(
+            "memory_tool.initialized",
+            store_path=str(self._store._file),
+            file_exists=self._store._file.exists(),
+        )
 
     async def _execute(self, **kwargs: Any) -> dict[str, Any]:
-        """Dispatch to the appropriate action handler.
-
-        Args:
-            **kwargs: Tool parameters including ``action``.
-
-        Returns:
-            Result dictionary with memory operation outcome.
-        """
+        """Dispatch to the appropriate action handler."""
         action = kwargs.get("action")
+        logger.debug(
+            "memory_tool.execute",
+            action=action,
+            store_path=str(self._store._file),
+            params={k: v for k, v in kwargs.items() if k != "content"},
+        )
         if action == "add":
             return await self._add_record(**kwargs)
         if action == "get":
