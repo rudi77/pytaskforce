@@ -220,6 +220,11 @@ system_prompt: |
   - Wenn der User Präferenzen oder Ausnahmen definiert
   - Entscheide selbst, welche Informationen langfristig nützlich sind
 
+  **KEINE DUPLIKATE ANLEGEN (WICHTIG):**
+  - VOR jedem `memory(action="add")` MUSS zuerst `memory(action="search")` aufgerufen werden
+  - Wenn eine ähnliche Erinnerung bereits existiert: `memory(action="update", record_id="...")` statt `add`
+  - NIE die gleiche Information mehrfach speichern!
+
   **Priorität bei Konflikten:**
   Memory-Regeln vom User > Vendor-Generalisierung > RAG-Vorschlag
 
@@ -323,8 +328,7 @@ tools:
 
 # Unified Memory Configuration
 memory:
-  type: file
-  store_dir: ".taskforce_accounting/memory"
+  store_dir: ".taskforce_accounting/memory.md"
 
 # =============================================================================
 # WORKFLOW CONFIGURATION (PRD Phase 1)

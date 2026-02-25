@@ -881,7 +881,9 @@ class AgentFactory:
             llm_provider=llm_provider,
             embedding_service=embedding_service,
         )
-        native_tools = self._resolve_plugin_native_tools(tool_configs, llm_provider)
+        native_tools = self._resolve_plugin_native_tools(
+            tool_configs, llm_provider, merged_config
+        )
         all_tools = plugin_tools + native_tools
 
         mcp_tools, mcp_contexts = await self._tool_builder.create_mcp_tools(merged_config)
@@ -961,8 +963,12 @@ class AgentFactory:
         self,
         tool_configs: list[Any],
         llm_provider: LLMProviderProtocol,
+        merged_config: dict[str, Any] | None = None,
     ) -> list[ToolProtocol]:
         """Resolve native tools referenced in plugin tool configs."""
+        from taskforce.application.tool_builder import ToolBuilder
+        from taskforce.application.tool_registry import ToolRegistry
+
         native_tool_names: list[str] = []
         for tool_cfg in tool_configs:
             if isinstance(tool_cfg, str):
@@ -973,12 +979,23 @@ class AgentFactory:
         if not native_tool_names:
             return []
 
-        native_tools: list[ToolProtocol] = []
-        for tool in self._tool_builder.get_all_native_tools(llm_provider):
-            if tool.name in native_tool_names:
-                native_tools.append(tool)
-                self.logger.debug("native_tool_added_for_plugin", tool_name=tool.name)
-        return native_tools
+        # Resolve memory_store_dir from merged config so MemoryTool uses
+        # the plugin's configured path instead of the default .taskforce/memory
+        memory_store_dir = None
+        if merged_config:
+            memory_store_dir = ToolBuilder.resolve_memory_store_dir(merged_config)
+
+        registry = ToolRegistry(
+            llm_provider=llm_provider,
+            memory_store_dir=memory_store_dir,
+        )
+        # Only resolve names the registry actually knows about —
+        # plugin-specific tool names are handled by plugin_loader, not here.
+        available = set(registry.get_available_tools())
+        names_to_resolve = [n for n in native_tool_names if n in available]
+        if not names_to_resolve:
+            return []
+        return registry.resolve(names_to_resolve)
 
     def _maybe_add_skill_tool(
         self, manifest: Any, all_tools: list[ToolProtocol]

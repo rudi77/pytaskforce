@@ -49,12 +49,12 @@ class TestHydrateMemoryToolSpec:
         result = ToolBuilder.hydrate_memory_tool_spec("memory", config)
         assert isinstance(result, dict)
         assert result["type"] == "MemoryTool"
-        assert result["params"]["store_dir"] == str(Path("/data/.tf") / "memory")
+        assert result["params"]["store_dir"] == str(Path("/data/.tf") / "memory.md")
 
     def test_memory_spec_default_persistence(self) -> None:
         result = ToolBuilder.hydrate_memory_tool_spec("memory", {})
         assert isinstance(result, dict)
-        assert result["params"]["store_dir"] == str(Path(".taskforce") / "memory")
+        assert result["params"]["store_dir"] == str(Path(".taskforce") / "memory.md")
 
 
 class TestResolveMemoryStoreDir:
@@ -67,16 +67,16 @@ class TestResolveMemoryStoreDir:
 
     def test_work_dir_override(self) -> None:
         result = ToolBuilder.resolve_memory_store_dir({}, work_dir_override="/override")
-        assert result == str(Path("/override") / "memory")
+        assert result == str(Path("/override") / "memory.md")
 
     def test_persistence_work_dir(self) -> None:
         config: dict[str, Any] = {"persistence": {"work_dir": "/persist"}}
         result = ToolBuilder.resolve_memory_store_dir(config)
-        assert result == str(Path("/persist") / "memory")
+        assert result == str(Path("/persist") / "memory.md")
 
     def test_default_fallback(self) -> None:
         result = ToolBuilder.resolve_memory_store_dir({})
-        assert result == str(Path(".taskforce") / "memory")
+        assert result == str(Path(".taskforce") / "memory.md")
 
     def test_explicit_store_dir_takes_precedence(self) -> None:
         config: dict[str, Any] = {

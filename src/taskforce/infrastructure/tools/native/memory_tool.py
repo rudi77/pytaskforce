@@ -13,7 +13,9 @@ class MemoryTool(BaseTool):
 
     tool_name = "memory"
     tool_description = (
-        "Create, read, search, update, and delete memory records stored as Markdown."
+        "Create, read, search, update, and delete memory records stored as Markdown. "
+        "IMPORTANT: Before adding a new record, always search first to avoid duplicates. "
+        "If a similar record exists, use 'update' with its record_id instead of 'add'."
     )
     tool_parameters_schema: dict[str, Any] = {
         "type": "object",

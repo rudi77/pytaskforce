@@ -539,20 +539,18 @@ class ToolBuilder:
         if tool_spec != "memory":
             return tool_spec
 
-        memory_config = config.get("memory", {})
-        store_dir = memory_config.get("store_dir")
-        if not store_dir:
-            persistence_dir = config.get("persistence", {}).get(
-                "work_dir", ".taskforce"
-            )
-            store_dir = str(Path(persistence_dir) / "memory")
+        store_dir = ToolBuilder.resolve_memory_store_dir(config)
         return {"type": "MemoryTool", "params": {"store_dir": store_dir}}
 
     @staticmethod
     def resolve_memory_store_dir(
         config: dict[str, Any], work_dir_override: str | None = None
     ) -> str:
-        """Resolve memory store directory from config."""
+        """Resolve memory store path from config.
+
+        Returns a path to the memory file (``memory.md``).  The
+        ``FileMemoryStore`` accepts both file and directory paths.
+        """
         memory_config = config.get("memory", {})
         store_dir = memory_config.get("store_dir")
         if store_dir:
@@ -560,4 +558,4 @@ class ToolBuilder:
         persistence_dir = work_dir_override or config.get(
             "persistence", {}
         ).get("work_dir", ".taskforce")
-        return str(Path(persistence_dir) / "memory")
+        return str(Path(persistence_dir) / "memory.md")

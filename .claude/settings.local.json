@@ -67,7 +67,9 @@
       "Bash(cd D:/home/Source/pytaskforce && PYTHONPATH=examples/accounting_agent uv run python -m pytest examples/accounting_agent/tests/test_semantic_rule_engine.py examples/accounting_agent/tests/test_confidence_calculator.py -v -p no:cacheprovider 2>&1)",
       "Bash(cd D:/home/Source/pytaskforce && PYTHONPATH=examples/accounting_agent uv run python -m pytest examples/accounting_agent/tests/test_confidence_evaluator.py examples/accounting_agent/tests/test_rule_engine_tool.py -v -p no:cacheprovider 2>&1)",
       "Bash(cd D:/home/Source/pytaskforce && PYTHONPATH=examples/accounting_agent uv run python -m pytest examples/accounting_agent/tests/test_e2e_invoice_runner.py -v -p no:cacheprovider 2>&1)",
-      "Bash(cd D:/home/Source/pytaskforce && PYTHONPATH=examples/accounting_agent uv run python -m pytest examples/accounting_agent/tests/test_vendor_generalization.py examples/accounting_agent/tests/test_litellm_embeddings.py examples/accounting_agent/tests/test_semantic_rule_engine.py examples/accounting_agent/tests/test_confidence_calculator.py examples/accounting_agent/tests/test_domain_models.py examples/accounting_agent/tests/test_scenarios_invoice.py -v -p no:cacheprovider 2>&1)"
+      "Bash(cd D:/home/Source/pytaskforce && PYTHONPATH=examples/accounting_agent uv run python -m pytest examples/accounting_agent/tests/test_vendor_generalization.py examples/accounting_agent/tests/test_litellm_embeddings.py examples/accounting_agent/tests/test_semantic_rule_engine.py examples/accounting_agent/tests/test_confidence_calculator.py examples/accounting_agent/tests/test_domain_models.py examples/accounting_agent/tests/test_scenarios_invoice.py -v -p no:cacheprovider 2>&1)",
+      "Bash(grep:*)",
+      "Bash(cd /d/home/Source/pytaskforce && PYTHONPATH=src:examples/accounting_agent python -m pytest examples/accounting_agent/tests/test_vendor_generalization.py -q --tb=short --timeout=10 -s 2>&1)"
     ],
     "deny": [],
     "ask": []

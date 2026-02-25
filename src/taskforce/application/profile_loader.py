@@ -205,4 +205,7 @@ class ProfileLoader:
                 plugin_config["context_management"]
             )
 
+        if "memory" in plugin_config:
+            merged.setdefault("memory", {}).update(plugin_config["memory"])
+
         return merged
