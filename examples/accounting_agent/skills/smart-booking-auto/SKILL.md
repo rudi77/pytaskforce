@@ -5,7 +5,9 @@ description: |
   Aktivieren wenn: INVOICE_PROCESSING Intent erkannt wurde.
   Dieser Skill führt den deterministischen Workflow aus und wechselt automatisch
   zu smart-booking-hitl wenn Confidence <95% oder Hard Gates ausgelöst werden.
-allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user memory
+  Bei fehlenden Pflichtangaben (§14 UStG) wird der Telegram-User per ask_user befragt.
+  Bei Buchungsentscheidungen wird an den Buchhalter (CLI) weitergeleitet.
+allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user send_notification memory
 
 workflow:
   steps:
@@ -28,7 +30,9 @@ workflow:
       params:
         invoice_data: "${invoice_data}"
       output: compliance_result
-      abort_on_error: true  # Bei kritischen Fehlern abbrechen
+      # Bei Compliance-Fehlern: ask_user um fehlende Pflichtangaben zu erfragen
+      # (siehe "Compliance-Validierung" Abschnitt unten)
+      on_error: ask_user_for_missing_fields
 
     # Step 4: Kontierungsregeln anwenden
     - tool: semantic_rule_engine
@@ -38,13 +42,13 @@ workflow:
       output: rule_result
 
     # Step 4b: KRITISCH - Prüfe ob Buchungsvorschläge vorhanden sind
-    # WENN rules_applied = 0 → SOFORT zu HITL wechseln!
+    # WENN rules_applied = 0 → SOFORT zu HITL (Buchhalter) wechseln!
     - switch:
         "on": rule_result.rules_applied
         cases:
           "0":
             skill: smart-booking-hitl
-            reason: "Keine passende Buchungsregel gefunden - User muss entscheiden"
+            reason: "Keine passende Buchungsregel gefunden - Buchhalter muss entscheiden"
 
     # Step 5: Confidence bewerten (NUR wenn booking_proposals vorhanden!)
     - tool: confidence_evaluator
@@ -55,17 +59,15 @@ workflow:
       output: confidence_result
 
     # Step 6: Entscheidung - Auto oder HITL?
-    # KRITISCH: Wenn recommendation = hitl_review, MUSS ask_user aufgerufen werden!
+    # Bei hitl_review → Weiterleitung an Buchhalter (CLI), NICHT ask_user!
     - switch:
         "on": confidence_result.recommendation
         cases:
           hitl_review:
-            # PFLICHT-SEQUENZ für HITL:
+            # Weiterleitung an Buchhalter:
             # 1. hitl_review(action="create") aufrufen
-            # 2. ask_user aufrufen mit Buchungsvorschlag
-            # 3. Warten auf User-Antwort
-            # 4. hitl_review(action="process") mit User-Entscheidung
-            # 5. rule_learning aufrufen
+            # 2. send_notification an Telegram-User (informieren, nicht fragen!)
+            # 3. Buchhalter bearbeitet über CLI
             skill: smart-booking-hitl
           auto_book:
             continue: true
@@ -99,13 +101,56 @@ workflow:
 Dieser Skill führt einen **deterministischen Workflow** aus, der Rechnungen
 automatisch verarbeitet und bucht, wenn die Confidence >= 95% ist.
 
+## Zwei-Rollen-Modell
+
+| Rolle | Kanal | Verantwortung |
+|-------|-------|---------------|
+| **Telegram-User** | Telegram | Reicht Rechnungen ein, ergänzt fehlende Pflichtangaben |
+| **Buchhalter** | CLI | Trifft Buchungsentscheidungen bei HITL-Reviews |
+
 ## Workflow-Übersicht
 
 ```
-PDF/Bild → Markdown → Strukturierte Daten → Compliance → Regeln → [PRÜFUNG] → Confidence → Buchung
-                                                           ↓
-                                              Keine Regel? → HITL
+PDF/Bild → Markdown → Strukturierte Daten → Compliance-Prüfung → Regeln → Confidence → Buchung
+                                                    ↓                          ↓
+                                          Fehler? → ask_user         HITL? → Buchhalter (CLI)
+                                          (Telegram-User)           (send_notification)
 ```
+
+## Compliance-Validierung (§14 UStG)
+
+**WENN `check_compliance` Fehler mit `severity: error` zurückgibt:**
+
+Diese Fehler bedeuten, dass **Pflichtangaben fehlen**. Der Telegram-User kann diese
+ergänzen, da er die Rechnung physisch vorliegen hat.
+
+**→ `ask_user` aufrufen um fehlende Angaben zu erfragen:**
+
+```tool
+ask_user(
+  question="⚠️ Die Rechnung ist unvollständig.
+
+Folgende Pflichtangaben nach §14 UStG fehlen:
+- [Feldname]: [Beschreibung] ([Rechtsgrundlage])
+- [Feldname]: [Beschreibung] ([Rechtsgrundlage])
+
+Bitte ergänzen Sie die fehlenden Angaben oder senden Sie ein besseres Bild der Rechnung."
+)
+```
+
+→ Mit den ergänzten Daten die Compliance erneut prüfen, dann den Workflow fortsetzen.
+
+**HINWEIS:** Warnungen (`severity: warning`) wie fehlendes Lieferdatum sind KEINE
+Abbruchgründe. Nur Fehler (`severity: error`) blockieren den Workflow.
+
+## HITL-Weiterleitung an Buchhalter
+
+**WENN `smart-booking-hitl` aktiviert wird:**
+
+Der Telegram-User wird per `send_notification` informiert, dass die Rechnung
+zur Prüfung an den Buchhalter weitergeleitet wurde. **NICHT per `ask_user` fragen!**
+
+Der Buchhalter bearbeitet den offenen Review über die CLI.
 
 ## KRITISCH: Keine Buchungsregel gefunden
 
@@ -114,12 +159,12 @@ PDF/Bild → Markdown → Strukturierte Daten → Compliance → Regeln → [PR�
 1. `booking_proposals` ist LEER (`[]`)
 2. `unmatched_items` enthält die nicht-gematchten Positionen
 
-**→ DU MUSST SOFORT zu `smart-booking-hitl` wechseln!**
+**→ Wechsle zu `smart-booking-hitl`!** (Weiterleitung an Buchhalter)
 
 **DU DARFST NICHT:**
 - Selbst eine Regel erstellen
 - Selbst ein Konto wählen
-- Ohne User-Bestätigung fortfahren
+- Den Telegram-User nach dem Konto fragen
 
 ## Automatische Ausführung
 
@@ -129,14 +174,14 @@ Der Workflow wird vom `activate_skill` Tool **direkt ausgeführt**:
 - Automatischer Skill-Wechsel bei niedrigem Confidence
 - **SOFORTIGER Skill-Wechsel wenn keine Regel gefunden**
 
-## Hard Gates (Auslöser für HITL)
+## Hard Gates (Auslöser für Buchhalter-HITL)
 
-| Hard Gate | Bedingung | Grund |
-|-----------|-----------|-------|
-| `no_rule_match` | **booking_proposals ist leer** | **Keine passende Regel - User muss entscheiden** |
-| `new_vendor` | Erster Invoice von diesem Lieferanten | Keine Historie |
-| `high_amount` | Bruttobetrag > 5.000 EUR | Wesentlichkeit |
-| `critical_account` | Zielkonto 1800, 2100 | Privatentnahmen, Anzahlungen |
+| Hard Gate | Bedingung | Aktion |
+|-----------|-----------|--------|
+| `no_rule_match` | **booking_proposals ist leer** | → Buchhalter (CLI) |
+| `new_vendor` | Erster Invoice von diesem Lieferanten | → Buchhalter (CLI) |
+| `high_amount` | Bruttobetrag > 5.000 EUR | → Buchhalter (CLI) |
+| `critical_account` | Zielkonto 1800, 2100 | → Buchhalter (CLI) |
 
 ## Confidence-Signale
 

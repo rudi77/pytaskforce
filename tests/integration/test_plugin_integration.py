@@ -34,12 +34,12 @@ class TestAccountingAgentPlugin:
         assert manifest.config_path is not None
         assert manifest.config_path.name == "accounting_agent.yaml"
 
-        # Check expected tool classes
+        # Check expected tool classes (SemanticRuleEngineTool supersedes RuleEngineTool)
         expected_tools = [
             "AuditLogTool",
             "ComplianceCheckerTool",
             "DoclingTool",
-            "RuleEngineTool",
+            "SemanticRuleEngineTool",
             "TaxCalculatorTool",
         ]
         for tool in expected_tools:
@@ -87,7 +87,7 @@ class TestAccountingAgentPlugin:
                 for name in [
                     "docling_extract",
                     "check_compliance",
-                    "apply_kontierung_rules",
+                    "semantic_rule_engine",
                     "calculate_tax",
                     "audit_log",
                 ]
