@@ -449,11 +449,11 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
 - **Domain Models:** `core/domain/gateway.py` (`InboundMessage`, `GatewayOptions`, `GatewayResponse`, `NotificationRequest`, `NotificationResult`)
 - **Gateway Service:** `application/gateway.py` (`CommunicationGateway`) - orchestrates inbound processing, session management, agent execution, outbound replies, and proactive push
 - **API Routes:** `api/routes/gateway.py`:
-  - `POST /gateway/{channel}/messages` - handle inbound messages from any channel
-  - `POST /gateway/{channel}/webhook` - handle raw provider webhooks (Telegram, Teams)
-  - `POST /gateway/notify` - send proactive push notifications
-  - `POST /gateway/broadcast` - broadcast to all recipients on a channel
-  - `GET  /gateway/channels` - list configured channels
+  - `POST /api/v1/gateway/{channel}/messages` - handle inbound messages from any channel
+  - `POST /api/v1/gateway/{channel}/webhook` - handle raw provider webhooks (Telegram, Teams)
+  - `POST /api/v1/gateway/notify` - send proactive push notifications
+  - `POST /api/v1/gateway/broadcast` - broadcast to all recipients on a channel
+  - `GET  /api/v1/gateway/channels` - list configured channels
 - **Send Notification Tool:** `infrastructure/tools/native/send_notification_tool.py` - allows agents to proactively push messages
 - **Extension Implementations:** `taskforce_extensions/infrastructure/communication/`:
   - `gateway_registry.py` - Component wiring and factory

@@ -83,17 +83,27 @@ def get_gateway_components():
     )
 
 
+@lru_cache(maxsize=1)
 def get_gateway():
-    """Provide a CommunicationGateway instance."""
+    """Provide a CommunicationGateway instance.
+
+    Also wires the gateway into the AgentFactory so that
+    SendNotificationTool receives a gateway reference at instantiation.
+    """
     from taskforce.application.gateway import CommunicationGateway
 
     components = get_gateway_components()
-    return CommunicationGateway(
+    gw = CommunicationGateway(
         executor=get_executor(),
         conversation_store=components.conversation_store,
         recipient_registry=components.recipient_registry,
         outbound_senders=components.outbound_senders,
     )
+
+    # Inject gateway into factory so SendNotificationTool is wired
+    get_executor().factory.set_gateway(gw)
+
+    return gw
 
 
 def get_inbound_adapters() -> dict[str, Any]:

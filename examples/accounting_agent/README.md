@@ -355,7 +355,7 @@ Register your webhook URL with the `profile` and `plugin_path` query parameters 
 
 ```bash
 # Set your public URL (e.g., via ngrok for development)
-WEBHOOK_URL="https://your-domain.com/gateway/telegram/webhook?profile=accounting_agent&plugin_path=examples/accounting_agent"
+WEBHOOK_URL="https://your-domain.com/api/v1/gateway/telegram/webhook?profile=accounting_agent&plugin_path=examples/accounting_agent"
 
 # Register webhook with Telegram
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
@@ -369,7 +369,7 @@ The Telegram integration leverages the existing Communication Gateway:
 
 ```
 User sends message on Telegram
-    → Telegram webhook delivers to /gateway/telegram/webhook
+    → Telegram webhook delivers to /api/v1/gateway/telegram/webhook
     → TelegramInboundAdapter normalizes the payload
     → CommunicationGateway executes accounting agent
     → Agent processes invoice / asks clarification questions

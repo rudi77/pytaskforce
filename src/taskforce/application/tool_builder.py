@@ -335,6 +335,7 @@ class ToolBuilder:
         tool_spec: str | dict[str, Any],
         llm_provider: LLMProviderProtocol,
         user_context: dict[str, Any] | None = None,
+        gateway: Any | None = None,
     ) -> ToolProtocol | None:
         """Instantiate a tool from configuration specification.
 
@@ -342,6 +343,7 @@ class ToolBuilder:
             tool_spec: Tool specification dict or short tool name.
             llm_provider: LLM provider for tools that need it.
             user_context: Optional user context for RAG tools.
+            gateway: Optional communication gateway for SendNotificationTool.
 
         Returns:
             Tool instance or None if instantiation fails.
@@ -381,6 +383,9 @@ class ToolBuilder:
             ]:
                 if user_context:
                     tool_params["user_context"] = user_context
+
+            if tool_type == "SendNotificationTool" and gateway:
+                tool_params["gateway"] = gateway
 
             tool_instance = tool_class(**tool_params)
 
