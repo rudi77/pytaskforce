@@ -388,7 +388,14 @@ class SimpleChatRunner:
                 paused_question = update.details
                 question = update.details.get("question", "")
                 missing = update.details.get("missing", [])
-                if missing:
+                channel = update.details.get("channel")
+                recipient = update.details.get("recipient_id")
+                if channel and recipient:
+                    self.console.print(
+                        f"[warning]📨 Sending question to "
+                        f"{channel}:{recipient}:[/warning] {question}"
+                    )
+                elif missing:
                     self.console.print(
                         f"[warning]❓ Agent needs input:[/warning] {question} "
                         f"(Missing: {', '.join(map(str, missing))})"
@@ -410,7 +417,20 @@ class SimpleChatRunner:
             self.console.print()
 
         if paused_question is not None:
+            channel = paused_question.get("channel")
+            recipient = paused_question.get("recipient_id")
             question_text = str(paused_question.get("question", "")).strip()
+
+            if channel and recipient:
+                # Channel-targeted question: send via gateway, poll for response
+                await self._handle_channel_question(
+                    question=question_text,
+                    channel=channel,
+                    recipient_id=recipient,
+                    history=history,
+                )
+                return
+
             if question_text:
                 state = await self.agent.state_manager.load_state(self.session_id) or {}
                 history = state.get("conversation_history", [])
@@ -425,6 +445,110 @@ class SimpleChatRunner:
         history.append({"role": MessageRole.ASSISTANT.value, "content": final_message})
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
+
+    async def _handle_channel_question(
+        self,
+        question: str,
+        channel: str,
+        recipient_id: str,
+        history: list[dict[str, Any]],
+    ) -> None:
+        """Send a question to a channel recipient and poll for the response.
+
+        When the agent uses ``ask_user(channel=..., recipient_id=...)`` the
+        CLI sends the question via the Communication Gateway and polls
+        until the recipient responds.  Once the response arrives the agent
+        is automatically resumed.
+
+        Args:
+            question: The question text.
+            channel: Target channel (e.g. 'telegram').
+            recipient_id: Recipient user ID on that channel.
+            history: Current conversation history.
+        """
+        import asyncio
+
+        from taskforce.application.gateway import CommunicationGateway
+        from taskforce.infrastructure.persistence.pending_channel_store import (
+            FilePendingChannelQuestionStore,
+        )
+
+        # Try to get the gateway from the executor or build a minimal one
+        gateway: CommunicationGateway | None = getattr(self.executor, "_gateway", None)
+
+        if not gateway:
+            self.console.print(
+                f"[warning]⚠️ No Communication Gateway configured. "
+                f"Cannot send question to {channel}:{recipient_id}.[/warning]"
+            )
+            self.console.print(
+                "[info]The agent is paused. Answer the question here instead:[/info]"
+            )
+            return
+
+        # Send question and register as pending
+        sent = await gateway.send_channel_question(
+            session_id=self.session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+            question=question,
+        )
+
+        if not sent:
+            self.console.print(
+                f"[error]❌ Failed to send question to {channel}:{recipient_id}.[/error]"
+            )
+            self.console.print(
+                "[info]The agent is paused. Answer the question here instead:[/info]"
+            )
+            return
+
+        self.console.print(
+            f"[info]⏳ Waiting for response from {channel}:{recipient_id}...[/info]"
+        )
+
+        # Poll for response
+        poll_interval = 2.0  # seconds
+        max_wait = 600.0  # 10 minutes
+        elapsed = 0.0
+
+        while elapsed < max_wait:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            response = await gateway.poll_channel_response(session_id=self.session_id)
+            if response is not None:
+                self.console.print(
+                    f"[info]✅ Response received from {channel}:{recipient_id}:[/info] "
+                    f"{response}"
+                )
+                # Clean up the pending question
+                await gateway.clear_channel_question(session_id=self.session_id)
+
+                # Resume the agent with the response (same as normal ask_user resume)
+                state = await self.agent.state_manager.load_state(self.session_id) or {}
+                conv_history = state.get("conversation_history", [])
+                conv_history.append(
+                    {"role": MessageRole.ASSISTANT.value, "content": question}
+                )
+                conv_history.append(
+                    {"role": MessageRole.USER.value, "content": response}
+                )
+                state["conversation_history"] = conv_history
+                await self.agent.state_manager.save_state(self.session_id, state)
+
+                # Automatically resume agent execution with the response
+                await self._stream_response(response, conv_history)
+                return
+
+        # Timeout
+        self.console.print(
+            f"[error]⏰ Timeout waiting for response from "
+            f"{channel}:{recipient_id} (after {int(max_wait)}s).[/error]"
+        )
+        self.console.print(
+            "[info]The agent remains paused. You can continue by typing the answer.[/info]"
+        )
 
     def _handle_plan_update(self, update: ProgressUpdate) -> None:
         """Handle plan update events."""

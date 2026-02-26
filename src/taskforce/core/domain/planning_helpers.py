@@ -418,10 +418,30 @@ async def _handle_ask_user(
     plan_iteration: int | None = None,
     paused_phase: str | None = None,
 ) -> AsyncIterator[StreamEvent]:
-    """Handle ask_user tool and save state for resume."""
+    """Handle ask_user tool and save state for resume.
+
+    Supports two modes:
+
+    * **Default** (no ``channel`` in args): Pauses execution and emits an
+      ``ASK_USER`` event.  The frontend (CLI, Gateway) shows the question
+      and feeds the answer back on the next turn.
+    * **Channel-targeted** (``channel`` + ``recipient_id`` in args): The
+      question is addressed to a specific person on a specific channel.
+      The ``ASK_USER`` event includes channel routing data so the frontend
+      can send the question to the right channel and poll for the response.
+    """
     q = str(args.get("question", "")).strip()
     missing = args.get("missing") or []
-    state["pending_question"] = {"question": q, "missing": missing}
+    channel = args.get("channel")
+    recipient_id = args.get("recipient_id")
+
+    pending: dict[str, Any] = {"question": q, "missing": missing}
+    if channel:
+        pending["channel"] = channel
+    if recipient_id:
+        pending["recipient_id"] = recipient_id
+
+    state["pending_question"] = pending
     state["paused_messages"] = messages
     state["paused_tool_call_id"] = tool_call_id
     state["paused_step"] = step
@@ -436,11 +456,26 @@ async def _handle_ask_user(
     await agent.state_store.save(
         session_id=session_id, state=state, planner=agent.planner
     )
+
+    event_data: dict[str, Any] = {"question": q, "missing": missing}
+    if channel:
+        event_data["channel"] = channel
+    if recipient_id:
+        event_data["recipient_id"] = recipient_id
+
     yield StreamEvent(
         event_type=EventType.ASK_USER,
-        data={"question": q, "missing": missing},
+        data=event_data,
     )
-    logger.info("paused_for_user_input", session_id=session_id)
+    if channel:
+        logger.info(
+            "paused_for_channel_input",
+            session_id=session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+        )
+    else:
+        logger.info("paused_for_user_input", session_id=session_id)
 
 
 async def _emit_tool_result(
