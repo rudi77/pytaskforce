@@ -6,14 +6,16 @@ Verifies orchestration logic, progress tracking, error handling, and logging.
 """
 
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
+from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.exceptions import AgentExecutionError
-from taskforce.core.domain.models import ExecutionResult
+from taskforce.core.domain.models import ExecutionResult, StreamEvent
 
 
 @pytest.mark.asyncio
@@ -432,3 +434,211 @@ async def test_progress_update_structure():
     assert update.message == "Analyzing task"
     assert update.details["step"] == 1
     assert update.details["rationale"] == "Need to read file"
+
+
+# ---------------------------------------------------------------------------
+# Channel-targeted ASK_USER routing via gateway
+# ---------------------------------------------------------------------------
+
+
+def test_is_channel_targeted_ask_true():
+    """Detect a channel-targeted ASK_USER event."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={
+            "question": "Invoice date?",
+            "channel": "telegram",
+            "recipient_id": "user-42",
+        },
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is True
+
+
+def test_is_channel_targeted_ask_false_standard():
+    """Standard ASK_USER (no channel) is NOT channel-targeted."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={"question": "Which account?"},
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is False
+
+
+def test_is_channel_targeted_ask_false_other_event():
+    """Non-ASK_USER event is NOT channel-targeted."""
+    event = StreamEvent(
+        event_type=EventType.TOOL_CALL,
+        data={"tool": "file_read", "channel": "telegram", "recipient_id": "u1"},
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is False
+
+
+def test_build_channel_question_sent_update():
+    """Build the 'sent' progress update with channel_routed flag."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={
+            "question": "Missing date?",
+            "channel": "telegram",
+            "recipient_id": "user-42",
+        },
+    )
+    update = AgentExecutor._build_channel_question_sent_update(event)
+
+    assert update.details["channel_routed"] is True
+    assert "telegram" in update.message
+    assert "user-42" in update.message
+    assert "Missing date?" in update.message
+
+
+def test_build_channel_response_received_update():
+    """Build the 'received' progress update."""
+    channel_ask = {
+        "channel": "telegram",
+        "recipient_id": "user-42",
+        "question": "Missing date?",
+    }
+    update = AgentExecutor._build_channel_response_received_update(
+        channel_ask, "2026-01-15"
+    )
+
+    assert update.details["channel_response_received"] is True
+    assert update.details["response"] == "2026-01-15"
+    assert "telegram" in update.message
+    assert "user-42" in update.message
+
+
+@pytest.mark.asyncio
+async def test_route_channel_question_success():
+    """Test that _route_channel_question sends and polls via gateway."""
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = True
+    mock_gateway.poll_channel_response.side_effect = [None, None, "2026-01-15"]
+    mock_gateway.clear_channel_question.return_value = None
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    response = await executor._route_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    assert response == "2026-01-15"
+    mock_gateway.send_channel_question.assert_called_once()
+    mock_gateway.clear_channel_question.assert_called_once_with(session_id="sess-1")
+
+
+@pytest.mark.asyncio
+async def test_route_channel_question_send_fails():
+    """When sending the question fails, return None."""
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = False
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    response = await executor._route_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    assert response is None
+    mock_gateway.poll_channel_response.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_streaming_intercepts_channel_ask():
+    """Executor handles channel-targeted ASK_USER and resumes agent."""
+    # Build a mock agent that streams: first run yields ASK_USER with channel,
+    # second run (resume) yields COMPLETE.
+    call_count = 0
+
+    async def fake_stream(mission, session_id):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(
+                event_type=EventType.ASK_USER,
+                data={
+                    "question": "Missing date?",
+                    "channel": "telegram",
+                    "recipient_id": "user-42",
+                },
+            )
+        else:
+            yield StreamEvent(
+                event_type=EventType.COMPLETE,
+                data={
+                    "status": "completed",
+                    "session_id": session_id,
+                    "final_message": f"Done with answer: {mission}",
+                },
+            )
+
+    mock_agent = MagicMock()
+    mock_agent.execute_stream = fake_stream
+
+    # Gateway that returns the response on first poll
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = True
+    mock_gateway.poll_channel_response.return_value = "2026-01-15"
+    mock_gateway.clear_channel_question.return_value = None
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    updates: list[ProgressUpdate] = []
+    async for update in executor._execute_streaming(mock_agent, "Process invoice", "s1"):
+        updates.append(update)
+
+    # Should have: channel_routed ASK_USER, channel_response_received, then COMPLETE
+    event_types = [
+        (u.event_type, u.details.get("channel_routed"), u.details.get("channel_response_received"))
+        for u in updates
+    ]
+
+    # First event: channel question sent (channel_routed=True)
+    assert updates[0].details.get("channel_routed") is True
+    assert "telegram" in updates[0].message
+
+    # Second event: response received
+    assert updates[1].details.get("channel_response_received") is True
+    assert updates[1].details["response"] == "2026-01-15"
+
+    # Third event: COMPLETE from resumed agent
+    complete_updates = [u for u in updates if u.event_type == EventType.COMPLETE
+                        or u.event_type == EventType.COMPLETE.value]
+    assert len(complete_updates) == 1
+
+    # Agent was called twice (original + resume)
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_streaming_no_gateway_yields_raw_ask():
+    """Without a gateway, channel-targeted ASK_USER is yielded as-is."""
+
+    async def fake_stream(mission, session_id):
+        yield StreamEvent(
+            event_type=EventType.ASK_USER,
+            data={
+                "question": "Missing date?",
+                "channel": "telegram",
+                "recipient_id": "user-42",
+            },
+        )
+
+    mock_agent = MagicMock()
+    mock_agent.execute_stream = fake_stream
+
+    executor = AgentExecutor()  # No gateway
+
+    updates: list[ProgressUpdate] = []
+    async for update in executor._execute_streaming(mock_agent, "Process invoice", "s1"):
+        updates.append(update)
+
+    # Should yield the raw ASK_USER event (not intercepted)
+    assert len(updates) == 1
+    assert updates[0].details.get("channel") == "telegram"
+    assert updates[0].details.get("channel_routed") is None

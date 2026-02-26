@@ -83,14 +83,22 @@ class AgentExecutor:
     different interfaces.
     """
 
-    def __init__(self, factory: AgentFactory | None = None):
-        """Initialize AgentExecutor with optional factory.
+    def __init__(
+        self,
+        factory: AgentFactory | None = None,
+        gateway: Any | None = None,
+    ):
+        """Initialize AgentExecutor with optional factory and gateway.
 
         Args:
             factory: Optional AgentFactory instance. If not provided,
                     creates a default factory.
+            gateway: Optional CommunicationGateway instance. When provided,
+                    channel-targeted ``ask_user`` calls are automatically
+                    routed via the gateway (send → poll → resume).
         """
         self.factory = factory or AgentFactory()
+        self._gateway = gateway
         self.logger = logger.bind(component="agent_executor")
 
     async def execute_mission(
@@ -844,6 +852,12 @@ class AgentExecutor:
         Uses true streaming if agent supports execute_stream(), otherwise
         falls back to post-hoc streaming from execution history.
 
+        When a gateway is configured, channel-targeted ``ask_user`` calls
+        (those with ``channel`` and ``recipient_id``) are handled
+        transparently: the question is sent via the gateway, the executor
+        polls for the response, and the agent is automatically resumed.
+        The consumer (CLI, API) only sees informational progress events.
+
         Args:
             agent: Agent instance to execute
             mission: Mission description
@@ -852,13 +866,54 @@ class AgentExecutor:
         Yields:
             ProgressUpdate objects for execution events
         """
-        if self._agent_supports_streaming(agent):
-            async for event in agent.execute_stream(mission, session_id):
-                yield self._stream_event_to_progress_update(event)
-        else:
-            result = await agent.execute(mission=mission, session_id=session_id)
-            async for update in self._yield_history_updates(result):
-                yield update
+        current_mission = mission
+
+        while True:
+            channel_ask: dict[str, Any] | None = None
+
+            if self._agent_supports_streaming(agent):
+                async for event in agent.execute_stream(current_mission, session_id):
+                    if self._is_channel_targeted_ask(event) and self._gateway:
+                        channel_ask = event.data
+                        # Yield an informational event (not a raw ASK_USER)
+                        yield self._build_channel_question_sent_update(event)
+                    else:
+                        yield self._stream_event_to_progress_update(event)
+            else:
+                result = await agent.execute(
+                    mission=current_mission, session_id=session_id
+                )
+                async for update in self._yield_history_updates(result):
+                    yield update
+
+            if not channel_ask or not self._gateway:
+                break  # Normal exit — no channel question to handle
+
+            # Route the channel question via the gateway
+            response = await self._route_channel_question(
+                session_id=session_id,
+                channel=channel_ask["channel"],
+                recipient_id=channel_ask["recipient_id"],
+                question=channel_ask.get("question", ""),
+            )
+
+            if response is not None:
+                yield self._build_channel_response_received_update(
+                    channel_ask, response
+                )
+                current_mission = response
+                # Loop continues: agent resumes with the response
+            else:
+                yield ProgressUpdate(
+                    timestamp=datetime.now(),
+                    event_type=EventType.ERROR,
+                    message=(
+                        f"Timeout waiting for response from "
+                        f"{channel_ask['channel']}:{channel_ask['recipient_id']}"
+                    ),
+                    details=channel_ask,
+                )
+                break
 
     def _agent_supports_streaming(self, agent: Agent) -> bool:
         """Check if the agent has a real execute_stream method.
@@ -876,6 +931,124 @@ class AgentExecutor:
             and not str(type(execute_stream_method).__module__).startswith(
                 "unittest.mock"
             )
+        )
+
+    # ------------------------------------------------------------------
+    # Channel-targeted ask_user routing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_channel_targeted_ask(event: StreamEvent) -> bool:
+        """Check whether a StreamEvent is a channel-targeted ASK_USER."""
+        evt = event.event_type
+        is_ask = evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
+        if not is_ask:
+            return False
+        data = event.data or {}
+        return bool(data.get("channel") and data.get("recipient_id"))
+
+    async def _route_channel_question(
+        self,
+        *,
+        session_id: str,
+        channel: str,
+        recipient_id: str,
+        question: str,
+    ) -> str | None:
+        """Send a channel question via the gateway and poll for the response.
+
+        Args:
+            session_id: Paused agent session.
+            channel: Target channel (e.g. 'telegram').
+            recipient_id: Recipient user ID on that channel.
+            question: The question text.
+
+        Returns:
+            Response text when the recipient answers, or None on timeout.
+        """
+        sent = await self._gateway.send_channel_question(
+            session_id=session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+            question=question,
+        )
+        if not sent:
+            self.logger.error(
+                "channel_question.send_failed",
+                session_id=session_id,
+                channel=channel,
+                recipient_id=recipient_id,
+            )
+            return None
+
+        self.logger.info(
+            "channel_question.polling",
+            session_id=session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+        )
+
+        poll_interval = 2.0
+        max_wait = 600.0
+        elapsed = 0.0
+
+        while elapsed < max_wait:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            response = await self._gateway.poll_channel_response(
+                session_id=session_id
+            )
+            if response is not None:
+                await self._gateway.clear_channel_question(session_id=session_id)
+                self.logger.info(
+                    "channel_question.response_received",
+                    session_id=session_id,
+                    channel=channel,
+                    recipient_id=recipient_id,
+                )
+                return response
+
+        self.logger.warning(
+            "channel_question.timeout",
+            session_id=session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+            max_wait=max_wait,
+        )
+        return None
+
+    @staticmethod
+    def _build_channel_question_sent_update(event: StreamEvent) -> ProgressUpdate:
+        """Build a ProgressUpdate for a channel question that was sent."""
+        data = event.data or {}
+        channel = data.get("channel", "")
+        recipient = data.get("recipient_id", "")
+        question = data.get("question", "")
+        return ProgressUpdate(
+            timestamp=event.timestamp,
+            event_type=EventType.ASK_USER,
+            message=f"Sending question to {channel}:{recipient}: {question}",
+            details={**data, "channel_routed": True},
+        )
+
+    @staticmethod
+    def _build_channel_response_received_update(
+        channel_ask: dict[str, Any], response: str
+    ) -> ProgressUpdate:
+        """Build a ProgressUpdate when a channel response is received."""
+        channel = channel_ask.get("channel", "")
+        recipient = channel_ask.get("recipient_id", "")
+        return ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.ASK_USER,
+            message=f"Response received from {channel}:{recipient}: {response}",
+            details={
+                "channel": channel,
+                "recipient_id": recipient,
+                "response": response,
+                "channel_response_received": True,
+            },
         )
 
     async def _yield_history_updates(
