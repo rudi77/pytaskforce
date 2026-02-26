@@ -87,21 +87,26 @@ def get_gateway_components():
 def get_gateway():
     """Provide a CommunicationGateway instance.
 
-    Also wires the gateway into the AgentFactory so that
-    SendNotificationTool receives a gateway reference at instantiation.
+    Also wires the gateway into the AgentExecutor (for channel-targeted
+    ``ask_user`` routing) and into the AgentFactory (so that
+    ``SendNotificationTool`` receives a gateway reference at instantiation).
     """
     from taskforce.application.gateway import CommunicationGateway
 
     components = get_gateway_components()
+    executor = get_executor()
     gw = CommunicationGateway(
-        executor=get_executor(),
+        executor=executor,
         conversation_store=components.conversation_store,
         recipient_registry=components.recipient_registry,
         outbound_senders=components.outbound_senders,
     )
 
+    # Inject gateway into executor so channel-targeted ask_user is routed
+    executor._gateway = gw
+
     # Inject gateway into factory so SendNotificationTool is wired
-    get_executor().factory.set_gateway(gw)
+    executor.factory.set_gateway(gw)
 
     return gw
 
