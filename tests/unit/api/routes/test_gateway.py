@@ -153,6 +153,75 @@ class TestHandleWebhook:
         body = response.json()
         assert body["code"] == "invalid_request"
 
+    def test_webhook_with_profile_query_param(self):
+        """Webhook passes profile query parameter via GatewayOptions."""
+        from taskforce.api.dependencies import get_gateway, get_inbound_adapters
+
+        gw = _mock_gateway()
+        app = create_app()
+        app.dependency_overrides[get_gateway] = lambda: gw
+        app.dependency_overrides[get_inbound_adapters] = _mock_adapters
+
+        with TestClient(app) as tc:
+            response = tc.post(
+                "/api/v1/gateway/telegram/webhook?profile=accounting_agent",
+                json={"update_id": 12345, "message": {"text": "Hi"}},
+            )
+        assert response.status_code == 200
+
+        call_args = gw.handle_message.call_args
+        options = call_args.args[1] if len(call_args.args) > 1 else None
+        assert options is not None
+        assert options.profile == "accounting_agent"
+        app.dependency_overrides.clear()
+
+    def test_webhook_with_plugin_path_query_param(self):
+        """Webhook passes plugin_path query parameter via GatewayOptions."""
+        from taskforce.api.dependencies import get_gateway, get_inbound_adapters
+
+        gw = _mock_gateway()
+        app = create_app()
+        app.dependency_overrides[get_gateway] = lambda: gw
+        app.dependency_overrides[get_inbound_adapters] = _mock_adapters
+
+        with TestClient(app) as tc:
+            response = tc.post(
+                "/api/v1/gateway/telegram/webhook"
+                "?profile=accounting_agent&plugin_path=examples/accounting_agent",
+                json={"update_id": 12345, "message": {"text": "Hi"}},
+            )
+        assert response.status_code == 200
+
+        call_args = gw.handle_message.call_args
+        options = call_args.args[1] if len(call_args.args) > 1 else None
+        assert options is not None
+        assert options.profile == "accounting_agent"
+        assert options.plugin_path == "examples/accounting_agent"
+        app.dependency_overrides.clear()
+
+    def test_webhook_default_profile(self):
+        """Webhook without profile query param defaults to 'dev'."""
+        from taskforce.api.dependencies import get_gateway, get_inbound_adapters
+
+        gw = _mock_gateway()
+        app = create_app()
+        app.dependency_overrides[get_gateway] = lambda: gw
+        app.dependency_overrides[get_inbound_adapters] = _mock_adapters
+
+        with TestClient(app) as tc:
+            response = tc.post(
+                "/api/v1/gateway/telegram/webhook",
+                json={"update_id": 12345, "message": {"text": "Hi"}},
+            )
+        assert response.status_code == 200
+
+        call_args = gw.handle_message.call_args
+        options = call_args.args[1] if len(call_args.args) > 1 else None
+        assert options is not None
+        assert options.profile == "dev"
+        assert options.plugin_path is None
+        app.dependency_overrides.clear()
+
     def test_webhook_signature_failure(self, client):
         from taskforce.api.dependencies import get_inbound_adapters
 
