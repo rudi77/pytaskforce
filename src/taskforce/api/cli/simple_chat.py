@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
+from taskforce.api.cli.tool_display_formatter import format_tool_call, format_tool_result
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
@@ -117,13 +118,9 @@ class SimpleChatRunner:
                 recipient_registry=components.recipient_registry,
             )
 
-            self.console.print(
-                "[info]📡 Telegram channel configured (long-polling mode)[/info]"
-            )
+            self.console.print("[info]📡 Telegram channel configured (long-polling mode)[/info]")
         except Exception as exc:
-            self.console.print(
-                f"[warning]⚠️ Telegram setup failed: {exc}[/warning]"
-            )
+            self.console.print(f"[warning]⚠️ Telegram setup failed: {exc}[/warning]")
 
     @property
     def prompt_session(self) -> PromptSession[str]:
@@ -411,9 +408,7 @@ class SimpleChatRunner:
             elif event_type == EventType.OBSERVATION.value:
                 observation = update.details.get("observation") or update.message
                 if observation:
-                    self.console.print(
-                        f"[observation]🔎 Observation:[/observation] {observation}"
-                    )
+                    self.console.print(f"[observation]🔎 Observation:[/observation] {observation}")
 
             elif event_type == EventType.PLAN_UPDATED.value:
                 self._handle_plan_update(update)
@@ -427,21 +422,19 @@ class SimpleChatRunner:
                 params = update.details.get("args", update.details.get("params", {}))
                 signature = (event_type, f"{tool}:{params}")
                 if signature != self._last_event_signature:
-                    self.console.print(
-                        f"[action]🔧 Tool call:[/action] {tool} {params}"
-                    )
+                    display = format_tool_call(tool, params if isinstance(params, dict) else {})
+                    self.console.print(f"[action]🔧 {display}[/action]")
                 self._last_event_signature = signature
 
             elif event_type == EventType.TOOL_RESULT.value:
                 tool = update.details.get("tool", "unknown")
                 success = update.details.get("success", True)
-                output = str(update.details.get("output", ""))[:200]
+                output = str(update.details.get("output", ""))
                 status = "✅" if success else "❌"
-                signature = (event_type, f"{tool}:{success}:{output}")
+                signature = (event_type, f"{tool}:{success}:{output[:200]}")
                 if signature != self._last_event_signature:
-                    self.console.print(
-                        f"[observation]{status} {tool}:[/observation] {output}"
-                    )
+                    display = format_tool_result(tool, success, output)
+                    self.console.print(f"[observation]{status} {tool}:[/observation] {display}")
                 self._last_event_signature = signature
 
             elif event_type == EventType.STEP_START.value:
@@ -466,8 +459,7 @@ class SimpleChatRunner:
                         f"{channel}:{recipient}:[/warning] {question}"
                     )
                     self.console.print(
-                        f"[info]⏳ Waiting for response from "
-                        f"{channel}:{recipient}...[/info]"
+                        f"[info]⏳ Waiting for response from " f"{channel}:{recipient}...[/info]"
                     )
                 elif channel_received:
                     # Response received from channel (executor handled it)
@@ -475,8 +467,7 @@ class SimpleChatRunner:
                     recipient = details.get("recipient_id", "")
                     response = details.get("response", "")
                     self.console.print(
-                        f"[info]✅ Response from {channel}:{recipient}:[/info] "
-                        f"{response}"
+                        f"[info]✅ Response from {channel}:{recipient}:[/info] " f"{response}"
                     )
                 else:
                     # Standard ask_user — pauses for CLI user input
@@ -489,9 +480,7 @@ class SimpleChatRunner:
                             f"(Missing: {', '.join(map(str, missing))})"
                         )
                     else:
-                        self.console.print(
-                            f"[warning]❓ Agent needs input:[/warning] {question}"
-                        )
+                        self.console.print(f"[warning]❓ Agent needs input:[/warning] {question}")
 
             elif event_type == EventType.ERROR.value:
                 self.console.print(f"[error]❌ Error:[/error] {update.message}")
@@ -545,10 +534,19 @@ class SimpleChatRunner:
         if self.plan_state.steps:
             for idx, step in enumerate(self.plan_state.steps, start=1):
                 status = step.get("status", "PENDING")
-                marker = "✓" if status in {TaskStatus.DONE.value, "COMPLETED"} else "⏳" if status in {
-                    "IN_PROGRESS",
-                    "ACTIVE",
-                } else " "
+                marker = (
+                    "✓"
+                    if status in {TaskStatus.DONE.value, "COMPLETED"}
+                    else (
+                        "⏳"
+                        if status
+                        in {
+                            "IN_PROGRESS",
+                            "ACTIVE",
+                        }
+                        else " "
+                    )
+                )
                 desc = step.get("description", "").strip()
                 self.console.print(f"  [{marker}] {idx}. {desc}")
         elif self.plan_state.text:
@@ -560,8 +558,7 @@ class SimpleChatRunner:
 
     def _print_session_info(self) -> None:
         self.console.print(
-            f"[info]Session:[/info] {self.session_id[:8]}  "
-            f"[info]Profile:[/info] {self.profile}"
+            f"[info]Session:[/info] {self.session_id[:8]}  " f"[info]Profile:[/info] {self.profile}"
         )
         if self.user_context:
             for key, value in self.user_context.items():
