@@ -92,14 +92,19 @@ def get_gateway():
     ``SendNotificationTool`` receives a gateway reference at instantiation).
     """
     from taskforce.application.gateway import CommunicationGateway
+    from taskforce.infrastructure.persistence.pending_channel_store import (
+        FilePendingChannelQuestionStore,
+    )
 
     components = get_gateway_components()
     executor = get_executor()
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
         recipient_registry=components.recipient_registry,
         outbound_senders=components.outbound_senders,
+        pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed

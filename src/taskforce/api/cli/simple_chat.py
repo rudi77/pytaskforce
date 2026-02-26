@@ -65,6 +65,64 @@ class SimpleChatRunner:
         self._last_event_signature: tuple[str, str] | None = None
         self._skill_service: SkillService | None = None
         self._prompt_session: PromptSession[str] | None = None
+        self._telegram_poller: Any | None = None
+
+        # Wire up Communication Gateway for channel-targeted ask_user
+        self._setup_gateway()
+
+    def _setup_gateway(self) -> None:
+        """Build Communication Gateway when channel credentials are available.
+
+        When ``TELEGRAM_BOT_TOKEN`` is set the CLI can send outbound
+        Telegram messages and receive replies via long-polling — no
+        webhook server required.
+        """
+        import os
+
+        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not telegram_token:
+            return
+
+        try:
+            from taskforce.application.gateway import CommunicationGateway
+            from taskforce.infrastructure.persistence.pending_channel_store import (
+                FilePendingChannelQuestionStore,
+            )
+            from taskforce_extensions.infrastructure.communication.gateway_registry import (
+                build_gateway_components,
+            )
+            from taskforce_extensions.infrastructure.communication.telegram_poller import (
+                TelegramPoller,
+            )
+
+            work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+            components = build_gateway_components(work_dir=work_dir)
+            pending_store = FilePendingChannelQuestionStore(work_dir=work_dir)
+
+            gateway = CommunicationGateway(
+                executor=self.executor,
+                conversation_store=components.conversation_store,
+                recipient_registry=components.recipient_registry,
+                outbound_senders=components.outbound_senders,
+                pending_channel_store=pending_store,
+            )
+            self.executor._gateway = gateway
+
+            # Prepare Telegram poller (started in run())
+            sender = components.outbound_senders.get("telegram")
+            self._telegram_poller = TelegramPoller(
+                bot_token=telegram_token,
+                pending_store=pending_store,
+                outbound_sender=sender,
+            )
+
+            self.console.print(
+                "[info]📡 Telegram channel configured (long-polling mode)[/info]"
+            )
+        except Exception as exc:
+            self.console.print(
+                f"[warning]⚠️ Telegram setup failed: {exc}[/warning]"
+            )
 
     @property
     def prompt_session(self) -> PromptSession[str]:
@@ -88,18 +146,26 @@ class SimpleChatRunner:
         self._print_banner()
         self._print_session_info()
 
-        while True:
-            message = await self._read_input()
-            if not message:
-                continue
+        # Start Telegram long-polling if configured
+        if self._telegram_poller:
+            await self._telegram_poller.start()
 
-            if message.startswith("/"):
-                should_exit = await self._handle_command(message)
-                if should_exit:
-                    return
-                continue
+        try:
+            while True:
+                message = await self._read_input()
+                if not message:
+                    continue
 
-            await self._handle_chat_message(message)
+                if message.startswith("/"):
+                    should_exit = await self._handle_command(message)
+                    if should_exit:
+                        return
+                    continue
+
+                await self._handle_chat_message(message)
+        finally:
+            if self._telegram_poller:
+                await self._telegram_poller.stop()
 
     async def _read_input(self) -> str:
         """Read input from the user with multi-line paste support."""
