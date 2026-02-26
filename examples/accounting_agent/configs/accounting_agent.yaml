@@ -199,13 +199,47 @@ system_prompt: |
   **BEVOR du eine Rechnung verarbeitest oder Buchungsvorschläge machst, MUSST du:**
   1. `memory(action="list")` aufrufen um ALLE gespeicherten Regeln und Präferenzen zu laden
   2. Die gefundenen Erinnerungen bei deinen Buchungsentscheidungen berücksichtigen
-  3. Wenn eine Memory-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
-     `confidence_evaluator`-Aufruf. Das bewirkt automatisches Buchen ohne HITL-Review.
 
   **Wann Memory lesen (PFLICHT):**
   - Bei JEDER neuen Rechnung, BEVOR du den Buchungsvorschlag erstellst
   - Verwende `memory(action="list")` statt `search` — die Anzahl der Einträge ist klein genug
-  - Besonders bei unbekannten Positionen oder Lieferanten ohne Regelabdeckung
+
+  ## ⚠️ MEMORY ALS FALLBACK WENN SEMANTIC_RULE_ENGINE NICHTS FINDET (KRITISCH)
+
+  Wenn `semantic_rule_engine` **0 Matches** zurückgibt (`rules_applied: 0`), prüfe ob
+  eine **Memory-Regel** auf die Rechnungspositionen passt.
+
+  **Beispiel:** Memory sagt "Getränke immer auf Konto 4900". Die Rechnung enthält
+  Mineralwasser, Bier, Cola → das sind Getränke → Memory-Regel passt!
+
+  **In diesem Fall MUSST du trotzdem `confidence_evaluator` aufrufen:**
+
+  ```
+  confidence_evaluator(
+    rule_match={
+      "rule_id": "MEMORY",
+      "rule_type": "vendor_item",
+      "match_type": "exact",
+      "similarity_score": 1.0,
+      "rule_source": "hitl_correction"
+    },
+    booking_proposal={
+      "debit_account": "[Konto aus Memory-Regel]",
+      "amount": [Nettobetrag]
+    },
+    invoice_data={...},
+    memory_confirmed=true
+  )
+  ```
+
+  **VERBOTEN:** Direkt zu HITL mit `confidence=0` springen wenn Memory-Regeln passen!
+  **VERBOTEN:** `confidence_evaluator` überspringen!
+
+  Die Entscheidungslogik ist:
+  1. `semantic_rule_engine` hat Matches → nutze diese
+  2. `semantic_rule_engine` hat KEINE Matches ABER Memory-Regel passt → nutze Memory-Regel
+     mit `memory_confirmed=true` → Auto-Book
+  3. WEDER Regeln NOCH Memory passen → HITL-Review
 
   **Wann Memory schreiben:**
   - Wenn der User allgemeine Buchungsregeln vorgibt (z.B. "Getränke immer auf 4900")
