@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from taskforce.api.dependencies import get_gateway, get_inbound_adapters
@@ -236,6 +236,14 @@ async def handle_message(
 async def handle_webhook(
     channel: str,
     request: Request,
+    profile: str = Query(
+        default="dev",
+        description="Agent profile to use for this channel's webhook.",
+    ),
+    plugin_path: str | None = Query(
+        default=None,
+        description="Optional plugin path for external agent tools.",
+    ),
     gateway=Depends(get_gateway),
     inbound_adapters=Depends(get_inbound_adapters),
 ) -> GatewayMessageResponse:
@@ -243,6 +251,12 @@ async def handle_webhook(
 
     Uses the channel's InboundAdapter to normalize the raw payload,
     verify its signature, and then process it through the gateway.
+
+    The ``profile`` and ``plugin_path`` query parameters allow callers
+    to configure which agent handles messages for this webhook. For
+    example, when registering a Telegram webhook URL::
+
+        https://example.com/gateway/telegram/webhook?profile=accounting_agent&plugin_path=examples/accounting_agent
     """
     adapter = inbound_adapters.get(channel)
     if not adapter:
@@ -283,7 +297,8 @@ async def handle_webhook(
         metadata=extracted.get("metadata", {}),
     )
 
-    response = await gateway.handle_message(inbound)
+    options = GatewayOptions(profile=profile, plugin_path=plugin_path)
+    response = await gateway.handle_message(inbound, options)
 
     return GatewayMessageResponse(
         session_id=response.session_id,

@@ -330,6 +330,89 @@ async def calculate_invoice_tax():
     print(f"Legal basis: {gwg_result['legal_basis']}")
 ```
 
+## Telegram Integration
+
+The accounting agent can be accessed via Telegram, allowing conversational invoice processing with interactive clarification questions.
+
+### Prerequisites
+
+1. **Create a Telegram Bot** via [@BotFather](https://t.me/BotFather) and save the token
+2. **Set the environment variable**:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your-bot-token-here"
+   ```
+
+### Start the API Server
+
+```bash
+# From the project root
+uvicorn taskforce.api.server:app --host 0.0.0.0 --port 8000
+```
+
+### Register the Telegram Webhook
+
+Register your webhook URL with the `profile` and `plugin_path` query parameters so that Telegram messages are routed to the accounting agent:
+
+```bash
+# Set your public URL (e.g., via ngrok for development)
+WEBHOOK_URL="https://your-domain.com/gateway/telegram/webhook?profile=accounting_agent&plugin_path=examples/accounting_agent"
+
+# Register webhook with Telegram
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\": \"${WEBHOOK_URL}\"}"
+```
+
+### How It Works
+
+The Telegram integration leverages the existing Communication Gateway:
+
+```
+User sends message on Telegram
+    → Telegram webhook delivers to /gateway/telegram/webhook
+    → TelegramInboundAdapter normalizes the payload
+    → CommunicationGateway executes accounting agent
+    → Agent processes invoice / asks clarification questions
+    → Response sent back via Telegram
+```
+
+**Clarification Flow (ask_user):**
+
+When the agent encounters ambiguities (e.g., missing invoice fields, unclear account assignment), it uses the `ask_user` tool. This:
+
+1. **Pauses** agent execution and saves state
+2. **Sends** the question to the user via Telegram
+3. **Waits** for the user's reply (next Telegram message)
+4. **Resumes** execution with the user's answer
+5. If the answer is unclear, **asks again** with a more specific question
+
+**Proactive Notifications (send_notification):**
+
+The agent can proactively notify the user via `send_notification` (e.g., booking completed, errors detected). The user is auto-registered as a notification recipient on first message.
+
+### Example Conversation
+
+```
+User:  Buche diese Rechnung: [PDF anhängen oder Text]
+Agent: 📋 RECHNUNGSDETAILS:
+       • Lieferant: Büromarkt AG
+       • Rechnungsnummer: 12345
+       • Bruttobetrag: 238,00 EUR
+
+       📦 POSITIONEN:
+       1. Druckerpapier A4 - 10 x 5,00 EUR (19%)
+          → Vorschlag: Konto 4930 (Büromaterial)
+       2. Unbekannter Artikel - 1 x 40,00 EUR (19%)
+          → ❓ Kein passendes Konto gefunden
+
+       Auf welches Konto soll "Unbekannter Artikel" gebucht werden?
+
+User:  Auf 4930 Büromaterial
+Agent: ✅ Buchung durchgeführt und Regel gespeichert:
+       - Druckerpapier A4 → Konto 4930 (Büromaterial)
+       - Unbekannter Artikel → Konto 4930 (Büromaterial)
+```
+
 ## Architecture
 
 ```
