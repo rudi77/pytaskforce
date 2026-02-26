@@ -60,6 +60,7 @@ class ToolRegistry:
         llm_provider: LLMProviderProtocol | None = None,
         user_context: dict[str, Any] | None = None,
         memory_store_dir: str | None = None,
+        gateway: Any | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -68,10 +69,12 @@ class ToolRegistry:
             llm_provider: LLM provider for tools that need it (e.g., LLMTool)
             user_context: User context for RAG tools (user_id, org_id, scope)
             memory_store_dir: Directory for file-based memory storage
+            gateway: Communication gateway for SendNotificationTool
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
         self._memory_store_dir = memory_store_dir
+        self._gateway = gateway
         self._logger = logger.bind(component="ToolRegistry")
 
     # -------------------------------------------------------------------------
@@ -346,6 +349,10 @@ class ToolRegistry:
             if tool_type == "MemoryTool" and self._memory_store_dir:
                 tool_params.setdefault("store_dir", self._memory_store_dir)
 
+            # Special handling for SendNotificationTool - inject gateway
+            if tool_type == "SendNotificationTool" and self._gateway:
+                tool_params["gateway"] = self._gateway
+
             # Instantiate the tool
             tool_instance: ToolProtocol = tool_class(**tool_params)
 
@@ -378,6 +385,7 @@ def get_tool_registry(
     llm_provider: LLMProviderProtocol | None = None,
     user_context: dict[str, Any] | None = None,
     memory_store_dir: str | None = None,
+    gateway: Any | None = None,
 ) -> ToolRegistry:
     """Get a tool registry instance.
 
@@ -392,6 +400,7 @@ def get_tool_registry(
         llm_provider: Optional LLM provider for tool instantiation.
         user_context: Optional user context for RAG tools.
         memory_store_dir: Optional memory store directory.
+        gateway: Optional communication gateway for SendNotificationTool.
 
     Returns:
         ToolRegistry instance.
@@ -400,6 +409,7 @@ def get_tool_registry(
         llm_provider is not None
         or user_context is not None
         or memory_store_dir is not None
+        or gateway is not None
     )
     if has_params:
         # Always return a fresh, request-scoped instance when DI params given.
@@ -407,6 +417,7 @@ def get_tool_registry(
             llm_provider=llm_provider,
             user_context=user_context,
             memory_store_dir=memory_store_dir,
+            gateway=gateway,
         )
 
     # Catalog-only path: reuse a shared lightweight instance.

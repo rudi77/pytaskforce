@@ -100,6 +100,15 @@ class AgentFactory:
         self.prompt_assembler = SystemPromptAssembler()
         self._tool_builder = ToolBuilder(self)
         self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
+        self._gateway: Any = None  # Optional CommunicationGateway for SendNotificationTool
+
+    def set_gateway(self, gateway: Any) -> None:
+        """Set the communication gateway for SendNotificationTool injection.
+
+        Args:
+            gateway: CommunicationGateway instance.
+        """
+        self._gateway = gateway
 
     @property
     def infra_builder(self) -> Any:
@@ -275,6 +284,7 @@ class AgentFactory:
             llm_provider=llm_provider,
             user_context=user_context,
             memory_store_dir=memory_store_dir,
+            gateway=self._gateway,
         )
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)
@@ -988,6 +998,7 @@ class AgentFactory:
         registry = ToolRegistry(
             llm_provider=llm_provider,
             memory_store_dir=memory_store_dir,
+            gateway=self._gateway,
         )
         # Only resolve names the registry actually knows about —
         # plugin-specific tool names are handled by plugin_loader, not here.
