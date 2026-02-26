@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -35,11 +35,24 @@ def outbound_sender() -> AsyncMock:
 
 
 @pytest.fixture
-def poller(pending_store: AsyncMock, outbound_sender: AsyncMock) -> TelegramPoller:
+def recipient_registry() -> AsyncMock:
+    """Mock RecipientRegistry."""
+    registry = AsyncMock()
+    registry.register = AsyncMock()
+    return registry
+
+
+@pytest.fixture
+def poller(
+    pending_store: AsyncMock,
+    outbound_sender: AsyncMock,
+    recipient_registry: AsyncMock,
+) -> TelegramPoller:
     return TelegramPoller(
         bot_token="123:FAKE",
         pending_store=pending_store,
         outbound_sender=outbound_sender,
+        recipient_registry=recipient_registry,
         poll_timeout=0,
     )
 
@@ -71,17 +84,28 @@ async def test_handle_update_resolves_pending_question(
     poller: TelegramPoller,
     pending_store: AsyncMock,
     outbound_sender: AsyncMock,
+    recipient_registry: AsyncMock,
 ):
     """When a pending question exists, the poller resolves it and sends ack."""
     pending_store.resolve.return_value = "session-42"
 
-    update = _make_update(update_id=1, chat_id=100, sender_id=200, text="2026-01-15")
+    update = _make_update(
+        update_id=1,
+        chat_id=100,
+        sender_id=200,
+        text="2026-01-15",
+    )
     await poller._handle_update(update)
 
     pending_store.resolve.assert_called_once_with(
         channel="telegram",
         sender_id="200",
         response="2026-01-15",
+    )
+    recipient_registry.register.assert_called_once_with(
+        channel="telegram",
+        user_id="200",
+        reference={"conversation_id": "100"},
     )
 
     # Acknowledgment sent
@@ -96,14 +120,25 @@ async def test_handle_update_no_pending_question(
     poller: TelegramPoller,
     pending_store: AsyncMock,
     outbound_sender: AsyncMock,
+    recipient_registry: AsyncMock,
 ):
     """When no pending question exists, the message is ignored."""
     pending_store.resolve.return_value = None
 
-    update = _make_update(update_id=2, chat_id=100, sender_id=200, text="Hello")
+    update = _make_update(
+        update_id=2,
+        chat_id=100,
+        sender_id=200,
+        text="Hello",
+    )
     await poller._handle_update(update)
 
     pending_store.resolve.assert_called_once()
+    recipient_registry.register.assert_called_once_with(
+        channel="telegram",
+        user_id="200",
+        reference={"conversation_id": "100"},
+    )
     outbound_sender.send.assert_not_called()
 
 
@@ -137,7 +172,9 @@ async def test_handle_update_skips_no_message(
 
 
 @pytest.mark.asyncio
-async def test_offset_advances(poller: TelegramPoller, pending_store: AsyncMock):
+async def test_offset_advances(
+    poller: TelegramPoller, pending_store: AsyncMock
+):
     """The offset advances past processed updates."""
     u1 = _make_update(update_id=10, chat_id=1, sender_id=2, text="a")
     u2 = _make_update(update_id=15, chat_id=1, sender_id=2, text="b")
@@ -154,7 +191,9 @@ async def test_start_and_stop(poller: TelegramPoller):
     """Poller can be started and stopped without errors."""
     # Patch HTTP calls to avoid real network access
     with patch.object(poller, "_delete_webhook", new_callable=AsyncMock):
-        with patch.object(poller, "_get_updates", new_callable=AsyncMock) as mock_get:
+        with patch.object(
+            poller, "_get_updates", new_callable=AsyncMock
+        ) as mock_get:
             # Return empty updates, then block
             mock_get.side_effect = [[], asyncio.CancelledError()]
 
@@ -175,7 +214,12 @@ async def test_ack_failure_does_not_crash(
     pending_store.resolve.return_value = "session-42"
     outbound_sender.send.side_effect = ConnectionError("network error")
 
-    update = _make_update(update_id=5, chat_id=100, sender_id=200, text="answer")
+    update = _make_update(
+        update_id=5,
+        chat_id=100,
+        sender_id=200,
+        text="answer",
+    )
     # Should not raise
     await poller._handle_update(update)
 
@@ -192,7 +236,12 @@ async def test_no_outbound_sender(pending_store: AsyncMock):
     )
     pending_store.resolve.return_value = "session-42"
 
-    update = _make_update(update_id=6, chat_id=100, sender_id=200, text="answer")
+    update = _make_update(
+        update_id=6,
+        chat_id=100,
+        sender_id=200,
+        text="answer",
+    )
     await poller._handle_update(update)
 
     pending_store.resolve.assert_called_once()

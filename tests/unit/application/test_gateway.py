@@ -480,6 +480,67 @@ async def test_send_channel_question(gateway_with_pending) -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_channel_question_fallback_single_recipient(
+    gateway_with_pending,
+) -> None:
+    """Fallback to the only known recipient when model sends a bad ID."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    await registry.register(
+        channel="telegram",
+        user_id="5865840420",
+        reference={"conversation_id": "5865840420"},
+    )
+
+    success = await gateway.send_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="musterbetrieb",
+        question="Bitte fehlende Angaben nachreichen.",
+    )
+
+    assert success
+    assert len(sender.sent) == 1
+    assert "fehlende Angaben" in sender.sent[0][1]
+
+    result = await pending.resolve(
+        channel="telegram",
+        sender_id="5865840420",
+        response="Kommt sofort",
+    )
+    assert result == "sess-1"
+
+
+@pytest.mark.asyncio
+async def test_send_channel_question_fallback_by_conversation_id(
+    gateway_with_pending,
+) -> None:
+    """Fallback resolves user_id when model passed conversation_id."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    await registry.register(
+        channel="telegram",
+        user_id="user-42",
+        reference={"conversation_id": "chat-42"},
+    )
+
+    success = await gateway.send_channel_question(
+        session_id="sess-2",
+        channel="telegram",
+        recipient_id="chat-42",
+        question="Bitte antworten Sie kurz.",
+    )
+
+    assert success
+    result = await pending.resolve(
+        channel="telegram",
+        sender_id="user-42",
+        response="OK",
+    )
+    assert result == "sess-2"
+
+
+@pytest.mark.asyncio
 async def test_send_channel_question_fails_without_sender(gateway_with_pending) -> None:
     """Channel question fails when no outbound sender for channel."""
     gateway, store, registry, sender, pending = gateway_with_pending

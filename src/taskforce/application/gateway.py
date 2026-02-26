@@ -202,21 +202,47 @@ class CommunicationGateway:
         Returns:
             True if the question was sent and registered successfully.
         """
+        effective_recipient_id = recipient_id
+
         # Send the question via notification
         result = await self.send_notification(
             NotificationRequest(
                 channel=channel,
-                recipient_id=recipient_id,
+                recipient_id=effective_recipient_id,
                 message=question,
                 metadata=metadata or {},
             )
         )
         if not result.success:
+            fallback_recipient_id = await self._resolve_fallback_recipient_id(
+                channel=channel,
+                recipient_id=recipient_id,
+            )
+            if fallback_recipient_id and fallback_recipient_id != recipient_id:
+                self._logger.warning(
+                    "gateway.channel_question.recipient_fallback",
+                    session_id=session_id,
+                    channel=channel,
+                    requested_recipient_id=recipient_id,
+                    fallback_recipient_id=fallback_recipient_id,
+                )
+                effective_recipient_id = fallback_recipient_id
+                result = await self.send_notification(
+                    NotificationRequest(
+                        channel=channel,
+                        recipient_id=effective_recipient_id,
+                        message=question,
+                        metadata=metadata or {},
+                    )
+                )
+
+        if not result.success:
             self._logger.error(
                 "gateway.channel_question.send_failed",
                 session_id=session_id,
                 channel=channel,
-                recipient_id=recipient_id,
+                recipient_id=effective_recipient_id,
+                requested_recipient_id=recipient_id,
                 error=result.error,
             )
             return False
@@ -226,7 +252,7 @@ class CommunicationGateway:
             await self._pending_channel_store.register(
                 session_id=session_id,
                 channel=channel,
-                recipient_id=recipient_id,
+                recipient_id=effective_recipient_id,
                 question=question,
                 metadata=metadata,
             )
@@ -235,7 +261,8 @@ class CommunicationGateway:
             "gateway.channel_question.sent",
             session_id=session_id,
             channel=channel,
-            recipient_id=recipient_id,
+            recipient_id=effective_recipient_id,
+            requested_recipient_id=recipient_id,
         )
         return True
 
@@ -400,6 +427,35 @@ class CommunicationGateway:
         generated = str(uuid4())
         await self._conversation_store.set_session_id(channel, conversation_id, generated)
         return generated
+
+    async def _resolve_fallback_recipient_id(
+        self,
+        *,
+        channel: str,
+        recipient_id: str,
+    ) -> str | None:
+        """Resolve a robust fallback user_id when model picked a bad recipient_id.
+
+        Fallback strategy:
+        1. Match by stored conversation_id value.
+        2. If exactly one recipient is registered on this channel, use it.
+        """
+        recipients = await self._recipient_registry.list_recipients(channel)
+        if not recipients:
+            return None
+
+        for user_id in recipients:
+            reference = await self._recipient_registry.resolve(
+                channel=channel, user_id=user_id
+            )
+            conversation_id = str((reference or {}).get("conversation_id", ""))
+            if conversation_id and conversation_id == recipient_id:
+                return user_id
+
+        if len(recipients) == 1:
+            return recipients[0]
+
+        return None
 
     async def _execute_agent(
         self,

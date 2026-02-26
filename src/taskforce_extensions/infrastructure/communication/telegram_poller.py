@@ -27,6 +27,7 @@ import aiohttp
 import structlog
 
 from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
+from taskforce.core.interfaces.gateway import RecipientRegistryProtocol
 
 logger = structlog.get_logger(__name__)
 
@@ -49,12 +50,14 @@ class TelegramPoller:
         bot_token: str,
         pending_store: PendingChannelQuestionStoreProtocol,
         outbound_sender: Any | None = None,
+        recipient_registry: RecipientRegistryProtocol | None = None,
         poll_timeout: int = 10,
     ) -> None:
         self._bot_token = bot_token
         self._base_url = f"https://api.telegram.org/bot{bot_token}"
         self._pending_store = pending_store
         self._outbound_sender = outbound_sender
+        self._recipient_registry = recipient_registry
         self._poll_timeout = poll_timeout
         self._offset: int = 0
         self._task: asyncio.Task[None] | None = None
@@ -162,6 +165,16 @@ class TelegramPoller:
 
         if not sender_id:
             return
+
+        # In CLI long-polling mode there is no inbound webhook flow that would
+        # auto-register recipients. Register the sender here so outbound
+        # channel-targeted ask_user/send_notification can reach this chat.
+        if self._recipient_registry and chat_id:
+            await self._recipient_registry.register(
+                channel="telegram",
+                user_id=sender_id,
+                reference={"conversation_id": chat_id},
+            )
 
         # Try to resolve a pending channel question
         resolved_session = await self._pending_store.resolve(

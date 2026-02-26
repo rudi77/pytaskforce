@@ -114,6 +114,7 @@ class SimpleChatRunner:
                 bot_token=telegram_token,
                 pending_store=pending_store,
                 outbound_sender=sender,
+                recipient_registry=components.recipient_registry,
             )
 
             self.console.print(

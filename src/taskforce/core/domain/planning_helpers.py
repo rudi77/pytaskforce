@@ -172,6 +172,7 @@ def _resume_from_pause(
         return None
 
     messages: list[dict[str, Any]] = state.get("paused_messages", [])
+    pending_question: dict[str, Any] = state.get("pending_question", {})
     tool_call_id: str = state.get("paused_tool_call_id", "ask_user_call")
     step: int = state.get("paused_step", 0)
     plan: list[str] = state.get("paused_plan", DEFAULT_PLAN)
@@ -185,7 +186,18 @@ def _resume_from_pause(
             "role": "tool",
             "tool_call_id": tool_call_id,
             "name": "ask_user",
-            "content": json.dumps({"success": True, "output": user_answer}),
+            "content": json.dumps(
+                {
+                    "success": True,
+                    "output": user_answer,
+                    "question": pending_question.get("question", ""),
+                    "missing": pending_question.get("missing", []),
+                    "resume_instruction": (
+                        "Interpret 'output' strictly as the answer to the previous "
+                        "ask_user question. It is not a new mission."
+                    ),
+                }
+            ),
         }
     )
 
