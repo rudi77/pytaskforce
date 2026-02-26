@@ -486,9 +486,10 @@ class SimpleChatRunner:
                 self.console.print(f"[error]❌ Error:[/error] {update.message}")
 
             elif event_type == EventType.COMPLETE.value:
-                if not final_tokens and update.message:
-                    self.console.print(f"[agent]🤖 Agent:[/agent] {update.message}")
-                    final_tokens.append(update.message)
+                # COMPLETE is a status event, not agent content — don't
+                # capture its message (e.g. "Execution completed. Status: completed")
+                # into final_tokens, which feeds conversation history.
+                pass
 
         if started_output:
             self.console.print()

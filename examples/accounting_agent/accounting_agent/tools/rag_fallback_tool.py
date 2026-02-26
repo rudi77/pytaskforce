@@ -10,6 +10,7 @@ PRD Reference:
 - Returns confidence score for evaluation
 """
 
+import json
 from typing import Any, Optional
 
 import structlog
@@ -199,12 +200,18 @@ class RAGFallbackTool:
 
             # Get LLM suggestion
             try:
-                response = await self._llm_provider.complete_json(
-                    prompt=context_prompt,
-                    system_prompt=RAG_SYSTEM_PROMPT,
-                    temperature=0.3,  # Low temperature for consistency
+                messages = [
+                    {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                    {"role": "user", "content": context_prompt},
+                ]
+                result = await self._llm_provider.complete(
+                    messages=messages,
+                    temperature=0.3,
                 )
+                if not result.get("success"):
+                    raise RuntimeError(result.get("error", "LLM call failed"))
 
+                response = json.loads(result.get("content", "{}"))
                 suggestion = {
                     "debit_account": response.get("suggested_account", ""),
                     "debit_account_name": response.get("account_name", ""),

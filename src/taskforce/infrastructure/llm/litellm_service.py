@@ -424,6 +424,58 @@ class LiteLLMService:
         }
 
     # ------------------------------------------------------------------
+    # JSON completion (convenience wrapper)
+    # ------------------------------------------------------------------
+
+    async def complete_json(
+        self,
+        messages: list[dict[str, Any]] | None = None,
+        prompt: str | None = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Complete with JSON response format and parse the result.
+
+        Accepts either ``messages`` (chat-style) or ``prompt``/``system_prompt``
+        (convenience style).  Returns the parsed JSON object on success, or a
+        ``{"success": False, ...}`` dict on failure.
+
+        Args:
+            messages: Chat messages (takes precedence over prompt).
+            prompt: Single user prompt (used when messages is None).
+            system_prompt: Optional system prompt (used with prompt).
+            model: Model alias or None for default.
+            **kwargs: Additional parameters (temperature, etc.).
+
+        Returns:
+            Parsed JSON dict from the LLM response.
+        """
+        if messages is None:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            if prompt:
+                messages.append({"role": "user", "content": prompt})
+
+        kwargs.setdefault("response_format", {"type": "json_object"})
+        result = await self.complete(messages=messages, model=model, **kwargs)
+
+        if not result.get("success"):
+            return result
+
+        try:
+            parsed = json.loads(result.get("content", "{}"))
+            return {"success": True, "data": parsed, "model": result.get("model")}
+        except (json.JSONDecodeError, TypeError) as exc:
+            return {
+                "success": False,
+                "error": f"Failed to parse JSON from LLM response: {exc}",
+                "error_type": "JSONDecodeError",
+                "raw_content": result.get("content"),
+            }
+
+    # ------------------------------------------------------------------
     # Generate (convenience wrapper)
     # ------------------------------------------------------------------
 

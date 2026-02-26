@@ -34,6 +34,7 @@ Example profile configuration::
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -215,6 +216,54 @@ class LLMRouter:
             model=resolved,
             **kwargs,
         )
+
+    async def complete_json(
+        self,
+        messages: list[dict[str, Any]] | None = None,
+        prompt: str | None = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Proxy ``complete_json`` to the delegate if it supports it.
+
+        Falls back to ``complete()`` + JSON parsing when the delegate
+        does not implement ``complete_json``.
+        """
+        if hasattr(self.delegate, "complete_json"):
+            return await self.delegate.complete_json(
+                messages=messages,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model=model,
+                **kwargs,
+            )
+
+        # Fallback: build messages and call complete() with json response format
+        if messages is None:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            if prompt:
+                messages.append({"role": "user", "content": prompt})
+
+        resolved = self._select_model(model, messages, None)
+        kwargs.setdefault("response_format", {"type": "json_object"})
+        result = await self.delegate.complete(messages=messages, model=resolved, **kwargs)
+
+        if not result.get("success"):
+            return result
+
+        try:
+            parsed = json.loads(result.get("content", "{}"))
+            return {"success": True, "data": parsed, "model": result.get("model")}
+        except (json.JSONDecodeError, TypeError) as exc:
+            return {
+                "success": False,
+                "error": f"Failed to parse JSON from LLM response: {exc}",
+                "error_type": "JSONDecodeError",
+                "raw_content": result.get("content"),
+            }
 
     async def complete_stream(
         self,

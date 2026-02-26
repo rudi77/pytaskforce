@@ -878,6 +878,11 @@ class AgentExecutor:
                         # Yield an informational event (not a raw ASK_USER)
                         yield self._build_channel_question_sent_update(event)
                     else:
+                        # Suppress COMPLETE events when a channel question is
+                        # pending — the "Execution completed" status would leak
+                        # into conversation history as if it were agent content.
+                        if channel_ask is not None and event.event_type == EventType.COMPLETE:
+                            continue
                         yield self._stream_event_to_progress_update(event)
             else:
                 result = await agent.execute(
