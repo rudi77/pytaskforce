@@ -134,23 +134,24 @@ Folgende Pflichtangaben nach §14 UStG fehlen:
 - [Feldname]: [Beschreibung] ([Rechtsgrundlage])
 - [Feldname]: [Beschreibung] ([Rechtsgrundlage])
 
-Bitte ergänzen Sie die fehlenden Angaben oder senden Sie ein besseres Bild der Rechnung."
+Bitte ergänzen Sie die fehlenden Angaben oder senden Sie ein besseres Bild der Rechnung.",
+  channel="telegram",
+  recipient_id="<sender_id_aus_metadata>"
 )
 ```
 
-→ Mit den ergänzten Daten die Compliance erneut prüfen, dann den Workflow fortsetzen.
+→ Wartet auf Antwort vom Telegram-User, ergänzt die Daten, prüft erneut.
 
 **HINWEIS:** Warnungen (`severity: warning`) wie fehlendes Lieferdatum sind KEINE
 Abbruchgründe. Nur Fehler (`severity: error`) blockieren den Workflow.
 
-## HITL-Weiterleitung an Buchhalter
+## HITL: Buchhalter über Standard-ask_user fragen
 
 **WENN `smart-booking-hitl` aktiviert wird:**
 
-Der Telegram-User wird per `send_notification` informiert, dass die Rechnung
-zur Prüfung an den Buchhalter weitergeleitet wurde. **NICHT per `ask_user` fragen!**
-
-Der Buchhalter bearbeitet den offenen Review über die CLI.
+Der Buchhalter wird über den Standard-`ask_user` (ohne channel) gefragt.
+Er antwortet direkt in der CLI. Der Telegram-User wird per `send_notification`
+über das Ergebnis informiert.
 
 ## KRITISCH: Keine Buchungsregel gefunden
 

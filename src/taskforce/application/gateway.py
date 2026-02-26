@@ -2,7 +2,8 @@
 
 Single entry point for all agent communication regardless of channel.
 Handles inbound message processing, session/history management, agent
-execution, outbound reply dispatch, and proactive push notifications.
+execution, outbound reply dispatch, proactive push notifications,
+and pending channel question resolution.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from taskforce.core.domain.gateway import (
     NotificationResult,
 )
 from taskforce.core.domain.models import ExecutionResult
+from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
 from taskforce.core.interfaces.gateway import (
     ConversationStoreProtocol,
     OutboundSenderProtocol,
@@ -33,8 +35,8 @@ class CommunicationGateway:
     """Unified gateway for all agent communication channels.
 
     Consolidates session management, conversation history, agent execution,
-    outbound reply dispatch, and proactive push notifications into a single
-    orchestration point.
+    outbound reply dispatch, proactive push notifications, and cross-channel
+    question resolution into a single orchestration point.
 
     Usage::
 
@@ -59,11 +61,13 @@ class CommunicationGateway:
         conversation_store: ConversationStoreProtocol,
         recipient_registry: RecipientRegistryProtocol,
         outbound_senders: dict[str, OutboundSenderProtocol] | None = None,
+        pending_channel_store: PendingChannelQuestionStoreProtocol | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
         self._recipient_registry = recipient_registry
         self._outbound_senders = dict(outbound_senders or {})
+        self._pending_channel_store = pending_channel_store
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -77,12 +81,20 @@ class CommunicationGateway:
     ) -> GatewayResponse:
         """Handle an inbound message from any channel.
 
-        1. Resolve or create session ID.
-        2. Load and append to conversation history.
-        3. Auto-register sender as push-notification recipient.
-        4. Execute agent.
-        5. Append reply to history and persist.
-        6. Send outbound reply via channel sender (if available).
+        Before starting a new agent execution the method checks whether
+        this message is a **response** to a pending channel question.  If
+        so the response is stored and the paused session is notified —
+        no new agent execution is started.
+
+        Normal flow:
+
+        1. Check for pending channel question (resolve if matched).
+        2. Resolve or create session ID.
+        3. Load and append to conversation history.
+        4. Auto-register sender as push-notification recipient.
+        5. Execute agent.
+        6. Append reply to history and persist.
+        7. Send outbound reply via channel sender (if available).
 
         Args:
             message: Normalized inbound message.
@@ -91,6 +103,38 @@ class CommunicationGateway:
         Returns:
             GatewayResponse with session_id, status, reply, and history.
         """
+        # ------- Check for pending channel question -------
+        if message.sender_id and self._pending_channel_store:
+            resolved_session = await self._pending_channel_store.resolve(
+                channel=message.channel,
+                sender_id=message.sender_id,
+                response=message.message,
+            )
+            if resolved_session:
+                self._logger.info(
+                    "gateway.pending_question.resolved",
+                    channel=message.channel,
+                    sender_id=message.sender_id,
+                    session_id=resolved_session,
+                )
+                # Send acknowledgment back to the channel
+                sender = self._outbound_senders.get(message.channel)
+                if sender:
+                    try:
+                        await sender.send(
+                            recipient_id=message.conversation_id,
+                            message="✅ Danke, Ihre Antwort wurde weitergeleitet.",
+                        )
+                    except Exception:
+                        pass  # Best-effort acknowledgment
+                return GatewayResponse(
+                    session_id=resolved_session,
+                    status="channel_response_received",
+                    reply="Antwort an den Agenten weitergeleitet.",
+                    history=[],
+                )
+
+        # ------- Normal inbound message flow -------
         resolved_options = options or GatewayOptions()
 
         session_id = await self._resolve_session_id(
@@ -129,6 +173,95 @@ class CommunicationGateway:
             conversation_history=history_with_user,
             result=result,
         )
+
+    # ------------------------------------------------------------------
+    # Channel-targeted question support
+    # ------------------------------------------------------------------
+
+    async def send_channel_question(
+        self,
+        *,
+        session_id: str,
+        channel: str,
+        recipient_id: str,
+        question: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Send a question to a channel recipient and register it as pending.
+
+        This is called when the agent uses ``ask_user(channel=..., recipient_id=...)``
+        and the frontend (CLI, API) needs to deliver the question.
+
+        Args:
+            session_id: The paused agent session.
+            channel: Target channel (e.g. 'telegram').
+            recipient_id: Recipient user ID on that channel.
+            question: The question text.
+            metadata: Optional extra data.
+
+        Returns:
+            True if the question was sent and registered successfully.
+        """
+        # Send the question via notification
+        result = await self.send_notification(
+            NotificationRequest(
+                channel=channel,
+                recipient_id=recipient_id,
+                message=question,
+                metadata=metadata or {},
+            )
+        )
+        if not result.success:
+            self._logger.error(
+                "gateway.channel_question.send_failed",
+                session_id=session_id,
+                channel=channel,
+                recipient_id=recipient_id,
+                error=result.error,
+            )
+            return False
+
+        # Register as pending question
+        if self._pending_channel_store:
+            await self._pending_channel_store.register(
+                session_id=session_id,
+                channel=channel,
+                recipient_id=recipient_id,
+                question=question,
+                metadata=metadata,
+            )
+
+        self._logger.info(
+            "gateway.channel_question.sent",
+            session_id=session_id,
+            channel=channel,
+            recipient_id=recipient_id,
+        )
+        return True
+
+    async def poll_channel_response(self, *, session_id: str) -> str | None:
+        """Poll for a response to a pending channel question.
+
+        Returns the response text if available, or None if still waiting.
+
+        Args:
+            session_id: The paused agent session to check.
+
+        Returns:
+            Response text or None.
+        """
+        if not self._pending_channel_store:
+            return None
+        return await self._pending_channel_store.get_response(session_id=session_id)
+
+    async def clear_channel_question(self, *, session_id: str) -> None:
+        """Remove a pending channel question after the agent has resumed.
+
+        Args:
+            session_id: The agent session whose question to clear.
+        """
+        if self._pending_channel_store:
+            await self._pending_channel_store.remove(session_id=session_id)
 
     # ------------------------------------------------------------------
     # Proactive push notifications

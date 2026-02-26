@@ -323,3 +323,244 @@ async def test_no_outbound_for_unconfigured_channel() -> None:
     msg = InboundMessage(channel="rest", conversation_id="api-call-1", message="Hello")
     response = await gateway.handle_message(msg)
     assert response.reply == "Agent reply"
+
+
+# ---------------------------------------------------------------------------
+# Pending channel question tests
+# ---------------------------------------------------------------------------
+
+
+class FakePendingStore:
+    """In-memory pending channel question store for testing."""
+
+    def __init__(self) -> None:
+        self._questions: dict[str, dict[str, Any]] = {}
+        self._index: dict[str, str] = {}  # channel:recipient_id -> session_id
+
+    async def register(
+        self,
+        *,
+        session_id: str,
+        channel: str,
+        recipient_id: str,
+        question: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        key = f"{channel}:{recipient_id}"
+        self._questions[session_id] = {
+            "channel": channel,
+            "recipient_id": recipient_id,
+            "question": question,
+            "response": None,
+        }
+        self._index[key] = session_id
+
+    async def resolve(
+        self, *, channel: str, sender_id: str, response: str
+    ) -> str | None:
+        key = f"{channel}:{sender_id}"
+        session_id = self._index.get(key)
+        if not session_id or session_id not in self._questions:
+            return None
+        entry = self._questions[session_id]
+        if entry["response"] is not None:
+            return None
+        entry["response"] = response
+        self._index.pop(key, None)
+        return session_id
+
+    async def get_response(self, *, session_id: str) -> str | None:
+        entry = self._questions.get(session_id)
+        if not entry:
+            return None
+        return entry["response"]
+
+    async def remove(self, *, session_id: str) -> None:
+        entry = self._questions.pop(session_id, None)
+        if entry:
+            key = f"{entry['channel']}:{entry['recipient_id']}"
+            self._index.pop(key, None)
+
+
+@pytest.fixture
+def gateway_with_pending():
+    """Build gateway with pending channel question store."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    sender = FakeSender()
+    pending = FakePendingStore()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": sender},
+        pending_channel_store=pending,
+    )
+    return gateway, store, registry, sender, pending
+
+
+@pytest.mark.asyncio
+async def test_inbound_resolves_pending_question(gateway_with_pending) -> None:
+    """When a message matches a pending question, resolve instead of new execution."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    # Register a pending question
+    await pending.register(
+        session_id="paused-sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="What is the invoice date?",
+    )
+
+    # Inbound message from the same user on the same channel
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="2026-01-15",
+        sender_id="user-42",
+    )
+    response = await gateway.handle_message(msg)
+
+    assert response.status == "channel_response_received"
+    assert response.session_id == "paused-sess-1"
+
+    # The response should be stored
+    stored_response = await pending.get_response(session_id="paused-sess-1")
+    assert stored_response == "2026-01-15"
+
+
+@pytest.mark.asyncio
+async def test_inbound_no_pending_question_runs_normally(gateway_with_pending) -> None:
+    """Without a pending question, normal agent execution happens."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="Hello!",
+        sender_id="user-42",
+    )
+    response = await gateway.handle_message(msg)
+
+    assert response.status == "completed"
+    assert response.reply == "Agent reply"
+
+
+@pytest.mark.asyncio
+async def test_send_channel_question(gateway_with_pending) -> None:
+    """Test sending a channel question via the gateway."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    # Register recipient first
+    await registry.register(
+        channel="telegram",
+        user_id="user-42",
+        reference={"conversation_id": "chat-42"},
+    )
+
+    success = await gateway.send_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="What is the invoice date?",
+    )
+
+    assert success
+
+    # Question should have been sent via the sender
+    assert len(sender.sent) == 1
+    assert "invoice date" in sender.sent[0][1]
+
+    # Question should be registered as pending
+    # (We can verify by resolving it)
+    result = await pending.resolve(
+        channel="telegram", sender_id="user-42", response="2026-01-15"
+    )
+    assert result == "sess-1"
+
+
+@pytest.mark.asyncio
+async def test_send_channel_question_fails_without_sender(gateway_with_pending) -> None:
+    """Channel question fails when no outbound sender for channel."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    success = await gateway.send_channel_question(
+        session_id="sess-1",
+        channel="slack",  # no sender configured
+        recipient_id="user-42",
+        question="Test?",
+    )
+
+    assert not success
+
+
+@pytest.mark.asyncio
+async def test_poll_channel_response(gateway_with_pending) -> None:
+    """Test polling for a channel response."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    await pending.register(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Date?",
+    )
+
+    # Before resolve: no response
+    result = await gateway.poll_channel_response(session_id="sess-1")
+    assert result is None
+
+    # Resolve the question
+    await pending.resolve(
+        channel="telegram", sender_id="user-42", response="2026-01-15"
+    )
+
+    # After resolve: response available
+    result = await gateway.poll_channel_response(session_id="sess-1")
+    assert result == "2026-01-15"
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_question(gateway_with_pending) -> None:
+    """Test clearing a pending channel question."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    await pending.register(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Date?",
+    )
+
+    await gateway.clear_channel_question(session_id="sess-1")
+
+    # After clearing, resolve should return None
+    result = await pending.resolve(
+        channel="telegram", sender_id="user-42", response="Answer"
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_inbound_sends_acknowledgment(gateway_with_pending) -> None:
+    """When resolving a pending question, an acknowledgment is sent back."""
+    gateway, store, registry, sender, pending = gateway_with_pending
+
+    await pending.register(
+        session_id="paused-sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="2026-01-15",
+        sender_id="user-42",
+    )
+    await gateway.handle_message(msg)
+
+    # Acknowledgment should have been sent
+    assert len(sender.sent) == 1
+    assert "Danke" in sender.sent[0][1] or "weitergeleitet" in sender.sent[0][1]
