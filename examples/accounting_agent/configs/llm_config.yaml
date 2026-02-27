@@ -1,0 +1,49 @@
+# LLM Configuration for Accounting Agent
+# Uses OpenAI models as primary provider.
+#
+# Requires: OPENAI_API_KEY environment variable
+# See https://docs.litellm.ai/docs/providers/openai for details.
+
+default_model: "main"
+
+# Model alias mapping: short name → LiteLLM model string
+models:
+  main: "azure/gpt-4.1"
+  fast: "azure/gpt-4.1"
+  powerful: "azure/gpt-4.1"
+  powerful-1: "azure/gpt-5.0-mini"
+
+# Per-model default parameters
+# LiteLLM's drop_params=True ensures unsupported params are ignored per provider
+model_params:
+  gpt-4.1:
+    temperature: 0.2
+    max_tokens: 8192
+
+  gpt-5.0-mini:
+    temperature: 0.7
+    max_tokens: 4096
+
+# Fallback parameters when no model-specific config matches
+default_params:
+  temperature: 0.7
+  max_tokens: 4096
+
+# Retry policy for transient API errors
+retry:
+  max_attempts: 3
+  backoff_multiplier: 2
+  timeout: 60
+
+logging:
+  log_prompts: false
+  log_completions: false
+  log_token_usage: true
+  log_latency: true
+  log_parameter_mapping: true
+
+tracing:
+  enabled: true
+  mode: "file"
+  file_config:
+    path: "traces/llm_traces.jsonl"

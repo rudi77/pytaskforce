@@ -161,10 +161,27 @@ class TestProfileLoaderMergePluginConfig:
         merged = loader.merge_plugin_config(base, {})
         assert merged == base
 
-    def test_merge_llm_not_overridden(self, loader: ProfileLoader) -> None:
-        """Plugin should NOT be able to override llm config (security)."""
-        base: dict[str, Any] = {"llm": {"default_model": "main"}}
-        plugin: dict[str, Any] = {"llm": {"default_model": "hacked"}}
+    def test_merge_llm_override(self, loader: ProfileLoader) -> None:
+        """Plugin can override llm default_model and config_path."""
+        base: dict[str, Any] = {"llm": {"default_model": "main", "config_path": "base.yaml"}}
+        plugin: dict[str, Any] = {"llm": {"default_model": "claude-sonnet"}}
         merged = loader.merge_plugin_config(base, plugin)
-        # Plugin doesn't have a 'llm' merge path, so base value is kept
+        assert merged["llm"]["default_model"] == "claude-sonnet"
+        # Keys not in plugin are preserved from base
+        assert merged["llm"]["config_path"] == "base.yaml"
+
+    def test_merge_llm_config_path_override(self, loader: ProfileLoader) -> None:
+        """Plugin can override llm config_path for custom LLM configuration."""
+        base: dict[str, Any] = {"llm": {"config_path": "base.yaml", "default_model": "main"}}
+        plugin: dict[str, Any] = {"llm": {"config_path": "plugin.yaml"}}
+        merged = loader.merge_plugin_config(base, plugin)
+        assert merged["llm"]["config_path"] == "plugin.yaml"
         assert merged["llm"]["default_model"] == "main"
+
+    def test_merge_llm_added_when_base_has_no_llm(self, loader: ProfileLoader) -> None:
+        """Plugin can add llm config when base has none."""
+        base: dict[str, Any] = {"agent": {"max_steps": 30}}
+        plugin: dict[str, Any] = {"llm": {"config_path": "plugin.yaml", "default_model": "claude-sonnet"}}
+        merged = loader.merge_plugin_config(base, plugin)
+        assert merged["llm"]["config_path"] == "plugin.yaml"
+        assert merged["llm"]["default_model"] == "claude-sonnet"

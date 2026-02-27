@@ -868,6 +868,13 @@ class AgentFactory:
         plugin_config = plugin_loader.load_config(manifest)
         merged_config = self.profile_loader.merge_plugin_config(base_config, plugin_config)
 
+        # Resolve ${PLUGIN_PATH} in LLM config path
+        llm_config_path = merged_config.get("llm", {}).get("config_path", "")
+        if "${PLUGIN_PATH}" in llm_config_path:
+            merged_config["llm"]["config_path"] = llm_config_path.replace(
+                "${PLUGIN_PATH}", str(manifest.path)
+            )
+
         self.logger.info(
             "creating_agent_with_plugin",
             plugin=manifest.name,

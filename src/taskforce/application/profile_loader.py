@@ -169,9 +169,15 @@ class ProfileLoader:
         * ``persistence.work_dir`` — overridden if plugin specifies it
         * ``mcp_servers`` — concatenated (base + plugin)
         * ``context_management`` — shallow dict update
+        * ``llm`` — shallow dict update (plugin can override ``default_model``
+          and ``config_path`` to use its own LLM configuration)
 
-        Infrastructure keys (``llm``, ``persistence.type``) always come from
-        *base_config* for security.
+        The ``persistence.type`` key always comes from *base_config* for
+        security (prevents plugins from switching storage backends).
+
+        Note: ``llm`` overrides are allowed because plugins are user-installed
+        and may legitimately need their own model provider configuration
+        (e.g. an Anthropic-based plugin vs. an Azure-based base profile).
 
         Args:
             base_config: Base profile configuration.
@@ -207,5 +213,8 @@ class ProfileLoader:
 
         if "memory" in plugin_config:
             merged.setdefault("memory", {}).update(plugin_config["memory"])
+
+        if "llm" in plugin_config:
+            merged.setdefault("llm", {}).update(plugin_config["llm"])
 
         return merged

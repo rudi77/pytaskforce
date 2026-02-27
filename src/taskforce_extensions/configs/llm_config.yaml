@@ -21,8 +21,12 @@ models:
   powerful-1: "azure/gpt-5.0-mini"
   legacy: "azure/gpt-4.1"
 
+  # ── Anthropic Claude models ─────────────────────────────────────────
+  claude-opus: "anthropic/claude-opus-4-6"
+  claude-sonnet: "anthropic/claude-sonnet-4-6"
+  claude-haiku: "anthropic/claude-haiku-4-5-20251001"
+
   # ── Multi-provider examples (uncomment to use) ──────────────────────
-  # claude-sonnet: "anthropic/claude-sonnet-4-20250514"
   # gemini-pro: "gemini/gemini-2.5-pro"
   # azure-main: "azure/my-gpt4-deployment"
   # local-llama: "ollama/llama3"
@@ -57,10 +61,20 @@ model_params:
     reasoning: "minimal"
     #max_tokens: 10000
 
+  # ── Anthropic Claude models ────────────────────────────────────────
+  anthropic/claude-opus-4-6:
+    max_tokens: 16384
+    temperature: 0.7
+
+  anthropic/claude-sonnet-4-6:
+    max_tokens: 8192
+    temperature: 0.7
+
+  anthropic/claude-haiku-4-5-20251001:
+    max_tokens: 4096
+    temperature: 0.7
+
   # ── Examples for other providers ────────────────────────────────────
-  # anthropic/claude-sonnet-4-20250514:
-  #   max_tokens: 8192
-  #   temperature: 0.7
   #
   # gemini/gemini-2.5-pro:
   #   max_tokens: 4096
