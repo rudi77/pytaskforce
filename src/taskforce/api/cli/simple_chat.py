@@ -10,10 +10,13 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
 
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
 from taskforce.api.cli.tool_display_formatter import format_tool_call, format_tool_result
 from taskforce.application.agent_registry import AgentRegistry
+from taskforce.application.context_display_service import ContextDisplayService
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
@@ -65,6 +68,7 @@ class SimpleChatRunner:
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature: tuple[str, str] | None = None
         self._skill_service: SkillService | None = None
+        self._context_service = ContextDisplayService()
         self._prompt_session: PromptSession[str] | None = None
         self._telegram_poller: Any | None = None
 
@@ -86,14 +90,14 @@ class SimpleChatRunner:
 
         try:
             from taskforce.application.gateway import CommunicationGateway
-            from taskforce.infrastructure.persistence.pending_channel_store import (
-                FilePendingChannelQuestionStore,
-            )
             from taskforce.infrastructure.communication.gateway_registry import (
                 build_gateway_components,
             )
             from taskforce.infrastructure.communication.telegram_poller import (
                 TelegramPoller,
+            )
+            from taskforce.infrastructure.persistence.pending_channel_store import (
+                FilePendingChannelQuestionStore,
             )
 
             work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
@@ -177,7 +181,7 @@ class SimpleChatRunner:
         """Handle slash commands. Returns True if we should exit."""
         parts = command.lstrip("/").split(maxsplit=1)
         cmd_name = parts[0].lower()
-        parts[1] if len(parts) > 1 else ""
+        command_args = parts[1] if len(parts) > 1 else ""
 
         if cmd_name in ["help", "h"]:
             self._show_help()
@@ -193,6 +197,8 @@ class SimpleChatRunner:
             self._print_system("Debug mode toggling is not used in simple mode.", style="warning")
         elif cmd_name == "tokens":
             self._print_system(f"Total tokens used: {self.total_tokens:,}", style="info")
+        elif cmd_name == "context":
+            await self._show_context(command_args)
         elif cmd_name == "plugins":
             self._list_plugins()
         elif cmd_name == "skills":
@@ -224,6 +230,7 @@ class SimpleChatRunner:
             "- /clear or /c\n"
             "- /export or /e\n"
             "- /tokens\n"
+            "- /context [full]\n"
             "- /plugins\n"
             "- /skills\n"
             "- /debug\n"
@@ -567,6 +574,47 @@ class SimpleChatRunner:
 
     def _print_system(self, message: str, style: str = "system") -> None:
         self.console.print(f"[{style}]ℹ️ {message}[/{style}]")
+
+    async def _show_context(self, command_args: str) -> None:
+        """Render a context snapshot showing what is sent to the LLM."""
+        include_content = command_args.strip().lower() == "full"
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        snapshot = self._context_service.build_snapshot(
+            agent=self.agent,
+            state=state,
+            include_content=include_content,
+        )
+
+        summary = (
+            f"Total Tokens: {snapshot.total_tokens:,} / {snapshot.max_tokens:,} "
+            f"({snapshot.utilization_percent:.1f}%)"
+        )
+        self.console.print(Panel(summary, title="Context Snapshot", border_style="info"))
+        self._render_context_group("System Prompt", snapshot.system_prompt, include_content)
+        self._render_context_group("Conversation History", snapshot.messages, include_content)
+        self._render_context_group("Skills", snapshot.skills, include_content)
+        self._render_context_group("Tool Definitions", snapshot.tools, include_content)
+
+    def _render_context_group(self, title: str, items: list[Any], include_content: bool) -> None:
+        """Render one context group as a token table."""
+        if not items:
+            self.console.print(f"[dim]{title}: empty[/dim]")
+            return
+
+        table = Table(title=title)
+        table.add_column("Section", style="cyan")
+        table.add_column("Tokens", style="magenta", justify="right")
+        if include_content:
+            table.add_column("Content", style="white")
+
+        for item in items:
+            row = [item.title, f"~{item.tokens}"]
+            if include_content:
+                content = (item.content or "").strip() or "-"
+                row.append(content)
+            table.add_row(*row)
+
+        self.console.print(table)
 
 
 async def run_simple_chat(
