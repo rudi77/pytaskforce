@@ -39,7 +39,7 @@ def get_project_root() -> Path:
     Find project root by searching for marker directories/files.
 
     Searches upward from this file's location for directories that
-    indicate the project root (pyproject.toml, configs/, src/).
+    indicate the project root (pyproject.toml, .git).
 
     Returns:
         Path to the project root directory.
@@ -50,8 +50,11 @@ def get_project_root() -> Path:
     # Start from this file's directory
     current = Path(__file__).resolve().parent
 
-    # Search upward for project root markers
-    markers = ["pyproject.toml", "configs", ".git"]
+    # Search upward for project root markers.
+    # Keep markers specific to the repository root so nested package folders
+    # (e.g. ``src/taskforce`` containing ``configs/``) are not detected as the
+    # project root.
+    markers = ["pyproject.toml", ".git"]
 
     for _ in range(10):  # Limit search depth
         for marker in markers:
