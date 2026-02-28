@@ -171,12 +171,8 @@ class TestCompleteStreamToolCalls:
             create_mock_chunk(
                 tool_calls=[create_mock_tool_call(0, "call_123", "get_weather", None)]
             ),
-            create_mock_chunk(
-                tool_calls=[create_mock_tool_call(0, None, None, '{"city":')]
-            ),
-            create_mock_chunk(
-                tool_calls=[create_mock_tool_call(0, None, None, '"NYC"}')]
-            ),
+            create_mock_chunk(tool_calls=[create_mock_tool_call(0, None, None, '{"city":')]),
+            create_mock_chunk(tool_calls=[create_mock_tool_call(0, None, None, '"NYC"}')]),
             create_mock_chunk(finish_reason="tool_calls"),
         ]
 
@@ -287,9 +283,7 @@ class TestCompleteStreamDoneEvent:
         class MockStreamResponse:
             def __init__(self, chunks):
                 self._chunks = chunks
-                self.usage = MagicMock(
-                    total_tokens=100, prompt_tokens=50, completion_tokens=50
-                )
+                self.usage = MagicMock(total_tokens=100, prompt_tokens=50, completion_tokens=50)
 
             def __aiter__(self):
                 return self
@@ -390,6 +384,56 @@ class TestCompleteStreamErrorHandling:
 
 
 @pytest.mark.asyncio
+class TestCompleteStreamUsageOptions:
+    """Test that stream_options include_usage is set for token tracking."""
+
+    async def test_stream_request_includes_usage_option(self, temp_config_file):
+        """Streaming requests must pass stream_options to get usage data."""
+        service = LiteLLMService(config_path=temp_config_file)
+
+        chunks = [
+            create_mock_chunk(content="Hi"),
+            create_mock_chunk(finish_reason="stop"),
+        ]
+
+        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_completion:
+            mock_completion.return_value = mock_stream_generator(chunks)
+
+            async for _ in service.complete_stream(
+                messages=[{"role": "user", "content": "Test"}],
+                model="main",
+            ):
+                pass
+
+            call_kwargs = mock_completion.call_args[1]
+            assert call_kwargs["stream"] is True
+            assert call_kwargs["stream_options"] == {"include_usage": True}
+
+    async def test_stream_options_not_overridden_if_caller_provides(self, temp_config_file):
+        """Caller-provided stream_options should be preserved."""
+        service = LiteLLMService(config_path=temp_config_file)
+
+        chunks = [
+            create_mock_chunk(content="Hi"),
+            create_mock_chunk(finish_reason="stop"),
+        ]
+
+        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_completion:
+            mock_completion.return_value = mock_stream_generator(chunks)
+
+            custom_opts = {"include_usage": True, "extra": 42}
+            async for _ in service.complete_stream(
+                messages=[{"role": "user", "content": "Test"}],
+                model="main",
+                stream_options=custom_opts,
+            ):
+                pass
+
+            call_kwargs = mock_completion.call_args[1]
+            assert call_kwargs["stream_options"] == custom_opts
+
+
+@pytest.mark.asyncio
 class TestCompleteStreamBackwardCompatibility:
     """Test that existing complete() method remains unchanged."""
 
@@ -401,9 +445,7 @@ class TestCompleteStreamBackwardCompatibility:
         mock_response.choices = [
             MagicMock(message=MagicMock(content="Test response", tool_calls=None))
         ]
-        mock_response.usage = MagicMock(
-            total_tokens=100, prompt_tokens=50, completion_tokens=50
-        )
+        mock_response.usage = MagicMock(total_tokens=100, prompt_tokens=50, completion_tokens=50)
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_completion:
             mock_completion.return_value = mock_response
@@ -440,9 +482,7 @@ class TestCompleteStreamBackwardCompatibility:
 
         mock_response = MagicMock()
         mock_response.choices = [mock_choice]
-        mock_response.usage = MagicMock(
-            total_tokens=50, prompt_tokens=30, completion_tokens=20
-        )
+        mock_response.usage = MagicMock(total_tokens=50, prompt_tokens=30, completion_tokens=20)
 
         tools = [
             {
@@ -468,5 +508,3 @@ class TestCompleteStreamBackwardCompatibility:
             assert result["tool_calls"] is not None
             assert len(result["tool_calls"]) == 1
             assert result["tool_calls"][0]["function"]["name"] == "get_weather"
-
-

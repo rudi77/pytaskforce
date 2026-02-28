@@ -186,6 +186,7 @@ class SimpleChatRunner:
         if cmd_name in ["help", "h"]:
             self._show_help()
         elif cmd_name in ["clear", "c"]:
+            await self._reset_context()
             self.console.clear()
             self._print_banner()
             self._print_session_info()
@@ -559,6 +560,20 @@ class SimpleChatRunner:
                 self.console.print(f"  [{marker}] {idx}. {desc}")
         elif self.plan_state.text:
             self.console.print(Markdown(self.plan_state.text))
+
+    async def _reset_context(self) -> None:
+        """Reset conversation context to default state.
+
+        Clears conversation history from the state manager and resets
+        in-memory counters (tokens, plan state, dedup signature).
+        """
+        self.total_tokens = 0
+        self.plan_state = PlanState(steps=[], text=None)
+        self._last_event_signature = None
+
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        state["conversation_history"] = []
+        await self.agent.state_manager.save_state(self.session_id, state)
 
     def _print_banner(self) -> None:
         self.console.print("[info]💬 Taskforce Chat (Simple)[/info]")
