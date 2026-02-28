@@ -26,6 +26,7 @@ from taskforce.core.domain.experience import (
     SessionExperience,
 )
 from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
 logger = structlog.get_logger(__name__)
@@ -138,7 +139,7 @@ class ConsolidationEngine:
 
     def __init__(
         self,
-        llm_provider: Any,
+        llm_provider: LLMProviderProtocol,
         memory_store: MemoryStoreProtocol,
         model_alias: str = "main",
     ) -> None:
@@ -440,7 +441,7 @@ class ConsolidationEngine:
         try:
             response = await self._llm.complete(
                 messages=[{"role": "user", "content": prompt}],
-                model_alias=self._model_alias,
+                model=self._model_alias,
             )
             content = response.get("content", "")
             tokens = response.get("usage", {}).get("total_tokens", 0)

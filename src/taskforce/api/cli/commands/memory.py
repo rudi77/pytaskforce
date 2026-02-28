@@ -5,6 +5,7 @@ memory consolidation, and viewing consolidation statistics.
 """
 
 import asyncio
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -22,6 +23,9 @@ def consolidate(
         "batch", "--strategy", "-s", help="Consolidation strategy (immediate|batch)"
     ),
     max_sessions: int = typer.Option(20, "--max-sessions", help="Maximum sessions to process"),
+    sessions: Optional[str] = typer.Option(
+        None, "--sessions", help="Comma-separated session IDs to consolidate"
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be consolidated without running"
     ),
@@ -34,17 +38,16 @@ def consolidate(
         from taskforce.application.consolidation_service import (
             build_consolidation_components,
         )
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
         from taskforce.application.profile_loader import ProfileLoader
-        from taskforce.infrastructure.memory.file_experience_store import (
-            FileExperienceStore,
-        )
 
         loader = ProfileLoader()
         config = loader.load_profile(profile)
+        ib = InfrastructureBuilder()
 
         if dry_run:
             work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
-            store = FileExperienceStore(work_dir)
+            store = ib.build_experience_store(work_dir)
             experiences = await store.list_experiences(limit=max_sessions, unprocessed_only=True)
             console.print(f"[bold]Dry run:[/bold] {len(experiences)} unprocessed experiences found")
             for exp in experiences:
@@ -54,9 +57,6 @@ def consolidate(
             return
 
         # Build LLM provider for consolidation
-        from taskforce.application.infrastructure_builder import InfrastructureBuilder
-
-        ib = InfrastructureBuilder()
         llm_provider = ib.build_llm_provider(config)
 
         tracker, service = build_consolidation_components(config, llm_provider)
@@ -67,8 +67,12 @@ def consolidate(
             )
             return
 
+        session_ids = [s.strip() for s in sessions.split(",")] if sessions else None
+
         console.print(f"[bold]Running {strategy} consolidation...[/bold]")
-        result = await service.trigger_consolidation(strategy=strategy, max_sessions=max_sessions)
+        result = await service.trigger_consolidation(
+            session_ids=session_ids, strategy=strategy, max_sessions=max_sessions
+        )
 
         table = Table(title="Consolidation Result")
         table.add_column("Metric", style="cyan")
@@ -100,16 +104,14 @@ def experiences(
     profile = profile or global_opts.get("profile", "dev")
 
     async def _list() -> None:
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
         from taskforce.application.profile_loader import ProfileLoader
-        from taskforce.infrastructure.memory.file_experience_store import (
-            FileExperienceStore,
-        )
 
         loader = ProfileLoader()
         config = loader.load_profile(profile)
         work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
-        store = FileExperienceStore(work_dir)
+        store = InfrastructureBuilder().build_experience_store(work_dir)
         exps = await store.list_experiences(limit=limit, unprocessed_only=unprocessed)
 
         if not exps:
@@ -149,19 +151,17 @@ def stats(
     profile = profile or global_opts.get("profile", "dev")
 
     async def _stats() -> None:
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
         from taskforce.application.profile_loader import ProfileLoader
-        from taskforce.infrastructure.memory.file_experience_store import (
-            FileExperienceStore,
-        )
-        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
         loader = ProfileLoader()
         config = loader.load_profile(profile)
         work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
         memory_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
 
-        store = FileExperienceStore(work_dir)
-        memory_store = FileMemoryStore(memory_dir)
+        ib = InfrastructureBuilder()
+        store = ib.build_experience_store(work_dir)
+        memory_store = ib.build_memory_store(memory_dir)
 
         all_exps = await store.list_experiences(limit=1000)
         unprocessed = [e for e in all_exps if not e.processed_by]

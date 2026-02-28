@@ -114,16 +114,14 @@ async def list_experiences(
     unprocessed: bool = False,
 ) -> list[ExperienceSummary]:
     """List captured session experiences."""
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
     from taskforce.application.profile_loader import ProfileLoader
-    from taskforce.infrastructure.memory.file_experience_store import (
-        FileExperienceStore,
-    )
 
     loader = ProfileLoader()
     config = loader.load_profile(profile)
     work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
-    store = FileExperienceStore(work_dir)
+    store = InfrastructureBuilder().build_experience_store(work_dir)
     experiences = await store.list_experiences(limit=limit, unprocessed_only=unprocessed)
 
     return [
@@ -145,16 +143,14 @@ async def list_consolidations(
     limit: int = 10,
 ) -> list[ConsolidationHistoryItem]:
     """List past consolidation runs."""
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
     from taskforce.application.profile_loader import ProfileLoader
-    from taskforce.infrastructure.memory.file_experience_store import (
-        FileExperienceStore,
-    )
 
     loader = ProfileLoader()
     config = loader.load_profile(profile)
     work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
-    store = FileExperienceStore(work_dir)
+    store = InfrastructureBuilder().build_experience_store(work_dir)
     results = await store.list_consolidations(limit=limit)
 
     return [

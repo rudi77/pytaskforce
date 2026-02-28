@@ -107,7 +107,53 @@ class AgentExecutor:
         self._gateway = gateway
         self._experience_tracker = experience_tracker
         self._consolidation_service = consolidation_service
+        self._consolidation_initialized = experience_tracker is not None
         self.logger = logger.bind(component="agent_executor")
+
+    def _ensure_consolidation_components(self, profile: str) -> None:
+        """Lazy-initialize consolidation components from profile config.
+
+        Only runs once.  If ``experience_tracker`` was already injected
+        via ``__init__``, this is a no-op.
+
+        Args:
+            profile: Profile name to load consolidation config from.
+        """
+        if self._consolidation_initialized:
+            return
+        self._consolidation_initialized = True
+
+        try:
+            from taskforce.application.consolidation_service import (
+                build_consolidation_components,
+            )
+            from taskforce.application.profile_loader import ProfileLoader
+
+            loader = ProfileLoader()
+            config = loader.load_profile(profile)
+
+            consol_config = config.get("consolidation", {})
+            if not consol_config.get("enabled", False) and not consol_config.get(
+                "auto_capture", False
+            ):
+                return
+
+            from taskforce.application.infrastructure_builder import (
+                InfrastructureBuilder,
+            )
+
+            llm_provider = InfrastructureBuilder().build_llm_provider(config)
+            tracker, service = build_consolidation_components(config, llm_provider)
+            if tracker is not None:
+                self._experience_tracker = tracker
+            if service is not None:
+                self._consolidation_service = service
+        except Exception:
+            self.logger.debug(
+                "consolidation.init_skipped",
+                reason="failed to build components",
+                profile=profile,
+            )
 
     async def execute_mission(
         self,
@@ -260,6 +306,9 @@ class AgentExecutor:
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
+        # Lazy-initialize consolidation components from profile config
+        self._ensure_consolidation_components(profile)
+
         # Start experience tracking (if enabled)
         if self._experience_tracker is not None:
             self._experience_tracker.start_session(resolved_session_id, mission, profile)
@@ -307,6 +356,7 @@ class AgentExecutor:
             conversation_history=conversation_history,
         )
 
+        execution_failed = False
         try:
             async for update in self._execute_streaming(agent, mission, resolved_session_id):
                 yield update
@@ -319,9 +369,11 @@ class AgentExecutor:
             )
 
         except asyncio.CancelledError as e:
+            execution_failed = True
             yield self._handle_cancellation(e, resolved_session_id, agent_id, plugin_path)
 
         except Exception as e:
+            execution_failed = True
             error_update, wrapped_error = self._handle_streaming_failure(
                 e, resolved_session_id, agent_id, plugin_path
             )
@@ -329,9 +381,10 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
-            # Finalize experience tracking
+            # Finalize experience tracking with correct status
             if self._experience_tracker is not None:
-                experience = await self._experience_tracker.end_session("completed")
+                status = ExecutionStatus.FAILED.value if execution_failed else ExecutionStatus.COMPLETED.value
+                experience = await self._experience_tracker.end_session(status)
                 if experience and self._consolidation_service is not None:
                     await self._consolidation_service.post_execution_hook(
                         resolved_session_id, experience

@@ -259,6 +259,7 @@ class ConsolidationResult:
     def from_dict(cls, data: dict[str, Any]) -> ConsolidationResult:
         """Deserialize from dictionary."""
         ended_at = data.get("ended_at")
+        started_at = data.get("started_at")
         return cls(
             consolidation_id=data.get("consolidation_id", uuid4().hex),
             strategy=data.get("strategy", "immediate"),
@@ -267,7 +268,7 @@ class ConsolidationResult:
             memories_updated=data.get("memories_updated", 0),
             memories_retired=data.get("memories_retired", 0),
             contradictions_resolved=data.get("contradictions_resolved", 0),
-            started_at=datetime.fromisoformat(data["started_at"]),
+            started_at=datetime.fromisoformat(started_at) if started_at else datetime.now(UTC),
             ended_at=datetime.fromisoformat(ended_at) if ended_at else None,
             total_tokens=data.get("total_tokens", 0),
             quality_score=data.get("quality_score", 0.0),
