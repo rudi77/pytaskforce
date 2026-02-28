@@ -131,7 +131,7 @@ class RuleEngine:
         tmp = self._store_path.with_suffix(".json.tmp")
         async with aiofiles.open(tmp, "w") as f:
             await f.write(raw)
-        tmp.rename(self._store_path)
+        tmp.replace(self._store_path)
 
     async def add_rule(self, rule: TriggerRule) -> str:
         """Add a new trigger rule."""

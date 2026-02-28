@@ -197,7 +197,10 @@ class TestGetDefaultSkillDirectories:
         """Should include user skills directory."""
         directories = get_default_skill_directories()
 
-        assert any(".taskforce/skills" in d for d in directories)
+        assert any(
+            ".taskforce" in d and "skills" in d
+            for d in directories
+        )
 
     def test_includes_project_directory(self):
         """Should include project skills directory."""

@@ -287,7 +287,7 @@ class TestConfigValidationError:
 
     def test_with_file_path(self) -> None:
         err = ConfigValidationError("Bad config", file_path=Path("/etc/config.yaml"))
-        assert "File: /etc/config.yaml" in str(err)
+        assert f"File: {Path('/etc/config.yaml')}" in str(err)
         assert "Bad config" in str(err)
 
     def test_with_field_path(self) -> None:
