@@ -45,6 +45,8 @@ taskforce chat --plugin examples/accounting_agent
 # List plugins and switch via slash commands
 # /plugins
 # /accounting_agent
+# Inspect active LLM context and token estimates
+# /context
 
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins

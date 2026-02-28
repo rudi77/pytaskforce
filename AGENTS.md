@@ -50,6 +50,8 @@ This file should be updated automatically when project-specific patterns, conven
 - Plugin agent roles can be configured under `src/taskforce/plugins/<plugin>/configs/agents/`
   and coordinated via orchestrator agents using `call_agent`.
 
+- CLI simple chat now supports `/context` and `/context full` to display the current assembled LLM context (system prompt, history, active skill instructions, and tool schemas) with heuristic token counts.
+
 # Python Best Practices
 
 ## 1) Code Style & Benennung

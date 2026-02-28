@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from rich.console import Console
 
@@ -9,9 +11,38 @@ from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import SkillMetadataModel
 
 
+class DummyStateManager:
+    async def load_state(self, session_id: str) -> dict:
+        return {"conversation_history": [{"role": "user", "content": "Hello"}]}
+
+
+class DummySkillManager:
+    active_skill_name = "debug-skill"
+
+    def get_active_instructions(self) -> str:
+        return "Focus on concise diagnostics."
+
+
 class DummyAgent:
     def __init__(self) -> None:
         self.closed = False
+        self.state_manager = DummyStateManager()
+        self.system_prompt = "Base system prompt"
+        self.skill_manager = DummySkillManager()
+        self._openai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "file_read",
+                    "description": "Read a file",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        self.token_budgeter = SimpleNamespace(max_input_tokens=1000)
+
+    def _build_system_prompt(self, mission=None, state=None, messages=None) -> str:
+        return "Base system prompt\n\n## CURRENT PLAN STATUS\n- Step 1"
 
     async def close(self) -> None:
         self.closed = True
@@ -162,3 +193,25 @@ async def test_try_switch_plugin_command(monkeypatch) -> None:
     assert runner.agent is new_agent
     assert runner.profile == "plugin:accounting_agent"
     assert factory.received_plugin_path == "examples/accounting_agent"
+
+
+@pytest.mark.asyncio
+async def test_context_command_renders_snapshot() -> None:
+    runner = _build_runner(DummyAgent())
+
+    await runner._handle_command("/context")
+
+    output = runner.console.export_text()
+    assert "Context Snapshot" in output
+    assert "System Prompt" in output
+    assert "Conversation History" in output
+
+
+@pytest.mark.asyncio
+async def test_context_full_renders_content_column() -> None:
+    runner = _build_runner(DummyAgent())
+
+    await runner._handle_command("/context full")
+
+    output = runner.console.export_text()
+    assert "Content" in output
