@@ -172,3 +172,5 @@ root/
 
 - Document extraction agent templates, tool stubs, and prompt/tool sketches live in
   `plugins/document_extraction_agent/`.
+
+- Project root detection in `taskforce.core.utils.paths.get_project_root()` should use root-unique markers (`pyproject.toml`, `.git`) to avoid false positives from nested `src/taskforce/configs/` directories in CI paths.
