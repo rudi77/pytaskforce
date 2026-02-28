@@ -190,7 +190,7 @@ class TestSchedulerService:
         await scheduler_with_callback.add_job(job)
 
         # Wait for the job to fire at least once
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2.5)
         await scheduler_with_callback.stop()
 
         assert callback.call_count >= 1

@@ -38,7 +38,7 @@ class FileJobStore:
         tmp = path.with_suffix(".json.tmp")
         async with aiofiles.open(tmp, "w") as f:
             await f.write(data)
-        tmp.rename(path)
+        tmp.replace(path)
         logger.debug("job_store.saved", job_id=job.job_id, name=job.name)
 
     async def load(self, job_id: str) -> ScheduleJob | None:

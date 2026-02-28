@@ -560,7 +560,9 @@ class TestCreateSkillManagerFromManifest:
         manifest = MagicMock()
         manifest.skills_path = None
 
-        with patch("taskforce.application.skill_manager.FileSkillRegistry"):
+        with patch("taskforce.application.skill_manager.FileSkillRegistry") as MockRegistry:
+            MockRegistry.return_value.get_skill_count.return_value = 0
+            MockRegistry.return_value.list_skills.return_value = []
             result = create_skill_manager_from_manifest(
                 manifest, include_global_skills=True
             )
@@ -572,7 +574,9 @@ class TestCreateSkillManagerFromManifest:
         manifest.skills_path = None
 
         configs = [{"name": "my-skill", "trigger": "BOOKING"}]
-        with patch("taskforce.application.skill_manager.FileSkillRegistry"):
+        with patch("taskforce.application.skill_manager.FileSkillRegistry") as MockRegistry:
+            MockRegistry.return_value.get_skill_count.return_value = 0
+            MockRegistry.return_value.list_skills.return_value = []
             result = create_skill_manager_from_manifest(
                 manifest, skill_configs=configs, include_global_skills=True
             )
