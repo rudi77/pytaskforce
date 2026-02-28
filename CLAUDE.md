@@ -119,12 +119,12 @@ src/taskforce/
     └── schemas/               # Pydantic request/response schemas
 ```
 
-### Extensions Package
+### Integrated Extensions (formerly `taskforce_extensions`)
 
-Separately under `src/taskforce_extensions/`:
+The following directories are part of the main `taskforce` package:
 
 ```
-src/taskforce_extensions/
+src/taskforce/
 ├── configs/                   # Profile YAML configs (dev, coding_agent, rag_agent, security, etc.)
 │   └── custom/                # Custom sub-agent configs
 ├── infrastructure/
@@ -236,7 +236,7 @@ factory = AgentFactory()
 
 # Option 1: Config file (for predefined agents)
 agent = await factory.create_agent(config="dev")
-agent = await factory.create_agent(config="src/taskforce_extensions/configs/custom/coding_worker.yaml")
+agent = await factory.create_agent(config="src/taskforce/configs/custom/coding_worker.yaml")
 
 # Option 2: Inline parameters (for programmatic creation)
 agent = await factory.create_agent(
@@ -419,7 +419,7 @@ Plugins extend Taskforce with custom agents, tools, and configurations via Pytho
 - **Discovery:** `setuptools` entry points under `taskforce.plugins`
 - **Structure:** Each plugin provides configs, tools, and optional domain logic
 - **Loading:** `PluginLoader` and `PluginDiscovery` in the application layer
-- **Examples:** `src/taskforce_extensions/plugins/ap_poc_agent/`, `document_extraction_agent/`
+- **Examples:** `src/taskforce/plugins/ap_poc_agent/`, `document_extraction_agent/`
 - **Docs:** `docs/plugins.md`
 
 ---
@@ -431,7 +431,7 @@ Multi-agent pipeline for complex, multi-step tasks using planner/worker/judge ro
 - **Orchestrator:** `src/taskforce/application/epic_orchestrator.py`
 - **Auto-Epic Classifier:** `src/taskforce/application/task_complexity_classifier.py`
 - **State:** Persisted under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, `MEMORY.md`
-- **Profiles:** Planner, worker, judge configs in `src/taskforce_extensions/configs/`
+- **Profiles:** Planner, worker, judge configs in `src/taskforce/configs/`
 - **CLI:** `taskforce epic` command with `--rounds` option for iterative refinement; `taskforce run mission --auto-epic` for automatic detection
 - **Config:** `orchestration.auto_epic` section in profile YAML (see `AutoEpicConfig` in `core/domain/config_schema.py`)
 - **Docs:** `docs/architecture/epic-orchestration.md`
@@ -455,7 +455,7 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
   - `POST /api/v1/gateway/broadcast` - broadcast to all recipients on a channel
   - `GET  /api/v1/gateway/channels` - list configured channels
 - **Send Notification Tool:** `infrastructure/tools/native/send_notification_tool.py` - allows agents to proactively push messages
-- **Extension Implementations:** `taskforce_extensions/infrastructure/communication/`:
+- **Extension Implementations:** `taskforce/infrastructure/communication/`:
   - `gateway_registry.py` - Component wiring and factory
   - `gateway_conversation_store.py` - File-based conversation persistence
   - `inbound_adapters.py` - Channel-specific payload normalization
@@ -512,7 +512,7 @@ taskforce butler schedules list
 
 ### Butler Profile
 
-The butler profile (`src/taskforce_extensions/configs/butler.yaml`) configures event sources, trigger rules, scheduler, and notification defaults.
+The butler profile (`src/taskforce/configs/butler.yaml`) configures event sources, trigger rules, scheduler, and notification defaults.
 
 ---
 
@@ -747,7 +747,7 @@ tests/
 ├── core/domain/           # Additional core tests (planning strategies)
 ├── fixtures/              # Shared test data
 ├── examples/              # Example tests
-├── taskforce_extensions/  # Extension tests
+├── taskforce/  # Extension tests
 └── conftest.py            # Shared fixtures (mock LLM, state managers, etc.)
 ```
 
@@ -815,7 +815,7 @@ async def test_file_state_manager_saves_and_loads(tmp_path: Path):
 
 ### Profiles
 
-Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce_extensions/configs/`:
+Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce/configs/`:
 
 - `dev.yaml` - Default development profile
 - `coding_agent.yaml` - Coding specialist with sub-agents
@@ -826,7 +826,7 @@ Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskfo
 - `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, etc.)
 
 ```yaml
-# src/taskforce_extensions/configs/dev.yaml
+# src/taskforce/configs/dev.yaml
 profile: dev
 specialist: null
 
@@ -844,7 +844,7 @@ agent:
   max_steps: 30
 
 llm:
-  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
 logging:
@@ -1081,7 +1081,7 @@ tool_msg = await agent.tool_result_message_factory.build_message(...)
 
 ### 4. Sub-Agent Spawning
 
-Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce_extensions/configs/custom/`.
+Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce/configs/custom/`.
 
 ---
 
@@ -1257,11 +1257,11 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/api/schemas/` - Request/response schemas
 
 ### Extensions
-- `src/taskforce_extensions/configs/` - Profile YAML configs (dev, coding_agent, rag_agent, security, butler, orchestration roles)
-- `src/taskforce_extensions/infrastructure/communication/` - Communication Gateway components (adapters, senders, stores, registry)
-- `src/taskforce_extensions/infrastructure/messaging/` - Message bus adapters
-- `src/taskforce_extensions/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
-- `src/taskforce_extensions/plugins/` - Plugin agents
+- `src/taskforce/configs/` - Profile YAML configs (dev, coding_agent, rag_agent, security, butler, orchestration roles)
+- `src/taskforce/infrastructure/communication/` - Communication Gateway components (adapters, senders, stores, registry)
+- `src/taskforce/infrastructure/messaging/` - Message bus adapters
+- `src/taskforce/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
+- `src/taskforce/plugins/` - Plugin agents
 
 ### Examples
 - `examples/accounting_agent/` - Full accounting agent with custom tools, skills, rules

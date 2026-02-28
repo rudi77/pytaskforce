@@ -140,7 +140,7 @@ docs/templates/document_extraction/
 ## 🤖 Coding Agent Multi-Agent Workflow
 
 The `coding_agent` profile now defines sub-agents as explicit tools and delegates
-work to specialist sub-agents defined in `src/taskforce_extensions/configs/custom/`.
+work to specialist sub-agents defined in `src/taskforce/configs/custom/`.
 The `name` field is the sub-agent identifier and is used for resolution:
 
 - `coding_planner`: breaks down missions into tasks and priorities

@@ -30,7 +30,7 @@ class GlobalDocumentAnalysisTool(ToolProtocol):
         """Lazy-load LLM provider if not provided."""
         if self._llm_provider is None:
             from taskforce.infrastructure.llm.litellm_service import LiteLLMService
-            self._llm_provider = LiteLLMService(config_path="src/taskforce_extensions/configs/llm_config.yaml")
+            self._llm_provider = LiteLLMService(config_path="src/taskforce/configs/llm_config.yaml")
         return self._llm_provider
 
     @property

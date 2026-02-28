@@ -9,27 +9,27 @@ Gateway components for unified channel-based agent communication:
 """
 
 # --- Stores ---
-from taskforce_extensions.infrastructure.communication.gateway_conversation_store import (
+from taskforce.infrastructure.communication.gateway_conversation_store import (
     FileConversationStore,
     InMemoryConversationStore,
 )
 
 # --- Wiring ---
-from taskforce_extensions.infrastructure.communication.gateway_registry import (
+from taskforce.infrastructure.communication.gateway_registry import (
     GatewayComponents,
     build_gateway_components,
 )
-from taskforce_extensions.infrastructure.communication.inbound_adapters import (
+from taskforce.infrastructure.communication.inbound_adapters import (
     TeamsInboundAdapter,
     TelegramInboundAdapter,
 )
 
 # --- Channel adapters ---
-from taskforce_extensions.infrastructure.communication.outbound_senders import (
+from taskforce.infrastructure.communication.outbound_senders import (
     TeamsOutboundSender,
     TelegramOutboundSender,
 )
-from taskforce_extensions.infrastructure.communication.recipient_registry import (
+from taskforce.infrastructure.communication.recipient_registry import (
     FileRecipientRegistry,
     InMemoryRecipientRegistry,
 )

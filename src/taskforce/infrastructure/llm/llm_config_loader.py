@@ -89,14 +89,14 @@ class LLMConfigLoader:
         """
         config_file = Path(config_path)
 
-        # Backward compatibility: try src/taskforce_extensions/configs/ as fallback
+        # Backward compatibility: try src/taskforce/configs/ as fallback
         if (
             not config_file.exists()
             and not config_file.is_absolute()
             and "configs/" in str(config_path)
         ):
             project_root = Path(__file__).parent.parent.parent.parent.parent
-            new_path = project_root / "src" / "taskforce_extensions" / config_path
+            new_path = project_root / "src" / "taskforce" / config_path
             if new_path.exists():
                 config_file = new_path
 

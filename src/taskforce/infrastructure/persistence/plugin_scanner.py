@@ -4,7 +4,7 @@ Plugin Scanner
 
 Discovers and loads plugin-based agent definitions from the filesystem.
 
-Scans well-known directories (``src/taskforce_extensions/plugins/``,
+Scans well-known directories (``src/taskforce/plugins/``,
 ``examples/``, ``plugins/``) for valid plugin manifests and converts them
 into ``PluginAgentDefinition`` domain objects.
 
@@ -51,7 +51,7 @@ def discover_plugin_agents(
     """Discover plugin agents from standard plugin directories.
 
     Scans the following directories (in order):
-    - ``<base_path>/src/taskforce_extensions/plugins/``
+    - ``<base_path>/src/taskforce/plugins/``
     - ``<base_path>/examples/``
     - ``<base_path>/plugins/`` (legacy location)
 
@@ -71,7 +71,7 @@ def discover_plugin_agents(
     plugins: list[PluginAgentDefinition] = []
 
     plugin_dirs = [
-        base_path / "src" / "taskforce_extensions" / "plugins",
+        base_path / "src" / "taskforce" / "plugins",
         base_path / "examples",
         base_path / "plugins",
     ]

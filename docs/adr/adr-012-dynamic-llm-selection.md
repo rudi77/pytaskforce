@@ -41,7 +41,7 @@ This means a complex reasoning step (e.g., architectural planning) uses the same
 ```yaml
 # Profile YAML
 llm:
-  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  config_path: src/taskforce/configs/llm_config.yaml
   default_model: main          # fallback for unmapped roles
 
   # NEW: role-based model mapping
@@ -244,7 +244,7 @@ strategy = SparStrategy(..., model_selector=model_selector)
 ```yaml
 # Profile YAML
 llm:
-  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
   # NEW: routing rules

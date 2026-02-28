@@ -77,7 +77,7 @@ core interfaces and infrastructure adapters:
 
 - **Message Bus Protocols** live in `core/interfaces` and provide publish/subscribe
   contracts for queue-backed coordination.
-- **Infrastructure Adapters** live under `taskforce_extensions/infrastructure/` and
+- **Infrastructure Adapters** live under `taskforce/infrastructure/` and
   include in-memory message buses plus file-backed runtime stores.
 - **Runtime Tracking** records heartbeats and checkpoints to support recovery and
   long-lived sessions.
@@ -137,7 +137,7 @@ The Skills System provides modular, domain-specific capabilities that extend age
                               │
             ┌─────────────────┼─────────────────┐
             ▼                 ▼                 ▼
-     ~/.taskforce/    .taskforce/skills/   taskforce_extensions/
+     ~/.taskforce/    .taskforce/skills/   taskforce/
         skills/       (project-level)         skills/
      (user-level)                          (built-in)
 ```

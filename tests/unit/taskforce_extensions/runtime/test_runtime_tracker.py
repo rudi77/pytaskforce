@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from taskforce_extensions.infrastructure.runtime import (
+from taskforce.infrastructure.runtime import (
     AgentRuntimeTracker,
     InMemoryCheckpointStore,
     InMemoryHeartbeatStore,

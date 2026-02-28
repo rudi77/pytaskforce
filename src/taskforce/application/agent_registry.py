@@ -70,14 +70,14 @@ class AgentRegistry:
 
         Args:
             config_dir: Root directory for configuration files. If None, uses
-                       'src/taskforce_extensions/configs/' relative to project root.
+                       'src/taskforce/configs/' relative to project root.
                        Falls back to 'configs/' for backward compatibility.
             base_path: Base path for plugin discovery (defaults to config_dir parent)
         """
         if config_dir is None:
             base_path_obj = get_base_path()
             # Try new location first, then fall back to old location for compatibility
-            new_config_dir = base_path_obj / "src" / "taskforce_extensions" / "configs"
+            new_config_dir = base_path_obj / "src" / "taskforce" / "configs"
             old_config_dir = base_path_obj / "configs"
             if new_config_dir.exists():
                 self.config_dir = new_config_dir
@@ -379,7 +379,7 @@ class AgentRegistry:
     def _load_plugin_agents(self) -> None:
         """Load plugin agents from examples/ and plugins/ (check new location first)."""
         plugin_dirs = [
-            self.base_path / "src" / "taskforce_extensions" / "plugins",
+            self.base_path / "src" / "taskforce" / "plugins",
             self.base_path / "examples",
             self.base_path / "plugins",  # Old location for backward compatibility
         ]

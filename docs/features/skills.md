@@ -125,13 +125,13 @@ Skills can be organised in subdirectories. The full name uses `:` as separator:
 
 ### Creating a Skill
 
-Create a directory in `src/taskforce_extensions/skills/` with a `SKILL.md` file:
+Create a directory in `src/taskforce/skills/` with a `SKILL.md` file:
 
 ```bash
-mkdir -p src/taskforce_extensions/skills/my-skill
+mkdir -p src/taskforce/skills/my-skill
 ```
 
-Create `src/taskforce_extensions/skills/my-skill/SKILL.md`:
+Create `src/taskforce/skills/my-skill/SKILL.md`:
 
 ```markdown
 ---
@@ -284,7 +284,7 @@ Additional files (references/, scripts/, assets/). Loaded only when explicitly r
 Skills are discovered from these default locations:
 - `~/.taskforce/skills/` - User-level skills
 - `.taskforce/skills/` - Project-level skills
-- `src/taskforce_extensions/skills/` - Extension skills
+- `src/taskforce/skills/` - Extension skills
 
 ### Custom Directories
 

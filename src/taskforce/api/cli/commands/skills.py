@@ -25,11 +25,11 @@ def _get_skill_service() -> SkillService:
     if _cli_skill_service is not None:
         return _cli_skill_service
 
-    # Include taskforce_extensions/skills if it exists
+    # Include bundled skills if present
     extension_dirs: list[str] = []
 
-    # Check for src/taskforce_extensions/skills
-    ext_dir = Path.cwd() / "src" / "taskforce_extensions" / "skills"
+    # Check for src/taskforce/skills
+    ext_dir = Path.cwd() / "src" / "taskforce" / "skills"
     if ext_dir.exists():
         extension_dirs.append(str(ext_dir))
 
@@ -67,7 +67,7 @@ def list_skills(
             "\nAdd skill directories to:\n"
             "  - ~/.taskforce/skills/ (user-level)\n"
             "  - .taskforce/skills/ (project-level)\n"
-            "  - src/taskforce_extensions/skills/ (extensions)"
+            "  - src/taskforce/skills/ (bundled)"
         )
         return
 
@@ -265,4 +265,4 @@ def show_paths() -> None:
     console.print("\n[bold]Default directories:[/bold]")
     console.print("  - ~/.taskforce/skills/ (user-level)")
     console.print("  - .taskforce/skills/ (project-level)")
-    console.print("  - src/taskforce_extensions/skills/ (extensions)")
+    console.print("  - src/taskforce/skills/ (bundled)")

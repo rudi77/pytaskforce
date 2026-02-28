@@ -18,7 +18,7 @@ def _get_config_dir() -> Path:
     project_root = Path.cwd()
 
     # Try new location first
-    new_config_dir = project_root / "src" / "taskforce_extensions" / "configs"
+    new_config_dir = project_root / "src" / "taskforce" / "configs"
     if new_config_dir.exists():
         return new_config_dir
 

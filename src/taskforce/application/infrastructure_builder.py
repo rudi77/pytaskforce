@@ -51,13 +51,13 @@ class InfrastructureBuilder:
 
         Args:
             config_dir: Path to configuration directory. If None, uses
-                       'src/taskforce_extensions/configs/' relative to project root.
+                       'src/taskforce/configs/' relative to project root.
                        Falls back to 'configs/' for backward compatibility.
         """
         if config_dir is None:
             base_path = get_base_path()
             # Try new location first, then fall back to old location for compatibility
-            new_config_dir = base_path / "src" / "taskforce_extensions" / "configs"
+            new_config_dir = base_path / "src" / "taskforce" / "configs"
             old_config_dir = base_path / "configs"
             if new_config_dir.exists():
                 self.config_dir = new_config_dir
@@ -228,7 +228,7 @@ class InfrastructureBuilder:
 
         llm_config = config.get("llm", {})
         config_path = llm_config.get(
-            "config_path", "src/taskforce_extensions/configs/llm_config.yaml"
+            "config_path", "src/taskforce/configs/llm_config.yaml"
         )
 
         # Resolve relative paths against base path (handles frozen executables)
@@ -238,7 +238,7 @@ class InfrastructureBuilder:
 
             # Backward compatibility: if old path doesn't exist, try new location
             if not resolved_path.exists() and config_path.startswith("configs/"):
-                new_path = get_base_path() / "src" / "taskforce_extensions" / config_path
+                new_path = get_base_path() / "src" / "taskforce" / config_path
                 if new_path.exists():
                     resolved_path = new_path
                     self._logger.debug(
@@ -336,7 +336,7 @@ class InfrastructureBuilder:
         Returns:
             GatewayComponents dataclass with stores, senders, and adapters.
         """
-        from taskforce_extensions.infrastructure.communication.gateway_registry import (
+        from taskforce.infrastructure.communication.gateway_registry import (
             build_gateway_components,
         )
 
@@ -425,7 +425,7 @@ class InfrastructureBuilder:
         """Build runtime tracker based on configuration.
 
         Centralises the extensions-infrastructure import so that callers
-        do not reference taskforce_extensions.infrastructure directly.
+        do not reference infrastructure directly.
 
         Args:
             config: Profile configuration dictionary.
@@ -449,7 +449,7 @@ class InfrastructureBuilder:
         store_type = runtime_config.get("store", "file")
 
         if store_type == "memory":
-            from taskforce_extensions.infrastructure.runtime import (
+            from taskforce.infrastructure.runtime import (
                 AgentRuntimeTracker,
                 InMemoryCheckpointStore,
                 InMemoryHeartbeatStore,
@@ -460,7 +460,7 @@ class InfrastructureBuilder:
                 checkpoint_store=InMemoryCheckpointStore(),
             )
         if store_type == "file":
-            from taskforce_extensions.infrastructure.runtime import (
+            from taskforce.infrastructure.runtime import (
                 AgentRuntimeTracker,
                 FileCheckpointStore,
                 FileHeartbeatStore,
@@ -485,7 +485,7 @@ class InfrastructureBuilder:
         Returns:
             InMemoryMessageBus instance implementing MessageBusProtocol.
         """
-        from taskforce_extensions.infrastructure.messaging import InMemoryMessageBus
+        from taskforce.infrastructure.messaging import InMemoryMessageBus
 
         return InMemoryMessageBus()
 

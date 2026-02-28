@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from taskforce_extensions.infrastructure.messaging import InMemoryMessageBus
+from taskforce.infrastructure.messaging import InMemoryMessageBus
 
 
 @pytest.mark.asyncio

@@ -89,10 +89,10 @@ class SimpleChatRunner:
             from taskforce.infrastructure.persistence.pending_channel_store import (
                 FilePendingChannelQuestionStore,
             )
-            from taskforce_extensions.infrastructure.communication.gateway_registry import (
+            from taskforce.infrastructure.communication.gateway_registry import (
                 build_gateway_components,
             )
-            from taskforce_extensions.infrastructure.communication.telegram_poller import (
+            from taskforce.infrastructure.communication.telegram_poller import (
                 TelegramPoller,
             )
 
@@ -243,7 +243,7 @@ class SimpleChatRunner:
         if not plugins:
             self._print_system("No plugin agents found.", style="info")
             self._print_system(
-                "Add plugin folders under examples/ or src/taskforce_extensions/plugins/.",
+                "Add plugin folders under examples/ or src/taskforce/plugins/.",
                 style="info",
             )
             return
