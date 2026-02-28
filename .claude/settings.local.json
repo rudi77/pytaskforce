@@ -72,7 +72,26 @@
       "Bash(cd /d/home/Source/pytaskforce && PYTHONPATH=src:examples/accounting_agent python -m pytest examples/accounting_agent/tests/test_vendor_generalization.py -q --tb=short --timeout=10 -s 2>&1)",
       "Bash(python3:*)"
     ],
-    "deny": [],
+    "deny": [
+      ".env",
+      ".env.example",
+      ".env.local",
+      ".env.development",
+      ".env.production",
+      ".env.test",
+      ".env.development.local",
+      ".env.production.local",
+      ".env.test.local",
+      ".env.development.local.example",
+      ".env.production.local.example",
+      ".env.test.local.example",
+      ".env.development.local.example",
+      ".env.production.local.example",
+      ".env.test.local.example",
+      ".env.development.local.example",
+      ".env.production.local.example",
+      ".env.test.local.example"
+    ],
     "ask": []
   }
 }

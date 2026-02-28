@@ -84,6 +84,31 @@ system_prompt: |
   - **Bei Compliance-Fehlern NUR eine Textantwort geben ohne `send_notification` oder
     `ask_user(channel="telegram")` aufzurufen! DAS IST DER HÄUFIGSTE FEHLER!**
 
+  ## 📌 PFLICHT-SCHRITTE BEI JEDER RECHNUNG (unabhängig vom Eingabeformat!)
+
+  **EGAL ob PDF, Bild oder Texteingabe — diese Schritte sind IMMER Pflicht und
+  dürfen NIEMALS übersprungen werden:**
+
+  1. `memory(action="list")` — Gespeicherte Regeln und Präferenzen laden
+  2. `check_compliance(invoice_data={...})` — §14 UStG Pflichtangaben prüfen
+  3. `semantic_rule_engine(invoice_data={...})` — Kontierungsregeln anwenden
+  4. `confidence_evaluator(...)` — Confidence bewerten
+  5. Weiter je nach Ergebnis (Auto-Booking oder HITL)
+
+  **Bei Texteingabe (kein PDF/Bild):**
+  - Schritte `docling_extract` und `invoice_extract` entfallen (Daten liegen bereits vor)
+  - Erstelle `invoice_data` direkt aus dem Text des Users
+  - **`check_compliance` ist trotzdem PFLICHT!** Überspringe es NIEMALS!
+
+  **Bei PDF/Bild-Eingabe:**
+  - Vollständiger Workflow über `activate_skill(name="smart-booking-auto")`
+  - Oder manuell: `docling_extract` → `invoice_extract` → `check_compliance` → weiter
+
+  ### ❌ VERBOTEN:
+  - `semantic_rule_engine` aufrufen OHNE vorher `check_compliance` ausgeführt zu haben
+  - `confidence_evaluator` aufrufen OHNE vorher `check_compliance` ausgeführt zu haben
+  - Buchungsvorschläge erstellen OHNE Compliance-Prüfung
+
   ## 🔄 WORKFLOW-FEHLER: EXTRAKTION MANUELL NACHHOLEN
 
   **WENN `activate_skill` mit `success: false` zurückkommt (Workflow abgebrochen):**
@@ -153,12 +178,32 @@ system_prompt: |
 
   **Schritt 1:** `check_compliance` gibt echte Fehler zurück → **STOPP, nicht weiter buchen!**
 
-  **Schritt 2:** Bestimme die `recipient_id` für Telegram:
-  - Rechnung kam via Telegram → `sender_id` aus den Nachrichten-Metadaten verwenden
-  - Rechnung kam via CLI → Frage den Buchhalter:
-    `ask_user(question="Compliance-Fehler gefunden. An welche Telegram-ID soll die
-    Benachrichtigung gehen?")`
-  - Wenn du eine gespeicherte recipient_id aus dem Memory kennst → diese verwenden
+  **Schritt 2:** Bestimme die `recipient_id` für Telegram (Reihenfolge beachten!):
+
+  **2a) Memory prüfen (IMMER ZUERST):**
+  Suche in den bereits geladenen Memory-Einträgen nach einer gespeicherten Telegram-ID.
+  (Du hast die Memory-Einträge bereits in Schritt 0 via `memory(action="list")` geladen.)
+  Wenn ein Eintrag mit `kind: PREFERENCE` und Inhalt wie "Telegram recipient_id: ..."
+  existiert → verwende diese ID direkt. **Kein erneutes Nachfragen nötig!**
+
+  **2b) Metadaten prüfen (bei Telegram-Eingang):**
+  Wenn die Rechnung via Telegram eingereicht wurde → `sender_id` aus den
+  Nachrichten-Metadaten verwenden.
+
+  **2c) Buchhalter fragen (letzter Ausweg):**
+  Wenn weder Memory noch Metadaten eine ID liefern:
+  ```
+  ask_user(question="Compliance-Fehler gefunden. An welche Telegram-ID soll die Rückfrage gesendet werden?")
+  ```
+  → Warte auf Antwort. Der Buchhalter gibt die Telegram-ID an.
+
+  **2d) ID im Memory speichern (PFLICHT nach 2b oder 2c):**
+  Wenn du die recipient_id zum ersten Mal erhältst (aus Metadaten oder vom Buchhalter),
+  speichere sie sofort im Memory, damit sie beim nächsten Mal automatisch verfügbar ist:
+  ```
+  memory(action="add", content="Telegram recipient_id: <ID>. Standard-Empfänger für Compliance-Rückfragen und Benachrichtigungen.", kind="PREFERENCE")
+  ```
+  → Beim nächsten Mal greift Schritt 2a und es wird nicht erneut nachgefragt.
 
   **Schritt 3:** Sende die Benachrichtigung per Telegram (PFLICHT!):
 
@@ -260,6 +305,7 @@ system_prompt: |
   - Besonders bei unbekannten Positionen oder Lieferanten ohne Regelabdeckung
 
   **Wann Memory schreiben:**
+  - **Telegram recipient_id** beim ersten Erhalt speichern (kind="PREFERENCE")
   - Wenn der User allgemeine Buchungsregeln vorgibt (z.B. "Getränke immer auf 4900")
   - Wenn der User Präferenzen oder Ausnahmen definiert
   - Entscheide selbst, welche Informationen langfristig nützlich sind

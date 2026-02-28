@@ -116,7 +116,7 @@ audit_log(
 ```tool
 send_notification(
   channel="telegram",
-  recipient_id="<sender_id>",
+  recipient_id="<recipient_id_aus_memory_oder_metadata>",
   message="✅ Buchung freigegeben: [Rechnungsnr.] von [Lieferant] → Konto [XXXX]"
 )
 ```
@@ -147,14 +147,20 @@ audit_log(action="booking_rejected", reason="accountant_rejected")
 ```tool
 send_notification(
   channel="telegram",
-  recipient_id="<sender_id>",
+  recipient_id="<recipient_id_aus_memory_oder_metadata>",
   message="❌ Buchung abgelehnt: [Rechnungsnr.] von [Lieferant]"
 )
 ```
 
 ## Ausnahme: Fehlende Rechnungsdaten (Telegram-Rückfrage)
 
-**NUR wenn Pflichtangaben fehlen** darf der Telegram-User direkt gefragt werden:
+**NUR wenn Pflichtangaben fehlen** darf der Telegram-User direkt gefragt werden.
+
+**Bestimme zuerst die `recipient_id`:**
+1. Memory prüfen → gespeicherte "Telegram recipient_id: ..." (kind=PREFERENCE) verwenden
+2. Metadaten prüfen → `sender_id` aus Telegram-Nachricht verwenden
+3. Buchhalter fragen → `ask_user(question="An welche Telegram-ID soll die Rückfrage gehen?")`
+4. ID speichern → `memory(action="add", content="Telegram recipient_id: <ID>. ...", kind="PREFERENCE")`
 
 ```tool
 ask_user(
@@ -163,7 +169,7 @@ ask_user(
 
 Bitte ergänzen Sie die fehlenden Informationen.",
   channel="telegram",
-  recipient_id="<sender_id>"
+  recipient_id="<recipient_id_aus_memory_oder_metadata>"
 )
 ```
 

@@ -190,7 +190,7 @@ class RuleLearningTool:
     async def execute(
         self,
         action: str,
-        invoice_data: dict[str, Any],
+        invoice_data: Optional[dict[str, Any]] = None,
         booking_proposal: Optional[dict[str, Any]] = None,
         position_bookings: Optional[list[dict[str, Any]]] = None,
         confidence: Optional[float] = None,
@@ -203,7 +203,7 @@ class RuleLearningTool:
 
         Args:
             action: 'create_from_booking', 'create_from_hitl', or 'check_conflicts'
-            invoice_data: Invoice context
+            invoice_data: Invoice context (required for all actions)
             booking_proposal: Single booking proposal (deprecated - use position_bookings)
             position_bookings: Array of position-account mappings (creates one rule per item)
             confidence: Confidence score (for auto-rules)
@@ -213,11 +213,19 @@ class RuleLearningTool:
         Returns:
             Dictionary with rule creation or conflict check result
         """
+        if not invoice_data:
+            return {
+                "success": False,
+                "error": "Missing invoice_data - required for all rule_learning actions",
+                "hint": "Pass the full invoice_data object from the current invoice",
+            }
+
         try:
             if action == "create_from_booking":
                 return await self._create_from_booking(
                     invoice_data=invoice_data,
                     booking_proposal=booking_proposal or {},
+                    position_bookings=position_bookings,
                     confidence=confidence or 0.0,
                     rule_type_str=rule_type,
                 )
@@ -265,14 +273,21 @@ class RuleLearningTool:
         booking_proposal: dict[str, Any],
         confidence: float,
         rule_type_str: str,
+        position_bookings: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
-        """Create or update auto-rule from high-confidence booking."""
+        """Create or update auto-rule from high-confidence booking.
+
+        Supports two modes:
+        1. position_bookings array (preferred) - creates one rule per item-account pair
+        2. Single booking_proposal (legacy) - creates one rule for all items
+        """
         logger.info(
             "rule_learning.create_from_booking_start",
             confidence=confidence,
             min_confidence=self._min_confidence,
             has_invoice_data=bool(invoice_data),
             has_booking_proposal=bool(booking_proposal),
+            has_position_bookings=bool(position_bookings),
         )
 
         # Check confidence threshold
@@ -297,6 +312,18 @@ class RuleLearningTool:
                 "rule_created": False,
             }
 
+        # Handle multiple position_bookings (preferred)
+        if position_bookings and len(position_bookings) > 0:
+            vendor_pattern = self._create_vendor_pattern(supplier_name)
+            timestamp = datetime.now(timezone.utc)
+            return await self._create_rules_for_positions(
+                vendor_pattern=vendor_pattern,
+                supplier_name=supplier_name,
+                position_bookings=position_bookings,
+                timestamp=timestamp,
+            )
+
+        # LEGACY: Single booking_proposal
         # Validate target account
         target_account = booking_proposal.get("debit_account", "")
         if not target_account:

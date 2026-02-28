@@ -121,6 +121,14 @@ PDF/Bild → Markdown → Strukturierte Daten → Compliance-Prüfung → Regeln
                                           (Telegram-User)           (send_notification)
 ```
 
+**Bei Texteingabe (kein PDF/Bild):**
+```
+Texteingabe → invoice_data erstellen → Compliance-Prüfung → Regeln → Confidence → Buchung
+```
+- `docling_extract` und `invoice_extract` entfallen
+- **`check_compliance` ist trotzdem PFLICHT — NIEMALS überspringen!**
+- Erstelle `invoice_data` als strukturiertes Objekt direkt aus dem Text des Users
+
 ## Compliance-Validierung (§14 UStG)
 
 **WENN `check_compliance` Fehler mit `severity: error` zurückgibt:**
@@ -128,7 +136,15 @@ PDF/Bild → Markdown → Strukturierte Daten → Compliance-Prüfung → Regeln
 Diese Fehler bedeuten, dass **Pflichtangaben fehlen**. Der Telegram-User kann diese
 ergänzen, da er die Rechnung physisch vorliegen hat.
 
-**→ `ask_user` aufrufen um fehlende Angaben zu erfragen:**
+**→ Bestimme die `recipient_id` und rufe `ask_user` mit Telegram-Routing auf:**
+
+1. **Memory prüfen:** Suche in den bereits geladenen Memory-Einträgen nach
+   "Telegram recipient_id: ..." (kind=PREFERENCE). Wenn gefunden → verwende diese ID.
+2. **Metadaten prüfen:** Rechnung kam via Telegram → `sender_id` aus Metadaten verwenden.
+3. **Buchhalter fragen:** Weder Memory noch Metadaten liefern eine ID →
+   `ask_user(question="Compliance-Fehler. An welche Telegram-ID soll die Rückfrage gehen?")`
+4. **ID speichern:** Bei erstmaligem Erhalt der ID →
+   `memory(action="add", content="Telegram recipient_id: <ID>. ...", kind="PREFERENCE")`
 
 ```tool
 ask_user(
@@ -140,7 +156,7 @@ Folgende Pflichtangaben nach §14 UStG fehlen:
 
 Bitte ergänzen Sie die fehlenden Angaben oder senden Sie ein besseres Bild der Rechnung.",
   channel="telegram",
-  recipient_id="<sender_id_aus_metadata>"
+  recipient_id="<recipient_id_aus_memory_oder_metadata>"
 )
 ```
 
@@ -192,6 +208,21 @@ abgebrochen (z.B. weil `docling_extract` oder `invoice_extract` fehlschlug).
 4. Normal fortfahren
 
 **NIEMALS Compliance-Fehler melden ohne vorherige erfolgreiche Extraktion!**
+
+## PFLICHT: `check_compliance` bei JEDER Rechnung
+
+**`check_compliance` MUSS bei JEDER Rechnung aufgerufen werden — auch wenn
+die Daten als Text (nicht als PDF) eingereicht wurden!**
+
+Reihenfolge (unabhängig vom Eingabeformat):
+1. `memory(action="list")` — Regeln laden
+2. **`check_compliance(invoice_data={...})`** — §14 UStG Prüfung (PFLICHT!)
+3. `semantic_rule_engine(...)` — Kontierung
+4. `confidence_evaluator(...)` — Bewertung
+5. Weiter (Auto-Booking oder HITL)
+
+**❌ VERBOTEN:** `semantic_rule_engine` oder `confidence_evaluator` aufrufen
+OHNE vorher `check_compliance` ausgeführt zu haben!
 
 ## Hard Gates (Auslöser für Buchhalter-HITL)
 
