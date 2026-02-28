@@ -90,7 +90,7 @@ class LearningService:
 
             response = await self._llm_provider.complete(
                 messages=[{"role": "user", "content": prompt}],
-                model_alias=self._model_alias,
+                model=self._model_alias,
             )
 
             content = response.get("content", "[]")
@@ -222,7 +222,7 @@ class LearningService:
             try:
                 response = await self._llm_provider.complete(
                     messages=[{"role": "user", "content": summary_prompt}],
-                    model_alias=self._model_alias,
+                    model=self._model_alias,
                 )
                 items = self._parse_extraction(response.get("content", "[]"))
 

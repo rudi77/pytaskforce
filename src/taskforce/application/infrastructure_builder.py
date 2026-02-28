@@ -490,6 +490,44 @@ class InfrastructureBuilder:
         return InMemoryMessageBus()
 
     # -------------------------------------------------------------------------
+    # Memory Stores (Memory Consolidation)
+    # -------------------------------------------------------------------------
+
+    def build_experience_store(self, work_dir: str = ".taskforce/experiences") -> Any:
+        """Build a FileExperienceStore instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not reference infrastructure directly.
+
+        Args:
+            work_dir: Working directory for experience persistence.
+
+        Returns:
+            FileExperienceStore instance implementing ExperienceStoreProtocol.
+        """
+        from taskforce.infrastructure.memory.file_experience_store import (
+            FileExperienceStore,
+        )
+
+        return FileExperienceStore(work_dir)
+
+    def build_memory_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileMemoryStore instance.
+
+        Centralises the infrastructure import so that API-layer code
+        does not reference infrastructure directly.
+
+        Args:
+            work_dir: Working directory for memory persistence.
+
+        Returns:
+            FileMemoryStore instance implementing MemoryStoreProtocol.
+        """
+        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+
+        return FileMemoryStore(work_dir)
+
+    # -------------------------------------------------------------------------
     # Combined Infrastructure
     # -------------------------------------------------------------------------
 
