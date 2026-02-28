@@ -116,9 +116,7 @@ class LiteLLMService:
         ValueError: If config is invalid (empty or missing models section).
     """
 
-    def __init__(
-        self, config_path: str = "src/taskforce/configs/llm_config.yaml"
-    ) -> None:
+    def __init__(self, config_path: str = "src/taskforce/configs/llm_config.yaml") -> None:
         self.logger = structlog.get_logger(__name__)
         self._config = LLMConfigLoader(config_path)
         self._parser = LLMResponseParser()
@@ -532,6 +530,7 @@ class LiteLLMService:
             messages, model, tools, tool_choice, **kwargs
         )
         litellm_kwargs["stream"] = True
+        litellm_kwargs.setdefault("stream_options", {"include_usage": True})
         return resolved_model, litellm_kwargs
 
     def _build_stream_done_event(

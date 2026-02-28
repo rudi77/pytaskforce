@@ -12,8 +12,17 @@ from taskforce.core.domain.skill import SkillMetadataModel
 
 
 class DummyStateManager:
+    def __init__(self, initial_state: dict | None = None) -> None:
+        self._states: dict[str, dict] = {}
+        self._initial = initial_state or {
+            "conversation_history": [{"role": "user", "content": "Hello"}]
+        }
+
     async def load_state(self, session_id: str) -> dict:
-        return {"conversation_history": [{"role": "user", "content": "Hello"}]}
+        return self._states.get(session_id, dict(self._initial))
+
+    async def save_state(self, session_id: str, state_data: dict) -> None:
+        self._states[session_id] = state_data
 
 
 class DummySkillManager:
@@ -215,3 +224,45 @@ async def test_context_full_renders_content_column() -> None:
 
     output = runner.console.export_text()
     assert "Content" in output
+
+
+@pytest.mark.asyncio
+async def test_tokens_command_shows_total() -> None:
+    """/tokens prints the accumulated token count."""
+    runner = _build_runner(DummyAgent())
+    runner.total_tokens = 1234
+
+    await runner._handle_command("/tokens")
+
+    output = runner.console.export_text()
+    assert "1,234" in output
+
+
+@pytest.mark.asyncio
+async def test_clear_resets_context() -> None:
+    """/clear resets conversation history, token counter, and plan state."""
+    agent = DummyAgent()
+    runner = _build_runner(agent)
+
+    # Simulate accumulated state
+    runner.total_tokens = 500
+    runner.plan_state.steps = [{"description": "step 1", "status": "PENDING"}]
+    runner._last_event_signature = ("tool_call", "file_read:{}")
+
+    # Store conversation history for this session
+    await agent.state_manager.save_state(
+        "session-id",
+        {"conversation_history": [{"role": "user", "content": "Hello"}]},
+    )
+
+    await runner._handle_command("/clear")
+
+    # In-memory counters should be reset
+    assert runner.total_tokens == 0
+    assert runner.plan_state.steps == []
+    assert runner.plan_state.text is None
+    assert runner._last_event_signature is None
+
+    # Conversation history should be cleared in the state manager
+    state = await agent.state_manager.load_state("session-id")
+    assert state["conversation_history"] == []
