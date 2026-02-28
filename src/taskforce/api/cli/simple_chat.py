@@ -14,6 +14,7 @@ from rich.markdown import Markdown
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
 from taskforce.api.cli.tool_display_formatter import format_tool_call, format_tool_result
 from taskforce.application.agent_registry import AgentRegistry
+from taskforce.application.context_display_service import ContextDisplayService, ContextSnapshot
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
@@ -193,6 +194,8 @@ class SimpleChatRunner:
             self._print_system("Debug mode toggling is not used in simple mode.", style="warning")
         elif cmd_name == "tokens":
             self._print_system(f"Total tokens used: {self.total_tokens:,}", style="info")
+        elif cmd_name in ["context", "ctx"]:
+            await self._show_context()
         elif cmd_name == "plugins":
             self._list_plugins()
         elif cmd_name == "skills":
@@ -222,6 +225,7 @@ class SimpleChatRunner:
             "**Commands:**\n"
             "- /help or /h\n"
             "- /clear or /c\n"
+            "- /context or /ctx — show current LLM context with token breakdown\n"
             "- /export or /e\n"
             "- /tokens\n"
             "- /plugins\n"
@@ -293,6 +297,56 @@ class SimpleChatRunner:
                 lines.append(f"- /{meta.effective_slash_name} — {meta.description}{active_marker}")
 
         self.console.print(Markdown("\n".join(lines)))
+
+    async def _show_context(self) -> None:
+        """Show the current LLM context with token breakdown."""
+        if not self.agent:
+            self._print_system("No agent is active.", style="warning")
+            return
+
+        service = ContextDisplayService()
+        try:
+            snapshot = await service.build_snapshot(self.agent, self.session_id)
+        except Exception as exc:
+            self._print_system(f"Failed to build context snapshot: {exc}", style="error")
+            return
+
+        self._render_context_snapshot(snapshot)
+
+    def _render_context_snapshot(self, snapshot: ContextSnapshot) -> None:
+        """Render a context snapshot using Rich Tree layout."""
+        from rich.panel import Panel
+        from rich.tree import Tree
+
+        # Header with totals
+        utilization_color = (
+            "green" if snapshot.utilization_pct < 50
+            else "yellow" if snapshot.utilization_pct < 80
+            else "red"
+        )
+        header = (
+            f"[bold]Model:[/bold] {snapshot.model_alias}    "
+            f"[bold]Tokens:[/bold] "
+            f"[{utilization_color}]{snapshot.total_tokens:,}[/{utilization_color}]"
+            f" / {snapshot.max_tokens:,} "
+            f"([{utilization_color}]{snapshot.utilization_pct}%[/{utilization_color}])"
+        )
+
+        tree = Tree(header)
+
+        for section in snapshot.sections:
+            branch = tree.add(
+                f"[bold]{section.name}[/bold]"
+                f"  [dim]~{section.token_estimate:,} tokens[/dim]"
+            )
+            for sub in section.subsections:
+                leaf_text = (
+                    f"{sub.name}"
+                    f"  [dim]~{sub.token_estimate:,}[/dim]"
+                )
+                branch.add(leaf_text)
+
+        self.console.print(Panel(tree, title="Context Snapshot", border_style="cyan"))
 
     async def _execute_prompt_skill(self, skill: Any, arguments: str) -> None:
         """Execute a PROMPT-type skill by substituting args and sending as chat."""

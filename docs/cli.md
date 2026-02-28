@@ -105,6 +105,37 @@ routed to Epic Orchestration. Simple missions use the standard single-agent path
 
 See [Epic Orchestration](architecture/epic-orchestration.md) for profile configuration details.
 
+## 🔍 Context Inspection
+
+### `/context` — Show Current LLM Context
+
+During an interactive chat session, use `/context` (or `/ctx`) to display the full context that would be sent to the LLM on the next call. The output is broken down into sections with estimated token counts:
+
+- **System Prompt** — Base kernel prompt, specialist/custom prompt, tool descriptions, plan status, context pack, active skill instructions
+- **Conversation History** — Each message with role and token estimate
+- **Tool Definitions** — All registered tool schemas with per-tool token cost
+
+```
+╭─ Context Snapshot ──────────────────────────────────────╮
+│ Model: main    Tokens: 3,200 / 100,000 (3.2%)          │
+│ ├── System Prompt  ~1,800 tokens                        │
+│ │   ├── Base Kernel Prompt  ~800                        │
+│ │   ├── Tool Descriptions (5 tools)  ~700               │
+│ │   └── Context Pack  ~300                              │
+│ ├── Conversation History (4 messages)  ~600 tokens      │
+│ │   ├── user (msg 1)  ~50                               │
+│ │   ├── assistant (msg 2)  ~200                         │
+│ │   ├── tool:file_read (msg 3)  ~300                    │
+│ │   └── assistant (msg 4)  ~50                          │
+│ └── Tool Definitions (5 tools)  ~800 tokens             │
+│     ├── file_read  ~160                                 │
+│     ├── python  ~180                                    │
+│     └── ...                                             │
+╰─────────────────────────────────────────────────────────╯
+```
+
+This is useful for understanding token budget utilisation, diagnosing prompt bloat, and verifying which skills, tools, and history are included in the LLM call.
+
 ## 🔍 Inspection & Management
 
 ### Tools
