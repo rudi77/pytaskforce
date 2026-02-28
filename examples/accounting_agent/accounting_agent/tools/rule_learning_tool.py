@@ -104,20 +104,26 @@ class RuleLearningTool:
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "Action to perform: 'create_from_booking' (auto-rule, requires confidence>=95%), 'create_from_hitl_confirmation' (user confirmed HITL, no confidence check), 'create_from_hitl' (user correction), 'check_conflicts'",
+                    "description": (
+                        "Action to perform. "
+                        "'create_from_booking': auto-rule from high-confidence booking (requires confidence>=95%). "
+                        "'create_from_hitl_confirmation': rule from user-confirmed HITL (no confidence check). "
+                        "'create_from_hitl': rule from user correction (supports position_bookings OR correction). "
+                        "'check_conflicts': check if a rule would conflict with existing rules."
+                    ),
                     "enum": ["create_from_booking", "create_from_hitl_confirmation", "create_from_hitl", "check_conflicts"],
                 },
                 "invoice_data": {
                     "type": "object",
-                    "description": "Invoice data for rule creation",
+                    "description": "REQUIRED for all actions. The full invoice_data object from the current invoice (must include supplier_name and line_items).",
                 },
                 "booking_proposal": {
                     "type": "object",
-                    "description": "Single booking proposal (DEPRECATED - use position_bookings for multiple positions)",
+                    "description": "Single booking proposal with debit_account. Legacy - prefer position_bookings for multiple positions.",
                 },
                 "position_bookings": {
                     "type": "array",
-                    "description": "Array of position-account mappings. Each creates a separate rule. Use this for invoices with multiple positions that need different accounts.",
+                    "description": "PREFERRED: Array of position-account mappings. Each item creates a separate vendor+item rule. Works with all create actions (create_from_booking, create_from_hitl_confirmation, create_from_hitl).",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -145,7 +151,7 @@ class RuleLearningTool:
                 },
                 "correction": {
                     "type": "object",
-                    "description": "User correction (for create_from_hitl)",
+                    "description": "User correction for single-account create_from_hitl. Must contain debit_account. For multiple positions, use position_bookings instead.",
                 },
                 "rule_type": {
                     "type": "string",
@@ -183,8 +189,19 @@ class RuleLearningTool:
         action = kwargs.get("action")
         if action not in ["create_from_booking", "create_from_hitl_confirmation", "create_from_hitl", "check_conflicts"]:
             return False, "Invalid action"
-        if "invoice_data" not in kwargs:
-            return False, "Missing invoice_data"
+        if "invoice_data" not in kwargs or not kwargs["invoice_data"]:
+            return False, "Missing invoice_data - required for all rule_learning actions"
+
+        # For create_from_hitl: need either position_bookings or correction with debit_account
+        if action == "create_from_hitl":
+            has_positions = kwargs.get("position_bookings") and len(kwargs["position_bookings"]) > 0
+            has_correction = kwargs.get("correction") and kwargs["correction"].get("debit_account")
+            if not has_positions and not has_correction:
+                return False, (
+                    "create_from_hitl requires either position_bookings array "
+                    "or correction with debit_account"
+                )
+
         return True, None
 
     async def execute(
@@ -242,6 +259,7 @@ class RuleLearningTool:
                 return await self._create_from_hitl(
                     invoice_data=invoice_data,
                     correction=correction or {},
+                    position_bookings=position_bookings,
                     rule_type_str=rule_type,
                 )
             elif action == "check_conflicts":
@@ -574,12 +592,22 @@ class RuleLearningTool:
         supplier_name: str,
         position_bookings: list[dict[str, Any]],
         timestamp: datetime,
+        source: RuleSource = RuleSource.AUTO_HIGH_CONFIDENCE,
+        priority: int = AUTO_RULE_PRIORITY,
     ) -> dict[str, Any]:
         """
         Create one rule per position-account pair.
 
         This is the preferred method for invoices with multiple line items
         that need different account assignments.
+
+        Args:
+            vendor_pattern: Vendor pattern for matching
+            supplier_name: Original supplier name (for logging)
+            position_bookings: Array of position-account mappings
+            timestamp: Creation timestamp
+            source: Rule source (AUTO_HIGH_CONFIDENCE or HITL_CORRECTION)
+            priority: Rule priority (HITL corrections get higher priority)
         """
         rules_created = []
         rules_updated = []
@@ -612,12 +640,15 @@ class RuleLearningTool:
                 # UPDATE existing rule
                 existing_rule.target_account = debit_account
                 existing_rule.target_account_name = debit_account_name
+                existing_rule.source = source
+                existing_rule.priority = priority
                 existing_rule.updated_at = timestamp.isoformat()
                 rule = existing_rule
                 action = "updated"
             else:
                 # CREATE new rule - unique ID per position
-                rule_id = f"HITL-CONF-{timestamp.strftime('%Y%m%d%H%M%S')}-{i+1}"
+                prefix = "HITL" if source == RuleSource.HITL_CORRECTION else "HITL-CONF"
+                rule_id = f"{prefix}-{timestamp.strftime('%Y%m%d%H%M%S')}-{i+1}"
                 rule = AccountingRule(
                     rule_id=rule_id,
                     rule_type=RuleType.VENDOR_ITEM,
@@ -625,9 +656,9 @@ class RuleLearningTool:
                     item_patterns=item_patterns,
                     target_account=debit_account,
                     target_account_name=debit_account_name,
-                    priority=AUTO_RULE_PRIORITY,
+                    priority=priority,
                     similarity_threshold=0.8,
-                    source=RuleSource.AUTO_HIGH_CONFIDENCE,
+                    source=source,
                     created_at=timestamp.isoformat(),
                     is_active=True,
                 )
@@ -676,8 +707,14 @@ class RuleLearningTool:
         invoice_data: dict[str, Any],
         correction: dict[str, Any],
         rule_type_str: str,
+        position_bookings: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
-        """Create or update rule from HITL correction."""
+        """Create or update rule from HITL correction.
+
+        Supports two modes:
+        1. position_bookings array (preferred) - creates one rule per item-account pair
+        2. Single correction dict (legacy) - creates one rule from debit_account
+        """
         # Use helper for supplier name extraction
         supplier_name = extract_supplier_name(invoice_data)
         if not supplier_name:
@@ -687,12 +724,27 @@ class RuleLearningTool:
                 "rule_created": False,
             }
 
+        vendor_pattern = self._create_vendor_pattern(supplier_name)
+        timestamp = datetime.now(timezone.utc)
+
+        # Handle multiple position_bookings (preferred)
+        if position_bookings and len(position_bookings) > 0:
+            return await self._create_rules_for_positions(
+                vendor_pattern=vendor_pattern,
+                supplier_name=supplier_name,
+                position_bookings=position_bookings,
+                timestamp=timestamp,
+                source=RuleSource.HITL_CORRECTION,
+                priority=HITL_RULE_PRIORITY,
+            )
+
         target_account = correction.get("debit_account")
         if not target_account:
             return {
                 "success": False,
                 "error": "Missing debit_account in correction",
                 "rule_created": False,
+                "hint": "Provide correction with debit_account field, or use position_bookings array for multiple positions",
             }
 
         # Determine rule type
@@ -701,7 +753,6 @@ class RuleLearningTool:
         # Use helper for line item extraction
         line_items = extract_line_items(invoice_data)
         item_patterns = self._extract_item_patterns(line_items, rule_type)
-        vendor_pattern = self._create_vendor_pattern(supplier_name)
 
         # Check for existing rule to UPDATE instead of creating duplicate
         existing_rule = None
@@ -709,8 +760,6 @@ class RuleLearningTool:
             existing_rule = await self._rule_repository.find_existing_rule(
                 vendor_pattern, item_patterns
             )
-
-        timestamp = datetime.now(timezone.utc)
 
         if existing_rule:
             # UPDATE existing rule with correction

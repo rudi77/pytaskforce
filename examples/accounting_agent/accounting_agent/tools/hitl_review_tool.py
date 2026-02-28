@@ -113,16 +113,16 @@ class HITLReviewTool:
                 },
                 "review_id": {
                     "type": "string",
-                    "description": "Review ID (for process action)",
+                    "description": "REQUIRED for action='process'. The review_id from a previously created review. Get it from the create action result.",
                 },
                 "user_decision": {
                     "type": "string",
-                    "description": "User decision (for process action)",
+                    "description": "REQUIRED for action='process'. The user's decision on the review.",
                     "enum": ["confirm", "correct", "reject"],
                 },
                 "correction": {
                     "type": "object",
-                    "description": "User correction data (if user_decision='correct')",
+                    "description": "User correction data. REQUIRED when user_decision='correct'. Must contain debit_account (account number) and optionally debit_account_name.",
                 },
                 "create_rule": {
                     "type": "boolean",
@@ -391,13 +391,20 @@ Bitte wählen Sie eine Option und geben Sie ggf. das korrekte Konto an.
         create_rule: bool,
     ) -> dict[str, Any]:
         """Process a HITL review response."""
-        # Validate review_id
+        # Validate review_id - auto-resolve when exactly one pending review exists
         if not review_id or not review_id.strip():
             pending_ids = list(self._pending_reviews.keys())
-            if pending_ids:
+            if len(pending_ids) == 1:
+                # Auto-resolve: only one pending review, use it
+                review_id = pending_ids[0]
+                logger.info(
+                    "hitl_review.auto_resolved_review_id",
+                    review_id=review_id,
+                )
+            elif len(pending_ids) > 1:
                 return {
                     "success": False,
-                    "error": "Missing review_id. Use one of the pending reviews.",
+                    "error": "Missing review_id. Multiple pending reviews exist, please specify which one.",
                     "pending_reviews": pending_ids,
                     "hint": f"Call hitl_review with action='process', review_id='{pending_ids[0]}', user_decision='confirm'",
                 }
