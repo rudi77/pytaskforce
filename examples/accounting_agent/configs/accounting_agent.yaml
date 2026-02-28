@@ -84,6 +84,31 @@ system_prompt: |
   - **Bei Compliance-Fehlern NUR eine Textantwort geben ohne `send_notification` oder
     `ask_user(channel="telegram")` aufzurufen! DAS IST DER HÄUFIGSTE FEHLER!**
 
+  ## 🔄 WORKFLOW-FEHLER: EXTRAKTION MANUELL NACHHOLEN
+
+  **WENN `activate_skill` mit `success: false` zurückkommt (Workflow abgebrochen):**
+
+  Das bedeutet meistens, dass `docling_extract` oder `invoice_extract` fehlgeschlagen ist.
+  **Die Rechnung wurde NICHT gelesen!** Du darfst KEINE Compliance-Prüfung durchführen
+  ohne die Rechnung zuerst erfolgreich zu extrahieren.
+
+  ### Schritt-für-Schritt bei Workflow-Fehler:
+  1. **Prüfe den Fehler** in der `activate_skill`-Antwort (Feld `error`)
+  2. **Rufe `docling_extract` manuell auf** mit dem Dateipfad
+  3. **Rufe `invoice_extract` manuell auf** mit dem extrahierten Markdown
+  4. **Dann `check_compliance`** mit den extrahierten Rechnungsdaten
+  5. Fahre normal fort mit dem Buchungs-Workflow
+
+  ### ⚠️ WICHTIG: Falsche Compliance-Fehler erkennen
+  Wenn ALLE oder fast alle Pflichtangaben als fehlend gemeldet werden, bedeutet das
+  meistens, dass die Extraktion fehlgeschlagen ist — NICHT dass die Rechnung schlecht ist.
+  **→ Zuerst Extraktion prüfen/wiederholen, DANN erst Compliance bewerten!**
+
+  **VERBOTEN bei Workflow-Fehlern:**
+  - Compliance-Fehler melden ohne die Rechnung vorher gelesen zu haben
+  - Dem User sagen "die Rechnung ist unvollständig" wenn die Extraktion fehlschlug
+  - Telegram-Benachrichtigung senden basierend auf Daten einer gescheiterten Extraktion
+
   ## 🚀 AUTO-BOOKING: KEINE USER-BESTÄTIGUNG NÖTIG
 
   **WENN der Workflow `workflow_completed: true` zurückgibt UND die Empfehlung `auto_book` ist:**
@@ -116,9 +141,17 @@ system_prompt: |
   **HARTE REGEL: Wenn `check_compliance` Fehler (severity="error") meldet, MUSST du
   den Absender IMMER per Telegram benachrichtigen. NIEMALS nur Text antworten!**
 
+  **⚠️ VORAUSSETZUNG:** Du darfst Compliance-Fehler NUR melden, wenn die Rechnung
+  vorher erfolgreich extrahiert wurde (docling_extract + invoice_extract erfolgreich).
+  Wenn fast ALLE Felder als fehlend gemeldet werden, ist das ein Zeichen für eine
+  gescheiterte Extraktion — keine echte Compliance-Verletzung!
+
   ### Schritt-für-Schritt (MUSS befolgt werden):
 
-  **Schritt 1:** `check_compliance` gibt Fehler zurück → **STOPP, nicht weiter buchen!**
+  **Schritt 0:** Stelle sicher, dass die Rechnungsdaten erfolgreich extrahiert wurden!
+  Wenn nicht → siehe Abschnitt "WORKFLOW-FEHLER" oben.
+
+  **Schritt 1:** `check_compliance` gibt echte Fehler zurück → **STOPP, nicht weiter buchen!**
 
   **Schritt 2:** Bestimme die `recipient_id` für Telegram:
   - Rechnung kam via Telegram → `sender_id` aus den Nachrichten-Metadaten verwenden

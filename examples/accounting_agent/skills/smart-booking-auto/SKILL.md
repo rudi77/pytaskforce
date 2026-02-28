@@ -12,11 +12,14 @@ allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_en
 workflow:
   steps:
     # Step 1: PDF zu Markdown extrahieren
+    # WICHTIG: abort_on_error statt optional!
+    # Wenn die Extraktion fehlschlägt, darf der Workflow NICHT mit leeren
+    # Daten weiterlaufen (führt sonst zu falschen Compliance-Fehlern).
     - tool: docling_extract
       params:
         file_path: "${input.file_path}"
       output: markdown_content
-      optional: true  # Kann übersprungen werden wenn bereits Markdown
+      abort_on_error: true
 
     # Step 2: Strukturierte Rechnungsdaten extrahieren
     - tool: invoice_extract
@@ -24,6 +27,7 @@ workflow:
         markdown_content: "${markdown_content}"
         expected_currency: "EUR"
       output: invoice_data
+      abort_on_error: true
 
     # Step 3: Compliance prüfen (§14 UStG)
     - tool: check_compliance
@@ -174,6 +178,20 @@ Der Workflow wird vom `activate_skill` Tool **direkt ausgeführt**:
 - Deterministische Tool-Sequenz
 - Automatischer Skill-Wechsel bei niedrigem Confidence
 - **SOFORTIGER Skill-Wechsel wenn keine Regel gefunden**
+- **Workflow bricht bei Extraktionsfehler ab** (`abort_on_error`)
+
+## Fehlerbehandlung bei Workflow-Abbruch
+
+Wenn `activate_skill` mit `success: false` zurückkommt, wurde der Workflow
+abgebrochen (z.B. weil `docling_extract` oder `invoice_extract` fehlschlug).
+
+**→ Dann MUSS der Agent die Schritte manuell nachholen:**
+1. `docling_extract(file_path="...")` einzeln aufrufen
+2. `invoice_extract(markdown_content="...")` mit dem Ergebnis aufrufen
+3. `check_compliance(invoice_data={...})` mit den extrahierten Daten aufrufen
+4. Normal fortfahren
+
+**NIEMALS Compliance-Fehler melden ohne vorherige erfolgreiche Extraktion!**
 
 ## Hard Gates (Auslöser für Buchhalter-HITL)
 
