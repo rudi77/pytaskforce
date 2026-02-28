@@ -51,7 +51,7 @@ def get_project_root() -> Path:
     current = Path(__file__).resolve().parent
 
     # Search upward for project root markers
-    markers = ["pyproject.toml", "configs", ".git"]
+    markers = ["pyproject.toml", ".git"]
 
     for _ in range(10):  # Limit search depth
         for marker in markers:
