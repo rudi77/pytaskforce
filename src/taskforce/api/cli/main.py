@@ -40,7 +40,7 @@ app.add_typer(butler.app, name="butler", help="Butler agent daemon")
 @app.callback()
 def main(
     ctx: typer.Context,
-    profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
+    profile: str = typer.Option("universal", "--profile", "-p", help="Configuration profile"),
     debug: bool = typer.Option(
         False,
         "--debug",

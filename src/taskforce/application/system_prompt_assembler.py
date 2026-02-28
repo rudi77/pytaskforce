@@ -19,6 +19,7 @@ from taskforce.core.prompts.autonomous_prompts import (
     CODING_SPECIALIST_PROMPT,
     LEAN_KERNEL_PROMPT,
     RAG_SPECIALIST_PROMPT,
+    UNIVERSAL_AGENT_PROMPT,
     WIKI_SYSTEM_PROMPT,
 )
 
@@ -34,6 +35,7 @@ _SPECIALIST_PROMPTS: dict[str, str] = {
     "coding": CODING_SPECIALIST_PROMPT,
     "rag": RAG_SPECIALIST_PROMPT,
     "wiki": WIKI_SYSTEM_PROMPT,
+    "universal": UNIVERSAL_AGENT_PROMPT,
 }
 
 
@@ -58,6 +60,7 @@ class SystemPromptAssembler:
         *,
         specialist: str | None = None,
         custom_prompt: str | None = None,
+        specialist_context: dict[str, str] | None = None,
     ) -> str:
         """Build a complete system prompt.
 
@@ -68,8 +71,14 @@ class SystemPromptAssembler:
 
         Args:
             tools: Available tools (used for the tool description section).
-            specialist: Specialist key (``"coding"``, ``"rag"``, ``"wiki"``).
+            specialist: Specialist key (``"coding"``, ``"rag"``, ``"wiki"``,
+                ``"universal"``).
             custom_prompt: Free-form prompt to append to the kernel.
+            specialist_context: Key-value pairs to substitute into the
+                specialist prompt template. For example,
+                ``{"available_specialists": "..."}`` replaces the
+                ``{available_specialists}`` placeholder in the universal
+                agent prompt.
 
         Returns:
             Fully assembled system prompt string.
@@ -80,6 +89,10 @@ class SystemPromptAssembler:
             base_prompt = LEAN_KERNEL_PROMPT
             specialist_prompt = _SPECIALIST_PROMPTS.get(specialist or "")
             if specialist_prompt:
+                # Substitute placeholders if context is provided
+                if specialist_context:
+                    for key, value in specialist_context.items():
+                        specialist_prompt = specialist_prompt.replace(f"{{{key}}}", value)
                 base_prompt += "\n\n" + specialist_prompt
 
         tools_description = format_tools_description(tools) if tools else ""

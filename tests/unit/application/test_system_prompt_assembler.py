@@ -85,3 +85,34 @@ class TestSystemPromptAssembler:
         prompt = assembler.assemble(tools=[])
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+    def test_universal_specialist(self) -> None:
+        """Universal specialist prompt content should be present."""
+        assembler = SystemPromptAssembler()
+        prompt = assembler.assemble(tools=[], specialist="universal")
+        assert "Universal Agent" in prompt
+
+    def test_universal_specialist_context_substitution(self) -> None:
+        """Specialist context replaces placeholders in the prompt."""
+        assembler = SystemPromptAssembler()
+        prompt = assembler.assemble(
+            tools=[],
+            specialist="universal",
+            specialist_context={
+                "available_specialists": "- `coding` - Code expert\n- `rag` - RAG expert",
+            },
+        )
+        assert "- `coding` - Code expert" in prompt
+        assert "- `rag` - RAG expert" in prompt
+        assert "{available_specialists}" not in prompt
+
+    def test_specialist_context_none_is_noop(self) -> None:
+        """None specialist_context leaves placeholders unchanged."""
+        assembler = SystemPromptAssembler()
+        prompt = assembler.assemble(
+            tools=[],
+            specialist="universal",
+            specialist_context=None,
+        )
+        # Placeholder remains unreplaced when context is None
+        assert "{available_specialists}" in prompt

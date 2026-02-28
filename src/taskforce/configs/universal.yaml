@@ -1,0 +1,84 @@
+# Universal Agent Profile
+#
+# Default all-purpose agent that handles most tasks directly and
+# delegates to specialist sub-agents when needed.
+#
+# Usage:
+#   taskforce run mission "..."              # uses universal by default
+#   taskforce run mission "..." --profile universal
+
+profile: universal
+specialist: universal  # Activates UNIVERSAL_AGENT_PROMPT
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce
+
+# Runtime tracking (heartbeats + checkpoints)
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
+# Agent configuration
+agent:
+  planning_strategy: plan_and_react  # Hybrid: plan first, react within each step
+  max_steps: 50                       # Higher limit for complex orchestration
+  max_parallel_tools: 4
+  enable_fast_path: true
+  router:
+    use_llm_classification: true
+    max_follow_up_length: 100
+
+# LLM configuration
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Policy configuration
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+# Broad toolset for all-purpose work + specialist delegation
+tools:
+  # File operations & search
+  - file_read
+  - file_write
+  - edit
+  - grep
+  - glob
+
+  # Code execution
+  - python
+  - powershell
+
+  # Web & browser
+  - web_search
+  - web_fetch
+  - browser
+
+  # Multimedia
+  - multimedia
+
+  # Version control
+  - git
+
+  # Memory & interaction
+  - memory
+  - ask_user
+
+  # Specialist delegation (core feature)
+  - call_agent
+
+# Unified Memory
+memory:
+  type: file
+  store_dir: .taskforce/memory

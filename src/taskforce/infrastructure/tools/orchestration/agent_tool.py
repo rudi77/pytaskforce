@@ -54,6 +54,7 @@ class AgentTool:
         max_steps: int | None = None,
         summarize_results: bool = False,
         summary_max_length: int = 2000,
+        specialist_index: str | None = None,
     ):
         """
         Initialize AgentTool with factory for creating sub-agents.
@@ -65,6 +66,8 @@ class AgentTool:
             max_steps: Optional max steps override for sub-agents
             summarize_results: Whether to summarize long sub-agent results
             summary_max_length: Max chars before summarization kicks in
+            specialist_index: Compact specialist list from SpecialistDiscovery
+                for dynamic tool description. When None, a static fallback is used.
         """
         self._factory = agent_factory
         self._spawner = sub_agent_spawner
@@ -73,6 +76,7 @@ class AgentTool:
         self._max_steps = max_steps
         self._summarize_results = summarize_results
         self._summary_max_length = summary_max_length
+        self._specialist_index = specialist_index
         self.logger = structlog.get_logger().bind(component="agent_tool")
 
     @property
@@ -81,16 +85,19 @@ class AgentTool:
 
     @property
     def description(self) -> str:
-        return (
+        base = (
             "Delegate a mission to a specialist sub-agent. "
-            "Use this when you need specialized capabilities not available in your current toolset. "
-            "Available specialists: "
-            "'coding' (file operations, shell commands, git), "
-            "'rag' (semantic search, document retrieval), "
-            "'wiki' (Wikipedia research). "
-            "You can also use custom agent IDs from configs/custom/ (e.g., 'german_tax_expert'). "
-            "The sub-agent will execute the mission independently and return results. "
+            "Use this when a task needs deep specialist expertise or involves "
+            "complex multi-file workflows beyond your direct capabilities. "
+            "The sub-agent executes independently and returns results. "
             "Sub-agents can run in parallel for independent tasks."
+        )
+        if self._specialist_index:
+            return f"{base}\n\nAvailable specialists:\n{self._specialist_index}"
+        return (
+            f"{base} "
+            "Available specialists: 'coding', 'rag', 'wiki'. "
+            "Custom agent IDs from configs/custom/ are also supported."
         )
 
     @property
@@ -269,9 +276,7 @@ class AgentTool:
 
         # Generate unique session ID for sub-agent
         sub_session_suffix = specialist or "generic"
-        sub_session_id = (
-            f"{parent_session}--sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
-        )
+        sub_session_id = f"{parent_session}--sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
 
         try:
             if self._spawner:
@@ -365,10 +370,7 @@ class AgentTool:
             result_text = result.final_message or "No result"
 
             # Optionally summarize long results
-            if (
-                self._summarize_results
-                and len(result_text) > self._summary_max_length
-            ):
+            if self._summarize_results and len(result_text) > self._summary_max_length:
                 self.logger.debug(
                     "summarizing_long_result",
                     original_length=len(result_text),

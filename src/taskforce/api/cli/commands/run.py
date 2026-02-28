@@ -21,10 +21,10 @@ app = typer.Typer(help="Execute agent missions")
 def run_mission(
     ctx: typer.Context,
     mission: str = typer.Argument(..., help="Mission description"),
-    profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile (overrides global --profile)"),
-    session_id: str | None = typer.Option(
-        None, "--session", "-s", help="Resume existing session"
+    profile: str | None = typer.Option(
+        None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
+    session_id: str | None = typer.Option(None, "--session", "-s", help="Resume existing session"),
     debug: bool | None = typer.Option(
         None, "--debug", help="Enable debug output (overrides global --debug)"
     ),
@@ -42,11 +42,16 @@ def run_mission(
         help="JSON string for planning strategy params.",
     ),
     stream: bool = typer.Option(
-        False, "--stream", "-S",
+        False,
+        "--stream",
+        "-S",
         help="Enable real-time streaming output. Shows tool calls, results, and answer as they happen.",
     ),
     plugin: str | None = typer.Option(
-        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+        None,
+        "--plugin",
+        "-P",
+        help="Path to external plugin directory (e.g., examples/accounting_agent)",
     ),
     auto_epic: bool | None = typer.Option(
         None,
@@ -80,13 +85,14 @@ def run_mission(
     """
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "universal")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging level based on debug flag
     import logging
 
     import structlog
+
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         structlog.configure(
@@ -118,9 +124,7 @@ def run_mission(
     if lean:
         tf_console.print_system_message("Using Agent (native tool calling)", "info")
     if planning_strategy:
-        tf_console.print_system_message(
-            f"Planning strategy: {planning_strategy}", "info"
-        )
+        tf_console.print_system_message(f"Planning strategy: {planning_strategy}", "info")
     if stream:
         tf_console.print_system_message("Streaming mode enabled", "info")
     if plugin:
@@ -133,17 +137,19 @@ def run_mission(
 
     # Use streaming or standard execution
     if stream:
-        asyncio.run(_execute_streaming_mission(
-            mission=mission,
-            profile=profile,
-            session_id=session_id,
-            lean=lean,
-            planning_strategy=planning_strategy,
-            planning_strategy_params=planning_strategy_params,
-            console=tf_console.console,
-            plugin=plugin,
-            auto_epic=auto_epic,
-        ))
+        asyncio.run(
+            _execute_streaming_mission(
+                mission=mission,
+                profile=profile,
+                session_id=session_id,
+                lean=lean,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+                console=tf_console.console,
+                plugin=plugin,
+                auto_epic=auto_epic,
+            )
+        )
     else:
         _execute_standard_mission(
             mission=mission,
@@ -177,7 +183,7 @@ def _execute_standard_mission(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        console=tf_console.console
+        console=tf_console.console,
     ) as progress:
         task = progress.add_task("[>] Executing mission...", total=None)
 
@@ -283,37 +289,45 @@ async def _execute_streaming_mission(
 
         # Current tool (if any)
         if current_tool:
-            elements.append(Panel(
-                Text(f"🔧 {current_tool}", style="yellow"),
-                title="Current Tool",
-                border_style="yellow",
-            ))
+            elements.append(
+                Panel(
+                    Text(f"🔧 {current_tool}", style="yellow"),
+                    title="Current Tool",
+                    border_style="yellow",
+                )
+            )
 
         # Recent tool results (last 5)
         if tool_results:
             results_text = "\n".join(tool_results[-5:])
-            elements.append(Panel(
-                Text(results_text),
-                title="Tool Results",
-                border_style="green",
-            ))
+            elements.append(
+                Panel(
+                    Text(results_text),
+                    title="Tool Results",
+                    border_style="green",
+                )
+            )
 
         plan_display = format_plan()
         if plan_display:
-            elements.append(Panel(
-                Text(plan_display),
-                title="🧭 Plan",
-                border_style="magenta",
-            ))
+            elements.append(
+                Panel(
+                    Text(plan_display),
+                    title="🧭 Plan",
+                    border_style="magenta",
+                )
+            )
 
         # Streaming final answer
         if final_answer_tokens:
             answer_text = "".join(final_answer_tokens)
-            elements.append(Panel(
-                Text(answer_text, style="white"),
-                title="💬 Answer",
-                border_style="blue",
-            ))
+            elements.append(
+                Panel(
+                    Text(answer_text, style="white"),
+                    title="💬 Answer",
+                    border_style="blue",
+                )
+            )
 
         return Group(*elements)
 
@@ -334,18 +348,20 @@ async def _execute_streaming_mission(
                 workers = update.details.get("worker_count", "?")
                 est_tasks = update.details.get("estimated_tasks", "?")
                 reasoning = update.details.get("reasoning", "")
-                console.print(Panel(
-                    (
-                        f"[bold yellow]Mission classified as complex[/]\n"
-                        f"Escalating to Epic Orchestration "
-                        f"(Planner / Worker / Judge)\n\n"
-                        f"Reasoning: {reasoning}\n"
-                        f"Workers: {workers}  |  "
-                        f"Estimated tasks: {est_tasks}"
-                    ),
-                    title="Epic Orchestration",
-                    border_style="yellow",
-                ))
+                console.print(
+                    Panel(
+                        (
+                            f"[bold yellow]Mission classified as complex[/]\n"
+                            f"Escalating to Epic Orchestration "
+                            f"(Planner / Worker / Judge)\n\n"
+                            f"Reasoning: {reasoning}\n"
+                            f"Workers: {workers}  |  "
+                            f"Estimated tasks: {est_tasks}"
+                        ),
+                        title="Epic Orchestration",
+                        border_style="yellow",
+                    )
+                )
                 status_message = "Running Epic Orchestration..."
                 should_update = True
 
@@ -397,9 +413,7 @@ async def _execute_streaming_mission(
                 if update.details.get("step") and update.details.get("status"):
                     step_index = update.details.get("step") - 1
                     if 0 <= step_index < len(plan_steps):
-                        plan_steps[step_index]["status"] = update.details.get(
-                            "status", "PENDING"
-                        )
+                        plan_steps[step_index]["status"] = update.details.get("status", "PENDING")
                 status_message = f"Plan {action}"
                 should_update = True
 
@@ -440,11 +454,13 @@ async def _execute_streaming_mission(
     # Final summary
     console.print()
     final_text = "".join(final_answer_tokens) if final_answer_tokens else "No answer generated"
-    console.print(Panel(
-        final_text,
-        title="✅ Final Answer",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            final_text,
+            title="✅ Final Answer",
+            border_style="green",
+        )
+    )
 
     # Display token usage summary
     if total_token_usage["total_tokens"] > 0:
@@ -453,12 +469,13 @@ async def _execute_streaming_mission(
             f"Completion Tokens: {total_token_usage['completion_tokens']:,}  |  "
             f"Total: {total_token_usage['total_tokens']:,}"
         )
-        console.print(Panel(
-            token_info,
-            title="🎯 Token Usage",
-            border_style="cyan",
-        ))
-
+        console.print(
+            Panel(
+                token_info,
+                title="🎯 Token Usage",
+                border_style="cyan",
+            )
+        )
 
 
 def _parse_strategy_params(raw_params: str | None) -> dict | None:
@@ -467,9 +484,7 @@ def _parse_strategy_params(raw_params: str | None) -> dict | None:
     try:
         data = json.loads(raw_params)
     except json.JSONDecodeError as exc:
-        raise typer.BadParameter(
-            f"Invalid JSON for --planning-strategy-params: {exc}"
-        ) from exc
+        raise typer.BadParameter(f"Invalid JSON for --planning-strategy-params: {exc}") from exc
     if not isinstance(data, dict):
         raise typer.BadParameter("--planning-strategy-params must be a JSON object")
     return data
@@ -480,13 +495,9 @@ def run_skill(
     ctx: typer.Context,
     skill_name: str = typer.Argument(..., help="Skill name (without /)"),
     arguments: list[str] = typer.Argument(None, help="Arguments for the skill"),
-    profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Configuration profile"
-    ),
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Configuration profile"),
     debug: bool | None = typer.Option(None, "--debug", help="Enable debug output"),
-    stream: bool = typer.Option(
-        False, "--stream", "-S", help="Enable streaming output"
-    ),
+    stream: bool = typer.Option(False, "--stream", "-S", help="Enable streaming output"),
 ) -> None:
     """
     Execute a skill directly.
@@ -510,7 +521,7 @@ def run_skill(
 
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "universal")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging

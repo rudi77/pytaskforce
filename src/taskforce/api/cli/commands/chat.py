@@ -23,14 +23,13 @@ def _run_chat(
         None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
     plugin: str | None = typer.Option(
-        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+        None,
+        "--plugin",
+        "-P",
+        help="Path to external plugin directory (e.g., examples/accounting_agent)",
     ),
-    user_id: str | None = typer.Option(
-        None, "--user-id", help="User ID for RAG context"
-    ),
-    org_id: str | None = typer.Option(
-        None, "--org-id", help="Organization ID for RAG context"
-    ),
+    user_id: str | None = typer.Option(None, "--user-id", help="User ID for RAG context"),
+    org_id: str | None = typer.Option(None, "--org-id", help="Organization ID for RAG context"),
     scope: str | None = typer.Option(
         None, "--scope", help="Scope for RAG context (shared/org/user)"
     ),
@@ -41,7 +40,9 @@ def _run_chat(
         False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
     ),
     stream: bool = typer.Option(
-        True, "--stream/--no-stream", "-S",
+        True,
+        "--stream/--no-stream",
+        "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
 ):
@@ -69,7 +70,7 @@ def _run_chat(
     """
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "universal")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging to file to avoid interfering with console output
@@ -126,19 +127,15 @@ def _run_chat(
                 user_context=user_context,
             )
             # Use plugin name for display
-            if hasattr(agent, '_plugin_manifest') and agent._plugin_manifest:
+            if hasattr(agent, "_plugin_manifest") and agent._plugin_manifest:
                 display_profile = f"plugin:{agent._plugin_manifest.name}"
         else:
             # Standard agent creation
-            agent = await factory.create_agent(
-                config=profile, user_context=user_context
-            )
+            agent = await factory.create_agent(config=profile, user_context=user_context)
 
         try:
             if not stream:
-                logging.warning(
-                    "Simple chat supports streaming only; forcing --stream."
-                )
+                logging.warning("Simple chat supports streaming only; forcing --stream.")
             await run_simple_chat(
                 session_id=session_id,
                 profile=display_profile,
@@ -166,14 +163,13 @@ def chat(
         None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
     plugin: str | None = typer.Option(
-        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+        None,
+        "--plugin",
+        "-P",
+        help="Path to external plugin directory (e.g., examples/accounting_agent)",
     ),
-    user_id: str | None = typer.Option(
-        None, "--user-id", help="User ID for RAG context"
-    ),
-    org_id: str | None = typer.Option(
-        None, "--org-id", help="Organization ID for RAG context"
-    ),
+    user_id: str | None = typer.Option(None, "--user-id", help="User ID for RAG context"),
+    org_id: str | None = typer.Option(None, "--org-id", help="Organization ID for RAG context"),
     scope: str | None = typer.Option(
         None, "--scope", help="Scope for RAG context (shared/org/user)"
     ),
@@ -184,7 +180,9 @@ def chat(
         False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
     ),
     stream: bool = typer.Option(
-        True, "--stream/--no-stream", "-S",
+        True,
+        "--stream/--no-stream",
+        "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
 ):
@@ -211,14 +209,13 @@ def chat_command(
         None, "--profile", "-p", help="Configuration profile (overrides global --profile)"
     ),
     plugin: str | None = typer.Option(
-        None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
+        None,
+        "--plugin",
+        "-P",
+        help="Path to external plugin directory (e.g., examples/accounting_agent)",
     ),
-    user_id: str | None = typer.Option(
-        None, "--user-id", help="User ID for RAG context"
-    ),
-    org_id: str | None = typer.Option(
-        None, "--org-id", help="Organization ID for RAG context"
-    ),
+    user_id: str | None = typer.Option(None, "--user-id", help="User ID for RAG context"),
+    org_id: str | None = typer.Option(None, "--org-id", help="Organization ID for RAG context"),
     scope: str | None = typer.Option(
         None, "--scope", help="Scope for RAG context (shared/org/user)"
     ),
@@ -229,7 +226,9 @@ def chat_command(
         False, "--lean", "-l", help="Use Agent (native tool calling, PlannerTool)"
     ),
     stream: bool = typer.Option(
-        True, "--stream/--no-stream", "-S",
+        True,
+        "--stream/--no-stream",
+        "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
 ):
