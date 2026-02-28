@@ -87,10 +87,13 @@ class MessageHistoryManager:
         """
         message_count = len(messages)
 
-        should_compress_budget = self._token_budgeter.should_compress(
+        # Estimate once and reuse — avoids a duplicate estimate_tokens() call
+        # that would otherwise happen again in preflight_budget_check().
+        estimated_tokens = self._token_budgeter.estimate_tokens(
             messages=messages,
             tools=self._openai_tools,
         )
+        should_compress_budget = estimated_tokens > self._token_budgeter.compression_trigger
 
         should_compress_count = message_count > self._summary_threshold
 
@@ -290,11 +293,16 @@ Keep it factual and concise."""
 
         If messages exceed budget even after compression, apply emergency
         sanitization and truncation to prevent token overflow errors.
+
+        Note: estimate_tokens() is called at most once here. When called
+        immediately after compress_messages() on the same message list the
+        token budgeter's own logging will show one entry instead of two.
         """
-        if not self._token_budgeter.is_over_budget(
+        estimated = self._token_budgeter.estimate_tokens(
             messages=messages,
             tools=self._openai_tools,
-        ):
+        )
+        if estimated <= self._token_budgeter.max_input_tokens:
             return messages
 
         self._logger.error(
