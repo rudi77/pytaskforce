@@ -89,11 +89,15 @@ system_prompt: |
   **EGAL ob PDF, Bild oder Texteingabe — diese Schritte sind IMMER Pflicht und
   dürfen NIEMALS übersprungen werden:**
 
-  1. `memory(action="list")` — Gespeicherte Regeln und Präferenzen laden
-  2. `check_compliance(invoice_data={...})` — §14 UStG Pflichtangaben prüfen
-  3. `semantic_rule_engine(invoice_data={...})` — Kontierungsregeln anwenden
-  4. `confidence_evaluator(...)` — Confidence bewerten
-  5. Weiter je nach Ergebnis (Auto-Booking oder HITL)
+  1. `check_compliance(invoice_data={...})` — §14 UStG Pflichtangaben prüfen
+  2. `semantic_rule_engine(invoice_data={...})` — Kontierungsregeln anwenden
+  3. `confidence_evaluator(...)` — Confidence bewerten
+  4. Weiter je nach Ergebnis (Auto-Booking oder HITL)
+
+  **Hinweis Memory:** Rufe `memory(action="list")` NUR auf, wenn du gezielt nach
+  einer Telegram-ID oder einer vom User definierten Präferenz suchst, die du noch
+  nicht kennst. Bei bekannten Lieferanten und Standard-Workflows ist kein
+  proaktiver Memory-Abruf nötig.
 
   **Bei Texteingabe (kein PDF/Bild):**
   - Schritte `docling_extract` und `invoice_extract` entfallen (Daten liegen bereits vor)
@@ -180,11 +184,11 @@ system_prompt: |
 
   **Schritt 2:** Bestimme die `recipient_id` für Telegram (Reihenfolge beachten!):
 
-  **2a) Memory prüfen (IMMER ZUERST):**
-  Suche in den bereits geladenen Memory-Einträgen nach einer gespeicherten Telegram-ID.
-  (Du hast die Memory-Einträge bereits in Schritt 0 via `memory(action="list")` geladen.)
+  **2a) Memory durchsuchen:**
+  Suche gezielt nach einer gespeicherten Telegram-ID:
+  `memory(action="search", query="telegram recipient_id")`
   Wenn ein Eintrag mit `kind: PREFERENCE` und Inhalt wie "Telegram recipient_id: ..."
-  existiert → verwende diese ID direkt. **Kein erneutes Nachfragen nötig!**
+  gefunden wird → verwende diese ID direkt. **Kein erneutes Nachfragen nötig!**
 
   **2b) Metadaten prüfen (bei Telegram-Eingang):**
   Wenn die Rechnung via Telegram eingereicht wurde → `sender_id` aus den
@@ -291,18 +295,20 @@ system_prompt: |
   - `audit_log(...)` für GoBD-Compliance
   - Per `send_notification` den Telegram-User über das Ergebnis informieren
 
-  ## MEMORY TOOL - PFLICHT BEI BUCHUNGEN
+  ## MEMORY TOOL - GEZIELT EINSETZEN
 
-  **BEVOR du eine Rechnung verarbeitest oder Buchungsvorschläge machst, MUSST du:**
-  1. `memory(action="list")` aufrufen um ALLE gespeicherten Regeln und Präferenzen zu laden
-  2. Die gefundenen Erinnerungen bei deinen Buchungsentscheidungen berücksichtigen
-  3. Wenn eine Memory-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
-     `confidence_evaluator`-Aufruf. Das bewirkt automatisches Buchen ohne HITL-Review.
+  **Wann Memory lesen:**
+  - Wenn du eine Telegram `recipient_id` benötigst und sie noch nicht aus den
+    Nachrichten-Metadaten entnehmen kannst → `memory(action="search", query="telegram recipient")`
+  - Wenn der User explizit auf eine gespeicherte Präferenz oder Regel hinweist
+  - Wenn ein Lieferant unbekannt ist und du prüfen willst, ob frühere Entscheidungen
+    gespeichert wurden → `memory(action="search", query="<Lieferantenname>")`
+  - Verwende `memory(action="search")` statt `list` — zielgerichteter und schneller
 
-  **Wann Memory lesen (PFLICHT):**
-  - Bei JEDER neuen Rechnung, BEVOR du den Buchungsvorschlag erstellst
-  - Verwende `memory(action="list")` statt `search` — die Anzahl der Einträge ist klein genug
-  - Besonders bei unbekannten Positionen oder Lieferanten ohne Regelabdeckung
+  **Kein proaktiver list-Aufruf:** Rufe NICHT `memory(action="list")` bei jeder Rechnung
+  proaktiv auf. Das `semantic_rule_engine` Tool lädt gelernte Regeln bereits selbst.
+  Wenn eine Memory-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
+  `confidence_evaluator`-Aufruf. Das bewirkt automatisches Buchen ohne HITL-Review.
 
   **Wann Memory schreiben:**
   - **Telegram recipient_id** beim ersten Erhalt speichern (kind="PREFERENCE")
@@ -452,7 +458,10 @@ embeddings:
   provider: litellm
   model: azure/text-embedding-3-small  # Azure OpenAI deployment name
   cache_enabled: true
-  cache_max_size: 1000
+  cache_max_size: 5000
+  # Persist embeddings to disk so they survive process restarts.
+  # Without this, embeddings are recomputed on every mission run (~8s API call).
+  cache_dir: .taskforce_accounting/.embedding_cache
 
 # =============================================================================
 # CONTEXT POLICY

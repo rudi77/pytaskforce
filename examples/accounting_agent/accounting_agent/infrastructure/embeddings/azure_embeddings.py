@@ -8,6 +8,9 @@ Implements EmbeddingProviderProtocol with caching support.
 import hashlib
 import math
 import os
+import pickle
+import shelve
+from pathlib import Path
 from typing import Optional
 
 import structlog
@@ -17,9 +20,10 @@ logger = structlog.get_logger(__name__)
 
 class EmbeddingCache:
     """
-    Simple in-memory cache for embeddings.
+    In-memory cache for embeddings.
 
-    Reduces API calls for repeated text embedding requests.
+    Reduces API calls for repeated text embedding requests within a process.
+    For cross-process persistence use PersistentEmbeddingCache instead.
     """
 
     def __init__(self, max_size: int = 1000):
@@ -54,6 +58,86 @@ class EmbeddingCache:
     def clear(self) -> None:
         """Clear all cached embeddings."""
         self._cache.clear()
+
+
+class PersistentEmbeddingCache:
+    """
+    Disk-backed cache for embeddings that survives process restarts.
+
+    Uses Python's shelve (dbm) for key-value persistence. Embeddings are
+    stored keyed by SHA-256 hash of the input text and the model name, so
+    different models never collide.
+
+    A secondary in-memory index avoids repeated disk reads for hot entries.
+
+    Args:
+        cache_dir: Directory where the cache database is stored.
+        model: Embedding model identifier (included in cache key).
+        max_size: Maximum number of entries before LRU eviction.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str,
+        model: str = "default",
+        max_size: int = 5000,
+    ):
+        self._cache_dir = Path(cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._model = model
+        self._max_size = max_size
+        # In-memory hot cache: avoids disk reads for recently used embeddings
+        self._hot: dict[str, list[float]] = {}
+        self._db_path = str(self._cache_dir / "embedding_cache")
+
+    def _key(self, text: str) -> str:
+        """Build cache key from model + text hash."""
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:24]
+        model_slug = hashlib.md5(self._model.encode()).hexdigest()[:8]
+        return f"{model_slug}:{text_hash}"
+
+    def get(self, text: str) -> Optional[list[float]]:
+        """Return cached embedding or None."""
+        key = self._key(text)
+        if key in self._hot:
+            return self._hot[key]
+        try:
+            with shelve.open(self._db_path, flag="r") as db:
+                if key in db:
+                    embedding = db[key]
+                    self._hot[key] = embedding
+                    return embedding
+        except Exception:
+            # DB might not exist yet or be locked — treat as cache miss
+            pass
+        return None
+
+    def put(self, text: str, embedding: list[float]) -> None:
+        """Persist embedding to disk and update hot cache."""
+        key = self._key(text)
+        self._hot[key] = embedding
+        try:
+            with shelve.open(self._db_path, flag="c") as db:
+                if len(db) >= self._max_size:
+                    # Evict one entry (first key found — shelve order not guaranteed)
+                    try:
+                        evict_key = next(iter(db))
+                        del db[evict_key]
+                        self._hot.pop(evict_key, None)
+                    except StopIteration:
+                        pass
+                db[key] = embedding
+        except Exception as exc:
+            logger.warning("embedding_cache.write_failed", error=str(exc))
+
+    def clear(self) -> None:
+        """Clear in-memory hot cache and remove disk database."""
+        self._hot.clear()
+        for suffix in ("", ".db", ".dir", ".bak", ".dat"):
+            p = Path(self._db_path + suffix)
+            if p.exists():
+                p.unlink(missing_ok=True)
+        logger.info("embedding_cache.cleared", path=self._db_path)
 
 
 class AzureEmbeddingService:

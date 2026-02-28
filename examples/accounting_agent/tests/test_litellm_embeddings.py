@@ -179,3 +179,114 @@ class TestGracefulDegradation:
 
         assert result["success"] is True
         assert result["rules_applied"] == 1
+
+
+class TestPersistentEmbeddingCache:
+    """Tests for PersistentEmbeddingCache (disk-backed)."""
+
+    def test_put_and_get_returns_same_embedding(self, tmp_path):
+        """Stored embedding should be retrievable immediately."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="test-model")
+        emb = [0.1, 0.2, 0.3]
+        cache.put("hello world", emb)
+        result = cache.get("hello world")
+        assert result == emb
+
+    def test_miss_returns_none(self, tmp_path):
+        """Unknown text should return None."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="test-model")
+        assert cache.get("not stored") is None
+
+    def test_survives_process_restart(self, tmp_path):
+        """Embedding written in one instance must be readable from a fresh instance."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache1 = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="text-embedding-3-small")
+        emb = [0.9, 0.8, 0.7]
+        cache1.put("persistent text", emb)
+
+        cache2 = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="text-embedding-3-small")
+        result = cache2.get("persistent text")
+        assert result == emb
+
+    def test_different_models_do_not_collide(self, tmp_path):
+        """Embeddings from different models must be keyed independently."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache_a = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="model-a")
+        cache_b = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="model-b")
+
+        cache_a.put("same text", [1.0, 0.0])
+        cache_b.put("same text", [0.0, 1.0])
+
+        assert cache_a.get("same text") == [1.0, 0.0]
+        assert cache_b.get("same text") == [0.0, 1.0]
+
+    def test_clear_removes_all_entries(self, tmp_path):
+        """After clear(), previously stored entries must be gone."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="test-model")
+        cache.put("text1", [0.1])
+        cache.put("text2", [0.2])
+        cache.clear()
+
+        assert cache.get("text1") is None
+        assert cache.get("text2") is None
+
+    def test_hot_cache_avoids_disk_read_on_repeated_access(self, tmp_path):
+        """After put(), subsequent get() should hit the in-memory hot cache."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        cache = PersistentEmbeddingCache(cache_dir=str(tmp_path), model="test-model")
+        emb = [0.5, 0.5]
+        cache.put("cached text", emb)
+
+        result1 = cache.get("cached text")
+        result2 = cache.get("cached text")
+        assert result1 == emb
+        assert result2 == emb
+
+
+class TestLiteLLMServiceWithPersistentCache:
+    """Tests for LiteLLMEmbeddingService with disk-backed persistent cache."""
+
+    @pytest.mark.asyncio
+    async def test_persistent_cache_used_when_cache_dir_provided(self, tmp_path):
+        """When cache_dir is given, service must use PersistentEmbeddingCache."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import PersistentEmbeddingCache
+        service = LiteLLMEmbeddingService(
+            model="text-embedding-3-small",
+            cache_enabled=True,
+            cache_dir=str(tmp_path),
+        )
+        assert isinstance(service._cache, PersistentEmbeddingCache)
+
+    def test_in_memory_cache_used_when_no_cache_dir(self):
+        """Without cache_dir, must fall back to in-memory EmbeddingCache."""
+        from accounting_agent.infrastructure.embeddings.azure_embeddings import (
+            EmbeddingCache,
+            PersistentEmbeddingCache,
+        )
+        service = LiteLLMEmbeddingService(cache_enabled=True)
+        assert isinstance(service._cache, EmbeddingCache)
+        assert not isinstance(service._cache, PersistentEmbeddingCache)
+
+    @pytest.mark.asyncio
+    async def test_persistent_cache_hit_skips_api(self, tmp_path):
+        """Second embed_text call with same text must not call the API."""
+        service = LiteLLMEmbeddingService(
+            model="text-embedding-3-small",
+            cache_enabled=True,
+            cache_dir=str(tmp_path),
+        )
+        mock_emb = [0.1, 0.2, 0.3]
+        mock_response = MagicMock()
+        mock_response.data = [{"embedding": mock_emb}]
+
+        with patch("accounting_agent.infrastructure.embeddings.litellm_embeddings.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(return_value=mock_response)
+
+            result1 = await service.embed_text("unique text abc")
+            result2 = await service.embed_text("unique text abc")
+
+            assert mock_litellm.aembedding.call_count == 1
+            assert result1 == result2 == mock_emb

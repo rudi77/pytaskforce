@@ -16,7 +16,10 @@ try:
 except ImportError:
     litellm = None  # type: ignore[assignment]
 
-from accounting_agent.infrastructure.embeddings.azure_embeddings import EmbeddingCache
+from accounting_agent.infrastructure.embeddings.azure_embeddings import (
+    EmbeddingCache,
+    PersistentEmbeddingCache,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -63,7 +66,8 @@ class LiteLLMEmbeddingService:
     """Provider-agnostic embedding service via LiteLLM.
 
     Uses litellm.aembedding() to generate embeddings from any supported provider.
-    Includes in-memory caching to reduce API calls.
+    Supports persistent disk caching (default) to avoid redundant API calls across
+    process restarts, or in-memory-only caching as fallback.
 
     Example models:
     - "text-embedding-3-small" (OpenAI)
@@ -77,17 +81,36 @@ class LiteLLMEmbeddingService:
         model: str = "text-embedding-3-small",
         cache_enabled: bool = True,
         cache_max_size: int = 1000,
+        cache_dir: Optional[str] = None,
     ):
         """Initialize LiteLLM embedding service.
 
         Args:
             model: LiteLLM model identifier for embeddings
-            cache_enabled: Whether to cache embeddings in memory
+            cache_enabled: Whether to cache embeddings (default: True)
             cache_max_size: Maximum number of embeddings to cache
+            cache_dir: Directory for persistent disk cache. When provided,
+                embeddings survive process restarts. When None, falls back
+                to in-memory-only caching.
         """
         self._model = model
         self._cache_enabled = cache_enabled
-        self._cache = EmbeddingCache(max_size=cache_max_size) if cache_enabled else None
+        if cache_enabled:
+            if cache_dir is not None:
+                self._cache: Optional[EmbeddingCache] = PersistentEmbeddingCache(
+                    cache_dir=cache_dir,
+                    model=model,
+                    max_size=cache_max_size,
+                )
+                logger.info(
+                    "litellm_embedding.persistent_cache_enabled",
+                    cache_dir=cache_dir,
+                    model=model,
+                )
+            else:
+                self._cache = EmbeddingCache(max_size=cache_max_size)
+        else:
+            self._cache = None
 
     async def embed_text(self, text: str) -> list[float]:
         """Generate embedding vector for a single text.

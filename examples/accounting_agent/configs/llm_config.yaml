@@ -7,9 +7,12 @@
 default_model: "main"
 
 # Model alias mapping: short name → LiteLLM model string
+# - main: standard model for tool-call decisions and final responses
+# - fast: cheaper/faster model for simple orchestration steps (summarizing, etc.)
+# - powerful: strong reasoning model for complex planning and reflection
 models:
   main: "azure/gpt-4.1"
-  fast: "azure/gpt-4.1"
+  fast: "azure/gpt-5.0-mini"
   powerful: "azure/gpt-4.1"
   powerful-1: "azure/gpt-5.0-mini"
 
@@ -41,6 +44,33 @@ logging:
   log_token_usage: true
   log_latency: true
   log_parameter_mapping: true
+
+# LLM Router: dynamic per-call model selection
+# Rules are evaluated in order; first match wins.
+# Phase hints are emitted by planning strategies as the `model` parameter:
+#   - "reasoning"   → main ReAct reasoning loop
+#   - "summarizing" → final response / compression summaries
+#   - "planning"    → plan generation phase
+#   - "reflecting"  → SPAR reflect phase
+# Tool-presence rules fire when the LLM is given tools (acting) vs not (summarizing).
+routing:
+  enabled: true
+  default_model: main
+  rules:
+    # Summarizing final responses and context compression use fast model
+    - condition: "hint:summarizing"
+      model: fast
+    # Planning and reflection use powerful model for quality
+    - condition: "hint:planning"
+      model: powerful
+    - condition: "hint:reflecting"
+      model: powerful
+    # When tools are provided → standard reasoning → main model
+    - condition: has_tools
+      model: main
+    # When no tools are provided (pure text generation) → fast model
+    - condition: no_tools
+      model: fast
 
 tracing:
   enabled: true

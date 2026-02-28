@@ -138,8 +138,8 @@ ergänzen, da er die Rechnung physisch vorliegen hat.
 
 **→ Bestimme die `recipient_id` und rufe `ask_user` mit Telegram-Routing auf:**
 
-1. **Memory prüfen:** Suche in den bereits geladenen Memory-Einträgen nach
-   "Telegram recipient_id: ..." (kind=PREFERENCE). Wenn gefunden → verwende diese ID.
+1. **Memory durchsuchen:** `memory(action="search", query="telegram recipient_id")`
+   Wenn ein Eintrag mit "Telegram recipient_id: ..." (kind=PREFERENCE) gefunden → verwende diese ID.
 2. **Metadaten prüfen:** Rechnung kam via Telegram → `sender_id` aus Metadaten verwenden.
 3. **Buchhalter fragen:** Weder Memory noch Metadaten liefern eine ID →
    `ask_user(question="Compliance-Fehler. An welche Telegram-ID soll die Rückfrage gehen?")`
@@ -215,11 +215,13 @@ abgebrochen (z.B. weil `docling_extract` oder `invoice_extract` fehlschlug).
 die Daten als Text (nicht als PDF) eingereicht wurden!**
 
 Reihenfolge (unabhängig vom Eingabeformat):
-1. `memory(action="list")` — Regeln laden
-2. **`check_compliance(invoice_data={...})`** — §14 UStG Prüfung (PFLICHT!)
-3. `semantic_rule_engine(...)` — Kontierung
-4. `confidence_evaluator(...)` — Bewertung
-5. Weiter (Auto-Booking oder HITL)
+1. **`check_compliance(invoice_data={...})`** — §14 UStG Prüfung (PFLICHT!)
+2. `semantic_rule_engine(...)` — Kontierung (lädt gelernte Regeln selbst)
+3. `confidence_evaluator(...)` — Bewertung
+4. Weiter (Auto-Booking oder HITL)
+
+**Memory:** Nur bei Bedarf aufrufen (z.B. Telegram-ID suchen via
+`memory(action="search", query="telegram recipient_id")`), NICHT proaktiv.
 
 **❌ VERBOTEN:** `semantic_rule_engine` oder `confidence_evaluator` aufrufen
 OHNE vorher `check_compliance` ausgeführt zu haben!

@@ -1186,6 +1186,11 @@ class AgentFactory:
             }
             if provider == "litellm":
                 kwargs["model"] = embeddings_config.get("model", "text-embedding-3-small")
+                # Pass cache_dir for persistent disk-backed embedding cache.
+                # When set, embeddings survive process restarts (avoids ~8s API calls).
+                cache_dir = embeddings_config.get("cache_dir")
+                if cache_dir:
+                    kwargs["cache_dir"] = cache_dir
             elif provider == "azure":
                 kwargs["deployment_name"] = embeddings_config.get("deployment_name")
                 kwargs["api_version"] = embeddings_config.get("api_version", "2024-02-01")

@@ -71,6 +71,12 @@ class TokenBudgeter:
         """
         Estimate total token count for a prompt.
 
+        Results are memoised for the duration of a single call chain: when
+        called twice in the same ReAct loop iteration with identical arguments
+        (same list object and same tools reference) the second call returns
+        the cached value and skips logging to avoid duplicate ``tokens_estimated``
+        log events.
+
         Args:
             messages: List of message dictionaries
             tools: Optional list of tool schemas
@@ -79,6 +85,13 @@ class TokenBudgeter:
         Returns:
             Estimated token count (conservative)
         """
+        # Short-circuit: same list object + same tools + no context_pack → reuse last result.
+        # Uses object identity (id()) which is O(1) and works reliably within one call chain.
+        cache_key = (id(messages), id(tools), context_pack)
+        cached = getattr(self, "_estimate_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
         total_tokens = 0
 
         # System prompt overhead
@@ -127,6 +140,9 @@ class TokenBudgeter:
             context_pack_length=len(context_pack) if context_pack else 0,
             estimated_tokens=total_tokens,
         )
+
+        # Cache result keyed by object identity for same-iteration reuse
+        self._estimate_cache = (cache_key, total_tokens)
 
         return total_tokens
 

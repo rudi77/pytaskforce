@@ -395,3 +395,63 @@ class TestTokenBudgeter:
 
         assert stats["should_compress"] is True
 
+    def test_estimate_tokens_memoization_same_list(self, mock_logger):
+        """Second call with the same list object must return cached value without re-logging."""
+        call_count = 0
+        log_records: list[str] = []
+
+        class CountingLogger:
+            def debug(self, event, **kw):
+                nonlocal call_count
+                if event == "tokens_estimated":
+                    call_count += 1
+                    log_records.append(event)
+
+            def warning(self, *a, **kw):
+                pass
+
+            def info(self, *a, **kw):
+                pass
+
+            def error(self, *a, **kw):
+                pass
+
+        budgeter = TokenBudgeter(logger=CountingLogger())
+        messages = [{"role": "user", "content": "hello world"}]
+        tools = [{"name": "tool_a"}]
+
+        result1 = budgeter.estimate_tokens(messages, tools)
+        result2 = budgeter.estimate_tokens(messages, tools)
+
+        assert result1 == result2
+        # tokens_estimated should only be logged once (cache hit on second call)
+        assert call_count == 1
+
+    def test_estimate_tokens_no_memoization_for_different_lists(self, mock_logger):
+        """Different list objects must each trigger a fresh estimation."""
+        call_count = 0
+
+        class CountingLogger:
+            def debug(self, event, **kw):
+                nonlocal call_count
+                if event == "tokens_estimated":
+                    call_count += 1
+
+            def warning(self, *a, **kw):
+                pass
+
+            def info(self, *a, **kw):
+                pass
+
+            def error(self, *a, **kw):
+                pass
+
+        budgeter = TokenBudgeter(logger=CountingLogger())
+        messages_a = [{"role": "user", "content": "hello"}]
+        messages_b = [{"role": "user", "content": "hello"}]  # different object
+
+        budgeter.estimate_tokens(messages_a)
+        budgeter.estimate_tokens(messages_b)
+
+        assert call_count == 2
+
