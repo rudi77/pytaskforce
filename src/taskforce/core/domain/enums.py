@@ -49,6 +49,9 @@ class EventType(str, Enum):
     BUTLER_RULE_FIRED = "butler_rule_fired"
     BUTLER_SCHEDULE_TRIGGERED = "butler_schedule_triggered"
     BUTLER_LEARNING_EXTRACTED = "butler_learning_extracted"
+    # Memory consolidation events
+    CONSOLIDATION_STARTED = "consolidation_started"
+    CONSOLIDATION_COMPLETED = "consolidation_completed"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"
@@ -105,3 +108,11 @@ class SkillType(str, Enum):
     CONTEXT = "context"
     PROMPT = "prompt"
     AGENT = "agent"
+
+
+class ConsolidationStrategy(str, Enum):
+    """Strategies for memory consolidation timing."""
+
+    IMMEDIATE = "immediate"
+    BATCH = "batch"
+    SCHEDULED = "scheduled"

@@ -174,9 +174,24 @@ The unified `memory` tool provides CRUD operations over memory records.
 
 ---
 
+## Memory Consolidation
+
+For cross-session experience consolidation (pattern detection, contradiction resolution, structured memory creation), see the dedicated **[Memory Consolidation](memory-consolidation.md)** feature guide.
+
+Key capabilities:
+- Automatic experience capture during agent execution
+- LLM-powered 5-phase consolidation pipeline
+- Cross-session pattern detection
+- Contradiction resolution against existing memories
+- Quality assessment scoring
+
+Enable via `consolidation.enabled: true` in your profile YAML.
+
+---
+
 ## Roadmap
 
-- [ ] Automatic summarization/compaction of older records
+- [x] Automatic summarization/compaction of older records (via Memory Consolidation)
 - [ ] Optional vector index for semantic recall
 - [ ] Multi-user memory with access control
 - [ ] Web UI for memory visualization

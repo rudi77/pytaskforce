@@ -87,6 +87,8 @@ class AgentExecutor:
         self,
         factory: AgentFactory | None = None,
         gateway: Any | None = None,
+        experience_tracker: Any | None = None,
+        consolidation_service: Any | None = None,
     ):
         """Initialize AgentExecutor with optional factory and gateway.
 
@@ -96,9 +98,15 @@ class AgentExecutor:
             gateway: Optional CommunicationGateway instance. When provided,
                     channel-targeted ``ask_user`` calls are automatically
                     routed via the gateway (send → poll → resume).
+            experience_tracker: Optional ExperienceTracker for capturing
+                    execution experiences into long-term memory.
+            consolidation_service: Optional ConsolidationService for
+                    auto-consolidation after execution.
         """
         self.factory = factory or AgentFactory()
         self._gateway = gateway
+        self._experience_tracker = experience_tracker
+        self._consolidation_service = consolidation_service
         self.logger = logger.bind(component="agent_executor")
 
     async def execute_mission(
@@ -180,9 +188,7 @@ class AgentExecutor:
 
         return result
 
-    def _extract_result_from_update(
-        self, update: ProgressUpdate
-    ) -> ExecutionResult | None:
+    def _extract_result_from_update(self, update: ProgressUpdate) -> ExecutionResult | None:
         """Extract an ExecutionResult from a COMPLETE progress update.
 
         Args:
@@ -192,10 +198,7 @@ class AgentExecutor:
             ExecutionResult if the update is a COMPLETE event, None otherwise.
         """
         event_type = update.event_type
-        is_complete = (
-            event_type == EventType.COMPLETE
-            or event_type == EventType.COMPLETE.value
-        )
+        is_complete = event_type == EventType.COMPLETE or event_type == EventType.COMPLETE.value
         if not is_complete:
             return None
 
@@ -257,6 +260,10 @@ class AgentExecutor:
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
+        # Start experience tracking (if enabled)
+        if self._experience_tracker is not None:
+            self._experience_tracker.start_session(resolved_session_id, mission, profile)
+
         yield self._build_started_update(
             mission, resolved_session_id, profile, agent_id, plugin_path
         )
@@ -273,9 +280,7 @@ class AgentExecutor:
 
         # --- Auto-epic classification ---
         if agent is None and auto_epic is not False:
-            escalated = await self._try_epic_escalation(
-                mission, profile, auto_epic
-            )
+            escalated = await self._try_epic_escalation(mission, profile, auto_epic)
             if escalated is not None:
                 yield escalated
                 async for update in self._execute_epic_streaming(
@@ -303,9 +308,7 @@ class AgentExecutor:
         )
 
         try:
-            async for update in self._execute_streaming(
-                agent, mission, resolved_session_id
-            ):
+            async for update in self._execute_streaming(agent, mission, resolved_session_id):
                 yield update
 
             self.logger.info(
@@ -316,9 +319,7 @@ class AgentExecutor:
             )
 
         except asyncio.CancelledError as e:
-            yield self._handle_cancellation(
-                e, resolved_session_id, agent_id, plugin_path
-            )
+            yield self._handle_cancellation(e, resolved_session_id, agent_id, plugin_path)
 
         except Exception as e:
             error_update, wrapped_error = self._handle_streaming_failure(
@@ -328,6 +329,14 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
+            # Finalize experience tracking
+            if self._experience_tracker is not None:
+                experience = await self._experience_tracker.end_session("completed")
+                if experience and self._consolidation_service is not None:
+                    await self._consolidation_service.post_execution_hook(
+                        resolved_session_id, experience
+                    )
+
             if agent and owns_agent:
                 await agent.close()
 
@@ -503,19 +512,27 @@ class AgentExecutor:
 
         if plugin_path:
             return await self._create_agent_from_plugin_path(
-                plugin_path, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                plugin_path,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         if agent_id:
             return await self._create_agent_from_agent_id(
-                agent_id, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                agent_id,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         return await self._create_agent_from_profile(
-            profile, user_context,
-            planning_strategy, planning_strategy_params,
+            profile,
+            user_context,
+            planning_strategy,
+            planning_strategy_params,
         )
 
     async def _create_agent_from_plugin_path(
@@ -589,14 +606,20 @@ class AgentExecutor:
 
         if isinstance(agent_response, PluginAgentDefinition):
             return await self._create_plugin_agent_from_definition(
-                agent_response, agent_id, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                agent_id,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         if isinstance(agent_response, CustomAgentDefinition):
             return await self._create_custom_agent_from_definition(
-                agent_response, agent_id,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                agent_id,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         raise ValidationError(
@@ -741,8 +764,11 @@ class AgentExecutor:
 
         if isinstance(agent_response, PluginAgentDefinition):
             return await self._create_plugin_agent_via_profile_name(
-                agent_response, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         return await self.factory.create_agent(
@@ -782,8 +808,7 @@ class AgentExecutor:
             profile=profile,
             plugin_path=str(plugin_path_abs),
             hint=(
-                "Using profile name as plugin agent. "
-                "Consider using agent_id parameter instead."
+                "Using profile name as plugin agent. " "Consider using agent_id parameter instead."
             ),
         )
 
@@ -832,9 +857,7 @@ class AgentExecutor:
                 message=result.final_message,
                 details={
                     "status": (
-                        result.status_value
-                        if hasattr(result, "status_value")
-                        else result.status
+                        result.status_value if hasattr(result, "status_value") else result.status
                     ),
                     "session_id": result.session_id,
                     "todolist_id": result.todolist_id,
@@ -873,6 +896,10 @@ class AgentExecutor:
 
             if self._agent_supports_streaming(agent):
                 async for event in agent.execute_stream(current_mission, session_id):
+                    # Capture experience (non-invasive, sync)
+                    if self._experience_tracker is not None:
+                        self._experience_tracker.observe(event)
+
                     if self._is_channel_targeted_ask(event) and self._gateway:
                         channel_ask = event.data
                         # Yield an informational event (not a raw ASK_USER)
@@ -885,9 +912,7 @@ class AgentExecutor:
                             continue
                         yield self._stream_event_to_progress_update(event)
             else:
-                result = await agent.execute(
-                    mission=current_mission, session_id=session_id
-                )
+                result = await agent.execute(mission=current_mission, session_id=session_id)
                 async for update in self._yield_history_updates(result):
                     yield update
 
@@ -903,9 +928,7 @@ class AgentExecutor:
             )
 
             if response is not None:
-                yield self._build_channel_response_received_update(
-                    channel_ask, response
-                )
+                yield self._build_channel_response_received_update(channel_ask, response)
                 current_mission = response
                 # Loop continues: agent resumes with the response
             else:
@@ -933,9 +956,7 @@ class AgentExecutor:
         return (
             execute_stream_method is not None
             and callable(execute_stream_method)
-            and not str(type(execute_stream_method).__module__).startswith(
-                "unittest.mock"
-            )
+            and not str(type(execute_stream_method).__module__).startswith("unittest.mock")
         )
 
     # ------------------------------------------------------------------
@@ -1001,9 +1022,7 @@ class AgentExecutor:
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
 
-            response = await self._gateway.poll_channel_response(
-                session_id=session_id
-            )
+            response = await self._gateway.poll_channel_response(session_id=session_id)
             if response is not None:
                 await self._gateway.clear_channel_question(session_id=session_id)
                 self.logger.info(
@@ -1102,9 +1121,7 @@ class AgentExecutor:
 
         return None
 
-    def _parse_history_event(
-        self, event: Any
-    ) -> tuple[str, str | int, dict[str, Any]]:
+    def _parse_history_event(self, event: Any) -> tuple[str, str | int, dict[str, Any]]:
         """Parse a history event into its type, step, and data components.
 
         Args:
@@ -1124,9 +1141,7 @@ class AgentExecutor:
             data = event.data
         return event_type_str, step, data
 
-    def _build_observation_update(
-        self, step: str | int, data: dict[str, Any]
-    ) -> ProgressUpdate:
+    def _build_observation_update(self, step: str | int, data: dict[str, Any]) -> ProgressUpdate:
         """Build a ProgressUpdate for an observation event.
 
         Args:
@@ -1137,11 +1152,7 @@ class AgentExecutor:
             ProgressUpdate with observation details.
         """
         success = data.get("success", False) if isinstance(data, dict) else False
-        obs_status = (
-            ExecutionStatus.COMPLETED.value
-            if success
-            else ExecutionStatus.FAILED.value
-        )
+        obs_status = ExecutionStatus.COMPLETED.value if success else ExecutionStatus.FAILED.value
         return ProgressUpdate(
             timestamp=datetime.now(),
             event_type="observation",
@@ -1158,11 +1169,7 @@ class AgentExecutor:
         Returns:
             ProgressUpdate with COMPLETE event type.
         """
-        status_value = (
-            result.status_value
-            if hasattr(result, "status_value")
-            else result.status
-        )
+        status_value = result.status_value if hasattr(result, "status_value") else result.status
         return ProgressUpdate(
             timestamp=datetime.now(),
             event_type=EventType.COMPLETE,
@@ -1200,9 +1207,7 @@ class AgentExecutor:
             EventType.PLAN_UPDATED.value: lambda d: (
                 f"Plan updated ({d.get('action', 'unknown')})"
             ),
-            EventType.TOKEN_USAGE.value: lambda d: (
-                f"Tokens: {d.get('total_tokens', 0)}"
-            ),
+            EventType.TOKEN_USAGE.value: lambda d: (f"Tokens: {d.get('total_tokens', 0)}"),
             EventType.FINAL_ANSWER.value: lambda d: d.get("content", ""),
             EventType.COMPLETE.value: lambda d: (
                 f"Execution completed. Status: {d.get('status', 'unknown')}"
@@ -1211,9 +1216,7 @@ class AgentExecutor:
         }
 
         event_type_value = (
-            event.event_type.value
-            if isinstance(event.event_type, EventType)
-            else event.event_type
+            event.event_type.value if isinstance(event.event_type, EventType) else event.event_type
         )
         message_fn = message_map.get(event_type_value, lambda d: str(d))
 
@@ -1312,9 +1315,7 @@ class AgentExecutor:
         if llm_provider is None:
             return None
 
-        classification = await self._run_classification(
-            mission, llm_provider, epic_config
-        )
+        classification = await self._run_classification(mission, llm_provider, epic_config)
         if classification is None:
             return None
 
@@ -1411,9 +1412,7 @@ class AgentExecutor:
         Returns:
             ProgressUpdate with EPIC_ESCALATION event type.
         """
-        worker_count = (
-            classification.suggested_worker_count or epic_config.default_worker_count
-        )
+        worker_count = classification.suggested_worker_count or epic_config.default_worker_count
         return ProgressUpdate(
             timestamp=datetime.now(),
             event_type=EventType.EPIC_ESCALATION,
@@ -1461,9 +1460,7 @@ class AgentExecutor:
                 max_rounds=cfg.default_max_rounds,
             )
 
-            completed_count = sum(
-                1 for r in result.worker_results if r.status == "completed"
-            )
+            completed_count = sum(1 for r in result.worker_results if r.status == "completed")
 
             yield ProgressUpdate(
                 timestamp=datetime.now(),

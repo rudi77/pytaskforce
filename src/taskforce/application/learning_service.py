@@ -50,12 +50,14 @@ class LearningService:
         model_alias: str = "main",
         auto_extract: bool = True,
         user_scope: str = "user",
+        consolidation_service: Any = None,
     ) -> None:
         self._memory_store = memory_store
         self._llm_provider = llm_provider
         self._model_alias = model_alias
         self._auto_extract = auto_extract
         self._user_scope = user_scope
+        self._consolidation_service = consolidation_service
 
     @property
     def auto_extract(self) -> bool:
@@ -380,3 +382,30 @@ class LearningService:
         words = text.lower().split()
         keywords = [w for w in words if len(w) > 2 and w not in stop_words]
         return keywords[:10]
+
+    async def consolidate_experiences(
+        self,
+        session_ids: list[str] | None = None,
+        strategy: str = "batch",
+    ) -> Any:
+        """Consolidate session experiences into long-term memories.
+
+        Delegates to the ``ConsolidationService`` if configured.
+
+        Args:
+            session_ids: Specific sessions to consolidate. If ``None``,
+                processes all unprocessed experiences.
+            strategy: Consolidation strategy (``immediate`` or ``batch``).
+
+        Returns:
+            ``ConsolidationResult`` if consolidation service is available,
+            ``None`` otherwise.
+        """
+        if self._consolidation_service is None:
+            logger.info("learning_service.no_consolidation_service")
+            return None
+
+        return await self._consolidation_service.trigger_consolidation(
+            session_ids=session_ids,
+            strategy=strategy,
+        )
