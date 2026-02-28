@@ -9,7 +9,15 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from taskforce.api.routes import agents, execution, gateway, health, sessions, tools
+from taskforce.api.routes import (
+    agents,
+    execution,
+    gateway,
+    health,
+    memory,
+    sessions,
+    tools,
+)
 from taskforce.application.plugin_discovery import (
     get_plugin_registry,
     is_enterprise_available,
@@ -45,11 +53,7 @@ async def taskforce_http_exception_handler(
     exc: HTTPException,
 ) -> JSONResponse:
     """Return standardized error responses for Taskforce exceptions."""
-    if (
-        exc.headers
-        and exc.headers.get("X-Taskforce-Error") == "1"
-        and isinstance(exc.detail, dict)
-    ):
+    if exc.headers and exc.headers.get("X-Taskforce-Error") == "1" and isinstance(exc.detail, dict):
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return await http_exception_handler(request, exc)
 
@@ -69,9 +73,7 @@ async def lifespan(app: FastAPI):
         enterprise=enterprise_status,
     )
     yield
-    await logger.ainfo(
-        "fastapi.shutdown", message="Taskforce API shutting down..."
-    )
+    await logger.ainfo("fastapi.shutdown", message="Taskforce API shutting down...")
 
     # Shutdown plugins
     shutdown_plugins()
@@ -90,6 +92,7 @@ def _load_plugin_config() -> dict[str, Any]:
     config_path = os.getenv("TASKFORCE_PLUGIN_CONFIG")
     if config_path and os.path.exists(config_path):
         import yaml
+
         with open(config_path) as f:
             return yaml.safe_load(f) or {}
 
@@ -108,10 +111,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     """
     app = FastAPI(
         title="Taskforce Agent API",
-        description=(
-            "Production-ready ReAct agent framework "
-            "with Clean Architecture"
-        ),
+        description=("Production-ready ReAct agent framework " "with Clean Architecture"),
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
@@ -134,22 +134,13 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     )
 
     # Include core routers
-    app.include_router(
-        execution.router, prefix="/api/v1", tags=["execution"]
-    )
-    app.include_router(
-        sessions.router, prefix="/api/v1", tags=["sessions"]
-    )
-    app.include_router(
-        agents.router, prefix="/api/v1", tags=["agents"]
-    )
-    app.include_router(
-        tools.router, prefix="/api/v1", tags=["tools"]
-    )
-    app.include_router(
-        gateway.router, prefix="/api/v1", tags=["gateway"]
-    )
+    app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
+    app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
+    app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
+    app.include_router(tools.router, prefix="/api/v1", tags=["tools"])
+    app.include_router(gateway.router, prefix="/api/v1", tags=["gateway"])
     app.include_router(health.router, tags=["health"])
+    app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation

@@ -27,6 +27,7 @@ class MemoryKind(str, Enum):
     EPIC_LOG = "epic_log"
     PREFERENCE = "preference"
     LEARNED_FACT = "learned_fact"
+    CONSOLIDATED = "consolidated"
 
 
 @dataclass

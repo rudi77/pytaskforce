@@ -49,7 +49,7 @@ class TestMemoryKind:
         assert MemoryKind.SHORT_TERM == "short_term"
 
     def test_member_count(self) -> None:
-        assert len(MemoryKind) == 6
+        assert len(MemoryKind) == 7
 
     def test_lookup_by_value(self) -> None:
         assert MemoryKind("preference") == MemoryKind.PREFERENCE
