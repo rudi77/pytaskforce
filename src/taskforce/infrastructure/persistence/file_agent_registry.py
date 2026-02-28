@@ -86,7 +86,7 @@ class FileAgentRegistry:
 
         Args:
             configs_dir: Root directory for configuration files.
-                        If None, auto-detects: tries 'src/taskforce_extensions/configs/'
+                        If None, auto-detects: tries 'src/taskforce/configs/'
                         first, falls back to 'configs/' for backward compatibility.
             tool_mapper: Optional tool mapper for tool name resolution.
                         If not provided, tool mapping features are disabled.
@@ -95,7 +95,7 @@ class FileAgentRegistry:
         """
         if configs_dir is None:
             detected_base = get_base_path()
-            new_config_dir = detected_base / "src" / "taskforce_extensions" / "configs"
+            new_config_dir = detected_base / "src" / "taskforce" / "configs"
             old_config_dir = detected_base / "configs"
             if new_config_dir.exists():
                 self.configs_dir = new_config_dir

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from taskforce_extensions.infrastructure.communication.telegram_poller import (
+from taskforce.infrastructure.communication.telegram_poller import (
     TelegramPoller,
 )
 

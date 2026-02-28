@@ -17,18 +17,18 @@ from taskforce.core.interfaces.gateway import (
     OutboundSenderProtocol,
     RecipientRegistryProtocol,
 )
-from taskforce_extensions.infrastructure.communication.gateway_conversation_store import (
+from taskforce.infrastructure.communication.gateway_conversation_store import (
     FileConversationStore,
 )
-from taskforce_extensions.infrastructure.communication.inbound_adapters import (
+from taskforce.infrastructure.communication.inbound_adapters import (
     TeamsInboundAdapter,
     TelegramInboundAdapter,
 )
-from taskforce_extensions.infrastructure.communication.outbound_senders import (
+from taskforce.infrastructure.communication.outbound_senders import (
     TeamsOutboundSender,
     TelegramOutboundSender,
 )
-from taskforce_extensions.infrastructure.communication.recipient_registry import (
+from taskforce.infrastructure.communication.recipient_registry import (
     FileRecipientRegistry,
 )
 

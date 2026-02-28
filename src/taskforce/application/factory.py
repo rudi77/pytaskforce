@@ -92,7 +92,7 @@ class AgentFactory:
 
         Args:
             config_dir: Path to directory containing profile YAML files.
-                       Defaults to ``src/taskforce_extensions/configs/``.
+                       Defaults to ``src/taskforce/configs/``.
         """
         self.config_dir = self._resolve_config_dir(config_dir)
         self.logger = structlog.get_logger().bind(component="agent_factory")
@@ -129,7 +129,7 @@ class AgentFactory:
             return Path(config_dir)
 
         base_path = get_base_path()
-        new_config_dir = base_path / "src" / "taskforce_extensions" / "configs"
+        new_config_dir = base_path / "src" / "taskforce" / "configs"
         old_config_dir = base_path / "configs"
         if new_config_dir.exists():
             return new_config_dir
@@ -767,7 +767,7 @@ class AgentFactory:
             effective_persistence = {**effective_persistence, "work_dir": work_dir}
 
         effective_llm = llm or default_config.get("llm", {
-            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+            "config_path": "src/taskforce/configs/llm_config.yaml",
             "default_model": "main",
         })
 

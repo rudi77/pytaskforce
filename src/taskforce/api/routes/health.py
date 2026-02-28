@@ -63,7 +63,7 @@ async def readiness_check() -> HealthResponse:
         from taskforce.core.utils.paths import get_base_path
 
         base = get_base_path()
-        config_dir = base / "src" / "taskforce_extensions" / "configs"
+        config_dir = base / "src" / "taskforce" / "configs"
         if config_dir.exists():
             checks["config_dir"] = "ok"
         else:

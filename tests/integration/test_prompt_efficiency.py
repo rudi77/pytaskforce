@@ -22,7 +22,7 @@ class TestPromptEfficiency:
         When: Agent is created via factory
         Then: llm_generate tool is not in the agent's tool list
         """
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        factory = AgentFactory(config_dir="src/taskforce/configs")
 
         agent = await factory.create_agent(profile="dev")
 
@@ -38,7 +38,7 @@ class TestPromptEfficiency:
         When: Agent is created via factory
         Then: System prompt contains 'YOU ARE THE GENERATOR' rule
         """
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        factory = AgentFactory(config_dir="src/taskforce/configs")
 
         agent = await factory.create_agent(profile="dev")
 
@@ -53,7 +53,7 @@ class TestPromptEfficiency:
         When: Agent is created via factory
         Then: System prompt contains 'MEMORY FIRST' rule
         """
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        factory = AgentFactory(config_dir="src/taskforce/configs")
 
         agent = await factory.create_agent(profile="dev")
 
@@ -68,7 +68,7 @@ class TestPromptEfficiency:
         When: Agent is created via factory with coding agent profile
         Then: System prompt contains performance rules
         """
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        factory = AgentFactory(config_dir="src/taskforce/configs")
 
         agent = await factory.create_agent(profile="coding_agent")
 
@@ -96,7 +96,7 @@ class TestLlmGenerateOptIn:
         import os
         from unittest.mock import patch
 
-        factory = AgentFactory(config_dir="src/taskforce_extensions/configs")
+        factory = AgentFactory(config_dir="src/taskforce/configs")
 
         # Mock Azure Search environment for RAG agent
         with patch.dict(

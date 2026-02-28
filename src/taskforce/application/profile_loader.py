@@ -44,7 +44,7 @@ DEFAULT_TOOL_NAMES: list[str] = [
 _FALLBACK_CONFIG: dict[str, Any] = {
     "persistence": {"type": "file", "work_dir": ".taskforce"},
     "llm": {
-        "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+        "config_path": "src/taskforce/configs/llm_config.yaml",
         "default_model": "main",
     },
     "agent": {"max_steps": 30},

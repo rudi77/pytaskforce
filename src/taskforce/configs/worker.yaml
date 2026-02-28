@@ -1,8 +1,8 @@
-# Judge Profile
+# Worker Profile
 #
-# Reviews worker changes, consolidates results, and optionally commits.
+# Executes assigned tasks in isolation.
 
-profile: judge
+profile: worker
 specialist: null
 
 persistence:
@@ -11,10 +11,10 @@ persistence:
 
 agent:
   planning_strategy: native_react
-  max_steps: 40
+  max_steps: 50
 
 llm:
-  config_path: src/taskforce_extensions/configs/llm_config.yaml
+  config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
 logging:
@@ -22,13 +22,13 @@ logging:
   format: console
 
 context_policy:
-  max_items: 20
-  max_chars_per_item: 4000
-  max_total_chars: 25000
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
 
 tools:
   - file_read
   - file_write
-  - git
+  - python
   - powershell
   - ask_user

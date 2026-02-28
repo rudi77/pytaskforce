@@ -170,7 +170,7 @@ def build_agent_yaml(
             "work_dir": f".taskforce_{agent_id}",
         },
         "llm": {
-            "config_path": "src/taskforce_extensions/configs/llm_config.yaml",
+            "config_path": "src/taskforce/configs/llm_config.yaml",
             "default_model": "main",
         },
         "logging": {"level": "DEBUG", "format": "console"},

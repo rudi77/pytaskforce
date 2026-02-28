@@ -74,7 +74,7 @@ EpicOrchestrator.run_epic()
 - `application/epic_state_store.py` — File-based state (3 Markdown files per run)
 - `core/domain/epic.py` — `EpicTask`, `EpicTaskResult`, `EpicRunResult`
 - `core/interfaces/messaging.py` — `MessageBusProtocol`
-- `taskforce_extensions/infrastructure/messaging/in_memory_bus.py` — Queue-based bus
+- `taskforce/infrastructure/messaging/in_memory_bus.py` — Queue-based bus
 
 ---
 

@@ -11,10 +11,10 @@ from taskforce.core.domain.gateway import (
     NotificationRequest,
 )
 from taskforce.core.domain.models import ExecutionResult
-from taskforce_extensions.infrastructure.communication.gateway_conversation_store import (
+from taskforce.infrastructure.communication.gateway_conversation_store import (
     InMemoryConversationStore,
 )
-from taskforce_extensions.infrastructure.communication.recipient_registry import (
+from taskforce.infrastructure.communication.recipient_registry import (
     InMemoryRecipientRegistry,
 )
 

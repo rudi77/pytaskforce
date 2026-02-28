@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.append("src/taskforce_extensions/plugins/ap_poc_agent")
+sys.path.append("src/taskforce/plugins/ap_poc_agent")
 
 from ap_poc_agent.tools import (  # noqa: E402
     ArchitectConfigTool,
@@ -12,7 +12,7 @@ from ap_poc_agent.tools import (  # noqa: E402
     TaxWizardTool,
 )
 
-BASE_DIR = Path("src/taskforce_extensions/plugins/ap_poc_agent/configs/data")
+BASE_DIR = Path("src/taskforce/plugins/ap_poc_agent/configs/data")
 
 
 def test_architect_config_validates_sample_config() -> None:

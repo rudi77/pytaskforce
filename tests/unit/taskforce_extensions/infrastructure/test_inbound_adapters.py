@@ -2,7 +2,7 @@
 
 import pytest
 
-from taskforce_extensions.infrastructure.communication.inbound_adapters import (
+from taskforce.infrastructure.communication.inbound_adapters import (
     TeamsInboundAdapter,
     TelegramInboundAdapter,
 )

@@ -659,7 +659,7 @@ taskforce butler start
 
 | Datei | Inhalt |
 |-------|--------|
-| `taskforce_extensions/configs/butler.yaml` | Butler-Profil |
+| `taskforce/configs/butler.yaml` | Butler-Profil |
 
 ---
 

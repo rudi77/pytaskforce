@@ -45,8 +45,8 @@ extraction directly via the MCP tools.
 
 ```bash
 # Run the orchestrator with the plugin loaded
-TASKFORCE_PROFILE=src/taskforce_extensions/plugins/ap_poc_agent/configs/ap_poc_agent.yaml \
-  taskforce run mission "Run AP PoC" --plugin src/taskforce_extensions/plugins/ap_poc_agent
+TASKFORCE_PROFILE=src/taskforce/plugins/ap_poc_agent/configs/ap_poc_agent.yaml \
+  taskforce run mission "Run AP PoC" --plugin src/taskforce/plugins/ap_poc_agent
 ```
 
 Then call the tools or agents in sequence:

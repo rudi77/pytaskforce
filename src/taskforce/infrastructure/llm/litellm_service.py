@@ -117,7 +117,7 @@ class LiteLLMService:
     """
 
     def __init__(
-        self, config_path: str = "src/taskforce_extensions/configs/llm_config.yaml"
+        self, config_path: str = "src/taskforce/configs/llm_config.yaml"
     ) -> None:
         self.logger = structlog.get_logger(__name__)
         self._config = LLMConfigLoader(config_path)

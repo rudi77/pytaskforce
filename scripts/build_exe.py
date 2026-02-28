@@ -95,7 +95,7 @@ def build_executable(
     spec_file = project_root / "taskforce.spec"
 
     # Path to config directory (relative to source tree)
-    configs_path = project_root / "src" / "taskforce_extensions" / "configs"
+    configs_path = project_root / "src" / "taskforce" / "configs"
 
     if use_folder:
         # Direct PyInstaller invocation for folder build (faster for testing)
@@ -105,7 +105,7 @@ def build_executable(
             "--name", "taskforce",
             "--console",
             "--noconfirm",
-            "--add-data", f"{configs_path}{DATA_SEP}taskforce_extensions/configs",
+            "--add-data", f"{configs_path}{DATA_SEP}taskforce/configs",
             "--paths", str(project_root / "src"),
         ]
 
@@ -125,7 +125,7 @@ def build_executable(
                 "--onefile",
                 "--console",
                 "--noconfirm",
-                "--add-data", f"{configs_path}{DATA_SEP}taskforce_extensions/configs",
+                "--add-data", f"{configs_path}{DATA_SEP}taskforce/configs",
                 "--paths", str(project_root / "src"),
                 str(project_root / "src" / "taskforce" / "api" / "cli" / "main.py"),
             ]

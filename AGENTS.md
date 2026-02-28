@@ -27,14 +27,14 @@ This file should be updated automatically when project-specific patterns, conven
 - Profile YAML tool lists now use short tool names (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs.
 - LeanAgent support services live in `src/taskforce/core/domain/lean_agent_components/` (prompt builder, message history manager, tool execution helpers, state store, resource closer).
 - Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
-- Multi-agent runtime tracking (heartbeats + checkpoints) uses adapters under `src/taskforce_extensions/infrastructure/runtime/` and is wired via `AgentRuntimeTracker`.
-- Message bus adapters live under `src/taskforce_extensions/infrastructure/messaging/` and implement `MessageBusProtocol` for agent-to-agent coordination.
-- External communication integrations use `CommunicationService` with provider adapters under `src/taskforce_extensions/infrastructure/communication/` (see `providers.py` + `registry.py`); API routes live at `/api/v1/integrations/{provider}/messages` and persist chat history in `.taskforce/conversations/`.
+- Multi-agent runtime tracking (heartbeats + checkpoints) uses adapters under `src/taskforce/infrastructure/runtime/` and is wired via `AgentRuntimeTracker`.
+- Message bus adapters live under `src/taskforce/infrastructure/messaging/` and implement `MessageBusProtocol` for agent-to-agent coordination.
+- External communication integrations use `CommunicationService` with provider adapters under `src/taskforce/infrastructure/communication/` (see `providers.py` + `registry.py`); API routes live at `/api/v1/integrations/{provider}/messages` and persist chat history in `.taskforce/conversations/`.
 - Sub-agent spawning is centralized in `src/taskforce/application/sub_agent_spawner.py` to standardize isolated session creation.
-- Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce_extensions/configs/`.
+- Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce/configs/`.
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
 - Epic orchestration persists run state under `.taskforce/epic_runs/<run_id>/` with `MISSION.md`, `CURRENT_STATE.md`, and `MEMORY.md`.
-- The `coding_agent` profile now declares sub-agents as explicit tools and delegates to custom sub-agents in `src/taskforce_extensions/configs/custom/` (`coding_planner`, `coding_worker`, `coding_reviewer`).
+- The `coding_agent` profile now declares sub-agents as explicit tools and delegates to custom sub-agents in `src/taskforce/configs/custom/` (`coding_planner`, `coding_worker`, `coding_reviewer`).
 - Unified long-term memory is provided by the native `memory` tool, configured via `memory.store_dir` in profile YAML (file-backed Markdown records).
 
 - **Slash Commands**: Flexible, file-based commands defined as Markdown files with optional YAML frontmatter.
@@ -47,7 +47,7 @@ This file should be updated automatically when project-specific patterns, conven
   - **Variables**: Use `$ARGUMENTS` in the Markdown body to inject user input from the command.
   - **Built-ins**: Chat includes built-ins like `/plugins` and `/skills` for discovery, and `/<plugin_name>` switches the current chat agent to a plugin agent.
 
-- Plugin agent roles can be configured under `src/taskforce_extensions/plugins/<plugin>/configs/agents/`
+- Plugin agent roles can be configured under `src/taskforce/plugins/<plugin>/configs/agents/`
   and coordinated via orchestrator agents using `call_agent`.
 
 # Python Best Practices

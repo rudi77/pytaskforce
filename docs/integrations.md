@@ -252,7 +252,7 @@ Content-Type: application/json
 
 To add support for a new channel (e.g., Slack, Discord):
 
-1. **Implement `OutboundSenderProtocol`** in `taskforce_extensions/infrastructure/communication/`:
+1. **Implement `OutboundSenderProtocol`** in `taskforce/infrastructure/communication/`:
 
 ```python
 class SlackOutboundSender:

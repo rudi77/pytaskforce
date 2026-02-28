@@ -2,11 +2,11 @@
 
 import pytest
 
-from taskforce_extensions.infrastructure.communication.gateway_conversation_store import (
+from taskforce.infrastructure.communication.gateway_conversation_store import (
     FileConversationStore,
     InMemoryConversationStore,
 )
-from taskforce_extensions.infrastructure.communication.recipient_registry import (
+from taskforce.infrastructure.communication.recipient_registry import (
     FileRecipientRegistry,
     InMemoryRecipientRegistry,
 )

@@ -300,7 +300,7 @@ def refresh() -> None
 **Default Skill Directories:**
 - `~/.taskforce/skills/` - User-level skills
 - `.taskforce/skills/` - Project-level skills
-- `src/taskforce_extensions/skills/` - Extension skills
+- `src/taskforce/skills/` - Extension skills
 
 **Dependencies:**
 - `PyYAML` - YAML frontmatter parsing

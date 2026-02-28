@@ -197,7 +197,7 @@ class AgentTool:
                 return yaml_file
 
         # 3. Check plugins/*/configs/agents/{specialist}.yaml
-        # Try new location first: src/taskforce_extensions/plugins
+        # Try new location first: src/taskforce/plugins
         # Then old location: plugins/ (for backward compatibility)
         plugins_dirs: list[Path] = []
 
@@ -205,8 +205,8 @@ class AgentTool:
             if path not in plugins_dirs:
                 plugins_dirs.append(path)
 
-        # New location: if config_dir is src/taskforce_extensions/configs, plugins is sibling
-        if config_dir.name == "configs" and config_dir.parent.name == "taskforce_extensions":
+        # New location: if config_dir is src/taskforce/configs, plugins is sibling
+        if config_dir.name == "configs" and config_dir.parent.name == "taskforce":
             add_plugins_dir(config_dir.parent / "plugins")
 
         # Old location: plugins/ at project root (sibling of configs)

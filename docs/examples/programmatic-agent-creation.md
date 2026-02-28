@@ -534,7 +534,7 @@ Before running these examples, ensure you have:
 
 1. **API Key**: Set `OPENAI_API_KEY` environment variable
 2. **Dependencies**: Install with `uv sync`
-3. **Profile**: A valid profile in `src/taskforce_extensions/configs/`
+3. **Profile**: A valid profile in `src/taskforce/configs/`
 
 ```bash
 # Set API key

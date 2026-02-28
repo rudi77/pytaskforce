@@ -14,7 +14,7 @@ We introduce a **provider architecture** with:
 
 1. **Core protocol** for external communication:
    - `CommunicationProviderProtocol` for outbound messaging plus session/history access.
-2. **Infrastructure adapters** in `taskforce_extensions/infrastructure/communication/`
+2. **Infrastructure adapters** in `taskforce/infrastructure/communication/`
    for concrete providers (Telegram, Teams) and storage backends.
 3. **Application service** (`CommunicationService`) responsible for:
    - mapping provider conversation IDs to Taskforce `session_id`

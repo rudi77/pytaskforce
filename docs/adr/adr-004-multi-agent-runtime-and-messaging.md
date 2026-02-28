@@ -15,7 +15,7 @@ We introduce:
 1. **Core Protocols** for messaging and runtime tracking (`MessageBusProtocol`,
    `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol`,
    `SubAgentSpawnerProtocol`).
-2. **Infrastructure Adapters** in `taskforce_extensions/infrastructure/` for
+2. **Infrastructure Adapters** in `taskforce/infrastructure/` for
    message buses and runtime stores.
 3. **Sub-Agent Spawner** in the application layer to encapsulate session creation
    and tool-driven orchestration with isolated contexts.

@@ -54,7 +54,7 @@ class SkillService:
 
         Args:
             skill_directories: Custom skill directories to include
-            extension_directories: Extension skill directories (e.g., taskforce_extensions/skills)
+            extension_directories: Extension skill directories (e.g., taskforce/skills)
             registry: Optional pre-existing registry to share (avoids duplicate
                       file-system discovery when a :class:`SkillManager` is
                       already initialised).
