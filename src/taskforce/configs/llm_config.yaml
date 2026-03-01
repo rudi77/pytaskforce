@@ -16,9 +16,9 @@ default_model: "powerful-1"
 # Model alias mapping: short name → LiteLLM model string
 models:
   main: "azure/gpt-4.1"
-  fast: "azure/gpt-4.1"
+  fast: "azure/gpt-5-mini"
   powerful: "azure/gpt-4.1"
-  powerful-1: "azure/gpt-5.0-mini"
+  powerful-1: "azure/gpt-5-mini"
   legacy: "azure/gpt-4.1"
 
   # ── Anthropic Claude models ─────────────────────────────────────────

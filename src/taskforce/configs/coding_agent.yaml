@@ -58,8 +58,8 @@ context_policy:
 consolidation:
   enabled: true
   auto_capture: true        # Experience-Tracking bei jeder Ausführung
-  auto_consolidate: true   # true = nach jeder Session konsolidieren
-  strategy: immediate            # "batch" oder "immediate"
+  auto_consolidate: false   # true = nach jeder Session konsolidieren
+  strategy: batch            # "batch" oder "immediate"
   max_sessions: 50
   model_alias: main
   work_dir: .taskforce/experiences
