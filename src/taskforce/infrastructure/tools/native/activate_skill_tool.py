@@ -3,6 +3,10 @@
 This tool allows the LLM to activate a skill by name. If the skill has a
 workflow defined, it executes the entire workflow directly without LLM
 intervention for each step - saving tokens and ensuring deterministic execution.
+
+When a skill defines a ``script`` field (Python workflow), execution is
+delegated to the ``WorkflowOrchestrator`` which supports pause/resume for
+human-in-the-loop workflows (e.g. LangGraph with ``interrupt()``).
 """
 
 from typing import Any
@@ -14,6 +18,7 @@ from taskforce.core.domain.skill_workflow import (
     SkillWorkflowExecutor,
     WorkflowContext,
 )
+from taskforce.core.domain.workflow import WorkflowStatus
 from taskforce.infrastructure.tools.base_tool import BaseTool
 
 logger = structlog.get_logger(__name__)
@@ -74,13 +79,20 @@ class ActivateSkillTool(BaseTool):
     tool_requires_approval = False
     tool_supports_parallelism = False
 
-    def __init__(self, agent_ref: Any = None):
-        """Initialize with optional agent reference.
+    def __init__(
+        self,
+        agent_ref: Any = None,
+        workflow_orchestrator: Any = None,
+    ):
+        """Initialize with optional agent reference and orchestrator.
 
         Args:
             agent_ref: Reference to the agent instance.
+            workflow_orchestrator: Optional WorkflowOrchestrator for
+                script-based resumable workflows.
         """
         self._agent_ref = agent_ref
+        self._workflow_orchestrator = workflow_orchestrator
         self._workflow_results: list[dict[str, Any]] = []
 
     def set_agent_ref(self, agent: Any) -> None:
@@ -90,6 +102,14 @@ class ActivateSkillTool(BaseTool):
             agent: The agent instance to reference for skill activation.
         """
         self._agent_ref = agent
+
+    def set_workflow_orchestrator(self, orchestrator: Any) -> None:
+        """Set workflow orchestrator for script-based workflows.
+
+        Args:
+            orchestrator: WorkflowOrchestrator instance.
+        """
+        self._workflow_orchestrator = orchestrator
 
     async def _execute(self, **params: Any) -> dict[str, Any]:
         """Execute skill activation and workflow.
@@ -138,7 +158,11 @@ class ActivateSkillTool(BaseTool):
 
         skill = self._agent_ref.skill_manager.active_skill
 
-        # Check if skill has a workflow
+        # Priority 1: Script-based resumable workflow (Python/LangGraph)
+        if skill.has_script and self._workflow_orchestrator:
+            return await self._execute_script_workflow(skill, input_vars)
+
+        # Priority 2: YAML-defined deterministic workflow
         if skill.has_workflow:
             return await self._execute_workflow(skill, input_vars)
 
@@ -148,9 +172,70 @@ class ActivateSkillTool(BaseTool):
             "skill_name": skill.name,
             "has_workflow": False,
             "message": (
-                f"Skill '{skill.name}' aktiviert. "
-                "Folge den Skill-Anweisungen im System-Prompt."
+                f"Skill '{skill.name}' aktiviert. " "Folge den Skill-Anweisungen im System-Prompt."
             ),
+        }
+
+    async def _execute_script_workflow(
+        self,
+        skill: Any,
+        input_vars: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Execute a script-based resumable workflow via WorkflowOrchestrator.
+
+        Args:
+            skill: The activated skill with a script field.
+            input_vars: Input variables for the workflow.
+
+        Returns:
+            Result dict, potentially signalling the agent to call ask_user.
+        """
+        session_id = getattr(self._agent_ref, "_session_id", "unknown")
+        result = await self._workflow_orchestrator.start_workflow(
+            session_id=session_id,
+            skill=skill,
+            input_data=input_vars,
+            tool_executor=self._execute_tool,
+        )
+
+        if result.status == WorkflowStatus.WAITING_FOR_INPUT and result.human_input_request:
+            hir = result.human_input_request
+            ask_user_params: dict[str, Any] = {
+                "question": hir.question,
+            }
+            if hir.channel:
+                ask_user_params["channel"] = hir.channel
+            if hir.recipient_id:
+                ask_user_params["recipient_id"] = hir.recipient_id
+
+            return {
+                "success": True,
+                "skill_name": skill.name,
+                "has_workflow": True,
+                "workflow_paused": True,
+                "requires_ask_user": True,
+                "ask_user_params": ask_user_params,
+                "message": (
+                    f"Workflow pausiert - menschliche Eingabe erforderlich. "
+                    f"Bitte rufe ask_user auf mit: {ask_user_params}"
+                ),
+            }
+
+        if result.status == WorkflowStatus.COMPLETED:
+            return {
+                "success": True,
+                "skill_name": skill.name,
+                "has_workflow": True,
+                "workflow_completed": True,
+                "outputs": result.outputs,
+                "message": "Workflow erfolgreich abgeschlossen.",
+            }
+
+        return {
+            "success": False,
+            "skill_name": skill.name,
+            "has_workflow": True,
+            "error": result.error or "Workflow fehlgeschlagen.",
         }
 
     async def _execute_workflow(

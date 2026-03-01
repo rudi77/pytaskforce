@@ -34,9 +34,7 @@ _SEGMENT_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # Hierarchical pattern: one or more kebab-case segments separated by ":"
 # Examples: "pdf-processing", "agents:reviewer", "tools:python:helper"
-NAME_PATTERN = re.compile(
-    r"^[a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)*$"
-)
+NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)*$")
 ALLOWED_TOOLS_PATTERN = re.compile(r"^[^\s]+(\s+[^\s]+)*$")
 
 
@@ -179,9 +177,11 @@ class SkillMetadataModel:
     skill_type: SkillType = SkillType.CONTEXT
     slash_name: str | None = None
     # agent_config excluded from hash/compare because dict is unhashable
-    agent_config: dict[str, Any] | None = field(
-        default=None, hash=False, compare=False
-    )
+    agent_config: dict[str, Any] | None = field(default=None, hash=False, compare=False)
+    # Resumable workflow script fields (Open Skill Standard)
+    script: str | None = None
+    script_entrypoint: str | None = None
+    script_engine: str | None = None
 
     def __post_init__(self) -> None:
         """Validate metadata after initialization."""
@@ -209,7 +209,7 @@ class SkillMetadataModel:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "source_path": self.source_path,
@@ -221,6 +221,13 @@ class SkillMetadataModel:
             "slash_name": self.slash_name,
             "agent_config": self.agent_config,
         }
+        if self.script is not None:
+            result["script"] = self.script
+        if self.script_entrypoint is not None:
+            result["script_entrypoint"] = self.script_entrypoint
+        if self.script_engine is not None:
+            result["script_engine"] = self.script_engine
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillMetadataModel:
@@ -242,6 +249,9 @@ class SkillMetadataModel:
             skill_type=skill_type,
             slash_name=_normalize_optional_str(data.get("slash_name")),
             agent_config=data.get("agent_config"),
+            script=_normalize_optional_str(data.get("script")),
+            script_entrypoint=_normalize_optional_str(data.get("script_entrypoint")),
+            script_engine=_normalize_optional_str(data.get("script_engine")),
         )
 
 
@@ -285,6 +295,10 @@ class Skill:
     skill_type: SkillType = SkillType.CONTEXT
     slash_name: str | None = None
     agent_config: dict[str, Any] | None = None
+    # Resumable workflow script fields (Open Skill Standard)
+    script: str | None = None
+    script_entrypoint: str | None = None
+    script_engine: str | None = None
     _resources_cache: dict[str, str] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -325,16 +339,24 @@ class Skill:
             skill_type=self.skill_type,
             slash_name=self.slash_name,
             agent_config=self.agent_config,
+            script=self.script,
+            script_entrypoint=self.script_entrypoint,
+            script_engine=self.script_engine,
         )
 
     @property
     def has_workflow(self) -> bool:
-        """Check if skill has a deterministic workflow defined."""
+        """Check if skill has a deterministic YAML workflow defined."""
         return (
             self.workflow is not None
             and isinstance(self.workflow, dict)
             and len(self.workflow.get("steps", [])) > 0
         )
+
+    @property
+    def has_script(self) -> bool:
+        """Check if skill has a resumable Python workflow script."""
+        return self.script is not None
 
     def substitute_arguments(self, arguments: str) -> str:
         """
@@ -424,7 +446,7 @@ class Skill:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "instructions": self.instructions,
@@ -437,6 +459,13 @@ class Skill:
             "slash_name": self.slash_name,
             "agent_config": self.agent_config,
         }
+        if self.script is not None:
+            result["script"] = self.script
+        if self.script_entrypoint is not None:
+            result["script_entrypoint"] = self.script_entrypoint
+        if self.script_engine is not None:
+            result["script_engine"] = self.script_engine
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Skill:
@@ -459,6 +488,9 @@ class Skill:
             skill_type=skill_type,
             slash_name=_normalize_optional_str(data.get("slash_name")),
             agent_config=data.get("agent_config"),
+            script=_normalize_optional_str(data.get("script")),
+            script_entrypoint=_normalize_optional_str(data.get("script_entrypoint")),
+            script_engine=_normalize_optional_str(data.get("script_engine")),
         )
 
     @classmethod
@@ -485,6 +517,9 @@ class Skill:
             skill_type=metadata.skill_type,
             slash_name=metadata.slash_name,
             agent_config=metadata.agent_config,
+            script=metadata.script,
+            script_entrypoint=metadata.script_entrypoint,
+            script_engine=metadata.script_engine,
         )
 
 
@@ -580,6 +615,4 @@ class SkillContext:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
-            "active_skills": [skill.name for skill in self.active_skills.values()]
-        }
+        return {"active_skills": [skill.name for skill in self.active_skills.values()]}

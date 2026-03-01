@@ -52,6 +52,10 @@ class EventType(str, Enum):
     # Memory consolidation events
     CONSOLIDATION_STARTED = "consolidation_started"
     CONSOLIDATION_COMPLETED = "consolidation_completed"
+    # Resumable workflow events
+    WORKFLOW_STEP = "workflow_step"
+    WORKFLOW_PAUSED = "workflow_paused"
+    WORKFLOW_RESUMED = "workflow_resumed"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

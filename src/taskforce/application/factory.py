@@ -101,6 +101,7 @@ class AgentFactory:
         self._tool_builder = ToolBuilder(self)
         self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
         self._gateway: Any = None  # Optional CommunicationGateway for SendNotificationTool
+        self._workflow_orchestrator: Any = None  # Lazy WorkflowOrchestrator
 
     def set_gateway(self, gateway: Any) -> None:
         """Set the communication gateway for SendNotificationTool injection.
@@ -109,6 +110,47 @@ class AgentFactory:
             gateway: CommunicationGateway instance.
         """
         self._gateway = gateway
+
+    def get_workflow_orchestrator(
+        self, work_dir: str = ".taskforce"
+    ) -> Any:
+        """Get or create the WorkflowOrchestrator singleton.
+
+        Creates the orchestrator lazily with available workflow engines.
+        LangGraph is used if installed; otherwise no engines are available.
+
+        Args:
+            work_dir: Working directory for workflow run persistence.
+
+        Returns:
+            WorkflowOrchestrator instance.
+        """
+        if self._workflow_orchestrator is not None:
+            return self._workflow_orchestrator
+
+        from taskforce.application.workflow_orchestrator import WorkflowOrchestrator
+        from taskforce.infrastructure.workflow.run_store import FileWorkflowRunStore
+
+        engines: dict[str, Any] = {}
+        try:
+            from taskforce.infrastructure.workflow.langgraph_adapter import (
+                HAS_LANGGRAPH,
+                LangGraphAdapter,
+            )
+
+            if HAS_LANGGRAPH:
+                engines["langgraph"] = LangGraphAdapter()
+                self.logger.debug("workflow_engine_registered", engine="langgraph")
+        except ImportError:
+            pass
+
+        run_store = FileWorkflowRunStore(work_dir=work_dir)
+        self._workflow_orchestrator = WorkflowOrchestrator(
+            engines=engines,
+            run_store=run_store,
+            pending_question_store=None,  # Injected later if gateway available
+        )
+        return self._workflow_orchestrator
 
     @property
     def infra_builder(self) -> Any:
@@ -972,6 +1014,9 @@ class AgentFactory:
 
         if activate_skill_tool is not None:
             activate_skill_tool.set_agent_ref(agent)
+            work_dir = merged_config.get("persistence", {}).get("work_dir", ".taskforce")
+            orchestrator = self.get_workflow_orchestrator(work_dir=work_dir)
+            activate_skill_tool.set_workflow_orchestrator(orchestrator)
             self.logger.debug("activate_skill_tool_agent_ref_set", plugin=manifest.name)
 
         return self._apply_extensions(merged_config, agent)

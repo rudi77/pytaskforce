@@ -88,10 +88,17 @@ def parse_skill_markdown(
     allowed_tools = _parse_allowed_tools(frontmatter)
     workflow = _parse_workflow(frontmatter)
     skill_type = _parse_skill_type(frontmatter)
-    slash_name = _parse_optional_string(
-        frontmatter, "slash-name"
-    ) or _parse_optional_string(frontmatter, "slash_name")
+    slash_name = _parse_optional_string(frontmatter, "slash-name") or _parse_optional_string(
+        frontmatter, "slash_name"
+    )
     agent_config = _parse_agent_config(frontmatter)
+    script = _parse_optional_string(frontmatter, "script")
+    script_entrypoint = _parse_optional_string(frontmatter, "script_entrypoint") or (
+        _parse_optional_string(frontmatter, "script-entrypoint")
+    )
+    script_engine = _parse_optional_string(frontmatter, "script_engine") or (
+        _parse_optional_string(frontmatter, "script-engine")
+    )
     instructions = body.strip()
 
     # Create and return skill (validation happens in __post_init__)
@@ -109,6 +116,9 @@ def parse_skill_markdown(
             skill_type=skill_type,
             slash_name=slash_name,
             agent_config=agent_config,
+            script=script,
+            script_entrypoint=script_entrypoint,
+            script_engine=script_engine,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill validation failed: {e}") from e
@@ -154,10 +164,17 @@ def parse_skill_metadata(
     metadata = _parse_metadata_dict(frontmatter)
     allowed_tools = _parse_allowed_tools(frontmatter)
     skill_type = _parse_skill_type(frontmatter)
-    slash_name = _parse_optional_string(
-        frontmatter, "slash-name"
-    ) or _parse_optional_string(frontmatter, "slash_name")
+    slash_name = _parse_optional_string(frontmatter, "slash-name") or _parse_optional_string(
+        frontmatter, "slash_name"
+    )
     agent_config = _parse_agent_config(frontmatter)
+    script = _parse_optional_string(frontmatter, "script")
+    script_entrypoint = _parse_optional_string(frontmatter, "script_entrypoint") or (
+        _parse_optional_string(frontmatter, "script-entrypoint")
+    )
+    script_engine = _parse_optional_string(frontmatter, "script_engine") or (
+        _parse_optional_string(frontmatter, "script-engine")
+    )
 
     try:
         return SkillMetadataModel(
@@ -171,6 +188,9 @@ def parse_skill_metadata(
             skill_type=skill_type,
             slash_name=slash_name,
             agent_config=agent_config,
+            script=script,
+            script_entrypoint=script_entrypoint,
+            script_engine=script_engine,
         )
     except SkillValidationError as e:
         raise SkillParseError(f"Skill metadata validation failed: {e}") from e
@@ -195,9 +215,7 @@ def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     match = re.match(pattern, content, re.DOTALL)
 
     if not match:
-        raise SkillParseError(
-            "SKILL.md must start with YAML frontmatter (--- delimited)"
-        )
+        raise SkillParseError("SKILL.md must start with YAML frontmatter (--- delimited)")
 
     frontmatter_yaml = match.group(1)
     body = match.group(2)
@@ -228,9 +246,7 @@ def _parse_optional_string(
     if not cleaned:
         return None
     if max_length is not None and len(cleaned) > max_length:
-        raise SkillParseError(
-            f"Frontmatter '{field_name}' exceeds {max_length} characters"
-        )
+        raise SkillParseError(f"Frontmatter '{field_name}' exceeds {max_length} characters")
     return cleaned
 
 
@@ -324,9 +340,7 @@ def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
             raise SkillParseError(f"Workflow step {i} must be a dictionary")
 
         if "tool" not in step and "switch" not in step:
-            raise SkillParseError(
-                f"Workflow step {i} must have 'tool' or 'switch'"
-            )
+            raise SkillParseError(f"Workflow step {i} must have 'tool' or 'switch'")
 
         if "tool" in step:
             if not isinstance(step["tool"], str):

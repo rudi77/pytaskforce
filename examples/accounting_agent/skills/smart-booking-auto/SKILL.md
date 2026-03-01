@@ -8,6 +8,8 @@ description: |
   Bei fehlenden Pflichtangaben (§14 UStG) wird der Telegram-User per ask_user befragt.
   Bei Buchungsentscheidungen wird an den Buchhalter (CLI) weitergeleitet.
 allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user send_notification memory
+script: scripts/workflow.py
+script-engine: langgraph
 
 workflow:
   steps:
