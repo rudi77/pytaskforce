@@ -129,17 +129,17 @@ class TestConsolidationService:
 
 
 class TestBuildConsolidationComponents:
-    def test_disabled_returns_none(self):
-        config = {"consolidation": {"enabled": False}}
+    def test_explicitly_disabled_returns_none(self):
+        config = {"consolidation": {"enabled": False, "auto_capture": False}}
         tracker, service = build_consolidation_components(config)
         assert tracker is None
         assert service is None
 
-    def test_missing_config_returns_none(self):
+    def test_missing_config_creates_tracker_via_default_auto_capture(self):
         config = {}
         tracker, service = build_consolidation_components(config)
-        assert tracker is None
-        assert service is None
+        assert tracker is not None
+        assert service is None  # No LLM provider
 
     def test_enabled_without_llm_creates_tracker_only(self):
         config = {

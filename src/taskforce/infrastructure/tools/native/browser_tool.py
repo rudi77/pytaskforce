@@ -12,7 +12,6 @@ Requires the optional 'browser' dependency group:
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 
@@ -186,7 +185,7 @@ class BrowserTool(ToolProtocol):
                     "description": (
                         "File path where the PNG screenshot should be saved "
                         "(optional for 'screenshot'). "
-                        "The base64-encoded image is always returned regardless."
+                        "If omitted a temporary file is created automatically."
                     ),
                 },
                 "script": {
@@ -383,25 +382,37 @@ class BrowserTool(ToolProtocol):
     async def _action_screenshot(
         self, page: Any, kwargs: dict[str, Any]
     ) -> dict[str, Any]:
-        """Capture the current page as a PNG image."""
+        """Capture the current page as a PNG image.
+
+        The screenshot is always saved to disk (auto-generated path if not
+        provided).  Only the file path is returned — the raw image data is
+        never included in the tool result to avoid bloating the conversation
+        history / LLM context window.
+        """
         full_page = bool(kwargs.get("full_page", False))
         screenshot_path = kwargs.get("screenshot_path")
 
         screenshot_bytes: bytes = await page.screenshot(full_page=full_page)
-        screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
 
-        saved_path: str | None = None
         if screenshot_path:
             path = Path(screenshot_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(screenshot_bytes)
-            saved_path = str(path.absolute())
-            logger.info("browser_tool.screenshot_saved", path=saved_path)
+        else:
+            import tempfile
+
+            fd, tmp = tempfile.mkstemp(suffix=".png", prefix="browser_screenshot_")
+            import os
+
+            os.close(fd)
+            path = Path(tmp)
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(screenshot_bytes)
+        saved_path = str(path.absolute())
+        logger.info("browser_tool.screenshot_saved", path=saved_path)
 
         return {
             "success": True,
             "action": "screenshot",
-            "screenshot_base64": screenshot_b64,
             "saved_path": saved_path,
             "url": page.url,
             "size_bytes": len(screenshot_bytes),

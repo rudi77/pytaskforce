@@ -260,13 +260,14 @@ class TestExecuteActions:
 
     # --- screenshot ---
 
-    async def test_screenshot_returns_base64(
+    async def test_screenshot_saves_to_temp_file(
         self, tool: BrowserTool, mock_page: MagicMock
     ) -> None:
         result = await tool.execute(action="screenshot")
         assert result["success"] is True
-        assert "screenshot_base64" in result
-        assert result["saved_path"] is None
+        assert "screenshot_base64" not in result
+        assert result["saved_path"] is not None
+        assert Path(result["saved_path"]).exists()
         assert result["size_bytes"] > 0
 
     async def test_screenshot_saves_to_path(

@@ -76,7 +76,7 @@ async def trigger_consolidation(body: ConsolidateRequest) -> ConsolidateResponse
     from taskforce.application.profile_loader import ProfileLoader
 
     loader = ProfileLoader()
-    config = loader.load_profile(body.profile)
+    config = loader.load(body.profile)
 
     ib = InfrastructureBuilder()
     llm_provider = ib.build_llm_provider(config)
@@ -118,7 +118,7 @@ async def list_experiences(
     from taskforce.application.profile_loader import ProfileLoader
 
     loader = ProfileLoader()
-    config = loader.load_profile(profile)
+    config = loader.load(profile)
     work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
     store = InfrastructureBuilder().build_experience_store(work_dir)
@@ -147,7 +147,7 @@ async def list_consolidations(
     from taskforce.application.profile_loader import ProfileLoader
 
     loader = ProfileLoader()
-    config = loader.load_profile(profile)
+    config = loader.load(profile)
     work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
     store = InfrastructureBuilder().build_experience_store(work_dir)

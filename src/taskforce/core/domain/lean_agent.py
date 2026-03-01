@@ -18,6 +18,10 @@ from typing import Any
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.enums import EventType, ExecutionStatus
+from taskforce.core.domain.lean_agent_components.memory_context_loader import (
+    MemoryContextConfig,
+    MemoryContextLoader,
+)
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
 )
@@ -36,6 +40,7 @@ from taskforce.core.domain.planning_strategy import (
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.logging import LoggerProtocol
+from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
@@ -89,6 +94,8 @@ class Agent:
         skill_manager: Any | None = None,
         intent_router: Any | None = None,
         summary_threshold: int | None = None,
+        memory_store: MemoryStoreProtocol | None = None,
+        memory_context_config: MemoryContextConfig | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -118,6 +125,11 @@ class Agent:
                           When provided, allows skipping planning for well-defined intents.
             summary_threshold: Message count threshold for triggering compression
                               (default: 20, lower values compress more aggressively).
+            memory_store: Optional memory store for automatic memory injection.
+                         When provided, relevant memories are loaded at session
+                         start and injected into the system prompt.
+            memory_context_config: Optional configuration for memory injection
+                                  budget (max memories, char limits, kinds).
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -128,6 +140,11 @@ class Agent:
         self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
         self.intent_router = intent_router
+
+        # Memory auto-injection
+        self._memory_store = memory_store
+        self._memory_context_config = memory_context_config or MemoryContextConfig()
+        self._memory_context: str | None = None
 
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
@@ -215,29 +232,50 @@ class Agent:
         """Expose the planner instance for persistence helpers."""
         return self._planner
 
+    async def load_memory_context(self) -> None:
+        """Load long-term memories and cache them for prompt injection.
+
+        Called once at session start (from planning helpers). Results are
+        cached in ``_memory_context`` and reused on every prompt rebuild.
+        """
+        if not self._memory_store:
+            return
+        loader = MemoryContextLoader(
+            memory_store=self._memory_store,
+            config=self._memory_context_config,
+            logger=self.logger,
+        )
+        self._memory_context = await loader.load_memory_context()
+
     def _build_system_prompt(
         self,
         mission: str | None = None,
         state: dict[str, Any] | None = None,
         messages: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Build system prompt with dynamic plan, context, and skill injection."""
+        """Build system prompt with dynamic plan, context, memory, and skill injection."""
         base_prompt = self.prompt_builder.build_system_prompt(
             mission=mission,
             state=state,
             messages=messages,
         )
 
+        # Inject cached long-term memory section
+        if self._memory_context:
+            base_prompt += self._memory_context
+
         # Inject active skill instructions if skill manager is configured
         if self.skill_manager and self.skill_manager.active_skill_name:
             skill_instructions = self.skill_manager.get_active_instructions()
             if skill_instructions:
-                base_prompt = f"""{base_prompt}
-
-# ACTIVE SKILL: {self.skill_manager.active_skill_name}
-
-{skill_instructions}
-"""
+                base_prompt = (
+                    f"{base_prompt}\n\n"
+                    f"# ACTIVE SKILL: {self.skill_manager.active_skill_name}\n\n"
+                    "Follow the skill instructions below. When the skill provides "
+                    "bundled resource files, use them directly via their absolute "
+                    "paths instead of reimplementing their logic.\n\n"
+                    f"{skill_instructions}\n"
+                )
 
         return base_prompt
 
