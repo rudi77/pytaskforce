@@ -12,7 +12,7 @@ default_model: "main"
 # - powerful: strong reasoning model for complex planning and reflection
 models:
   main: "azure/gpt-4.1"
-  fast: "azure/gpt-5-mini"
+  fast: "azure/gpt-5-nano"
   powerful: "azure/gpt-4.1"
   powerful-1: "azure/gpt-5-mini"
 
@@ -23,8 +23,13 @@ model_params:
     temperature: 0.2
     max_tokens: 8192
 
-  gpt-5.0-mini:
-    temperature: 0.7
+  # GPT-5 models use reasoning_effort instead of temperature
+  gpt-5-mini:
+    reasoning_effort: "low"
+    max_tokens: 4096
+
+  gpt-5-nano:
+    reasoning_effort: "low"
     max_tokens: 4096
 
 # Fallback parameters when no model-specific config matches
