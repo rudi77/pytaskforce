@@ -12,9 +12,9 @@ default_model: "main"
 # - powerful: strong reasoning model for complex planning and reflection
 models:
   main: "azure/gpt-4.1"
-  fast: "azure/gpt-5.0-mini"
+  fast: "azure/gpt-5-mini"
   powerful: "azure/gpt-4.1"
-  powerful-1: "azure/gpt-5.0-mini"
+  powerful-1: "azure/gpt-5-mini"
 
 # Per-model default parameters
 # LiteLLM's drop_params=True ensures unsupported params are ignored per provider
@@ -57,18 +57,20 @@ routing:
   enabled: true
   default_model: main
   rules:
-    # Summarizing final responses and context compression use fast model
-    - condition: "hint:summarizing"
-      model: fast
-    # Planning and reflection use powerful model for quality
     - condition: "hint:planning"
       model: powerful
+    - condition: "hint:reasoning"
+      model: fast
     - condition: "hint:reflecting"
+      model: main
+    - condition: "hint:acting"
+      model: main
+    - condition: "hint:summarizing"
+      model: fast
+    - condition: "message_count > 20"
       model: powerful
-    # When tools are provided → standard reasoning → main model
     - condition: has_tools
       model: main
-    # When no tools are provided (pure text generation) → fast model
     - condition: no_tools
       model: fast
 

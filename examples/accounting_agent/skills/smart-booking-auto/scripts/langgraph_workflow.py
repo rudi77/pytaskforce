@@ -4,8 +4,6 @@ This PoC executes the same core steps as the declarative workflow but with an
 explicit graph so pauses/branches are represented as workflow state transitions.
 """
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypedDict
 
@@ -209,11 +207,13 @@ async def run_smart_booking_auto_workflow(
             tool_executor=tool_executor,
             tool_name="audit_log",
             params={
-                "action": "booking_created",
-                "invoice_data": state["outputs"].get("invoice_data"),
-                "booking_proposal": proposals[0],
-                "confidence": confidence.get("overall_confidence"),
-                "auto_booked": True,
+                "operation": "booking_proposed",
+                "details": {
+                    "invoice_data": state["outputs"].get("invoice_data"),
+                    "booking_proposal": proposals[0],
+                    "confidence": confidence.get("overall_confidence"),
+                    "auto_booked": True,
+                },
             },
             output_key="audit_entry",
         )
