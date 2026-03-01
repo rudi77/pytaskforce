@@ -28,7 +28,7 @@ class GitTool(ToolProtocol):
 
     @property
     def description(self) -> str:
-        return "Execute git operations (init, add, commit, push, status, clone, etc.)"
+        return "Execute git operations (init, add, commit, push, status, clone, remote, diff, log, branch, checkout, pull, fetch)"
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -45,6 +45,12 @@ class GitTool(ToolProtocol):
                         "status",
                         "clone",
                         "remote",
+                        "diff",
+                        "log",
+                        "branch",
+                        "checkout",
+                        "pull",
+                        "fetch",
                     ],
                     "description": "Git operation to perform",
                 },
@@ -54,7 +60,7 @@ class GitTool(ToolProtocol):
                 },
                 "remote": {
                     "type": "string",
-                    "description": "Remote name (for push), defaults to 'origin'",
+                    "description": "Remote name (for push/pull/fetch), defaults to 'origin'",
                 },
                 "message": {
                     "type": "string",
@@ -63,21 +69,49 @@ class GitTool(ToolProtocol):
                 "files": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Files to add (for add operation)",
+                    "description": "Files to add (add) or paths to limit diff (diff) or restore (checkout)",
                 },
                 "url": {
                     "type": "string",
                     "description": "Remote URL (for remote/clone operations)",
                 },
-                "branch": {"type": "string", "description": "Branch name"},
+                "branch": {"type": "string", "description": "Branch name (push, pull, checkout, log)"},
                 "action": {
                     "type": "string",
                     "enum": ["add", "list", "set_url"],
-                    "description": "Remote sub-action when operation=remote",
+                    "description": "Remote sub-action when operation=remote; branch sub-action: list/create/delete",
                 },
                 "name": {
                     "type": "string",
-                    "description": "Remote name for operation=remote (default: origin)",
+                    "description": "Remote name for operation=remote (default: origin); branch name for operation=branch",
+                },
+                "staged": {
+                    "type": "boolean",
+                    "description": "For diff: show staged changes (index vs HEAD) when true",
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "For diff: first ref (e.g. HEAD, commit); for log: ref to show log for",
+                },
+                "ref2": {
+                    "type": "string",
+                    "description": "For diff: second ref to compare against ref",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "For log: max number of commits to show",
+                },
+                "oneline": {
+                    "type": "boolean",
+                    "description": "For log: show one line per commit",
+                },
+                "all_branches": {
+                    "type": "boolean",
+                    "description": "For branch list: include remote-tracking branches (-a)",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "For branch delete: force delete (-D); for checkout: force",
                 },
             },
             "required": ["operation"],
@@ -192,6 +226,70 @@ class GitTool(ToolProtocol):
                     cmd = ["git", "remote", "-v"]
                 else:
                     return {"success": False, "error": f"Unknown remote action: {action}"}
+            elif operation == "diff":
+                cmd = ["git", "diff"]
+                if kwargs.get("staged"):
+                    cmd.append("--staged")
+                ref = kwargs.get("ref")
+                ref2 = kwargs.get("ref2")
+                paths = kwargs.get("files") or []
+                if ref and ref2:
+                    cmd.extend([ref, ref2])
+                elif ref:
+                    cmd.append(ref)
+                if paths:
+                    cmd.append("--")
+                    cmd.extend(paths)
+            elif operation == "log":
+                cmd = ["git", "log"]
+                if kwargs.get("oneline"):
+                    cmd.append("--oneline")
+                n = kwargs.get("limit")
+                if n is not None:
+                    cmd.extend(["-n", str(int(n))])
+                branch = kwargs.get("branch") or kwargs.get("ref")
+                if branch:
+                    cmd.append(branch)
+            elif operation == "branch":
+                branch_action = kwargs.get("action", "list")
+                branch_name = kwargs.get("name")
+                if branch_action == "list":
+                    cmd = ["git", "branch"]
+                    if kwargs.get("all_branches"):
+                        cmd.append("-a")
+                elif branch_action == "create":
+                    if not branch_name:
+                        return {"success": False, "error": "name required for branch create"}
+                    cmd = ["git", "branch", branch_name]
+                elif branch_action == "delete":
+                    if not branch_name:
+                        return {"success": False, "error": "name required for branch delete"}
+                    cmd = ["git", "branch", "-D" if kwargs.get("force") else "-d", branch_name]
+                else:
+                    return {"success": False, "error": f"Unknown branch action: {branch_action}"}
+            elif operation == "checkout":
+                branch = kwargs.get("branch")
+                files_to_restore = kwargs.get("files")
+                if branch:
+                    cmd = ["git", "checkout"]
+                    if kwargs.get("force"):
+                        cmd.append("-f")
+                    cmd.append(branch)
+                elif files_to_restore:
+                    cmd = ["git", "checkout", "--"] + files_to_restore
+                else:
+                    return {"success": False, "error": "checkout requires branch or files"}
+            elif operation == "pull":
+                remote = kwargs.get("remote", "origin")
+                branch = kwargs.get("branch")
+                cmd = ["git", "pull", remote]
+                if branch:
+                    cmd.append(branch)
+            elif operation == "fetch":
+                remote = kwargs.get("remote")
+                cmd = ["git", "fetch"]
+                if remote:
+                    cmd.append(remote)
             else:
                 return {"success": False, "error": f"Unknown operation: {operation}"}
 
@@ -256,6 +354,12 @@ class GitTool(ToolProtocol):
             "status",
             "clone",
             "remote",
+            "diff",
+            "log",
+            "branch",
+            "checkout",
+            "pull",
+            "fetch",
         ]:
             return False, f"Invalid operation: {operation}"
         return True, None

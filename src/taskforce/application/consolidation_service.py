@@ -35,16 +35,19 @@ def build_consolidation_components(
         be ``None`` if consolidation is not enabled.
     """
     consol_config = config.get("consolidation", {})
-    if not consol_config.get("enabled", False):
+    if not consol_config.get("enabled", False) and not consol_config.get(
+        "auto_capture", True
+    ):
         return None, None
 
+    from taskforce.application.tool_builder import ToolBuilder
     from taskforce.infrastructure.memory.consolidation_engine import ConsolidationEngine
     from taskforce.infrastructure.memory.experience_tracker import ExperienceTracker
     from taskforce.infrastructure.memory.file_experience_store import FileExperienceStore
     from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
     work_dir = consol_config.get("work_dir", ".taskforce/experiences")
-    memory_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
+    memory_dir = ToolBuilder.resolve_memory_store_dir(config)
 
     experience_store = FileExperienceStore(work_dir)
     memory_store = FileMemoryStore(memory_dir)

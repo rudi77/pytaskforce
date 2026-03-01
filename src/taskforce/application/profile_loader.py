@@ -60,11 +60,29 @@ class ProfileLoader:
 
     Args:
         config_dir: Root directory containing profile YAML files.
+            When ``None``, uses the standard config directory resolved
+            via ``get_base_path()``.
     """
 
-    def __init__(self, config_dir: Path) -> None:
+    def __init__(self, config_dir: Path | None = None) -> None:
+        if config_dir is None:
+            config_dir = self._resolve_default_config_dir()
         self._config_dir = config_dir
         self._logger = logger.bind(component="profile_loader")
+
+    @staticmethod
+    def _resolve_default_config_dir() -> Path:
+        """Resolve the default config directory."""
+        from taskforce.core.utils.paths import get_base_path
+
+        base_path = get_base_path()
+        new_config_dir = base_path / "src" / "taskforce" / "configs"
+        if new_config_dir.exists():
+            return new_config_dir
+        old_config_dir = base_path / "configs"
+        if old_config_dir.exists():
+            return old_config_dir
+        return new_config_dir
 
     # ------------------------------------------------------------------
     # Public API

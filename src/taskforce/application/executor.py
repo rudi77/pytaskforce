@@ -127,14 +127,12 @@ class AgentExecutor:
             from taskforce.application.consolidation_service import (
                 build_consolidation_components,
             )
-            from taskforce.application.profile_loader import ProfileLoader
 
-            loader = ProfileLoader()
-            config = loader.load_profile(profile)
+            config = self.factory.profile_loader.load(profile)
 
             consol_config = config.get("consolidation", {})
             if not consol_config.get("enabled", False) and not consol_config.get(
-                "auto_capture", False
+                "auto_capture", True
             ):
                 return
 

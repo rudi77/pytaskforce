@@ -212,11 +212,13 @@ class AgentFactory:
             planning_strategy=agent_settings["planning_strategy"].name,
         )
 
+        skill_manager = self._build_default_skill_manager()
         agent = self._instantiate_agent(
             infra=infra,
             all_tools=all_tools,
             system_prompt=system_prompt,
             settings=agent_settings,
+            skill_manager=skill_manager,
         )
 
         _set_mcp_contexts(agent, infra["mcp_contexts"])
@@ -238,13 +240,17 @@ class AgentFactory:
         base_config: dict[str, Any],
         definition: AgentDefinition,
     ) -> dict[str, Any]:
-        """Build core infrastructure components (state manager, LLM, runtime).
+        """Build core infrastructure components (state manager, LLM, runtime, memory).
 
         Returns:
             Dict with keys: state_manager, llm_provider, context_policy,
-            runtime_tracker, mcp_contexts (populated later).
+            runtime_tracker, memory_store, memory_context_config,
+            mcp_contexts (populated later).
         """
         ib = self.infra_builder
+        memory_store, memory_context_config = self._build_memory_injection(
+            base_config, work_dir_override=definition.work_dir
+        )
         return {
             "state_manager": ib.build_state_manager(
                 base_config, work_dir_override=definition.work_dir
@@ -255,8 +261,47 @@ class AgentFactory:
                 base_config, work_dir_override=definition.work_dir
             ),
             "model_alias": base_config.get("llm", {}).get("default_model", "main"),
+            "memory_store": memory_store,
+            "memory_context_config": memory_context_config,
             "mcp_contexts": [],
         }
+
+    def _build_memory_injection(
+        self,
+        config: dict[str, Any],
+        work_dir_override: str | None = None,
+    ) -> tuple[Any, Any]:
+        """Build memory store and config for auto-injection.
+
+        Returns ``(memory_store, memory_context_config)`` — both ``None``
+        when the agent has no ``memory`` tool configured.
+        """
+        from taskforce.core.domain.lean_agent_components.memory_context_loader import (
+            MemoryContextConfig,
+        )
+
+        # Only inject if the memory tool is listed in tools
+        tool_names = [
+            (t if isinstance(t, str) else t.get("name", ""))
+            for t in config.get("tools", [])
+        ]
+        if "memory" not in tool_names:
+            return None, None
+
+        store_dir = ToolBuilder.resolve_memory_store_dir(
+            config, work_dir_override=work_dir_override
+        )
+        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+
+        memory_store = FileMemoryStore(store_dir)
+
+        injection_cfg = config.get("memory", {}).get("context_injection")
+        memory_context_config = (
+            MemoryContextConfig.from_dict(injection_cfg)
+            if injection_cfg
+            else MemoryContextConfig()
+        )
+        return memory_store, memory_context_config
 
     async def _collect_tools_for_definition(
         self,
@@ -373,6 +418,8 @@ class AgentFactory:
             summary_threshold=summary_threshold,
             compression_trigger=compression_trigger,
             max_input_tokens=max_input_tokens,
+            memory_store=infra.get("memory_store"),
+            memory_context_config=infra.get("memory_context_config"),
         )
 
     async def _load_plugin_tools_for_definition(
@@ -775,11 +822,15 @@ class AgentFactory:
             "persistence": effective_persistence,
             "llm": effective_llm,
             "context_policy": context_policy or default_config.get("context_policy"),
+            "tools": tools or [],
             "mcp_servers": mcp_servers or [],
         }
 
         # Build infrastructure
         ib = self.infra_builder
+        mem_store, mem_cfg = self._build_memory_injection(
+            merged_config, work_dir_override=work_dir
+        )
         infra: dict[str, Any] = {
             "state_manager": ib.build_state_manager(
                 merged_config, work_dir_override=work_dir
@@ -789,6 +840,8 @@ class AgentFactory:
             "runtime_tracker": self._create_runtime_tracker(
                 merged_config, work_dir_override=work_dir
             ),
+            "memory_store": mem_store,
+            "memory_context_config": mem_cfg,
             "mcp_contexts": [],
         }
 
@@ -829,9 +882,11 @@ class AgentFactory:
             planning_strategy=settings["planning_strategy"].name,
         )
 
+        skill_manager = self._build_default_skill_manager()
         agent = self._instantiate_agent(
             infra=infra, all_tools=all_tools,
             system_prompt=final_system_prompt, settings=settings,
+            skill_manager=skill_manager,
         )
         _set_mcp_contexts(agent, infra["mcp_contexts"])
         return self._apply_extensions(merged_config, agent)
@@ -925,14 +980,20 @@ class AgentFactory:
             "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
             "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
         }
+        plugin_work_dir = merged_config.get("persistence", {}).get("work_dir")
+        plugin_mem_store, plugin_mem_cfg = self._build_memory_injection(
+            merged_config, work_dir_override=plugin_work_dir
+        )
         infra = {
             "state_manager": state_manager,
             "llm_provider": llm_provider,
             "context_policy": self._create_context_policy(merged_config),
             "runtime_tracker": self._create_runtime_tracker(
                 merged_config,
-                work_dir_override=merged_config.get("persistence", {}).get("work_dir"),
+                work_dir_override=plugin_work_dir,
             ),
+            "memory_store": plugin_mem_store,
+            "memory_context_config": plugin_mem_cfg,
             "mcp_contexts": [],
         }
 
@@ -1056,6 +1117,13 @@ class AgentFactory:
                 skill_manager, manifest.skill_names
             )
         return skill_manager
+
+    def _build_default_skill_manager(self) -> SkillManager | None:
+        """Build a SkillManager for profile-based agents with project/user skills."""
+        manager = SkillManager(include_global_skills=True)
+        if manager.has_skills:
+            return manager
+        return None
 
     def _configure_skill_switch_conditions(
         self, skill_manager: SkillManager, skill_names: list[str]

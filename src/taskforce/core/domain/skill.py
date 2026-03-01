@@ -544,8 +544,11 @@ class SkillContext:
         return name in self.active_skills
 
     def get_combined_instructions(self) -> str:
-        """
-        Get combined instructions from all active skills.
+        """Get combined instructions from all active skills.
+
+        Each skill section includes a header with description, source path,
+        and a listing of bundled resource files so the agent can locate and
+        use them.
 
         Returns:
             Concatenated instructions from all active skills,
@@ -556,7 +559,17 @@ class SkillContext:
 
         parts = []
         for skill in self.active_skills.values():
-            parts.append(f"## Skill: {skill.name}\n\n{skill.instructions}")
+            header = f"## Skill: {skill.name}"
+            if skill.description:
+                header += f"\n{skill.description}"
+            if skill.source_path:
+                header += f"\n\nSkill directory: {skill.source_path}"
+                resources = skill.get_resources()
+                if resources:
+                    header += "\n\nBundled resources (use these files directly via their absolute paths):"
+                    for rel_path, abs_path in sorted(resources.items()):
+                        header += f"\n  - {abs_path}"
+            parts.append(f"{header}\n\n{skill.instructions}")
 
         return "\n\n---\n\n".join(parts)
 

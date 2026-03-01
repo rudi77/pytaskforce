@@ -212,8 +212,10 @@ class SimpleChatRunner:
                 elif skill.skill_type == SkillType.AGENT:
                     await self._execute_agent_skill(skill, args)
                 else:
-                    # CONTEXT skill: activate it
+                    # CONTEXT skill: activate it in both the service and the agent
                     self.skill_service.activate_skill(skill.name)
+                    self._ensure_agent_skill_manager()
+                    self.agent.skill_manager.activate_skill(skill.name)
                     self._print_system(f"Activated context skill: {skill.name}", style="info")
             elif await self._try_switch_plugin(cmd_name):
                 return False
@@ -301,6 +303,13 @@ class SimpleChatRunner:
                 lines.append(f"- /{meta.effective_slash_name} — {meta.description}{active_marker}")
 
         self.console.print(Markdown("\n".join(lines)))
+
+    def _ensure_agent_skill_manager(self) -> None:
+        """Ensure the agent has a SkillManager for context skill injection."""
+        if self.agent.skill_manager is None:
+            from taskforce.application.skill_manager import SkillManager
+
+            self.agent.skill_manager = SkillManager(include_global_skills=True)
 
     async def _execute_prompt_skill(self, skill: Any, arguments: str) -> None:
         """Execute a PROMPT-type skill by substituting args and sending as chat."""

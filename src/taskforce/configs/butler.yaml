@@ -32,15 +32,13 @@ memory:
   auto_extract: true
   compaction_interval_hours: 24
 
-# Memory consolidation (opt-in)
-# consolidation:
-#   enabled: false
-#   auto_capture: true
-#   auto_consolidate: true
-#   strategy: batch
-#   max_sessions: 50
-#   model_alias: main
-#   work_dir: .taskforce/experiences
+# Memory consolidation (auto_capture defaults to true for all profiles)
+# Butler uses auto_consolidate to learn from interactions automatically
+consolidation:
+  auto_consolidate: true
+  strategy: batch
+  max_sessions: 50
+  model_alias: main
 
 logging:
   level: INFO

@@ -55,6 +55,16 @@ context_policy:
   allow_selectors:                   # Selector types to use (MVP: first_chars)
     - first_chars
 
+consolidation:
+  enabled: true
+  auto_capture: true        # Experience-Tracking bei jeder Ausführung
+  auto_consolidate: true   # true = nach jeder Session konsolidieren
+  strategy: immediate            # "batch" oder "immediate"
+  max_sessions: 50
+  model_alias: main
+  work_dir: .taskforce/experiences
+
+
 # Tool configuration for coding agent
 # These tools override the specialist defaults when defined
 # Claude Code style tools for software development
@@ -82,6 +92,9 @@ tools:
   # Version control
   - git            # Git operations
   - memory         # Unified memory tool
+
+  # Browser automation
+  - browser        # Headless browser via Playwright
 
   # Sub-agent tools (explicitly defined)
   - type: sub_agent

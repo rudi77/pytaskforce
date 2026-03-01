@@ -42,7 +42,7 @@ def consolidate(
         from taskforce.application.profile_loader import ProfileLoader
 
         loader = ProfileLoader()
-        config = loader.load_profile(profile)
+        config = loader.load(profile)
         ib = InfrastructureBuilder()
 
         if dry_run:
@@ -108,7 +108,7 @@ def experiences(
         from taskforce.application.profile_loader import ProfileLoader
 
         loader = ProfileLoader()
-        config = loader.load_profile(profile)
+        config = loader.load(profile)
         work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
 
         store = InfrastructureBuilder().build_experience_store(work_dir)
@@ -155,7 +155,7 @@ def stats(
         from taskforce.application.profile_loader import ProfileLoader
 
         loader = ProfileLoader()
-        config = loader.load_profile(profile)
+        config = loader.load(profile)
         work_dir = config.get("consolidation", {}).get("work_dir", ".taskforce/experiences")
         memory_dir = config.get("persistence", {}).get("work_dir", ".taskforce")
 
