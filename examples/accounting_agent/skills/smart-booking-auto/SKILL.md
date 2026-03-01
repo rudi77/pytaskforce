@@ -10,94 +10,10 @@ description: |
 allowed_tools: docling_extract invoice_extract check_compliance semantic_rule_engine confidence_evaluator rule_learning audit_log hitl_review ask_user send_notification memory
 
 workflow:
-  steps:
-    # Step 1: PDF zu Markdown extrahieren
-    # WICHTIG: abort_on_error statt optional!
-    # Wenn die Extraktion fehlschlägt, darf der Workflow NICHT mit leeren
-    # Daten weiterlaufen (führt sonst zu falschen Compliance-Fehlern).
-    - tool: docling_extract
-      params:
-        file_path: "${input.file_path}"
-      output: markdown_content
-      abort_on_error: true
+  engine: langgraph
+  callable_path: "scripts/langgraph_workflow.py:run_smart_booking_auto_workflow"
+  description: "LangGraph-basierter Smart-Booking-Auto-Workflow mit Branching zu HITL/Compliance-Rückfrage"
 
-    # Step 2: Strukturierte Rechnungsdaten extrahieren
-    - tool: invoice_extract
-      params:
-        markdown_content: "${markdown_content}"
-        expected_currency: "EUR"
-      output: invoice_data
-      abort_on_error: true
-
-    # Step 3: Compliance prüfen (§14 UStG)
-    - tool: check_compliance
-      params:
-        invoice_data: "${invoice_data}"
-      output: compliance_result
-      # Bei Compliance-Fehlern: ask_user um fehlende Pflichtangaben zu erfragen
-      # (siehe "Compliance-Validierung" Abschnitt unten)
-      on_error: ask_user_for_missing_fields
-
-    # Step 4: Kontierungsregeln anwenden
-    - tool: semantic_rule_engine
-      params:
-        invoice_data: "${invoice_data}"
-        chart_of_accounts: "SKR03"
-      output: rule_result
-
-    # Step 4b: KRITISCH - Prüfe ob Buchungsvorschläge vorhanden sind
-    # WENN rules_applied = 0 → SOFORT zu HITL (Buchhalter) wechseln!
-    - switch:
-        "on": rule_result.rules_applied
-        cases:
-          "0":
-            skill: smart-booking-hitl
-            reason: "Keine passende Buchungsregel gefunden - Buchhalter muss entscheiden"
-
-    # Step 5: Confidence bewerten (NUR wenn booking_proposals vorhanden!)
-    - tool: confidence_evaluator
-      params:
-        invoice_data: "${invoice_data}"
-        rule_match: "${rule_result.rule_matches[0]}"
-        booking_proposal: "${rule_result.booking_proposals[0]}"
-      output: confidence_result
-
-    # Step 6: Entscheidung - Auto oder HITL?
-    # Bei hitl_review → Weiterleitung an Buchhalter (CLI), NICHT ask_user!
-    - switch:
-        "on": confidence_result.recommendation
-        cases:
-          hitl_review:
-            # Weiterleitung an Buchhalter:
-            # 1. hitl_review(action="create") aufrufen
-            # 2. send_notification an Telegram-User (informieren, nicht fragen!)
-            # 3. Buchhalter bearbeitet über CLI
-            skill: smart-booking-hitl
-          auto_book:
-            continue: true
-
-    # Step 7: Bei Auto-Booking - Regel lernen
-    - tool: rule_learning
-      params:
-        action: "create_from_booking"
-        invoice_data: "${invoice_data}"
-        booking_proposal: "${rule_result.booking_proposals[0]}"
-        confidence: "${confidence_result.overall_confidence}"
-      output: learned_rule
-      optional: true
-
-    # Step 8: Audit-Log erstellen
-    - tool: audit_log
-      params:
-        action: "booking_created"
-        invoice_data: "${invoice_data}"
-        booking_proposal: "${rule_result.booking_proposals[0]}"
-        confidence: "${confidence_result.overall_confidence}"
-        auto_booked: true
-      output: audit_entry
-
-  on_complete: "Buchung erfolgreich erstellt"
-  on_error: "Buchung konnte nicht abgeschlossen werden"
 ---
 
 # Smart Booking - Automatischer Workflow

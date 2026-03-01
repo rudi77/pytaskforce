@@ -101,6 +101,17 @@ conversations (e.g., Telegram or MS Teams) to Taskforce session IDs. The
 conversation store persists chat history per provider conversation so repeated
 messages resume the correct session context without losing history.
 
+## ⏸️ Resumable Human-in-the-Loop Workflows (2026-03)
+
+Long-running automations can pause on external dependencies without keeping an
+LLM loop active. A generic wait/resume checkpoint protocol persists
+`WorkflowState` (`run_id`, `node_id`, `blocking_reason`, `required_inputs`) and
+continues only when a typed resume event arrives. The pattern is engine-agnostic
+(LangGraph/Temporal/custom) and domain-agnostic (accounting, procurement,
+onboarding, compliance, support) while minimizing token replay. Taskforce
+provides workflow checkpoint APIs under `/api/v1/workflows/*` for wait/resume
+operations, including resume-and-continue execution for engine-backed skills.
+
 ## 📊 Architecture Diagrams
 
 For visual representations of the architecture, see **[Architecture Diagrams](architecture/architecture-diagrams.md)** which includes:
@@ -141,6 +152,13 @@ The Skills System provides modular, domain-specific capabilities that extend age
         skills/       (project-level)         skills/
      (user-level)                          (built-in)
 ```
+
+### Workflow Execution Modes
+
+Skills can execute deterministic workflows either as inline `workflow.steps`
+(orchestrated by the built-in executor) or via engine-backed callables using
+`workflow.engine` + `workflow.callable_path` (e.g., LangGraph), while still
+using Taskforce tools and returning normalized workflow results.
 
 ### Progressive Loading Pattern
 

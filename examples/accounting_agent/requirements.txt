@@ -9,6 +9,9 @@
 # Document extraction - converts PDF/images to Markdown
 docling>=2.0.0
 
+# Workflow engine for smart-booking-auto PoC
+langgraph>=0.2.0
+
 # YAML parsing for rule engine
 pyyaml>=6.0
 

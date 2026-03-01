@@ -75,6 +75,27 @@ If the agent needs missing information, it emits an SSE event with `event_type: 
 
 To resume, call the same endpoint again with the same `session_id` and include the user's answer in `mission` (or in `conversation_history`).
 
+### Workflow Resume (Human-in-the-Loop)
+- `POST /api/v1/workflows/wait`: Persist a waiting checkpoint (`run_id`, `node_id`, `blocking_reason`, `required_inputs`).
+- `GET /api/v1/workflows/{run_id}`: Fetch checkpoint state.
+- `POST /api/v1/workflows/{run_id}/resume`: Submit resume payload and transition checkpoint to `resumed`.
+- `POST /api/v1/workflows/{run_id}/resume-and-continue`: Resume and continue execution via `activate_skill` in one call.
+
+Example resume request:
+
+```json
+{
+  "input_type": "supplier_reply",
+  "payload": {
+    "supplier_reply": "USt-ID DE123456789"
+  },
+  "sender_metadata": {
+    "channel": "telegram",
+    "sender_id": "123456"
+  }
+}
+```
+
 ### Agents
 - `GET /api/v1/agents`: List all available agents (custom, profile, and plugin agents).
 - `GET /api/v1/agents/{agent_id}`: Get a specific agent definition.

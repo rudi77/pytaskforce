@@ -119,3 +119,15 @@ def get_gateway():
 def get_inbound_adapters() -> dict[str, Any]:
     """Provide inbound adapters from gateway components."""
     return get_gateway_components().inbound_adapters
+
+
+@lru_cache(maxsize=1)
+def get_workflow_runtime_service():
+    """Provide a shared WorkflowRuntimeService instance."""
+    from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
+    from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
+        FileWorkflowCheckpointStore,
+    )
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
