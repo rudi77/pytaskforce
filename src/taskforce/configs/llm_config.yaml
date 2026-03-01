@@ -16,9 +16,9 @@ default_model: "powerful-1"
 # Model alias mapping: short name → LiteLLM model string
 models:
   main: "azure/gpt-4.1"
-  fast: "azure/gpt-4.1"
+  fast: "azure/gpt-5-mini"
   powerful: "azure/gpt-4.1"
-  powerful-1: "azure/gpt-5.0-mini"
+  powerful-1: "azure/gpt-5-mini"
   legacy: "azure/gpt-4.1"
 
   # ── Anthropic Claude models ─────────────────────────────────────────
@@ -132,26 +132,26 @@ tracing:
 #   reflecting  — SPAR reflect phase / self-critique
 #   summarizing — final answer synthesis
 #
-# routing:
-#   enabled: true
-#   default_model: main          # fallback when no rule matches
-#   rules:
-#     - condition: "hint:planning"
-#       model: powerful
-#     - condition: "hint:reasoning"
-#       model: powerful
-#     - condition: "hint:reflecting"
-#       model: powerful
-#     - condition: "hint:acting"
-#       model: main
-#     - condition: "hint:summarizing"
-#       model: fast
-#     - condition: "message_count > 20"
-#       model: powerful
-#     - condition: has_tools
-#       model: main
-#     - condition: no_tools
-#       model: fast
+routing:
+  enabled: true
+  default_model: main          # fallback when no rule matches
+  rules:
+    - condition: "hint:planning"
+      model: powerful
+    - condition: "hint:reasoning"
+      model: fast
+    - condition: "hint:reflecting"
+      model: main
+    - condition: "hint:acting"
+      model: main
+    - condition: "hint:summarizing"
+      model: fast
+    - condition: "message_count > 20"
+      model: powerful
+    - condition: has_tools
+      model: main
+    - condition: no_tools
+      model: fast
 
 # ============================================================================
 # Environment Variable Quick Reference
