@@ -39,7 +39,7 @@ from taskforce.core.domain.errors import (
     ValidationError,
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
-from taskforce.core.domain.models import ExecutionResult, StreamEvent
+from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
 
 logger = structlog.get_logger()
 
@@ -205,6 +205,7 @@ class AgentExecutor:
         """
         # Delegate to streaming implementation and collect result
         result: ExecutionResult | None = None
+        accumulated_usage = TokenUsage()
         async for update in self.execute_mission_streaming(
             mission=mission,
             profile=profile,
@@ -221,6 +222,17 @@ class AgentExecutor:
             if progress_callback:
                 progress_callback(update)
 
+            # Accumulate token usage from TOKEN_USAGE events
+            evt = update.event_type
+            is_token_usage = (
+                evt == EventType.TOKEN_USAGE or evt == EventType.TOKEN_USAGE.value
+            )
+            if is_token_usage:
+                usage = update.details
+                accumulated_usage.prompt_tokens += usage.get("prompt_tokens", 0)
+                accumulated_usage.completion_tokens += usage.get("completion_tokens", 0)
+                accumulated_usage.total_tokens += usage.get("total_tokens", 0)
+
             # Extract result from complete event
             result = self._extract_result_from_update(update) or result
 
@@ -229,6 +241,10 @@ class AgentExecutor:
                 "No completion event received from streaming execution",
                 session_id=session_id,
             )
+
+        # Attach accumulated token usage to result
+        if accumulated_usage.total_tokens > 0:
+            result.token_usage = accumulated_usage
 
         return result
 
@@ -1132,7 +1148,7 @@ class AgentExecutor:
         """Yield ProgressUpdate events from a completed execution result.
 
         Converts execution_history entries into streaming-compatible
-        progress updates, followed by a final COMPLETE event.
+        progress updates, followed by token usage and a final COMPLETE event.
 
         Args:
             result: The completed execution result.
@@ -1144,6 +1160,17 @@ class AgentExecutor:
             update = self._history_entry_to_update(event)
             if update is not None:
                 yield update
+
+        # Emit token usage from the completed result
+        usage = result.token_usage
+        usage_dict = usage.to_dict() if hasattr(usage, "to_dict") else usage
+        if usage_dict and usage_dict.get("total_tokens", 0) > 0:
+            yield ProgressUpdate(
+                timestamp=datetime.now(),
+                event_type=EventType.TOKEN_USAGE,
+                message=f"Tokens: {usage_dict.get('total_tokens', 0)}",
+                details=usage_dict,
+            )
 
         yield self._build_completion_update(result)
 

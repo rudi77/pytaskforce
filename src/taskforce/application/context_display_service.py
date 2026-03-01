@@ -110,17 +110,41 @@ class ContextDisplayService:
 
     def _build_skill_items(self, agent: Any, include_content: bool) -> list[ContextItem]:
         manager = getattr(agent, "skill_manager", None)
-        if not manager or not getattr(manager, "active_skill_name", None):
+        if not manager:
             return []
 
-        instructions = str(manager.get_active_instructions() or "")
-        return [
-            ContextItem(
-                title=f"Active skill: {manager.active_skill_name}",
-                tokens=self._estimate_tokens(instructions),
-                content=instructions if include_content else None,
+        items: list[ContextItem] = []
+
+        # Show active skill with its instructions (these are sent to the LLM)
+        active_name = getattr(manager, "active_skill_name", None)
+        if active_name:
+            instructions = str(manager.get_active_instructions() or "")
+            items.append(
+                ContextItem(
+                    title=f"Active skill: {active_name}",
+                    tokens=self._estimate_tokens(instructions),
+                    content=instructions if include_content else None,
+                )
             )
-        ]
+
+        # Show all available (loaded) skills
+        available = manager.list_skills() if hasattr(manager, "list_skills") else []
+        for name in available:
+            if name == active_name:
+                continue  # Already shown above
+            skill = manager.get_skill(name) if hasattr(manager, "get_skill") else None
+            desc = ""
+            if skill:
+                desc = getattr(skill, "description", "") or ""
+            items.append(
+                ContextItem(
+                    title=f"Loaded: {name}",
+                    tokens=0,  # Not injected into context until activated
+                    content=desc if include_content else None,
+                )
+            )
+
+        return items
 
     def _build_tool_items(self, agent: Any, include_content: bool) -> list[ContextItem]:
         openai_tools = list(getattr(agent, "_openai_tools", []) or [])

@@ -390,10 +390,13 @@ async def _stream_final_response(
                     data={"content": chunk["content"]},
                 )
                 final += chunk["content"]
-            elif chunk.get("type") == "usage":
+            elif (
+                chunk.get("type") == LLMStreamEventType.DONE.value
+                and chunk.get("usage")
+            ):
                 yield StreamEvent(
                     event_type=EventType.TOKEN_USAGE,
-                    data=chunk.get("usage", {}),
+                    data=chunk["usage"],
                 )
     else:
         r = await agent.llm_provider.complete(
@@ -404,6 +407,11 @@ async def _stream_final_response(
             temperature=0.2,
         )
         final = r.get("content", "") if r.get("success") else ""
+        if r.get("usage"):
+            yield StreamEvent(
+                event_type=EventType.TOKEN_USAGE,
+                data=r["usage"],
+            )
 
     if final:
         yield StreamEvent(

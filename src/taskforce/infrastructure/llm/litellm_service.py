@@ -535,20 +535,28 @@ class LiteLLMService:
 
     def _build_stream_done_event(
         self,
-        response: Any,
         resolved_model: str,
         messages: list[dict[str, Any]],
         content_accumulated: str,
         current_tool_calls: dict[int, dict[str, Any]],
         start_time: float,
+        usage: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the final ``done`` event and fire tracing task.
+
+        Args:
+            resolved_model: Resolved model string for logging.
+            messages: Original messages for tracing.
+            content_accumulated: Accumulated content from stream.
+            current_tool_calls: Accumulated tool calls from stream.
+            start_time: Request start time for latency calculation.
+            usage: Token usage captured from the stream.
 
         Returns:
             The ``done`` event dict with ``usage``.
         """
         latency_ms = int((time.time() - start_time) * 1000)
-        usage = LLMResponseParser.extract_usage(response) if hasattr(response, "usage") else {}
+        usage = usage or {}
 
         self.logger.info(
             "llm_stream_completed",
@@ -629,7 +637,17 @@ class LiteLLMService:
             content_accumulated = ""
             start_time = time.time()
 
+            stream_usage: dict[str, Any] = {}
+
             async for chunk in response:
+                # Capture usage from any chunk that carries it.
+                # Some providers send usage on the last content chunk
+                # (with choices), others send a final chunk with empty
+                # choices — we handle both.
+                chunk_usage = LLMResponseParser.extract_usage(chunk)
+                if chunk_usage:
+                    stream_usage = chunk_usage
+
                 if not chunk.choices:
                     continue
 
@@ -659,12 +677,12 @@ class LiteLLMService:
                         }
 
             yield self._build_stream_done_event(
-                response,
                 resolved_model,
                 messages,
                 content_accumulated,
                 current_tool_calls,
                 start_time,
+                stream_usage,
             )
 
         except Exception as e:

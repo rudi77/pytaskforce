@@ -372,7 +372,7 @@ consolidation:
   enabled: true
   auto_capture: true
   auto_consolidate: false  # Disable immediate block, use batch or CLI
-  strategy: batch
+  strategy: immediate
   max_sessions: 50
   model_alias: main
   work_dir: .taskforce_accounting/experiences
