@@ -302,18 +302,28 @@ def _parse_agent_config(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
-    """
-    Parse workflow definition from frontmatter.
-
-    The workflow defines a deterministic sequence of tool calls that
-    can be executed without LLM intervention.
-    """
+    """Parse workflow definition from frontmatter."""
     if "workflow" not in frontmatter:
         return None
 
     workflow = frontmatter["workflow"]
     if not isinstance(workflow, dict):
         raise SkillParseError("Frontmatter 'workflow' must be a dictionary")
+
+    has_engine_callable = bool(workflow.get("engine") and workflow.get("callable_path"))
+    has_steps = "steps" in workflow
+
+    if has_engine_callable:
+        if not isinstance(workflow["engine"], str):
+            raise SkillParseError("Workflow 'engine' must be a string")
+        if not isinstance(workflow["callable_path"], str):
+            raise SkillParseError("Workflow 'callable_path' must be a string")
+        return workflow
+
+    if not has_steps:
+        raise SkillParseError(
+            "Workflow must define either 'steps' or ('engine' + 'callable_path')"
+        )
 
     steps = workflow.get("steps", [])
     if not isinstance(steps, list):
@@ -324,13 +334,10 @@ def _parse_workflow(frontmatter: dict[str, Any]) -> dict[str, Any] | None:
             raise SkillParseError(f"Workflow step {i} must be a dictionary")
 
         if "tool" not in step and "switch" not in step:
-            raise SkillParseError(
-                f"Workflow step {i} must have 'tool' or 'switch'"
-            )
+            raise SkillParseError(f"Workflow step {i} must have 'tool' or 'switch'")
 
-        if "tool" in step:
-            if not isinstance(step["tool"], str):
-                raise SkillParseError(f"Workflow step {i} 'tool' must be a string")
+        if "tool" in step and not isinstance(step["tool"], str):
+            raise SkillParseError(f"Workflow step {i} 'tool' must be a string")
 
     return workflow
 

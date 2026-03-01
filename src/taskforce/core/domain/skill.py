@@ -330,11 +330,13 @@ class Skill:
     @property
     def has_workflow(self) -> bool:
         """Check if skill has a deterministic workflow defined."""
-        return (
-            self.workflow is not None
-            and isinstance(self.workflow, dict)
-            and len(self.workflow.get("steps", [])) > 0
+        if self.workflow is None or not isinstance(self.workflow, dict):
+            return False
+        has_legacy_steps = len(self.workflow.get("steps", [])) > 0
+        has_external_engine = bool(
+            self.workflow.get("engine") and self.workflow.get("callable_path")
         )
+        return has_legacy_steps or has_external_engine
 
     def substitute_arguments(self, arguments: str) -> str:
         """

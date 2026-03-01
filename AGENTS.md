@@ -30,6 +30,8 @@ This file should be updated automatically when project-specific patterns, conven
 - Multi-agent runtime tracking (heartbeats + checkpoints) uses adapters under `src/taskforce/infrastructure/runtime/` and is wired via `AgentRuntimeTracker`.
 - Message bus adapters live under `src/taskforce/infrastructure/messaging/` and implement `MessageBusProtocol` for agent-to-agent coordination.
 - External communication integrations use `CommunicationService` with provider adapters under `src/taskforce/infrastructure/communication/` (see `providers.py` + `registry.py`); API routes live at `/api/v1/integrations/{provider}/messages` and persist chat history in `.taskforce/conversations/`.
+- Resumable human-in-the-loop workflows should use a generic checkpoint protocol (`run_id`, `node_id`, `blocking_reason`, `required_inputs`) with a wait gate + typed resume events, so flows can pause for external input and continue deterministically across domains.
+- Resumable workflow APIs are available at `/api/v1/workflows/wait`, `/api/v1/workflows/{run_id}`, `/api/v1/workflows/{run_id}/resume`, and `/api/v1/workflows/{run_id}/resume-and-continue` with file-backed checkpoints under `.taskforce/workflows/checkpoints/`.
 - Sub-agent spawning is centralized in `src/taskforce/application/sub_agent_spawner.py` to standardize isolated session creation.
 - Epic orchestration pipeline lives in `src/taskforce/application/epic_orchestrator.py` with planner/worker/judge profiles under `src/taskforce/configs/`.
 - Epic orchestration supports iterative rounds via judge decisions and the `--rounds` CLI option.
@@ -50,6 +52,8 @@ This file should be updated automatically when project-specific patterns, conven
 - Plugin agent roles can be configured under `src/taskforce/plugins/<plugin>/configs/agents/`
   and coordinated via orchestrator agents using `call_agent`.
 
+- Skill workflows now support engine-backed execution via `workflow.engine` + `workflow.callable_path` (e.g., LangGraph), in addition to inline `workflow.steps`.
+- Engine-backed skill workflow `callable_path` values are restricted to files inside the skill directory (no path traversal).
 - CLI simple chat now supports `/context` and `/context full` to display the current assembled LLM context (system prompt, history, active skill instructions, and tool schemas) with heuristic token counts.
 
 # Python Best Practices

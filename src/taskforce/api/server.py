@@ -17,6 +17,7 @@ from taskforce.api.routes import (
     memory,
     sessions,
     tools,
+    workflows,
 )
 from taskforce.application.plugin_discovery import (
     get_plugin_registry,
@@ -141,6 +142,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(gateway.router, prefix="/api/v1", tags=["gateway"])
     app.include_router(health.router, tags=["health"])
     app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
+    app.include_router(workflows.router, prefix="/api/v1", tags=["workflows"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation
