@@ -1,6 +1,6 @@
 """Tests for resumable workflow domain models."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from taskforce.core.domain.workflow import (
     HumanInputRequest,
@@ -120,7 +120,7 @@ class TestWorkflowRunRecord:
     """Tests for WorkflowRunRecord persistence model."""
 
     def test_to_dict_roundtrip(self) -> None:
-        now = datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
         record = WorkflowRunRecord(
             run_id="run-001",
             session_id="session-001",

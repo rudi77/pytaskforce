@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -281,6 +282,74 @@ class TestCheckTimeouts:
     async def test_no_timeouts(self) -> None:
         store = _make_store()
         store.list_waiting = AsyncMock(return_value=[])
+        orchestrator = WorkflowOrchestrator(engines={}, run_store=store)
+        timed_out = await orchestrator.check_timeouts()
+        assert timed_out == []
+
+    @pytest.mark.asyncio
+    async def test_timed_out_record(self) -> None:
+        from datetime import datetime
+
+        store = _make_store()
+        old_time = datetime(2020, 1, 1, tzinfo=UTC)
+        record = WorkflowRunRecord(
+            run_id="run-1",
+            session_id="s-1",
+            workflow_name="test",
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            engine="test_engine",
+            input_data={},
+            checkpoint={},
+            human_input_request=HumanInputRequest(
+                question="Missing data?",
+                timeout_seconds=60,
+            ),
+            updated_at=old_time,
+        )
+        store.list_waiting = AsyncMock(return_value=[record])
+        orchestrator = WorkflowOrchestrator(engines={}, run_store=store)
+        timed_out = await orchestrator.check_timeouts()
+        assert len(timed_out) == 1
+        assert timed_out[0].run_id == "run-1"
+
+    @pytest.mark.asyncio
+    async def test_not_yet_timed_out(self) -> None:
+        from taskforce.core.utils.time import utc_now
+
+        store = _make_store()
+        record = WorkflowRunRecord(
+            run_id="run-1",
+            session_id="s-1",
+            workflow_name="test",
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            engine="test_engine",
+            input_data={},
+            checkpoint={},
+            human_input_request=HumanInputRequest(
+                question="Missing data?",
+                timeout_seconds=99999,
+            ),
+            updated_at=utc_now(),
+        )
+        store.list_waiting = AsyncMock(return_value=[record])
+        orchestrator = WorkflowOrchestrator(engines={}, run_store=store)
+        timed_out = await orchestrator.check_timeouts()
+        assert timed_out == []
+
+    @pytest.mark.asyncio
+    async def test_no_timeout_seconds_excluded(self) -> None:
+        store = _make_store()
+        record = WorkflowRunRecord(
+            run_id="run-1",
+            session_id="s-1",
+            workflow_name="test",
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            engine="test_engine",
+            input_data={},
+            checkpoint={},
+            human_input_request=HumanInputRequest(question="No timeout set"),
+        )
+        store.list_waiting = AsyncMock(return_value=[record])
         orchestrator = WorkflowOrchestrator(engines={}, run_store=store)
         timed_out = await orchestrator.check_timeouts()
         assert timed_out == []

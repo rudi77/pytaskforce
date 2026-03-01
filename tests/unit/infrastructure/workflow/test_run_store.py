@@ -1,5 +1,7 @@
 """Tests for FileWorkflowRunStore."""
 
+from typing import Any
+
 import pytest
 
 from taskforce.core.domain.workflow import (
@@ -32,7 +34,7 @@ def _make_record(
 
 
 @pytest.mark.asyncio
-async def test_save_and_load(tmp_path: str) -> None:
+async def test_save_and_load(tmp_path: Any) -> None:
     store = FileWorkflowRunStore(work_dir=tmp_path)
     record = _make_record()
 
@@ -49,14 +51,14 @@ async def test_save_and_load(tmp_path: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_load_nonexistent(tmp_path: str) -> None:
+async def test_load_nonexistent(tmp_path: Any) -> None:
     store = FileWorkflowRunStore(work_dir=tmp_path)
     result = await store.load("nonexistent")
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_delete(tmp_path: str) -> None:
+async def test_delete(tmp_path: Any) -> None:
     store = FileWorkflowRunStore(work_dir=tmp_path)
     record = _make_record()
 
@@ -68,7 +70,7 @@ async def test_delete(tmp_path: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_waiting(tmp_path: str) -> None:
+async def test_list_waiting(tmp_path: Any) -> None:
     store = FileWorkflowRunStore(work_dir=tmp_path)
 
     await store.save(_make_record("run-1", "s-1", WorkflowStatus.WAITING_FOR_INPUT))
@@ -81,7 +83,7 @@ async def test_list_waiting(tmp_path: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_load_by_session(tmp_path: str) -> None:
+async def test_load_by_session(tmp_path: Any) -> None:
     store = FileWorkflowRunStore(work_dir=tmp_path)
 
     await store.save(_make_record("run-1", "s-1", WorkflowStatus.WAITING_FOR_INPUT))

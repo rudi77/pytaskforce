@@ -23,7 +23,6 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-
 # ---------------------------------------------------------------------------
 # State schema
 # ---------------------------------------------------------------------------
@@ -43,30 +42,60 @@ class BookingState(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
-# Node functions
+# Tool access helper
 # ---------------------------------------------------------------------------
 
 
-def extract(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def _get_tool_executor(config: dict[str, Any]) -> Any:
+    """Extract the Taskforce tool executor from the LangGraph config.
+
+    The LangGraphAdapter stores the executor on the graph object as
+    ``_taskforce_tool_executor``. It is also passed in the configurable
+    dict for convenience.
+
+    Returns a callable ``(tool_name, params) -> result`` or a no-op fallback.
+    """
+    # Try configurable first (preferred injection path)
+    configurable = config.get("configurable", {})
+    executor = configurable.get("tool_executor")
+    if executor is not None:
+        return executor
+
+    # Fallback: no-op that logs the gap
+    def _noop(name: str, params: dict[str, Any]) -> dict[str, Any]:
+        return {"success": False, "error": f"No tool executor for {name}"}
+
+    return _noop
+
+
+# ---------------------------------------------------------------------------
+# Node functions
+#
+# Each node receives (state, config) from LangGraph.  The ``config``
+# dict carries the Taskforce tool executor injected by the adapter.
+# ---------------------------------------------------------------------------
+
+
+def extract(state: BookingState, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Extract markdown from PDF and parse structured invoice data."""
-    _tools = _get_tools(tools, state)
-    md = _tools("docling_extract", {"file_path": state["file_path"]})
-    invoice = _tools(
+    tools = _get_tool_executor(config or {})
+    md = tools("docling_extract", {"file_path": state["file_path"]})
+    invoice = tools(
         "invoice_extract",
         {"markdown_content": md, "expected_currency": "EUR"},
     )
     return {"markdown_content": md, "invoice_data": invoice}
 
 
-def check_compliance(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def check_compliance(state: BookingState, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Check invoice compliance (§14 UStG).
 
     If critical errors are found, interrupts the workflow to ask the
     supplier (via Telegram) for missing mandatory fields. After resume,
     the supplier's response is merged into the invoice data.
     """
-    _tools = _get_tools(tools, state)
-    result = _tools("check_compliance", {"invoice_data": state["invoice_data"]})
+    tools = _get_tool_executor(config or {})
+    result = tools("check_compliance", {"invoice_data": state["invoice_data"]})
 
     violations = result.get("violations", [])
     errors = [v for v in violations if v.get("severity") == "error"]
@@ -97,23 +126,25 @@ def check_compliance(state: BookingState, *, tools: Any = None) -> dict[str, Any
     return {"compliance_result": result}
 
 
-def apply_rules(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def apply_rules(state: BookingState, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Apply semantic rule engine for account assignment."""
-    _tools = _get_tools(tools, state)
-    result = _tools(
+    tools = _get_tool_executor(config or {})
+    result = tools(
         "semantic_rule_engine",
         {"invoice_data": state["invoice_data"], "chart_of_accounts": "SKR03"},
     )
     return {"rule_result": result}
 
 
-def evaluate_confidence(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def evaluate_confidence(
+    state: BookingState, config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Evaluate booking confidence based on rule match quality."""
-    _tools = _get_tools(tools, state)
+    tools = _get_tool_executor(config or {})
     rule_result = state.get("rule_result", {})
     rule_matches = rule_result.get("rule_matches", [])
     booking_proposals = rule_result.get("booking_proposals", [])
-    result = _tools(
+    result = tools(
         "confidence_evaluator",
         {
             "invoice_data": state["invoice_data"],
@@ -124,13 +155,13 @@ def evaluate_confidence(state: BookingState, *, tools: Any = None) -> dict[str, 
     return {"confidence_result": result}
 
 
-def hitl_review(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def hitl_review(state: BookingState, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Human-in-the-loop review by the accountant.
 
     Interrupts the workflow to ask the accountant (via CLI / current session)
     for their booking decision.
     """
-    _tools = _get_tools(tools, state)
+    tools = _get_tool_executor(config or {})
     rule_result = state.get("rule_result", {})
     booking_proposals = rule_result.get("booking_proposals", [])
 
@@ -155,19 +186,19 @@ def hitl_review(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
             # channel=None → ask current session user (accountant in CLI)
         }
     )
-    _tools("hitl_review", {"action": "process", "user_decision": str(decision)})
-    return {}
+    tools("hitl_review", {"action": "process", "user_decision": str(decision)})
+    return {"hitl_decision": str(decision)}
 
 
-def auto_book(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
+def auto_book(state: BookingState, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Automatically book the invoice and learn the rule."""
-    _tools = _get_tools(tools, state)
+    tools = _get_tool_executor(config or {})
     rule_result = state.get("rule_result", {})
     confidence_result = state.get("confidence_result", {})
     booking_proposals = rule_result.get("booking_proposals", [])
 
     # Learn rule for future auto-booking
-    learned = _tools(
+    learned = tools(
         "rule_learning",
         {
             "action": "create_from_booking",
@@ -178,7 +209,7 @@ def auto_book(state: BookingState, *, tools: Any = None) -> dict[str, Any]:
     )
 
     # Audit log
-    audit = _tools(
+    audit = tools(
         "audit_log",
         {
             "action": "booking_created",
@@ -245,19 +276,3 @@ def create_workflow() -> Any:
     graph.add_edge("auto_book", END)
 
     return graph.compile()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _get_tools(tools: Any, state: Any) -> Any:
-    """Get tool executor from node kwargs or graph config."""
-    if tools is not None:
-        return tools
-    # Fallback: if tools not injected, return a no-op callable that logs
-    def _noop(name: str, params: dict[str, Any]) -> dict[str, Any]:
-        return {"success": False, "error": f"No tool executor for {name}"}
-
-    return _noop

@@ -83,10 +83,16 @@ class LangGraphAdapter:
         _require_langgraph()
 
         graph = self._prepare_graph(run_id, workflow_definition, tool_executor)
-        config = {"configurable": {"thread_id": run_id}}
+        config = {
+            "configurable": {
+                "thread_id": run_id,
+                "tool_executor": tool_executor,
+            }
+        }
 
         try:
             result = await graph.ainvoke(input_data, config)
+            self._graphs.pop(run_id, None)  # Cleanup completed graph
             return WorkflowRunResult(
                 status=WorkflowStatus.COMPLETED,
                 outputs=dict(result) if isinstance(result, dict) else {"result": result},
@@ -94,6 +100,7 @@ class LangGraphAdapter:
         except GraphInterrupt as exc:
             return self._handle_interrupt(run_id, exc)
         except Exception as exc:
+            self._graphs.pop(run_id, None)  # Cleanup failed graph
             logger.error("langgraph.start_failed", run_id=run_id, error=str(exc))
             return WorkflowRunResult(
                 status=WorkflowStatus.FAILED,
@@ -133,10 +140,16 @@ class LangGraphAdapter:
                 "The workflow definition must be reloaded after restart.",
             )
 
-        config = {"configurable": {"thread_id": run_id}}
+        config = {
+            "configurable": {
+                "thread_id": run_id,
+                "tool_executor": tool_executor,
+            }
+        }
 
         try:
             result = await graph.ainvoke(Command(resume=response), config)
+            self._graphs.pop(run_id, None)  # Cleanup completed graph
             return WorkflowRunResult(
                 status=WorkflowStatus.COMPLETED,
                 outputs=dict(result) if isinstance(result, dict) else {"result": result},
@@ -144,6 +157,7 @@ class LangGraphAdapter:
         except GraphInterrupt as exc:
             return self._handle_interrupt(run_id, exc)
         except Exception as exc:
+            self._graphs.pop(run_id, None)  # Cleanup failed graph
             logger.error("langgraph.resume_failed", run_id=run_id, error=str(exc))
             return WorkflowRunResult(
                 status=WorkflowStatus.FAILED,
@@ -163,6 +177,24 @@ class LangGraphAdapter:
         except Exception:
             logger.debug("langgraph.checkpoint_get_failed", run_id=run_id)
         return {"thread_id": run_id}
+
+    def register_graph(
+        self,
+        run_id: str,
+        workflow_definition: Any,
+        tool_executor: Callable[[str, dict[str, Any]], Awaitable[Any]],
+    ) -> None:
+        """Register a graph for an existing run (e.g. after process restart).
+
+        This allows the adapter to resume a paused workflow whose compiled
+        graph was lost from memory during a restart.
+
+        Args:
+            run_id: The run identifier.
+            workflow_definition: The compiled graph (or builder).
+            tool_executor: Callback to execute Taskforce tools.
+        """
+        self._prepare_graph(run_id, workflow_definition, tool_executor)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -244,5 +276,9 @@ class LangGraphAdapter:
             existing = self._checkpointer.get(config)
             if existing is None:
                 self._checkpointer.put(config, saved_cp, {}, {})
-        except Exception:
-            logger.debug("langgraph.checkpoint_restore_failed", run_id=run_id)
+        except Exception as exc:
+            logger.warning(
+                "langgraph.checkpoint_restore_failed",
+                run_id=run_id,
+                error=str(exc),
+            )

@@ -156,6 +156,7 @@ class WorkflowOrchestrator:
         run_id: str,
         response: str,
         tool_executor: Callable[[str, dict[str, Any]], Awaitable[Any]] | None = None,
+        skill: Skill | None = None,
     ) -> WorkflowRunResult:
         """Resume a paused workflow with the human's response.
 
@@ -165,6 +166,8 @@ class WorkflowOrchestrator:
             tool_executor: Optional tool executor callback. If None,
                 a no-op executor is used (tools won't work on resume
                 unless the executor is re-provided).
+            skill: Optional skill reference for re-registering the
+                workflow definition after a process restart.
 
         Returns:
             WorkflowRunResult (may pause again or complete).
@@ -184,6 +187,15 @@ class WorkflowOrchestrator:
             )
 
         executor = tool_executor or _noop_tool_executor
+
+        # Re-register graph if the engine lost it (e.g. after restart).
+        if skill and skill.has_script and hasattr(engine, "register_graph"):
+            graphs = getattr(engine, "_graphs", {})
+            if run_id not in graphs:
+                workflow_def = self._load_workflow_definition(skill)
+                if workflow_def is not None:
+                    engine.register_graph(run_id, workflow_def, executor)
+                    logger.info("workflow.graph_re_registered", run_id=run_id)
 
         logger.info(
             "workflow.resuming",
@@ -214,6 +226,7 @@ class WorkflowOrchestrator:
         else:
             # Completed or failed - clean up
             await self._run_store.delete(run_id)
+            await self._remove_pending_question(record)
             logger.info(
                 "workflow.resume_completed",
                 run_id=run_id,
@@ -270,7 +283,16 @@ class WorkflowOrchestrator:
 
     def _load_workflow_definition(self, skill: Skill) -> Any | None:
         """Load the workflow definition from a skill's Python script."""
-        script_path = Path(skill.source_path) / skill.script
+        script_path = (Path(skill.source_path) / skill.script).resolve()
+        skill_dir = Path(skill.source_path).resolve()
+        # Path traversal protection: ensure script is within skill directory
+        if not str(script_path).startswith(str(skill_dir)):
+            logger.error(
+                "workflow.script_path_traversal",
+                skill=skill.name,
+                path=str(script_path),
+            )
+            return None
         if not script_path.exists():
             logger.error(
                 "workflow.script_not_found",
@@ -377,6 +399,25 @@ class WorkflowOrchestrator:
         except Exception as exc:
             logger.warning(
                 "workflow.pending_question_register_failed",
+                run_id=record.run_id,
+                error=str(exc),
+            )
+
+    async def _remove_pending_question(
+        self,
+        record: WorkflowRunRecord,
+    ) -> None:
+        """Remove any pending question for a completed/failed workflow."""
+        if not self._pending_question_store:
+            return
+        try:
+            if hasattr(self._pending_question_store, "remove"):
+                await self._pending_question_store.remove(
+                    session_id=record.session_id,
+                )
+        except Exception as exc:
+            logger.debug(
+                "workflow.pending_question_remove_failed",
                 run_id=record.run_id,
                 error=str(exc),
             )

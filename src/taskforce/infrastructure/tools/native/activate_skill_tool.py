@@ -132,7 +132,7 @@ class ActivateSkillTool(BaseTool):
                 "input={'file_path': '/path/to/invoice.pdf'})",
             }
 
-        if not input_vars:
+        if input_vars is None:
             return {
                 "success": False,
                 "error": f"Missing required parameter 'input' for skill '{skill_name}'. "

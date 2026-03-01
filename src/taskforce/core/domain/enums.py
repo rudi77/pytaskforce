@@ -56,6 +56,8 @@ class EventType(str, Enum):
     WORKFLOW_STEP = "workflow_step"
     WORKFLOW_PAUSED = "workflow_paused"
     WORKFLOW_RESUMED = "workflow_resumed"
+    WORKFLOW_COMPLETED = "workflow_completed"
+    WORKFLOW_FAILED = "workflow_failed"
     # Legacy event types (for original Agent)
     THOUGHT = "thought"
     OBSERVATION = "observation"

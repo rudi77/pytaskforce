@@ -32,7 +32,15 @@ class FileWorkflowRunStore(WorkflowRunStoreProtocol):
     async def save(self, record: WorkflowRunRecord) -> None:
         """Save or update a workflow run record."""
         path = self._path_for(record.run_id)
-        payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2)
+        try:
+            payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2, default=str)
+        except (TypeError, ValueError) as exc:
+            logger.error(
+                "workflow_run.serialize_failed",
+                run_id=record.run_id,
+                error=str(exc),
+            )
+            raise
         tmp_path = path.with_suffix(".tmp")
         async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
             await f.write(payload)
@@ -48,9 +56,13 @@ class FileWorkflowRunStore(WorkflowRunStoreProtocol):
         path = self._path_for(run_id)
         if not path.exists():
             return None
-        async with aiofiles.open(path, encoding="utf-8") as f:
-            data = json.loads(await f.read())
-        return WorkflowRunRecord.from_dict(data)
+        try:
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                data = json.loads(await f.read())
+            return WorkflowRunRecord.from_dict(data)
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            logger.warning("workflow_run.load_failed", run_id=run_id, error=str(exc))
+            return None
 
     async def load_by_session(self, session_id: str) -> WorkflowRunRecord | None:
         """Load the active (WAITING_FOR_INPUT) workflow run for a session."""

@@ -72,7 +72,7 @@ class HumanInputRequest:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class WorkflowRunResult:
     """Result of a workflow start or resume call.
 
@@ -158,7 +158,12 @@ class WorkflowRunRecord:
 
 
 def _parse_timestamp(raw: str | None) -> datetime:
-    """Parse an ISO timestamp string."""
+    """Parse an ISO timestamp string, ensuring timezone awareness."""
     if not raw:
         return _utc_now()
-    return datetime.fromisoformat(raw)
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        from datetime import UTC
+
+        dt = dt.replace(tzinfo=UTC)
+    return dt
