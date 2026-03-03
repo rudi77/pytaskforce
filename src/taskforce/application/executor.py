@@ -110,7 +110,11 @@ class AgentExecutor:
         self._consolidation_initialized = experience_tracker is not None
         self.logger = logger.bind(component="agent_executor")
 
-    def _ensure_consolidation_components(self, profile: str) -> None:
+    def _ensure_consolidation_components(
+        self,
+        profile: str,
+        config: dict[str, Any] | None = None,
+    ) -> None:
         """Lazy-initialize consolidation components from profile config.
 
         Only runs once.  If ``experience_tracker`` was already injected
@@ -118,6 +122,9 @@ class AgentExecutor:
 
         Args:
             profile: Profile name to load consolidation config from.
+            config: Optional pre-loaded config dict. When provided (e.g.
+                for plugin agents whose profile name is not loadable),
+                the profile loader is skipped entirely.
         """
         if self._consolidation_initialized:
             return
@@ -128,7 +135,8 @@ class AgentExecutor:
                 build_consolidation_components,
             )
 
-            config = self.factory.profile_loader.load(profile)
+            if config is None:
+                config = self.factory.profile_loader.load(profile)
 
             consol_config = config.get("consolidation", {})
             if not consol_config.get("enabled", False) and not consol_config.get(
@@ -320,8 +328,11 @@ class AgentExecutor:
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
-        # Lazy-initialize consolidation components from profile config
-        self._ensure_consolidation_components(profile)
+        # Lazy-initialize consolidation components from profile config.
+        # When a pre-created agent is passed (e.g. plugin agents), extract
+        # its merged config so that the profile loader is not required.
+        agent_config = getattr(agent, "_merged_config", None) if agent else None
+        self._ensure_consolidation_components(profile, config=agent_config)
 
         # Start experience tracking (if enabled)
         if self._experience_tracker is not None:

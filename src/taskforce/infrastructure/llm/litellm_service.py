@@ -292,6 +292,7 @@ class LiteLLMService:
             self.logger.info(
                 "llm_completion_success",
                 model=model,
+                actual_model=result.get("actual_model"),
                 tokens=result.get("usage", {}).get("total_tokens", 0),
                 latency_ms=latency_ms,
                 tool_calls_count=len(result.get("tool_calls") or []),
@@ -541,6 +542,7 @@ class LiteLLMService:
         current_tool_calls: dict[int, dict[str, Any]],
         start_time: float,
         usage: dict[str, Any] | None = None,
+        actual_model: str | None = None,
     ) -> dict[str, Any]:
         """Build the final ``done`` event and fire tracing task.
 
@@ -551,6 +553,7 @@ class LiteLLMService:
             current_tool_calls: Accumulated tool calls from stream.
             start_time: Request start time for latency calculation.
             usage: Token usage captured from the stream.
+            actual_model: The model string reported by the provider in stream chunks.
 
         Returns:
             The ``done`` event dict with ``usage``.
@@ -561,9 +564,13 @@ class LiteLLMService:
         self.logger.info(
             "llm_stream_completed",
             model=resolved_model,
+            actual_model=actual_model,
             latency_ms=latency_ms,
             tool_calls_count=len(current_tool_calls),
         )
+
+        # Verify model match
+        LLMResponseParser._check_model_mismatch(resolved_model, actual_model)
 
         self._trace_success(
             messages,
@@ -638,6 +645,7 @@ class LiteLLMService:
             start_time = time.time()
 
             stream_usage: dict[str, Any] = {}
+            stream_actual_model: str | None = None
 
             async for chunk in response:
                 # Capture usage from any chunk that carries it.
@@ -647,6 +655,12 @@ class LiteLLMService:
                 chunk_usage = LLMResponseParser.extract_usage(chunk)
                 if chunk_usage:
                     stream_usage = chunk_usage
+
+                # Capture actual model from the first chunk that reports it
+                if stream_actual_model is None:
+                    chunk_model = LLMResponseParser.extract_actual_model_from_chunk(chunk)
+                    if chunk_model:
+                        stream_actual_model = chunk_model
 
                 if not chunk.choices:
                     continue
@@ -683,6 +697,7 @@ class LiteLLMService:
                 current_tool_calls,
                 start_time,
                 stream_usage,
+                actual_model=stream_actual_model,
             )
 
         except Exception as e:

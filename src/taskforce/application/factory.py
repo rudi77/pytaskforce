@@ -57,6 +57,16 @@ def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
     agent._plugin_manifest = manifest
 
 
+def _set_merged_config(agent: Agent, config: dict[str, Any]) -> None:
+    """Store the merged profile config on an agent.
+
+    This allows downstream consumers (e.g. the executor's consolidation
+    initializer) to access the fully resolved config for plugin agents
+    where the profile name alone is not loadable.
+    """
+    agent._merged_config = config
+
+
 # Type for factory extension callbacks
 FactoryExtensionCallback = Any  # Callable[[AgentFactory, dict, Agent], Agent]
 
@@ -222,6 +232,7 @@ class AgentFactory:
         )
 
         _set_mcp_contexts(agent, infra["mcp_contexts"])
+        _set_merged_config(agent, base_config)
         return self._apply_extensions(base_config, agent)
 
     async def _resolve_base_config(
@@ -1030,6 +1041,7 @@ class AgentFactory:
 
         _set_mcp_contexts(agent, mcp_contexts)
         _set_plugin_manifest(agent, manifest)
+        _set_merged_config(agent, merged_config)
 
         if activate_skill_tool is not None:
             activate_skill_tool.set_agent_ref(agent)
