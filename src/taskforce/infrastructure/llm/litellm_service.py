@@ -282,7 +282,7 @@ class LiteLLMService:
         result = LLMResponseParser.parse_response(response, resolved_model, latency_ms)
 
         self._log_completion_success(result, resolved_model, latency_ms)
-        self._trace_success(messages, result, resolved_model, latency_ms)
+        await self._trace_success(messages, result, resolved_model, latency_ms)
 
         return result
 
@@ -298,43 +298,39 @@ class LiteLLMService:
                 tool_calls_count=len(result.get("tool_calls") or []),
             )
 
-    def _trace_success(
+    async def _trace_success(
         self,
         messages: list[dict[str, Any]],
         result: dict[str, Any],
         model: str,
         latency_ms: int,
     ) -> None:
-        """Fire-and-forget trace of a successful completion."""
-        asyncio.create_task(
-            self._trace_interaction(
-                messages=messages,
-                response_content=result.get("content"),
-                model=model,
-                token_stats=result.get("usage", {}),
-                latency_ms=latency_ms,
-                success=True,
-            )
+        """Trace a successful completion."""
+        await self._trace_interaction(
+            messages=messages,
+            response_content=result.get("content"),
+            model=model,
+            token_stats=result.get("usage", {}),
+            latency_ms=latency_ms,
+            success=True,
         )
 
-    def _trace_failure(
+    async def _trace_failure(
         self,
         messages: list[dict[str, Any]],
         model: str,
         latency_ms: int,
         error: str,
     ) -> None:
-        """Fire-and-forget trace of a failed completion."""
-        asyncio.create_task(
-            self._trace_interaction(
-                messages=messages,
-                response_content=None,
-                model=model,
-                token_stats={},
-                latency_ms=latency_ms,
-                success=False,
-                error=error,
-            )
+        """Trace a failed completion."""
+        await self._trace_interaction(
+            messages=messages,
+            response_content=None,
+            model=model,
+            token_stats={},
+            latency_ms=latency_ms,
+            success=False,
+            error=error,
         )
 
     async def _handle_retry_or_fail(
@@ -371,7 +367,7 @@ class LiteLLMService:
             attempts=attempt + 1,
         )
         latency_ms = int((time.time() - start_time) * 1000)
-        self._trace_failure(messages, resolved_model, latency_ms, str(error))
+        await self._trace_failure(messages, resolved_model, latency_ms, str(error))
         return False
 
     async def complete(
@@ -534,7 +530,7 @@ class LiteLLMService:
         litellm_kwargs.setdefault("stream_options", {"include_usage": True})
         return resolved_model, litellm_kwargs
 
-    def _build_stream_done_event(
+    async def _build_stream_done_event(
         self,
         resolved_model: str,
         messages: list[dict[str, Any]],
@@ -544,7 +540,7 @@ class LiteLLMService:
         usage: dict[str, Any] | None = None,
         actual_model: str | None = None,
     ) -> dict[str, Any]:
-        """Build the final ``done`` event and fire tracing task.
+        """Build the final ``done`` event and write trace.
 
         Args:
             resolved_model: Resolved model string for logging.
@@ -572,7 +568,7 @@ class LiteLLMService:
         # Verify model match
         LLMResponseParser._check_model_mismatch(resolved_model, actual_model)
 
-        self._trace_success(
+        await self._trace_success(
             messages,
             {"content": content_accumulated or None, "usage": usage},
             resolved_model,
@@ -581,7 +577,7 @@ class LiteLLMService:
 
         return {"type": "done", "usage": usage}
 
-    def _handle_stream_error(
+    async def _handle_stream_error(
         self,
         error: Exception,
         resolved_model: str,
@@ -598,7 +594,7 @@ class LiteLLMService:
             error_type=type(error).__name__,
             error=str(error)[:200],
         )
-        self._trace_failure(messages, resolved_model, 0, str(error))
+        await self._trace_failure(messages, resolved_model, 0, str(error))
         return {"type": "error", "message": str(error)}
 
     async def complete_stream(
@@ -690,7 +686,7 @@ class LiteLLMService:
                             "index": tc_idx,
                         }
 
-            yield self._build_stream_done_event(
+            done_event = await self._build_stream_done_event(
                 resolved_model,
                 messages,
                 content_accumulated,
@@ -699,9 +695,13 @@ class LiteLLMService:
                 stream_usage,
                 actual_model=stream_actual_model,
             )
+            yield done_event
 
         except Exception as e:
-            yield self._handle_stream_error(e, resolved_model, messages)
+            error_event = await self._handle_stream_error(
+                e, resolved_model, messages
+            )
+            yield error_event
 
     async def _process_tool_call_delta(
         self,
