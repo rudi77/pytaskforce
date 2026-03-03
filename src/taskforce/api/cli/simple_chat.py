@@ -613,7 +613,7 @@ class SimpleChatRunner:
             f"Total Tokens: {snapshot.total_tokens:,} / {snapshot.max_tokens:,} "
             f"({snapshot.utilization_percent:.1f}%)"
         )
-        self.console.print(Panel(summary, title="Context Snapshot", border_style="info"))
+        self.console.print(Panel(summary, title="Context Snapshot", border_style="cyan"))
         self._render_context_group("System Prompt", snapshot.system_prompt, include_content)
         self._render_context_group("Conversation History", snapshot.messages, include_content)
         self._render_context_group("Skills", snapshot.skills, include_content)

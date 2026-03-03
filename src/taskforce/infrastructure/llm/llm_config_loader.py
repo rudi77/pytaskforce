@@ -220,19 +220,71 @@ class LLMConfigLoader:
         """
         params: dict[str, Any] = {**self.default_params}
 
-        # Try exact alias match first, then resolved model name
         resolved = self.models.get(model_alias, model_alias)
-        if model_alias in self.model_params:
-            params.update(self.model_params[model_alias])
-        elif resolved in self.model_params:
-            params.update(self.model_params[resolved])
-        else:
-            # Try prefix match (e.g., "gpt-4" matches "gpt-4-turbo")
-            for key, model_cfg in self.model_params.items():
-                if resolved.startswith(key):
-                    params.update(model_cfg)
-                    break
+        matched = self._match_model_params(model_alias, resolved)
+        if matched is not None:
+            params.update(matched)
 
         # Caller kwargs override everything
         params.update({k: v for k, v in kwargs.items() if v is not None})
         return params
+
+    @staticmethod
+    def _bare_model(model: str) -> str:
+        """Strip provider prefix from a model string.
+
+        Args:
+            model: LiteLLM model string (e.g., "azure/gpt-5-mini").
+
+        Returns:
+            Bare model name (e.g., "gpt-5-mini"), or the original if no prefix.
+        """
+        return model.split("/", 1)[1] if "/" in model else model
+
+    def _match_model_params(
+        self, alias: str, resolved: str
+    ) -> dict[str, Any] | None:
+        """Find the best matching model_params entry for a model.
+
+        Match priority (first hit wins):
+        1. Exact match on alias
+        2. Exact match on resolved model string
+        3. Exact match on bare model name (provider prefix stripped)
+        4. Longest-prefix match on resolved model string
+        5. Longest-prefix match on bare model name
+
+        Args:
+            alias: The model alias (e.g., "fast").
+            resolved: The resolved LiteLLM model string (e.g., "azure/gpt-5-mini").
+
+        Returns:
+            The matched parameter dict, or ``None`` if nothing matched.
+        """
+        mp = self.model_params
+
+        # 1. Exact alias match
+        if alias in mp:
+            return mp[alias]
+
+        # 2. Exact resolved match
+        if resolved in mp:
+            return mp[resolved]
+
+        # 3. Exact bare model match (strip "azure/", "anthropic/", etc.)
+        bare = self._bare_model(resolved)
+        if bare != resolved and bare in mp:
+            return mp[bare]
+
+        # 4 & 5. Longest-prefix match on resolved, then bare name
+        #   Sort candidates by key length descending so "gpt-5-mini" beats "gpt-5".
+        sorted_keys = sorted(mp.keys(), key=len, reverse=True)
+
+        for key in sorted_keys:
+            if resolved.startswith(key):
+                return mp[key]
+
+        for key in sorted_keys:
+            if bare.startswith(key):
+                return mp[key]
+
+        return None

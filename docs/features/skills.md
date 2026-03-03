@@ -191,6 +191,25 @@ type: context              # Optional: context (default), prompt, agent
 The body contains instructions for the agent.
 ```
 
+### Workflow Definitions
+
+Context skills can define deterministic workflows in two formats:
+
+1. **Inline steps** (legacy): `workflow.steps` with `tool`/`switch` entries.
+2. **External engine callable**: `workflow.engine` + `workflow.callable_path`.
+
+Example for engine-backed workflow:
+
+```yaml
+workflow:
+  engine: langgraph
+  callable_path: scripts/langgraph_workflow.py:run_smart_booking_auto_workflow
+```
+
+The callable receives `tool_executor`, `input_vars`, and `workflow` and must
+return `{outputs, steps_executed, aborted, error, switch_to_skill}`.
+`callable_path` is resolved relative to the skill directory and cannot escape it.
+
 ### Optional Resources
 
 Skills can include additional files and folders:

@@ -642,3 +642,113 @@ async def test_execute_streaming_no_gateway_yields_raw_ask():
     assert len(updates) == 1
     assert updates[0].details.get("channel") == "telegram"
     assert updates[0].details.get("channel_routed") is None
+
+
+# ---------------------------------------------------------------------------
+# Consolidation component initialization tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureConsolidationComponents:
+    """Tests for _ensure_consolidation_components with config override."""
+
+    def _make_executor(self) -> AgentExecutor:
+        mock_factory = MagicMock(spec=AgentFactory)
+        mock_factory.profile_loader = MagicMock()
+        return AgentExecutor(factory=mock_factory)
+
+    def test_skips_when_already_initialized(self):
+        """Once initialized, subsequent calls are no-ops."""
+        executor = self._make_executor()
+        executor._consolidation_initialized = True
+        executor._ensure_consolidation_components("dev", config={"consolidation": {"enabled": True}})
+        # profile_loader should never be called
+        executor.factory.profile_loader.load.assert_not_called()
+
+    def test_config_param_skips_profile_loader(self):
+        """When config is provided, profile_loader.load is NOT called."""
+        executor = self._make_executor()
+
+        # Provide a config where consolidation is disabled
+        config = {"consolidation": {"enabled": False, "auto_capture": False}}
+        executor._ensure_consolidation_components("plugin:accounting_agent", config=config)
+
+        # profile_loader should NOT be called because config was provided
+        executor.factory.profile_loader.load.assert_not_called()
+        assert executor._consolidation_initialized is True
+
+    def test_falls_back_to_profile_loader_when_no_config(self):
+        """When no config is provided, falls back to profile_loader.load."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.return_value = {
+            "consolidation": {"enabled": False, "auto_capture": False}
+        }
+
+        executor._ensure_consolidation_components("dev")
+
+        executor.factory.profile_loader.load.assert_called_once_with("dev")
+
+    def test_profile_loader_failure_is_handled_gracefully(self):
+        """When profile loading fails (e.g. plugin: prefix), no crash."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.side_effect = FileNotFoundError("not found")
+
+        # Should not raise
+        executor._ensure_consolidation_components("plugin:accounting_agent")
+
+        assert executor._consolidation_initialized is True
+        assert executor._experience_tracker is None
+
+    @pytest.mark.asyncio
+    async def test_streaming_extracts_merged_config_from_agent(self):
+        """execute_mission_streaming reads _merged_config from pre-created agent."""
+        executor = self._make_executor()
+
+        # Create a mock agent with _merged_config set (simulates plugin agent)
+        mock_agent = MagicMock()
+        mock_agent._merged_config = {
+            "consolidation": {"enabled": False, "auto_capture": False},
+        }
+
+        async def fake_stream(mission, session_id):
+            yield StreamEvent(event_type=EventType.COMPLETE, data={"status": "completed"})
+
+        mock_agent.execute_stream = fake_stream
+        mock_agent.close = AsyncMock()
+
+        updates = []
+        async for update in executor.execute_mission_streaming(
+            mission="Test",
+            profile="plugin:accounting_agent",
+            agent=mock_agent,
+        ):
+            updates.append(update)
+
+        # Profile loader should NOT be called because _merged_config was used
+        executor.factory.profile_loader.load.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_streaming_without_merged_config_uses_profile(self):
+        """Without _merged_config, falls back to profile_loader."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.return_value = {
+            "consolidation": {"enabled": False, "auto_capture": False},
+        }
+
+        mock_agent = MagicMock(spec=[])  # empty spec → no auto-created attributes
+
+        async def fake_stream(mission, session_id):
+            yield StreamEvent(event_type=EventType.COMPLETE, data={"status": "completed"})
+
+        mock_agent.execute_stream = fake_stream
+        mock_agent.close = AsyncMock()
+
+        updates = []
+        async for update in executor.execute_mission_streaming(
+            mission="Test",
+            profile="dev",
+            agent=mock_agent,
+        ):
+            updates.append(update)
+
+        executor.factory.profile_loader.load.assert_called_once_with("dev")

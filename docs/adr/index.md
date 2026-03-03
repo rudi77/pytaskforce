@@ -17,6 +17,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 011: Unified Skills System (Slash Commands als Subset von Skills)](adr-011-unified-skills-system.md)**
 - **[ADR 012: Dynamic LLM Selection per Agent Step](adr-012-dynamic-llm-selection.md)**
 - **[ADR 013: Agent Memory Consolidation](adr-013-memory-consolidation.md)**
+- **[ADR 014: Resumable Human-in-the-Loop Workflow Checkpoints](adr-014-resumable-human-in-the-loop-workflows.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*

@@ -135,6 +135,12 @@ result = await agent.execute_mission(
 )
 ```
 
+### Smart Booking Auto (LangGraph PoC)
+- `smart-booking-auto` runs as an engine-backed workflow (`workflow.engine: langgraph`)
+- Workflow implementation lives in `skills/smart-booking-auto/scripts/langgraph_workflow.py`
+- Branches to `smart-booking-hitl` when confidence/rules require accountant review
+- Uses `ask_user` for compliance clarification requests when mandatory fields are missing
+
 ## Configuration
 
 ### Accounting Rules

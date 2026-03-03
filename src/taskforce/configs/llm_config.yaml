@@ -51,15 +51,18 @@ model_params:
     temperature: 0.7
     max_tokens: 10000
 
+  # ── GPT-5 family ──────────────────────────────────────────────────
+  # GPT-5 models do NOT support `temperature` — use `reasoning_effort`
+  # ("low", "medium", "high") instead. LiteLLM's drop_params=True
+  # silently strips any unsupported params, but setting them correctly
+  # avoids relying on that safety net.
   gpt-5:
-    effort: "medium"
-    reasoning: "balanced"
+    reasoning_effort: "medium"
     max_tokens: 4000
 
   gpt-5-mini:
-    effort: "low"
-    reasoning: "minimal"
-    #max_tokens: 10000
+    reasoning_effort: "low"
+    max_tokens: 10000
 
   # ── Anthropic Claude models ────────────────────────────────────────
   anthropic/claude-opus-4-6:
@@ -134,7 +137,7 @@ tracing:
 #
 routing:
   enabled: true
-  default_model: main          # fallback when no rule matches
+  default_model: main
   rules:
     - condition: "hint:planning"
       model: powerful
@@ -145,12 +148,6 @@ routing:
     - condition: "hint:acting"
       model: main
     - condition: "hint:summarizing"
-      model: fast
-    - condition: "message_count > 20"
-      model: powerful
-    - condition: has_tools
-      model: main
-    - condition: no_tools
       model: fast
 
 # ============================================================================

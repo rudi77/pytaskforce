@@ -64,6 +64,8 @@ taskforce chat --plugin examples/accounting_agent
 - **LLM Agnostic**: Support for OpenAI, Azure OpenAI, and more via LiteLLM.
 - **Plugin System**: Load custom agent plugins with specialized tools.
 - **Communication Integrations**: Inbound messaging endpoints for Telegram/MS Teams with session-bound chat history ([docs/integrations.md](docs/integrations.md)).
+- **Resumable HITL Workflows**: Durable wait/resume checkpoints with workflow APIs (`/api/v1/workflows/*`) for long-running human-in-the-loop processes.
+- **Workflow Resume APIs**: Wait/resume/continue endpoints for durable HITL flow control (`/api/v1/workflows/wait`, `/resume`, `/resume-and-continue`).
 - **Skill Metadata**: Optional skill frontmatter fields (license, compatibility, allowed tools, metadata) show up in `taskforce skills show --full`.
 - **Advanced Tools**: Python, Git, RAG (Azure AI Search), and web search.
 - **Long-Term Memory**: Session-persistent memory records stored in Markdown.

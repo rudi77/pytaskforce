@@ -51,7 +51,7 @@ def temp_config_file(tmp_path):
     return str(config_path)
 
 
-def create_mock_chunk(content=None, tool_calls=None, finish_reason=None):
+def create_mock_chunk(content=None, tool_calls=None, finish_reason=None, usage=None):
     """Helper to create mock streaming chunks."""
     chunk = MagicMock()
     delta = MagicMock()
@@ -66,6 +66,9 @@ def create_mock_chunk(content=None, tool_calls=None, finish_reason=None):
         delta.tool_calls = None
 
     chunk.choices = [MagicMock(delta=delta, finish_reason=finish_reason)]
+    # Explicitly set usage to None unless provided, so extract_usage
+    # doesn't pick up auto-generated MagicMock attributes.
+    chunk.usage = usage
     return chunk
 
 
@@ -271,32 +274,23 @@ class TestCompleteStreamDoneEvent:
     """Test done event and usage statistics."""
 
     async def test_complete_stream_done_event_with_usage(self, temp_config_file):
-        """Test that done event includes usage statistics when available."""
+        """Test that done event includes usage statistics when available.
+
+        Usage data arrives on the last streaming chunk (matching real
+        provider behaviour with ``stream_options={"include_usage": True}``).
+        """
         service = LiteLLMService(config_path=temp_config_file)
 
+        mock_usage = MagicMock(
+            total_tokens=100, prompt_tokens=50, completion_tokens=50,
+        )
         chunks = [
             create_mock_chunk(content="Response"),
-            create_mock_chunk(finish_reason="stop"),
+            create_mock_chunk(finish_reason="stop", usage=mock_usage),
         ]
 
-        # Create a custom wrapper class that has usage attribute
-        class MockStreamResponse:
-            def __init__(self, chunks):
-                self._chunks = chunks
-                self.usage = MagicMock(total_tokens=100, prompt_tokens=50, completion_tokens=50)
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if not self._chunks:
-                    raise StopAsyncIteration
-                return self._chunks.pop(0)
-
-        mock_response = MockStreamResponse(chunks.copy())
-
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_completion:
-            mock_completion.return_value = mock_response
+            mock_completion.return_value = mock_stream_generator(chunks)
 
             events = []
             async for event in service.complete_stream(
@@ -308,6 +302,9 @@ class TestCompleteStreamDoneEvent:
             done_event = [e for e in events if e["type"] == "done"][0]
             assert done_event["type"] == "done"
             assert "usage" in done_event
+            assert done_event["usage"]["total_tokens"] == 100
+            assert done_event["usage"]["prompt_tokens"] == 50
+            assert done_event["usage"]["completion_tokens"] == 50
 
     async def test_complete_stream_done_event_without_usage(self, temp_config_file):
         """Test that done event works even without usage data."""
