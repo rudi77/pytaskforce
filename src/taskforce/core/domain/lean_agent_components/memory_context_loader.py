@@ -3,14 +3,25 @@
 Loads relevant long-term memories from a ``MemoryStoreProtocol`` and
 formats them as a system-prompt section so the agent can leverage past
 experience without requiring an explicit ``memory`` tool call.
+
+Selection is based on **effective memory strength** (combining recency,
+access frequency, emotional valence, and importance) rather than a
+simple recency sort.  This mirrors how human recall surfaces the most
+*salient* memories first — not necessarily the newest ones.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
-from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+from taskforce.core.domain.memory import (
+    EmotionalValence,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+)
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
@@ -21,6 +32,17 @@ _DEFAULT_KINDS: list[MemoryKind] = [
     MemoryKind.CONSOLIDATED,
     MemoryKind.LONG_TERM,
 ]
+
+# Strength below which memories are considered too faded to inject.
+_MIN_INJECTION_STRENGTH: float = 0.15
+
+_EMOTION_ICONS: dict[EmotionalValence, str] = {
+    EmotionalValence.NEUTRAL: "",
+    EmotionalValence.POSITIVE: "(+)",
+    EmotionalValence.NEGATIVE: "(-)",
+    EmotionalValence.SURPRISE: "(!)",
+    EmotionalValence.FRUSTRATION: "(?!)",
+}
 
 
 @dataclass
@@ -63,6 +85,11 @@ class MemoryContextConfig:
 class MemoryContextLoader:
     """Load and format long-term memories for system-prompt injection.
 
+    Memories are selected by **effective strength** — a composite score
+    that accounts for recency, access frequency, emotional encoding, and
+    importance.  This ensures the agent's "working memory" is populated
+    with the most salient knowledge, not just the most recent.
+
     Usage::
 
         loader = MemoryContextLoader(memory_store, config, logger)
@@ -92,13 +119,31 @@ class MemoryContextLoader:
         if not records:
             return None
 
-        records.sort(key=lambda r: r.updated_at, reverse=True)
-        records = records[: self._config.max_memories]
+        now = datetime.now(UTC)
+
+        # Filter out archived and very weak memories.
+        active = [
+            r
+            for r in records
+            if "archived" not in r.tags
+            and r.effective_strength(now) >= _MIN_INJECTION_STRENGTH
+        ]
+        if not active:
+            return None
+
+        # Sort by effective strength (strongest / most salient first).
+        active.sort(key=lambda r: r.effective_strength(now), reverse=True)
+        active = active[: self._config.max_memories]
+
+        # Reinforce injected memories (they are being "recalled").
+        for record in active:
+            record.reinforce(now)
+            await self._store.update(record)
 
         lines: list[str] = []
         total_chars = 0
-        for record in records:
-            entry = self._format_record(record)
+        for record in active:
+            entry = self._format_record(record, now)
             if total_chars + len(entry) > self._config.max_total_chars:
                 break
             lines.append(entry)
@@ -115,6 +160,7 @@ class MemoryContextLoader:
         header = (
             "\n\n## LONG-TERM MEMORY\n"
             "The following memories were automatically loaded from previous sessions. "
+            "They are sorted by salience (strongest memories first). "
             "Use them to personalise your responses and avoid repeating past mistakes.\n\n"
         )
         return header + "\n".join(lines)
@@ -127,11 +173,30 @@ class MemoryContextLoader:
             all_records.extend(records)
         return all_records
 
-    def _format_record(self, record: MemoryRecord) -> str:
-        """Format a single memory record as a bullet point."""
+    def _format_record(self, record: MemoryRecord, now: datetime) -> str:
+        """Format a single memory record as a bullet point.
+
+        Includes a strength indicator and optional emotion icon to give
+        the agent a sense of how reliable/vivid the memory is.
+        """
         content = record.content
         max_len = self._config.max_chars_per_memory
         if len(content) > max_len:
             content = content[: max_len - 3] + "..."
         kind_label = record.kind.value.upper().replace("_", " ")
-        return f"- **[{kind_label}]** {content}"
+        eff = record.effective_strength(now)
+        strength_bar = self._strength_indicator(eff)
+        emotion = _EMOTION_ICONS.get(record.emotional_valence, "")
+        emotion_suffix = f" {emotion}" if emotion else ""
+        return f"- **[{kind_label}]** {strength_bar}{emotion_suffix} {content}"
+
+    @staticmethod
+    def _strength_indicator(strength: float) -> str:
+        """Return a visual indicator of memory strength."""
+        if strength >= 0.8:
+            return "[vivid]"
+        if strength >= 0.5:
+            return "[clear]"
+        if strength >= 0.3:
+            return "[fading]"
+        return "[dim]"
