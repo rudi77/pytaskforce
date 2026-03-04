@@ -108,8 +108,20 @@ class MemoryContextLoader:
         self._config = config
         self._logger = logger
 
-    async def load_memory_context(self) -> str | None:
+    async def load_memory_context(
+        self,
+        mission: str | None = None,
+    ) -> str | None:
         """Load memories and return a formatted prompt section.
+
+        When a *mission* string is provided, memories whose content
+        overlaps with the mission keywords receive a relevance boost,
+        making the retrieval **contextual** — the agent's working memory
+        is biased towards the current task.
+
+        Args:
+            mission: Optional current mission / task description used
+                to boost contextually relevant memories.
 
         Returns:
             A Markdown section string starting with ``## LONG-TERM MEMORY``,
@@ -131,8 +143,27 @@ class MemoryContextLoader:
         if not active:
             return None
 
-        # Sort by effective strength (strongest / most salient first).
-        active.sort(key=lambda r: r.effective_strength(now), reverse=True)
+        # Build mission keyword set for contextual boosting.
+        mission_keywords: set[str] = set()
+        if mission:
+            mission_keywords = {
+                w.lower() for w in mission.split() if len(w) > 2
+            }
+
+        # Sort by effective strength with optional mission-relevance boost.
+        def _salience(record: MemoryRecord) -> float:
+            eff = record.effective_strength(now)
+            if not mission_keywords:
+                return eff
+            haystack = f"{record.content} {' '.join(record.tags)}".lower()
+            overlap = sum(1 for kw in mission_keywords if kw in haystack)
+            if overlap == 0:
+                return eff
+            # Up to 50% boost for highly relevant memories.
+            relevance_boost = min(overlap / max(len(mission_keywords), 1), 0.5)
+            return eff * (1.0 + relevance_boost)
+
+        active.sort(key=_salience, reverse=True)
         active = active[: self._config.max_memories]
 
         # Reinforce injected memories (they are being "recalled").

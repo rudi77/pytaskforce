@@ -304,7 +304,22 @@ class AgentFactory:
         )
         from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
-        memory_store = FileMemoryStore(store_dir)
+        # Wire optional embedding provider for semantic search.
+        embedding_provider = None
+        embedding_cfg = config.get("memory", {}).get("embeddings", {})
+        if embedding_cfg.get("enabled", False):
+            try:
+                from taskforce.infrastructure.llm.embedding_service import (
+                    LiteLLMEmbeddingService,
+                )
+
+                embedding_provider = LiteLLMEmbeddingService(
+                    model=embedding_cfg.get("model", "text-embedding-3-small"),
+                )
+            except Exception:
+                pass  # Graceful fallback — keyword search still works.
+
+        memory_store = FileMemoryStore(store_dir, embedding_provider=embedding_provider)
 
         injection_cfg = config.get("memory", {}).get("context_injection")
         memory_context_config = (

@@ -238,6 +238,11 @@ class Agent:
         Called once at session start (from planning helpers). Results are
         cached in ``_memory_context`` and reused on every prompt rebuild.
 
+        Args:
+            mission: Optional current mission text.  When provided, memories
+                whose content is relevant to the mission receive a salience
+                boost (contextual retrieval).
+
         Uses lazy loading: skips memory fetch when the mission is unlikely
         to benefit from historical context (e.g., pure implementation tasks
         delegated by an orchestrator). Memory is always loaded when:
@@ -267,7 +272,7 @@ class Agent:
             config=self._memory_context_config,
             logger=self.logger,
         )
-        self._memory_context = await loader.load_memory_context()
+        self._memory_context = await loader.load_memory_context(mission=mission)
 
     def _build_system_prompt(
         self,

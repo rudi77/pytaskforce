@@ -627,7 +627,8 @@ async def _load_and_resume_state(
     state = await agent.state_manager.load_state(session_id) or {}
     if agent._planner and state.get("planner_state"):
         agent._planner.set_state(state["planner_state"])
-    # Load long-term memories once at session start for prompt injection (lazy)
+    # Load long-term memories once at session start for prompt injection (lazy).
+    # Pass the mission so contextually relevant memories are boosted.
     await agent.load_memory_context(mission=mission)
     resume = _resume_from_pause(state, mission, logger, session_id)
     return state, resume
