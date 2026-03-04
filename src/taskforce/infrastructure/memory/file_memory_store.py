@@ -1,13 +1,19 @@
-"""File-backed memory store using a single Markdown file.
+"""File-backed memory store with in-memory cache.
 
 Supports the enhanced human-like memory model: new fields (strength,
 access_count, last_accessed, emotional_valence, importance,
 associations, decay_rate) are serialized alongside the original fields.
 Legacy records without these fields are loaded with sensible defaults.
+
+The in-memory cache avoids repeated YAML parsing on every operation.
+Records are loaded once and kept in memory; writes flush to disk
+immediately.  The cache is invalidated when the file's mtime changes
+(e.g. another process modified it).
 """
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,22 +36,38 @@ class FileMemoryStore(MemoryStoreProtocol):
     """Persist memory records in a single Markdown file (``memory.md``).
 
     All records are stored as YAML documents separated by ``---`` inside a
-    single file.  This replaces the previous multi-file/directory layout and
-    keeps things simple and human-readable.
+    single file.  An in-memory cache avoids re-parsing the file on every
+    read.  Writes flush to disk immediately and update the cache.
+
+    When an ``EmbeddingProviderProtocol`` is provided, ``search()`` uses
+    semantic (cosine-similarity) matching in addition to keyword matching.
+    Without it, falls back to pure keyword search.
 
     Args:
         base_dir: Path that is either a ``.md`` file or a directory.
             * If it ends with ``.md`` → used as-is (e.g. ``work_dir/memory.md``).
             * Otherwise treated as a directory and ``memory.md`` is appended.
+        embedding_provider: Optional embedding service for semantic search.
     """
 
-    def __init__(self, base_dir: str | Path) -> None:
+    def __init__(
+        self,
+        base_dir: str | Path,
+        embedding_provider: Any | None = None,
+    ) -> None:
         path = Path(base_dir)
         if path.suffix == ".md":
             self._file = path
         else:
             self._file = path / "memory.md"
         self._file.parent.mkdir(parents=True, exist_ok=True)
+        # In-memory cache
+        self._cache: list[MemoryRecord] | None = None
+        self._cache_mtime: float = 0.0
+        # Optional embedding provider for semantic search
+        self._embedder = embedding_provider
+        # Embedding vector cache: record_id → vector
+        self._embedding_cache: dict[str, list[float]] = {}
         # Migrate legacy directory layout if present
         self._migrate_legacy(path)
 
@@ -85,25 +107,18 @@ class FileMemoryStore(MemoryStoreProtocol):
         kind: MemoryKind | None = None,
         limit: int = 10,
     ) -> list[MemoryRecord]:
-        """Search memory records using word-based matching combined with memory strength.
+        """Search memory records using hybrid keyword + semantic matching.
 
-        The query is split into individual words.  A record matches when
-        **at least one** query word is found in the record's content or tags.
+        When an embedding provider is configured, uses a combined score::
 
-        Results are ranked by a combined score::
+            combined = (keyword_score + semantic_similarity) × (1 + effective_strength)
 
-            combined = keyword_hits × effective_strength
+        Without embeddings, falls back to keyword-only::
 
-        This ensures that both relevant *and* strong memories surface
-        first — mimicking how human retrieval favours memories that are
-        both contextually relevant and well-consolidated.
+            combined = keyword_hits × (1 + effective_strength)
 
-        Words longer than 4 characters also match by prefix (dropping the
-        last character) to handle common morphological variants such as
-        German plural forms (e.g. "Buchungsregeln" matches "Buchungsregel").
-
-        Archived memories (tagged ``archived``) are excluded from search
-        results by default.
+        Archived memories are excluded.  Words longer than 4 characters
+        also match by prefix for morphological variant handling.
         """
         query_words = query.lower().split()
         if not query_words:
@@ -112,30 +127,94 @@ class FileMemoryStore(MemoryStoreProtocol):
         logger.debug(
             "memory.search",
             query=query,
-            query_words=query_words,
             total_records=len(all_records),
+            semantic=self._embedder is not None,
         )
-        now = datetime.now(UTC)
-        scored: list[tuple[float, MemoryRecord]] = []
+
+        # Pre-filter candidates.
+        candidates: list[MemoryRecord] = []
         for record in all_records:
             if scope and record.scope != scope:
                 continue
             if kind and record.kind != kind:
                 continue
-            # Skip archived memories.
             if "archived" in record.tags:
                 continue
+            candidates.append(record)
+
+        if not candidates:
+            return []
+
+        now = datetime.now(UTC)
+
+        # Compute semantic similarities if embedder available.
+        semantic_scores: dict[str, float] = {}
+        if self._embedder is not None:
+            semantic_scores = await self._compute_semantic_scores(query, candidates)
+
+        scored: list[tuple[float, MemoryRecord]] = []
+        for record in candidates:
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
-            hits = sum(1 for w in query_words if self._word_matches(w, haystack))
-            if hits > 0:
-                eff = record.effective_strength(now)
-                combined = hits * (1.0 + eff)
-                scored.append((combined, record))
-        # Sort by combined score descending (most relevant + strong first)
+            keyword_hits = sum(
+                1 for w in query_words if self._word_matches(w, haystack)
+            )
+            keyword_score = keyword_hits / max(len(query_words), 1)
+            sem_score = semantic_scores.get(record.id, 0.0)
+
+            # Require at least some relevance signal.
+            if keyword_hits == 0 and sem_score < 0.3:
+                continue
+
+            eff = record.effective_strength(now)
+            combined = (keyword_score + sem_score) * (1.0 + eff)
+            scored.append((combined, record))
+
         scored.sort(key=lambda item: item[0], reverse=True)
         matches = [record for _, record in scored[:limit]]
         logger.debug("memory.search.results", query=query, matched=len(matches))
         return matches
+
+    async def _compute_semantic_scores(
+        self,
+        query: str,
+        candidates: list[MemoryRecord],
+    ) -> dict[str, float]:
+        """Compute cosine similarity between query and candidate records.
+
+        Uses cached embeddings when available.  Falls back gracefully
+        on any embedding error (returns empty scores).
+        """
+        from taskforce.infrastructure.llm.embedding_service import cosine_similarity
+
+        try:
+            query_vec = await self._embedder.embed_text(query)
+
+            # Collect texts that need embedding.
+            to_embed: list[tuple[int, MemoryRecord]] = []
+            cached_vecs: dict[str, list[float]] = {}
+            for i, rec in enumerate(candidates):
+                if rec.id in self._embedding_cache:
+                    cached_vecs[rec.id] = self._embedding_cache[rec.id]
+                else:
+                    to_embed.append((i, rec))
+
+            if to_embed:
+                texts = [r.content for _, r in to_embed]
+                vecs = await self._embedder.embed_batch(texts)
+                for (_, rec), vec in zip(to_embed, vecs, strict=True):
+                    self._embedding_cache[rec.id] = vec
+                    cached_vecs[rec.id] = vec
+
+            scores: dict[str, float] = {}
+            for rec in candidates:
+                vec = cached_vecs.get(rec.id)
+                if vec:
+                    scores[rec.id] = max(0.0, cosine_similarity(query_vec, vec))
+            return scores
+
+        except Exception as exc:
+            logger.warning("memory.semantic_search_failed", error=str(exc))
+            return {}
 
     @staticmethod
     def _word_matches(word: str, haystack: str) -> bool:
@@ -175,15 +254,39 @@ class FileMemoryStore(MemoryStoreProtocol):
         return True
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # In-memory cache
     # ------------------------------------------------------------------
 
     def _load_all(self) -> list[MemoryRecord]:
-        """Load all records from the single memory file."""
+        """Load all records, using the in-memory cache when possible.
+
+        The cache is invalidated when the file's mtime changes, so
+        external modifications (e.g. another process editing the file)
+        are picked up automatically.
+        """
+        if self._cache is not None and not self._cache_stale():
+            return list(self._cache)
+        return self._load_from_disk()
+
+    def _cache_stale(self) -> bool:
+        """Check whether the on-disk file has changed since last load."""
+        try:
+            mtime = os.path.getmtime(self._file)
+            return mtime != self._cache_mtime
+        except OSError:
+            # File might not exist.
+            return self._cache_mtime != 0.0
+
+    def _load_from_disk(self) -> list[MemoryRecord]:
+        """Parse the YAML file and populate the cache."""
         if not self._file.exists():
+            self._cache = []
+            self._cache_mtime = 0.0
             return []
         text = self._file.read_text(encoding="utf-8").strip()
         if not text:
+            self._cache = []
+            self._cache_mtime = 0.0
             return []
         records: list[MemoryRecord] = []
         for doc in yaml.safe_load_all(text):
@@ -193,13 +296,28 @@ class FileMemoryStore(MemoryStoreProtocol):
                 records.append(self._dict_to_record(doc))
             except (KeyError, ValueError):
                 continue  # skip malformed entries
-        return records
+        self._cache = records
+        try:
+            self._cache_mtime = os.path.getmtime(self._file)
+        except OSError:
+            self._cache_mtime = 0.0
+        return list(records)
 
     def _save_all(self, records: list[MemoryRecord]) -> None:
-        """Write all records to the single memory file."""
+        """Write all records to disk and update the cache."""
         docs = [self._record_to_dict(r) for r in records]
         text = yaml.dump_all(docs, sort_keys=False, allow_unicode=True)
         self._file.write_text(text, encoding="utf-8")
+        # Update cache to match what we just wrote.
+        self._cache = list(records)
+        try:
+            self._cache_mtime = os.path.getmtime(self._file)
+        except OSError:
+            self._cache_mtime = 0.0
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
 
     def _record_to_dict(self, record: MemoryRecord) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -253,14 +371,16 @@ class FileMemoryStore(MemoryStoreProtocol):
     def _parse_datetime(self, value: str) -> datetime:
         return datetime.fromisoformat(value)
 
+    # ------------------------------------------------------------------
+    # Legacy migration
+    # ------------------------------------------------------------------
+
     def _migrate_legacy(self, original_path: Path) -> None:
         """Auto-migrate from old directory-based layout to single file.
 
         Checks for the old ``scope/kind/uuid.md`` directory layout and
         consolidates all records into the new single file.
         """
-        # Determine legacy directory: if original_path is a .md file,
-        # check for a directory with the same stem (e.g. memory/ next to memory.md)
         if original_path.suffix == ".md":
             legacy_dir = original_path.with_suffix("")
         elif original_path.is_dir():
@@ -269,7 +389,6 @@ class FileMemoryStore(MemoryStoreProtocol):
             return
         if not legacy_dir.is_dir():
             return
-        # Only migrate if there are .md files deeper inside
         legacy_files = [
             p
             for p in legacy_dir.rglob("*.md")
@@ -277,7 +396,6 @@ class FileMemoryStore(MemoryStoreProtocol):
         ]
         if not legacy_files:
             return
-        # If the new file already has content, skip migration
         if self._file.exists() and self._file.stat().st_size > 0:
             return
         records: list[MemoryRecord] = []
