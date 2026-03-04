@@ -415,8 +415,56 @@ class AgentExecutor:
                         resolved_session_id, experience
                     )
 
+            # Run lightweight (no-LLM) memory consolidation after each session.
+            if agent and not execution_failed:
+                await self._run_lightweight_consolidation(agent, mission)
+
             if agent and owns_agent:
                 await agent.close()
+
+    async def _run_lightweight_consolidation(
+        self,
+        agent: Agent,
+        mission: str,
+    ) -> None:
+        """Run lightweight memory consolidation after a successful session.
+
+        Extracts keywords from the mission to reinforce related memories.
+        Runs decay sweep, reinforcement, and association building without
+        any LLM calls.  Failures are logged but never propagated.
+        """
+        memory_store = getattr(agent, "_memory_store", None)
+        if not memory_store:
+            return
+
+        try:
+            from taskforce.infrastructure.memory.lightweight_consolidation import (
+                run_lightweight_consolidation,
+            )
+
+            # Extract keywords from mission for selective reinforcement.
+            keywords = {w.lower() for w in mission.split() if len(w) > 2}
+
+            # Use the agent's embedding provider if available.
+            embedder = getattr(memory_store, "_embedder", None)
+
+            result = await run_lightweight_consolidation(
+                store=memory_store,
+                session_keywords=keywords if keywords else None,
+                embedding_provider=embedder,
+            )
+            self.logger.debug(
+                "lightweight_consolidation.done",
+                archived=result.archived,
+                strengthened=result.strengthened,
+                associations=result.associations_created,
+                duration_ms=result.duration_ms,
+            )
+        except Exception:
+            self.logger.debug(
+                "lightweight_consolidation.skipped",
+                reason="error during consolidation",
+            )
 
     def _build_started_update(
         self,

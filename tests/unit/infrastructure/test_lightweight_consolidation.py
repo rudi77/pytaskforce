@@ -161,6 +161,79 @@ class TestAssociationPhase:
 # ------------------------------------------------------------------
 
 
+class TestEmbeddingAssociations:
+    """Test embedding-based association building."""
+
+    async def test_embeddings_create_associations(self) -> None:
+        """Records with similar embeddings get associated."""
+        r1 = _make_record(content="Python testing", record_id="a")
+        r2 = _make_record(content="Python unit tests", record_id="b")
+        store = _mock_store([r1, r2])
+
+        embedder = AsyncMock()
+        # High cosine similarity between the two.
+        embedder.embed_batch = AsyncMock(
+            return_value=[[0.9, 0.1, 0.0], [0.85, 0.15, 0.0]]
+        )
+
+        result = await run_lightweight_consolidation(
+            store, embedding_provider=embedder
+        )
+        assert result.associations_created >= 1
+        assert "b" in r1.associations
+        assert "a" in r2.associations
+
+    async def test_dissimilar_embeddings_no_association(self) -> None:
+        """Records with low cosine similarity are not associated."""
+        r1 = _make_record(content="Python testing", record_id="a")
+        r2 = _make_record(content="Italian cooking", record_id="b")
+        store = _mock_store([r1, r2])
+
+        embedder = AsyncMock()
+        # Low similarity.
+        embedder.embed_batch = AsyncMock(
+            return_value=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        )
+
+        result = await run_lightweight_consolidation(
+            store, embedding_provider=embedder
+        )
+        assert result.associations_created == 0
+
+    async def test_embedding_failure_falls_back_to_tags(self) -> None:
+        """If embeddings fail, fall back to tag-based associations."""
+        r1 = _make_record(content="A", record_id="a", tags=["python"])
+        r2 = _make_record(content="B", record_id="b", tags=["python"])
+        store = _mock_store([r1, r2])
+
+        embedder = AsyncMock()
+        embedder.embed_batch = AsyncMock(side_effect=RuntimeError("API error"))
+
+        result = await run_lightweight_consolidation(
+            store, embedding_provider=embedder
+        )
+        # Should still create tag-based association.
+        assert result.associations_created >= 1
+
+    async def test_embedding_with_single_record_falls_back(self) -> None:
+        """With only one active record, skip embedding path."""
+        r1 = _make_record(content="A", record_id="a", tags=["python"])
+        store = _mock_store([r1])
+
+        embedder = AsyncMock()
+
+        await run_lightweight_consolidation(
+            store, embedding_provider=embedder
+        )
+        # embed_batch should not be called with < 2 records.
+        embedder.embed_batch.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Result summary
+# ------------------------------------------------------------------
+
+
 class TestResultSummary:
     async def test_duration_measured(self) -> None:
         store = _mock_store([])
