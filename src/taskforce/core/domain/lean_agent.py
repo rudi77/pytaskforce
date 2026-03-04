@@ -232,11 +232,16 @@ class Agent:
         """Expose the planner instance for persistence helpers."""
         return self._planner
 
-    async def load_memory_context(self) -> None:
+    async def load_memory_context(self, mission: str | None = None) -> None:
         """Load long-term memories and cache them for prompt injection.
 
         Called once at session start (from planning helpers). Results are
         cached in ``_memory_context`` and reused on every prompt rebuild.
+
+        Args:
+            mission: Optional current mission text.  When provided, memories
+                whose content is relevant to the mission receive a salience
+                boost (contextual retrieval).
         """
         if not self._memory_store:
             return
@@ -245,7 +250,7 @@ class Agent:
             config=self._memory_context_config,
             logger=self.logger,
         )
-        self._memory_context = await loader.load_memory_context()
+        self._memory_context = await loader.load_memory_context(mission=mission)
 
     def _build_system_prompt(
         self,

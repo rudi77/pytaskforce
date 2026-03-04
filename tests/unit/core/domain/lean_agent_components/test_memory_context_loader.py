@@ -11,8 +11,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
-import pytest
-
 from taskforce.core.domain.lean_agent_components.memory_context_loader import (
     MemoryContextConfig,
     MemoryContextLoader,
@@ -269,3 +267,72 @@ async def test_reinforce_on_injection():
     await loader.load_memory_context()
     assert rec.access_count >= 1
     assert store.update.called
+
+
+# ------------------------------------------------------------------
+# Contextual retrieval (mission-based boosting)
+# ------------------------------------------------------------------
+
+
+async def test_contextual_retrieval_boosts_relevant_memories():
+    """When a mission is provided, matching memories rank higher."""
+    now = datetime.now(UTC)
+    # Both have similar strength, but "python" memory matches the mission.
+    python_rec = _make_record(
+        content="Python best practices for testing",
+        strength=0.6,
+        updated_at=now,
+        tags=["python", "testing"],
+    )
+    cooking_rec = _make_record(
+        content="Best Italian cooking recipes",
+        strength=0.65,
+        updated_at=now,
+        tags=["cooking", "recipes"],
+    )
+    store = AsyncMock()
+    store.list = AsyncMock(return_value=[cooking_rec, python_rec])
+    store.update = AsyncMock(side_effect=lambda r: r)
+    logger = Mock()
+    loader = MemoryContextLoader(
+        memory_store=store,
+        config=MemoryContextConfig(),
+        logger=logger,
+    )
+
+    # Without mission, cooking_rec has higher raw strength → first.
+    result_no_mission = await loader.load_memory_context()
+    assert result_no_mission is not None
+    cooking_pos = result_no_mission.index("cooking")
+    python_pos = result_no_mission.index("Python")
+    assert cooking_pos < python_pos
+
+    # Reset access counts for clean comparison.
+    python_rec.access_count = 0
+    cooking_rec.access_count = 0
+
+    # With mission about Python testing, python_rec should be boosted.
+    result_with_mission = await loader.load_memory_context(
+        mission="Write Python unit tests for the API"
+    )
+    assert result_with_mission is not None
+    python_pos2 = result_with_mission.index("Python")
+    cooking_pos2 = result_with_mission.index("cooking")
+    assert python_pos2 < cooking_pos2
+
+
+async def test_contextual_retrieval_without_mission_is_neutral():
+    """Without mission, load_memory_context behaves as before."""
+    rec = _make_record(content="some fact", strength=0.8)
+    store = AsyncMock()
+    store.list = AsyncMock(return_value=[rec])
+    store.update = AsyncMock(side_effect=lambda r: r)
+    logger = Mock()
+    loader = MemoryContextLoader(
+        memory_store=store,
+        config=MemoryContextConfig(),
+        logger=logger,
+    )
+    result = await loader.load_memory_context(mission=None)
+    assert result is not None
+    assert "some fact" in result
