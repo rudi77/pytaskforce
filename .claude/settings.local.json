@@ -73,7 +73,8 @@
       "Bash(python3:*)",
       "Bash(ls:*)",
       "Bash(PYTHONPATH=examples/accounting_agent uv run:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git:*)"
     ],
     "deny": [
       ".env",

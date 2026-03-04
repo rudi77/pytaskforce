@@ -59,7 +59,7 @@ logging:
 #   - "reflecting"  → SPAR reflect phase
 # Tool-presence rules fire when the LLM is given tools (acting) vs not (summarizing).
 routing:
-  enabled: true
+  enabled: false
   default_model: main
   rules:
     - condition: "hint:planning"
