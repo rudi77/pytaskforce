@@ -1,15 +1,26 @@
-"""File-backed memory store using a single Markdown file."""
+"""File-backed memory store using a single Markdown file.
+
+Supports the enhanced human-like memory model: new fields (strength,
+access_count, last_accessed, emotional_valence, importance,
+associations, decay_rate) are serialized alongside the original fields.
+Legacy records without these fields are loaded with sensible defaults.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import structlog
 import yaml
 
-from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+from taskforce.core.domain.memory import (
+    EmotionalValence,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+)
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
 logger = structlog.get_logger(__name__)
@@ -74,15 +85,25 @@ class FileMemoryStore(MemoryStoreProtocol):
         kind: MemoryKind | None = None,
         limit: int = 10,
     ) -> list[MemoryRecord]:
-        """Search memory records using word-based matching with relevance scoring.
+        """Search memory records using word-based matching combined with memory strength.
 
         The query is split into individual words.  A record matches when
         **at least one** query word is found in the record's content or tags.
-        Results are ranked by the number of matching words (most relevant
-        first).  Words longer than 4 characters also match by prefix
-        (dropping the last character) to handle common morphological
-        variants such as German plural forms (e.g. "Buchungsregeln"
-        matches "Buchungsregel").
+
+        Results are ranked by a combined score::
+
+            combined = keyword_hits × effective_strength
+
+        This ensures that both relevant *and* strong memories surface
+        first — mimicking how human retrieval favours memories that are
+        both contextually relevant and well-consolidated.
+
+        Words longer than 4 characters also match by prefix (dropping the
+        last character) to handle common morphological variants such as
+        German plural forms (e.g. "Buchungsregeln" matches "Buchungsregel").
+
+        Archived memories (tagged ``archived``) are excluded from search
+        results by default.
         """
         query_words = query.lower().split()
         if not query_words:
@@ -94,17 +115,23 @@ class FileMemoryStore(MemoryStoreProtocol):
             query_words=query_words,
             total_records=len(all_records),
         )
-        scored: list[tuple[int, MemoryRecord]] = []
+        now = datetime.now(UTC)
+        scored: list[tuple[float, MemoryRecord]] = []
         for record in all_records:
             if scope and record.scope != scope:
                 continue
             if kind and record.kind != kind:
                 continue
+            # Skip archived memories.
+            if "archived" in record.tags:
+                continue
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
             hits = sum(1 for w in query_words if self._word_matches(w, haystack))
             if hits > 0:
-                scored.append((hits, record))
-        # Sort by number of matching words descending (most relevant first)
+                eff = record.effective_strength(now)
+                combined = hits * (1.0 + eff)
+                scored.append((combined, record))
+        # Sort by combined score descending (most relevant + strong first)
         scored.sort(key=lambda item: item[0], reverse=True)
         matches = [record for _, record in scored[:limit]]
         logger.debug("memory.search.results", query=query, matched=len(matches))
@@ -175,7 +202,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         self._file.write_text(text, encoding="utf-8")
 
     def _record_to_dict(self, record: MemoryRecord) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "id": record.id,
             "scope": record.scope.value,
             "kind": record.kind.value,
@@ -184,9 +211,22 @@ class FileMemoryStore(MemoryStoreProtocol):
             "metadata": record.metadata,
             "created_at": record.created_at.isoformat(),
             "updated_at": record.updated_at.isoformat(),
+            # Human-like memory properties
+            "strength": round(record.strength, 4),
+            "access_count": record.access_count,
+            "emotional_valence": record.emotional_valence.value,
+            "importance": round(record.importance, 4),
+            "decay_rate": round(record.decay_rate, 6),
         }
+        if record.last_accessed:
+            result["last_accessed"] = record.last_accessed.isoformat()
+        if record.associations:
+            result["associations"] = record.associations
+        return result
 
     def _dict_to_record(self, data: dict[str, Any]) -> MemoryRecord:
+        last_accessed_raw = data.get("last_accessed")
+        valence_raw = data.get("emotional_valence")
         return MemoryRecord(
             id=data["id"],
             scope=MemoryScope(data["scope"]),
@@ -196,6 +236,18 @@ class FileMemoryStore(MemoryStoreProtocol):
             metadata=data.get("metadata", {}),
             created_at=self._parse_datetime(data["created_at"]),
             updated_at=self._parse_datetime(data["updated_at"]),
+            # Human-like memory properties (backward-compatible defaults)
+            strength=data.get("strength", -1.0),
+            access_count=data.get("access_count", 0),
+            last_accessed=(
+                self._parse_datetime(last_accessed_raw) if last_accessed_raw else None
+            ),
+            emotional_valence=(
+                EmotionalValence(valence_raw) if valence_raw else EmotionalValence.NEUTRAL
+            ),
+            importance=data.get("importance", 0.5),
+            associations=data.get("associations", []),
+            decay_rate=data.get("decay_rate", -1.0),
         )
 
     def _parse_datetime(self, value: str) -> datetime:

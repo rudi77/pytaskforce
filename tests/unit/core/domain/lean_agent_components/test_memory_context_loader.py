@@ -1,4 +1,10 @@
-"""Tests for MemoryContextLoader."""
+"""Tests for MemoryContextLoader.
+
+The loader now selects and sorts memories by effective_strength (a
+composite of recency, access frequency, emotional valence, and
+importance) rather than simple recency.  It also reinforces injected
+memories to model the fact that they are being "recalled".
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,12 @@ from taskforce.core.domain.lean_agent_components.memory_context_loader import (
     MemoryContextConfig,
     MemoryContextLoader,
 )
-from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+from taskforce.core.domain.memory import (
+    EmotionalValence,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+)
 
 
 def _make_record(
@@ -19,6 +30,10 @@ def _make_record(
     kind: MemoryKind = MemoryKind.PREFERENCE,
     scope: MemoryScope = MemoryScope.USER,
     updated_at: datetime | None = None,
+    strength: float = 0.8,
+    importance: float = 0.5,
+    emotional_valence: EmotionalValence = EmotionalValence.NEUTRAL,
+    tags: list[str] | None = None,
 ) -> MemoryRecord:
     """Create a MemoryRecord for testing."""
     return MemoryRecord(
@@ -26,6 +41,10 @@ def _make_record(
         kind=kind,
         content=content,
         updated_at=updated_at or datetime.now(UTC),
+        strength=strength,
+        importance=importance,
+        emotional_valence=emotional_valence,
+        tags=tags or [],
     )
 
 
@@ -36,6 +55,7 @@ def _make_loader(
     """Create a MemoryContextLoader with a mock store."""
     store = AsyncMock()
     store.list = AsyncMock(return_value=records or [])
+    store.update = AsyncMock(side_effect=lambda r: r)
     logger = Mock()
     return MemoryContextLoader(
         memory_store=store,
@@ -62,15 +82,14 @@ async def test_load_formats_records_with_header():
 
 async def test_respects_max_total_chars():
     """Records that would exceed max_total_chars are dropped."""
-    config = MemoryContextConfig(max_total_chars=100)
+    config = MemoryContextConfig(max_total_chars=150)
     records = [
-        _make_record(content="A" * 60, updated_at=datetime.now(UTC)),
-        _make_record(content="B" * 60, updated_at=datetime.now(UTC) - timedelta(hours=1)),
+        _make_record(content="A" * 60, strength=0.9),
+        _make_record(content="B" * 60, strength=0.7),
     ]
     loader = _make_loader(records=records, config=config)
     result = await loader.load_memory_context()
     assert result is not None
-    # First record fits, second would exceed budget
     assert "A" * 60 in result
     assert "B" * 60 not in result
 
@@ -82,7 +101,6 @@ async def test_respects_max_chars_per_memory():
     loader = _make_loader(records=records, config=config)
     result = await loader.load_memory_context()
     assert result is not None
-    # Content should be truncated to 17 chars + "..."
     assert "A" * 17 + "..." in result
     assert "A" * 100 not in result
 
@@ -111,16 +129,16 @@ async def test_config_from_dict_defaults():
     assert MemoryKind.PREFERENCE in config.kinds
 
 
-async def test_sorts_by_updated_at_descending():
-    """Most recently updated memories appear first."""
+async def test_sorts_by_effective_strength_descending():
+    """Strongest (most salient) memories appear first."""
     now = datetime.now(UTC)
-    old = _make_record(content="old memory", updated_at=now - timedelta(days=10))
-    new = _make_record(content="new memory", updated_at=now)
-    mid = _make_record(content="mid memory", updated_at=now - timedelta(days=5))
+    weak = _make_record(content="weak memory", strength=0.3, updated_at=now)
+    strong = _make_record(content="strong memory", strength=0.95, updated_at=now)
+    medium = _make_record(content="medium memory", strength=0.6, updated_at=now)
 
-    # Store returns them in arbitrary order
     store = AsyncMock()
-    store.list = AsyncMock(return_value=[old, mid, new])
+    store.list = AsyncMock(return_value=[weak, medium, strong])
+    store.update = AsyncMock(side_effect=lambda r: r)
     logger = Mock()
     loader = MemoryContextLoader(
         memory_store=store,
@@ -129,21 +147,19 @@ async def test_sorts_by_updated_at_descending():
     )
     result = await loader.load_memory_context()
     assert result is not None
-    # new memory should appear before mid, which should appear before old
-    new_pos = result.index("new memory")
-    mid_pos = result.index("mid memory")
-    old_pos = result.index("old memory")
-    assert new_pos < mid_pos < old_pos
+    strong_pos = result.index("strong memory")
+    medium_pos = result.index("medium memory")
+    weak_pos = result.index("weak memory")
+    assert strong_pos < medium_pos < weak_pos
 
 
 async def test_respects_max_memories():
     """Only max_memories records are included."""
     config = MemoryContextConfig(max_memories=2, max_total_chars=10000)
-    records = [_make_record(content=f"Memory {i}") for i in range(5)]
+    records = [_make_record(content=f"Memory {i}", strength=0.8) for i in range(5)]
     loader = _make_loader(records=records, config=config)
     result = await loader.load_memory_context()
     assert result is not None
-    # Should contain at most 2 bullet entries
     assert result.count("- **[") == 2
 
 
@@ -154,12 +170,12 @@ async def test_fetches_all_configured_kinds():
     )
     store = AsyncMock()
     store.list = AsyncMock(return_value=[])
+    store.update = AsyncMock(side_effect=lambda r: r)
     logger = Mock()
     loader = MemoryContextLoader(
         memory_store=store, config=config, logger=logger
     )
     await loader.load_memory_context()
-    # Should have called list() once per kind
     assert store.list.call_count == 2
     calls = store.list.call_args_list
     assert calls[0].kwargs == {"scope": MemoryScope.USER, "kind": MemoryKind.PREFERENCE}
@@ -173,6 +189,7 @@ async def test_kind_label_formatting():
     ]
     store = AsyncMock()
     store.list = AsyncMock(return_value=records)
+    store.update = AsyncMock(side_effect=lambda r: r)
     logger = Mock()
     loader = MemoryContextLoader(
         memory_store=store,
@@ -182,3 +199,73 @@ async def test_kind_label_formatting():
     result = await loader.load_memory_context()
     assert result is not None
     assert "**[LEARNED FACT]**" in result
+
+
+async def test_strength_indicators_in_output():
+    """Records show strength indicators (vivid, clear, fading, dim)."""
+    records = [_make_record(content="vivid mem", strength=0.95)]
+    loader = _make_loader(records=records)
+    result = await loader.load_memory_context()
+    assert result is not None
+    assert "[vivid]" in result
+
+
+async def test_emotional_icon_in_output():
+    """Emotional memories show an emotion indicator."""
+    records = [
+        _make_record(
+            content="surprising discovery",
+            emotional_valence=EmotionalValence.SURPRISE,
+            strength=0.8,
+        )
+    ]
+    loader = _make_loader(records=records)
+    result = await loader.load_memory_context()
+    assert result is not None
+    assert "(!)" in result
+
+
+async def test_archived_memories_excluded():
+    """Memories tagged 'archived' are not injected."""
+    records = [
+        _make_record(content="active", strength=0.8, tags=[]),
+        _make_record(content="old", strength=0.8, tags=["archived"]),
+    ]
+    loader = _make_loader(records=records)
+    result = await loader.load_memory_context()
+    assert result is not None
+    assert "active" in result
+    assert "old" not in result
+
+
+async def test_very_weak_memories_excluded():
+    """Memories with effective strength below threshold are excluded."""
+    very_old = datetime.now(UTC) - timedelta(days=365)
+    records = [
+        _make_record(
+            content="forgotten",
+            strength=0.01,
+            importance=0.0,
+            updated_at=very_old,
+        ),
+    ]
+    loader = _make_loader(records=records)
+    result = await loader.load_memory_context()
+    assert result is None
+
+
+async def test_reinforce_on_injection():
+    """Injected memories are reinforced (access_count increases)."""
+    rec = _make_record(content="recalled")
+    store = AsyncMock()
+    store.list = AsyncMock(return_value=[rec])
+    store.update = AsyncMock(side_effect=lambda r: r)
+    logger = Mock()
+    loader = MemoryContextLoader(
+        memory_store=store,
+        config=MemoryContextConfig(),
+        logger=logger,
+    )
+    await loader.load_memory_context()
+    assert rec.access_count >= 1
+    assert store.update.called

@@ -1,22 +1,35 @@
-"""Unified memory tool backed by file-based memory storage."""
+"""Unified memory tool backed by file-based memory storage.
+
+Supports human-like memory operations including reinforcement (spaced
+repetition), association linking, and decay sweeps alongside standard
+CRUD.
+"""
 
 from __future__ import annotations
 
-import structlog
 from typing import Any
 
-from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
+import structlog
+
+from taskforce.core.domain.memory import (
+    EmotionalValence,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+)
 from taskforce.infrastructure.tools.base_tool import BaseTool
 
 logger = structlog.get_logger(__name__)
 
 
 class MemoryTool(BaseTool):
-    """Tool for managing unified memory records."""
+    """Tool for managing unified memory records with human-like properties."""
 
     tool_name = "memory"
     tool_description = (
         "Create, read, search, update, and delete memory records stored as Markdown. "
+        "Supports human-like memory features: emotional tagging, importance scoring, "
+        "reinforcement on recall (spaced repetition), and associative linking. "
         "IMPORTANT: Before adding a new record, always search first to avoid duplicates. "
         "If a similar record exists, use 'update' with its record_id instead of 'add'."
     )
@@ -25,12 +38,31 @@ class MemoryTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["add", "get", "list", "search", "update", "delete"],
-                "description": "Memory action to perform",
+                "enum": [
+                    "add",
+                    "get",
+                    "list",
+                    "search",
+                    "update",
+                    "delete",
+                    "reinforce",
+                    "associate",
+                    "decay_sweep",
+                ],
+                "description": (
+                    "Memory action to perform. "
+                    "'reinforce' strengthens a memory (spaced repetition). "
+                    "'associate' links two memories. "
+                    "'decay_sweep' runs a forgetting pass over all memories."
+                ),
             },
             "record_id": {
                 "type": "string",
-                "description": "Memory record id for get/update/delete",
+                "description": "Memory record id for get/update/delete/reinforce",
+            },
+            "target_id": {
+                "type": "string",
+                "description": "Second record id for 'associate' action",
             },
             "scope": {
                 "type": "string",
@@ -49,6 +81,18 @@ class MemoryTool(BaseTool):
             "limit": {
                 "type": "integer",
                 "description": "Maximum results to return (default: 10)",
+            },
+            "emotional_valence": {
+                "type": "string",
+                "enum": [v.value for v in EmotionalValence],
+                "description": (
+                    "Emotional charge of the memory "
+                    "(neutral, positive, negative, surprise, frustration)"
+                ),
+            },
+            "importance": {
+                "type": "number",
+                "description": "Perceived importance 0.0-1.0 (higher = more persistent)",
             },
         },
         "required": ["action"],
@@ -87,6 +131,12 @@ class MemoryTool(BaseTool):
             return await self._update_record(**kwargs)
         if action == "delete":
             return await self._delete_record(**kwargs)
+        if action == "reinforce":
+            return await self._reinforce_record(**kwargs)
+        if action == "associate":
+            return await self._associate_records(**kwargs)
+        if action == "decay_sweep":
+            return await self._decay_sweep(**kwargs)
         return {"success": False, "error": f"Unknown action: {action}"}
 
     async def _add_record(self, **kwargs: Any) -> dict[str, Any]:
@@ -137,6 +187,54 @@ class MemoryTool(BaseTool):
             return {"success": False, "error": f"Record not found: {record_id}"}
         return {"success": True, "deleted": True, "record_id": record_id}
 
+    async def _reinforce_record(self, **kwargs: Any) -> dict[str, Any]:
+        """Reinforce a memory — spaced repetition effect."""
+        record_id = self._require_field(kwargs, "record_id")
+        record = await self._store.get(record_id)
+        if not record:
+            return {"success": False, "error": f"Record not found: {record_id}"}
+        record.reinforce()
+        saved = await self._store.update(record)
+        return {
+            "success": True,
+            "record": self._record_payload(saved),
+            "message": "Memory reinforced (spaced repetition)",
+        }
+
+    async def _associate_records(self, **kwargs: Any) -> dict[str, Any]:
+        """Create a bidirectional association between two memories."""
+        id_a = self._require_field(kwargs, "record_id")
+        id_b = self._require_field(kwargs, "target_id")
+        rec_a = await self._store.get(id_a)
+        rec_b = await self._store.get(id_b)
+        if not rec_a:
+            return {"success": False, "error": f"Record not found: {id_a}"}
+        if not rec_b:
+            return {"success": False, "error": f"Record not found: {id_b}"}
+        rec_a.associate_with(id_b)
+        rec_b.associate_with(id_a)
+        await self._store.update(rec_a)
+        await self._store.update(rec_b)
+        return {
+            "success": True,
+            "message": f"Associated {id_a[:8]} <-> {id_b[:8]}",
+            "record_a": self._record_payload(rec_a),
+            "record_b": self._record_payload(rec_b),
+        }
+
+    async def _decay_sweep(self, **kwargs: Any) -> dict[str, Any]:
+        """Run a forgetting sweep — archive weak memories."""
+        from taskforce.core.domain.memory_service import MemoryService
+
+        service = MemoryService(self._store)
+        decayed, forgotten = await service.decay_sweep()
+        return {
+            "success": True,
+            "decayed": decayed,
+            "archived": forgotten,
+            "message": f"Decay sweep: {decayed} weakened, {forgotten} archived",
+        }
+
     def _build_record(self, kwargs: dict[str, Any]) -> MemoryRecord:
         scope_value = self._require_field(kwargs, "scope")
         kind_value = self._require_field(kwargs, "kind")
@@ -144,6 +242,9 @@ class MemoryTool(BaseTool):
         tags = kwargs.get("tags", [])
         metadata = kwargs.get("metadata", {})
         record_id = kwargs.get("record_id")
+        valence_raw = kwargs.get("emotional_valence")
+        importance_raw = kwargs.get("importance")
+
         record_payload: dict[str, Any] = {
             "scope": MemoryScope(scope_value),
             "kind": MemoryKind(kind_value),
@@ -153,10 +254,17 @@ class MemoryTool(BaseTool):
         }
         if record_id:
             record_payload["id"] = str(record_id)
+        if valence_raw:
+            record_payload["emotional_valence"] = EmotionalValence(valence_raw)
+        if importance_raw is not None:
+            record_payload["importance"] = min(1.0, max(0.0, float(importance_raw)))
         return MemoryRecord(**record_payload)
 
     def _record_payload(self, record: MemoryRecord) -> dict[str, Any]:
-        return {
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        payload: dict[str, Any] = {
             "id": record.id,
             "scope": record.scope.value,
             "kind": record.kind.value,
@@ -165,7 +273,17 @@ class MemoryTool(BaseTool):
             "metadata": record.metadata,
             "created_at": record.created_at.isoformat(),
             "updated_at": record.updated_at.isoformat(),
+            # Human-like properties
+            "strength": round(record.strength, 4),
+            "effective_strength": round(record.effective_strength(now), 4),
+            "access_count": record.access_count,
+            "emotional_valence": record.emotional_valence.value,
+            "importance": round(record.importance, 4),
+            "associations": record.associations,
         }
+        if record.last_accessed:
+            payload["last_accessed"] = record.last_accessed.isoformat()
+        return payload
 
     def _parse_scope(self, value: str | None) -> MemoryScope | None:
         return MemoryScope(value) if value else None
