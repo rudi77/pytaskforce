@@ -1,0 +1,37 @@
+{
+  "eval_id": 2,
+  "eval_name": "foreign-reverse-charge",
+  "prompt": "Rechnung von Fortuna S.R.L., Via Roma 123, 20100 Milano, IT12345678901. Nr. 2024-4567, Datum 03.02.2026. Software Lizenz Annual 1200 EUR netto, Consulting Services 800 EUR netto. Reverse Charge gemaess §13b UStG. Gesamtbetrag 2000 EUR netto.",
+  "assertions": [
+    {
+      "name": "software_account_4964",
+      "description": "Software Lizenz auf Konto 4964 (Software-Aufwand)",
+      "check": "output contains '4964'"
+    },
+    {
+      "name": "consulting_account_4950",
+      "description": "Consulting auf Konto 4950 (Beratungskosten)",
+      "check": "output contains '4950'"
+    },
+    {
+      "name": "reverse_charge_vat_1577",
+      "description": "Vorsteuer auf 1577 (Reverse Charge) statt 1576",
+      "check": "output contains '1577'"
+    },
+    {
+      "name": "reverse_charge_recognized",
+      "description": "Reverse Charge / §13b UStG erkannt und erwaehnt",
+      "check": "output contains '§13b' or 'Reverse Charge' or 'reverse_charge'"
+    },
+    {
+      "name": "both_items_assigned",
+      "description": "Beide Positionen (Software + Consulting) haben Kontozuordnung",
+      "check": "output contains 'Software' and output contains 'Consulting'"
+    },
+    {
+      "name": "audit_trail_created",
+      "description": "Audit Trail erstellt",
+      "check": "output contains 'audit' or 'Audit' or 'Protokoll' or 'audit_trail'"
+    }
+  ]
+}

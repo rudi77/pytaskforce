@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "eval_name": "foreign-reverse-charge",
+  "variant": "without_skill",
+  "expectations": [
+    {"text": "software_account_4964", "passed": true, "evidence": "Line 39: 'Konto 4964 Aufwendungen fuer Lizenzen/Konzessionen'"},
+    {"text": "consulting_account_4950", "passed": false, "evidence": "Line 44: Uses 'Konto 4900 Sonstige betriebliche Aufwendungen' instead of 4950. While not incorrect per se, 4950 (Rechts- und Beratungskosten) is the more specific and preferred account for consulting services."},
+    {"text": "reverse_charge_vat_1577", "passed": false, "evidence": "Lines 55-58: Uses 1574/1774 (innergemeinschaftlicher Erwerb) instead of 1577 (§13b UStG Leistungen). For B2B services (not goods), §13b UStG applies — the correct accounts are 1577/1787, not the igE accounts 1574/1774."},
+    {"text": "reverse_charge_recognized", "passed": true, "evidence": "Line 103: 'REVERSE CHARGE BEHANDLUNG (PARAGRAPH 13b UStG)' — correctly identified"},
+    {"text": "both_items_assigned", "passed": true, "evidence": "Lines 24-25: Both items listed and assigned"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 169: 'AUDIT TRAIL' section present"}
+  ]
+}

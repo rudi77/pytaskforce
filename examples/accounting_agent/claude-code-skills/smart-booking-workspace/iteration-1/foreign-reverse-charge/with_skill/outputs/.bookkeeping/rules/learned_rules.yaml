@@ -1,0 +1,27 @@
+version: '1.0'
+updated_at: '2026-03-04T19:55:53.227165+00:00'
+rules:
+- rule_id: AUTO-20260304195553-1
+  rule_type: vendor_item
+  vendor_pattern: Fortuna S.R.L.
+  item_patterns:
+  - Software Lizenz Annual
+  target_account: '4964'
+  target_account_name: Aufwendungen fuer Software (GWG)
+  priority: 75
+  similarity_threshold: 0.8
+  source: auto_high_confidence
+  created_at: '2026-03-04T19:55:53.227165+00:00'
+  is_active: true
+- rule_id: AUTO-20260304195553-2
+  rule_type: vendor_item
+  vendor_pattern: Fortuna S.R.L.
+  item_patterns:
+  - Consulting Services
+  target_account: '4950'
+  target_account_name: Rechts- und Beratungskosten
+  priority: 75
+  similarity_threshold: 0.8
+  source: auto_high_confidence
+  created_at: '2026-03-04T19:55:53.227165+00:00'
+  is_active: true

@@ -1,0 +1,20 @@
+BUCHUNG ABGESCHLOSSEN
+
+Lieferant: Telekom
+Rechnungsnr.: RE-2024-0815
+Rechnungsdatum: 15.06.2024
+Brutto: 71,39 EUR
+
+Buchungen:
+- Mobilfunk Business L → 4920 (Telefon) | 59,99 EUR
+  Vorsteuer: 1576 (Abziehbare Vorsteuer 19%) | 11,40 EUR
+  Gegenkonto: 1600 (Verbindlichkeiten aus Lieferungen und Leistungen) | 71,39 EUR
+
+Status: Manuell bestaetigt (HITL Review — Erster Beleg von diesem Lieferanten)
+Confidence: 96,25%
+Audit-ID: f71d5fd3-fa15-400e-beed-7fa0efbd1266
+Booking-ID: BK-20260304195501-2d9591
+Neue Regeln: 1 gelernt (AUTO-20260304195506-1: Mobilfunk Business L → 4920 Telefon)
+
+Compliance: Konform (Kleinbetragsrechnung gemaess §33 UStDV, 5 Felder geprueft)
+Rechtsgrundlage: §14 UStG, §15 Abs. 1 UStG, §4 Abs. 4 EStG

@@ -1,0 +1,219 @@
+================================================================================
+BUCHUNGSVORSCHLAG - REVERSE CHARGE EINGANGSRECHNUNG
+================================================================================
+Erstellt am: 2026-03-04
+Methode: Manuelle Analyse (ohne Skill-Unterstuetzung)
+
+================================================================================
+1. RECHNUNGSDATEN (EXTRAHIERT)
+================================================================================
+
+Lieferant:
+  Name:           Fortuna S.R.L.
+  Strasse:        Via Roma 123
+  PLZ/Ort:        20100 Milano, Italien
+  USt-IdNr.:      IT12345678901
+  Land:           Italien (EU-Mitgliedstaat)
+
+Rechnungsdaten:
+  Rechnungsnr.:   2024-4567
+  Rechnungsdatum: 03.02.2026
+  Waehrung:       EUR
+
+Positionen:
+  1. Software Lizenz Annual ........... 1.200,00 EUR netto
+  2. Consulting Services .............. 800,00 EUR netto
+  -------------------------------------------------------
+  Nettobetrag gesamt:                   2.000,00 EUR
+  USt auf Rechnung:                     0,00 EUR (Reverse Charge)
+  Rechnungsbetrag:                      2.000,00 EUR
+
+Steuerhinweis auf Rechnung:
+  "Reverse Charge gemaess Paragraph 13b UStG"
+
+================================================================================
+2. KONTENZUORDNUNG (SKR03)
+================================================================================
+
+Aufwandskonten:
+  - Konto 4964 "Aufwendungen fuer Lizenzen/Konzessionen"
+    Betrag: 1.200,00 EUR
+    Begruendung: Software-Jahreslizenzen werden als laufender Aufwand
+    erfasst (keine Aktivierung, da jaehrlich wiederkehrend).
+
+  - Konto 4900 "Sonstige betriebliche Aufwendungen"
+    (alternativ: Konto 4980 "Fremdleistungen")
+    Betrag: 800,00 EUR
+    Begruendung: Consulting-Dienstleistungen sind sonstige betriebliche
+    Aufwendungen bzw. Fremdleistungen.
+
+Kreditorenkonto:
+  - Konto 70000-99999 (Kreditorenbereich)
+    Empfehlung: Kreditor-Stammsatz fuer "Fortuna S.R.L." anlegen
+
+Umsatzsteuerkonten (Reverse Charge):
+  - Konto 1774 "Umsatzsteuer aus innergemeinschaftlichem Erwerb 19%"
+    (Umsatzsteuer-Schuld gemaess Paragraph 13b UStG)
+  - Konto 1574 "Abziehbare Vorsteuer aus innergemeinschaftlichem Erwerb 19%"
+    (Vorsteuerabzug, sofern Berechtigung besteht)
+
+Steuersatz:
+  - 19% auf den Nettobetrag (Regelsteuersatz)
+  - Bemessungsgrundlage: 2.000,00 EUR
+  - USt-Betrag: 380,00 EUR
+
+================================================================================
+3. COMPLIANCE-PRUEFUNG PARAGRAPH 14 UStG
+================================================================================
+
+Pflichtangaben gemaess Paragraph 14 Abs. 4 UStG - Pruefung:
+
+  [OK]  Vollstaendiger Name und Anschrift des Leistenden
+        -> Fortuna S.R.L., Via Roma 123, 20100 Milano
+  [OK]  Steuernummer oder USt-IdNr. des Leistenden
+        -> IT12345678901
+  [!!]  Vollstaendiger Name und Anschrift des Leistungsempfaengers
+        -> FEHLT auf der Rechnung (muss geprueft werden)
+  [!!]  USt-IdNr. des Leistungsempfaengers
+        -> FEHLT in den vorliegenden Daten (erforderlich fuer
+           innergemeinschaftliche Leistung)
+  [OK]  Rechnungsnummer (fortlaufend)
+        -> 2024-4567
+  [OK]  Rechnungsdatum
+        -> 03.02.2026
+  [OK]  Menge und Art der Leistung
+        -> Software Lizenz Annual, Consulting Services
+  [OK]  Zeitpunkt der Leistung / Lieferung
+        -> Implizit durch Rechnungsdatum (sollte explizit angegeben sein)
+  [OK]  Nettobetrag (Entgelt)
+        -> 2.000,00 EUR
+  [OK]  Hinweis auf Steuerschuldnerschaft des Leistungsempfaengers
+        -> "Reverse Charge gemaess Paragraph 13b UStG"
+  [!!]  Leistungszeitraum
+        -> Nicht explizit angegeben (bei Software-Lizenz: Laufzeit?)
+
+Hinweise:
+  - Die USt-IdNr. des Leistungsempfaengers (eigene DE-USt-IdNr.) muss
+    auf der Rechnung angegeben sein bzw. vorliegen.
+  - Der Leistungszeitraum sollte konkretisiert werden.
+  - Pruefung der USt-IdNr. IT12345678901 ueber das BZSt-MIAS/VIES-System
+    wird empfohlen (qualifizierte Bestaetigung einholen).
+
+================================================================================
+4. REVERSE CHARGE BEHANDLUNG (PARAGRAPH 13b UStG)
+================================================================================
+
+Rechtsgrundlage:
+  Paragraph 13b Abs. 1 UStG i.V.m. Paragraph 13b Abs. 5 Satz 1 UStG:
+  Bei sonstigen Leistungen eines im uebrigen Gemeinschaftsgebiet ansaessigen
+  Unternehmers schuldet der Leistungsempfaenger die Umsatzsteuer, wenn er
+  ein Unternehmer ist (B2B).
+
+  Paragraph 3a Abs. 2 UStG: Ort der sonstigen Leistung ist dort, wo der
+  Leistungsempfaenger sein Unternehmen betreibt (B2B-Grundregel) -> Deutschland.
+
+Folgen:
+  - Leistungsort: Deutschland (Paragraph 3a Abs. 2 UStG)
+  - Steuerschuldner: Leistungsempfaenger (wir) gemaess Paragraph 13b UStG
+  - Steuersatz: 19% (Regelsteuersatz, Paragraph 12 Abs. 1 UStG)
+  - Vorsteuerabzug: Ja, sofern Leistung fuer das Unternehmen bezogen
+    (Paragraph 15 Abs. 1 Satz 1 Nr. 4 UStG)
+
+  -> Umsatzsteuer und Vorsteuer gleichen sich aus (ergebnisneutral),
+     sofern voller Vorsteuerabzug besteht.
+
+Meldepflichten:
+  - USt-Voranmeldung: Zeile 46/47 (Leistungen Paragraph 13b, 19%)
+  - Zusammenfassende Meldung (ZM): Nicht erforderlich fuer Eingangsleistungen
+    (ZM nur fuer Ausgangsleistungen / innergemeinschaftliche Lieferungen)
+
+================================================================================
+5. BUCHUNGSVORSCHLAG (BUCHUNGSSAETZE)
+================================================================================
+
+Buchungsdatum: 03.02.2026
+Belegnummer: ER-2024-4567
+Belegtext: Fortuna S.R.L. / Software Lizenz + Consulting / RC Paragraph 13b
+
+--- Buchungssatz 1: Aufwand Software-Lizenz ---
+  Soll  4964  Aufwand Lizenzen/Konzessionen    1.200,00 EUR
+  Haben 70xxx Kreditor Fortuna S.R.L.           1.200,00 EUR
+  Steuerschluessel: Reverse Charge 19% (z.B. BU-Schluessel 94 in DATEV)
+
+--- Buchungssatz 2: Aufwand Consulting ---
+  Soll  4900  Sonstige betriebl. Aufwendungen     800,00 EUR
+  Haben 70xxx Kreditor Fortuna S.R.L.              800,00 EUR
+  Steuerschluessel: Reverse Charge 19% (z.B. BU-Schluessel 94 in DATEV)
+
+--- Automatische Steuerbuchung (durch Steuerschluessel) ---
+  Soll  1574  Abziehbare VSt innergem. Erwerb     380,00 EUR
+  Haben 1774  USt innergem. Erwerb                 380,00 EUR
+
+Zusammenfassung der Konten-Bewegungen:
+  Konto  | Soll        | Haben       | Bezeichnung
+  -------|-------------|-------------|----------------------------------
+  4964   | 1.200,00    |             | Aufwand Lizenzen/Konzessionen
+  4900   |   800,00    |             | Sonstige betriebl. Aufwendungen
+  1574   |   380,00    |             | Abziehbare VSt innergem. Erwerb
+  1774   |             |   380,00    | USt innergem. Erwerb
+  70xxx  |             | 2.000,00    | Kreditor Fortuna S.R.L.
+
+Kontrollsumme:
+  Soll gesamt:  2.380,00 EUR
+  Haben gesamt: 2.380,00 EUR
+  -> Bilanzgleichung erfuellt.
+
+Zahlungsbetrag an Lieferant: 2.000,00 EUR (kein USt-Ausweis auf Rechnung)
+
+================================================================================
+6. AUDIT TRAIL
+================================================================================
+
+Zeitstempel          | Aktion
+---------------------|--------------------------------------------------------
+2026-03-04 00:00:00  | Rechnungsdaten extrahiert aus Belegtext
+2026-03-04 00:00:01  | Lieferant identifiziert: Fortuna S.R.L. (IT, EU)
+2026-03-04 00:00:02  | Reverse-Charge-Sachverhalt erkannt (Paragraph 13b UStG)
+2026-03-04 00:00:03  | Leistungsort bestimmt: Deutschland (Paragraph 3a Abs. 2)
+2026-03-04 00:00:04  | Steuersatz festgelegt: 19% Regelsteuersatz
+2026-03-04 00:00:05  | Aufwandskonten zugeordnet: 4964, 4900 (SKR03)
+2026-03-04 00:00:06  | Steuerkonten zugeordnet: 1574 (VSt), 1774 (USt)
+2026-03-04 00:00:07  | Paragraph 14 UStG Pflichtangaben geprueft
+2026-03-04 00:00:08  | Hinweise erstellt: USt-IdNr. Empfaenger, Leistungszeitraum
+2026-03-04 00:00:09  | Buchungssaetze erstellt (2 Aufwandsbuchungen + Steuer)
+2026-03-04 00:00:10  | Kontrollsumme verifiziert: Soll = Haben = 2.380,00 EUR
+2026-03-04 00:00:11  | Buchungsvorschlag fertiggestellt
+
+================================================================================
+7. OFFENE PUNKTE / HANDLUNGSEMPFEHLUNGEN
+================================================================================
+
+1. USt-IdNr. des Leistungsempfaengers pruefen:
+   -> Eigene DE-USt-IdNr. muss auf der Rechnung erscheinen.
+   -> Falls fehlend: Rechnungskorrektur anfordern.
+
+2. USt-IdNr. des Lieferanten verifizieren:
+   -> IT12345678901 ueber BZSt/VIES qualifiziert bestaetigen lassen.
+   -> Bestaetigung als Beleg archivieren (GoBD-konform).
+
+3. Leistungszeitraum klaeren:
+   -> Software-Lizenz: Ab wann bis wann laeuft die Jahreslizenz?
+   -> Consulting: Wann wurden die Leistungen erbracht?
+   -> Ggf. zeitliche Abgrenzung erforderlich (Konto 0980/0990).
+
+4. USt-Voranmeldung:
+   -> Reverse-Charge-Umsatz in der VAM fuer Februar 2026 melden.
+   -> Zeile 46: Bemessungsgrundlage 2.000,00 EUR
+   -> Zeile 47: Steuer 380,00 EUR
+
+5. Kreditor-Stammdaten:
+   -> Stammsatz fuer Fortuna S.R.L. anlegen (falls noch nicht vorhanden)
+   -> Zahlungsbedingungen und Bankverbindung erfassen.
+
+6. GoBD-Archivierung:
+   -> Originalbeleg revisionssicher archivieren.
+   -> Verfahrensdokumentation aktualisieren.
+
+================================================================================
+ENDE DES BUCHUNGSVORSCHLAGS
+================================================================================

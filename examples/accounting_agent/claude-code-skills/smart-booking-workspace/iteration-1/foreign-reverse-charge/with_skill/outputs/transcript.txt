@@ -1,0 +1,297 @@
+================================================================================
+SMART BOOKING SKILL - EXECUTION TRANSCRIPT
+================================================================================
+Invoice: Rechnung von Fortuna S.R.L., Nr. 2024-4567, Datum 03.02.2026
+Type: Foreign EU invoice with Reverse Charge (§13b UStG)
+Date: 2026-03-04
+================================================================================
+
+================================================================================
+PHASE 1: Rechnungsdaten extrahieren
+================================================================================
+
+Extracted invoice data from text input and saved to:
+  .bookkeeping/current_invoice.json
+
+Invoice JSON:
+{
+  "supplier_name": "Fortuna S.R.L.",
+  "supplier_address": "Via Roma 123, 20100 Milano",
+  "supplier_vat_id": "IT12345678901",
+  "invoice_number": "2024-4567",
+  "invoice_date": "2026-02-03",
+  "delivery_date": null,
+  "total_net": 2000.00,
+  "total_vat": 0.00,
+  "total_gross": 2000.00,
+  "reverse_charge": true,
+  "line_items": [
+    {
+      "description": "Software Lizenz Annual",
+      "quantity": 1,
+      "unit_price": 1200.00,
+      "net_amount": 1200.00,
+      "vat_rate": 0.19,
+      "vat_amount": 0.00
+    },
+    {
+      "description": "Consulting Services",
+      "quantity": 1,
+      "unit_price": 800.00,
+      "net_amount": 800.00,
+      "vat_rate": 0.19,
+      "vat_amount": 0.00
+    }
+  ],
+  "vat_breakdown": [
+    {"rate": 0.19, "net_amount": 2000.00, "vat_amount": 0.00}
+  ]
+}
+
+Notes:
+- Supplier is Italian (IT VAT ID) -> EU inbound invoice
+- Reverse Charge noted per §13b UStG
+- VAT on invoice = 0.00 EUR (supplier does not charge VAT)
+- VAT rate 0.19 set for German Vorsteuer calculation under §13b
+
+================================================================================
+PHASE 2: Compliance-Pruefung (§14 UStG)
+================================================================================
+
+Command:
+  python smart-booking/scripts/compliance.py \
+    --input .bookkeeping/current_invoice.json \
+    --rules smart-booking/resources/compliance_rules.yaml
+
+Output:
+{
+  "is_compliant": true,
+  "is_small_invoice": false,
+  "is_reverse_charge": false,
+  "legal_basis": "§14 Abs. 4 UStG",
+  "missing_fields": [],
+  "errors": [],
+  "warnings": [
+    {
+      "field": "vat_calculation",
+      "message": "MwSt-Abweichung (multi-rate): 0.00 vs 380.00",
+      "legal_reference": "§14 Abs. 4 Nr. 8 UStG",
+      "severity": "warning"
+    }
+  ],
+  "summary": "Rechnung grundsaetzlich konform. 1 Hinweis(e).",
+  "fields_checked": 8
+}
+
+Result: COMPLIANT
+  - No errors (all mandatory fields present)
+  - 1 warning: VAT amount mismatch (expected since Reverse Charge: supplier
+    invoices 0.00 EUR VAT, but 19% rate applied = 380.00 EUR calculated)
+  - This is normal for Reverse Charge invoices
+  -> Proceed to Phase 3
+
+================================================================================
+PHASE 3: Kontierung (Kontozuordnung)
+================================================================================
+
+Command:
+  python smart-booking/scripts/kontierung.py \
+    --input .bookkeeping/current_invoice.json \
+    --rules smart-booking/resources/kontierung_rules.yaml \
+    --workspace .bookkeeping \
+    --reverse-charge
+
+Output:
+{
+  "success": true,
+  "supplier_name": "Fortuna S.R.L.",
+  "is_new_vendor": true,
+  "rule_matches": [
+    {
+      "rule_id": "SR-004",
+      "rule_type": "vendor_item",
+      "match_type": "semantic",
+      "target_account": "4964",
+      "target_account_name": "Aufwendungen fuer Software (GWG)",
+      "similarity_score": 0.9,
+      "matched_item": "Software Lizenz Annual",
+      "matched_pattern": "Software",
+      "priority": 50,
+      "legal_basis": "§6 Abs. 2 EStG"
+    },
+    {
+      "rule_id": "SR-008",
+      "rule_type": "vendor_item",
+      "match_type": "semantic",
+      "target_account": "4950",
+      "target_account_name": "Rechts- und Beratungskosten",
+      "similarity_score": 0.9,
+      "matched_item": "Consulting Services",
+      "matched_pattern": "Consulting",
+      "priority": 50,
+      "legal_basis": "§4 Abs. 4 EStG"
+    }
+  ],
+  "rules_applied": 2,
+  "booking_proposals": [
+    {
+      "line_item": "Software Lizenz Annual",
+      "debit_account": "4964",
+      "debit_account_name": "Aufwendungen fuer Software (GWG)",
+      "credit_account": "1600",
+      "credit_account_name": "Verbindlichkeiten aus Lieferungen und Leistungen",
+      "net_amount": 1200.0,
+      "vat_rate": 0.19,
+      "vat_amount": 228.0,
+      "vat_account": "1577",
+      "vat_account_name": "Vorsteuer Reverse Charge"
+    },
+    {
+      "line_item": "Consulting Services",
+      "debit_account": "4950",
+      "debit_account_name": "Rechts- und Beratungskosten",
+      "credit_account": "1600",
+      "credit_account_name": "Verbindlichkeiten aus Lieferungen und Leistungen",
+      "net_amount": 800.0,
+      "vat_rate": 0.19,
+      "vat_amount": 152.0,
+      "vat_account": "1577",
+      "vat_account_name": "Vorsteuer Reverse Charge"
+    }
+  ],
+  "unmatched_items": [],
+  "confidence": {
+    "overall_confidence": 0.7875,
+    "recommendation": "hitl_review",
+    "triggered_hard_gates": [
+      {
+        "gate_type": "new_vendor",
+        "reason": "Erster Beleg von diesem Lieferanten"
+      }
+    ],
+    "explanation": "HITL erforderlich: Erster Beleg von diesem Lieferanten"
+  }
+}
+
+Result: HITL REVIEW REQUIRED
+  - Confidence: 78.75% (below 95% threshold)
+  - Hard Gate: New vendor (first invoice from Fortuna S.R.L.)
+  - Reverse Charge correctly detected: VAT account 1577 assigned
+  - All items matched via semantic rules
+  -> Proceed to Phase 4B (HITL Review)
+
+================================================================================
+PHASE 4B: Manuelle Pruefung (HITL Review)
+================================================================================
+
+BUCHUNGSVORSCHLAG ZUR PRUEFUNG:
+
+Lieferant: Fortuna S.R.L. [NEU - erster Beleg]
+Rechnungsnr.: 2024-4567
+Brutto: 2.000,00 EUR
+Confidence: 78,75%
+
+Hard Gates:
+- Erster Beleg von diesem Lieferanten
+
+POSITIONEN & KONTIERUNGSVORSCHLAEGE:
+
+1. Software Lizenz Annual — 1.200,00 EUR netto
+   -> Konto 4964 (Aufwendungen fuer Software (GWG))
+   Confidence: 90%, Grund: Semantic Match "Software" (SR-004)
+   Vorsteuer Reverse Charge: Konto 1577 | 228,00 EUR
+
+2. Consulting Services — 800,00 EUR netto
+   -> Konto 4950 (Rechts- und Beratungskosten)
+   Confidence: 90%, Grund: Semantic Match "Consulting" (SR-008)
+   Vorsteuer Reverse Charge: Konto 1577 | 152,00 EUR
+
+---
+Optionen:
+1. BESTAETIGEN - Vorschlag uebernehmen
+2. KORRIGIEREN - z.B. "Position 1 auf Konto 4930"
+3. ABLEHNEN - Nicht buchen
+
+User-Eingabe: 1 (BESTAETIGEN)
+
+--- Booking Save ---
+
+Command:
+  python smart-booking/scripts/booking.py save \
+    --input .bookkeeping/booking_save_input.json \
+    --workspace .bookkeeping
+
+Output:
+{
+  "success": true,
+  "booking_id": "BK-20260304195551-a88ee6",
+  "timestamp": "2026-03-04T19:55:51.859784+00:00",
+  "bookings_file": ".bookkeeping\\bookings\\bookings.jsonl"
+}
+
+--- Rule Learning ---
+
+Command:
+  python smart-booking/scripts/booking.py learn \
+    --input .bookkeeping/rule_learn_input.json \
+    --workspace .bookkeeping
+
+Output:
+{
+  "success": true,
+  "rules_created": 2,
+  "rules_updated": 0,
+  "created_rules": [
+    {
+      "rule_id": "AUTO-20260304195553-1",
+      "item": "Software Lizenz Annual",
+      "account": "4964"
+    },
+    {
+      "rule_id": "AUTO-20260304195553-2",
+      "item": "Consulting Services",
+      "account": "4950"
+    }
+  ],
+  "vendor_pattern": "Fortuna S.R.L.",
+  "learned_rules_file": ".bookkeeping\\rules\\learned_rules.yaml"
+}
+
+--- Audit Log ---
+
+Command:
+  python smart-booking/scripts/booking.py audit \
+    --input .bookkeeping/audit_input.json \
+    --workspace .bookkeeping
+
+Output:
+{
+  "success": true,
+  "log_id": "ac9dce3d-95cc-443b-9026-8c94cf8e82da",
+  "timestamp": "2026-03-04T19:55:54.122172+00:00",
+  "integrity_hash": "96c7e2fd0e91f1b11bd068c07004e0c8461d8e67801e07db0216d391943e5535",
+  "audit_file": ".bookkeeping\\audit\\audit_trail.jsonl"
+}
+
+================================================================================
+PHASE 5: Zusammenfassung
+================================================================================
+
+See summary.txt for the final booking summary.
+
+================================================================================
+WORKSPACE FILES CREATED
+================================================================================
+
+.bookkeeping/
+  current_invoice.json          - Extracted invoice data (Phase 1)
+  booking_save_input.json       - Booking save input (Phase 4B)
+  rule_learn_input.json         - Rule learning input (Phase 4B)
+  audit_input.json              - Audit log input (Phase 4B)
+  bookings/bookings.jsonl       - Booking history (append-only)
+  rules/learned_rules.yaml      - Learned booking rules
+  audit/audit_trail.jsonl       - GoBD-compliant audit trail
+
+================================================================================
+END OF TRANSCRIPT
+================================================================================

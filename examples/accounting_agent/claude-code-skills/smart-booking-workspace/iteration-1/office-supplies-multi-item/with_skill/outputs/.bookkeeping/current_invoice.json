@@ -1,0 +1,36 @@
+{
+  "supplier_name": "Bueromaterial Mueller GmbH",
+  "supplier_address": "Hauptstr. 1, 10115 Berlin",
+  "supplier_vat_id": "DE987654321",
+  "invoice_number": "2024-789",
+  "invoice_date": "2024-06-20",
+  "delivery_date": null,
+  "total_net": 150.00,
+  "total_vat": 28.50,
+  "total_gross": 178.50,
+  "line_items": [
+    {
+      "description": "Druckerpapier A4",
+      "quantity": 5,
+      "unit_price": 6.00,
+      "net_amount": 30.00,
+      "vat_rate": 0.19,
+      "vat_amount": 5.70
+    },
+    {
+      "description": "Toner HP schwarz",
+      "quantity": 2,
+      "unit_price": 60.00,
+      "net_amount": 120.00,
+      "vat_rate": 0.19,
+      "vat_amount": 22.80
+    }
+  ],
+  "vat_breakdown": [
+    {
+      "rate": 0.19,
+      "net_amount": 150.00,
+      "vat_amount": 28.50
+    }
+  ]
+}

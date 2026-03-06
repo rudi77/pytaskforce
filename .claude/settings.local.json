@@ -74,7 +74,9 @@
       "Bash(ls:*)",
       "Bash(PYTHONPATH=examples/accounting_agent uv run:*)",
       "Bash(git merge:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(start:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)"
     ],
     "deny": [
       ".env",

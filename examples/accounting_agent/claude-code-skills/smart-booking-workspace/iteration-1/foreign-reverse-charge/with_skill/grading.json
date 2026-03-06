@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "eval_name": "foreign-reverse-charge",
+  "variant": "with_skill",
+  "expectations": [
+    {"text": "software_account_4964", "passed": true, "evidence": "Line 13: '4964 (Aufwendungen fuer Software (GWG))'"},
+    {"text": "consulting_account_4950", "passed": true, "evidence": "Line 18: '4950 (Rechts- und Beratungskosten)'"},
+    {"text": "reverse_charge_vat_1577", "passed": true, "evidence": "Lines 14,19: 'Vorsteuer Reverse Charge: Konto 1577'"},
+    {"text": "reverse_charge_recognized", "passed": true, "evidence": "Line 10: 'Reverse Charge: Ja (gemaess §13b UStG)'"},
+    {"text": "both_items_assigned", "passed": true, "evidence": "Line 13: 'Software Lizenz Annual', Line 18: 'Consulting Services'"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 36: 'Audit-ID: ac9dce3d-...' with integrity hash"}
+  ]
+}

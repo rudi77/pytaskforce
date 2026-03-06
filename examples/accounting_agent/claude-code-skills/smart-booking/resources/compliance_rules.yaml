@@ -1,0 +1,145 @@
+# Compliance Rules for DACH & EU Invoice Validation
+# Based on §14 UStG (DE) and general EU VAT Directive
+# Version: 1.1
+
+version: "1.1"
+legal_basis: "§14 Abs. 4 UStG / Art. 226 MwStSystRL"
+
+# =============================================================================
+# MANDATORY FIELDS (Pflichtangaben)
+# =============================================================================
+
+mandatory_fields:
+  # Nr. 1 - Name und Anschrift des leistenden Unternehmers
+  supplier_name:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständiger Name des leistenden Unternehmers"
+    severity: "error"
+    required: true
+
+  supplier_address:
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+    description: "Vollständige Anschrift des leistenden Unternehmers"
+    severity: "error"
+    required: true
+
+  # Nr. 2 - Steuernummer oder USt-IdNr.
+  vat_id:
+    legal_ref: "§14 Abs. 4 Nr. 2 UStG"
+    description: "Umsatzsteuer-Identifikationsnummer (EU-Format)"
+    severity: "error"
+    required: true
+    validation:
+      # Erlaubt alle EU-Formate (z.B. DE123..., ATU123..., NL123...)
+      pattern_vat_id: "^([A-Z]{2})[0-9A-Za-z\\+\\*\\.]{2,12}$"
+      # Fallback für deutsche Steuernummern
+      pattern_tax_number: "^\\d{2,3}/\\d{3}/\\d{5}$"
+
+  # Nr. 3 - Ausstellungsdatum
+  invoice_date:
+    legal_ref: "§14 Abs. 4 Nr. 3 UStG"
+    description: "Ausstellungsdatum der Rechnung"
+    severity: "error"
+    required: true
+
+  # Nr. 4 - Fortlaufende Rechnungsnummer
+  invoice_number:
+    legal_ref: "§14 Abs. 4 Nr. 4 UStG"
+    description: "Fortlaufende Rechnungsnummer"
+    severity: "error"
+    required: true
+
+  # Nr. 5 - Menge und Art der Lieferung
+  quantity_description:
+    legal_ref: "§14 Abs. 4 Nr. 5 UStG"
+    description: "Menge und Art der Lieferung/Leistung"
+    severity: "error"
+    required: true
+
+  # Nr. 7/8 - Beträge
+  net_amount:
+    legal_ref: "§14 Abs. 4 Nr. 7 UStG"
+    severity: "error"
+    required: true
+
+  vat_rate:
+    legal_ref: "§14 Abs. 4 Nr. 8 UStG"
+    severity: "error"
+    required: true
+
+# =============================================================================
+# CONTEXT LOGIC (Kontext-abhängige Prüfung)
+# =============================================================================
+
+context_logic:
+  # Inlandsrechnung (DE → DE)
+  domestic:
+    applies_when:
+      supplier_vat_id: "^DE.*"
+    severity: "error"
+    strict_validation: true
+
+  # EU-Rechnung (EU → DE)
+  eu_inbound:
+    applies_when:
+      supplier_vat_id: "^(AT|BE|BG|CY|CZ|DK|EE|FI|FR|GR|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK).*"
+    action: "check_reverse_charge"
+    severity: "warning"
+    check_instead:
+      - "Reverse Charge Hinweis (§13b UStG)"
+      - "Innergemeinschaftliche Lieferung"
+
+  # Ausländische Rechnung (Drittland)
+  foreign_supplier:
+    applies_when:
+      supplier_vat_id: "^(?!(DE|AT|BE|BG|CY|CZ|DK|EE|FI|FR|GR|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK)).*"
+    action: "downgrade_severity"
+    severity: "warning"
+    reason: "Ausländische Rechnung - §14 UStG Formvorschriften gelten nur eingeschränkt"
+
+# =============================================================================
+# WARNINGS (Nicht-kritische Prüfungen)
+# =============================================================================
+
+warnings:
+  - field: "delivery_date"
+    message: "Leistungsdatum fehlt oder unklar"
+    severity: "warning"
+    note: "Oft reicht 'Leistungsmonat' oder 'Rechnungsdatum = Leistungsdatum'"
+
+  - field: "recipient_name"
+    message: "Rechnungsempfänger nicht eindeutig"
+    severity: "warning"
+
+  - field: "payment_terms"
+    message: "Zahlungsbedingungen fehlen"
+    severity: "info"
+
+# =============================================================================
+# SPECIAL CASES (Sonderfälle)
+# =============================================================================
+
+special_cases:
+  # Kleinbetragsrechnung (§33 UStDV)
+  small_invoice:
+    applies_when:
+      total_gross: "<= 250"
+    reduced_requirements:
+      - supplier_name: true
+      - supplier_address: false  # Nicht zwingend erforderlich
+      - vat_id: false            # Nicht zwingend erforderlich
+      - invoice_date: true
+      - quantity_description: true
+      - total_gross: true
+      - vat_rate: true
+    legal_ref: "§33 UStDV"
+
+  # Reverse Charge
+  reverse_charge:
+    indicators:
+      - "Steuerschuldnerschaft des Leistungsempfängers"
+      - "Reverse Charge"
+      - "§13b UStG"
+      - "VAT due by recipient"
+    action: "flag_for_review"
+    booking_note: "Vorsteuer und USt. auf Konto 1787/1577 buchen"

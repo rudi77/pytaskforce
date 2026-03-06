@@ -1,0 +1,13 @@
+{
+  "eval_id": 1,
+  "eval_name": "office-supplies-multi-item",
+  "variant": "without_skill",
+  "expectations": [
+    {"text": "correct_debit_account_4930", "passed": true, "evidence": "Line 41: 'Konto 4930 Buerobedarfs'"},
+    {"text": "both_items_assigned", "passed": true, "evidence": "Lines 23-26: Both Druckerpapier and Toner listed with positions"},
+    {"text": "correct_vat_account_1576", "passed": true, "evidence": "Line 49: 'Konto 1576 Abziehbare Vorsteuer 19%'"},
+    {"text": "compliance_check_performed", "passed": true, "evidence": "Line 64: 'COMPLIANCE-PRUEFUNG NACH Paragraph 14 UStG' with full table"},
+    {"text": "correct_total_amount", "passed": true, "evidence": "Line 31: 'Bruttobetrag gesamt: 178,50 EUR'"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 141: 'AUDIT TRAIL / PRUEFPROTOKOLL' section"}
+  ]
+}

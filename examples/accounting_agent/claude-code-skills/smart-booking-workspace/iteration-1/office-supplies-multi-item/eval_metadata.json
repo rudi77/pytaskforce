@@ -1,0 +1,37 @@
+{
+  "eval_id": 1,
+  "eval_name": "office-supplies-multi-item",
+  "prompt": "Ich habe eine Rechnung von Bueromaterial Mueller GmbH: Nr. 2024-789, 20.06.2024. Positionen: 5x Druckerpapier A4 je 6 EUR (30 EUR netto), 2x Toner HP schwarz je 60 EUR (120 EUR netto). 19% MwSt auf alles. Gesamtbetrag 178,50 EUR brutto. USt-ID DE987654321, Hauptstr. 1, 10115 Berlin",
+  "assertions": [
+    {
+      "name": "correct_debit_account_4930",
+      "description": "Soll-Konto ist 4930 (Buerobedarf)",
+      "check": "output contains '4930'"
+    },
+    {
+      "name": "both_items_assigned",
+      "description": "Beide Positionen (Druckerpapier + Toner) haben Kontozuordnung",
+      "check": "output contains 'Druckerpapier' and output contains 'Toner'"
+    },
+    {
+      "name": "correct_vat_account_1576",
+      "description": "Vorsteuer-Konto ist 1576 (19%)",
+      "check": "output contains '1576'"
+    },
+    {
+      "name": "compliance_check_performed",
+      "description": "Compliance/§14 UStG Pruefung wurde durchgefuehrt",
+      "check": "output contains '§14' or 'complian' or 'Pflichtangabe' or 'konform'"
+    },
+    {
+      "name": "correct_total_amount",
+      "description": "Gesamtbetrag 178,50 korrekt",
+      "check": "output contains '178.50' or '178,50'"
+    },
+    {
+      "name": "audit_trail_created",
+      "description": "Audit Trail erstellt",
+      "check": "output contains 'audit' or 'Audit' or 'Protokoll' or 'audit_trail'"
+    }
+  ]
+}

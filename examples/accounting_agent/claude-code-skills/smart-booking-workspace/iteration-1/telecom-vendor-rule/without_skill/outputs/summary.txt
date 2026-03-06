@@ -1,0 +1,177 @@
+================================================================================
+BUCHUNGSPROTOKOLL / BOOKING SUMMARY
+================================================================================
+Erstellt am: 2026-03-04
+Methode: Ohne Skill-Unterstuetzung (rein AI-basiert)
+================================================================================
+
+1. RECHNUNGSDATEN (EXTRAHIERTE DATEN)
+================================================================================
+
+Rechnungsnummer:    RE-2024-0815
+Rechnungsdatum:     15.06.2024
+Lieferant:          Deutsche Telekom AG (Telekom)
+USt-ID Lieferant:   DE123456789
+Anschrift:          Landgrabenweg 151, 53227 Bonn
+Leistung:           Mobilfunk Business L
+Nettobetrag:        59,99 EUR
+USt-Satz:           19%
+USt-Betrag:         11,40 EUR
+Bruttobetrag:       71,39 EUR
+
+Rechnerische Pruefung:
+  59,99 EUR * 0,19 = 11,3981 EUR --> gerundet 11,40 EUR  [OK]
+  59,99 EUR + 11,40 EUR = 71,39 EUR                      [OK]
+
+================================================================================
+
+2. PRUEFUNG GEMAESS PAR. 14 UStG (PFLICHTANGABEN)
+================================================================================
+
+Pflichtangabe                          | Vorhanden | Status
+---------------------------------------|-----------|-------
+Par. 14 Abs. 4 Nr. 1: Name/Anschrift  | Ja        | [OK]  Telekom, Landgrabenweg 151, 53227 Bonn
+  des leistenden Unternehmers          |           |
+Par. 14 Abs. 4 Nr. 2: Name/Anschrift  | NEIN      | [!] Name/Anschrift des Leistungsempfaengers
+  des Leistungsempfaengers             |           |      fehlt in den uebergebenen Daten
+Par. 14 Abs. 4 Nr. 3: Steuernummer    | Ja        | [OK]  USt-ID DE123456789 vorhanden
+  oder USt-IdNr.                       |           |
+Par. 14 Abs. 4 Nr. 4: Rechnungsnummer | Ja        | [OK]  RE-2024-0815
+  (fortlaufend)                        |           |
+Par. 14 Abs. 4 Nr. 5: Menge und Art   | Teilweise | [~]   "Mobilfunk Business L" - Art ja,
+  der Leistung                         |           |       Leistungszeitraum nicht explizit
+Par. 14 Abs. 4 Nr. 6: Zeitpunkt der   | NEIN      | [!]   Leistungszeitraum nicht angegeben
+  Leistung                             |           |       (typisch: Monatsrechnung Juni 2024)
+Par. 14 Abs. 4 Nr. 7: Entgelt         | Ja        | [OK]  59,99 EUR netto
+Par. 14 Abs. 4 Nr. 8: Steuersatz und  | Ja        | [OK]  19%, 11,40 EUR USt
+  Steuerbetrag                         |           |
+Par. 14 Abs. 4 Nr. 9: Hinweis auf     | n/a       | [-]   Keine Steuerbefreiung
+  Steuerbefreiung                      |           |
+
+ERGEBNIS: 2 Warnungen / fehlende Angaben.
+  - Leistungsempfaenger fehlt (muss auf Originalrechnung stehen)
+  - Leistungszeitraum nicht explizit angegeben
+
+HINWEIS: Fuer den Vorsteuerabzug (Par. 15 UStG) muessen ALLE Pflichtangaben
+auf der Originalrechnung vorhanden sein. Die fehlenden Angaben koennten auf
+der Original-PDF-Rechnung enthalten sein, waren aber nicht in der Aufgabe
+uebergeben. Vor Buchung sollte die Originalrechnung geprueft werden.
+
+================================================================================
+
+3. KONTENZUORDNUNG (SKR03)
+================================================================================
+
+Aufwandskonto:
+  Konto 4920 - Telefon (alternativ: 4925 - Mobilfunk)
+  Hinweis: Im SKR03 wird Mobilfunk haeufig auf 4920 "Telefon" gebucht.
+           Manche Unternehmen nutzen ein Unterkonto 4925 fuer Mobilfunk.
+           Hier wird 4920 verwendet, da es das Standardkonto ist.
+
+Vorsteuerkonto:
+  Konto 1576 - Abziehbare Vorsteuer 19%
+
+Kreditorenkonto:
+  Konto 70000+ (individuelle Kreditornummer fuer Deutsche Telekom)
+  Alternativ: Konto 1600 - Verbindlichkeiten aus Lieferungen und Leistungen
+  Hier verwendet: Kreditor 70001 (angenommen fuer Telekom)
+
+================================================================================
+
+4. BUCHUNGSVORSCHLAG
+================================================================================
+
+Buchungssatz (Eingangsrechnung):
+
+  Soll                          | Haben                         | Betrag (EUR)
+  ------------------------------|-------------------------------|-------------
+  4920 Telefon                  |                               | 59,99
+  1576 Vorsteuer 19%            |                               | 11,40
+                                | 70001 Kreditor Telekom        | 71,39
+  ------------------------------|-------------------------------|-------------
+  Summe Soll: 71,39             | Summe Haben: 71,39            | AUSGEGLICHEN
+
+Buchungstext:     "Telekom Mobilfunk Business L, RE-2024-0815, 06/2024"
+Buchungsdatum:    15.06.2024 (= Rechnungsdatum)
+Belegdatum:       15.06.2024
+Belegnummer:      RE-2024-0815
+Kostenstelle:     [vom Anwender zuzuordnen]
+
+Bei Zahlung (spaetere Buchung):
+
+  Soll                          | Haben                         | Betrag (EUR)
+  ------------------------------|-------------------------------|-------------
+  70001 Kreditor Telekom        |                               | 71,39
+                                | 1200 Bank                     | 71,39
+
+================================================================================
+
+5. AUDIT TRAIL / PRUEFPROTOKOLL
+================================================================================
+
+Zeitstempel             | Aktion                              | Details
+------------------------|-------------------------------------|---------------------------
+2026-03-04 00:00:00 UTC | Rechnungsdaten empfangen            | Manuelle Eingabe
+2026-03-04 00:00:01 UTC | Datenextraktion abgeschlossen       | 9 Felder extrahiert
+2026-03-04 00:00:02 UTC | Rechnerische Pruefung               | Netto + USt = Brutto [OK]
+2026-03-04 00:00:03 UTC | USt-Satz verifiziert                | 19% auf 59,99 = 11,40 [OK]
+2026-03-04 00:00:04 UTC | Par. 14 UStG Pruefung               | 2 Warnungen (s. Abschnitt 2)
+2026-03-04 00:00:05 UTC | Kontenzuordnung (SKR03)             | 4920/1576 an 70001
+2026-03-04 00:00:06 UTC | Buchungsvorschlag erstellt           | Soll/Haben ausgeglichen
+2026-03-04 00:00:07 UTC | Vorsteuerabzug-Berechtigung         | Pruefung Originalbeleg empfohlen
+
+Pruefungsschritte im Detail:
+
+  [1] DATENEXTRAKTION
+      - Rechnungsnummer: RE-2024-0815 (Format plausibel)
+      - Datum: 15.06.2024 (gueltiges Datum)
+      - Betraege: Netto 59,99 / USt 11,40 / Brutto 71,39
+      - Lieferant: Deutsche Telekom, Bonn
+      - USt-ID: DE123456789 (Format DE + 9 Ziffern korrekt)
+
+  [2] RECHNERISCHE PRUEFUNG
+      - 59,99 * 1,19 = 71,3881 --> gerundet 71,39 [OK]
+      - 59,99 * 0,19 = 11,3981 --> gerundet 11,40 [OK]
+      - Summenbildung: 59,99 + 11,40 = 71,39 [OK]
+
+  [3] USt-ID VALIDIERUNG
+      - Format DE + 9 Ziffern: syntaktisch korrekt
+      - HINWEIS: Online-Validierung ueber BZSt (VIES) empfohlen
+      - HINWEIS: DE123456789 sieht nach einer Platzhalter-USt-ID aus;
+        die tatsaechliche USt-ID der Telekom ist DE123475223
+
+  [4] KONTENZUORDNUNG
+      - Leistungsart "Mobilfunk" --> Konto 4920 Telefon (SKR03)
+      - Regelmaessige Betriebsausgabe, voller Vorsteuerabzug bei
+        betrieblicher Nutzung (Par. 15 Abs. 1 UStG)
+      - Bei gemischter Nutzung (privat/geschaeftlich): Vorsteuerabzug
+        anteilig kuerzen (Par. 15 Abs. 1b UStG)
+
+  [5] COMPLIANCE-HINWEISE
+      - Aufbewahrungsfrist: 10 Jahre (Par. 147 Abs. 3 AO)
+      - Aufzubewahren bis: 31.12.2034
+      - GoBD: Originalbeleg revisionssicher archivieren
+      - Vorsteuerabzug nur bei vollstaendigen Pflichtangaben (Par. 15 UStG)
+
+================================================================================
+
+6. ZUSAMMENFASSUNG UND EMPFEHLUNGEN
+================================================================================
+
+BUCHUNG:    BEREIT ZUR FREIGABE (mit Vorbehalten)
+
+Vorbehalte:
+  1. Originalrechnung auf vollstaendige Par. 14 UStG Angaben pruefen
+     (insbesondere Leistungsempfaenger und Leistungszeitraum)
+  2. USt-ID DE123456789 ueber VIES/BZSt validieren
+     (Hinweis: sieht nach Platzhalter-Nummer aus)
+  3. Bei Mischnutzung (privat/geschaeftlich) den Vorsteuerabzug
+     anteilig kuerzen
+  4. Kostenstelle vom Anwender zuordnen lassen
+
+Empfohlene Kontierung:
+  4920 (Telefon) / 1576 (Vorsteuer 19%) an Kreditor Telekom
+
+================================================================================
+ENDE DES BUCHUNGSPROTOKOLLS
+================================================================================

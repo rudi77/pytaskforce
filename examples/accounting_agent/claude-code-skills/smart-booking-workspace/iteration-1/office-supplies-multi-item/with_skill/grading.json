@@ -1,0 +1,13 @@
+{
+  "eval_id": 1,
+  "eval_name": "office-supplies-multi-item",
+  "variant": "with_skill",
+  "expectations": [
+    {"text": "correct_debit_account_4930", "passed": true, "evidence": "Lines 15,21: '4930 (Buerobedarf)' for both positions"},
+    {"text": "both_items_assigned", "passed": true, "evidence": "Line 14: 'Druckerpapier A4', Line 20: 'Toner HP schwarz' — both with account assignments"},
+    {"text": "correct_vat_account_1576", "passed": true, "evidence": "Lines 16,22: '1576 (Abziehbare Vorsteuer 19%)'"},
+    {"text": "compliance_check_performed", "passed": true, "evidence": "Line 10: 'Compliance: Konform (Kleinbetragsrechnung gemaess §33 UStDV)'"},
+    {"text": "correct_total_amount", "passed": true, "evidence": "Line 29: 'Brutto gesamt: 178,50 EUR'"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 36: 'Audit-ID: bd6cf18a-...' with SHA-256 integrity hash"}
+  ]
+}

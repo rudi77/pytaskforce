@@ -1,0 +1,11 @@
+{
+  "reviews": [
+    {"run_id": "telecom-vendor-rule-with_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"},
+    {"run_id": "telecom-vendor-rule-without_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"},
+    {"run_id": "office-supplies-multi-item-with_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"},
+    {"run_id": "office-supplies-multi-item-without_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"},
+    {"run_id": "foreign-reverse-charge-with_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"},
+    {"run_id": "foreign-reverse-charge-without_skill", "feedback": "", "timestamp": "2026-03-04T20:05:00Z"}
+  ],
+  "status": "complete"
+}

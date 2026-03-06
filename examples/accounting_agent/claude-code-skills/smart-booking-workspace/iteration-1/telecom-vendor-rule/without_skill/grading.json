@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "telecom-vendor-rule",
+  "variant": "without_skill",
+  "expectations": [
+    {"text": "correct_debit_account_4920", "passed": true, "evidence": "Line 66: 'Konto 4920 - Telefon'"},
+    {"text": "correct_vat_account_1576", "passed": true, "evidence": "Line 72: 'Konto 1576 - Abziehbare Vorsteuer 19%'"},
+    {"text": "correct_credit_account_1600", "passed": true, "evidence": "Line 76: 'Konto 1600 - Verbindlichkeiten aus Lieferungen und Leistungen'"},
+    {"text": "compliance_check_performed", "passed": true, "evidence": "Lines 28-58: Full Par. 14 UStG compliance table"},
+    {"text": "amounts_correct", "passed": true, "evidence": "Line 17: '59,99 EUR'"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 109: 'AUDIT TRAIL / PRUEFPROTOKOLL' section present"}
+  ]
+}

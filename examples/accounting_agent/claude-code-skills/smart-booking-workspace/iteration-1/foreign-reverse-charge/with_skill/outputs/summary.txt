@@ -1,0 +1,39 @@
+BUCHUNG ABGESCHLOSSEN
+
+Lieferant: Fortuna S.R.L.
+Adresse: Via Roma 123, 20100 Milano
+USt-IdNr.: IT12345678901
+Rechnungsnr.: 2024-4567
+Rechnungsdatum: 03.02.2026
+Brutto: 2.000,00 EUR
+Netto: 2.000,00 EUR
+Reverse Charge: Ja (gemaess §13b UStG)
+
+Buchungen:
+1. Software Lizenz Annual -> Konto 4964 (Aufwendungen fuer Software (GWG)) | 1.200,00 EUR netto
+   Vorsteuer Reverse Charge: Konto 1577 | 228,00 EUR
+   Haben: Konto 1600 (Verbindlichkeiten aus Lieferungen und Leistungen)
+   Regel: SR-004 (Semantic Match, Similarity: 90%)
+
+2. Consulting Services -> Konto 4950 (Rechts- und Beratungskosten) | 800,00 EUR netto
+   Vorsteuer Reverse Charge: Konto 1577 | 152,00 EUR
+   Haben: Konto 1600 (Verbindlichkeiten aus Lieferungen und Leistungen)
+   Regel: SR-008 (Semantic Match, Similarity: 90%)
+
+Compliance-Pruefung: Bestanden (§14 Abs. 4 UStG)
+  Hinweis: MwSt-Abweichung erwartet bei Reverse Charge (0,00 EUR auf Rechnung vs. 380,00 EUR Vorsteuer §13b)
+
+Kontierung:
+  Confidence: 78,75%
+  Hard Gates: Neuer Lieferant (erster Beleg)
+  Empfehlung: HITL Review erforderlich
+
+HITL-Entscheidung: BESTAETIGT (Option 1)
+
+Status: Manuell bestaetigt
+Booking-ID: BK-20260304195551-a88ee6
+Audit-ID: ac9dce3d-95cc-443b-9026-8c94cf8e82da
+Integrity-Hash: 96c7e2fd0e91f1b11bd068c07004e0c8461d8e67801e07db0216d391943e5535
+Neue Regeln: 2 gelernt
+  - AUTO-20260304195553-1: "Software Lizenz Annual" -> Konto 4964
+  - AUTO-20260304195553-2: "Consulting Services" -> Konto 4950

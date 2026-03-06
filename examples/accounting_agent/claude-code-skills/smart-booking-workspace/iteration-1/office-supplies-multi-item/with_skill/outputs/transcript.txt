@@ -1,0 +1,295 @@
+================================================================================
+SMART-BOOKING SKILL TRANSCRIPT
+Invoice: Bueromaterial Mueller GmbH, Nr. 2024-789
+Date: 2026-03-04
+================================================================================
+
+================================================================================
+PHASE 1: Rechnungsdaten extrahieren
+================================================================================
+
+Extracted invoice data from user text input and saved to:
+  .bookkeeping/current_invoice.json
+
+Invoice JSON:
+{
+  "supplier_name": "Bueromaterial Mueller GmbH",
+  "supplier_address": "Hauptstr. 1, 10115 Berlin",
+  "supplier_vat_id": "DE987654321",
+  "invoice_number": "2024-789",
+  "invoice_date": "2024-06-20",
+  "delivery_date": null,
+  "total_net": 150.00,
+  "total_vat": 28.50,
+  "total_gross": 178.50,
+  "line_items": [
+    {
+      "description": "Druckerpapier A4",
+      "quantity": 5,
+      "unit_price": 6.00,
+      "net_amount": 30.00,
+      "vat_rate": 0.19,
+      "vat_amount": 5.70
+    },
+    {
+      "description": "Toner HP schwarz",
+      "quantity": 2,
+      "unit_price": 60.00,
+      "net_amount": 120.00,
+      "vat_rate": 0.19,
+      "vat_amount": 22.80
+    }
+  ],
+  "vat_breakdown": [
+    {
+      "rate": 0.19,
+      "net_amount": 150.00,
+      "vat_amount": 28.50
+    }
+  ]
+}
+
+================================================================================
+PHASE 2: Compliance-Pruefung (§14 UStG)
+================================================================================
+
+COMMAND:
+python smart-booking/scripts/compliance.py \
+  --input .bookkeeping/current_invoice.json \
+  --rules smart-booking/resources/compliance_rules.yaml
+
+OUTPUT:
+{
+  "is_compliant": true,
+  "is_small_invoice": true,
+  "is_reverse_charge": false,
+  "legal_basis": "§33 UStDV (Kleinbetragsrechnung)",
+  "missing_fields": [],
+  "errors": [],
+  "warnings": [],
+  "summary": "Rechnung erfuellt alle Pflichtangaben gemaess §14 UStG.",
+  "fields_checked": 5
+}
+
+RESULT: COMPLIANT
+- Kleinbetragsrechnung (Brutto 178,50 EUR <= 250 EUR)
+- Reduzierte Anforderungen gemaess §33 UStDV
+- Alle 5 Pflichtfelder vorhanden
+- Keine Fehler, keine Warnungen
+- Kein Reverse Charge
+
+================================================================================
+PHASE 3: Kontierung (Kontozuordnung)
+================================================================================
+
+COMMAND:
+python smart-booking/scripts/kontierung.py \
+  --input .bookkeeping/current_invoice.json \
+  --rules smart-booking/resources/kontierung_rules.yaml \
+  --workspace .bookkeeping
+
+OUTPUT:
+{
+  "success": true,
+  "supplier_name": "Bueromaterial Mueller GmbH",
+  "is_new_vendor": true,
+  "rule_matches": [
+    {
+      "rule_id": "SR-001",
+      "rule_type": "vendor_item",
+      "match_type": "semantic",
+      "target_account": "4930",
+      "target_account_name": "Buerobedarf",
+      "similarity_score": 0.9,
+      "matched_item": "Druckerpapier A4",
+      "matched_pattern": "Druckerpapier",
+      "priority": 50
+    },
+    {
+      "rule_id": "SR-001",
+      "rule_type": "vendor_item",
+      "match_type": "semantic",
+      "target_account": "4930",
+      "target_account_name": "Buerobedarf",
+      "similarity_score": 0.9,
+      "matched_item": "Toner HP schwarz",
+      "matched_pattern": "Toner",
+      "priority": 50
+    },
+    {
+      "rule_id": "SR-003",
+      "rule_type": "vendor_item",
+      "match_type": "semantic",
+      "target_account": "4985",
+      "target_account_name": "Werkzeuge und Kleingeraete (GWG)",
+      "similarity_score": 0.9,
+      "matched_item": "Druckerpapier A4",
+      "matched_pattern": "Drucker",
+      "priority": 50
+    }
+  ],
+  "rules_applied": 2,
+  "booking_proposals": [
+    {
+      "line_item": "Druckerpapier A4",
+      "debit_account": "4930",
+      "debit_account_name": "Buerobedarf",
+      "credit_account": "1600",
+      "net_amount": 30.0,
+      "vat_rate": 0.19,
+      "vat_amount": 5.7,
+      "vat_account": "1576"
+    },
+    {
+      "line_item": "Toner HP schwarz",
+      "debit_account": "4930",
+      "debit_account_name": "Buerobedarf",
+      "credit_account": "1600",
+      "net_amount": 120.0,
+      "vat_rate": 0.19,
+      "vat_amount": 22.8,
+      "vat_account": "1576"
+    }
+  ],
+  "unmatched_items": [],
+  "confidence": {
+    "overall_confidence": 0.7875,
+    "recommendation": "hitl_review",
+    "triggered_hard_gates": [
+      {"gate_type": "new_vendor", "reason": "Erster Beleg von diesem Lieferanten"}
+    ]
+  }
+}
+
+RESULT: hitl_review (Confidence 78,75%, Hard Gate: new_vendor)
+
+================================================================================
+PHASE 4B: Manuelle Pruefung (HITL Review)
+================================================================================
+
+BUCHUNGSVORSCHLAG ZUR PRUEFUNG:
+
+Lieferant: Bueromaterial Mueller GmbH [NEU — erster Beleg]
+Rechnungsnr.: 2024-789
+Brutto: 178,50 EUR
+Confidence: 78,75%
+
+Hard Gate: Erster Beleg von diesem Lieferanten
+
+POSITIONEN & KONTIERUNGSVORSCHLAEGE:
+
+1. Druckerpapier A4 — 30,00 EUR
+   -> Konto 4930 (Buerobedarf)
+   Confidence: 90%, Grund: Semantische Regel SR-001 (Pattern: "Druckerpapier")
+
+2. Toner HP schwarz — 120,00 EUR
+   -> Konto 4930 (Buerobedarf)
+   Confidence: 90%, Grund: Semantische Regel SR-001 (Pattern: "Toner")
+
+---
+Optionen:
+1. BESTAETIGEN — Vorschlag uebernehmen
+2. KORRIGIEREN — z.B. "Position 1 auf Konto 4930" oder "alles auf 6805"
+3. ABLEHNEN — Nicht buchen
+
+USER-EINGABE: 1 (BESTAETIGEN)
+
+--- Buchung speichern ---
+
+COMMAND:
+echo '<booking_json>' | python smart-booking/scripts/booking.py save --workspace .bookkeeping
+
+OUTPUT:
+{
+  "success": true,
+  "booking_id": "BK-20260304195526-cd3db7",
+  "timestamp": "2026-03-04T19:55:26.860268+00:00",
+  "bookings_file": ".bookkeeping/bookings/bookings.jsonl"
+}
+
+--- Regel lernen ---
+
+COMMAND:
+echo '<rule_json>' | python smart-booking/scripts/booking.py learn --workspace .bookkeeping
+
+INPUT:
+{
+  "action": "create_from_hitl_confirmation",
+  "supplier_name": "Bueromaterial Mueller GmbH",
+  "confidence": 0.7875,
+  "position_bookings": [
+    {"item_description": "Druckerpapier A4", "debit_account": "4930", "debit_account_name": "Buerobedarf"},
+    {"item_description": "Toner HP schwarz", "debit_account": "4930", "debit_account_name": "Buerobedarf"}
+  ]
+}
+
+OUTPUT:
+{
+  "success": true,
+  "rules_created": 2,
+  "rules_updated": 0,
+  "created_rules": [
+    {"rule_id": "AUTO-20260304195532-1", "item": "Druckerpapier A4", "account": "4930"},
+    {"rule_id": "AUTO-20260304195532-2", "item": "Toner HP schwarz", "account": "4930"}
+  ],
+  "vendor_pattern": "Bueromaterial Mueller GmbH",
+  "learned_rules_file": ".bookkeeping/rules/learned_rules.yaml"
+}
+
+--- Audit Log ---
+
+COMMAND:
+echo '<audit_json>' | python smart-booking/scripts/booking.py audit --workspace .bookkeeping
+
+INPUT:
+{
+  "operation": "booking_created",
+  "document_id": "2024-789",
+  "details": {
+    "supplier_name": "Bueromaterial Mueller GmbH",
+    "invoice_number": "2024-789",
+    "invoice_date": "2024-06-20",
+    "total_gross": 178.50,
+    "total_net": 150.00,
+    "total_vat": 28.50,
+    "booking_proposals": [...],
+    "confidence": 0.7875,
+    "decision": "user_confirmed",
+    "hard_gates": ["new_vendor"]
+  },
+  "decision": "user_confirmed",
+  "legal_basis": "§14 UStG, §4 Abs. 4 EStG"
+}
+
+OUTPUT:
+{
+  "success": true,
+  "log_id": "bd6cf18a-258c-418a-8964-3e5cf77af90c",
+  "timestamp": "2026-03-04T19:55:35.954175+00:00",
+  "integrity_hash": "91cd9e7cc14e1ead07416d878c3c7e29ed28cc09d9e12da0ad88c02eb6ac4d1a",
+  "audit_file": ".bookkeeping/audit/audit_trail.jsonl"
+}
+
+================================================================================
+PHASE 5: Zusammenfassung
+================================================================================
+
+BUCHUNG ABGESCHLOSSEN
+
+Lieferant: Bueromaterial Mueller GmbH
+Rechnungsnr.: 2024-789
+Brutto: 178,50 EUR
+
+Buchungen:
+- Druckerpapier A4 -> 4930 (Buerobedarf) | 30,00 EUR
+  Vorsteuer: 1576 | 5,70 EUR
+- Toner HP schwarz -> 4930 (Buerobedarf) | 120,00 EUR
+  Vorsteuer: 1576 | 22,80 EUR
+
+Status: Manuell bestaetigt
+Audit-ID: bd6cf18a-258c-418a-8964-3e5cf77af90c
+Neue Regeln: 2 gelernt
+
+================================================================================
+END OF TRANSCRIPT
+================================================================================

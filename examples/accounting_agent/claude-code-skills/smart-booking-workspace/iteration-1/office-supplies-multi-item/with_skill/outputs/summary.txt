@@ -1,0 +1,47 @@
+BUCHUNG ABGESCHLOSSEN
+
+Lieferant: Bueromaterial Mueller GmbH
+Rechnungsnr.: 2024-789
+Rechnungsdatum: 20.06.2024
+Brutto: 178,50 EUR
+Netto: 150,00 EUR
+MwSt: 28,50 EUR (19%)
+
+Compliance: Konform (Kleinbetragsrechnung gemaess §33 UStDV, Brutto <= 250 EUR)
+Alle 5 Pflichtangaben erfuellt. Keine Fehler, keine Warnungen.
+
+Buchungen:
+1. Druckerpapier A4 (5x 6,00 EUR)
+   Soll: 4930 (Buerobedarf) | 30,00 EUR netto
+   Vorsteuer: 1576 (Abziehbare Vorsteuer 19%) | 5,70 EUR
+   Haben: 1600 (Verbindlichkeiten aus Lieferungen und Leistungen) | 35,70 EUR
+   Regel: SR-001 (Semantisch, Similarity: 90%)
+
+2. Toner HP schwarz (2x 60,00 EUR)
+   Soll: 4930 (Buerobedarf) | 120,00 EUR netto
+   Vorsteuer: 1576 (Abziehbare Vorsteuer 19%) | 22,80 EUR
+   Haben: 1600 (Verbindlichkeiten aus Lieferungen und Leistungen) | 142,80 EUR
+   Regel: SR-001 (Semantisch, Similarity: 90%)
+
+Kontrollsumme:
+  Netto gesamt:     150,00 EUR (30,00 + 120,00)
+  Vorsteuer gesamt:  28,50 EUR (5,70 + 22,80)
+  Brutto gesamt:    178,50 EUR
+
+Status: Manuell bestaetigt (HITL Review — Grund: Erster Beleg von diesem Lieferanten)
+Confidence: 78,75%
+Hard Gates: new_vendor (Erster Beleg von diesem Lieferanten)
+
+Booking-ID: BK-20260304195526-cd3db7
+Audit-ID: bd6cf18a-258c-418a-8964-3e5cf77af90c
+Audit Integrity Hash: 91cd9e7cc14e1ead07416d878c3c7e29ed28cc09d9e12da0ad88c02eb6ac4d1a
+
+Neue Regeln: 2 gelernt
+  - AUTO-20260304195532-1: Druckerpapier A4 -> Konto 4930 (Buerobedarf)
+  - AUTO-20260304195532-2: Toner HP schwarz -> Konto 4930 (Buerobedarf)
+
+Workspace-Dateien:
+  .bookkeeping/current_invoice.json      — Extrahierte Rechnungsdaten
+  .bookkeeping/bookings/bookings.jsonl   — Buchungshistorie (append-only)
+  .bookkeeping/rules/learned_rules.yaml  — Gelernte Buchungsregeln
+  .bookkeeping/audit/audit_trail.jsonl   — GoBD-konformer Audit Trail

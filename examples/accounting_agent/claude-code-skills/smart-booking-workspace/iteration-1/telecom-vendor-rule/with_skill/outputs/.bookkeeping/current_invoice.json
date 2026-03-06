@@ -1,0 +1,28 @@
+{
+  "supplier_name": "Telekom",
+  "supplier_address": "Landgrabenweg 151, 53227 Bonn",
+  "supplier_vat_id": "DE123456789",
+  "invoice_number": "RE-2024-0815",
+  "invoice_date": "2024-06-15",
+  "delivery_date": null,
+  "total_net": 59.99,
+  "total_vat": 11.40,
+  "total_gross": 71.39,
+  "line_items": [
+    {
+      "description": "Mobilfunk Business L",
+      "quantity": 1,
+      "unit_price": 59.99,
+      "net_amount": 59.99,
+      "vat_rate": 0.19,
+      "vat_amount": 11.40
+    }
+  ],
+  "vat_breakdown": [
+    {
+      "rate": 0.19,
+      "net_amount": 59.99,
+      "vat_amount": 11.40
+    }
+  ]
+}

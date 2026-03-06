@@ -1,0 +1,15 @@
+version: '1.0'
+updated_at: '2026-03-04T19:55:06.459472+00:00'
+rules:
+- rule_id: AUTO-20260304195506-1
+  rule_type: vendor_item
+  vendor_pattern: Telekom
+  item_patterns:
+  - Mobilfunk Business L
+  target_account: '4920'
+  target_account_name: Telefon
+  priority: 75
+  similarity_threshold: 0.8
+  source: auto_high_confidence
+  created_at: '2026-03-04T19:55:06.459472+00:00'
+  is_active: true

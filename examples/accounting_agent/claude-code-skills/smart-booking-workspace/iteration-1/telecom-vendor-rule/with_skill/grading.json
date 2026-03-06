@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "telecom-vendor-rule",
+  "variant": "with_skill",
+  "expectations": [
+    {"text": "correct_debit_account_4920", "passed": true, "evidence": "Line 9: '4920 (Telefon)'"},
+    {"text": "correct_vat_account_1576", "passed": true, "evidence": "Line 10: '1576 (Abziehbare Vorsteuer 19%)'"},
+    {"text": "correct_credit_account_1600", "passed": true, "evidence": "Line 11: '1600 (Verbindlichkeiten aus Lieferungen und Leistungen)'"},
+    {"text": "compliance_check_performed", "passed": true, "evidence": "Line 19: 'Compliance: Konform (Kleinbetragsrechnung gemaess §33 UStDV, 5 Felder geprueft)'"},
+    {"text": "amounts_correct", "passed": true, "evidence": "Line 9: '59,99 EUR'"},
+    {"text": "audit_trail_created", "passed": true, "evidence": "Line 15: 'Audit-ID: f71d5fd3-...' with integrity hash chain"}
+  ]
+}

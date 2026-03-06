@@ -1,0 +1,33 @@
+{
+  "supplier_name": "Fortuna S.R.L.",
+  "supplier_address": "Via Roma 123, 20100 Milano",
+  "supplier_vat_id": "IT12345678901",
+  "invoice_number": "2024-4567",
+  "invoice_date": "2026-02-03",
+  "delivery_date": null,
+  "total_net": 2000.00,
+  "total_vat": 0.00,
+  "total_gross": 2000.00,
+  "reverse_charge": true,
+  "line_items": [
+    {
+      "description": "Software Lizenz Annual",
+      "quantity": 1,
+      "unit_price": 1200.00,
+      "net_amount": 1200.00,
+      "vat_rate": 0.19,
+      "vat_amount": 0.00
+    },
+    {
+      "description": "Consulting Services",
+      "quantity": 1,
+      "unit_price": 800.00,
+      "net_amount": 800.00,
+      "vat_rate": 0.19,
+      "vat_amount": 0.00
+    }
+  ],
+  "vat_breakdown": [
+    {"rate": 0.19, "net_amount": 2000.00, "vat_amount": 0.00}
+  ]
+}

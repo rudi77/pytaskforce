@@ -1,0 +1,17 @@
+{
+  "action": "create_from_hitl_confirmation",
+  "supplier_name": "Fortuna S.R.L.",
+  "confidence": 0.7875,
+  "position_bookings": [
+    {
+      "item_description": "Software Lizenz Annual",
+      "debit_account": "4964",
+      "debit_account_name": "Aufwendungen fuer Software (GWG)"
+    },
+    {
+      "item_description": "Consulting Services",
+      "debit_account": "4950",
+      "debit_account_name": "Rechts- und Beratungskosten"
+    }
+  ]
+}

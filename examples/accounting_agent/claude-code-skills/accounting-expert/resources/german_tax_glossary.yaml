@@ -1,0 +1,145 @@
+# Deutsches Steuer-Glossar für Rechnungserklärungen
+# Verwendung: Schnelle Referenz für häufige Fragen
+
+version: "1.0"
+
+# =============================================================================
+# MEHRWERTSTEUER / UMSATZSTEUER
+# =============================================================================
+
+vat_terms:
+  MwSt:
+    full_name: "Mehrwertsteuer"
+    synonym: "Umsatzsteuer (USt)"
+    explanation: "Indirekte Steuer auf den Mehrwert bei Warenlieferungen und Dienstleistungen"
+    legal_basis: "UStG"
+
+  USt:
+    full_name: "Umsatzsteuer"
+    synonym: "Mehrwertsteuer (MwSt)"
+    explanation: "Offizielle Bezeichnung im deutschen Steuerrecht"
+    legal_basis: "§1 UStG"
+
+  Vorsteuer:
+    explanation: "MwSt, die ein Unternehmer für betriebliche Einkäufe zahlt und vom Finanzamt zurückfordern kann"
+    legal_basis: "§15 UStG"
+    example: "Firma kauft Büromaterial für 119 EUR → 19 EUR Vorsteuer abziehbar"
+
+  USt-IdNr:
+    full_name: "Umsatzsteuer-Identifikationsnummer"
+    explanation: "EU-weit gültige Steuernummer für Unternehmer"
+    format: "DE + 9 Ziffern (Deutschland)"
+    example: "DE123456789"
+
+# =============================================================================
+# STEUERSÄTZE
+# =============================================================================
+
+tax_rates:
+  standard:
+    rate: "19%"
+    applies_to: "Die meisten Waren und Dienstleistungen"
+    legal_basis: "§12 Abs. 1 UStG"
+
+  reduced:
+    rate: "7%"
+    applies_to:
+      - "Lebensmittel (außer Getränke)"
+      - "Bücher und Zeitschriften"
+      - "Öffentlicher Nahverkehr"
+      - "Kulturelle Veranstaltungen"
+      - "Medizinische Hilfsmittel"
+    legal_basis: "§12 Abs. 2 UStG"
+
+  zero:
+    rate: "0%"
+    applies_to:
+      - "Innergemeinschaftliche Lieferungen"
+      - "Exporte (Ausfuhrlieferungen)"
+    legal_basis: "§4 Nr. 1 UStG"
+
+# =============================================================================
+# RECHNUNGSARTEN
+# =============================================================================
+
+invoice_types:
+  Kleinbetragsrechnung:
+    threshold: "≤ 250 EUR brutto"
+    reduced_requirements: true
+    explanation: "Vereinfachte Rechnung mit weniger Pflichtangaben"
+    legal_basis: "§33 UStDV"
+
+  Reverse_Charge:
+    explanation: "Steuerschuldnerschaft des Leistungsempfängers - USt wird vom Käufer abgeführt"
+    applies_when: "EU-Lieferant ohne deutsche USt-IdNr."
+    legal_basis: "§13b UStG"
+    booking_note: "Vorsteuer und USt auf Konto 1787/1577"
+
+  Innergemeinschaftliche_Lieferung:
+    explanation: "Lieferung an Unternehmer in anderen EU-Ländern"
+    vat_rate: "0% (steuerfrei)"
+    legal_basis: "§4 Nr. 1b UStG"
+    requirement: "Empfänger muss gültige USt-IdNr. haben"
+
+# =============================================================================
+# PFLICHTANGABEN NACH §14 UStG
+# =============================================================================
+
+mandatory_fields:
+  supplier_name:
+    german: "Name des Rechnungsausstellers"
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+
+  supplier_address:
+    german: "Anschrift des Rechnungsausstellers"
+    legal_ref: "§14 Abs. 4 Nr. 1 UStG"
+
+  vat_id_or_tax_number:
+    german: "USt-IdNr. oder Steuernummer"
+    legal_ref: "§14 Abs. 4 Nr. 2 UStG"
+
+  invoice_date:
+    german: "Ausstellungsdatum"
+    legal_ref: "§14 Abs. 4 Nr. 3 UStG"
+
+  invoice_number:
+    german: "Fortlaufende Rechnungsnummer"
+    legal_ref: "§14 Abs. 4 Nr. 4 UStG"
+
+  quantity_and_description:
+    german: "Menge und Art der Lieferung/Leistung"
+    legal_ref: "§14 Abs. 4 Nr. 5 UStG"
+
+  delivery_date:
+    german: "Zeitpunkt der Lieferung/Leistung"
+    legal_ref: "§14 Abs. 4 Nr. 6 UStG"
+    note: "Kann auch 'Rechnungsdatum = Leistungsdatum' sein"
+
+  net_amount:
+    german: "Entgelt (Nettobetrag)"
+    legal_ref: "§14 Abs. 4 Nr. 7 UStG"
+
+  vat_rate_and_amount:
+    german: "Steuersatz und Steuerbetrag"
+    legal_ref: "§14 Abs. 4 Nr. 8 UStG"
+
+# =============================================================================
+# HÄUFIGE FRAGEN
+# =============================================================================
+
+faq:
+  two_vat_rates:
+    question: "Warum gibt es zwei MwSt-Sätze auf der Rechnung?"
+    answer: "Bestimmte Waren (Lebensmittel, Bücher) werden mit 7% besteuert, andere mit 19%. Wenn beide Warenarten auf einer Rechnung sind, werden beide Sätze ausgewiesen."
+
+  vat_deductible:
+    question: "Kann ich die Vorsteuer abziehen?"
+    answer: "Ja, wenn: 1) Sie Unternehmer sind, 2) die Rechnung alle Pflichtangaben hat, 3) die Leistung für Ihr Unternehmen ist."
+
+  foreign_invoice:
+    question: "Was bedeutet es, wenn keine MwSt auf der Rechnung steht?"
+    answer: "Mögliche Gründe: 1) Reverse Charge (Sie schulden die USt), 2) Innergemeinschaftliche Lieferung, 3) Export, 4) Kleinunternehmer (§19 UStG)"
+
+  invoice_vs_receipt:
+    question: "Was ist der Unterschied zwischen Rechnung und Quittung?"
+    answer: "Eine Rechnung hat alle §14 UStG Pflichtangaben und berechtigt zum Vorsteuerabzug. Eine Quittung ist nur ein Zahlungsbeleg."

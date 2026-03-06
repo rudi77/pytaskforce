@@ -1,0 +1,175 @@
+================================================================================
+BUCHUNGSPROTOKOLL / BOOKING SUMMARY
+================================================================================
+Erstellt am: 2026-03-04
+Methode: Ohne Skill-Unterstuetzung (rein wissensbasiert)
+================================================================================
+
+1. RECHNUNGSDATEN (EXTRAHIERTE DATEN)
+================================================================================
+
+Lieferant/Kreditor:
+  Name:           Bueromaterial Mueller GmbH
+  Strasse:        Hauptstr. 1
+  PLZ/Ort:        10115 Berlin
+  USt-ID:         DE987654321
+
+Rechnungsdaten:
+  Rechnungsnummer: 2024-789
+  Rechnungsdatum:  20.06.2024
+  Zahlungsziel:    nicht angegeben (Annahme: 30 Tage = 20.07.2024)
+
+Positionen:
+  Pos. | Beschreibung         | Menge | Einzelpreis | Nettobetrag | MwSt-Satz
+  -----|----------------------|-------|-------------|-------------|----------
+  1    | Druckerpapier A4     |     5 |    6,00 EUR |   30,00 EUR | 19%
+  2    | Toner HP schwarz     |     2 |   60,00 EUR |  120,00 EUR | 19%
+
+Betraege:
+  Nettobetrag gesamt:        150,00 EUR
+  USt 19%:                    28,50 EUR
+  Bruttobetrag gesamt:       178,50 EUR
+
+Rechnerische Pruefung:
+  150,00 EUR * 1,19 = 178,50 EUR  --> KORREKT
+
+
+2. KONTENZUORDNUNG (SKR03)
+================================================================================
+
+Sollkonten:
+  - Konto 4930 "Buerobedarfs" (Aufwandskonto)
+    Beide Positionen (Druckerpapier und Toner) fallen unter Buerobedarf/
+    Bueroausstattung. Da die Einzelwerte unter der GWG-Grenze liegen und es
+    sich um Verbrauchsmaterial handelt, werden sie als Aufwand gebucht.
+
+    Alternativ waere auch Konto 4910 "Porto, Telefon" oder 4950 "Reparaturen"
+    denkbar, aber 4930 ist das korrekte Konto fuer Bueromaterial.
+
+  - Konto 1576 "Abziehbare Vorsteuer 19%"
+    Vorsteuer aus Eingangsrechnungen mit dem Regelsteuersatz.
+
+Habenkonten:
+  - Konto 1600 "Verbindlichkeiten aus Lieferungen und Leistungen"
+    (alternativ: direktes Kreditorenkonto, z.B. 70xxx)
+
+Begruendung der Kontenwahl:
+  - Druckerpapier A4: Typisches Verbrauchsmaterial fuer den Bueroalltag.
+    Kein Anlagegut (Verbrauch, kein dauerhafter Wert). -> 4930
+  - Toner HP schwarz: Verbrauchsmaterial fuer Drucker/Kopierer.
+    Kein GWG, da Verbrauchsmaterial ohne eigenstaendige Nutzbarkeit. -> 4930
+  - Beide Positionen tragen 19% MwSt -> 1576 fuer Vorsteuerabzug
+
+
+3. COMPLIANCE-PRUEFUNG NACH Paragraph 14 UStG
+================================================================================
+
+Pflichtangaben gemaess Paragraph 14 Abs. 4 UStG:
+
+  Nr. | Pflichtangabe                              | Status    | Bemerkung
+  ----|-------------------------------------------|-----------|------------------
+  1   | Name und Anschrift des Leistenden          | ERFUELLT  | Bueromaterial Mueller GmbH, Hauptstr. 1, 10115 Berlin
+  2   | Name und Anschrift des Leistungsempfaengers| FEHLT     | Nicht in den Daten enthalten
+  3   | USt-ID oder Steuernummer des Leistenden    | ERFUELLT  | DE987654321
+  4   | Rechnungsnummer (fortlaufend)              | ERFUELLT  | 2024-789
+  5   | Rechnungsdatum                             | ERFUELLT  | 20.06.2024
+  6   | Zeitpunkt der Lieferung/Leistung           | FEHLT     | Nicht explizit angegeben (ggf. = Rechnungsdatum)
+  7   | Menge und Art der Lieferung                | ERFUELLT  | 5x Druckerpapier A4, 2x Toner HP schwarz
+  8   | Entgelt (netto) aufgeschluesselt           | ERFUELLT  | 30,00 EUR + 120,00 EUR
+  9   | Steuersatz und Steuerbetrag                | ERFUELLT  | 19%, 28,50 EUR
+  10  | Im Voraus vereinbarte Minderungen          | N/A       | Keine Rabatte/Skonti angegeben
+
+Ergebnis: BEDINGT KONFORM
+  - WARNUNG: Empfaengeranschrift fehlt in den uebermittelten Daten.
+    Dies koennte auf der Originalrechnung vorhanden sein, wurde aber
+    nicht in der Beschreibung mitgeteilt.
+  - WARNUNG: Lieferdatum/Leistungsdatum nicht explizit angegeben.
+    Paragraph 14 Abs. 4 Nr. 6 UStG verlangt die Angabe des Zeitpunkts
+    der Lieferung. Haufig wird "Rechnungsdatum = Lieferdatum" vermerkt.
+  - EMPFEHLUNG: Vor Buchung pruefen, ob die Originalrechnung beide
+    fehlenden Angaben enthaelt. Ohne diese ist der Vorsteuerabzug
+    gemaess Paragraph 15 UStG gefaehrdet.
+
+
+4. BUCHUNGSVORSCHLAG
+================================================================================
+
+Buchungssatz (Eingangsrechnung):
+--------------------------------------------------------------------------------
+
+  Buchungsdatum: 20.06.2024
+  Belegnummer:   ER-2024-789
+  Buchungstext:  Bueromaterial Mueller GmbH, RE 2024-789, Buerobedarf
+
+  Soll                              | Haben
+  ----------------------------------|----------------------------------
+  4930 Buerobedarf     150,00 EUR   | 1600 Verb. a. LuL   178,50 EUR
+  1576 Vorsteuer 19%    28,50 EUR   |
+  ----------------------------------|----------------------------------
+  Summe Soll:          178,50 EUR   | Summe Haben:        178,50 EUR
+
+  --> Bilanzgleichung: AUSGEGLICHEN
+
+Alternative Darstellung mit Positionsaufschluesselung:
+--------------------------------------------------------------------------------
+
+  Buchung 1 (Druckerpapier):
+    Soll 4930    30,00 EUR    Buerobedarf - 5x Druckerpapier A4
+    Soll 1576     5,70 EUR    Vorsteuer 19% auf 30,00 EUR
+    Haben 1600   35,70 EUR    Verb. a. LuL
+
+  Buchung 2 (Toner):
+    Soll 4930   120,00 EUR    Buerobedarf - 2x Toner HP schwarz
+    Soll 1576    22,80 EUR    Vorsteuer 19% auf 120,00 EUR
+    Haben 1600  142,80 EUR    Verb. a. LuL
+
+  Gesamt:
+    Soll 4930:  150,00 EUR
+    Soll 1576:   28,50 EUR
+    Haben 1600: 178,50 EUR
+
+Zahlungsbuchung (bei Bezahlung):
+--------------------------------------------------------------------------------
+
+  Buchungsdatum: [Zahlungsdatum]
+  Buchungstext:  Zahlung Bueromaterial Mueller GmbH, RE 2024-789
+
+  Soll 1600 Verb. a. LuL   178,50 EUR
+  Haben 1200 Bank           178,50 EUR
+
+
+5. AUDIT TRAIL / PRUEFPROTOKOLL
+================================================================================
+
+Zeitstempel          | Aktion                        | Details
+---------------------|-------------------------------|-----------------------------
+2026-03-04           | Rechnungseingang              | RE 2024-789 erfasst
+2026-03-04           | Datenextraktion               | Lieferant, Positionen, Betraege extrahiert
+2026-03-04           | Rechnerische Pruefung         | Netto 150,00 + USt 28,50 = Brutto 178,50 KORREKT
+2026-03-04           | Compliance-Pruefung           | Paragraph 14 UStG geprueft - BEDINGT KONFORM
+2026-03-04           | Kontenzuordnung               | SKR03: 4930/1576 an 1600
+2026-03-04           | Buchungsvorschlag erstellt    | Doppelte Buchfuehrung, ausgeglichen
+2026-03-04           | Freigabestatus                | OFFEN - Manuelle Pruefung empfohlen
+
+Offene Punkte / Klaerungsbedarf:
+  1. Originalrechnung auf Empfaengeranschrift pruefen
+  2. Lieferdatum auf Originalrechnung verifizieren
+  3. Kreditorenkonto anlegen oder bestehendes zuordnen
+  4. Zahlungsziel/Skonto-Konditionen klaeren
+  5. Kostenstelle zuordnen (falls Kostenrechnung gefuehrt wird)
+
+================================================================================
+ZUSAMMENFASSUNG
+================================================================================
+
+Rechnung:        2024-789 von Bueromaterial Mueller GmbH
+Nettobetrag:     150,00 EUR
+Vorsteuer 19%:    28,50 EUR
+Bruttobetrag:    178,50 EUR
+Buchungssatz:    4930/1576 an 1600 (SKR03)
+Compliance:      Bedingt konform (2 Warnungen - siehe Abschnitt 3)
+Status:          Buchungsvorschlag erstellt - Freigabe ausstehend
+
+================================================================================
+Ende des Buchungsprotokolls
+================================================================================

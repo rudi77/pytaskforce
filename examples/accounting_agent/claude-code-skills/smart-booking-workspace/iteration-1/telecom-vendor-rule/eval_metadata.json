@@ -1,0 +1,37 @@
+{
+  "eval_id": 0,
+  "eval_name": "telecom-vendor-rule",
+  "prompt": "Buche die Rechnung von der Telekom: RE-2024-0815, 15.06.2024, Mobilfunk Business L, 59,99 EUR netto + 11,40 EUR MwSt = 71,39 EUR brutto. USt-ID DE123456789, Landgrabenweg 151, 53227 Bonn",
+  "assertions": [
+    {
+      "name": "correct_debit_account_4920",
+      "description": "Soll-Konto ist 4920 (Telefon)",
+      "check": "output contains '4920'"
+    },
+    {
+      "name": "correct_vat_account_1576",
+      "description": "Vorsteuer-Konto ist 1576 (19%)",
+      "check": "output contains '1576'"
+    },
+    {
+      "name": "correct_credit_account_1600",
+      "description": "Haben-Konto ist 1600 (Verbindlichkeiten)",
+      "check": "output contains '1600'"
+    },
+    {
+      "name": "compliance_check_performed",
+      "description": "Compliance/§14 UStG Pruefung wurde erwaehnt",
+      "check": "output contains '§14' or 'complian' or 'Pflichtangabe' or 'konform'"
+    },
+    {
+      "name": "amounts_correct",
+      "description": "Netto 59,99 und Brutto 71,39 korrekt genannt",
+      "check": "output contains '59.99' or '59,99'"
+    },
+    {
+      "name": "audit_trail_created",
+      "description": "Audit Trail / Protokoll erstellt oder erwaehnt",
+      "check": "output contains 'audit' or 'Audit' or 'Protokoll' or 'audit_trail'"
+    }
+  ]
+}

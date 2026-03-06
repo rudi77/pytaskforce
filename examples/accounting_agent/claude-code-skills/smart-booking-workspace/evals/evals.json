@@ -1,0 +1,26 @@
+{
+  "skill_name": "smart-booking",
+  "evals": [
+    {
+      "id": 0,
+      "name": "telecom-vendor-rule",
+      "prompt": "Buche die Rechnung von der Telekom: RE-2024-0815, 15.06.2024, Mobilfunk Business L, 59,99 EUR netto + 11,40 EUR MwSt = 71,39 EUR brutto. USt-ID DE123456789, Landgrabenweg 151, 53227 Bonn",
+      "expected_output": "Buchung auf Konto 4920 (Telefon), Vorsteuer 1576, Gegenkonto 1600. Compliance OK (Kleinbetragsrechnung). HITL wegen neuem Lieferanten, danach Regel gelernt.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "office-supplies-multi-item",
+      "prompt": "Ich habe eine Rechnung von Bueromaterial Mueller GmbH: Nr. 2024-789, 20.06.2024. Positionen: 5x Druckerpapier A4 je 6 EUR (30 EUR netto), 2x Toner HP schwarz je 60 EUR (120 EUR netto). 19% MwSt auf alles. Gesamtbetrag 178,50 EUR brutto. USt-ID DE987654321, Hauptstr. 1, 10115 Berlin",
+      "expected_output": "Beide Positionen auf Konto 4930 (Buerobedarf), Vorsteuer 1576, Gegenkonto 1600. Compliance OK. HITL wegen neuem Lieferanten, danach Regeln gelernt.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "foreign-reverse-charge",
+      "prompt": "Rechnung von Fortuna S.R.L., Via Roma 123, 20100 Milano, IT12345678901. Nr. 2024-4567, Datum 03.02.2026. Software Lizenz Annual 1200 EUR netto, Consulting Services 800 EUR netto. Reverse Charge gemaess §13b UStG. Gesamtbetrag 2000 EUR netto.",
+      "expected_output": "Software auf 4964, Consulting auf 4950. Reverse Charge erkannt, Vorsteuer auf 1577 (nicht 1576). HITL wegen neuem Lieferanten + ggf. fehlender MwSt-Info. Compliance Warnung wegen auslaendischer Rechnung.",
+      "files": []
+    }
+  ]
+}
