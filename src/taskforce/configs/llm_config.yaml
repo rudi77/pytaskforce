@@ -109,7 +109,7 @@ logging:
   log_parameter_mapping: true
 
 tracing:
-  enabled: true
+  enabled: false
   # Mode: 'file', 'phoenix', or 'both'
   mode: "file"
   file_config:

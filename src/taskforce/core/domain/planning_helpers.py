@@ -670,12 +670,33 @@ def _rebuild_system_prompt(
     mission: str,
     state: dict[str, Any],
 ) -> None:
-    """Overwrite ``messages[0]`` with a fresh system prompt."""
+    """Overwrite ``messages[0]`` with a fresh system prompt.
+
+    Uses a lightweight cache: skips the rebuild when the planner state
+    and message count haven't changed since the last call, because
+    ``_build_system_prompt`` is dominated by context-pack extraction
+    (reverse message scan) and plan summary formatting.
+    """
+    # Cache key: planner state snapshot + message count.  When tools
+    # execute or compression runs, the message count changes and the
+    # cache naturally invalidates.
+    planner_state = state.get("planner_state")
+    cache_key = (id(planner_state), len(messages))
+    prev = getattr(agent, "_prompt_cache", None)
+    if prev is not None and prev[0] == cache_key:
+        messages[0] = {
+            "role": MessageRole.SYSTEM.value,
+            "content": prev[1],
+        }
+        return
+
+    prompt = agent._build_system_prompt(
+        mission=mission, state=state, messages=messages
+    )
+    agent._prompt_cache = (cache_key, prompt)  # type: ignore[attr-defined]
     messages[0] = {
         "role": MessageRole.SYSTEM.value,
-        "content": agent._build_system_prompt(
-            mission=mission, state=state, messages=messages
-        ),
+        "content": prompt,
     }
 
 
@@ -805,6 +826,13 @@ async def _react_loop(
             else:
                 content = content_acc
         else:
+            # Apply compression + budget check for non-streaming path too
+            messages = await agent.message_history_manager.compress_messages(
+                messages
+            )
+            messages = agent.message_history_manager.preflight_budget_check(
+                messages
+            )
             result = await agent.llm_provider.complete(
                 messages=messages,
                 model=model_hint,

@@ -35,6 +35,7 @@ class PlannerTool(ToolProtocol):
                 "status": "PENDING"|"DONE"}]}
         """
         self._state: dict[str, Any] = initial_state or {"tasks": []}
+        self._version: int = 0  # Monotonic counter; bumped on every mutation
 
     @property
     def name(self) -> str:
@@ -273,6 +274,7 @@ class PlannerTool(ToolProtocol):
             PlanTask(description=task, status=TaskStatus.PENDING.value).to_dict()
             for task in tasks
         ]
+        self._version += 1
 
         return ToolResult.success_result(
             output=self._format_plan(),
@@ -308,6 +310,7 @@ class PlannerTool(ToolProtocol):
             )
 
         tasks[zero_based_index]["status"] = TaskStatus.DONE.value
+        self._version += 1
 
         return ToolResult.success_result(
             output=self._format_plan(),
@@ -377,6 +380,7 @@ class PlannerTool(ToolProtocol):
                 )
 
         self._state["tasks"] = tasks
+        self._version += 1
 
         return ToolResult.success_result(
             output=self._format_plan(),

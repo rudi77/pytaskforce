@@ -31,9 +31,22 @@ class LeanAgentStateStore:
         state: dict[str, Any],
         planner: PlannerTool | None,
     ) -> None:
-        """Save state including PlannerTool state when available."""
+        """Save state including PlannerTool state when available.
+
+        Caches the planner state snapshot so repeated saves without
+        planner changes skip the serialization overhead.
+        """
         if planner:
-            state["planner_state"] = planner.get_state()
+            # Cache planner state by version to avoid re-serializing unchanged plans.
+            planner_version = getattr(planner, "_version", None)
+            cached = getattr(self, "_planner_state_cache", None)
+            if cached is not None and planner_version is not None and cached[0] == planner_version:
+                state["planner_state"] = cached[1]
+            else:
+                ps = planner.get_state()
+                state["planner_state"] = ps
+                if planner_version is not None:
+                    self._planner_state_cache = (planner_version, ps)
         await self._state_manager.save_state(session_id, state)
         if self._runtime_tracker:
             await self._runtime_tracker.record_checkpoint(session_id, state)
