@@ -121,13 +121,22 @@ class TokenBudgeter:
                     tc_json = json.dumps(tc, ensure_ascii=False, default=str)
                     total_tokens += len(tc_json) // self.CHARS_PER_TOKEN
 
-        # Tool schemas
+        # Tool schemas — cache the per-tool-list token estimate because the
+        # tool list object rarely changes between calls (same list reference),
+        # but json.dumps() on every tool schema is expensive with 19+ tools.
         if tools:
-            for tool in tools:
-                total_tokens += self.TOOL_SCHEMA_OVERHEAD_TOKENS
-                # Tool schema JSON
-                tool_json = json.dumps(tool, ensure_ascii=False, default=str)
-                total_tokens += len(tool_json) // self.CHARS_PER_TOKEN
+            tools_id = id(tools)
+            cached_tools = getattr(self, "_tools_tokens_cache", None)
+            if cached_tools is not None and cached_tools[0] == tools_id:
+                total_tokens += cached_tools[1]
+            else:
+                tools_tokens = 0
+                for tool in tools:
+                    tools_tokens += self.TOOL_SCHEMA_OVERHEAD_TOKENS
+                    tool_json = json.dumps(tool, ensure_ascii=False, default=str)
+                    tools_tokens += len(tool_json) // self.CHARS_PER_TOKEN
+                self._tools_tokens_cache = (tools_id, tools_tokens)
+                total_tokens += tools_tokens
 
         # Context pack
         if context_pack:
