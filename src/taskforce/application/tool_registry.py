@@ -76,6 +76,9 @@ class ToolRegistry:
         self._memory_store_dir = memory_store_dir
         self._gateway = gateway
         self._logger = logger.bind(component="ToolRegistry")
+        # Caches: avoid re-instantiating the same tool and re-listing all tools.
+        self._tool_cache: dict[str, ToolProtocol] = {}
+        self._native_tools_cache: list[dict[str, Any]] | None = None
 
     # -------------------------------------------------------------------------
     # Catalog functionality
@@ -86,14 +89,18 @@ class ToolRegistry:
         Get all registered tool definitions.
 
         Instantiates each tool from the infrastructure registry and returns
-        its metadata. This ensures the list is always in sync with the
-        single source of truth.
+        its metadata.  Results are cached for the lifetime of this registry
+        instance so repeated calls (e.g. from the ``/api/v1/tools`` endpoint)
+        are effectively free.
 
         Returns:
             List of tool definitions with name, description,
             parameters_schema, requires_approval, approval_risk_level,
             and origin fields.
         """
+        if self._native_tools_cache is not None:
+            return self._native_tools_cache
+
         tools = []
         for tool_name in get_all_tool_names():
             tool = self._instantiate_tool(tool_name)
@@ -109,6 +116,8 @@ class ToolRegistry:
                 "supports_parallelism": getattr(tool, "supports_parallelism", False),
                 "origin": "native",
             })
+
+        self._native_tools_cache = tools
         return tools
 
     def get_native_tool_names(self) -> set[str]:
@@ -269,7 +278,9 @@ class ToolRegistry:
         Returns:
             True if tool exists in registry
         """
-        return get_tool_definition(tool_name) is not None
+        from taskforce.infrastructure.tools.registry import is_registered
+
+        return is_registered(tool_name)
 
     def validate_tools(self, tool_names: list[str]) -> tuple[list[str], list[str]]:
         """
@@ -296,12 +307,20 @@ class ToolRegistry:
         """
         Instantiate a tool from its registry name.
 
+        Results are cached per tool name so the same tool is only imported
+        and constructed once per registry instance.
+
         Args:
             tool_name: Registry name of the tool
 
         Returns:
             Tool instance or None if instantiation fails
         """
+        # Return cached instance if available.
+        cached = self._tool_cache.get(tool_name)
+        if cached is not None:
+            return cached
+
         resolved_spec = resolve_tool_spec(tool_name)
         if not resolved_spec:
             self._logger.warning(
@@ -362,6 +381,7 @@ class ToolRegistry:
                 tool_name=tool_instance.name,
             )
 
+            self._tool_cache[tool_name] = tool_instance
             return tool_instance
 
         except Exception as e:

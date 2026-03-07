@@ -1,10 +1,16 @@
 """
 Tool registry for resolving tool names and types to module specifications.
+
+Performance notes:
+- ``get_tool_definition`` returns a *shallow* copy (type/module are strings,
+  params is shallow-copied).  Callers that mutate nested params should copy
+  them explicitly — but all current callers already do ``params.copy()``.
+- ``get_tool_name_for_type`` uses a pre-built reverse index instead of a
+  linear scan, making it O(1) instead of O(n).
 """
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 ToolSpec = dict[str, Any]
@@ -166,26 +172,38 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
     },
 }
 
+# Pre-built reverse index: tool class name → short name (O(1) lookups).
+_TYPE_TO_NAME: dict[str, str] = {
+    spec["type"]: name for name, spec in _TOOL_REGISTRY.items()
+}
+
 
 def get_tool_definition(tool_name: str) -> ToolSpec | None:
-    """Return a deep-copied tool definition by short name."""
+    """Return a shallow-copied tool definition by short name.
+
+    The returned dict has its own ``params`` dict so callers can safely
+    mutate params without affecting the registry.  ``type`` and ``module``
+    are immutable strings and are shared.
+    """
     definition = _TOOL_REGISTRY.get(tool_name)
     if not definition:
         return None
-    return copy.deepcopy(definition)
+    # Shallow copy: type/module are strings (immutable), params is a new dict.
+    return {
+        "type": definition["type"],
+        "module": definition["module"],
+        "params": dict(definition.get("params", {})),
+    }
 
 
 def get_tool_name_for_type(tool_type: str) -> str | None:
-    """Return the short tool name for a given tool class name."""
-    for name, definition in _TOOL_REGISTRY.items():
-        if definition["type"] == tool_type:
-            return name
-    return None
+    """Return the short tool name for a given tool class name (O(1))."""
+    return _TYPE_TO_NAME.get(tool_type)
 
 
 def get_tool_definition_by_type(tool_type: str) -> ToolSpec | None:
-    """Return a deep-copied tool definition by tool class name."""
-    tool_name = get_tool_name_for_type(tool_type)
+    """Return a shallow-copied tool definition by tool class name."""
+    tool_name = _TYPE_TO_NAME.get(tool_type)
     if not tool_name:
         return None
     return get_tool_definition(tool_name)
@@ -260,12 +278,12 @@ def get_all_tool_names() -> list[str]:
 
 def get_all_tool_definitions() -> dict[str, ToolSpec]:
     """
-    Get all tool definitions.
+    Get all tool definitions (shallow copies).
 
     Returns:
-        Deep copy of the entire registry.
+        Dict of tool names to shallow-copied specs.
     """
-    return copy.deepcopy(_TOOL_REGISTRY)
+    return {name: get_tool_definition(name) for name in _TOOL_REGISTRY}  # type: ignore[misc]
 
 
 def register_tool(
@@ -296,6 +314,7 @@ def register_tool(
         "module": module,
         "params": params or {},
     }
+    _TYPE_TO_NAME[tool_type] = name
 
 
 def unregister_tool(name: str) -> bool:
@@ -309,7 +328,9 @@ def unregister_tool(name: str) -> bool:
         True if tool was removed, False if not found
     """
     if name in _TOOL_REGISTRY:
+        tool_type = _TOOL_REGISTRY[name]["type"]
         del _TOOL_REGISTRY[name]
+        _TYPE_TO_NAME.pop(tool_type, None)
         return True
     return False
 
