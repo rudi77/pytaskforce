@@ -94,6 +94,9 @@ class ToolBuilder:
     ) -> list[ToolProtocol]:
         """Create tools filtered by allowlist.
 
+        Only instantiates the tools in the allowlist instead of creating
+        all 30+ tools and filtering afterwards.
+
         Args:
             tool_allowlist: List of allowed native tool names.
             mcp_servers: MCP server configurations.
@@ -106,15 +109,18 @@ class ToolBuilder:
         tools: list[ToolProtocol] = []
 
         if tool_allowlist:
-            available_native_tools = self.get_all_native_tools(llm_provider)
-            for tool in available_native_tools:
-                if tool.name in tool_allowlist:
-                    tools.append(tool)
-                    self._logger.debug(
-                        "native_tool_added",
-                        tool_name=tool.name,
-                        reason="in_tool_allowlist",
-                    )
+            # Resolve only the requested tools directly — no need to
+            # instantiate all 30+ native tools just to filter them.
+            from taskforce.application.tool_registry import ToolRegistry
+
+            registry = ToolRegistry(llm_provider=llm_provider)
+            tools = registry.resolve(tool_allowlist)
+            for tool in tools:
+                self._logger.debug(
+                    "native_tool_added",
+                    tool_name=tool.name,
+                    reason="in_tool_allowlist",
+                )
 
         if mcp_servers:
             temp_config: dict[str, Any] = {"mcp_servers": mcp_servers}
@@ -227,10 +233,11 @@ class ToolBuilder:
         """Get all available native tools.
 
         Delegates to ``ToolRegistry.resolve()`` to avoid duplicating
-        tool instantiation logic.
+        tool instantiation logic.  Uses the cached registry from the
+        factory when available to avoid redundant instantiation.
 
         Args:
-            llm_provider: LLM provider (unused but kept for consistency).
+            llm_provider: LLM provider for tools that need it.
 
         Returns:
             List of all native tool instances.
