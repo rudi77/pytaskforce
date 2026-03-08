@@ -143,6 +143,13 @@ The `coding_agent` profile now defines sub-agents as explicit tools and delegate
 work to specialist sub-agents defined in `src/taskforce/configs/custom/`.
 The `name` field is the sub-agent identifier and is used for resolution:
 
+Runtime tuning defaults for this workflow:
+- Orchestrator (`coding_agent`): `planning_strategy: native_react`, `max_steps: 50`, and broader context budget (`max_chars_per_item: 3500`, `max_total_chars: 8000`) for better delegation decisions.
+- Planner (`coding_planner`): `planning_strategy: native_react`, `max_steps: 30`.
+- Reviewer (`coding_reviewer`): `planning_strategy: native_react`, `max_steps: 25`.
+- Worker (`coding_worker`): narrower context budget (`max_chars_per_item: 1500`, `max_total_chars: 2000`) to keep execution lean.
+- Sub-agent tool outputs are truncated by default (`summarize_results: true`) to avoid passing full verbose execution transcripts back into orchestrator context.
+
 - `coding_planner`: breaks down missions into tasks and priorities
 - `coding_worker`: implements scoped tasks with tooling access
 - `coding_reviewer`: reviews changes and test coverage

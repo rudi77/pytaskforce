@@ -178,3 +178,7 @@ root/
 
 - Document extraction agent templates, tool stubs, and prompt/tool sketches live in
   `plugins/document_extraction_agent/`.
+- Coding-agent runtime defaults are tuned for orchestration efficiency: `coding_agent` uses broader context policy (`max_chars_per_item: 3500`, `max_total_chars: 8000`) while `coding_worker` keeps a tighter budget (`1500`/`2000`) to reduce token churn.
+- `CODING_SPECIALIST_PROMPT` in `src/taskforce/core/prompts/autonomous_prompts.py` has been intentionally shortened to avoid repeated long guidance in every ReAct loop while preserving core senior-engineer/tool-discipline rules.
+- Core `Agent` defaults already use early compression (`DEFAULT_COMPRESSION_TRIGGER = 40000`) and lazy memory loading based on mission keywords in `load_memory_context`.
+- Sub-agent tool specs can set `summarize_results` and `summary_max_length`; defaults in `ToolBuilder.instantiate_sub_agent_tool` now enable truncation (`summarize_results: true`) to prevent verbose sub-agent outputs from bloating orchestrator context.

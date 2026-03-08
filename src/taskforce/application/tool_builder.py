@@ -439,6 +439,8 @@ class ToolBuilder:
         work_dir = tool_spec.get("work_dir")
         max_steps = tool_spec.get("max_steps")
         planning_strategy = tool_spec.get("planning_strategy")
+        summarize_results = bool(tool_spec.get("summarize_results", True))
+        summary_max_length = int(tool_spec.get("summary_max_length", 2000))
 
         sub_agent_spawner = SubAgentSpawner(
             agent_factory=self._factory,
@@ -452,6 +454,8 @@ class ToolBuilder:
             profile=profile,
             work_dir=work_dir,
             max_steps=max_steps,
+            summarize_results=summarize_results,
+            summary_max_length=summary_max_length,
         )
 
         return SubAgentTool(

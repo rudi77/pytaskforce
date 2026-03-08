@@ -193,3 +193,51 @@ class TestBuildTools:
         )
         assert mcp_contexts == []
         assert len(tools) == 9  # defaults
+
+
+class TestInstantiateSubAgentTool:
+    """Tests for instantiate_sub_agent_tool."""
+
+    def test_sub_agent_tool_enables_result_summarization_by_default(
+        self, builder: ToolBuilder
+    ) -> None:
+        with (
+            patch("taskforce.application.sub_agent_spawner.SubAgentSpawner"),
+            patch("taskforce.infrastructure.tools.orchestration.AgentTool") as mock_agent_tool_cls,
+            patch("taskforce.infrastructure.tools.orchestration.sub_agent_tool.SubAgentTool") as mock_sub_tool_cls,
+        ):
+            mock_agent_tool_cls.return_value = MagicMock()
+            mock_sub_tool_cls.return_value = MagicMock()
+
+            spec = {"type": "sub_agent", "name": "coding_worker"}
+            result = builder.instantiate_sub_agent_tool(spec)
+
+            assert result is not None
+            mock_agent_tool_cls.assert_called_once()
+            kwargs = mock_agent_tool_cls.call_args.kwargs
+            assert kwargs["summarize_results"] is True
+            assert kwargs["summary_max_length"] == 2000
+
+    def test_sub_agent_tool_accepts_custom_summary_limits(
+        self, builder: ToolBuilder
+    ) -> None:
+        with (
+            patch("taskforce.application.sub_agent_spawner.SubAgentSpawner"),
+            patch("taskforce.infrastructure.tools.orchestration.AgentTool") as mock_agent_tool_cls,
+            patch("taskforce.infrastructure.tools.orchestration.sub_agent_tool.SubAgentTool") as mock_sub_tool_cls,
+        ):
+            mock_agent_tool_cls.return_value = MagicMock()
+            mock_sub_tool_cls.return_value = MagicMock()
+
+            spec = {
+                "type": "sub_agent",
+                "name": "coding_reviewer",
+                "summarize_results": False,
+                "summary_max_length": 1500,
+            }
+            result = builder.instantiate_sub_agent_tool(spec)
+
+            assert result is not None
+            kwargs = mock_agent_tool_cls.call_args.kwargs
+            assert kwargs["summarize_results"] is False
+            assert kwargs["summary_max_length"] == 1500

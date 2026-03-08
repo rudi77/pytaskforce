@@ -54,8 +54,8 @@ tool_allowlist:
 
 context_policy:
   max_items: 10
-  max_chars_per_item: 2000
-  max_total_chars: 3000
+  max_chars_per_item: 1500
+  max_total_chars: 2000
 
 # Route worker to main model (good balance of capability and cost)
 llm:
