@@ -234,12 +234,16 @@ class AgentFactory:
                 custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
             )
 
+        context_mgmt = base_config.get("context_management", {})
         agent = self._instantiate_agent(
             infra=infra,
             all_tools=all_tools,
             system_prompt=system_prompt,
             settings=agent_settings,
             skill_manager=skill_manager,
+            summary_threshold=context_mgmt.get("summary_threshold"),
+            compression_trigger=context_mgmt.get("compression_trigger"),
+            max_input_tokens=context_mgmt.get("max_input_tokens"),
         )
 
         if activate_skill_tool is not None:

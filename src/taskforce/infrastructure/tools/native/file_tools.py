@@ -126,7 +126,7 @@ class FileWriteTool(ToolProtocol):
 
     @property
     def description(self) -> str:
-        return "Write content to file with backup and safety checks"
+        return "Write or append content to a file with backup and safety checks"
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -141,9 +141,14 @@ class FileWriteTool(ToolProtocol):
                     "type": "string",
                     "description": "Content to write to the file",
                 },
+                "mode": {
+                    "type": "string",
+                    "description": "Write mode: 'write' overwrites the file (default), 'append' adds to the end",
+                    "enum": ["write", "append"],
+                },
                 "backup": {
                     "type": "boolean",
-                    "description": "Whether to backup the existing file (default: True)",
+                    "description": "Whether to backup the existing file (default: True, only for write mode)",
                 },
             },
             "required": ["path", "content"],
@@ -165,55 +170,70 @@ class FileWriteTool(ToolProtocol):
         path = kwargs.get("path", "")
         content = kwargs.get("content", "")
         content_preview = content[:100] + "..." if len(content) > 100 else content
+        mode = kwargs.get("mode", "write")
         backup = kwargs.get("backup", True)
-        return f"⚠️ FILE WRITE OPERATION\nTool: {self.name}\nPath: {path}\nBackup: {backup}\nContent Preview:\n{content_preview}"
+        return f"⚠️ FILE WRITE OPERATION\nTool: {self.name}\nPath: {path}\nMode: {mode}\nBackup: {backup}\nContent Preview:\n{content_preview}"
 
     async def execute(
-        self, path: str, content: str, backup: bool = True, **kwargs
+        self, path: str, content: str, mode: str = "write", backup: bool = True, **kwargs
     ) -> dict[str, Any]:
         """
-        Write content to file with backup and safety checks.
+        Write or append content to a file with backup and safety checks.
 
         Args:
             path: The path to the file to write
             content: The content to write to the file
-            backup: Whether to backup the existing file (default: True)
+            mode: 'write' (default) overwrites, 'append' adds to end
+            backup: Whether to backup the existing file (default: True, only for write mode)
 
         Returns:
             Dictionary with:
             - success: True if the file was written successfully, False otherwise
             - path: The absolute path to the file
-            - size: The size of the file in bytes
+            - size: The total size of the file in bytes
             - backed_up: Whether the existing file was backed up
-            - error: The error message if the file was not written successfully
+            - mode: The write mode used
         """
         try:
             file_path = Path(path)
 
-            # Backup existing file
+            # Create parent directories
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if mode == "append":
+                with open(file_path, "a", encoding="utf-8") as f:
+                    f.write(content)
+                total_size = file_path.stat().st_size
+                return {
+                    "success": True,
+                    "path": str(file_path.absolute()),
+                    "size": total_size,
+                    "appended": len(content),
+                    "mode": "append",
+                    "backed_up": False,
+                }
+
+            # Default: write mode (overwrite)
             backed_up = False
             if backup and file_path.exists():
                 backup_path = file_path.with_suffix(file_path.suffix + ".bak")
                 backup_path.write_text(file_path.read_text(), encoding="utf-8")
                 backed_up = True
 
-            # Create parent directories
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Write content
             file_path.write_text(content, encoding="utf-8")
 
             return {
                 "success": True,
                 "path": str(file_path.absolute()),
                 "size": len(content),
+                "mode": "write",
                 "backed_up": backed_up,
             }
         except Exception as e:
             tool_error = ToolError(
                 f"{self.name} failed: {e}",
                 tool_name=self.name,
-                details={"path": path, "backup": backup},
+                details={"path": path, "mode": mode, "backup": backup},
             )
             return tool_error_payload(tool_error)
 

@@ -107,7 +107,7 @@ class TestFileWriteTool:
     def test_tool_metadata(self, tool):
         """Test tool metadata properties."""
         assert tool.name == "file_write"
-        assert "Write content to file" in tool.description
+        assert "content to a file" in tool.description
         assert tool.requires_approval is True
 
     def test_parameters_schema(self, tool):
@@ -178,6 +178,34 @@ class TestFileWriteTool:
 
         backup_file = tmp_path / "test.txt.bak"
         assert not backup_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_append_to_existing_file(self, tool, tmp_path):
+        """Test appending content to an existing file."""
+        test_file = tmp_path / "log.md"
+        test_file.write_text("# Log\n")
+
+        result = await tool.execute(
+            path=str(test_file), content="- entry 1\n", mode="append"
+        )
+
+        assert result["success"] is True
+        assert result["mode"] == "append"
+        assert result["appended"] == len("- entry 1\n")
+        assert test_file.read_text() == "# Log\n- entry 1\n"
+
+    @pytest.mark.asyncio
+    async def test_append_creates_new_file(self, tool, tmp_path):
+        """Test appending to a non-existent file creates it."""
+        test_file = tmp_path / "new_log.md"
+
+        result = await tool.execute(
+            path=str(test_file), content="first line\n", mode="append"
+        )
+
+        assert result["success"] is True
+        assert test_file.exists()
+        assert test_file.read_text() == "first line\n"
 
     @pytest.mark.asyncio
     async def test_create_parent_directories(self, tool, tmp_path):

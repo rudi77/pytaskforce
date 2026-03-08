@@ -27,6 +27,18 @@ system_prompt: |
   - Summarize and reconcile findings from all sub-agents.
   - If review finds issues, send fixes back to coding_worker.
 
+  SCRATCHPAD PROTOCOL (MANDATORY for analysis with >5 files):
+  You WILL lose earlier file contents due to message compression. The scratchpad is your persistent memory.
+  1. FIRST: Read `.taskforce_coding/scratchpad.md` with file_read. If it exists, it contains your earlier findings — do NOT repeat work already recorded there.
+  2. APPEND: After each batch of file reads, use file_write with mode="append" to add findings to the scratchpad.
+     Format per file: `## path/to/file.py\n- Key finding 1\n- Key finding 2\n`
+  3. TRACK PROGRESS: Start the scratchpad with a `# Files Read` section listing every file path you have analyzed. Before reading a file, check this list — skip files already recorded.
+  4. FINAL ANSWER: Read the scratchpad and synthesize your answer from it.
+
+  NOTIFICATIONS:
+  When a task completes, encounters an important error, or produces significant results,
+  notify the user via send_notification with channel="telegram" and recipient_id="5865840420".
+
   EFFICIENCY RULES (CRITICAL):
   - NEVER use ask_user. You have enough tools to discover everything yourself.
   - NEVER use the llm tool to generate or summarize text - you ARE the LLM.
@@ -42,7 +54,7 @@ persistence:
 agent:
   enable_fast_path: true  # Enable fast-path for follow-up queries
   planning_strategy: native_react  # Sense-Plan-Act-Reflect for orchestration
-  max_steps: 50  # Higher than default (30) to allow error recovery in multi-agent workflows
+  max_steps: 150  # High limit to allow thorough analysis and multi-agent workflows
   max_parallel_tools: 3
   router:
     use_llm_classification: true  # Use LLM for better accuracy in prod
@@ -58,6 +70,14 @@ llm:
 logging:
   level: DEBUG
   format: console
+
+# Context Management - compression thresholds
+# Prevents the infinite re-read loop where compression wipes file contents
+# and the agent reads the same files again (default summary_threshold=20 is too low)
+context_management:
+  summary_threshold: 60          # Message count before triggering compression (default: 20)
+  compression_trigger: 80000     # Token count before triggering compression (default: 40000)
+  max_input_tokens: 120000       # Max input tokens allowed (default: 100000)
 
 # Context Policy configuration (Story 9.2)
 # Controls budgeting for context pack injection before LLM calls
@@ -84,17 +104,20 @@ consolidation:
 # Minimal tool set - orchestrator delegates heavy work to sub-agents
 # Fewer tools = fewer tokens for tool schemas in system prompt
 tools:
-  # Codebase discovery (for providing context to sub-agents)
+  # Codebase discovery and editing
   - file_read      # Read file contents
+  - file_write     # Write/append to files (scratchpad, notes)
+  - edit           # Targeted file editing
   - grep           # Search file contents with regex patterns
   - glob           # Find files by name patterns
 
   # Shell (consolidate operations into shell commands where possible)
   - powershell     # Execute shell commands (tests, builds, git, file ops)
 
-  # Version control and memory
+  # Version control, memory, and notifications
   - git            # Git operations
   - memory         # Unified memory tool
+  - send_notification  # Push notifications (Telegram, etc.)
 
   # Sub-agent tools (explicitly defined)
   - type: sub_agent
@@ -109,6 +132,11 @@ tools:
     name: coding_reviewer
     summarize_results: true
     summary_max_length: 2600
+
+# Notification defaults
+notifications:
+  default_channel: telegram
+  default_recipient_id: "5865840420"
 
 # Unified Memory Configuration
 memory:

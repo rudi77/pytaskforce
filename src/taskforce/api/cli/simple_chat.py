@@ -9,7 +9,6 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
@@ -612,7 +611,10 @@ class SimpleChatRunner:
                 desc = step.get("description", "").strip()
                 self.console.print(f"  [{marker}] {idx}. {desc}")
         elif self.plan_state.text:
-            self.console.print(Markdown(self.plan_state.text))
+            for line in self.plan_state.text.strip().splitlines():
+                line = line.strip()
+                if line:
+                    self.console.print(f"  {line}")
 
     async def _reset_context(self) -> None:
         """Reset conversation context to default state.
