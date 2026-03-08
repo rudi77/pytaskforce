@@ -104,6 +104,7 @@ tools:
   - memory
   - send_notification
   - calendar
+  - gmail
   - schedule
   - reminder
   - rule_manager

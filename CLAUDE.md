@@ -81,7 +81,7 @@ src/taskforce/
 │   ├── memory/                # File-based memory store
 │   ├── cache/                 # Tool result caching
 │   ├── tools/
-│   │   ├── native/            # 19 built-in tools
+│   │   ├── native/            # 20 built-in tools
 │   │   ├── mcp/               # MCP server connections
 │   │   ├── rag/               # Azure AI Search tools
 │   │   └── orchestration/     # Agent/sub-agent tools
@@ -359,7 +359,7 @@ When routing is disabled (default), the router transparently maps all hints back
 
 ## Native Tools
 
-19 built-in tools in `infrastructure/tools/native/`:
+20 built-in tools in `infrastructure/tools/native/`:
 
 | Tool | File | Description |
 |------|------|-------------|
@@ -377,6 +377,7 @@ When routing is disabled (default), the router transparently maps all hints back
 | Ask User | `ask_user_tool.py` | Interactive user prompts |
 | Activate Skill | `activate_skill_tool.py` | Runtime skill activation |
 | Send Notification | `send_notification_tool.py` | Proactive push notifications via Communication Gateway |
+| Gmail | `gmail_tool.py` | Google Gmail list/read/draft/send (butler) |
 | Calendar | `calendar_tool.py` | Google Calendar list/create (butler) |
 | Schedule | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
 | Reminder | `reminder_tool.py` | One-shot reminder creation (butler) |
