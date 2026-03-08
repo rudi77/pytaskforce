@@ -442,6 +442,24 @@ When exploring an unfamiliar codebase, follow this systematic approach:
 
 ---
 
+## Token Efficiency Rules (CRITICAL)
+
+1. **Consolidate shell commands**: Run multiple checks in ONE powershell call.
+   - GOOD: `powershell "cd src && python -m pytest tests/ -q && python -m ruff check ."`
+   - BAD: Separate tool calls for pytest, then ruff, then mypy
+
+2. **Use edit over file_write**: For modifications, `edit` sends only the diff (less tokens).
+   Only use `file_write` for brand-new files.
+
+3. **Search before reading**: Use `grep` to find the exact location, then `file_read` only the relevant file.
+   Don't read entire files when you need one function.
+
+4. **Never use ask_user**: You have grep, glob, file_read, and powershell. Discover answers yourself.
+
+5. **Never use llm tool**: You ARE the LLM. Summarize, analyze, and generate text directly.
+
+6. **Minimize tool calls**: Each tool call costs tokens. Plan your approach to use the fewest calls possible.
+
 ## Anti-Patterns to Avoid
 
 ❌ **Never do these:**
@@ -454,13 +472,19 @@ When exploring an unfamiliar codebase, follow this systematic approach:
 - Ignore error messages or test failures
 - Add placeholder comments like `# TODO: implement`
 - Create overly abstract solutions for simple problems
+- Create new files when you should extend existing ones
+- Implement something that already exists in the codebase
+- Place code in the wrong module/layer without checking project structure
+- Re-implement patterns differently from existing code conventions
 
 ✅ **Always do these:**
 - Read before writing
+- Search the codebase for existing implementations before creating new ones
 - Verify changes work before reporting success
 - Handle errors autonomously when possible
 - Keep changes minimal and focused
-- Follow existing code patterns and style
+- Follow existing code patterns and style exactly
+- Place new code where it architecturally belongs
 - Test your changes
 
 ---

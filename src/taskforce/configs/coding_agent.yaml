@@ -16,8 +16,15 @@ system_prompt: |
 
   Keep orchestration focused:
   - Provide each sub-agent with clear mission scope and expected outputs.
+  - Include relevant file paths, existing patterns, and architectural context in sub-agent missions.
   - Summarize and reconcile findings from all sub-agents.
   - If review finds issues, send fixes back to coding_worker.
+
+  EFFICIENCY RULES (CRITICAL):
+  - NEVER use ask_user. You have enough tools to discover everything yourself.
+  - NEVER use the llm tool to generate or summarize text - you ARE the LLM.
+  - Prefer shell commands (powershell) over specialized tools when a single command suffices.
+  - Before delegating to sub-agents, do a quick codebase scan yourself (grep/glob) to give them precise context about where to work and what patterns to follow.
 
 # Persistence configuration
 persistence:
@@ -66,35 +73,20 @@ consolidation:
 
 
 # Tool configuration for coding agent
-# These tools override the specialist defaults when defined
-# Claude Code style tools for software development
+# Minimal tool set - orchestrator delegates heavy work to sub-agents
+# Fewer tools = fewer tokens for tool schemas in system prompt
 tools:
-  # File reading and searching (Claude Code style)
+  # Codebase discovery (for providing context to sub-agents)
   - file_read      # Read file contents
   - grep           # Search file contents with regex patterns
   - glob           # Find files by name patterns
 
-  # File modification (Claude Code style)
-  - file_write     # Write entire file
-  - edit           # Exact string replacement (surgical edits)
+  # Shell (consolidate operations into shell commands where possible)
+  - powershell     # Execute shell commands (tests, builds, git, file ops)
 
-  # Multimedia support (Claude Code style)
-  - multimedia     # Read images, PDFs, notebooks
-
-  # Shell and execution
-  - powershell     # Execute shell commands
-  - python         # Execute Python code
-
-  # User interaction and LLM
-  - ask_user       # Ask user for clarification
-  - llm            # Generate content with LLM
-
-  # Version control
+  # Version control and memory
   - git            # Git operations
   - memory         # Unified memory tool
-
-  # Browser automation
-  - browser        # Headless browser via Playwright
 
   # Sub-agent tools (explicitly defined)
   - type: sub_agent
