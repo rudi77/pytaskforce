@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
+from unittest.mock import AsyncMock
 
 from taskforce.api.cli.simple_chat import SimpleChatRunner
 from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
@@ -107,13 +108,14 @@ class DummyFactory:
         return self.agent
 
 
-def _build_runner(agent: DummyAgent) -> SimpleChatRunner:
+def _build_runner(agent: DummyAgent, telegram_polling: bool = False) -> SimpleChatRunner:
     runner = SimpleChatRunner(
         session_id="session-id",
         profile="dev",
         agent=agent,
         stream=True,
         user_context=None,
+        telegram_polling=telegram_polling,
     )
     runner.console = Console(record=True)
     return runner
@@ -266,3 +268,51 @@ async def test_clear_resets_context() -> None:
     # Conversation history should be cleared in the state manager
     state = await agent.state_manager.load_state("session-id")
     assert state["conversation_history"] == []
+
+
+def test_telegram_poller_not_initialized_without_flag(monkeypatch) -> None:
+    """Telegram poller should stay disabled unless flag is set."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake")
+    runner = _build_runner(DummyAgent(), telegram_polling=False)
+    assert runner._telegram_poller is None
+
+
+@pytest.mark.asyncio
+async def test_run_starts_and_stops_configured_telegram_poller() -> None:
+    """Runner should start and stop an already configured poller."""
+    runner = _build_runner(DummyAgent(), telegram_polling=True)
+    fake_poller = AsyncMock()
+    runner._telegram_poller = fake_poller
+
+    async def _quit_immediately() -> str:
+        return "/quit"
+
+    runner._read_input = _quit_immediately  # type: ignore[method-assign]
+
+    await runner.run()
+
+    fake_poller.start.assert_awaited_once()
+    fake_poller.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_telegram_inbound_message_routes_via_gateway() -> None:
+    """Unsolicited Telegram messages should be processed by the gateway."""
+    runner = _build_runner(DummyAgent(), telegram_polling=True)
+    gateway = AsyncMock()
+    gateway.handle_message = AsyncMock()
+    runner._gateway = gateway
+
+    await runner._handle_telegram_inbound_message(
+        conversation_id="12345",
+        sender_id="67890",
+        message="Hallo Agent",
+    )
+
+    gateway.handle_message.assert_awaited_once()
+    inbound_message, options = gateway.handle_message.await_args.args
+    assert inbound_message.channel == "telegram"
+    assert inbound_message.conversation_id == "12345"
+    assert inbound_message.sender_id == "67890"
+    assert inbound_message.message == "Hallo Agent"
+    assert options.profile == "dev"

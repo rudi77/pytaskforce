@@ -109,7 +109,7 @@ logging:
   log_parameter_mapping: true
 
 tracing:
-  enabled: false
+  enabled: true
   # Mode: 'file', 'phoenix', or 'both'
   mode: "file"
   file_config:
@@ -142,10 +142,12 @@ routing:
     - condition: "hint:planning"
       model: powerful
     - condition: "hint:reasoning"
-      model: fast
+      model: main
     - condition: "hint:reflecting"
       model: main
     - condition: "hint:acting"
+      model: main
+    - condition: has_tools
       model: main
     - condition: "hint:summarizing"
       model: fast

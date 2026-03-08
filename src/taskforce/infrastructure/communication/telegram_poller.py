@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
@@ -40,8 +41,8 @@ class TelegramPoller:
 
     * If a pending question exists for ``(telegram, sender_id)`` the
       response is stored and (optionally) an acknowledgment is sent back.
-    * Otherwise the message is silently ignored (the CLI user is the
-      primary operator; unsolicited Telegram messages are not processed).
+    * Otherwise an optional inbound handler can process unsolicited
+      Telegram messages as regular chat input.
     """
 
     def __init__(
@@ -51,6 +52,7 @@ class TelegramPoller:
         pending_store: PendingChannelQuestionStoreProtocol,
         outbound_sender: Any | None = None,
         recipient_registry: RecipientRegistryProtocol | None = None,
+        inbound_message_handler: Callable[[str, str, str], Awaitable[None]] | None = None,
         poll_timeout: int = 10,
     ) -> None:
         self._bot_token = bot_token
@@ -58,6 +60,7 @@ class TelegramPoller:
         self._pending_store = pending_store
         self._outbound_sender = outbound_sender
         self._recipient_registry = recipient_registry
+        self._inbound_message_handler = inbound_message_handler
         self._poll_timeout = poll_timeout
         self._offset: int = 0
         self._task: asyncio.Task[None] | None = None
@@ -199,8 +202,6 @@ class TelegramPoller:
                 except Exception:
                     pass  # Best-effort acknowledgment
         else:
-            logger.debug(
-                "telegram_poller.no_pending_question",
-                sender_id=sender_id,
-                text=text[:50],
-            )
+            logger.debug("telegram_poller.inbound_message", sender_id=sender_id, text=text[:50])
+            if self._inbound_message_handler and chat_id:
+                await self._inbound_message_handler(chat_id, sender_id, text)

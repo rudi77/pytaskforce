@@ -52,9 +52,9 @@ tool_allowlist:
   - web_search
 
 context_policy:
-  max_items: 8
-  max_chars_per_item: 1500
-  max_total_chars: 2000
+  max_items: 12
+  max_chars_per_item: 2200
+  max_total_chars: 5000
 
 # Route planner to powerful model for better architectural reasoning
 llm:

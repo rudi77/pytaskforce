@@ -44,6 +44,11 @@ def _run_chat(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
+    telegram_polling: bool = typer.Option(
+        False,
+        "--telegram-polling",
+        help="Enable Telegram long-polling in chat mode (requires TELEGRAM_BOT_TOKEN)",
+    ),
 ):
     """Start interactive chat session with agent in a simple console.
 
@@ -145,6 +150,7 @@ def _run_chat(
                 agent=agent,
                 stream=True,
                 user_context=user_context,
+                telegram_polling=telegram_polling,
             )
         finally:
             # Clean up agent connections
@@ -187,6 +193,11 @@ def chat(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
+    telegram_polling: bool = typer.Option(
+        False,
+        "--telegram-polling",
+        help="Enable Telegram long-polling in chat mode (requires TELEGRAM_BOT_TOKEN)",
+    ),
 ):
     """Run chat when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
@@ -201,6 +212,7 @@ def chat(
         debug=debug,
         lean=lean,
         stream=stream,
+        telegram_polling=telegram_polling,
     )
 
 
@@ -232,6 +244,11 @@ def chat_command(
         True, "--stream/--no-stream", "-S",
         help="Enable real-time streaming output (default: enabled)",
     ),
+    telegram_polling: bool = typer.Option(
+        False,
+        "--telegram-polling",
+        help="Enable Telegram long-polling in chat mode (requires TELEGRAM_BOT_TOKEN)",
+    ),
 ):
     """Backwards-compatible subcommand for chat."""
     _run_chat(
@@ -244,4 +261,5 @@ def chat_command(
         debug=debug,
         lean=lean,
         stream=stream,
+        telegram_polling=telegram_polling,
     )

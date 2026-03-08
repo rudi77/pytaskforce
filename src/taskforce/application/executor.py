@@ -214,6 +214,7 @@ class AgentExecutor:
         # Delegate to streaming implementation and collect result
         result: ExecutionResult | None = None
         accumulated_usage = TokenUsage()
+        latest_final_answer: str | None = None
         async for update in self.execute_mission_streaming(
             mission=mission,
             profile=profile,
@@ -241,8 +242,21 @@ class AgentExecutor:
                 accumulated_usage.completion_tokens += usage.get("completion_tokens", 0)
                 accumulated_usage.total_tokens += usage.get("total_tokens", 0)
 
+            # Keep track of FINAL_ANSWER to avoid leaking generic COMPLETE text
+            is_final_answer = (
+                evt == EventType.FINAL_ANSWER or evt == EventType.FINAL_ANSWER.value
+            )
+            if is_final_answer:
+                answer = str(update.details.get("content") or update.message or "").strip()
+                if answer:
+                    latest_final_answer = answer
+
             # Extract result from complete event
-            result = self._extract_result_from_update(update) or result
+            extracted = self._extract_result_from_update(update)
+            if extracted is not None:
+                if latest_final_answer:
+                    extracted.final_message = latest_final_answer
+                result = extracted
 
         if result is None:
             raise AgentExecutionError(
@@ -270,9 +284,10 @@ class AgentExecutor:
         if not is_complete:
             return None
 
+        final_message = str(update.details.get("final_message") or update.message or "")
         return ExecutionResult(
             status=update.details.get("status", ExecutionStatus.COMPLETED.value),
-            final_message=update.message,
+            final_message=final_message,
             session_id=update.details.get("session_id", ""),
             todolist_id=update.details.get("todolist_id"),
             execution_history=[],

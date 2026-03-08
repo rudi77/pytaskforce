@@ -55,12 +55,14 @@ class SimpleChatRunner:
         agent: Any,
         stream: bool,
         user_context: dict[str, Any] | None,
+        telegram_polling: bool = False,
     ):
         self.session_id = session_id
         self.profile = profile
         self.agent = agent
         self.stream = stream
         self.user_context = user_context
+        self.telegram_polling = telegram_polling
         self.console = Console(theme=TASKFORCE_THEME)
         self.executor = AgentExecutor()
         self.agent_registry = AgentRegistry()
@@ -71,6 +73,7 @@ class SimpleChatRunner:
         self._context_service = ContextDisplayService()
         self._prompt_session: PromptSession[str] | None = None
         self._telegram_poller: Any | None = None
+        self._gateway: Any | None = None
 
         # Wire up Communication Gateway for channel-targeted ask_user
         self._setup_gateway()
@@ -84,8 +87,14 @@ class SimpleChatRunner:
         """
         import os
 
+        if not self.telegram_polling:
+            return
+
         telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not telegram_token:
+            self.console.print(
+                "[warning]⚠️ --telegram-polling enabled, but TELEGRAM_BOT_TOKEN is not set[/warning]"
+            )
             return
 
         try:
@@ -112,6 +121,7 @@ class SimpleChatRunner:
                 pending_channel_store=pending_store,
             )
             self.executor._gateway = gateway
+            self._gateway = gateway
 
             # Prepare Telegram poller (started in run())
             sender = components.outbound_senders.get("telegram")
@@ -120,6 +130,7 @@ class SimpleChatRunner:
                 pending_store=pending_store,
                 outbound_sender=sender,
                 recipient_registry=components.recipient_registry,
+                inbound_message_handler=self._handle_telegram_inbound_message,
             )
 
             self.console.print("[info]📡 Telegram channel configured (long-polling mode)[/info]")
@@ -168,6 +179,27 @@ class SimpleChatRunner:
         finally:
             if self._telegram_poller:
                 await self._telegram_poller.stop()
+
+    async def _handle_telegram_inbound_message(
+        self,
+        conversation_id: str,
+        sender_id: str,
+        message: str,
+    ) -> None:
+        """Route unsolicited Telegram messages through CommunicationGateway."""
+        if not self._gateway:
+            return
+
+        from taskforce.core.domain.gateway import GatewayOptions, InboundMessage
+
+        inbound = InboundMessage(
+            channel="telegram",
+            conversation_id=conversation_id,
+            message=message,
+            sender_id=sender_id,
+        )
+        options = GatewayOptions(profile=self.profile, user_context=self.user_context)
+        await self._gateway.handle_message(inbound, options)
 
     async def _read_input(self) -> str:
         """Read input from the user with multi-line paste support."""
@@ -516,7 +548,13 @@ class SimpleChatRunner:
             if question_text:
                 state = await self.agent.state_manager.load_state(self.session_id) or {}
                 history = state.get("conversation_history", [])
-                history.append({"role": MessageRole.ASSISTANT.value, "content": question_text})
+                history.append(
+                    {
+                        "role": MessageRole.ASSISTANT.value,
+                        "content": question_text,
+                        "verified": True,
+                    }
+                )
                 state["conversation_history"] = history
                 await self.agent.state_manager.save_state(self.session_id, state)
             return
@@ -524,7 +562,13 @@ class SimpleChatRunner:
         final_message = "".join(final_tokens) if final_tokens else "No response"
         state = await self.agent.state_manager.load_state(self.session_id) or {}
         history = state.get("conversation_history", [])
-        history.append({"role": MessageRole.ASSISTANT.value, "content": final_message})
+        history.append(
+            {
+                "role": MessageRole.ASSISTANT.value,
+                "content": final_message,
+                "verified": True,
+            }
+        )
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
 
@@ -592,6 +636,8 @@ class SimpleChatRunner:
         self.console.print(
             f"[info]Session:[/info] {self.session_id[:8]}  " f"[info]Profile:[/info] {self.profile}"
         )
+        if self.telegram_polling:
+            self.console.print("[info]Telegram polling:[/info] enabled")
         if self.user_context:
             for key, value in self.user_context.items():
                 self.console.print(f"[info]{key}:[/info] {value}")
@@ -647,6 +693,7 @@ async def run_simple_chat(
     agent: Any,
     stream: bool,
     user_context: dict[str, Any] | None,
+    telegram_polling: bool = False,
 ) -> None:
     """Entry point to run the simple chat loop."""
     runner = SimpleChatRunner(
@@ -655,5 +702,6 @@ async def run_simple_chat(
         agent=agent,
         stream=stream,
         user_context=user_context,
+        telegram_polling=telegram_polling,
     )
     await runner.run()

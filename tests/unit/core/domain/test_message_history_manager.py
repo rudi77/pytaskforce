@@ -175,6 +175,25 @@ class TestBuildInitialMessages:
         # system + 2 valid history msgs + user = 4
         assert len(messages) == 4
 
+    def test_coding_mission_skips_unverified_assistant_history(self) -> None:
+        """Coding missions should not replay unverified assistant claims."""
+        mgr = _make_manager()
+        state = {
+            "conversation_history": [
+                {"role": "user", "content": "Previous request"},
+                {"role": "assistant", "content": "Done — implemented everything."},
+                {"role": "assistant", "content": "Verified response", "verified": True},
+            ]
+        }
+        messages = mgr.build_initial_messages(
+            mission="Please debug this taskforce code path",
+            state=state,
+            base_system_prompt="System",
+        )
+        contents = [m.get("content", "") for m in messages]
+        assert "Done — implemented everything." not in contents
+        assert "Verified response" in contents
+
     def test_includes_user_answers(self) -> None:
         """User-provided answers from state are appended to user message."""
         mgr = _make_manager()

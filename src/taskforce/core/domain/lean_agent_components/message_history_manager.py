@@ -51,10 +51,21 @@ class MessageHistoryManager:
         ]
 
         conversation_history = state.get("conversation_history", [])
+        require_verified_assistant_history = self._requires_verified_assistant_history(mission)
         if conversation_history:
             for msg in conversation_history:
                 role = msg.get("role")
                 content = msg.get("content", "")
+                if (
+                    role == "assistant"
+                    and require_verified_assistant_history
+                    and not msg.get("verified", False)
+                ):
+                    self._logger.debug(
+                        "assistant_history_skipped_unverified",
+                        mission=mission[:80],
+                    )
+                    continue
                 if role in ("user", "assistant") and content:
                     messages.append({"role": role, "content": content})
             self._logger.debug(
@@ -73,6 +84,30 @@ class MessageHistoryManager:
         messages.append({"role": "user", "content": user_message})
 
         return messages
+
+    def _requires_verified_assistant_history(self, mission: str) -> bool:
+        """Require verified assistant history for coding-heavy missions.
+
+        Coding sessions are more sensitive to stale or speculative assistant
+        claims (e.g. "implemented already"), so only assistant messages that
+        were explicitly marked as verified should be replayed.
+        """
+        mission_lower = mission.lower()
+        coding_keywords = (
+            "implement",
+            "fix",
+            "refactor",
+            "debug",
+            "analy",
+            "review",
+            "code",
+            "taskforce",
+            "telegram",
+            "bug",
+            "test",
+            "profil",
+        )
+        return any(keyword in mission_lower for keyword in coding_keywords)
 
     async def compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
@@ -129,6 +164,8 @@ Provide a 2-3 paragraph summary of:
 - Key decisions made
 - Important tool results and findings
 - Context needed for understanding recent messages
+- Exact file paths and symbols discovered
+- Repeated failures or no-result searches
 
 Keep it factual and concise."""
 

@@ -333,6 +333,34 @@ async def test_execute_mission_failed_status():
 
 
 @pytest.mark.asyncio
+async def test_execute_mission_uses_final_answer_from_streaming_events():
+    """execute_mission should return FINAL_ANSWER, not generic COMPLETE text."""
+    mock_factory = MagicMock(spec=AgentFactory)
+
+    class StreamingAgent:
+        async def execute_stream(self, mission, session_id):
+            yield StreamEvent(
+                event_type=EventType.FINAL_ANSWER,
+                data={"content": "Das ist die echte Antwort."},
+            )
+            yield StreamEvent(
+                event_type=EventType.COMPLETE,
+                data={"status": "completed", "session_id": session_id},
+            )
+
+        async def close(self):
+            return None
+
+    mock_factory.create_agent = AsyncMock(return_value=StreamingAgent())
+
+    executor = AgentExecutor(factory=mock_factory)
+    result = await executor.execute_mission("Test mission")
+
+    assert result.status == "completed"
+    assert result.final_message == "Das ist die echte Antwort."
+
+
+@pytest.mark.asyncio
 async def test_generate_session_id_uniqueness():
     """Test that generated session IDs are unique."""
     executor = AgentExecutor()

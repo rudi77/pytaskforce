@@ -46,9 +46,9 @@ tool_allowlist:
   - git
 
 context_policy:
-  max_items: 8
-  max_chars_per_item: 1500
-  max_total_chars: 2000
+  max_items: 10
+  max_chars_per_item: 2200
+  max_total_chars: 4500
 
 # Route reviewer to standard model (sufficient for code review)
 llm:

@@ -149,6 +149,24 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
     return steps
 
 
+def _is_no_progress_tool_output(output: str) -> bool:
+    """Heuristic detection for low-signal tool outputs.
+
+    This helps the ReAct loop detect repeated search cycles that keep
+    returning empty results.
+    """
+    normalized = output.lower()
+    no_progress_markers = (
+        "0 matches",
+        "no files found",
+        "no records",
+        "not found",
+        "0 file",
+        "0 results",
+    )
+    return any(marker in normalized for marker in no_progress_markers)
+
+
 # ---------------------------------------------------------------------------
 # Resume from pause
 # ---------------------------------------------------------------------------
@@ -729,6 +747,9 @@ async def _react_loop(
     use_stream = hasattr(agent.llm_provider, "complete_stream")
     step = start_step
     final = ""
+    consecutive_no_progress_steps = 0
+    last_tool_signature: str | None = None
+    repeated_signature_count = 0
 
     while step < agent.max_steps:
         await agent.record_heartbeat(
@@ -861,6 +882,12 @@ async def _react_loop(
 
         if tool_calls:
             paused = False
+            tool_result_events = 0
+            no_progress_tool_results = 0
+            tool_signature = "|".join(
+                f"{tc.get('function', {}).get('name', '')}:{tc.get('function', {}).get('arguments', '')}"
+                for tc in tool_calls
+            )
             async for evt in _process_tool_calls(
                 agent, tool_calls, session_id, step + 1,
                 state, messages, logger,
@@ -868,8 +895,42 @@ async def _react_loop(
                 event_type = _ensure_event_type(evt)
                 if event_type == EventType.ASK_USER:
                     paused = True
+                elif event_type == EventType.TOOL_RESULT:
+                    tool_result_events += 1
+                    output = str(evt.data.get("output", ""))
+                    if not evt.data.get("success", False) or _is_no_progress_tool_output(output):
+                        no_progress_tool_results += 1
                 yield evt
             if paused:
+                return
+
+            if tool_result_events > 0 and no_progress_tool_results == tool_result_events:
+                consecutive_no_progress_steps += 1
+            else:
+                consecutive_no_progress_steps = 0
+
+            if tool_signature and tool_signature == last_tool_signature:
+                repeated_signature_count += 1
+            else:
+                repeated_signature_count = 0
+            last_tool_signature = tool_signature or None
+
+            if consecutive_no_progress_steps >= 3 or repeated_signature_count >= 3:
+                logger.warning(
+                    "react_loop_stalled",
+                    consecutive_no_progress_steps=consecutive_no_progress_steps,
+                    repeated_signature_count=repeated_signature_count,
+                    session_id=session_id,
+                )
+                yield StreamEvent(
+                    event_type=EventType.ERROR,
+                    data={
+                        "message": (
+                            "Execution stalled due to repeated no-progress tool calls. "
+                            "Please refine scope, path, or constraints and retry."
+                        )
+                    },
+                )
                 return
             step += 1
         elif content:

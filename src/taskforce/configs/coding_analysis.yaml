@@ -1,0 +1,50 @@
+profile: coding_analysis
+specialist: coding
+
+system_prompt: |
+  You are a coding analysis specialist.
+
+  Your job is read-only analysis:
+  - Explore the repository precisely with file_read/grep/glob/powershell.
+  - Explain architecture, behavior, root causes, and integration points.
+  - Provide implementation recommendations without changing code.
+
+  Rules:
+  - Do NOT claim code was implemented.
+  - Do NOT invent files, symbols, or behavior.
+  - Prefer concrete evidence from discovered file paths and code snippets.
+
+persistence:
+  type: file
+  work_dir: .taskforce_coding
+
+agent:
+  enable_fast_path: true
+  planning_strategy: native_react
+  max_steps: 35
+  max_parallel_tools: 3
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: DEBUG
+  format: console
+
+context_policy:
+  max_items: 15
+  max_chars_per_item: 3500
+  max_total_chars: 10000
+  include_latest_tool_previews_n: 6
+  allow_tools: null
+  allow_selectors:
+    - first_chars
+
+tools:
+  - file_read
+  - grep
+  - glob
+  - powershell
+  - git
+  - memory

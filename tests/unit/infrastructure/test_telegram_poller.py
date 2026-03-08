@@ -43,16 +43,24 @@ def recipient_registry() -> AsyncMock:
 
 
 @pytest.fixture
+def inbound_message_handler() -> AsyncMock:
+    """Mock inbound Telegram message handler."""
+    return AsyncMock()
+
+
+@pytest.fixture
 def poller(
     pending_store: AsyncMock,
     outbound_sender: AsyncMock,
     recipient_registry: AsyncMock,
+    inbound_message_handler: AsyncMock,
 ) -> TelegramPoller:
     return TelegramPoller(
         bot_token="123:FAKE",
         pending_store=pending_store,
         outbound_sender=outbound_sender,
         recipient_registry=recipient_registry,
+        inbound_message_handler=inbound_message_handler,
         poll_timeout=0,
     )
 
@@ -121,8 +129,9 @@ async def test_handle_update_no_pending_question(
     pending_store: AsyncMock,
     outbound_sender: AsyncMock,
     recipient_registry: AsyncMock,
+    inbound_message_handler: AsyncMock,
 ):
-    """When no pending question exists, the message is ignored."""
+    """When no pending question exists, the inbound handler is called."""
     pending_store.resolve.return_value = None
 
     update = _make_update(
@@ -140,6 +149,7 @@ async def test_handle_update_no_pending_question(
         reference={"conversation_id": "100"},
     )
     outbound_sender.send.assert_not_called()
+    inbound_message_handler.assert_awaited_once_with("100", "200", "Hello")
 
 
 @pytest.mark.asyncio
