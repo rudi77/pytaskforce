@@ -121,6 +121,11 @@ async def run_lightweight_consolidation(
     # Phase 3: Build associations
     active = [r for r in all_records if "archived" not in r.tags]
 
+    # Snapshot existing associations so we only persist records that changed.
+    assoc_before: dict[str, set[str]] = {
+        r.id: set(r.associations) for r in active
+    }
+
     if embedding_provider and len(active) >= 2:
         result.associations_created += await _build_embedding_associations(
             active, embedding_provider, store
@@ -128,9 +133,9 @@ async def run_lightweight_consolidation(
     else:
         result.associations_created += _build_tag_associations(active)
 
-    # Persist association updates
+    # Persist only records whose association list actually changed.
     for rec in active:
-        if rec.associations:
+        if set(rec.associations) != assoc_before.get(rec.id, set()):
             await store.update(rec)
 
     elapsed = (datetime.now(UTC) - start).total_seconds() * 1000
