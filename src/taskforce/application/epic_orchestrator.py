@@ -49,6 +49,16 @@ def _build_worker_prompt(task: EpicTask, epic_context: str) -> str:
     )
 
 
+_MAX_SUMMARY_CHARS = 2000  # Cap worker summaries to prevent token bloat
+
+
+def _truncate(text: str, limit: int = _MAX_SUMMARY_CHARS) -> str:
+    """Truncate text to *limit* chars, appending an ellipsis if cut."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "... [truncated]"
+
+
 def _build_judge_prompt(
     epic_context: str,
     worker_results: list[EpicTaskResult],
@@ -58,7 +68,7 @@ def _build_judge_prompt(
 ) -> str:
     """Build judge mission prompt for consolidation."""
     summaries = "\n".join(
-        f"- {result.task_id}: {result.status} ({result.summary})"
+        f"- {result.task_id}: {result.status} ({_truncate(result.summary)})"
         for result in worker_results
     )
     commit_text = (
@@ -402,11 +412,18 @@ class EpicOrchestrator:
         scopes: list[str],
         state_store: EpicStateStore,
     ) -> list[EpicTask]:
-        tasks: list[EpicTask] = []
-        for scope in scopes:
-            tasks.extend(
-                await self._run_planner(run_id, mission, planner_profile, scope, state_store)
+        if not scopes:
+            return []
+        # Run sub-planners in parallel for faster task decomposition
+        results = await asyncio.gather(
+            *(
+                self._run_planner(run_id, mission, planner_profile, scope, state_store)
+                for scope in scopes
             )
+        )
+        tasks: list[EpicTask] = []
+        for task_list in results:
+            tasks.extend(task_list)
         return tasks
 
     async def _publish_tasks(self, tasks: list[EpicTask], worker_count: int) -> None:
@@ -467,7 +484,7 @@ class EpicOrchestrator:
         prompt = _build_worker_prompt(task, mission)
         result = await agent.execute(prompt, session_id)
         status = "completed" if result.status == "completed" else result.status
-        summary = (result.final_message or "").strip()
+        summary = _truncate((result.final_message or "").strip())
         return EpicTaskResult(
             task_id=task.task_id,
             worker_session_id=session_id,

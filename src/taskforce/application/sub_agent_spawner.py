@@ -91,6 +91,8 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 system_prompt=custom_definition.get("system_prompt"),
                 tools=custom_definition.get("tool_allowlist") or custom_definition.get("tools"),
                 mcp_servers=custom_definition.get("mcp_servers"),
+                llm=custom_definition.get("llm"),
+                context_policy=custom_definition.get("context_policy"),
                 work_dir=work_dir,
                 planning_strategy=spec.planning_strategy,
                 specialist=custom_definition.get("specialist"),

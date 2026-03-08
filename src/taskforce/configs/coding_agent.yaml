@@ -35,6 +35,7 @@ persistence:
 agent:
   enable_fast_path: true  # Enable fast-path for follow-up queries
   planning_strategy: native_react  # Sense-Plan-Act-Reflect for orchestration
+  max_steps: 50  # Higher than default (30) to allow error recovery in multi-agent workflows
   max_parallel_tools: 3
   router:
     use_llm_classification: true  # Use LLM for better accuracy in prod
@@ -54,9 +55,9 @@ logging:
 # Context Policy configuration (Story 9.2)
 # Controls budgeting for context pack injection before LLM calls
 context_policy:
-  max_items: 10                      # Maximum number of items in context pack
-  max_chars_per_item: 500            # Maximum characters per individual item
-  max_total_chars: 3000              # Maximum total characters across all items
+  max_items: 15                      # Higher for orchestrator - needs broad context for delegation
+  max_chars_per_item: 3000           # Generous - orchestrator makes delegation decisions
+  max_total_chars: 5000              # More budget for orchestration context
   include_latest_tool_previews_n: 5  # Number of latest tool previews to include
   allow_tools: null                  # null = all tools allowed, or list of tool names
   allow_selectors:                   # Selector types to use (MVP: first_chars)

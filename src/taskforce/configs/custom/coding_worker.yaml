@@ -53,8 +53,13 @@ tool_allowlist:
   - git
 
 context_policy:
-  max_items: 12
-  max_chars_per_item: 3500
+  max_items: 10
+  max_chars_per_item: 2000
+  max_total_chars: 3000
+
+# Route worker to main model (good balance of capability and cost)
+llm:
+  default_model: main
 
 persistence:
   type: file

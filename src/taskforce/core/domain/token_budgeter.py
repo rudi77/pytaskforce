@@ -31,7 +31,7 @@ class TokenBudgeter:
 
     # Default budget limits (conservative for GPT-4 class models)
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
-    DEFAULT_COMPRESSION_TRIGGER = 80000  # Trigger compression at 80% of max
+    DEFAULT_COMPRESSION_TRIGGER = 40000  # Trigger compression at 40% - keep history lean
 
     # Heuristic constants
     CHARS_PER_TOKEN = 4  # Conservative estimate (real: 3-5)

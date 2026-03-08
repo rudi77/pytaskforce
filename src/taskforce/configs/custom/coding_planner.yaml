@@ -6,8 +6,8 @@
 
 agent:
   type: custom
-  planning_strategy: plan_and_react
-  max_steps: 60
+  planning_strategy: native_react
+  max_steps: 30
 
 system_prompt: |
   You are a PLANNER agent in a multi-agent coding system.
@@ -52,8 +52,13 @@ tool_allowlist:
   - web_search
 
 context_policy:
-  max_items: 10
-  max_chars_per_item: 3000
+  max_items: 8
+  max_chars_per_item: 1500
+  max_total_chars: 2000
+
+# Route planner to powerful model for better architectural reasoning
+llm:
+  default_model: powerful
 
 persistence:
   type: file
