@@ -237,6 +237,9 @@ class FileMemoryStore(MemoryStoreProtocol):
         records = self._load_all()
         for i, existing in enumerate(records):
             if existing.id == record.id:
+                # Invalidate stale embedding if content changed.
+                if existing.content != record.content:
+                    self._embedding_cache.pop(record.id, None)
                 records[i] = record
                 self._save_all(records)
                 return record
@@ -250,6 +253,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         new_records = [r for r in records if r.id != record_id]
         if len(new_records) == len(records):
             return False
+        self._embedding_cache.pop(record_id, None)
         self._save_all(new_records)
         return True
 
