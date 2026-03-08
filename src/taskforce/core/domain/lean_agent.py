@@ -73,7 +73,7 @@ class Agent:
     DEFAULT_MAX_PARALLEL_TOOLS = 4  # Conservative parallelism limit for tool execution
     # Token budget defaults
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
-    DEFAULT_COMPRESSION_TRIGGER = 80000  # Trigger compression at 80% of max
+    DEFAULT_COMPRESSION_TRIGGER = 40000  # Trigger compression at 40% - keep history lean
 
     def __init__(
         self,
@@ -232,14 +232,36 @@ class Agent:
         """Expose the planner instance for persistence helpers."""
         return self._planner
 
-    async def load_memory_context(self) -> None:
+    async def load_memory_context(self, mission: str | None = None) -> None:
         """Load long-term memories and cache them for prompt injection.
 
         Called once at session start (from planning helpers). Results are
         cached in ``_memory_context`` and reused on every prompt rebuild.
+
+        Uses lazy loading: skips memory fetch when the mission is unlikely
+        to benefit from historical context (e.g., pure implementation tasks
+        delegated by an orchestrator). Memory is always loaded when:
+        - The mission explicitly references memory/history/preferences
+        - No mission is provided (interactive/chat sessions)
         """
         if not self._memory_store:
             return
+
+        # Lazy check: skip memory loading for sub-agent tasks that won't
+        # benefit from historical context. Always load for chat/interactive.
+        if mission:
+            _lower = mission.lower()
+            _memory_keywords = (
+                "remember", "memory", "preference", "previous", "last time",
+                "history", "learned", "convention", "style", "pattern",
+            )
+            if not any(kw in _lower for kw in _memory_keywords):
+                self.logger.debug(
+                    "memory_context.skipped_lazy",
+                    reason="mission_has_no_memory_keywords",
+                )
+                return
+
         loader = MemoryContextLoader(
             memory_store=self._memory_store,
             config=self._memory_context_config,

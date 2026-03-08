@@ -284,4 +284,5 @@ def mock_agent(mock_logger: MockLogger) -> MagicMock:
     agent.state_manager.load_state = AsyncMock(return_value=None)
     agent.state_store = AsyncMock()
     agent.record_heartbeat = AsyncMock()
+    agent.load_memory_context = AsyncMock()
     return agent
