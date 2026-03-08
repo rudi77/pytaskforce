@@ -76,7 +76,8 @@
       "Bash(git merge:*)",
       "Bash(git:*)",
       "Bash(start:*)",
-      "Bash(PYTHONIOENCODING=utf-8 python:*)"
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(PYTHONPATH=src python:*)"
     ],
     "deny": [
       ".env",

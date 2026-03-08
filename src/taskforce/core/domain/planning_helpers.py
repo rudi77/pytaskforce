@@ -79,6 +79,14 @@ DEFAULT_PLAN = [
 ]
 
 
+def _persist_active_skill(agent: Agent, state: dict[str, Any]) -> None:
+    """Snapshot the active skill name into ``state`` for session persistence."""
+    if agent.skill_manager:
+        state["active_skill"] = agent.skill_manager.active_skill_name
+    elif "active_skill" not in state:
+        state["active_skill"] = None
+
+
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
@@ -147,6 +155,27 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
             if c:
                 steps.append(c)
     return steps
+
+
+def _build_retry_nudge(failed_tool_names: list[str]) -> dict[str, Any]:
+    """Build a user-role message nudging the agent to retry after tool failures.
+
+    Args:
+        failed_tool_names: Names of tools that failed in the current step.
+
+    Returns:
+        A message dict with role ``user`` containing retry instructions.
+    """
+    tools_str = ", ".join(dict.fromkeys(failed_tool_names))  # deduplicate, preserve order
+    return {
+        "role": MessageRole.USER.value,
+        "content": (
+            f"[System: {tools_str} failed. "
+            "Do NOT give up or explain the error to the user. "
+            "Try a different tool or approach immediately. "
+            "For example, use `python` or `powershell`/`shell` as alternatives.]"
+        ),
+    }
 
 
 def _is_no_progress_tool_output(output: str) -> bool:
@@ -491,6 +520,7 @@ async def _handle_ask_user(
         state["paused_plan_iteration"] = plan_iteration
     if paused_phase is not None:
         state["paused_phase"] = paused_phase
+    _persist_active_skill(agent, state)
     await agent.state_store.save(
         session_id=session_id, state=state, planner=agent.planner
     )
@@ -627,6 +657,11 @@ async def _load_and_resume_state(
     state = await agent.state_manager.load_state(session_id) or {}
     if agent._planner and state.get("planner_state"):
         agent._planner.set_state(state["planner_state"])
+    # Restore active skill from persisted state
+    saved_skill = state.get("active_skill")
+    if saved_skill and agent.skill_manager:
+        agent.skill_manager.activate_skill(saved_skill)
+        logger.debug("skill_restored_from_state", skill=saved_skill)
     # Load long-term memories once at session start for prompt injection (lazy).
     # Pass the mission so contextually relevant memories are boosted.
     await agent.load_memory_context(mission=mission)
@@ -678,6 +713,7 @@ async def _generate_and_register_plan(
         yield steps
 
     if session_id is not None and state is not None:
+        _persist_active_skill(agent, state)
         await agent.state_store.save(
             session_id=session_id, state=state, planner=agent.planner
         )
@@ -885,6 +921,7 @@ async def _react_loop(
             paused = False
             tool_result_events = 0
             no_progress_tool_results = 0
+            failed_tool_names: list[str] = []
             tool_signature = "|".join(
                 f"{tc.get('function', {}).get('name', '')}:{tc.get('function', {}).get('arguments', '')}"
                 for tc in tool_calls
@@ -899,7 +936,10 @@ async def _react_loop(
                 elif event_type == EventType.TOOL_RESULT:
                     tool_result_events += 1
                     output = str(evt.data.get("output", ""))
-                    if not evt.data.get("success", False) or _is_no_progress_tool_output(output):
+                    if not evt.data.get("success", False):
+                        no_progress_tool_results += 1
+                        failed_tool_names.append(str(evt.data.get("tool", "unknown")))
+                    elif _is_no_progress_tool_output(output):
                         no_progress_tool_results += 1
                 yield evt
             if paused:
@@ -933,6 +973,11 @@ async def _react_loop(
                     },
                 )
                 return
+
+            # Nudge the LLM to retry with alternative tools after failures
+            if failed_tool_names:
+                messages.append(_build_retry_nudge(failed_tool_names))
+
             step += 1
         elif content:
             step += 1
@@ -1009,6 +1054,7 @@ async def _llm_call_and_process(
 
     if result.get("tool_calls"):
         paused = False
+        failed_tool_names: list[str] = []
         async for e in _process_tool_calls(
             agent, result["tool_calls"], session_id, step,
             state, messages, logger,
@@ -1018,7 +1064,11 @@ async def _llm_call_and_process(
             event_type = _ensure_event_type(e)
             if event_type == EventType.ASK_USER:
                 paused = True
+            elif event_type == EventType.TOOL_RESULT and not e.data.get("success", False):
+                failed_tool_names.append(str(e.data.get("tool", "unknown")))
             events.append(e)
+        if not paused and failed_tool_names:
+            messages.append(_build_retry_nudge(failed_tool_names))
         yield ("paused" if paused else "tool_calls", events)
         return
 
@@ -1054,6 +1104,7 @@ async def _save_and_emit_max_steps(
             event_type=EventType.ERROR,
             data={"message": f"Exceeded max steps ({agent.max_steps})"},
         )
+    _persist_active_skill(agent, state)
     await agent.state_store.save(
         session_id=session_id, state=state, planner=agent.planner
     )

@@ -223,6 +223,17 @@ class AgentFactory:
         )
 
         skill_manager = self._build_default_skill_manager()
+        activate_skill_tool = self._maybe_add_skill_tool_for_profile(
+            skill_manager, all_tools
+        )
+        if activate_skill_tool is not None:
+            # Re-assemble system prompt to include new tool description
+            system_prompt = self.prompt_assembler.assemble(
+                all_tools,
+                specialist=definition.specialist,
+                custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
+            )
+
         agent = self._instantiate_agent(
             infra=infra,
             all_tools=all_tools,
@@ -230,6 +241,9 @@ class AgentFactory:
             settings=agent_settings,
             skill_manager=skill_manager,
         )
+
+        if activate_skill_tool is not None:
+            activate_skill_tool.set_agent_ref(agent)
 
         _set_mcp_contexts(agent, infra["mcp_contexts"])
         _set_merged_config(agent, base_config)
@@ -909,11 +923,23 @@ class AgentFactory:
         )
 
         skill_manager = self._build_default_skill_manager()
+        activate_skill_tool = self._maybe_add_skill_tool_for_profile(
+            skill_manager, all_tools
+        )
+        if activate_skill_tool is not None:
+            final_system_prompt = self.prompt_assembler.assemble(
+                all_tools, specialist=specialist, custom_prompt=system_prompt,
+            )
+
         agent = self._instantiate_agent(
             infra=infra, all_tools=all_tools,
             system_prompt=final_system_prompt, settings=settings,
             skill_manager=skill_manager,
         )
+
+        if activate_skill_tool is not None:
+            activate_skill_tool.set_agent_ref(agent)
+
         _set_mcp_contexts(agent, infra["mcp_contexts"])
         return self._apply_extensions(merged_config, agent)
 
@@ -1117,6 +1143,30 @@ class AgentFactory:
         activate_skill_tool = ActivateSkillTool()
         all_tools.append(activate_skill_tool)
         self.logger.debug("activate_skill_tool_added", plugin=manifest.name)
+        return activate_skill_tool
+
+    def _maybe_add_skill_tool_for_profile(
+        self,
+        skill_manager: SkillManager | None,
+        all_tools: list[ToolProtocol],
+    ) -> Any:
+        """Add ActivateSkillTool for profile-based agents with skills.
+
+        Returns the tool instance or None.
+        """
+        if not skill_manager or not skill_manager.has_skills:
+            return None
+
+        from taskforce.infrastructure.tools.native.activate_skill_tool import (
+            ActivateSkillTool,
+        )
+
+        activate_skill_tool = ActivateSkillTool()
+        all_tools.append(activate_skill_tool)
+        self.logger.debug(
+            "activate_skill_tool_added_for_profile_agent",
+            skills=skill_manager.list_skills(),
+        )
         return activate_skill_tool
 
     def _build_plugin_skill_manager(

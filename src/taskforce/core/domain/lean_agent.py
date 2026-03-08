@@ -303,6 +303,15 @@ class Agent:
                     "paths instead of reimplementing their logic.\n\n"
                     f"{skill_instructions}\n"
                 )
+        elif self.skill_manager and self.skill_manager.has_skills:
+            available = self.skill_manager.list_skills()
+            skill_list = ", ".join(f"`{s}`" for s in available)
+            base_prompt += (
+                f"\n\n# AVAILABLE SKILLS\n\n"
+                f"You have {len(available)} skill(s) available that you can activate "
+                f"using the `activate_skill` tool: {skill_list}\n"
+                f"Activate a skill when the user's request matches its capabilities.\n"
+            )
 
         return base_prompt
 
