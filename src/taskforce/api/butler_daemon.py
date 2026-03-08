@@ -41,6 +41,7 @@ class ButlerDaemon:
         self._running = False
         self._status_task: asyncio.Task[None] | None = None
         self._status_path = Path(work_dir) / "butler" / "status.json"
+        self._telegram_poller: Any = None
 
     @property
     def is_running(self) -> bool:
@@ -79,6 +80,9 @@ class ButlerDaemon:
         await self._butler.start()
         self._running = True
 
+        # Start Telegram inbound polling (if bot token is configured)
+        await self._setup_telegram_poller(config)
+
         # Start periodic status writer
         self._status_task = asyncio.create_task(self._write_status_loop(), name="butler-status")
 
@@ -94,6 +98,9 @@ class ButlerDaemon:
                 await self._status_task
             except asyncio.CancelledError:
                 pass
+
+        if self._telegram_poller:
+            await self._telegram_poller.stop()
 
         if self._butler:
             await self._butler.stop()
@@ -206,6 +213,37 @@ class ButlerDaemon:
             else:
                 logger.warning("butler_daemon.unknown_source_type", source_type=source_type)
 
+    async def _setup_telegram_poller(self, config: dict[str, Any]) -> None:
+        """Start Telegram long-polling for inbound messages.
+
+        If ``TELEGRAM_BOT_TOKEN`` is set and a gateway is configured,
+        starts a background poller that feeds incoming Telegram messages
+        through ``CommunicationGateway.handle_message()``.
+        """
+        if not self._butler or not self._butler._gateway:
+            return
+
+        import os
+
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not bot_token:
+            return
+
+        try:
+            from taskforce.infrastructure.communication.butler_telegram_poller import (
+                ButlerTelegramPoller,
+            )
+
+            self._telegram_poller = ButlerTelegramPoller(
+                bot_token=bot_token,
+                gateway=self._butler._gateway,
+                profile=self._profile,
+            )
+            await self._telegram_poller.start()
+            logger.info("butler_daemon.telegram_poller_started")
+        except Exception as exc:
+            logger.warning("butler_daemon.telegram_poller_failed", error=str(exc))
+
     async def _load_rules(self, config: dict[str, Any]) -> None:
         """Load trigger rules from configuration."""
         if self._butler is None:
@@ -244,6 +282,7 @@ class ButlerDaemon:
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._status_path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(status, indent=2, default=str))
-            tmp.rename(self._status_path)
+            # On Windows Path.rename() fails if target exists; use replace()
+            tmp.replace(self._status_path)
         except Exception as exc:
             logger.warning("butler_daemon.status_write_failed", error=str(exc))
