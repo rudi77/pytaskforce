@@ -56,8 +56,8 @@ logging:
 # Controls budgeting for context pack injection before LLM calls
 context_policy:
   max_items: 15                      # Higher for orchestrator - needs broad context for delegation
-  max_chars_per_item: 3000           # Generous - orchestrator makes delegation decisions
-  max_total_chars: 5000              # More budget for orchestration context
+  max_chars_per_item: 3500           # Generous - orchestrator makes delegation decisions
+  max_total_chars: 8000              # More budget for orchestration context
   include_latest_tool_previews_n: 5  # Number of latest tool previews to include
   allow_tools: null                  # null = all tools allowed, or list of tool names
   allow_selectors:                   # Selector types to use (MVP: first_chars)
@@ -92,10 +92,16 @@ tools:
   # Sub-agent tools (explicitly defined)
   - type: sub_agent
     name: coding_planner
+    summarize_results: true
+    summary_max_length: 1800
   - type: sub_agent
     name: coding_worker
+    summarize_results: true
+    summary_max_length: 2200
   - type: sub_agent
     name: coding_reviewer
+    summarize_results: true
+    summary_max_length: 1800
 
 # Unified Memory Configuration
 memory:

@@ -362,24 +362,7 @@ class AgentTool:
             )
 
             # Prepare result for parent agent
-            result_text = result.final_message or "No result"
-
-            # Optionally summarize long results
-            if (
-                self._summarize_results
-                and len(result_text) > self._summary_max_length
-            ):
-                self.logger.debug(
-                    "summarizing_long_result",
-                    original_length=len(result_text),
-                    max_length=self._summary_max_length,
-                )
-                # TODO: Implement summarization via LLM
-                # For now, just truncate
-                result_text = (
-                    result_text[: self._summary_max_length]
-                    + f"\n\n[Result truncated - original length: {len(result_text)} chars]"
-                )
+            result_text = self._maybe_summarize_result_text(result.final_message)
 
             # Return result to parent agent
             return {
@@ -429,6 +412,26 @@ class AgentTool:
 
         return True, None
 
+
+    def _maybe_summarize_result_text(self, message: str | None) -> str:
+        """Return sub-agent message, optionally truncated for token efficiency."""
+        result_text = message or "No result"
+        if (
+            not self._summarize_results
+            or len(result_text) <= self._summary_max_length
+        ):
+            return result_text
+
+        self.logger.debug(
+            "summarizing_long_result",
+            original_length=len(result_text),
+            max_length=self._summary_max_length,
+        )
+        return (
+            result_text[: self._summary_max_length]
+            + f"\n\n[Result truncated - original length: {len(result_text)} chars]"
+        )
+
     def _format_spawner_result(self, result: Any) -> dict[str, Any]:
         if not hasattr(result, "session_id"):
             return {
@@ -440,7 +443,9 @@ class AgentTool:
         success = getattr(result, "success", False)
         return {
             "success": success,
-            "result": getattr(result, "final_message", "") or "No result",
+            "result": self._maybe_summarize_result_text(
+                getattr(result, "final_message", "")
+            ),
             "session_id": getattr(result, "session_id", "unknown"),
             "status": getattr(result, "status", "unknown"),
             "error": None if success else getattr(result, "error", None),
