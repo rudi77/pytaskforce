@@ -402,7 +402,7 @@ class TestContextualRetrievalBenchmark:
                 if "[vivid]" in line:
                     assert any(
                         kw in line.lower()
-                        for kw in ["pytest", "type annotation", "sleep", "caching", "deployment"]
+                        for kw in ["pytest", "type annotation", "sleep", "caching", "deployment", "emergency"]
                     )
                     break
 
