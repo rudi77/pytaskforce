@@ -109,4 +109,5 @@ tools:
 | `infrastructure/tools/orchestration/__init__.py` | Export `ParallelAgentTool` |
 | `infrastructure/tools/registry.py` | Register `call_agents_parallel` |
 | `application/tool_builder.py` | Wire `auto_approve` and `parallel_agent` type |
-| `configs/coding_agent.yaml` | Enable `auto_approve` for `coding_worker` |
+| `configs/coding_agent.yaml` | Enable `auto_approve` for `coding_worker` and `coding_analyst` |
+| `configs/custom/coding_analyst.yaml` | **New** — Read-only analysis sub-agent for parallel codebase exploration |

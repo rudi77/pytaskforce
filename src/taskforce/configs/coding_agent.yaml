@@ -12,9 +12,12 @@ system_prompt: |
   - If the user asks for analysis only (e.g. analyze, explain, investigate, review, compare, root-cause),
     run ANALYSIS MODE:
     1. Do direct repository exploration with file_read/grep/glob/powershell.
-    2. Optionally use coding_planner for structure.
-    3. Do NOT call coding_worker.
-    4. Do NOT claim implementation was done.
+    2. For broad analysis across multiple areas, dispatch multiple coding_analyst sub-agents
+       in parallel (via call_agents_parallel or multiple coding_analyst calls) — each assigned
+       a distinct codebase area to investigate simultaneously.
+    3. Optionally use coding_planner for structure.
+    4. Do NOT call coding_worker.
+    5. Do NOT claim implementation was done.
   - If the user asks for implementation/refactor/fix, run IMPLEMENTATION MODE:
     1. Ask coding_planner to break the mission into concrete tasks and priorities.
     2. Dispatch coding_worker to implement each task (parallelize if independent).
@@ -129,6 +132,11 @@ tools:
     auto_approve: true       # Enable parallel execution without per-call approval
     summarize_results: true
     summary_max_length: 3200
+  - type: sub_agent
+    name: coding_analyst
+    auto_approve: true       # Read-only analysis - safe for parallel execution
+    summarize_results: true
+    summary_max_length: 2200
   - type: sub_agent
     name: coding_reviewer
     summarize_results: true
