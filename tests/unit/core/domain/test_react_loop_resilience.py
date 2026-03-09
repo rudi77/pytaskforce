@@ -78,8 +78,13 @@ class TestBuildRetryNudge:
         nudge = _build_retry_nudge(["file_read"])
         assert nudge["role"] == MessageRole.USER.value
         assert "file_read failed" in nudge["content"]
-        assert "Do NOT give up" in nudge["content"]
         assert "different tool" in nudge["content"]
+
+    def test_escalation_on_repeated_failure(self) -> None:
+        nudge = _build_retry_nudge(["file_read"], attempt=2)
+        assert "ask_user" in nudge["content"]
+        assert "update_plan" in nudge["content"]
+        assert "attempt 2" in nudge["content"]
 
     def test_multiple_tools(self) -> None:
         nudge = _build_retry_nudge(["file_read", "web_fetch"])
@@ -164,7 +169,7 @@ class TestReactLoopResilience:
             for m in messages
             if m.get("role") == MessageRole.USER.value
             and "failed" in m.get("content", "")
-            and "Do NOT give up" in m.get("content", "")
+            and "different tool" in m.get("content", "")
         ]
         assert len(nudge_messages) >= 1, "Expected at least one retry nudge message"
         assert "file_read" in nudge_messages[0]["content"]

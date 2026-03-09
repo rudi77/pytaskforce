@@ -162,6 +162,7 @@ class PlanAndExecuteStrategy:
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
                 agent, mission, logger, self.max_plan_steps,
+                state=state,
             ):
                 if isinstance(item, list):
                     plan = item
@@ -326,6 +327,7 @@ class SparStrategy:
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
                 agent, mission, logger, self.max_plan_steps,
+                state=state,
             ):
                 if isinstance(item, list):
                     plan = item
@@ -409,7 +411,11 @@ class SparStrategy:
                                 "action step. Check correctness, edge cases, "
                                 "tests, and security. If more info is needed, "
                                 "ask_user. If validation tools should be "
-                                "used, call them."
+                                "used, call them. "
+                                "If the step failed due to missing configuration "
+                                "or infrastructure issues, use the planner tool "
+                                "with update_plan to remove or adapt the step "
+                                "rather than retrying indefinitely."
                             ),
                             session_id=session_id,
                             step=progress + 1,
@@ -439,7 +445,8 @@ class SparStrategy:
                         "REFLECT: Review the overall outcome for the "
                         "mission. Verify quality, tests, and completeness. "
                         "If anything is missing, ask_user or call tools "
-                        "to validate."
+                        "to validate. If any plan steps were skipped due "
+                        "to failures, mention them in the final summary."
                     ),
                     session_id=session_id,
                     step=progress + 1,

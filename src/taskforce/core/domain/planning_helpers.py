@@ -155,23 +155,38 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
     return steps
 
 
-def _build_retry_nudge(failed_tool_names: list[str]) -> dict[str, Any]:
+def _build_retry_nudge(
+    failed_tool_names: list[str], attempt: int = 1
+) -> dict[str, Any]:
     """Build a user-role message nudging the agent to retry after tool failures.
 
     Args:
         failed_tool_names: Names of tools that failed in the current step.
+        attempt: How many times this tool has already failed (1 = first failure).
 
     Returns:
         A message dict with role ``user`` containing retry instructions.
     """
     tools_str = ", ".join(dict.fromkeys(failed_tool_names))  # deduplicate, preserve order
+    if attempt >= 2:
+        return {
+            "role": MessageRole.USER.value,
+            "content": (
+                f"[System: {tools_str} failed again (attempt {attempt}). "
+                "This step may require missing configuration or credentials. "
+                "Options: (1) use ask_user to get help, "
+                "(2) use planner update_plan to skip this step if non-critical, "
+                "(3) try one final alternative approach.]"
+            ),
+        }
     return {
         "role": MessageRole.USER.value,
         "content": (
             f"[System: {tools_str} failed. "
-            "Do NOT give up or explain the error to the user. "
-            "Try a different tool or approach immediately. "
-            "For example, use `python` or `powershell`/`shell` as alternatives.]"
+            "Try a different tool or approach. "
+            "If this is a non-critical step (like notifications) and "
+            "the alternative also fails, skip it and move on. "
+            "Use `python` or `powershell`/`shell` as alternatives.]"
         ),
     }
 
@@ -275,22 +290,47 @@ def _resume_from_pause(
 # ---------------------------------------------------------------------------
 
 
-async def _generate_plan(agent: Agent, mission: str, logger: LoggerProtocol) -> list[str]:
+async def _generate_plan(
+    agent: Agent,
+    mission: str,
+    logger: LoggerProtocol,
+    conversation_context: list[dict[str, Any]] | None = None,
+) -> list[str]:
     """Generate plan steps via LLM.
 
     Passes ``"planning"`` as the model hint so that an LLMRouter (if active)
     can route this call to a model suited for task decomposition.
+
+    Args:
+        agent: The agent instance.
+        mission: The current mission/user message.
+        logger: Logger instance.
+        conversation_context: Optional prior conversation messages
+            (user/assistant pairs) so the planner knows what was already done.
     """
+    messages: list[dict[str, Any]] = [
+        {"role": MessageRole.SYSTEM.value, "content": agent.system_prompt},
+    ]
+    # Include conversation history so the planner is aware of prior work
+    if conversation_context:
+        for msg in conversation_context:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+    messages.append(
+        {
+            "role": MessageRole.USER.value,
+            "content": (
+                f"{mission}\n\nCreate a concise step-by-step plan. "
+                "Consider what has already been done in the conversation above. "
+                "Do NOT repeat completed work. "
+                "Return ONLY a JSON array."
+            ),
+        },
+    )
     result = await agent.llm_provider.complete(
-        messages=[
-            {"role": MessageRole.SYSTEM.value, "content": agent.system_prompt},
-            {
-                "role": MessageRole.USER.value,
-                "content": (
-                    f"{mission}\n\nCreate a concise step-by-step plan. " "Return ONLY a JSON array."
-                ),
-            },
-        ],
+        messages=messages,
         model="planning",
         tools=None,
         tool_choice="none",
@@ -653,6 +693,7 @@ async def _generate_and_register_plan(
     max_plan_steps: int,
     session_id: str | None = None,
     state: dict[str, Any] | None = None,
+    conversation_context: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[StreamEvent | list[str]]:
     """Generate plan steps, register with planner, yield events.
 
@@ -669,7 +710,13 @@ async def _generate_and_register_plan(
             else:
                 yield item  # StreamEvent
     """
-    steps = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:max_plan_steps]
+    # If no explicit context, try extracting from state
+    if conversation_context is None and state:
+        conversation_context = state.get("conversation_history")
+    steps = (
+        await _generate_plan(agent, mission, logger, conversation_context)
+        or DEFAULT_PLAN
+    )[:max_plan_steps]
 
     if agent._planner:
         await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=steps)
@@ -928,7 +975,12 @@ async def _react_loop(
 
             # Nudge the LLM to retry with alternative tools after failures
             if failed_tool_names:
-                messages.append(_build_retry_nudge(failed_tool_names))
+                messages.append(
+                    _build_retry_nudge(
+                        failed_tool_names,
+                        attempt=consecutive_no_progress_steps,
+                    )
+                )
 
             step += 1
         elif content:

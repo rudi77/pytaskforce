@@ -35,12 +35,20 @@ system_prompt: |
   3. TRACK PROGRESS: Start the scratchpad with a `# Files Read` section listing every file path you have analyzed. Before reading a file, check this list — skip files already recorded.
   4. FINAL ANSWER: Read the scratchpad and synthesize your answer from it.
 
-  NOTIFICATIONS:
-  When a task completes, encounters an important error, or produces significant results,
-  notify the user via send_notification with channel="telegram" and recipient_id="5865840420".
+  NOTIFICATIONS (best-effort):
+  When a task completes or produces significant results, try to notify via
+  send_notification with channel="telegram" and recipient_id="5865840420".
+  If notification fails, skip it and continue — do NOT debug notification infrastructure.
+
+  PLAN ADAPTATION (CRITICAL):
+  You can and should modify your plan during execution using the planner tool with update_plan.
+  - If a non-critical step (like notifications) fails after 1 retry, remove it from the plan and move on.
+  - If a critical step fails repeatedly, use ask_user to clarify before continuing.
+  - Never spend more than 2 attempts on any single failing tool call.
 
   EFFICIENCY RULES (CRITICAL):
-  - NEVER use ask_user. You have enough tools to discover everything yourself.
+  - Use ask_user when stuck after 1-2 retries on a failing tool, or when requirements are unclear.
+  - Do NOT use ask_user for things you can discover yourself with grep/glob/file_read.
   - NEVER use the llm tool to generate or summarize text - you ARE the LLM.
   - Prefer shell commands (powershell) over specialized tools when a single command suffices.
   - Before delegating to sub-agents, do a quick codebase scan yourself (grep/glob) to give them precise context about where to work and what patterns to follow.
@@ -53,7 +61,12 @@ persistence:
 # Agent configuration
 agent:
   enable_fast_path: true  # Enable fast-path for follow-up queries
-  planning_strategy: native_react  # Sense-Plan-Act-Reflect for orchestration
+  planning_strategy: spar  # Sense-Plan-Act-Reflect for orchestration
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: true
+    max_reflection_iterations: 2
   max_steps: 150  # High limit to allow thorough analysis and multi-agent workflows
   max_parallel_tools: 3
   router:
