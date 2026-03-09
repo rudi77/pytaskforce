@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 
-from taskforce.api.cli.tool_display_formatter import format_tool_call, format_tool_result
+from taskforce.api.cli.tool_display_formatter import (
+    format_tool_call,
+    format_tool_change_preview,
+    format_tool_result,
+)
 
 # ── Tool-Call formatting ────────────────────────────────────────────────
 
@@ -288,3 +292,34 @@ class TestFormatToolResult:
     def test_truncation_of_long_output(self) -> None:
         result = format_tool_result("some_tool", True, "x" * 200)
         assert len(result) <= 83  # 80 chars + "..."
+
+
+class TestFormatToolChangePreview:
+    """Tests for file-change previews in CLI tool call output."""
+
+    def test_edit_preview_shows_old_and_new_lines(self) -> None:
+        preview = format_tool_change_preview(
+            "edit",
+            {
+                "file_path": "src/taskforce/application/factory.py",
+                "old_string": "context = old",
+                "new_string": "context = new",
+            },
+        )
+        assert preview is not None
+        assert "Update(" in preview
+        assert "- context = old" in preview
+        assert "+ context = new" in preview
+
+    def test_file_write_preview_shows_added_content(self) -> None:
+        preview = format_tool_change_preview(
+            "file_write",
+            {"path": "README.md", "content": "## New Heading\nBody"},
+        )
+        assert preview is not None
+        assert "Write(" in preview
+        assert "+ ## New Heading\nBody" not in preview
+        assert "+ ## New Heading\\nBody" in preview
+
+    def test_unknown_tool_has_no_preview(self) -> None:
+        assert format_tool_change_preview("shell", {"command": "pwd"}) is None

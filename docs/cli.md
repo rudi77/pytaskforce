@@ -16,7 +16,7 @@ Open a continuous conversation with an agent.
 taskforce chat
 ```
 Use `Enter` to send messages (simple REPL-style input).
-Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color.
+Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color. The chat also shows an explicit "💭 Thinking..." state before reasoning events arrive and prints compact `Update(...)` / `Write(...)` previews for file-editing tool calls so you can see what changed.
 Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. Built-ins include `/plugins` and `/skills` to list available plugin agents and skills, and you can switch to a plugin agent by typing `/<plugin_name>` after selecting it from `/plugins`. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own. Use `/context` to inspect the currently assembled LLM context with token estimates by section (system prompt, conversation history, active skill instructions, and tool definitions). Use `/context full` to include full content in the output.
 
 ### Loading Plugins
