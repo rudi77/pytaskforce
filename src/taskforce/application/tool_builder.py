@@ -363,6 +363,9 @@ class ToolBuilder:
         }:
             return self.instantiate_sub_agent_tool(tool_spec)
 
+        if isinstance(tool_spec, dict) and tool_spec.get("type") == "parallel_agent":
+            return self.instantiate_parallel_agent_tool(tool_spec)
+
         resolved_spec = resolve_tool_spec(tool_spec)
         if not resolved_spec:
             self._logger.warning(
@@ -441,6 +444,7 @@ class ToolBuilder:
         planning_strategy = tool_spec.get("planning_strategy")
         summarize_results = bool(tool_spec.get("summarize_results", True))
         summary_max_length = int(tool_spec.get("summary_max_length", 2000))
+        auto_approve = bool(tool_spec.get("auto_approve", False))
 
         sub_agent_spawner = SubAgentSpawner(
             agent_factory=self._factory,
@@ -456,6 +460,7 @@ class ToolBuilder:
             max_steps=max_steps,
             summarize_results=summarize_results,
             summary_max_length=summary_max_length,
+            auto_approve=auto_approve,
         )
 
         return SubAgentTool(
@@ -464,6 +469,37 @@ class ToolBuilder:
             name=tool_name,
             description=tool_spec.get("description"),
             planning_strategy=planning_strategy,
+            auto_approve=auto_approve,
+        )
+
+    def instantiate_parallel_agent_tool(
+        self,
+        tool_spec: dict[str, Any],
+    ) -> ToolProtocol | None:
+        """Instantiate a parallel agent tool from configuration."""
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration.parallel_agent_tool import (
+            ParallelAgentTool,
+        )
+
+        profile = tool_spec.get("profile", "dev")
+        work_dir = tool_spec.get("work_dir")
+        max_steps = tool_spec.get("max_steps")
+        max_concurrency = int(tool_spec.get("max_concurrency", 3))
+
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self._factory,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+        )
+
+        return ParallelAgentTool(
+            sub_agent_spawner=sub_agent_spawner,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+            default_max_concurrency=max_concurrency,
         )
 
     # -------------------------------------------------------------------------
@@ -498,6 +534,9 @@ class ToolBuilder:
             ),
             summary_max_length=orchestration_config.get(
                 "summary_max_length", 2000
+            ),
+            auto_approve=bool(
+                orchestration_config.get("auto_approve", False)
             ),
         )
 

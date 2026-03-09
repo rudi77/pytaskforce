@@ -126,12 +126,16 @@ tools:
     summary_max_length: 2600
   - type: sub_agent
     name: coding_worker
+    auto_approve: true       # Enable parallel execution without per-call approval
     summarize_results: true
     summary_max_length: 3200
   - type: sub_agent
     name: coding_reviewer
     summarize_results: true
     summary_max_length: 2600
+  # Parallel sub-agent dispatch (batch multiple workers in one call)
+  - type: parallel_agent
+    max_concurrency: 3
 
 # Notification defaults
 notifications:

@@ -54,6 +54,7 @@ class AgentTool:
         max_steps: int | None = None,
         summarize_results: bool = False,
         summary_max_length: int = 2000,
+        auto_approve: bool = False,
     ):
         """
         Initialize AgentTool with factory for creating sub-agents.
@@ -73,6 +74,7 @@ class AgentTool:
         self._max_steps = max_steps
         self._summarize_results = summarize_results
         self._summary_max_length = summary_max_length
+        self._auto_approve = auto_approve
         self.logger = structlog.get_logger().bind(component="agent_tool")
 
     @property
@@ -131,8 +133,9 @@ class AgentTool:
 
     @property
     def requires_approval(self) -> bool:
-        # Sub-agent spawning requires approval (sub-agent may execute risky tools)
-        return True
+        # When auto_approve is enabled, skip approval to allow parallel execution.
+        # Sub-agents still enforce their own tool-level approval internally.
+        return not self._auto_approve
 
     @property
     def approval_risk_level(self) -> ApprovalRiskLevel:
