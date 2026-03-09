@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from rich.console import Console
-from unittest.mock import AsyncMock
 
 from taskforce.api.cli.simple_chat import SimpleChatRunner
+from taskforce.application.executor import ProgressUpdate
 from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
-from taskforce.core.domain.enums import SkillType
+from taskforce.core.domain.enums import EventType, SkillType
 from taskforce.core.domain.skill import SkillMetadataModel
 
 
@@ -316,3 +318,107 @@ async def test_telegram_inbound_message_routes_via_gateway() -> None:
     assert inbound_message.sender_id == "67890"
     assert inbound_message.message == "Hallo Agent"
     assert options.profile == "dev"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_shows_thinking_and_file_change_preview() -> None:
+    """Streaming UI should include thinking state and file-change preview lines."""
+    runner = _build_runner(DummyAgent())
+
+    updates = [
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.STEP_START.value,
+            message="step",
+            details={"step": 1},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.TOOL_CALL.value,
+            message="tool",
+            details={
+                "tool": "edit",
+                "args": {
+                    "file_path": "src/taskforce/application/factory.py",
+                    "old_string": "context = old",
+                    "new_string": "context = new",
+                },
+            },
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.FINAL_ANSWER.value,
+            message="done",
+            details={"content": "Alles erledigt"},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.COMPLETE.value,
+            message="complete",
+            details={},
+        ),
+    ]
+
+    async def _fake_stream(*args, **kwargs):
+        for item in updates:
+            yield item
+
+    runner.executor.execute_mission_streaming = _fake_stream
+
+    await runner._stream_response("Bitte ändere die Datei", [{"role": "user", "content": "x"}])
+
+    output = runner.console.export_text()
+    assert "Thinking..." in output
+    assert "Update(" in output
+    assert "context = old" in output
+    assert "context = new" in output
+
+
+@pytest.mark.asyncio
+async def test_stream_response_emits_thinking_for_each_step() -> None:
+    """Each new step should emit a Thinking indicator even after earlier thought events."""
+    runner = _build_runner(DummyAgent())
+
+    updates = [
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.STEP_START.value,
+            message="step1",
+            details={"step": 1},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.THOUGHT.value,
+            message="thought",
+            details={"step": 1, "thought": "Ich prüfe Datei A"},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.STEP_START.value,
+            message="step2",
+            details={"step": 2},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.FINAL_ANSWER.value,
+            message="done",
+            details={"content": "Fertig"},
+        ),
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.COMPLETE.value,
+            message="complete",
+            details={},
+        ),
+    ]
+
+    async def _fake_stream(*args, **kwargs):
+        for item in updates:
+            yield item
+
+    runner.executor.execute_mission_streaming = _fake_stream
+
+    await runner._stream_response("Bitte in zwei Schritten arbeiten", [{"role": "user", "content": "x"}])
+
+    output = runner.console.export_text()
+    assert output.count("Thinking...") >= 2

@@ -57,6 +57,19 @@ def format_tool_result(tool_name: str, success: bool, output: str) -> str:
         return _truncate(str(output))
 
 
+def format_tool_change_preview(tool_name: str, params: dict[str, Any]) -> str | None:
+    """Build an optional multiline preview for file-changing tool calls."""
+    formatter = _TOOL_CHANGE_PREVIEW_FORMATTERS.get(tool_name)
+    if formatter is None:
+        return None
+
+    try:
+        preview = formatter(tool_name, params)
+    except Exception:
+        return None
+    return preview or None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -229,6 +242,33 @@ def _call_generic(tool_name: str, params: dict[str, Any]) -> str:
     return f"{tool_name} {', '.join(parts)}"
 
 
+def _preview_edit(_name: str, params: dict[str, Any]) -> str | None:
+    path = str(params.get("file_path") or params.get("path") or "")
+    old_string = str(params.get("old_string") or "")
+    new_string = str(params.get("new_string") or "")
+    if not path or (not old_string and not new_string):
+        return None
+
+    old_preview = _truncate(old_string.replace("\n", "\\n"), 120) if old_string else ""
+    new_preview = _truncate(new_string.replace("\n", "\\n"), 120) if new_string else ""
+    lines = [f"Update({_shorten_path(path)})"]
+    if old_preview:
+        lines.append(f"  - {old_preview}")
+    if new_preview:
+        lines.append(f"  + {new_preview}")
+    return "\n".join(lines)
+
+
+def _preview_file_write(_name: str, params: dict[str, Any]) -> str | None:
+    path = str(params.get("path") or params.get("file_path") or "")
+    content = str(params.get("content") or "")
+    if not path or not content:
+        return None
+
+    preview_line = _truncate(content.replace("\n", "\\n"), 120)
+    return f"Write({_shorten_path(path)})\n  + {preview_line}"
+
+
 _TOOL_CALL_FORMATTERS: dict[str, _ToolCallFormatter] = {
     "file_read": _call_file_read,
     "file_write": _call_file_write,
@@ -243,6 +283,12 @@ _TOOL_CALL_FORMATTERS: dict[str, _ToolCallFormatter] = {
     "glob": _call_glob,
     "memory": _call_memory,
     "send_notification": _call_send_notification,
+}
+
+
+_TOOL_CHANGE_PREVIEW_FORMATTERS: dict[str, _ToolCallFormatter] = {
+    "edit": _preview_edit,
+    "file_write": _preview_file_write,
 }
 
 

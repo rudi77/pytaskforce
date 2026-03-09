@@ -47,6 +47,7 @@ taskforce chat --plugin examples/accounting_agent
 # /accounting_agent
 # Inspect active LLM context and token estimates
 # /context
+# Live stream now includes thinking traces ("💭 Thinking...") and compact file change previews for edit/file_write calls
 
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins

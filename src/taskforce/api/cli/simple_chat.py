@@ -14,7 +14,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
-from taskforce.api.cli.tool_display_formatter import format_tool_call, format_tool_result
+from taskforce.api.cli.tool_display_formatter import (
+    format_tool_call,
+    format_tool_change_preview,
+    format_tool_result,
+)
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.context_display_service import ContextDisplayService
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
@@ -417,6 +421,8 @@ class SimpleChatRunner:
         final_tokens: list[str] = []
         paused_question: dict[str, Any] | None = None
         started_output = False
+        current_step: str | None = None
+        thinking_emitted_for_steps: set[str] = set()
 
         async for update in self.executor.execute_mission_streaming(
             mission=content,
@@ -451,8 +457,11 @@ class SimpleChatRunner:
                     or update.details.get("thought")
                     or update.message
                 )
+                step_key = update.details.get("step") or current_step
+                if step_key is not None:
+                    thinking_emitted_for_steps.add(str(step_key))
                 if thought_text:
-                    self.console.print(f"[thought]💭 Thought:[/thought] {thought_text}")
+                    self.console.print(f"[thought]💭 Thinking:[/thought] {thought_text}")
 
             elif event_type == EventType.OBSERVATION.value:
                 observation = update.details.get("observation") or update.message
@@ -469,10 +478,14 @@ class SimpleChatRunner:
             elif event_type == EventType.TOOL_CALL.value:
                 tool = update.details.get("tool", "unknown")
                 params = update.details.get("args", update.details.get("params", {}))
+                normalized_params = params if isinstance(params, dict) else {}
                 signature = (event_type, f"{tool}:{params}")
                 if signature != self._last_event_signature:
-                    display = format_tool_call(tool, params if isinstance(params, dict) else {})
+                    display = format_tool_call(tool, normalized_params)
                     self.console.print(f"[action]🔧 {display}[/action]")
+                    change_preview = format_tool_change_preview(tool, normalized_params)
+                    if change_preview:
+                        self.console.print(f"[action]{change_preview}[/action]")
                 self._last_event_signature = signature
 
             elif event_type == EventType.TOOL_RESULT.value:
@@ -488,7 +501,11 @@ class SimpleChatRunner:
 
             elif event_type == EventType.STEP_START.value:
                 step = update.details.get("step", "?")
+                current_step = str(step)
                 self.console.print(f"[info]🧠 Step {step} starting...[/info]")
+                if current_step not in thinking_emitted_for_steps:
+                    self.console.print("[thought]💭 Thinking...[/thought]")
+                    thinking_emitted_for_steps.add(current_step)
 
             elif event_type == EventType.STARTED.value:
                 self.console.print("[info]🚀 Started[/info]")

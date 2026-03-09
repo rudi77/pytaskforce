@@ -182,3 +182,6 @@ root/
 - `CODING_SPECIALIST_PROMPT` in `src/taskforce/core/prompts/autonomous_prompts.py` has been intentionally shortened to avoid repeated long guidance in every ReAct loop while preserving core senior-engineer/tool-discipline rules.
 - Core `Agent` defaults already use early compression (`DEFAULT_COMPRESSION_TRIGGER = 40000`) and lazy memory loading based on mission keywords in `load_memory_context`.
 - Sub-agent tool specs can set `summarize_results` and `summary_max_length`; defaults in `ToolBuilder.instantiate_sub_agent_tool` now enable truncation (`summarize_results: true`) to prevent verbose sub-agent outputs from bloating orchestrator context.
+
+- CLI simple chat streaming now prints an explicit "💭 Thinking..." indicator on step start and includes compact file change previews (`Update(...)` for `edit`, `Write(...)` for `file_write`) to make in-flight modifications visible.
+- CLI thinking indicator is tracked per step in simple chat streaming, so each `step_start` prints a fresh `💭 Thinking...` marker even when earlier steps already emitted detailed thought events.
