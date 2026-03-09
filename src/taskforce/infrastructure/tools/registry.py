@@ -164,6 +164,12 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.reminder_tool",
         "params": {},
     },
+    # Orchestration tools - Parallel sub-agent execution
+    "call_agents_parallel": {
+        "type": "ParallelAgentTool",
+        "module": "taskforce.infrastructure.tools.orchestration.parallel_agent_tool",
+        "params": {},
+    },
     # Butler tools - Rule management
     "rule_manager": {
         "type": "RuleManagerTool",

@@ -23,6 +23,7 @@ class SubAgentTool:
         name: str,
         description: str | None = None,
         planning_strategy: str | None = None,
+        auto_approve: bool = False,
     ) -> None:
         self._agent_tool = agent_tool
         self._specialist = specialist
@@ -32,6 +33,7 @@ class SubAgentTool:
             or f"Delegate a mission to the '{specialist}' sub-agent."
         )
         self._planning_strategy = planning_strategy
+        self._auto_approve = auto_approve
 
     @property
     def name(self) -> str:
@@ -58,7 +60,7 @@ class SubAgentTool:
 
     @property
     def requires_approval(self) -> bool:
-        return True
+        return not self._auto_approve
 
     @property
     def approval_risk_level(self) -> ApprovalRiskLevel:
