@@ -77,7 +77,9 @@
       "Bash(git:*)",
       "Bash(start:*)",
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
-      "Bash(PYTHONPATH=src python:*)"
+      "Bash(PYTHONPATH=src python:*)",
+      "WebSearch",
+      "WebFetch(domain:inspect.aisi.org.uk)"
     ],
     "deny": [
       ".env",

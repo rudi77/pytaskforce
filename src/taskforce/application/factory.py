@@ -402,11 +402,14 @@ class AgentFactory:
         tools: list[ToolProtocol],
         sub_agent_specs: list[dict[str, Any]],
     ) -> None:
-        """Instantiate and add sub-agent tools from definition specs."""
+        """Instantiate and add sub-agent and parallel-agent tools from definition specs."""
         for spec in sub_agent_specs:
-            sub_agent_tool = self._tool_builder.instantiate_sub_agent_tool(spec)
-            if sub_agent_tool:
-                tools.append(sub_agent_tool)
+            if spec.get("type") == "parallel_agent":
+                tool = self._tool_builder.instantiate_parallel_agent_tool(spec)
+            else:
+                tool = self._tool_builder.instantiate_sub_agent_tool(spec)
+            if tool:
+                tools.append(tool)
 
     def _extract_agent_settings(
         self,
@@ -669,16 +672,17 @@ class AgentFactory:
     @staticmethod
     def _resolve_dict_tool_name(tool_entry: dict[str, Any]) -> str | None:
         """Resolve a tool name from a dict config entry, skipping sub-agents."""
-        if tool_entry.get("type") in {"sub_agent", "agent"}:
+        if tool_entry.get("type") in {"sub_agent", "agent", "parallel_agent"}:
             return None
         name = tool_entry.get("name") or tool_entry.get("type", "")
         return name if name else None
 
     def _extract_sub_agent_specs(self, tools_config: list[Any]) -> list[dict[str, Any]]:
-        """Extract sub-agent tool specs from mixed config entries."""
+        """Extract sub-agent and parallel-agent tool specs from mixed config entries."""
         return [
             entry for entry in tools_config
-            if isinstance(entry, dict) and entry.get("type") in {"sub_agent", "agent"}
+            if isinstance(entry, dict)
+            and entry.get("type") in {"sub_agent", "agent", "parallel_agent"}
         ]
 
     def _build_definition_from_config(
