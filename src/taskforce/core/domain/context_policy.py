@@ -30,6 +30,9 @@ class ContextPolicy:
         include_latest_tool_previews_n: Number of latest tool previews to include
         allow_tools: Optional whitelist of tool names to include (None = all)
         allow_selectors: Optional list of selector types to use (future feature)
+        deduplicate_visible_window: Number of recent messages to check for
+            deduplication. Tool previews already visible in this window are
+            skipped from the context pack. Set to 0 to disable. Default: 10.
     """
 
     max_items: int = 10
@@ -38,6 +41,7 @@ class ContextPolicy:
     include_latest_tool_previews_n: int = 5
     allow_tools: list[str] | None = None
     allow_selectors: list[str] | None = field(default_factory=lambda: ["first_chars"])
+    deduplicate_visible_window: int = 10
 
     def __post_init__(self) -> None:
         """Validate policy constraints."""
@@ -49,6 +53,8 @@ class ContextPolicy:
             raise ValueError("max_total_chars must be positive")
         if self.include_latest_tool_previews_n < 0:
             raise ValueError("include_latest_tool_previews_n must be non-negative")
+        if self.deduplicate_visible_window < 0:
+            raise ValueError("deduplicate_visible_window must be non-negative")
 
         # Ensure max_total_chars is achievable given per-item limit
         if self.max_chars_per_item * self.max_items < self.max_total_chars:
@@ -107,6 +113,7 @@ class ContextPolicy:
             include_latest_tool_previews_n=data.get("include_latest_tool_previews_n", 5),
             allow_tools=data.get("allow_tools"),
             allow_selectors=data.get("allow_selectors", ["first_chars"]),
+            deduplicate_visible_window=data.get("deduplicate_visible_window", 10),
         )
 
     def to_dict(self) -> dict:
@@ -123,5 +130,5 @@ class ContextPolicy:
             "include_latest_tool_previews_n": self.include_latest_tool_previews_n,
             "allow_tools": self.allow_tools,
             "allow_selectors": self.allow_selectors,
+            "deduplicate_visible_window": self.deduplicate_visible_window,
         }
-

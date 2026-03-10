@@ -103,9 +103,7 @@ def _ensure_event_type(event: StreamEvent) -> EventType:
     return et if isinstance(et, EventType) else EventType(et)
 
 
-def _parse_tool_args(
-    tool_call: dict[str, Any], logger: LoggerProtocol
-) -> dict[str, Any]:
+def _parse_tool_args(tool_call: dict[str, Any], logger: LoggerProtocol) -> dict[str, Any]:
     """Parse tool call arguments from JSON string."""
     try:
         result: dict[str, Any] = json.loads(tool_call["function"]["arguments"])
@@ -260,9 +258,7 @@ def _resume_from_pause(
     ]:
         state.pop(key, None)
 
-    logger.info(
-        "resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100]
-    )
+    logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
 
     return ResumeContext(
         messages=messages,
@@ -279,9 +275,7 @@ def _resume_from_pause(
 # ---------------------------------------------------------------------------
 
 
-async def _generate_plan(
-    agent: Agent, mission: str, logger: LoggerProtocol
-) -> list[str]:
+async def _generate_plan(agent: Agent, mission: str, logger: LoggerProtocol) -> list[str]:
     """Generate plan steps via LLM.
 
     Passes ``"planning"`` as the model hint so that an LLMRouter (if active)
@@ -293,8 +287,7 @@ async def _generate_plan(
             {
                 "role": MessageRole.USER.value,
                 "content": (
-                    f"{mission}\n\nCreate a concise step-by-step plan. "
-                    "Return ONLY a JSON array."
+                    f"{mission}\n\nCreate a concise step-by-step plan. " "Return ONLY a JSON array."
                 ),
             },
         ],
@@ -329,14 +322,10 @@ async def _execute_tool_calls(
     for req in requests:
         tool = agent.tools.get(req.tool_name)
         can_parallel = (
-            tool
-            and getattr(tool, "supports_parallelism", False)
-            and not tool.requires_approval
+            tool and getattr(tool, "supports_parallelism", False) and not tool.requires_approval
         )
         if can_parallel and max_p > 1:
-            tasks.append(
-                (req, asyncio.create_task(run(req.tool_name, req.tool_args)))
-            )
+            tasks.append((req, asyncio.create_task(run(req.tool_name, req.tool_args))))
         else:
             results[req.tool_call_id] = await agent._execute_tool(
                 req.tool_name, req.tool_args, session_id=session_id
@@ -350,9 +339,7 @@ async def _execute_tool_calls(
     return [(req, results[req.tool_call_id]) for req in requests]
 
 
-async def _collect_result(
-    session_id: str, events: AsyncIterator[StreamEvent]
-) -> ExecutionResult:
+async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -> ExecutionResult:
     """Collect events into ExecutionResult."""
     history: list[dict[str, Any]] = []
     final_msg, error = "", ""
@@ -428,19 +415,13 @@ async def _stream_final_response(
             tool_choice="none",
             temperature=0.2,
         ):
-            if (
-                chunk.get("type") == LLMStreamEventType.TOKEN.value
-                and chunk.get("content")
-            ):
+            if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
                 yield StreamEvent(
                     event_type=EventType.LLM_TOKEN,
                     data={"content": chunk["content"]},
                 )
                 final += chunk["content"]
-            elif (
-                chunk.get("type") == LLMStreamEventType.DONE.value
-                and chunk.get("usage")
-            ):
+            elif chunk.get("type") == LLMStreamEventType.DONE.value and chunk.get("usage"):
                 yield StreamEvent(
                     event_type=EventType.TOKEN_USAGE,
                     data=chunk["usage"],
@@ -461,9 +442,7 @@ async def _stream_final_response(
             )
 
     if final:
-        yield StreamEvent(
-            event_type=EventType.FINAL_ANSWER, data={"content": final}
-        )
+        yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": final})
     else:
         yield StreamEvent(
             event_type=EventType.FINAL_ANSWER,
@@ -521,9 +500,7 @@ async def _handle_ask_user(
     if paused_phase is not None:
         state["paused_phase"] = paused_phase
     _persist_active_skill(agent, state)
-    await agent.state_store.save(
-        session_id=session_id, state=state, planner=agent.planner
-    )
+    await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
 
     event_data: dict[str, Any] = {"question": q, "missing": missing}
     if channel:
@@ -692,14 +669,10 @@ async def _generate_and_register_plan(
             else:
                 yield item  # StreamEvent
     """
-    steps = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[
-        :max_plan_steps
-    ]
+    steps = (await _generate_plan(agent, mission, logger) or DEFAULT_PLAN)[:max_plan_steps]
 
     if agent._planner:
-        await agent._planner.execute(
-            action=PlannerAction.CREATE_PLAN.value, tasks=steps
-        )
+        await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=steps)
         yield steps
         yield StreamEvent(
             event_type=EventType.PLAN_UPDATED,
@@ -714,9 +687,7 @@ async def _generate_and_register_plan(
 
     if session_id is not None and state is not None:
         _persist_active_skill(agent, state)
-        await agent.state_store.save(
-            session_id=session_id, state=state, planner=agent.planner
-        )
+        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
 
 
 def _rebuild_system_prompt(
@@ -732,11 +703,12 @@ def _rebuild_system_prompt(
     ``_build_system_prompt`` is dominated by context-pack extraction
     (reverse message scan) and plan summary formatting.
     """
-    # Cache key: planner state snapshot + message count.  When tools
+    # Cache key: plan content hash + message count.  When tools
     # execute or compression runs, the message count changes and the
-    # cache naturally invalidates.
-    planner_state = state.get("planner_state")
-    cache_key = (id(planner_state), len(messages))
+    # cache naturally invalidates.  Uses content hash instead of id()
+    # to detect mutations to the same dict object.
+    plan_summary = agent._planner.get_plan_summary() if agent._planner else ""
+    cache_key = (hash(plan_summary), len(messages))
     prev = getattr(agent, "_prompt_cache", None)
     if prev is not None and prev[0] == cache_key:
         messages[0] = {
@@ -745,9 +717,7 @@ def _rebuild_system_prompt(
         }
         return
 
-    prompt = agent._build_system_prompt(
-        mission=mission, state=state, messages=messages
-    )
+    prompt = agent._build_system_prompt(mission=mission, state=state, messages=messages)
     agent._prompt_cache = (cache_key, prompt)  # type: ignore[attr-defined]
     messages[0] = {
         "role": MessageRole.SYSTEM.value,
@@ -789,18 +759,12 @@ async def _react_loop(
     repeated_signature_count = 0
 
     while step < agent.max_steps:
-        await agent.record_heartbeat(
-            session_id, ExecutionStatus.PENDING.value, {"step": step}
-        )
+        await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
         _rebuild_system_prompt(agent, messages, mission, state)
 
         if use_stream:
-            messages = await agent.message_history_manager.compress_messages(
-                messages
-            )
-            messages = agent.message_history_manager.preflight_budget_check(
-                messages
-            )
+            messages = await agent.message_history_manager.compress_messages(messages)
+            messages = agent.message_history_manager.preflight_budget_check(messages)
 
         tool_calls: list[dict[str, Any]] = []
         content = ""
@@ -817,10 +781,7 @@ async def _react_loop(
                     temperature=0.2,
                 ):
                     t = chunk.get("type")
-                    if (
-                        t == LLMStreamEventType.TOKEN.value
-                        and chunk.get("content")
-                    ):
+                    if t == LLMStreamEventType.TOKEN.value and chunk.get("content"):
                         yield StreamEvent(
                             event_type=EventType.LLM_TOKEN,
                             data={"content": chunk["content"]},
@@ -836,9 +797,7 @@ async def _react_loop(
                         t == LLMStreamEventType.TOOL_CALL_DELTA.value
                         and chunk.get("index", 0) in tc_acc
                     ):
-                        tc_acc[chunk["index"]]["arguments"] += chunk.get(
-                            "arguments_delta", ""
-                        )
+                        tc_acc[chunk["index"]]["arguments"] += chunk.get("arguments_delta", "")
                     elif (
                         t == LLMStreamEventType.TOOL_CALL_END.value
                         and chunk.get("index", 0) in tc_acc
@@ -847,10 +806,7 @@ async def _react_loop(
                             "arguments",
                             tc_acc[chunk["index"]]["arguments"],
                         )
-                    elif (
-                        t == LLMStreamEventType.DONE.value
-                        and chunk.get("usage")
-                    ):
+                    elif t == LLMStreamEventType.DONE.value and chunk.get("usage"):
                         yield StreamEvent(
                             event_type=EventType.TOKEN_USAGE,
                             data=chunk["usage"],
@@ -858,9 +814,7 @@ async def _react_loop(
                     elif t == "error":
                         yield StreamEvent(
                             event_type=EventType.ERROR,
-                            data={
-                                "message": chunk.get("message", "Error")
-                            },
+                            data={"message": chunk.get("message", "Error")},
                         )
             except Exception as e:
                 yield StreamEvent(
@@ -885,12 +839,8 @@ async def _react_loop(
                 content = content_acc
         else:
             # Apply compression + budget check for non-streaming path too
-            messages = await agent.message_history_manager.compress_messages(
-                messages
-            )
-            messages = agent.message_history_manager.preflight_budget_check(
-                messages
-            )
+            messages = await agent.message_history_manager.compress_messages(messages)
+            messages = agent.message_history_manager.preflight_budget_check(messages)
             result = await agent.llm_provider.complete(
                 messages=messages,
                 model=model_hint,
@@ -907,10 +857,7 @@ async def _react_loop(
                 messages.append(
                     {
                         "role": MessageRole.USER.value,
-                        "content": (
-                            f"[System Error: {result.get('error')}. "
-                            "Try again.]"
-                        ),
+                        "content": (f"[System Error: {result.get('error')}. " "Try again.]"),
                     }
                 )
                 continue
@@ -927,8 +874,13 @@ async def _react_loop(
                 for tc in tool_calls
             )
             async for evt in _process_tool_calls(
-                agent, tool_calls, session_id, step + 1,
-                state, messages, logger,
+                agent,
+                tool_calls,
+                session_id,
+                step + 1,
+                state,
+                messages,
+                logger,
             ):
                 event_type = _ensure_event_type(evt)
                 if event_type == EventType.ASK_USER:
@@ -991,19 +943,14 @@ async def _react_loop(
             messages.append(
                 {
                     "role": MessageRole.USER.value,
-                    "content": (
-                        "[System: Empty response. "
-                        "Provide answer or use tool.]"
-                    ),
+                    "content": ("[System: Empty response. " "Provide answer or use tool.]"),
                 }
             )
 
     if step >= agent.max_steps and not final:
         yield StreamEvent(
             event_type=EventType.ERROR,
-            data={
-                "message": f"Exceeded max steps ({agent.max_steps})"
-            },
+            data={"message": f"Exceeded max steps ({agent.max_steps})"},
         )
 
 
@@ -1038,9 +985,7 @@ async def _llm_call_and_process(
         temperature=0.2,
     )
     if result.get("usage"):
-        events.append(
-            StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"])
-        )
+        events.append(StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"]))
 
     if not result.get("success"):
         messages.append(
@@ -1056,10 +1001,17 @@ async def _llm_call_and_process(
         paused = False
         failed_tool_names: list[str] = []
         async for e in _process_tool_calls(
-            agent, result["tool_calls"], session_id, step,
-            state, messages, logger,
-            plan=plan, plan_step_idx=plan_step_idx,
-            plan_iteration=plan_iteration, paused_phase=paused_phase,
+            agent,
+            result["tool_calls"],
+            session_id,
+            step,
+            state,
+            messages,
+            logger,
+            plan=plan,
+            plan_step_idx=plan_step_idx,
+            plan_iteration=plan_iteration,
+            paused_phase=paused_phase,
         ):
             event_type = _ensure_event_type(e)
             if event_type == EventType.ASK_USER:
@@ -1073,9 +1025,7 @@ async def _llm_call_and_process(
         return
 
     if result.get("content"):
-        messages.append(
-            {"role": MessageRole.ASSISTANT.value, "content": result["content"]}
-        )
+        messages.append({"role": MessageRole.ASSISTANT.value, "content": result["content"]})
         yield ("content", events)
         return
 
@@ -1105,6 +1055,4 @@ async def _save_and_emit_max_steps(
             data={"message": f"Exceeded max steps ({agent.max_steps})"},
         )
     _persist_active_skill(agent, state)
-    await agent.state_store.save(
-        session_id=session_id, state=state, planner=agent.planner
-    )
+    await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)

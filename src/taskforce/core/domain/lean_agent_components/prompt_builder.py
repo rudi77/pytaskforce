@@ -32,6 +32,12 @@ class LeanPromptBuilder:
         self._context_policy = context_policy
         self._logger = logger
 
+        # Section-level caches for prompt building
+        self._cached_plan_section: str | None = None
+        self._cached_plan_hash: int | None = None
+        self._cached_context_section: str | None = None
+        self._cached_context_key: tuple[int, int] | None = None
+
     def build_system_prompt(
         self,
         *,
@@ -66,13 +72,24 @@ class LeanPromptBuilder:
         return prompt
 
     def _build_plan_section(self) -> str:
-        """Build the plan status section for the system prompt."""
+        """Build the plan status section for the system prompt.
+
+        Caches the result keyed on the hash of the plan summary string.
+        The cache invalidates when the plan content changes (e.g., steps
+        are marked done).
+        """
         if not self._planner:
             return ""
 
         plan_output = self._planner.get_plan_summary()
         if not plan_output or plan_output == "No active plan.":
+            self._cached_plan_section = ""
+            self._cached_plan_hash = None
             return ""
+
+        plan_hash = hash(plan_output)
+        if self._cached_plan_hash == plan_hash and self._cached_plan_section is not None:
+            return self._cached_plan_section
 
         plan_section = (
             "\n\n## CURRENT PLAN STATUS\n"
@@ -81,6 +98,8 @@ class LeanPromptBuilder:
             f"{plan_output}"
         )
         self._logger.debug("plan_injected", plan_steps=plan_output.count("\n") + 1)
+        self._cached_plan_section = plan_section
+        self._cached_plan_hash = plan_hash
         return plan_section
 
     def _build_context_pack_section(
@@ -93,6 +112,10 @@ class LeanPromptBuilder:
         """
         Build the context pack section for the system prompt.
 
+        Caches the result keyed on message count and the identity of the
+        last tool message content. The cache invalidates when new tool
+        results are added or messages are compressed.
+
         Args:
             mission: Optional mission description for context pack
             state: Optional session state for context pack
@@ -101,10 +124,28 @@ class LeanPromptBuilder:
         Returns:
             Context pack section string or empty string if no context pack.
         """
+        # Compute a lightweight cache key from message shape
+        msg_list = messages or []
+        last_tool_content_id = 0
+        for msg in reversed(msg_list):
+            if msg.get("role") == "tool":
+                last_tool_content_id = id(msg.get("content"))
+                break
+        context_key = (len(msg_list), last_tool_content_id)
+
+        if self._cached_context_key == context_key and self._cached_context_section is not None:
+            return self._cached_context_section
+
+        visible_window = self._context_policy.deduplicate_visible_window or None
         context_pack = self._context_builder.build_context_pack(
-            mission=mission, state=state, messages=messages
+            mission=mission,
+            state=state,
+            messages=messages,
+            visible_window_size=visible_window,
         )
         if not context_pack:
+            self._cached_context_section = ""
+            self._cached_context_key = context_key
             return ""
 
         self._logger.debug(
@@ -112,4 +153,7 @@ class LeanPromptBuilder:
             pack_length=len(context_pack),
             policy_max=self._context_policy.max_total_chars,
         )
-        return f"\n\n{context_pack}"
+        result = f"\n\n{context_pack}"
+        self._cached_context_section = result
+        self._cached_context_key = context_key
+        return result

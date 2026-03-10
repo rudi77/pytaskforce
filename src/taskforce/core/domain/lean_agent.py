@@ -146,6 +146,9 @@ class Agent:
         self._memory_context_config = memory_context_config or MemoryContextConfig()
         self._memory_context: str | None = None
 
+        # Skill suffix cache: (active_skill_name, suffix_string)
+        self._cached_skill_suffix: tuple[str | None, str] | None = None
+
         # Execution limits configuration
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
         self.max_parallel_tools = max_parallel_tools or self.DEFAULT_MAX_PARALLEL_TOOLS
@@ -257,8 +260,16 @@ class Agent:
         if mission:
             _lower = mission.lower()
             _memory_keywords = (
-                "remember", "memory", "preference", "previous", "last time",
-                "history", "learned", "convention", "style", "pattern",
+                "remember",
+                "memory",
+                "preference",
+                "previous",
+                "last time",
+                "history",
+                "learned",
+                "convention",
+                "style",
+                "pattern",
             )
             if not any(kw in _lower for kw in _memory_keywords):
                 self.logger.debug(
@@ -292,28 +303,51 @@ class Agent:
             base_prompt += self._memory_context
 
         # Inject active skill instructions if skill manager is configured
-        if self.skill_manager and self.skill_manager.active_skill_name:
+        # Uses a cache keyed on the active skill name to avoid rebuilding
+        # the suffix on every ReAct iteration when the skill hasn't changed.
+        if self.skill_manager:
+            active_name = self.skill_manager.active_skill_name
+            if (
+                self._cached_skill_suffix is not None
+                and self._cached_skill_suffix[0] == active_name
+            ):
+                base_prompt += self._cached_skill_suffix[1]
+            else:
+                suffix = self._build_skill_suffix(active_name)
+                self._cached_skill_suffix = (active_name, suffix)
+                base_prompt += suffix
+
+        return base_prompt
+
+    def _build_skill_suffix(self, active_skill_name: str | None) -> str:
+        """Build the skill instructions suffix for the system prompt.
+
+        Args:
+            active_skill_name: Name of the currently active skill, or None.
+
+        Returns:
+            Skill suffix string to append to the system prompt.
+        """
+        if active_skill_name:
             skill_instructions = self.skill_manager.get_active_instructions()
             if skill_instructions:
-                base_prompt = (
-                    f"{base_prompt}\n\n"
-                    f"# ACTIVE SKILL: {self.skill_manager.active_skill_name}\n\n"
+                return (
+                    f"\n\n# ACTIVE SKILL: {active_skill_name}\n\n"
                     "Follow the skill instructions below. When the skill provides "
                     "bundled resource files, use them directly via their absolute "
                     "paths instead of reimplementing their logic.\n\n"
                     f"{skill_instructions}\n"
                 )
-        elif self.skill_manager and self.skill_manager.has_skills:
+        elif self.skill_manager.has_skills:
             available = self.skill_manager.list_skills()
             skill_list = ", ".join(f"`{s}`" for s in available)
-            base_prompt += (
+            return (
                 f"\n\n# AVAILABLE SKILLS\n\n"
                 f"You have {len(available)} skill(s) available that you can activate "
                 f"using the `activate_skill` tool: {skill_list}\n"
                 f"Activate a skill when the user's request matches its capabilities.\n"
             )
-
-        return base_prompt
+        return ""
 
     async def execute(self, mission: str, session_id: str) -> ExecutionResult:
         """
