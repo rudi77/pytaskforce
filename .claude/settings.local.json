@@ -79,7 +79,8 @@
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
       "Bash(PYTHONPATH=src python:*)",
       "WebSearch",
-      "WebFetch(domain:inspect.aisi.org.uk)"
+      "WebFetch(domain:inspect.aisi.org.uk)",
+      "Bash(PYTHONPATH=. .venv/Scripts/python.exe:*)"
     ],
     "deny": [
       ".env",

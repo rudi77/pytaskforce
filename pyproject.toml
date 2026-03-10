@@ -116,6 +116,9 @@ build = [
     "build>=1.0.0",
     "twine>=5.0.0",
 ]
+evals = [
+    "inspect-ai>=0.3.130",
+]
 
 [dependency-groups]
 dev = [
