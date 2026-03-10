@@ -530,21 +530,22 @@ class LiteLLMService:
         litellm_kwargs.setdefault("stream_options", {"include_usage": True})
         return resolved_model, litellm_kwargs
 
-    async def _build_stream_done_event(
+    def _build_stream_done_event(
         self,
         resolved_model: str,
-        messages: list[dict[str, Any]],
         content_accumulated: str,
         current_tool_calls: dict[int, dict[str, Any]],
         start_time: float,
         usage: dict[str, Any] | None = None,
         actual_model: str | None = None,
     ) -> dict[str, Any]:
-        """Build the final ``done`` event and write trace.
+        """Build the final ``done`` event dict (no I/O).
+
+        Tracing is handled separately by the caller to avoid blocking
+        the stream consumer.
 
         Args:
             resolved_model: Resolved model string for logging.
-            messages: Original messages for tracing.
             content_accumulated: Accumulated content from stream.
             current_tool_calls: Accumulated tool calls from stream.
             start_time: Request start time for latency calculation.
@@ -568,13 +569,6 @@ class LiteLLMService:
         # Verify model match
         LLMResponseParser._check_model_mismatch(resolved_model, actual_model)
 
-        await self._trace_success(
-            messages,
-            {"content": content_accumulated or None, "usage": usage},
-            resolved_model,
-            latency_ms,
-        )
-
         return {"type": "done", "usage": usage}
 
     async def _handle_stream_error(
@@ -594,7 +588,8 @@ class LiteLLMService:
             error_type=type(error).__name__,
             error=str(error)[:200],
         )
-        await self._trace_failure(messages, resolved_model, 0, str(error))
+        # Fire-and-forget: trace without blocking the stream consumer
+        asyncio.create_task(self._trace_failure(messages, resolved_model, 0, str(error)))
         return {"type": "error", "message": str(error)}
 
     async def complete_stream(
@@ -686,9 +681,9 @@ class LiteLLMService:
                             "index": tc_idx,
                         }
 
-            done_event = await self._build_stream_done_event(
+            latency_ms = int((time.time() - start_time) * 1000)
+            done_event = self._build_stream_done_event(
                 resolved_model,
-                messages,
                 content_accumulated,
                 current_tool_calls,
                 start_time,
@@ -697,10 +692,18 @@ class LiteLLMService:
             )
             yield done_event
 
-        except Exception as e:
-            error_event = await self._handle_stream_error(
-                e, resolved_model, messages
+            # Fire-and-forget: trace without blocking the stream consumer
+            asyncio.create_task(
+                self._trace_success(
+                    messages,
+                    {"content": content_accumulated or None, "usage": stream_usage},
+                    resolved_model,
+                    latency_ms,
+                )
             )
+
+        except Exception as e:
+            error_event = await self._handle_stream_error(e, resolved_model, messages)
             yield error_event
 
     async def _process_tool_call_delta(
