@@ -47,6 +47,7 @@ class ContextBuilder:
         mission: str | None = None,
         state: dict[str, Any] | None = None,
         messages: list[dict[str, Any]] | None = None,
+        visible_window_size: int | None = None,
     ) -> str:
         """
         Build a budgeted context pack from session state.
@@ -62,6 +63,9 @@ class ContextBuilder:
             mission: Optional mission description
             state: Optional session state dictionary
             messages: Optional message history (for extracting tool previews)
+            visible_window_size: Number of recent messages guaranteed to be
+                visible to the LLM. Tool previews from this window are
+                skipped to avoid duplication. None disables deduplication.
 
         Returns:
             Formatted context pack string ready for injection
@@ -76,8 +80,13 @@ class ContextBuilder:
         if mission and len(mission) <= self.policy.max_chars_per_item:
             sections.append(f"**Mission:** {mission}")
 
+        # Compute visible tool IDs for deduplication
+        visible_ids: set[str] | None = None
+        if visible_window_size and messages:
+            visible_ids = self._get_visible_tool_ids(messages, visible_window_size)
+
         # Section 2: Latest tool result previews
-        tool_previews = self._extract_tool_previews(messages)
+        tool_previews = self._extract_tool_previews(messages, visible_ids=visible_ids)
         if tool_previews:
             preview_section = self._build_tool_preview_section(tool_previews)
             if preview_section:
@@ -95,17 +104,58 @@ class ContextBuilder:
 
         return context_pack
 
+    def _get_visible_tool_ids(
+        self,
+        messages: list[dict[str, Any]],
+        visible_window_size: int,
+    ) -> set[str]:
+        """Collect handle IDs of tool results in the visible message window.
+
+        These tool results are already visible to the LLM in the message
+        history, so including them again in the context pack is redundant.
+
+        Args:
+            messages: Full message history.
+            visible_window_size: Number of recent messages in the visible window.
+
+        Returns:
+            Set of handle IDs found in the visible window.
+        """
+        visible_ids: set[str] = set()
+        visible_messages = messages[-visible_window_size:]
+        for msg in visible_messages:
+            if msg.get("role") != "tool":
+                continue
+            content = msg.get("content", "")
+            if not content:
+                continue
+            try:
+                parsed = json.loads(content)
+                handle_data = parsed.get("handle")
+                if handle_data:
+                    handle_id = handle_data.get("id", "")
+                    if handle_id:
+                        visible_ids.add(handle_id)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+        return visible_ids
+
     def _extract_tool_previews(
-        self, messages: list[dict[str, Any]]
+        self,
+        messages: list[dict[str, Any]],
+        visible_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Extract tool result previews from message history.
 
         Looks for tool messages with preview data (from Story 9.1).
-        Returns the latest N previews based on policy.
+        Returns the latest N previews based on policy, optionally skipping
+        previews that are already visible in the message window.
 
         Args:
             messages: Message history
+            visible_ids: Optional set of handle IDs already visible in the
+                message window. Previews with these IDs are skipped.
 
         Returns:
             List of preview dictionaries (latest first)
@@ -128,18 +178,25 @@ class ContextBuilder:
                 if "handle" in parsed and "preview_text" in parsed:
                     # This is a preview message
                     handle_data = parsed["handle"]
+                    handle_id = handle_data.get("id", "")
                     tool_name = handle_data.get("tool", "unknown")
+
+                    # Skip if already visible in the message window
+                    if visible_ids and handle_id in visible_ids:
+                        continue
 
                     # Check if tool is allowed by policy
                     if not self.policy.is_tool_allowed(tool_name):
                         continue
 
-                    previews.append({
-                        "tool": tool_name,
-                        "preview": parsed["preview_text"],
-                        "truncated": parsed.get("truncated", False),
-                        "size_chars": handle_data.get("size_chars", 0),
-                    })
+                    previews.append(
+                        {
+                            "tool": tool_name,
+                            "preview": parsed["preview_text"],
+                            "truncated": parsed.get("truncated", False),
+                            "size_chars": handle_data.get("size_chars", 0),
+                        }
+                    )
 
                     # Stop when we have enough
                     if len(previews) >= self.policy.include_latest_tool_previews_n:
@@ -151,9 +208,7 @@ class ContextBuilder:
         # Return in chronological order (oldest first)
         return list(reversed(previews))
 
-    def _build_tool_preview_section(
-        self, previews: list[dict[str, Any]]
-    ) -> str | None:
+    def _build_tool_preview_section(self, previews: list[dict[str, Any]]) -> str | None:
         """
         Build tool preview section from extracted previews.
 
@@ -273,9 +328,7 @@ class ContextBuilder:
 
         return pack
 
-    def apply_selector(
-        self, content: str, selector: str, max_chars: int | None = None
-    ) -> str:
+    def apply_selector(self, content: str, selector: str, max_chars: int | None = None) -> str:
         """
         Apply a selector to extract part of content.
 

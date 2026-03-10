@@ -105,6 +105,9 @@ postgres = [
     "alembic>=1.13",
     "asyncpg>=0.29",
 ]
+tokenizer = [
+    "tiktoken>=0.5.0",
+]
 tracing = [
     "arize-phoenix-otel>=0.6.0",
     "openinference-instrumentation-litellm>=0.1.0",

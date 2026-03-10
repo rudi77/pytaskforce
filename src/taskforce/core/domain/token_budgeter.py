@@ -5,39 +5,45 @@ This module provides utilities for estimating token usage and enforcing
 budget constraints to prevent "input tokens exceed limit" errors.
 
 Key features:
-- Heuristic token estimation (chars/4 + overhead)
+- Pluggable token estimation via TokenEstimatorProtocol
 - Budget-based compression triggers
 - Safe message sanitization (hard caps on content)
 - Handle-aware: understands tool result handles vs raw outputs
 """
 
-import json
-from typing import Any
+from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING, Any
+
+from taskforce.core.domain.heuristic_token_estimator import HeuristicTokenEstimator
 from taskforce.core.interfaces.logging import LoggerProtocol
+
+if TYPE_CHECKING:
+    from taskforce.core.interfaces.token_estimator import TokenEstimatorProtocol
 
 
 class TokenBudgeter:
     """
     Budget manager for LLM prompt token estimation and enforcement.
 
-    Uses a simple heuristic for token estimation:
-    - Base: len(text) / 4 (approximates ~4 chars per token)
-    - Overhead: JSON structure, message roles, tool schemas
-    - Context pack: Estimated separately with caps
+    Uses a pluggable TokenEstimatorProtocol for token counting. When no
+    estimator is provided, falls back to HeuristicTokenEstimator with
+    calibrated constants.
 
-    This is intentionally conservative to prevent overflow.
+    The estimator can be swapped for accurate tiktoken-based counting
+    when the optional ``tokenizer`` dependency is installed.
     """
 
     # Default budget limits (conservative for GPT-4 class models)
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
     DEFAULT_COMPRESSION_TRIGGER = 40000  # Trigger compression at 40% - keep history lean
 
-    # Heuristic constants
-    CHARS_PER_TOKEN = 4  # Conservative estimate (real: 3-5)
-    MESSAGE_OVERHEAD_TOKENS = 10  # Per message (role, structure)
-    TOOL_SCHEMA_OVERHEAD_TOKENS = 50  # Per tool definition
-    SYSTEM_PROMPT_OVERHEAD_TOKENS = 100  # System prompt structure
+    # Legacy heuristic constants (kept for backward compatibility)
+    CHARS_PER_TOKEN = 4
+    MESSAGE_OVERHEAD_TOKENS = 10
+    TOOL_SCHEMA_OVERHEAD_TOKENS = 50
+    SYSTEM_PROMPT_OVERHEAD_TOKENS = 100
 
     # Hard caps for individual message content (safety limits)
     MAX_MESSAGE_CONTENT_CHARS = 50000  # ~12.5k tokens max per message
@@ -49,6 +55,7 @@ class TokenBudgeter:
         logger: LoggerProtocol,
         max_input_tokens: int | None = None,
         compression_trigger: int | None = None,
+        estimator: TokenEstimatorProtocol | None = None,
     ):
         """
         Initialize TokenBudgeter with budget limits.
@@ -57,10 +64,12 @@ class TokenBudgeter:
             logger: Logger instance (created in factory and always required).
             max_input_tokens: Maximum input tokens allowed (default: 100k)
             compression_trigger: Token count to trigger compression (default: 80k)
+            estimator: Token estimation strategy (default: HeuristicTokenEstimator)
         """
         self.max_input_tokens = max_input_tokens or self.DEFAULT_MAX_INPUT_TOKENS
         self.compression_trigger = compression_trigger or self.DEFAULT_COMPRESSION_TRIGGER
         self.logger = logger
+        self._estimator: TokenEstimatorProtocol = estimator or HeuristicTokenEstimator()
 
     def estimate_tokens(
         self,
@@ -93,25 +102,26 @@ class TokenBudgeter:
             return cached[1]
 
         total_tokens = 0
+        estimator = self._estimator
 
         # System prompt overhead
-        total_tokens += self.SYSTEM_PROMPT_OVERHEAD_TOKENS
+        total_tokens += estimator.count_system_prompt_overhead()
 
         # Messages
         for msg in messages:
             # Message overhead (role, structure)
-            total_tokens += self.MESSAGE_OVERHEAD_TOKENS
+            total_tokens += estimator.count_message_overhead()
 
             # Content
             content = msg.get("content")
             if content:
                 if isinstance(content, str):
-                    total_tokens += len(content) // self.CHARS_PER_TOKEN
+                    total_tokens += estimator.count_tokens(content)
                 elif isinstance(content, list):
                     # Multi-part content (images, etc.)
                     for part in content:
                         if isinstance(part, dict) and "text" in part:
-                            total_tokens += len(part["text"]) // self.CHARS_PER_TOKEN
+                            total_tokens += estimator.count_tokens(part["text"])
 
             # Tool calls (if present)
             tool_calls = msg.get("tool_calls")
@@ -119,7 +129,7 @@ class TokenBudgeter:
                 for tc in tool_calls:
                     # Tool name + arguments
                     tc_json = json.dumps(tc, ensure_ascii=False, default=str)
-                    total_tokens += len(tc_json) // self.CHARS_PER_TOKEN
+                    total_tokens += estimator.count_tokens(tc_json)
 
         # Tool schemas — cache the per-tool-list token estimate because the
         # tool list object rarely changes between calls (same list reference),
@@ -132,15 +142,15 @@ class TokenBudgeter:
             else:
                 tools_tokens = 0
                 for tool in tools:
-                    tools_tokens += self.TOOL_SCHEMA_OVERHEAD_TOKENS
+                    tools_tokens += estimator.count_tool_schema_overhead()
                     tool_json = json.dumps(tool, ensure_ascii=False, default=str)
-                    tools_tokens += len(tool_json) // self.CHARS_PER_TOKEN
+                    tools_tokens += estimator.count_tokens(tool_json)
                 self._tools_tokens_cache = (tools_id, tools_tokens)
                 total_tokens += tools_tokens
 
         # Context pack
         if context_pack:
-            total_tokens += len(context_pack) // self.CHARS_PER_TOKEN
+            total_tokens += estimator.count_tokens(context_pack)
 
         self.logger.debug(
             "tokens_estimated",
