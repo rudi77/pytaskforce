@@ -204,7 +204,7 @@ class ToolBuilder:
         "git",
         "file_read",
         "file_write",
-        "powershell",
+        "shell",
         "ask_user",
     ]
 

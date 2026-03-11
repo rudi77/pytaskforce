@@ -36,7 +36,7 @@ DEFAULT_TOOL_NAMES: list[str] = [
     "file_read",
     "file_write",
     "python",
-    "powershell",
+    "shell",
     "ask_user",
 ]
 

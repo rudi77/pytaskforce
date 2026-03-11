@@ -30,5 +30,5 @@ tools:
   - file_read
   - file_write
   - git
-  - powershell
+  - shell
   - ask_user

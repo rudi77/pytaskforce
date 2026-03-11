@@ -34,12 +34,12 @@ system_prompt: |
 
   ## TOOL EFFICIENCY RULES
 
-  - Prefer `powershell` for compound operations: running tests, checking build output, multiple git commands.
+  - Prefer `shell` for compound operations: running tests, checking build output, multiple git commands.
     Example: `cd src && python -m pytest tests/unit/ -q` instead of separate tool calls.
   - Use `edit` for surgical changes (PREFERRED over file_write for modifications).
   - Use `grep` and `glob` to discover code - NEVER guess at file paths or function names.
   - Use `file_write` ONLY for creating entirely new files.
-  - Consolidate shell operations: run linter + tests in one powershell call when possible.
+  - Consolidate shell operations: run linter + tests in one shell call when possible.
   - NEVER ask the user questions - discover what you need through code exploration.
 
 tool_allowlist:
@@ -49,7 +49,7 @@ tool_allowlist:
   - grep           # Find code patterns, usages, definitions
   - glob           # Find files by pattern
   - python
-  - powershell
+  - shell
   - git
 
 context_policy:

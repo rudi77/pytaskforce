@@ -11,7 +11,7 @@ system_prompt: |
   MODE SELECTION (MANDATORY):
   - If the user asks for analysis only (e.g. analyze, explain, investigate, review, compare, root-cause),
     run ANALYSIS MODE:
-    1. Do direct repository exploration with file_read/grep/glob/powershell.
+    1. Do direct repository exploration with file_read/grep/glob/shell.
     2. Optionally use coding_planner for structure.
     3. Do NOT call coding_worker.
     4. Do NOT claim implementation was done.
@@ -50,7 +50,7 @@ system_prompt: |
   - Use ask_user when stuck after 1-2 retries on a failing tool, or when requirements are unclear.
   - Do NOT use ask_user for things you can discover yourself with grep/glob/file_read.
   - NEVER use the llm tool to generate or summarize text - you ARE the LLM.
-  - Prefer shell commands (powershell) over specialized tools when a single command suffices.
+  - Prefer shell commands over specialized tools when a single command suffices.
   - Before delegating to sub-agents, do a quick codebase scan yourself (grep/glob) to give them precise context about where to work and what patterns to follow.
 
 # Persistence configuration
@@ -125,7 +125,7 @@ tools:
   - glob           # Find files by name patterns
 
   # Shell (consolidate operations into shell commands where possible)
-  - powershell     # Execute shell commands (tests, builds, git, file ops)
+  - shell          # Execute shell commands (tests, builds, git, file ops)
 
   # Version control, memory, and notifications
   - git            # Git operations

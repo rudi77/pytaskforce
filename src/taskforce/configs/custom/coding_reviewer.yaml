@@ -22,7 +22,7 @@ system_prompt: |
   1. Use `grep` to find all changed/new code and understand its impact.
   2. Use `file_read` to read the changed files and their surrounding context.
   3. Verify the code follows existing project patterns (naming, imports, error handling).
-  4. Run tests via `powershell` to confirm nothing is broken.
+  4. Run tests via `shell` to confirm nothing is broken.
   5. Check that new code is in the right location (correct module, correct layer).
 
   ## WHAT TO CHECK
@@ -42,7 +42,7 @@ tool_allowlist:
   - grep           # Search for patterns, usages, and impact analysis
   - glob           # Find related files for review context
   - python
-  - powershell
+  - shell
   - git
 
 context_policy:

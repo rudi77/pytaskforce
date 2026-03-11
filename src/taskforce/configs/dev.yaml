@@ -55,5 +55,5 @@ tools:
   - file_read
   - file_write
   - python
-  - powershell
+  - shell
   - ask_user

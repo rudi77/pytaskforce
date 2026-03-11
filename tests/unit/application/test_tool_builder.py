@@ -143,7 +143,7 @@ class TestCreateDefaultTools:
             "git",
             "file_read",
             "file_write",
-            "powershell",
+            "shell",
             "ask_user",
         }
         assert tool_names == expected

@@ -66,9 +66,14 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.git_tools",
         "params": {},
     },
-    # Native tools - Shell (platform-agnostic and Windows-specific)
+    # Native tools - Shell (platform-agnostic, bash-explicit, and Windows-specific)
     "shell": {
         "type": "ShellTool",
+        "module": "taskforce.infrastructure.tools.native.shell_tool",
+        "params": {},
+    },
+    "bash": {
+        "type": "BashTool",
         "module": "taskforce.infrastructure.tools.native.shell_tool",
         "params": {},
     },

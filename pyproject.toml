@@ -118,6 +118,7 @@ build = [
 ]
 evals = [
     "inspect-ai>=0.3.130",
+    "inspect-evals[swe_bench]>=0.3.0",
 ]
 
 [dependency-groups]

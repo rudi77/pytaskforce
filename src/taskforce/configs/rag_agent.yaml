@@ -65,7 +65,7 @@ tools:
   
   - file_write
   
-  - powershell
+  - shell
   
   - ask_user
   - memory

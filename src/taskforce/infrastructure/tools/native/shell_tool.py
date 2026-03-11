@@ -1,5 +1,5 @@
 """
-Shell and PowerShell Tools
+Shell, Bash, and PowerShell Tools
 
 Provides shell command execution with safety limits and timeout handling.
 Migrated from Agent V2 with full preservation of functionality.
@@ -22,9 +22,26 @@ from typing import Any
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 
+# Dangerous command patterns shared across shell tools
+_DANGEROUS_PATTERNS = [
+    "rm -rf /",
+    "rm -rf /*",
+    "dd if=/dev/zero",
+    "dd if=/dev/random",
+    "format c:",
+    "del /f /s /q",
+    ":(){ :|:& };:",  # Fork bomb
+    "> /dev/sda",
+    "mkfs.",
+]
+
 
 class ShellTool(ToolProtocol):
-    """Execute shell commands with safety limits and timeout."""
+    """Execute shell commands with safety limits and timeout.
+
+    Platform-aware: uses ``/bin/bash`` on Linux/macOS and the system
+    default shell (``cmd.exe``) on Windows.
+    """
 
     @property
     def name(self) -> str:
@@ -32,7 +49,9 @@ class ShellTool(ToolProtocol):
 
     @property
     def description(self) -> str:
-        return "Execute shell commands with timeout and safety limits"
+        if os.name == "nt":
+            return "Execute shell commands with timeout and safety limits (Windows cmd)"
+        return "Execute bash commands with timeout and safety limits"
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -95,23 +114,153 @@ class ShellTool(ToolProtocol):
         """
         try:
             # Safety check - block dangerous commands
-            dangerous_patterns = [
-                "rm -rf /",
-                "rm -rf /*",
-                "dd if=/dev/zero",
-                "dd if=/dev/random",
-                "format c:",
-                "del /f /s /q",
-                ":(){ :|:& };:",  # Fork bomb
-                "> /dev/sda",
-                "mkfs.",
-            ]
-
-            if any(pattern in command.lower() for pattern in dangerous_patterns):
+            if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
                 return {"success": False, "error": "Command blocked for safety reasons"}
 
-            # Execute command
-            process = await asyncio.create_subprocess_shell(
+            # Platform-aware execution: explicit bash on Linux, system shell on Windows
+            if os.name != "nt":
+                bash_path = shutil.which("bash") or "/bin/bash"
+                process = await asyncio.create_subprocess_exec(
+                    bash_path,
+                    "-c",
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
+            else:
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
+
+                success = process.returncode == 0
+                stdout_text = stdout.decode() if stdout else ""
+                stderr_text = stderr.decode() if stderr else ""
+
+                resp = {
+                    "success": success,
+                    "stdout": stdout_text,
+                    "stderr": stderr_text,
+                    "returncode": process.returncode,
+                    "command": command,
+                }
+                if not success:
+                    resp["error"] = (
+                        stderr_text or f"Command failed with code {process.returncode}"
+                    )
+                return resp
+            except TimeoutError:
+                process.kill()
+                return {
+                    "success": False,
+                    "error": f"Command timed out after {timeout}s",
+                }
+
+        except Exception as e:
+            tool_error = ToolError(
+                f"{self.name} failed: {e}",
+                tool_name=self.name,
+                details={"command": command, "cwd": cwd, "timeout": timeout},
+            )
+            return tool_error_payload(tool_error)
+
+    def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
+        """Validate parameters before execution."""
+        if "command" not in kwargs:
+            return False, "Missing required parameter: command"
+        if not isinstance(kwargs["command"], str):
+            return False, "Parameter 'command' must be a string"
+        return True, None
+
+
+class BashTool(ToolProtocol):
+    """Execute bash commands explicitly via ``/bin/bash``.
+
+    Unlike ``ShellTool`` which adapts to the platform, ``BashTool``
+    always uses bash.  Useful when the agent must run Unix commands
+    regardless of the host OS (e.g. inside WSL or Docker containers).
+    """
+
+    @property
+    def name(self) -> str:
+        return "bash"
+
+    @property
+    def description(self) -> str:
+        return "Execute bash commands with timeout and safety limits"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Bash command to execute",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Command timeout in seconds (default: 30)",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory for command execution (optional)",
+                },
+            },
+            "required": ["command"],
+        }
+
+    @property
+    def requires_approval(self) -> bool:
+        return True
+
+    @property
+    def approval_risk_level(self) -> ApprovalRiskLevel:
+        return ApprovalRiskLevel.HIGH
+
+    @property
+    def supports_parallelism(self) -> bool:
+        return False
+
+    def get_approval_preview(self, **kwargs: Any) -> str:
+        command = kwargs.get("command", "")
+        cwd = kwargs.get("cwd", "current directory")
+        timeout = kwargs.get("timeout", 30)
+        return (
+            f"⚠️ BASH COMMAND EXECUTION\n"
+            f"Tool: {self.name}\nCommand: {command}\n"
+            f"Working Directory: {cwd}\nTimeout: {timeout}s"
+        )
+
+    async def execute(
+        self, command: str, timeout: int = 30, cwd: str | None = None, **kwargs
+    ) -> dict[str, Any]:
+        """Execute bash command with safety checks and timeout.
+
+        Args:
+            command: Bash command to execute.
+            timeout: Command timeout in seconds (default: 30).
+            cwd: Working directory for execution (optional).
+
+        Returns:
+            Dictionary with success, stdout, stderr, returncode, command keys.
+        """
+        try:
+            if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
+                return {"success": False, "error": "Command blocked for safety reasons"}
+
+            bash_path = shutil.which("bash") or "/bin/bash"
+            process = await asyncio.create_subprocess_exec(
+                bash_path,
+                "-c",
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

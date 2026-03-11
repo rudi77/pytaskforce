@@ -41,7 +41,7 @@ system_prompt: |
 
   ## EFFICIENCY
 
-  - Consolidate grep/glob calls where possible via powershell.
+  - Consolidate grep/glob calls where possible via shell.
   - Do NOT read entire files - read only the relevant sections.
   - NEVER ask the user questions - explore the code to find answers.
 
