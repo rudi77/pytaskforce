@@ -44,11 +44,7 @@ def swe_bench_verified_mini():
         dataset="princeton-nlp/SWE-bench_Verified",
         split="test[:20]",
     )
-    base_task.solver = taskforce_swebench_solver(
-        profile="coding_agent",
-        max_steps=60,
-        planning_strategy="spar",
-    )
+    base_task.solver = taskforce_swebench_solver()
     return base_task
 
 
@@ -62,11 +58,7 @@ def swe_bench_lite():
         dataset="princeton-nlp/SWE-bench_Lite",
         split="test",
     )
-    base_task.solver = taskforce_swebench_solver(
-        profile="coding_agent",
-        max_steps=60,
-        planning_strategy="spar",
-    )
+    base_task.solver = taskforce_swebench_solver()
     return base_task
 
 
@@ -77,9 +69,5 @@ def swe_bench_verified():
         dataset="princeton-nlp/SWE-bench_Verified",
         split="test",
     )
-    base_task.solver = taskforce_swebench_solver(
-        profile="coding_agent",
-        max_steps=60,
-        planning_strategy="spar",
-    )
+    base_task.solver = taskforce_swebench_solver()
     return base_task

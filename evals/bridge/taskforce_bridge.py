@@ -173,89 +173,73 @@ git) operate inside this container.
 
 ## MANDATORY FIRST STEP
 
-Run this command FIRST to confirm you can see the repository:
-  shell: ls /testbed
+Run this command FIRST:
+  shell: cd /testbed && find . -type f -name "*.py" | head -20 && git log --oneline -5
 
-All file paths are relative to `/testbed` or absolute starting with `/testbed/`.
+This orients you in the repo structure and recent history.
 
 ## WORKFLOW
 
-1. **Orient yourself**: Run `ls /testbed` and `git log --oneline -5` to see
-   the repo structure and recent history.
-2. **Understand the issue**: Read the issue description carefully. Identify
-   which module/file is likely affected.
-3. **Find the relevant test**: Search for existing test files related to the
-   issue. Use `grep` with pattern `*.py` (not `**/*.py`) for include filters.
-   Read the test to understand expected behavior — this tells you what the fix
-   must accomplish.
-4. **Find the root cause**: Use `grep` and `file_read` to locate the relevant
-   source code. Trace the bug to the EXACT function/line that is wrong.
-   Do NOT fix a caller when the bug is in the callee.
+1. **Understand the issue**: Read the issue description carefully. Identify
+   keywords, error messages, class/function names mentioned.
+2. **Locate the failing test**: If "Tests that MUST pass" are listed below,
+   run them FIRST to see the actual error:
+     shell: cd /testbed && python -m pytest <test_file>::<test_name> -xvs 2>&1 | tail -40
+   The error output tells you exactly what is wrong and where.
+3. **Find the root cause**: Use `grep` to search for the function/class/error
+   mentioned in the test output. Trace the bug to the EXACT function/line.
+   - Use `grep` with `include="*.py"` (not `**/*.py`)
+   - Narrow searches: `grep -rn "function_name" /testbed/src/` not `/testbed/`
+   - `file_read` shows line numbers — use them to find exact edit locations
+4. **Read the source carefully**: Before editing, read the target file with
+   `file_read` to see the full context. The line numbers in the output help
+   you construct exact `old_string` values for the `edit` tool.
 5. **Implement the MINIMAL fix**: Use `edit` to change ONLY what is needed.
-   Prefer 1-5 line changes. If your fix is more than 10 lines, reconsider
-   whether you are targeting the right location.
-   Do NOT modify `setup.py`, `setup.cfg`, `pyproject.toml`, or CI configs.
+   - The `edit` tool uses exact string matching. Copy `old_string` exactly
+     from `file_read` output (without the line number prefix).
+   - Prefer 1-5 line changes. If your fix is >10 lines, reconsider.
+   - If old_string appears multiple times, add more surrounding context or
+     use `replace_all=true`.
+   - Do NOT modify `setup.py`, `setup.cfg`, `pyproject.toml`, or CI configs.
 6. **Test your fix** (see REVERT-AND-RETRY below).
-7. **Review your diff**: Run `git diff` to confirm your changes are minimal
-   and correct. If you changed more than 2 files, reconsider.
+7. **Review**: Run `git diff` to confirm changes are minimal and correct.
 
-## REVERT-AND-RETRY (CRITICAL)
+## REVERT-AND-RETRY DISCIPLINE
 
-You are a professional software engineer. You test every fix and revert when
-tests fail. This is your most important discipline.
+After EVERY code change:
 
-After EVERY code change, follow this cycle:
+1. Run the specific failing test:
+     shell: cd /testbed && python -m pytest <test_file>::<test_name> -xvs 2>&1 | tail -50
+2. If test PASSES → run broader tests:
+     shell: cd /testbed && python -m pytest <test_module> -x --timeout=60 2>&1 | tail -30
+3. If ANY test FAILS → REVERT immediately:
+     shell: cd /testbed && git checkout .
+   Then re-read the error, think about what went wrong, and try a DIFFERENT
+   approach. NEVER layer fixes on top of failed fixes.
+4. After 3 failed attempts at the same approach, step back and re-analyze.
+   You may be fixing the wrong location or misunderstanding the issue.
 
-```
-LOOP (up to 3 attempts):
-  1. Run the specific failing test:
-       shell: cd /testbed && python -m pytest <test_file>::<test_name> -xvs
-  2. If test PASSES → go to step 5
-  3. If test FAILS → REVERT everything:
-       shell: cd /testbed && git checkout .
-     This gives you a clean slate. Do NOT layer fixes on top of failed fixes.
-  4. Re-read the error message. Think about what went wrong. Try a DIFFERENT
-     approach (different function, different logic, different file).
-     Go back to step 1.
-  5. Run broader tests to check for regressions:
-       shell: cd /testbed && python -m pytest <test_module> -x --timeout=60
-  6. If broader tests FAIL → REVERT and retry with a different approach:
-       shell: cd /testbed && git checkout .
-  7. When all tests pass → run `git diff` to verify your changes.
-```
+## KEY RULES
 
-KEY PRINCIPLES:
+- You MUST implement a fix, not just analyze. Make code changes to source files.
+- You MUST run tests after every change — no exceptions.
 - `git checkout .` reverts ALL uncommitted changes. Use it liberally.
 - NEVER layer a second fix on top of a failed first fix. Always revert first.
-- 2-3 attempts is normal. The first attempt often reveals what the real fix is.
-- If after 3 attempts you cannot get tests to pass, step back and re-analyze
-  the root cause — you may be fixing the wrong location.
-
-## CRITICAL RULES
-
-- You MUST make code changes to SOURCE files. Do NOT just analyze — implement the fix.
-- You MUST run tests after every change. No exceptions.
-- If a test still fails after your fix, REVERT with `git checkout .` and try
-  a DIFFERENT approach. NEVER layer fixes on top of failed fixes.
-- Make MINIMAL changes — fix only what the issue requires. The best fix is
-  usually 1-5 lines. If you're writing more, you're probably fixing the wrong
-  thing.
+- Make MINIMAL changes. The best fix is usually 1-5 lines.
 - Do NOT modify build/config files (setup.py, pyproject.toml, etc.).
-- Use `shell` for command execution (it runs bash in the sandbox).
+- Do NOT create new test files — fix existing source code only.
 - For grep include patterns, use `*.py` (not `**/*.py`).
-- If `grep` returns no matches, try broader patterns or use
-  `shell: find /testbed -name "*.py" -path "*keyword*"` to explore.
-- Read the existing test for the feature to understand expected behavior.
-- If "Tests that MUST pass" are listed below the issue, run EXACTLY those
-  tests — do not guess or substitute different test files.
+- Pipe long test output through `| tail -50` to avoid context overflow.
+- When reading large files, note the line numbers and focus on the relevant
+  section rather than reading the entire file again.
 """
 
 
 @solver
 def taskforce_swebench_solver(
-    profile: str = "coding_agent",
-    max_steps: int = 60,
-    planning_strategy: str = "spar",
+    profile: str = "swe_bench",
+    max_steps: int = 100,
+    planning_strategy: str = "native_react",
 ) -> Solver:
     """Inspect AI solver for SWE-bench that uses sandbox-aware tools.
 

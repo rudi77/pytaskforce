@@ -118,7 +118,10 @@ class SandboxFileReadTool(ToolProtocol):
 
     @property
     def description(self) -> str:
-        return "Read file contents from the repository sandbox"
+        return (
+            "Read file contents from the repository sandbox. "
+            "Output includes line numbers for precise editing."
+        )
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -149,10 +152,18 @@ class SandboxFileReadTool(ToolProtocol):
         return f"sandbox read: {kwargs.get('path', '')}"
 
     async def execute(self, path: str, **kwargs) -> dict[str, Any]:
-        """Read a file from the sandbox."""
+        """Read a file from the sandbox with line numbers."""
         try:
             content = await self._sandbox.read_file(path, text=True)
-            return {"success": True, "content": content, "path": path}
+            # Add line numbers to help agent construct exact edit strings
+            lines = content.splitlines()
+            numbered = "\n".join(f"{i + 1:6d}\t{line}" for i, line in enumerate(lines))
+            return {
+                "success": True,
+                "content": numbered,
+                "path": path,
+                "lines": len(lines),
+            }
         except FileNotFoundError:
             return {"success": False, "error": f"File not found: {path}"}
         except Exception as e:
@@ -261,6 +272,10 @@ class SandboxGrepTool(ToolProtocol):
                     "type": "string",
                     "description": "File glob pattern to include (e.g. '*.py')",
                 },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum result lines to return (default: 50)",
+                },
             },
             "required": ["pattern"],
         }
@@ -281,26 +296,42 @@ class SandboxGrepTool(ToolProtocol):
         return f"sandbox grep: {kwargs.get('pattern', '')}"
 
     async def execute(
-        self, pattern: str, path: str = ".", include: str | None = None, **kwargs
+        self,
+        pattern: str,
+        path: str = ".",
+        include: str | None = None,
+        max_results: int = 50,
+        **kwargs,
     ) -> dict[str, Any]:
-        """Run grep inside the sandbox."""
+        """Run grep inside the sandbox with output limits."""
         try:
             # Normalize include pattern: '**/*.py' -> '*.py' (grep --include
             # uses fnmatch, not recursive globs)
             if include:
                 include = include.lstrip("*").lstrip("/")
                 if not include.startswith("*"):
-                    include = f"*.{include}" if "." in include and "*" not in include else include
+                    include = (
+                        f"*.{include}"
+                        if "." in include and "*" not in include
+                        else include
+                    )
 
             cmd = ["grep", "-rn", "--color=never"]
             if include:
                 cmd.extend(["--include", include])
             cmd.extend(["--", pattern, path])
-            result = await self._sandbox.exec(cmd=cmd, timeout=30)
+
+            # Pipe through head to limit output and prevent context overflow
+            import shlex
+
+            shell_cmd = " ".join(shlex.quote(c) for c in cmd) + f" | head -{max_results}"
+            result = await self._sandbox.exec(
+                cmd=["bash", "-c", shell_cmd], timeout=30
+            )
 
             # grep exit code 1 = no matches (not an error)
             matches_text = result.stdout or ""
-            match_lines = [l for l in matches_text.splitlines() if l.strip()]
+            match_lines = [line for line in matches_text.splitlines() if line.strip()]
             if result.returncode == 1 and not match_lines:
                 return {
                     "success": True,
@@ -311,13 +342,23 @@ class SandboxGrepTool(ToolProtocol):
             if result.returncode > 1:
                 return {
                     "success": False,
-                    "error": result.stderr or f"grep failed with code {result.returncode}",
+                    "error": (
+                        result.stderr
+                        or f"grep failed with code {result.returncode}"
+                    ),
                 }
-            return {
+            truncated = len(match_lines) >= max_results
+            resp: dict[str, Any] = {
                 "success": True,
                 "matches": matches_text,
                 "match_count": len(match_lines),
             }
+            if truncated:
+                resp["note"] = (
+                    f"Output truncated to {max_results} lines. "
+                    "Use a more specific pattern or path to narrow results."
+                )
+            return resp
         except Exception as e:
             return tool_error_payload(
                 ToolError(f"sandbox grep failed: {e}", tool_name="grep")
@@ -433,6 +474,10 @@ class SandboxEditTool(ToolProtocol):
                     "type": "string",
                     "description": "The replacement text",
                 },
+                "replace_all": {
+                    "type": "boolean",
+                    "description": "Replace all occurrences (default: false)",
+                },
             },
             "required": ["path", "old_string", "new_string"],
         }
@@ -453,28 +498,51 @@ class SandboxEditTool(ToolProtocol):
         return f"sandbox edit: {kwargs.get('path', '')}"
 
     async def execute(
-        self, path: str, old_string: str, new_string: str, **kwargs
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
         """Apply a find-and-replace edit inside the sandbox."""
         try:
             content = await self._sandbox.read_file(path, text=True)
             if old_string not in content:
+                # Provide hints about similar content
+                first_line = old_string.strip().split("\n")[0][:80]
+                search_key = first_line[:40]
+                similar = [
+                    line.strip()
+                    for line in content.splitlines()
+                    if search_key and search_key in line
+                ][:3]
+                hint = ""
+                if similar:
+                    hint = f" Similar lines found: {similar}"
                 return {
                     "success": False,
-                    "error": f"old_string not found in {path}",
+                    "error": f"old_string not found in {path}.{hint}",
                 }
             count = content.count(old_string)
-            if count > 1:
+            if count > 1 and not replace_all:
                 return {
                     "success": False,
                     "error": (
                         f"old_string found {count} times in {path}. "
-                        "Provide more context to make it unique."
+                        "Provide more context to make it unique, or set replace_all=true."
                     ),
                 }
-            new_content = content.replace(old_string, new_string, 1)
+            if replace_all:
+                new_content = content.replace(old_string, new_string)
+            else:
+                new_content = content.replace(old_string, new_string, 1)
             await self._sandbox.write_file(path, new_content)
-            return {"success": True, "path": path, "replacements": 1}
+            return {
+                "success": True,
+                "path": path,
+                "replacements": count if replace_all else 1,
+            }
         except FileNotFoundError:
             return {"success": False, "error": f"File not found: {path}"}
         except Exception as e:
