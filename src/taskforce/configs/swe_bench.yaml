@@ -1,0 +1,45 @@
+# SWE-bench evaluation profile
+#
+# Minimal profile optimized for SWE-bench: no sub-agents, no specialist
+# prompt, no memory/notifications. The SWE-bench system prompt in
+# evals/bridge/taskforce_bridge.py provides all necessary instructions.
+
+profile: swe_bench
+specialist: null
+
+persistence:
+  type: file
+  work_dir: .taskforce_swebench
+
+agent:
+  planning_strategy: native_react
+  max_steps: 100
+  max_parallel_tools: 1
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 4000
+  max_total_chars: 20000
+  include_latest_tool_previews_n: 5
+
+compression:
+  summary_threshold: 40
+  compression_trigger: 60000
+  max_input_tokens: 120000
+
+logging:
+  level: INFO
+  format: console
+
+tools:
+  - shell
+  - file_read
+  - file_write
+  - edit
+  - grep
+  - glob
+  - git
