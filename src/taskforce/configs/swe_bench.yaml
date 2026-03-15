@@ -21,14 +21,15 @@ llm:
   default_model: main
 
 context_policy:
-  max_items: 10
-  max_chars_per_item: 4000
-  max_total_chars: 20000
+  max_items: 15
+  max_chars_per_item: 6000
+  max_total_chars: 40000
   include_latest_tool_previews_n: 5
 
-compression:
-  summary_threshold: 40
-  compression_trigger: 60000
+# Higher thresholds to preserve file contents longer before compression
+context_management:
+  summary_threshold: 50
+  compression_trigger: 80000
   max_input_tokens: 120000
 
 logging:

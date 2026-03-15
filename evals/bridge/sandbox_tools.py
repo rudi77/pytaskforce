@@ -132,6 +132,14 @@ class SandboxFileReadTool(ToolProtocol):
                     "type": "string",
                     "description": "Path to the file (relative to repo root)",
                 },
+                "offset": {
+                    "type": "integer",
+                    "description": "1-based line number to start reading from (default: 1)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to read (default: entire file)",
+                },
             },
             "required": ["path"],
         }
@@ -151,19 +159,37 @@ class SandboxFileReadTool(ToolProtocol):
     def get_approval_preview(self, **kwargs: Any) -> str:
         return f"sandbox read: {kwargs.get('path', '')}"
 
-    async def execute(self, path: str, **kwargs) -> dict[str, Any]:
+    async def execute(
+        self, path: str, offset: int = 1, limit: int | None = None, **kwargs
+    ) -> dict[str, Any]:
         """Read a file from the sandbox with line numbers."""
         try:
             content = await self._sandbox.read_file(path, text=True)
             # Add line numbers to help agent construct exact edit strings
-            lines = content.splitlines()
-            numbered = "\n".join(f"{i + 1:6d}\t{line}" for i, line in enumerate(lines))
-            return {
+            all_lines = content.splitlines()
+            total = len(all_lines)
+
+            # Apply offset (1-based) and limit
+            start = max(0, offset - 1)
+            end = start + limit if limit else total
+            lines = all_lines[start:end]
+
+            numbered = "\n".join(
+                f"{start + i + 1:6d}\t{line}" for i, line in enumerate(lines)
+            )
+            resp: dict[str, Any] = {
                 "success": True,
                 "content": numbered,
                 "path": path,
                 "lines": len(lines),
+                "total_lines": total,
             }
+            if end < total:
+                resp["note"] = (
+                    f"Showing lines {start + 1}-{start + len(lines)} of {total}. "
+                    f"Use offset={start + len(lines) + 1} to read more."
+                )
+            return resp
         except FileNotFoundError:
             return {"success": False, "error": f"File not found: {path}"}
         except Exception as e:
@@ -509,17 +535,57 @@ class SandboxEditTool(ToolProtocol):
         try:
             content = await self._sandbox.read_file(path, text=True)
             if old_string not in content:
-                # Provide hints about similar content
-                first_line = old_string.strip().split("\n")[0][:80]
-                search_key = first_line[:40]
-                similar = [
-                    line.strip()
-                    for line in content.splitlines()
-                    if search_key and search_key in line
-                ][:3]
+                # Use difflib to find the most similar region in the file
+                import difflib
+
+                content_lines = content.splitlines()
+                old_lines = old_string.strip().splitlines()
+                first_line = old_lines[0].strip() if old_lines else ""
+
+                # Find lines with high similarity to the first line of old_string
+                best_matches: list[tuple[float, int]] = []
+                for i, line in enumerate(content_lines):
+                    if not first_line:
+                        break
+                    ratio = difflib.SequenceMatcher(
+                        None, first_line, line.strip()
+                    ).ratio()
+                    if ratio > 0.5:
+                        best_matches.append((ratio, i))
+
+                best_matches.sort(key=lambda x: -x[0])
+                snippets: list[str] = []
+                for _, line_idx in best_matches[:2]:
+                    start = max(0, line_idx - 1)
+                    end = min(len(content_lines), line_idx + len(old_lines) + 1)
+                    snippet = "\n".join(
+                        f"{start + j + 1:6d}\t{content_lines[start + j]}"
+                        for j in range(end - start)
+                    )
+                    snippets.append(snippet)
+
                 hint = ""
-                if similar:
-                    hint = f" Similar lines found: {similar}"
+                if snippets:
+                    hint = (
+                        "\n\nDid you mean one of these similar sections?\n\n"
+                        + "\n---\n".join(snippets)
+                        + "\n\nCopy the exact text (without line numbers) for old_string."
+                    )
+                elif len(content_lines) <= 30:
+                    preview = "\n".join(
+                        f"{i + 1:6d}\t{l}" for i, l in enumerate(content_lines)
+                    )
+                    hint = f"\n\nFull file content:\n{preview}"
+                else:
+                    preview = "\n".join(
+                        f"{i + 1:6d}\t{l}"
+                        for i, l in enumerate(content_lines[:30])
+                    )
+                    hint = (
+                        f"\n\nFile starts with ({len(content_lines)} lines total):"
+                        f"\n{preview}"
+                    )
+
                 return {
                     "success": False,
                     "error": f"old_string not found in {path}.{hint}",
