@@ -1,0 +1,139 @@
+# AutoOptim config: Code Simplification
+#
+# Reduces code complexity and lines of code while keeping tests passing.
+# Uses radon for cyclomatic complexity and cloc for line counts.
+#
+# Prerequisites:
+#   pip install radon
+#   apt-get install cloc  (or brew install cloc)
+#
+# Usage:
+#   autooptim run --config examples/code_simplification/config.yaml \
+#     --max-iterations 20
+
+name: code-simplification
+description: "Reduce complexity and improve readability while keeping tests passing"
+
+project_root: "."  # override via CLI or set to your project
+
+categories:
+  refactor:
+    weight: 1.0
+    mutator:
+      type: code
+      allowed_paths:
+        - "src/"
+      blocked_paths:
+        - "src/migrations/"
+        - "tests/"
+        - ".git/"
+      preflight:
+        - "python -c 'import myapp'"
+        - "pytest tests/ -x -q --timeout=60"
+    context_files:
+      - "src/myapp/core.py"
+      - "src/myapp/utils.py"
+
+evaluator:
+  type: script
+  timeout: 120
+  quick_task: "quick"
+  full_task: "full"
+  script: |
+    import subprocess, json, sys
+
+    # Measure cyclomatic complexity with radon
+    result = subprocess.run(
+        ["radon", "cc", "src/", "-j", "-a"],
+        capture_output=True, text=True
+    )
+    try:
+        data = json.loads(result.stdout)
+        avg_cc = float(data.get("average", 5.0))
+    except (json.JSONDecodeError, ValueError):
+        avg_cc = 10.0
+
+    # Count lines of code with cloc
+    loc_result = subprocess.run(
+        ["cloc", "src/", "--json", "--quiet"],
+        capture_output=True, text=True
+    )
+    try:
+        loc_data = json.loads(loc_result.stdout)
+        total_loc = float(loc_data.get("Python", {}).get("code", 1000))
+    except (json.JSONDecodeError, ValueError, KeyError):
+        total_loc = 1000.0
+
+    # Run tests
+    test_result = subprocess.run(
+        ["pytest", "tests/", "-q", "--tb=no"],
+        capture_output=True, text=True
+    )
+    test_pass = 1.0 if test_result.returncode == 0 else 0.0
+
+    print(json.dumps({
+        "test_pass": test_pass,
+        "avg_complexity": avg_cc,
+        "loc": total_loc,
+    }))
+
+metric:
+  scores:
+    - name: test_pass
+      range: [0.0, 1.0]
+    - name: avg_complexity
+      type: lower_is_better
+    - name: loc
+      type: lower_is_better
+  composite:
+    quality:
+      weight: 0.5
+      components:
+        test_pass: 1.0
+    efficiency:
+      weight: 0.5
+      type: ratio_to_baseline
+      components:
+        - avg_complexity
+        - loc
+
+proposer:
+  model: "claude-sonnet-4-20250514"
+  temperature: 0.7
+  max_tokens: 4000
+  system_prompt: |
+    You are a code simplification assistant. Your goal is to reduce cyclomatic
+    complexity and lines of code while keeping ALL tests passing.
+
+    Rules:
+    - Propose ONE refactoring at a time
+    - Provide FULL new file content (not diffs)
+    - Focus on: extracting helper functions, removing dead code, simplifying
+      conditionals, using list comprehensions, removing unnecessary abstractions
+    - NEVER change the public API (function signatures, class interfaces)
+    - NEVER remove or modify tests
+    - Prefer clarity over cleverness
+  user_template: |
+    # Simplification Proposal Request
+
+    ## Experiment History
+    {experiment_history}
+
+    ## Current Baseline
+    Composite score: {baseline_composite:.4f}
+    {baseline_scores_text}
+
+    ## Current Files
+    {current_files}
+
+    ## Instructions
+    Propose a single refactoring that reduces complexity or LOC while
+    keeping tests passing. Return a JSON experiment plan.
+
+runner:
+  max_iterations: 20
+  max_cost_usd: 10.0
+  eval_runs: 1
+  tolerance: 0.01
+  full_eval_every_n: 10
+  eval_mode: full

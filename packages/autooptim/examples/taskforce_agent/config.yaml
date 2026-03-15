@@ -1,0 +1,138 @@
+# AutoOptim config: Taskforce Agent Optimization
+#
+# Optimizes the Taskforce multi-agent framework's coding performance
+# using Inspect AI evaluation benchmarks.
+#
+# Usage:
+#   autooptim run --config examples/taskforce_agent/config.yaml
+
+name: taskforce-agent-optimization
+description: "Optimize Taskforce agent performance on coding benchmarks"
+
+project_root: "../../../"  # relative to this config file, or use absolute path
+
+categories:
+  config:
+    weight: 0.50
+    mutator:
+      type: yaml
+      allowed_paths:
+        - "src/taskforce/configs/dev.yaml"
+        - "src/taskforce/configs/coding_agent.yaml"
+      safe_keys:
+        agent:
+          - planning_strategy
+          - max_steps
+          - planning_strategy_params
+          - max_parallel_tools
+        context_policy:
+          - max_items
+          - max_chars_per_item
+          - max_total_chars
+        tools: null  # entire list can be replaced
+        logging:
+          - level
+      validation_rules:
+        agent.max_steps:
+          type: int
+          min: 1
+          max: 200
+        agent.planning_strategy:
+          type: str
+          choices: [native_react, plan_and_execute, plan_and_react, spar]
+        context_policy.max_items:
+          type: positive_int
+        context_policy.max_chars_per_item:
+          type: positive_int
+        context_policy.max_total_chars:
+          type: positive_int
+        tools:
+          type: list
+    context_files:
+      - "src/taskforce/configs/dev.yaml"
+      - "src/taskforce/configs/coding_agent.yaml"
+
+  prompt:
+    weight: 0.35
+    mutator:
+      type: text
+      allowed_paths:
+        - "src/taskforce/core/prompts/"
+    context_files:
+      - "src/taskforce/core/prompts/autonomous_prompts.py"
+
+  code:
+    weight: 0.15
+    mutator:
+      type: code
+      allowed_paths:
+        - "src/taskforce/core/domain/planning_strategy.py"
+        - "src/taskforce/core/domain/lean_agent_components/"
+        - "src/taskforce/core/domain/context_builder.py"
+        - "src/taskforce/core/domain/context_policy.py"
+        - "src/taskforce/core/prompts/"
+        - "src/taskforce/infrastructure/tools/native/"
+      blocked_paths:
+        - "src/taskforce/application/factory.py"
+        - "src/taskforce/api/"
+        - "src/taskforce/core/interfaces/"
+        - "tests/"
+      preflight:
+        - "python -c 'import taskforce'"
+        - "ruff check {files}"
+    context_files:
+      - "src/taskforce/core/domain/planning_strategy.py"
+      - "src/taskforce/core/domain/context_policy.py"
+      - "src/taskforce/core/domain/context_builder.py"
+
+evaluator:
+  type: command
+  command: "python evals/run_eval.py {task_name}"
+  quick_task: "coding_generation"
+  full_task: "coding_full"
+  timeout: 600
+  parser:
+    type: custom
+    class: "examples.taskforce_agent.inspect_parser:InspectAIParser"
+
+metric:
+  scores:
+    - name: task_completion
+      range: [0.0, 1.0]
+    - name: output_accuracy
+      range: [0.0, 1.0]
+    - name: model_graded_qa
+      range: [0.0, 1.0]
+    - name: efficiency_steps
+      type: lower_is_better
+    - name: efficiency_tokens
+      type: lower_is_better
+  composite:
+    quality:
+      weight: 0.90
+      components:
+        task_completion: 0.50
+        output_accuracy: 0.25
+        model_graded_qa: 0.25
+    efficiency:
+      weight: 0.10
+      type: ratio_to_baseline
+      components:
+        - efficiency_steps
+        - efficiency_tokens
+
+proposer:
+  model: "claude-sonnet-4-20250514"
+  temperature: 0.7
+  max_tokens: 4000
+  system_prompt_file: "proposer_system.md"
+  user_template_file: "proposer_user.md"
+
+runner:
+  max_iterations: 0
+  max_cost_usd: 50.0
+  eval_runs: 2
+  tolerance: 0.02
+  full_eval_every_n: 5
+  large_improvement_threshold: 0.05
+  eval_mode: quick
