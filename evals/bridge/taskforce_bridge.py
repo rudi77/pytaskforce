@@ -249,8 +249,8 @@ def taskforce_swebench_solver(
 
     Args:
         profile: Base Taskforce profile for LLM/infra config.
-        max_steps: Maximum agent execution steps (default: 60).
-        planning_strategy: Planning strategy (default: spar).
+        max_steps: Maximum agent execution steps (default: 100).
+        planning_strategy: Planning strategy (default: native_react).
     """
 
     async def solve(state: TaskState, generate: Any) -> TaskState:
