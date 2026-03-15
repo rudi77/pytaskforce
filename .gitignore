@@ -214,3 +214,7 @@ tiktoken_cache/fb374d419588a4632f3f557e76b4b70aebbca790
 
 # LLM trace files (too large for git)
 traces/llm_traces.jsonl
+
+# Autoresearch experiment logs and state
+evals/autoresearch/logs/*.tsv
+.autoresearch_state.json
