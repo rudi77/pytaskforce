@@ -697,3 +697,21 @@ def create_sandbox_tools(sandbox_env: SandboxEnv) -> list[ToolProtocol]:
         SandboxGlobTool(sandbox_env),
         SandboxGitTool(sandbox_env),
     ]
+
+
+def create_sandbox_tools_minimal(sandbox_env: SandboxEnv) -> list[ToolProtocol]:
+    """Create a minimal toolset (shell + edit) for SWE-bench evaluation.
+
+    Fewer tools = smaller system prompt = more context budget for working
+    memory. The agent uses shell for cat, grep, find, git, pytest, etc.
+
+    Args:
+        sandbox_env: The Inspect AI SandboxEnvironment instance.
+
+    Returns:
+        List with only SandboxShellTool and SandboxEditTool.
+    """
+    return [
+        SandboxShellTool(sandbox_env),
+        SandboxEditTool(sandbox_env),
+    ]

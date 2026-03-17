@@ -156,7 +156,10 @@
       "Bash(where python:*)",
       "Bash(wsl:*)",
       "Bash(wsl.exe -d Ubuntu-20.04 -- bash /mnt/c/Users/rudi/source/pytaskforce/evals/wsl_run_swebench.sh mini 2>&1)",
-      "Bash(cmd.exe //c \"wsl.exe -d Ubuntu-20.04 -- bash /mnt/c/Users/rudi/source/pytaskforce/evals/wsl_run_swebench.sh mini\" 2>&1)"
+      "Bash(cmd.exe //c \"wsl.exe -d Ubuntu-20.04 -- bash /mnt/c/Users/rudi/source/pytaskforce/evals/wsl_run_swebench.sh mini\" 2>&1)",
+      "Read(//c/tmp/**)",
+      "Bash(cp \"C:/Users/rudi/source/pytaskforce/logs/2026-03-16T20-14-46+00-00_swe-bench-verified-mini_atW2M8tfvYULtctKTvmEvm.eval\" eval.zip)",
+      "Bash(unzip -l eval.zip)"
     ],
     "deny": [
       ".env",

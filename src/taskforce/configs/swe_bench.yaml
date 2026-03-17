@@ -3,6 +3,10 @@
 # Minimal profile optimized for SWE-bench: no sub-agents, no specialist
 # prompt, no memory/notifications. The SWE-bench system prompt in
 # evals/bridge/taskforce_bridge.py provides all necessary instructions.
+#
+# Uses only shell + edit tools (set in the solver, not here) to maximize
+# context budget. Shell output tends to be longer, so max_chars_per_item
+# is set higher.
 
 profile: swe_bench
 specialist: null
@@ -13,26 +17,27 @@ persistence:
 
 agent:
   planning_strategy: native_react
-  max_steps: 100
+  max_steps: 120
   max_parallel_tools: 1
 
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
-# Generous context policy so file contents and test output are preserved
-# fully. Truncated tool results cause edit mismatches and loops.
+# Generous context policy. Shell output is longer than structured tool
+# results, so max_chars_per_item is set high. The agent's scratchpad
+# file re-reads also need room.
 context_policy:
-  max_items: 25
-  max_chars_per_item: 12000
-  max_total_chars: 100000
-  include_latest_tool_previews_n: 10
+  max_items: 30
+  max_chars_per_item: 15000
+  max_total_chars: 120000
+  include_latest_tool_previews_n: 12
 
-# High thresholds to avoid premature compression which destroys working
-# memory (file contents, previous edit attempts, test output).
+# High thresholds — premature compression destroys working memory
+# (file contents, previous edit attempts, test output, scratchpad).
 context_management:
-  summary_threshold: 90
-  compression_trigger: 120000
+  summary_threshold: 95
+  compression_trigger: 128000
   max_input_tokens: 128000
 
 logging:
@@ -41,9 +46,4 @@ logging:
 
 tools:
   - shell
-  - file_read
-  - file_write
   - edit
-  - grep
-  - glob
-  - git

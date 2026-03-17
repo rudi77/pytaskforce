@@ -165,109 +165,103 @@ def taskforce_solver(
 # ---------------------------------------------------------------------------
 
 _SWE_BENCH_SYSTEM_PROMPT = """\
-You are an expert software engineer. Your ONLY job is to resolve the GitHub
-issue by editing source code files. You MUST make code changes.
+You are an expert software engineer. You fix bugs in Python repositories.
+You work inside a Docker container. The repo is at `/testbed`.
 
-You work inside a Docker container. The repository is at `/testbed`.
-Your tools: shell, file_read, file_write, edit, grep, glob, git.
-
-## CRITICAL: YOU MUST ALWAYS MAKE A CODE CHANGE
-
-The issue described below is REAL and NEEDS a fix. Your job is to change
-source code to fix it.
-
-NEVER conclude that the bug is "already fixed" or "not present". NEVER say
-"no code changes are needed". The bug EXISTS — you must find and fix it.
-
-**Why tests may be misleading:** The test suite is modified AFTER you finish
-your work. Some FAIL_TO_PASS tests listed below may not exist yet in the
-repo, or may use parametrized values that are added later. If a test is
-"not found" or seems to pass, that does NOT mean the bug is fixed. You must
-STILL fix the source code based on the issue description.
-
-## BUDGET
-
-You have LIMITED tool calls. Be efficient.
-- Max 3-4 tool calls for exploration.
-- Move to implementing quickly.
-- If an edit fails (old_string mismatch), re-read the file ONCE with
-  file_read, then retry. Do NOT retry the same edit more than twice.
-- NEVER repeat the same tool call with the same arguments.
-
-## WORKFLOW
-
-### Step 1: UNDERSTAND THE ISSUE (no tool calls needed)
-Read the issue description below carefully. Identify:
-- What behavior is wrong
-- What the correct behavior should be
-- Which module/class/function is likely involved
-
-### Step 2: READ THE TEST CODE FIRST (1-2 tool calls) — MANDATORY
-{baseline_test_module_section}
-Read the FAIL_TO_PASS test file BEFORE doing anything else:
-  file_read: path="/testbed/{test_file_hint}"
-The test's imports tell you EXACTLY which source file to edit. The assertions
-tell you EXACTLY what the correct behavior should be.
-**Anti-pattern: NEVER edit a file that the test doesn't import from.**
-
-### Step 2.5: CAPTURE BASELINE (1 tool call) — MANDATORY
-Run the FULL test module to see which tests currently PASS:
-  shell: cd /testbed && python -m pytest {test_module_hint} -x --timeout=120 2>&1 | tail -80
-Record which tests pass. This is your baseline — you must NOT break any of them.
-
-### Step 3: ORIENT & LOCATE (2-4 tool calls)
-Use grep to find the relevant code based on imports from the test, then
-file_read to see it:
-  grep: pattern="function_name", path="/testbed", include="*.py"
-  file_read: path="/testbed/path/to/file.py"
-Note the EXACT text including whitespace — you need it for the edit tool.
-
-### Step 4: IMPLEMENT THE FIX (1-2 tool calls)
-Use edit with the EXACT old_string from file_read (without line number
-prefixes). Keep changes minimal (1-5 lines ideal).
-
-### Step 5: VERIFY AGAINST BASELINE (2-3 tool calls)
-1. Run the ENTIRE test module (same command as Step 2.5):
-     shell: cd /testbed && python -m pytest {test_module_hint} -x --timeout=120 2>&1 | tail -80
-2. Compare against your baseline from Step 2.5:
-   - ALL previously-passing tests MUST still pass
-   - If ANY test regressed (was passing, now failing), REVERT immediately:
-       shell: cd /testbed && git checkout .
-     Then try a DIFFERENT approach that preserves backward compatibility.
-3. After your final fix, run `git diff` to review. Your diff should be small
-   and focused. If it looks too complex, simplify.
-
-## WHEN YOUR FIX DOESN'T WORK
-
-If tests still fail after your first attempt:
-- Try the OPPOSITE approach (if you added code, try DELETING code instead;
-  if you edited file A, try file B)
-- Most fixes are 1-10 lines. If your diff is >20 lines, you're overcomplicating it
-- DELETING code is often the correct fix (removing a special case, a wrong
-  condition, an incorrect override)
-- Try the SIMPLEST fix first — often it's a one-line change
-- REVERT with `git checkout .` BEFORE each new attempt
+Your tools: **shell** and **edit** only.
+Use shell for everything: cat, grep, find, git, python, pytest.
+Use edit for precise find-and-replace edits in source files.
 
 ## RULES
 
-- You MUST make source code changes. No analysis-only responses.
-- NEVER conclude "bug already fixed" or "no changes needed".
-- NEVER ask for permission. Just implement the fix.
-- Focus on the ISSUE DESCRIPTION and the TEST CODE to understand what the
-  correct behavior should be. Tests may not fully exist in the repo yet,
-  but if the test file exists, READ IT — it defines the expected behavior.
-- ALWAYS run the full test module after editing (not just the single test).
-  If ANY previously-passing test now fails, your fix has a regression.
-  REVERT immediately with `git checkout .` and try a different approach
-  that preserves backward compatibility.
-- REVERT with `git checkout .` BEFORE trying any different approach.
-- Do NOT modify setup.py, setup.cfg, pyproject.toml, or CI configs.
-- Do NOT create new test files — only edit existing source code.
-- Pipe long output through `| tail -80`.
-- For grep include patterns, use `*.py` (not `**/*.py`).
-- If you cannot find source files, try broader searches:
-    find /testbed -type f -name "*.py" | grep <keyword> | head -20
-    grep -r "class_name" /testbed --include="*.py" -l
+- You MUST make source code changes. The bug is REAL.
+- NEVER conclude "already fixed" or "no changes needed".
+- Do NOT modify setup.py, setup.cfg, pyproject.toml, or test files.
+- Most fixes are 1-10 lines. If >20 lines, you're overcomplicating.
+- DELETING code is often correct (removing a wrong condition/override).
+- Pipe long output through `| tail -60` or `| head -80`.
+
+## SCRATCHPAD
+
+You MUST maintain `/testbed/SCRATCHPAD.md` as your working memory.
+Write analysis, baseline, and attempt history there.
+Re-read it (`cat /testbed/SCRATCHPAD.md`) before each new attempt.
+This file survives context compression — your memory does not.
+
+## WORKFLOW
+
+### PHASE 1: ANALYZE (no code changes!)
+
+1. Read the failing test to understand expected behavior:
+   shell: cat /testbed/{test_file_hint} | head -200
+
+2. Note which source files the test imports — ONLY edit files the test imports.
+
+3. Capture baseline — record which tests currently pass:
+   shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=no -q 2>&1 | tail -40
+
+4. Read the source code that the test imports:
+   shell: cat -n /testbed/<source_file.py> | head -300
+
+5. Write analysis + plan to scratchpad:
+   shell: cat > /testbed/SCRATCHPAD.md << 'SCRATCHPAD'
+   ## Issue Analysis
+   - Bug: <what is wrong>
+   - Expected: <correct behavior from test assertions>
+   - Source file: <path>
+   - Function/method: <name>
+   - Baseline: X passed, Y failed
+   - Passing tests to protect: <list key test names>
+   ## Plan
+   - Change: <what to change and why>
+   - Why safe: <why existing tests won't break>
+   SCRATCHPAD
+
+### PHASE 2: IMPLEMENT
+
+6. Apply fix with edit (EXACT strings from cat output, no line numbers).
+
+7. Verify — run full test module:
+   shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=short -q 2>&1 | tail -60
+
+8. If all tests pass: done! Run `git diff` to confirm.
+
+### PHASE 3: REGRESSION RECOVERY (if any baseline test broke)
+
+**STOP. Do NOT just revert and retry the same thing.**
+
+9. KEEP your broken fix applied. Understand the regression FIRST:
+   shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=long 2>&1 | grep -A 25 "FAILED"
+
+10. Read the regressing test to understand what it expects:
+    shell: grep -n "def test_<name>" /testbed/{test_module_hint} -A 30
+
+11. Update scratchpad with what you learned:
+    shell: cat >> /testbed/SCRATCHPAD.md << 'SCRATCHPAD'
+
+    ## Attempt N: REGRESSION
+    - Changed: <what I changed>
+    - Broke: <which test>
+    - Why: <old test expects X, my fix changed behavior to Y>
+    - Constraint: must preserve <specific behavior>
+    - Next: <DIFFERENT strategy that satisfies BOTH old and new tests>
+    SCRATCHPAD
+
+12. NOW revert: shell: cd /testbed && git checkout .
+
+13. Re-read scratchpad: shell: cat /testbed/SCRATCHPAD.md
+
+14. Implement a DIFFERENT approach informed by the regression analysis.
+
+### SOLVING REGRESSIONS — KEY STRATEGIES
+
+Your fix must satisfy TWO constraints: new test expects A, old test expects B.
+Common solutions:
+- Make fix CONDITIONAL: only apply to the specific case the new test covers
+- Fix at a DIFFERENT level: caller instead of callee, or vice versa
+- Add a parameter with old behavior as default
+- Fix the ROOT CAUSE: maybe the real bug is elsewhere
+- NARROWER fix: change less code, target only the broken path
 """
 
 
@@ -277,15 +271,14 @@ def taskforce_swebench_solver(
     max_steps: int = 120,
     planning_strategy: str = "native_react",
 ) -> Solver:
-    """Inspect AI solver for SWE-bench that uses sandbox-aware tools.
+    """Inspect AI solver for SWE-bench using minimal sandbox tools.
 
-    Creates a Taskforce agent whose tools (shell, file_read, file_write,
-    edit, grep, glob, git) all operate inside the SWE-bench Docker
-    sandbox rather than on the host filesystem.
+    Uses only shell + edit tools to maximize context budget. The agent
+    uses shell for cat, grep, find, git, pytest, etc.
 
     Args:
         profile: Base Taskforce profile for LLM/infra config.
-        max_steps: Maximum agent execution steps (default: 100).
+        max_steps: Maximum agent execution steps.
         planning_strategy: Planning strategy (default: native_react).
     """
 
@@ -299,7 +292,7 @@ def taskforce_swebench_solver(
         )
         from taskforce.core.tools.tool_converter import tools_to_openai_format
 
-        from evals.bridge.sandbox_tools import create_sandbox_tools
+        from evals.bridge.sandbox_tools import create_sandbox_tools_minimal
 
         prompt = state.input_text
 
@@ -317,7 +310,9 @@ def taskforce_swebench_solver(
                 first_test = fail_to_pass
 
             # Extract test module path (everything before ::)
-            test_module_hint = first_test.split("::")[0] if "::" in first_test else first_test
+            test_module_hint = (
+                first_test.split("::")[0] if "::" in first_test else first_test
+            )
             test_file_hint = test_module_hint
 
             prompt += (
@@ -326,40 +321,32 @@ def taskforce_swebench_solver(
                 f"\nNOTE: These tests may NOT exist yet in the repo (they may be "
                 f"added by a test patch later). If a test is not found, you must "
                 f"STILL fix the source code based on the issue description above.\n"
-                f"\nTo try running: shell: cd /testbed && python -m pytest {first_test} -xvs 2>&1 | tail -60"
+                f"\nTo try running: shell: cd /testbed && python -m pytest "
+                f"{first_test} -xvs 2>&1 | tail -60"
             )
 
-        # Inject hints_text if available — gives extra context about the fix.
-        # Place prominently as these often contain the actual solution approach.
+        # Inject hints_text if available.
         hints_text = state.metadata.get("hints_text", "")
         if hints_text and len(str(hints_text).strip()) > 10:
             prompt += (
-                f"\n\n## Hints from maintainers (READ CAREFULLY — these often describe the solution)\n"
+                f"\n\n## Hints from maintainers (READ CAREFULLY)\n"
                 f"{str(hints_text).strip()[:800]}"
             )
 
-        # Build the system prompt with test module placeholders filled in.
-        baseline_section = ""
-        if test_module_hint:
-            baseline_section = (
-                f"BASELINE TEST MODULE: `{test_module_hint}`\n"
-                f"You MUST run this module before AND after your fix to detect regressions.\n\n"
-            )
-        system_prompt = _SWE_BENCH_SYSTEM_PROMPT.format(
-            baseline_test_module_section=baseline_section,
-            test_file_hint=test_file_hint or "<test_file_path>",
-            test_module_hint=test_module_hint or "<test_module>",
+        # Build the system prompt with test module placeholders.
+        system_prompt = _SWE_BENCH_SYSTEM_PROMPT.replace(
+            "{test_file_hint}", test_file_hint or "<test_file_path>"
+        ).replace(
+            "{test_module_hint}", test_module_hint or "<test_module>"
         )
 
         # Get the Inspect AI sandbox environment (Docker container)
         sbx = sandbox()
 
-        # Create sandbox-aware tools that operate inside the container
-        sandbox_tool_list = create_sandbox_tools(sbx)
+        # Minimal toolset: shell + edit only (saves ~1500 tokens/iteration)
+        sandbox_tool_list = create_sandbox_tools_minimal(sbx)
 
         # Create agent via factory to get LLM provider, state manager, etc.
-        # Note: factory.create_agent(config=...) does not accept inline
-        # params like max_steps — we override them after creation.
         factory = AgentFactory()
         agent = await factory.create_agent(config=profile)
 
@@ -369,7 +356,6 @@ def taskforce_swebench_solver(
         agent.max_steps = max_steps
 
         # Replace host tools with sandbox tools only — no planner tool.
-        # The planner wastes steps on planning instead of acting.
         sandbox_tools_dict = {t.name: t for t in sandbox_tool_list}
         agent._planner = None
         agent.tools = sandbox_tools_dict
@@ -379,9 +365,8 @@ def taskforce_swebench_solver(
         )
         agent.message_history_manager._openai_tools = agent._openai_tools
 
-        # Monkey-patch _build_system_prompt to inject step-budget warnings.
-        # This gives the agent awareness of how many steps remain so it
-        # commits to an approach rather than looping indefinitely.
+        # Monkey-patch _build_system_prompt to inject step-budget warnings
+        # and a reminder to check the scratchpad.
         _original_build_system_prompt = agent._build_system_prompt
 
         def _budget_aware_system_prompt(
@@ -392,26 +377,26 @@ def taskforce_swebench_solver(
             )
             if messages:
                 tool_calls = sum(
-                    1 for m in messages if m.get("role") == "assistant"
-                    and m.get("tool_calls")
+                    1
+                    for m in messages
+                    if m.get("role") == "assistant" and m.get("tool_calls")
                 )
                 remaining = max_steps - tool_calls
-                if remaining <= 20:
+                if remaining <= 15:
                     base += (
-                        "\n\n## ⚠️ URGENT: VERY LOW BUDGET"
-                        f"\nYou have used {tool_calls}/{max_steps} steps."
+                        "\n\n## URGENT: VERY LOW BUDGET"
+                        f"\n{tool_calls}/{max_steps} steps used."
                         f" Only ~{remaining} remain."
-                        "\nYou MUST wrap up NOW:"
-                        "\n- If you have a working fix, run final verification and STOP."
-                        "\n- If not, commit to your best approach immediately."
-                        "\n- Do NOT start over or explore further."
+                        "\nWrap up NOW. Commit to your best fix."
+                        "\nRun: cat /testbed/SCRATCHPAD.md to review"
+                        " what you've tried, then finalize."
                     )
-                elif remaining <= 40:
+                elif remaining <= 35:
                     base += (
-                        "\n\n## ⚡ BUDGET WARNING"
-                        f"\nYou have used {tool_calls}/{max_steps} steps."
+                        "\n\n## BUDGET WARNING"
+                        f"\n{tool_calls}/{max_steps} steps used."
                         f" ~{remaining} remain."
-                        "\nBe efficient — implement your fix now if you haven't already."
+                        "\nBe efficient. If stuck, read your SCRATCHPAD."
                     )
             return base
 
@@ -430,7 +415,9 @@ def taskforce_swebench_solver(
             ):
                 _collect_events(update, acc)
         except Exception as e:
-            logger.error(f"Taskforce SWE-bench agent failed: {e}", exc_info=True)
+            logger.error(
+                f"Taskforce SWE-bench agent failed: {e}", exc_info=True
+            )
             return _write_error_metadata(state, e)
 
         return _write_metadata(state, acc)
