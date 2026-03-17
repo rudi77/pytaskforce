@@ -165,80 +165,116 @@ def taskforce_solver(
 # ---------------------------------------------------------------------------
 
 _SWE_BENCH_SYSTEM_PROMPT = """\
-You are an expert software engineer tasked with resolving a GitHub issue.
+You are an expert software engineer. Your ONLY job is to resolve the GitHub
+issue by editing source code files. You MUST make code changes.
 
-You are working inside a Docker container with the full repository checked out
-at `/testbed`. All your tools (shell, file_read, file_write, edit, grep, glob,
-git) operate inside this container.
+You work inside a Docker container. The repository is at `/testbed`.
+Your tools: shell, file_read, file_write, edit, grep, glob, git.
 
-## MANDATORY FIRST STEP
+## CRITICAL: YOU MUST ALWAYS MAKE A CODE CHANGE
 
-Run this command FIRST:
-  shell: cd /testbed && find . -type f -name "*.py" | head -20 && git log --oneline -5
+The issue described below is REAL and NEEDS a fix. Your job is to change
+source code to fix it.
 
-This orients you in the repo structure and recent history.
+NEVER conclude that the bug is "already fixed" or "not present". NEVER say
+"no code changes are needed". The bug EXISTS — you must find and fix it.
+
+**Why tests may be misleading:** The test suite is modified AFTER you finish
+your work. Some FAIL_TO_PASS tests listed below may not exist yet in the
+repo, or may use parametrized values that are added later. If a test is
+"not found" or seems to pass, that does NOT mean the bug is fixed. You must
+STILL fix the source code based on the issue description.
+
+## BUDGET
+
+You have LIMITED tool calls. Be efficient.
+- Max 3-4 tool calls for exploration.
+- Move to implementing quickly.
+- If an edit fails (old_string mismatch), re-read the file ONCE with
+  file_read, then retry. Do NOT retry the same edit more than twice.
+- NEVER repeat the same tool call with the same arguments.
 
 ## WORKFLOW
 
-1. **Understand the issue**: Read the issue description carefully. Identify
-   keywords, error messages, class/function names mentioned.
-2. **Locate the failing test**: If "Tests that MUST pass" are listed below,
-   run them FIRST to see the actual error:
-     shell: cd /testbed && python -m pytest <test_file>::<test_name> -xvs 2>&1 | tail -40
-   The error output tells you exactly what is wrong and where.
-3. **Find the root cause**: Use `grep` to search for the function/class/error
-   mentioned in the test output. Trace the bug to the EXACT function/line.
-   - Use `grep` with `include="*.py"` (not `**/*.py`)
-   - Narrow searches: `grep -rn "function_name" /testbed/src/` not `/testbed/`
-   - `file_read` shows line numbers — use them to find exact edit locations
-4. **Read the source carefully**: Before editing, read the target file with
-   `file_read` to see the full context. The line numbers in the output help
-   you construct exact `old_string` values for the `edit` tool.
-5. **Implement the MINIMAL fix**: Use `edit` to change ONLY what is needed.
-   - The `edit` tool uses exact string matching. Copy `old_string` exactly
-     from `file_read` output (without the line number prefix).
-   - Prefer 1-5 line changes. If your fix is >10 lines, reconsider.
-   - If old_string appears multiple times, add more surrounding context or
-     use `replace_all=true`.
-   - Do NOT modify `setup.py`, `setup.cfg`, `pyproject.toml`, or CI configs.
-6. **Test your fix** (see REVERT-AND-RETRY below).
-7. **Review**: Run `git diff` to confirm changes are minimal and correct.
+### Step 1: UNDERSTAND THE ISSUE (no tool calls needed)
+Read the issue description below carefully. Identify:
+- What behavior is wrong
+- What the correct behavior should be
+- Which module/class/function is likely involved
 
-## REVERT-AND-RETRY DISCIPLINE
+### Step 2: READ THE TEST CODE FIRST (1-2 tool calls) — MANDATORY
+{baseline_test_module_section}
+Read the FAIL_TO_PASS test file BEFORE doing anything else:
+  file_read: path="/testbed/{test_file_hint}"
+The test's imports tell you EXACTLY which source file to edit. The assertions
+tell you EXACTLY what the correct behavior should be.
+**Anti-pattern: NEVER edit a file that the test doesn't import from.**
 
-After EVERY code change:
+### Step 2.5: CAPTURE BASELINE (1 tool call) — MANDATORY
+Run the FULL test module to see which tests currently PASS:
+  shell: cd /testbed && python -m pytest {test_module_hint} -x --timeout=120 2>&1 | tail -80
+Record which tests pass. This is your baseline — you must NOT break any of them.
 
-1. Run the specific failing test:
-     shell: cd /testbed && python -m pytest <test_file>::<test_name> -xvs 2>&1 | tail -50
-2. If test PASSES → run broader tests:
-     shell: cd /testbed && python -m pytest <test_module> -x --timeout=60 2>&1 | tail -30
-3. If ANY test FAILS → REVERT immediately:
-     shell: cd /testbed && git checkout .
-   Then re-read the error, think about what went wrong, and try a DIFFERENT
-   approach. NEVER layer fixes on top of failed fixes.
-4. After 3 failed attempts at the same approach, step back and re-analyze.
-   You may be fixing the wrong location or misunderstanding the issue.
+### Step 3: ORIENT & LOCATE (2-4 tool calls)
+Use grep to find the relevant code based on imports from the test, then
+file_read to see it:
+  grep: pattern="function_name", path="/testbed", include="*.py"
+  file_read: path="/testbed/path/to/file.py"
+Note the EXACT text including whitespace — you need it for the edit tool.
 
-## KEY RULES
+### Step 4: IMPLEMENT THE FIX (1-2 tool calls)
+Use edit with the EXACT old_string from file_read (without line number
+prefixes). Keep changes minimal (1-5 lines ideal).
 
-- You MUST implement a fix, not just analyze. Make code changes to source files.
-- You MUST run tests after every change — no exceptions.
-- `git checkout .` reverts ALL uncommitted changes. Use it liberally.
-- NEVER layer a second fix on top of a failed first fix. Always revert first.
-- Make MINIMAL changes. The best fix is usually 1-5 lines.
-- Do NOT modify build/config files (setup.py, pyproject.toml, etc.).
-- Do NOT create new test files — fix existing source code only.
+### Step 5: VERIFY AGAINST BASELINE (2-3 tool calls)
+1. Run the ENTIRE test module (same command as Step 2.5):
+     shell: cd /testbed && python -m pytest {test_module_hint} -x --timeout=120 2>&1 | tail -80
+2. Compare against your baseline from Step 2.5:
+   - ALL previously-passing tests MUST still pass
+   - If ANY test regressed (was passing, now failing), REVERT immediately:
+       shell: cd /testbed && git checkout .
+     Then try a DIFFERENT approach that preserves backward compatibility.
+3. After your final fix, run `git diff` to review. Your diff should be small
+   and focused. If it looks too complex, simplify.
+
+## WHEN YOUR FIX DOESN'T WORK
+
+If tests still fail after your first attempt:
+- Try the OPPOSITE approach (if you added code, try DELETING code instead;
+  if you edited file A, try file B)
+- Most fixes are 1-10 lines. If your diff is >20 lines, you're overcomplicating it
+- DELETING code is often the correct fix (removing a special case, a wrong
+  condition, an incorrect override)
+- Try the SIMPLEST fix first — often it's a one-line change
+- REVERT with `git checkout .` BEFORE each new attempt
+
+## RULES
+
+- You MUST make source code changes. No analysis-only responses.
+- NEVER conclude "bug already fixed" or "no changes needed".
+- NEVER ask for permission. Just implement the fix.
+- Focus on the ISSUE DESCRIPTION and the TEST CODE to understand what the
+  correct behavior should be. Tests may not fully exist in the repo yet,
+  but if the test file exists, READ IT — it defines the expected behavior.
+- ALWAYS run the full test module after editing (not just the single test).
+  If ANY previously-passing test now fails, your fix has a regression.
+  REVERT immediately with `git checkout .` and try a different approach
+  that preserves backward compatibility.
+- REVERT with `git checkout .` BEFORE trying any different approach.
+- Do NOT modify setup.py, setup.cfg, pyproject.toml, or CI configs.
+- Do NOT create new test files — only edit existing source code.
+- Pipe long output through `| tail -80`.
 - For grep include patterns, use `*.py` (not `**/*.py`).
-- Pipe long test output through `| tail -50` to avoid context overflow.
-- When reading large files, note the line numbers and focus on the relevant
-  section rather than reading the entire file again.
+- If you cannot find source files, try broader searches:
+    find /testbed -type f -name "*.py" | grep <keyword> | head -20
+    grep -r "class_name" /testbed --include="*.py" -l
 """
 
 
 @solver
 def taskforce_swebench_solver(
     profile: str = "swe_bench",
-    max_steps: int = 100,
+    max_steps: int = 120,
     planning_strategy: str = "native_react",
 ) -> Solver:
     """Inspect AI solver for SWE-bench that uses sandbox-aware tools.
@@ -267,19 +303,53 @@ def taskforce_swebench_solver(
 
         prompt = state.input_text
 
-        # Inject FAIL_TO_PASS test names into the prompt so the agent
-        # knows exactly which test must pass after the fix.
+        # Extract test module path from FAIL_TO_PASS for baseline testing.
         fail_to_pass = state.metadata.get("FAIL_TO_PASS", "")
+        test_module_hint = ""
+        test_file_hint = ""
+        first_test = ""
         if fail_to_pass:
             if isinstance(fail_to_pass, list):
                 test_list = "\n".join(f"  - {t}" for t in fail_to_pass[:5])
+                first_test = fail_to_pass[0]
             else:
                 test_list = f"  - {fail_to_pass}"
+                first_test = fail_to_pass
+
+            # Extract test module path (everything before ::)
+            test_module_hint = first_test.split("::")[0] if "::" in first_test else first_test
+            test_file_hint = test_module_hint
+
             prompt += (
                 f"\n\n## Tests that MUST pass after your fix\n"
-                f"Run these tests to validate your fix works:\n{test_list}\n"
-                f"\nExample: shell: cd /testbed && python -m pytest {fail_to_pass[0] if isinstance(fail_to_pass, list) else fail_to_pass} -xvs"
+                f"{test_list}\n"
+                f"\nNOTE: These tests may NOT exist yet in the repo (they may be "
+                f"added by a test patch later). If a test is not found, you must "
+                f"STILL fix the source code based on the issue description above.\n"
+                f"\nTo try running: shell: cd /testbed && python -m pytest {first_test} -xvs 2>&1 | tail -60"
             )
+
+        # Inject hints_text if available — gives extra context about the fix.
+        # Place prominently as these often contain the actual solution approach.
+        hints_text = state.metadata.get("hints_text", "")
+        if hints_text and len(str(hints_text).strip()) > 10:
+            prompt += (
+                f"\n\n## Hints from maintainers (READ CAREFULLY — these often describe the solution)\n"
+                f"{str(hints_text).strip()[:800]}"
+            )
+
+        # Build the system prompt with test module placeholders filled in.
+        baseline_section = ""
+        if test_module_hint:
+            baseline_section = (
+                f"BASELINE TEST MODULE: `{test_module_hint}`\n"
+                f"You MUST run this module before AND after your fix to detect regressions.\n\n"
+            )
+        system_prompt = _SWE_BENCH_SYSTEM_PROMPT.format(
+            baseline_test_module_section=baseline_section,
+            test_file_hint=test_file_hint or "<test_file_path>",
+            test_module_hint=test_module_hint or "<test_module>",
+        )
 
         # Get the Inspect AI sandbox environment (Docker container)
         sbx = sandbox()
@@ -294,20 +364,58 @@ def taskforce_swebench_solver(
         agent = await factory.create_agent(config=profile)
 
         # Override settings for SWE-bench
-        agent._base_system_prompt = _SWE_BENCH_SYSTEM_PROMPT
-        agent.prompt_builder._base_system_prompt = _SWE_BENCH_SYSTEM_PROMPT
+        agent._base_system_prompt = system_prompt
+        agent.prompt_builder._base_system_prompt = system_prompt
         agent.max_steps = max_steps
 
-        # Replace host tools with sandbox tools (keep planner tool)
+        # Replace host tools with sandbox tools only — no planner tool.
+        # The planner wastes steps on planning instead of acting.
         sandbox_tools_dict = {t.name: t for t in sandbox_tool_list}
-        if agent._planner:
-            sandbox_tools_dict[agent._planner.name] = agent._planner
+        agent._planner = None
         agent.tools = sandbox_tools_dict
         agent._openai_tools = tools_to_openai_format(agent.tools)
         agent.tool_executor = ToolExecutor(
             tools=agent.tools, logger=agent.logger
         )
         agent.message_history_manager._openai_tools = agent._openai_tools
+
+        # Monkey-patch _build_system_prompt to inject step-budget warnings.
+        # This gives the agent awareness of how many steps remain so it
+        # commits to an approach rather than looping indefinitely.
+        _original_build_system_prompt = agent._build_system_prompt
+
+        def _budget_aware_system_prompt(
+            mission=None, state=None, messages=None
+        ):
+            base = _original_build_system_prompt(
+                mission=mission, state=state, messages=messages
+            )
+            if messages:
+                tool_calls = sum(
+                    1 for m in messages if m.get("role") == "assistant"
+                    and m.get("tool_calls")
+                )
+                remaining = max_steps - tool_calls
+                if remaining <= 20:
+                    base += (
+                        "\n\n## ⚠️ URGENT: VERY LOW BUDGET"
+                        f"\nYou have used {tool_calls}/{max_steps} steps."
+                        f" Only ~{remaining} remain."
+                        "\nYou MUST wrap up NOW:"
+                        "\n- If you have a working fix, run final verification and STOP."
+                        "\n- If not, commit to your best approach immediately."
+                        "\n- Do NOT start over or explore further."
+                    )
+                elif remaining <= 40:
+                    base += (
+                        "\n\n## ⚡ BUDGET WARNING"
+                        f"\nYou have used {tool_calls}/{max_steps} steps."
+                        f" ~{remaining} remain."
+                        "\nBe efficient — implement your fix now if you haven't already."
+                    )
+            return base
+
+        agent._build_system_prompt = _budget_aware_system_prompt
 
         # Execute the agent
         executor = AgentExecutor(factory)

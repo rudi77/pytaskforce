@@ -20,17 +20,20 @@ llm:
   config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
+# Generous context policy so file contents and test output are preserved
+# fully. Truncated tool results cause edit mismatches and loops.
 context_policy:
-  max_items: 15
-  max_chars_per_item: 6000
-  max_total_chars: 40000
-  include_latest_tool_previews_n: 5
+  max_items: 25
+  max_chars_per_item: 12000
+  max_total_chars: 100000
+  include_latest_tool_previews_n: 10
 
-# Higher thresholds to preserve file contents longer before compression
+# High thresholds to avoid premature compression which destroys working
+# memory (file contents, previous edit attempts, test output).
 context_management:
-  summary_threshold: 50
-  compression_trigger: 80000
-  max_input_tokens: 120000
+  summary_threshold: 90
+  compression_trigger: 120000
+  max_input_tokens: 128000
 
 logging:
   level: INFO

@@ -181,13 +181,12 @@ class SandboxFileReadTool(ToolProtocol):
                 "success": True,
                 "content": numbered,
                 "path": path,
-                "lines": len(lines),
                 "total_lines": total,
             }
             if end < total:
                 resp["note"] = (
-                    f"Showing lines {start + 1}-{start + len(lines)} of {total}. "
-                    f"Use offset={start + len(lines) + 1} to read more."
+                    f"Lines {start + 1}-{start + len(lines)} of {total}. "
+                    f"Use offset={start + len(lines) + 1} to continue."
                 )
             return resp
         except FileNotFoundError:
@@ -300,7 +299,7 @@ class SandboxGrepTool(ToolProtocol):
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximum result lines to return (default: 50)",
+                    "description": "Maximum result lines to return (default: 30)",
                 },
             },
             "required": ["pattern"],
@@ -326,7 +325,7 @@ class SandboxGrepTool(ToolProtocol):
         pattern: str,
         path: str = ".",
         include: str | None = None,
-        max_results: int = 50,
+        max_results: int = 30,
         **kwargs,
     ) -> dict[str, Any]:
         """Run grep inside the sandbox with output limits."""
@@ -535,56 +534,41 @@ class SandboxEditTool(ToolProtocol):
         try:
             content = await self._sandbox.read_file(path, text=True)
             if old_string not in content:
-                # Use difflib to find the most similar region in the file
+                # Find the best matching line to help the agent locate
+                # the correct text. Keep the hint compact to save context.
                 import difflib
 
                 content_lines = content.splitlines()
                 old_lines = old_string.strip().splitlines()
                 first_line = old_lines[0].strip() if old_lines else ""
 
-                # Find lines with high similarity to the first line of old_string
-                best_matches: list[tuple[float, int]] = []
-                for i, line in enumerate(content_lines):
-                    if not first_line:
-                        break
-                    ratio = difflib.SequenceMatcher(
-                        None, first_line, line.strip()
-                    ).ratio()
-                    if ratio > 0.5:
-                        best_matches.append((ratio, i))
-
-                best_matches.sort(key=lambda x: -x[0])
-                snippets: list[str] = []
-                for _, line_idx in best_matches[:2]:
-                    start = max(0, line_idx - 1)
-                    end = min(len(content_lines), line_idx + len(old_lines) + 1)
-                    snippet = "\n".join(
-                        f"{start + j + 1:6d}\t{content_lines[start + j]}"
-                        for j in range(end - start)
-                    )
-                    snippets.append(snippet)
-
                 hint = ""
-                if snippets:
-                    hint = (
-                        "\n\nDid you mean one of these similar sections?\n\n"
-                        + "\n---\n".join(snippets)
-                        + "\n\nCopy the exact text (without line numbers) for old_string."
-                    )
-                elif len(content_lines) <= 30:
-                    preview = "\n".join(
-                        f"{i + 1:6d}\t{l}" for i, l in enumerate(content_lines)
-                    )
-                    hint = f"\n\nFull file content:\n{preview}"
-                else:
-                    preview = "\n".join(
-                        f"{i + 1:6d}\t{l}"
-                        for i, l in enumerate(content_lines[:30])
-                    )
-                    hint = (
-                        f"\n\nFile starts with ({len(content_lines)} lines total):"
-                        f"\n{preview}"
-                    )
+                if first_line:
+                    best: tuple[float, int] = (0.0, 0)
+                    for i, line in enumerate(content_lines):
+                        ratio = difflib.SequenceMatcher(
+                            None, first_line, line.strip()
+                        ).ratio()
+                        if ratio > best[0]:
+                            best = (ratio, i)
+
+                    if best[0] > 0.5:
+                        line_idx = best[1]
+                        start = max(0, line_idx - 1)
+                        end = min(len(content_lines), line_idx + len(old_lines) + 2)
+                        snippet = "\n".join(
+                            f"{start + j + 1:6d}\t{content_lines[start + j]}"
+                            for j in range(end - start)
+                        )
+                        hint = (
+                            f"\n\nClosest match near line {line_idx + 1}:\n{snippet}"
+                            "\n\nUse file_read to see the exact text, then retry edit."
+                        )
+                    else:
+                        hint = (
+                            f"\n\nFile has {len(content_lines)} lines. "
+                            "Use file_read to see the actual content before editing."
+                        )
 
                 return {
                     "success": False,

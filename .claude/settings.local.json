@@ -153,7 +153,10 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-20.04 -- bash -c 'export PYTHONPATH=/mnt/c/Users/rudi/source/pytaskforce/src:/mnt/c/Users/rudi/source/pytaskforce/evals && cd /mnt/c/Users/rudi/source/pytaskforce && /home/rudi/taskforce-eval-venv/bin/python3 evals/debug_metadata.py 2>&1 | tail -5')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-20.04 -- bash -c '/home/rudi/taskforce-eval-venv/bin/python3 -c \"from inspect_ai.solver import TaskState; help\\(TaskState.metadata.fget\\)\" 2>&1 | head -10')",
       "Bash(wsl bash:*)",
-      "Bash(where python:*)"
+      "Bash(where python:*)",
+      "Bash(wsl:*)",
+      "Bash(wsl.exe -d Ubuntu-20.04 -- bash /mnt/c/Users/rudi/source/pytaskforce/evals/wsl_run_swebench.sh mini 2>&1)",
+      "Bash(cmd.exe //c \"wsl.exe -d Ubuntu-20.04 -- bash /mnt/c/Users/rudi/source/pytaskforce/evals/wsl_run_swebench.sh mini\" 2>&1)"
     ],
     "deny": [
       ".env",

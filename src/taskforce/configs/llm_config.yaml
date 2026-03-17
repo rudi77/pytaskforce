@@ -15,11 +15,11 @@ default_model: "powerful-1"
 
 # Model alias mapping: short name → LiteLLM model string
 models:
-  main: "azure/gpt-4.1"
-  fast: "azure/gpt-4.1"
-  powerful: "azure/gpt-4.1"
-  powerful-1: "azure/gpt-4.1"
-  legacy: "azure/gpt-4.1"
+  main: "azure/gpt-5"
+  fast: "azure/gpt-5"
+  powerful: "azure/gpt-5"
+  powerful-1: "azure/gpt-5"
+  legacy: "azure/gpt-5"
 
   # ── Anthropic Claude models ─────────────────────────────────────────
   claude-opus: "anthropic/claude-opus-4-6"
@@ -58,7 +58,7 @@ model_params:
   # avoids relying on that safety net.
   gpt-5:
     reasoning_effort: "medium"
-    max_tokens: 4000
+    max_tokens: 16384
 
   gpt-5-mini:
     reasoning_effort: "low"
