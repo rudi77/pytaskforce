@@ -203,7 +203,11 @@ This file survives context compression — your memory does not.
 4. Read the source code that the test imports:
    shell: cat -n /testbed/<source_file.py> | head -300
 
-5. Write analysis + plan to scratchpad:
+5. Before editing, TEST YOUR HYPOTHESIS with a quick Python check:
+   shell: cd /testbed && python -c "from module import func; print(func(args))"
+   If output doesn't match expectations, investigate more before editing.
+
+6. Write analysis + plan to scratchpad:
    shell: cat > /testbed/SCRATCHPAD.md << 'SCRATCHPAD'
    ## Issue Analysis
    - Bug: <what is wrong>
@@ -219,39 +223,34 @@ This file survives context compression — your memory does not.
 
 ### PHASE 2: IMPLEMENT
 
-6. Apply fix with edit (EXACT strings from cat output, no line numbers).
+7. Apply fix with edit (EXACT strings from cat output, no line numbers).
 
-7. Verify — run full test module:
+8. Verify — run full test module:
    shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=short -q 2>&1 | tail -60
 
-8. If all tests pass: done! Run `git diff` to confirm.
+9. If all tests pass: done! Run `git diff` to confirm.
 
 ### PHASE 3: REGRESSION RECOVERY (if any baseline test broke)
 
 **STOP. Do NOT just revert and retry the same thing.**
 
-9. KEEP your broken fix applied. Understand the regression FIRST:
-   shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=long 2>&1 | grep -A 25 "FAILED"
+10. KEEP your fix applied. Understand the regression FIRST:
+    shell: cd /testbed && python -m pytest {test_module_hint} --timeout=120 --tb=long 2>&1 | grep -A 25 "FAILED"
 
-10. Read the regressing test to understand what it expects:
-    shell: grep -n "def test_<name>" /testbed/{test_module_hint} -A 30
+11. Read the regressing test to understand what it expects.
 
-11. Update scratchpad with what you learned:
-    shell: cat >> /testbed/SCRATCHPAD.md << 'SCRATCHPAD'
+12. Update scratchpad with what you learned about the regression.
 
-    ## Attempt N: REGRESSION
-    - Changed: <what I changed>
-    - Broke: <which test>
-    - Why: <old test expects X, my fix changed behavior to Y>
-    - Constraint: must preserve <specific behavior>
-    - Next: <DIFFERENT strategy that satisfies BOTH old and new tests>
-    SCRATCHPAD
+13. Use git stash to PRESERVE your fix while you investigate:
+    shell: cd /testbed && git stash
+    (Read the regressing test in original code)
+    shell: cd /testbed && git stash pop
+    Now make it CONDITIONAL — add if/else to handle both old and new case.
 
-12. NOW revert: shell: cd /testbed && git checkout .
+14. Re-read scratchpad: shell: cat /testbed/SCRATCHPAD.md
 
-13. Re-read scratchpad: shell: cat /testbed/SCRATCHPAD.md
-
-14. Implement a DIFFERENT approach informed by the regression analysis.
+15. Implement a DIFFERENT approach informed by the regression analysis.
+    Do NOT just revert to scratch. Your fix is 90%+ correct — refine it.
 
 ### SOLVING REGRESSIONS — KEY STRATEGIES
 
@@ -268,7 +267,7 @@ Common solutions:
 @solver
 def taskforce_swebench_solver(
     profile: str = "swe_bench",
-    max_steps: int = 120,
+    max_steps: int = 80,
     planning_strategy: str = "native_react",
 ) -> Solver:
     """Inspect AI solver for SWE-bench using minimal sandbox tools.
@@ -365,8 +364,7 @@ def taskforce_swebench_solver(
         )
         agent.message_history_manager._openai_tools = agent._openai_tools
 
-        # Monkey-patch _build_system_prompt to inject step-budget warnings
-        # and a reminder to check the scratchpad.
+        # Monkey-patch _build_system_prompt to inject step-budget warnings.
         _original_build_system_prompt = agent._build_system_prompt
 
         def _budget_aware_system_prompt(
@@ -382,7 +380,7 @@ def taskforce_swebench_solver(
                     if m.get("role") == "assistant" and m.get("tool_calls")
                 )
                 remaining = max_steps - tool_calls
-                if remaining <= 15:
+                if remaining <= 10:
                     base += (
                         "\n\n## URGENT: VERY LOW BUDGET"
                         f"\n{tool_calls}/{max_steps} steps used."
@@ -391,7 +389,7 @@ def taskforce_swebench_solver(
                         "\nRun: cat /testbed/SCRATCHPAD.md to review"
                         " what you've tried, then finalize."
                     )
-                elif remaining <= 35:
+                elif remaining <= 25:
                     base += (
                         "\n\n## BUDGET WARNING"
                         f"\n{tool_calls}/{max_steps} steps used."

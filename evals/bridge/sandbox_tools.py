@@ -81,16 +81,32 @@ class SandboxShellTool(ToolProtocol):
                 timeout=timeout,
                 cwd=cwd,
             )
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+
+            # Reflection hint: when shell output contains test results with
+            # failures, nudge the agent to think before acting.
+            if any(kw in stdout for kw in ["FAILED", "failed", "error", "ERROR"]):
+                if "FAILED" in stdout or "ERRORS" in stdout:
+                    stdout += (
+                        "\n\n--- THINK BEFORE ACTING ---\n"
+                        "Tests FAILED. Before making any changes:\n"
+                        "1. Update /testbed/SCRATCHPAD.md with which tests failed and WHY\n"
+                        "2. If this is a REGRESSION (test that passed before): "
+                        "read the failing test code first\n"
+                        "3. Only then decide your next action\n"
+                    )
+
             resp: dict[str, Any] = {
                 "success": result.success,
-                "stdout": result.stdout or "",
-                "stderr": result.stderr or "",
+                "stdout": stdout,
+                "stderr": stderr,
                 "returncode": result.returncode,
                 "command": command,
             }
             if not result.success:
                 resp["error"] = (
-                    result.stderr or f"Command failed with code {result.returncode}"
+                    stderr or f"Command failed with code {result.returncode}"
                 )
             return resp
         except TimeoutError:

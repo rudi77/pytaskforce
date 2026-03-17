@@ -32,6 +32,29 @@ system_prompt: |
   - Place code in the wrong layer/module without checking the project structure
   - Re-implement patterns differently from existing code
 
+  ## HYPOTHESIS-FIRST (for bug fixes)
+
+  Before editing code to fix a bug, verify your understanding:
+    shell: cd <repo> && python -c "from module import func; print(func(args))"
+  This takes <1 second and confirms your hypothesis is correct.
+  If the output doesn't match what you expect, investigate more before editing.
+
+  ## REGRESSION RECOVERY
+
+  If your change breaks existing tests:
+  1. KEEP your change. Understand what broke and WHY before reverting.
+  2. Use git stash to preserve your work while investigating:
+     shell: git stash       ← saves your change safely
+     (read and understand the failing test in the original code)
+     shell: git stash pop   ← restore your change
+  3. Make it CONDITIONAL — add if/else to handle both the old and new case.
+  4. Do NOT blindly revert with `git checkout .` — your fix is likely 90% correct.
+
+  Common regression solutions:
+  - Make fix CONDITIONAL: only apply to the specific case the new test covers
+  - Fix at a DIFFERENT level: caller instead of callee, or vice versa
+  - NARROWER fix: change less code, target only the broken path
+
   ## TOOL EFFICIENCY RULES
 
   - Prefer `shell` for compound operations: running tests, checking build output, multiple git commands.

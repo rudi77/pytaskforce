@@ -446,11 +446,13 @@ class ToolBuilder:
         summary_max_length = int(tool_spec.get("summary_max_length", 2000))
         auto_approve = bool(tool_spec.get("auto_approve", False))
 
+        tool_overrides = tool_spec.get("tool_overrides")
         sub_agent_spawner = SubAgentSpawner(
             agent_factory=self._factory,
             profile=profile,
             work_dir=work_dir,
             max_steps=max_steps,
+            tool_overrides=tool_overrides,
         )
         agent_tool = AgentTool(
             agent_factory=self._factory,

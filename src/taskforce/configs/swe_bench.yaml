@@ -17,7 +17,7 @@ persistence:
 
 agent:
   planning_strategy: native_react
-  max_steps: 120
+  max_steps: 80
   max_parallel_tools: 1
 
 llm:

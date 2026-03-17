@@ -16,6 +16,7 @@ from taskforce.core.domain.sub_agents import (
     build_sub_agent_session_id,
 )
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
+from taskforce.core.interfaces.tools import ToolProtocol
 
 if TYPE_CHECKING:
     from taskforce.application.factory import AgentFactory
@@ -32,11 +33,13 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         profile: str = "dev",
         work_dir: str | None = None,
         max_steps: int | None = None,
+        tool_overrides: list[ToolProtocol] | None = None,
     ) -> None:
         self._agent_factory = agent_factory
         self._profile = profile
         self._work_dir = work_dir
         self._max_steps = max_steps
+        self._tool_overrides = tool_overrides
         self._logger = structlog.get_logger().bind(component="SubAgentSpawner")
 
     async def spawn(self, spec: SubAgentSpec) -> SubAgentResult:
@@ -46,6 +49,8 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         )
         try:
             agent = await self._create_agent(spec)
+            if self._tool_overrides:
+                self._apply_tool_overrides(agent)
             if spec.max_steps:
                 agent.max_steps = spec.max_steps
             elif self._max_steps:
@@ -81,12 +86,48 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             error=None if success else result.final_message,
         )
 
+    def _apply_tool_overrides(self, agent: Agent) -> None:
+        """Replace agent tools with override instances.
+
+        Used when sub-agents must share specific tool instances with
+        their parent (e.g. sandbox-aware tools in SWE-bench evaluation).
+        """
+        from taskforce.core.domain.lean_agent_components.tool_executor import (
+            ToolExecutor,
+        )
+        from taskforce.core.tools.tool_converter import tools_to_openai_format
+
+        tools_dict = {t.name: t for t in self._tool_overrides}
+        agent._planner = None
+        agent.tools = tools_dict
+        agent._openai_tools = tools_to_openai_format(agent.tools)
+        agent.tool_executor = ToolExecutor(
+            tools=agent.tools, logger=agent.logger
+        )
+        agent.message_history_manager._openai_tools = agent._openai_tools
+        self._logger.debug(
+            "tool_overrides_applied",
+            tool_names=[t.name for t in self._tool_overrides],
+        )
+
     async def _create_agent(self, spec: SubAgentSpec) -> Agent:
-        custom_definition = spec.agent_definition or await self._load_custom_definition(spec)
         profile = spec.profile or self._profile
         work_dir = spec.work_dir or self._work_dir
+
+        # Prefer loading as config file to get full settings (context_management,
+        # context_policy, etc.) rather than the inline path which drops fields.
+        if spec.specialist:
+            config_path = self._find_agent_config(spec.specialist)
+            if config_path:
+                return await self._agent_factory.create_agent(
+                    config=str(config_path),
+                    work_dir=work_dir,
+                    planning_strategy=spec.planning_strategy,
+                )
+
+        custom_definition = spec.agent_definition
         if custom_definition:
-            # Use new unified API with inline parameters
+            # Fallback: inline parameters from agent_definition dict
             return await self._agent_factory.create_agent(
                 system_prompt=custom_definition.get("system_prompt"),
                 tools=custom_definition.get("tool_allowlist") or custom_definition.get("tools"),
@@ -97,7 +138,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 planning_strategy=spec.planning_strategy,
                 specialist=custom_definition.get("specialist"),
             )
-        # Use config file path
+        # Use profile config
         return await self._agent_factory.create_agent(
             config=profile,
             specialist=spec.specialist,
