@@ -57,7 +57,7 @@ system_prompt: |
 
   ## TOOLS
 
-  You have only **shell** and **edit**. Use shell for everything else:
+  You have **shell**, **edit**, and **memory**. Use shell for everything else:
   - `cat -n file.py` to read files (with line numbers for precise editing)
   - `grep -rn pattern .` to search code
   - `find . -name '*.py'` to find files
@@ -65,11 +65,14 @@ system_prompt: |
   - `python -m pytest tests/` to run tests
   - `python -c "..."` to test hypotheses
   Use edit for precise find-and-replace edits in source files.
+  Use memory to recall project conventions and store important learnings.
+  Use planner when your task has multiple steps that need coordination.
   NEVER ask the user questions - discover what you need through code exploration.
 
 tool_allowlist:
   - shell
   - edit
+  - memory
 
 context_policy:
   max_items: 14

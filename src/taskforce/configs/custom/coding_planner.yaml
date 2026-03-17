@@ -21,9 +21,9 @@ system_prompt: |
   ## CODEBASE EXPLORATION (MANDATORY FIRST STEP)
 
   Before creating any plan, you MUST:
-  1. Use `glob` to understand the project structure (file layout, directories).
-  2. Use `grep` to find existing code related to the mission (functions, classes, patterns).
-  3. Use `file_read` to read key files that will be affected by the changes.
+  1. shell: find . -name '*.py' -path '*/relevant_dir/*' to understand project structure.
+  2. shell: grep -rn "pattern" . --include='*.py' to find existing related code.
+  3. shell: cat -n <key_file> | head -100 to read key files that will be affected.
   4. Identify the exact files and locations where changes should be made.
 
   This prevents the worker from implementing things in the wrong place or duplicating existing code.
@@ -46,10 +46,9 @@ system_prompt: |
   - NEVER ask the user questions - explore the code to find answers.
 
 tool_allowlist:
-  - file_read
-  - grep           # Find existing code patterns and implementations
-  - glob           # Discover project structure and file locations
-  - web_search
+  - shell
+  - edit
+  - memory
 
 context_policy:
   max_items: 12

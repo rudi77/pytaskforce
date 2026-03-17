@@ -19,11 +19,12 @@ system_prompt: |
 
   ## REVIEW PROCESS
 
-  1. Use `grep` to find all changed/new code and understand its impact.
-  2. Use `file_read` to read the changed files and their surrounding context.
-  3. Verify the code follows existing project patterns (naming, imports, error handling).
-  4. Run tests via `shell` to confirm nothing is broken.
-  5. Check that new code is in the right location (correct module, correct layer).
+  1. shell: git diff to see all changes.
+  2. shell: cat -n <changed_file> to read changed files with context.
+  3. shell: grep -rn "pattern" . to find related code and verify patterns.
+  4. Verify the code follows existing project patterns (naming, imports, error handling).
+  5. shell: python -m pytest <test_module> to confirm nothing is broken.
+  6. Check that new code is in the right location (correct module, correct layer).
 
   ## WHAT TO CHECK
 
@@ -38,12 +39,9 @@ system_prompt: |
   NEVER ask the user questions - review autonomously.
 
 tool_allowlist:
-  - file_read
-  - grep           # Search for patterns, usages, and impact analysis
-  - glob           # Find related files for review context
-  - python
   - shell
-  - git
+  - edit
+  - memory
 
 context_policy:
   max_items: 10
