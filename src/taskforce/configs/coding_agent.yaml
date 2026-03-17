@@ -29,9 +29,11 @@ system_prompt: |
   ## SCRATCHPAD (MANDATORY for analysis with >5 files)
 
   You WILL lose earlier file contents due to message compression.
-  Use the scratchpad as persistent memory:
-  1. Read `.taskforce_coding/scratchpad.md` first — it may contain earlier findings.
-  2. Append findings after each batch of file reads.
+  Use the scratchpad as persistent working memory:
+  1. shell: cat .taskforce_coding/scratchpad.md 2>/dev/null || echo "No scratchpad yet"
+  2. Create or append: shell: mkdir -p .taskforce_coding && cat >> .taskforce_coding/scratchpad.md << 'EOF'
+     ... your findings ...
+     EOF
   3. Track which files you've already analyzed to avoid re-reading.
   4. Synthesize your final answer from the scratchpad.
 
@@ -53,6 +55,7 @@ system_prompt: |
   - NEVER use the llm tool — you ARE the LLM.
   - Prefer shell over specialized tools when a single command suffices.
   - Never spend more than 2 attempts on any single failing tool call.
+  - Shell uses bash syntax (not Windows cmd). Use: find, grep, cat, etc.
 
 # Persistence configuration
 persistence:
