@@ -177,6 +177,79 @@ async def test_queue_sends_outbound_reply(queue_setup) -> None:
 
 
 @pytest.mark.asyncio
+async def test_queue_reuses_stable_session_id(queue_setup) -> None:
+    """P1: Executor receives the gateway-resolved session_id, not request_id."""
+    gateway, queue, processor, conv_mgr, legacy_store, sender, executor = queue_setup
+
+    task = asyncio.create_task(processor.run())
+    try:
+        msg1 = InboundMessage(
+            channel="telegram",
+            conversation_id="chat-42",
+            message="First",
+            sender_id="user-1",
+        )
+        resp1 = await asyncio.wait_for(gateway.handle_message(msg1), timeout=5.0)
+
+        msg2 = InboundMessage(
+            channel="telegram",
+            conversation_id="chat-42",
+            message="Second",
+            sender_id="user-1",
+        )
+        resp2 = await asyncio.wait_for(gateway.handle_message(msg2), timeout=5.0)
+
+        # Both gateway responses report the same session_id.
+        assert resp1.session_id == resp2.session_id
+
+        # Both executor calls received that same stable session_id.
+        assert len(executor.calls) == 2
+        assert executor.calls[0]["session_id"] == resp1.session_id
+        assert executor.calls[1]["session_id"] == resp2.session_id
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_queue_preserves_gateway_options(queue_setup) -> None:
+    """P2: All GatewayOptions fields are forwarded to the executor."""
+    gateway, queue, processor, conv_mgr, legacy_store, sender, executor = queue_setup
+
+    task = asyncio.create_task(processor.run())
+    try:
+        msg = InboundMessage(
+            channel="telegram",
+            conversation_id="chat-42",
+            message="With options",
+            sender_id="user-1",
+        )
+        options = GatewayOptions(
+            profile="coding_agent",
+            user_context={"org_id": "acme"},
+            agent_id="custom-agent-1",
+            planning_strategy="spar",
+            planning_strategy_params={"max_plan_steps": 5},
+            plugin_path="/path/to/plugin",
+        )
+        await asyncio.wait_for(gateway.handle_message(msg, options), timeout=5.0)
+
+        assert len(executor.calls) == 1
+        call = executor.calls[0]
+        assert call["profile"] == "coding_agent"
+        assert call["user_context"] == {"org_id": "acme"}
+        assert call["agent_id"] == "custom-agent-1"
+        assert call["planning_strategy"] == "spar"
+        assert call["planning_strategy_params"] == {"max_plan_steps": 5}
+        assert call["plugin_path"] == "/path/to/plugin"
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
 async def test_gateway_without_queue_uses_direct_execution() -> None:
     """When no queue is provided, gateway uses direct execution (Phase 3 path)."""
     legacy_store = InMemoryConversationStore()
