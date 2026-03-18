@@ -281,8 +281,12 @@ class ExecuteMissionRequest(BaseModel):
     )
     session_id: str | None = Field(
         default=None,
-        description="Session ID to resume. Auto-generated if omitted.",
-        examples=["550e8400-e29b-41d4-a716-446655440000"]
+        description=(
+            "Deprecated: Use conversation_id instead (ADR-016). "
+            "Session ID to resume. Auto-generated if omitted."
+        ),
+        examples=["550e8400-e29b-41d4-a716-446655440000"],
+        json_schema_extra={"deprecated": True},
     )
     conversation_id: str | None = Field(
         default=None,
@@ -500,6 +504,14 @@ async def execute_mission(
     """
     try:
         user_context = _build_user_context(request)
+
+        # Warn when session_id is used without conversation_id (deprecated path).
+        if request.session_id and not request.conversation_id:
+            _stream_logger.warning(
+                "api.execute.session_id_deprecated",
+                session_id=request.session_id,
+                hint="Use conversation_id instead (ADR-016).",
+            )
 
         # ADR-016: conversation_id and conversation_history are mutually exclusive.
         conversation_history = request.conversation_history

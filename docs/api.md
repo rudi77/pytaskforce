@@ -73,7 +73,7 @@ If the agent needs missing information, it emits an SSE event with `event_type: 
 - **`details.question`**: the question to show the user
 - **`details.missing`**: optional list of missing info items
 
-To resume, call the same endpoint again with the same `session_id` and include the user's answer in `mission` (or in `conversation_history`).
+To resume, call the same endpoint again with the same `session_id` (deprecated) or `conversation_id` (preferred, ADR-016) and include the user's answer in `mission` (or in `conversation_history`).
 
 ### Workflow Resume (Human-in-the-Loop)
 - `POST /api/v1/workflows/wait`: Persist a waiting checkpoint (`run_id`, `node_id`, `blocking_reason`, `required_inputs`).
@@ -136,9 +136,27 @@ response = requests.post(
 )
 ```
 
-### Sessions
+### Sessions (Deprecated)
+
+> **Deprecated (ADR-016):** Session endpoints are deprecated. Use the
+> Conversation endpoints below instead. Responses include `Deprecation`
+> and `Sunset` headers. These endpoints will be removed in a future
+> major release.
+
 - `GET /api/v1/sessions`: List all active sessions.
 - `GET /api/v1/sessions/{session_id}`: Retrieve full state for a specific session.
+- `POST /api/v1/sessions`: Create a new session.
+
+### Conversations (ADR-016)
+
+Persistent conversation management — the replacement for sessions.
+
+- `POST /api/v1/conversations`: Create a new conversation.
+- `GET  /api/v1/conversations`: List active conversations.
+- `GET  /api/v1/conversations/archived`: List archived conversations.
+- `GET  /api/v1/conversations/{id}/messages`: Get messages for a conversation.
+- `POST /api/v1/conversations/{id}/messages`: Send a message (runs agent, returns reply).
+- `POST /api/v1/conversations/{id}/archive`: Archive a conversation.
 
 ### System
 - `GET /health`: Basic liveness check.
