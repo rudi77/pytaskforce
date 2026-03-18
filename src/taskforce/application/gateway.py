@@ -4,11 +4,16 @@ Single entry point for all agent communication regardless of channel.
 Handles inbound message processing, session/history management, agent
 execution, outbound reply dispatch, proactive push notifications,
 and pending channel question resolution.
+
+When a ``ConversationManager`` is provided (ADR-016), the gateway delegates
+history management and conversation lifecycle to it instead of using the
+legacy ``ConversationStoreProtocol`` directly. This enables persistent,
+cross-session conversations.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import structlog
@@ -30,6 +35,9 @@ from taskforce.core.interfaces.gateway import (
     RecipientRegistryProtocol,
 )
 
+if TYPE_CHECKING:
+    from taskforce.application.conversation_manager import ConversationManager
+
 
 class CommunicationGateway:
     """Unified gateway for all agent communication channels.
@@ -38,6 +46,10 @@ class CommunicationGateway:
     outbound reply dispatch, proactive push notifications, and cross-channel
     question resolution into a single orchestration point.
 
+    When ``conversation_manager`` is provided, the gateway uses it for
+    message history and conversation lifecycle instead of the legacy
+    ``conversation_store``.
+
     Usage::
 
         gateway = CommunicationGateway(
@@ -45,6 +57,7 @@ class CommunicationGateway:
             conversation_store=store,
             recipient_registry=registry,
             outbound_senders={"telegram": telegram_sender},
+            conversation_manager=conv_manager,  # ADR-016
         )
 
         # Handle an inbound message (from any channel)
@@ -62,12 +75,14 @@ class CommunicationGateway:
         recipient_registry: RecipientRegistryProtocol,
         outbound_senders: dict[str, OutboundSenderProtocol] | None = None,
         pending_channel_store: PendingChannelQuestionStoreProtocol | None = None,
+        conversation_manager: ConversationManager | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
         self._recipient_registry = recipient_registry
         self._outbound_senders = dict(outbound_senders or {})
         self._pending_channel_store = pending_channel_store
+        self._conversation_manager = conversation_manager
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -143,11 +158,6 @@ class CommunicationGateway:
             explicit_session_id=resolved_options.session_id,
         )
 
-        history = await self._conversation_store.load_history(
-            message.channel, message.conversation_id
-        )
-        history_with_user = _append_message(history, MessageRole.USER.value, message.message)
-
         # Auto-register sender for future push notifications
         if message.sender_id:
             await self._recipient_registry.register(
@@ -158,6 +168,20 @@ class CommunicationGateway:
                     "metadata": message.metadata,
                 },
             )
+
+        # --- ADR-016: conversation-managed history ---
+        if self._conversation_manager:
+            return await self._handle_with_conversation_manager(
+                message=message,
+                session_id=session_id,
+                options=resolved_options,
+            )
+
+        # --- Legacy: channel-keyed conversation store ---
+        history = await self._conversation_store.load_history(
+            message.channel, message.conversation_id
+        )
+        history_with_user = _append_message(history, MessageRole.USER.value, message.message)
 
         result = await self._execute_agent(
             message=message.message,
@@ -405,6 +429,93 @@ class CommunicationGateway:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _handle_with_conversation_manager(
+        self,
+        *,
+        message: InboundMessage,
+        session_id: str,
+        options: GatewayOptions,
+    ) -> GatewayResponse:
+        """Handle message using ConversationManager (ADR-016 path).
+
+        Uses ``ConversationManager`` for history storage and conversation
+        lifecycle instead of the legacy ``ConversationStoreProtocol``.
+        """
+        assert self._conversation_manager is not None  # guarded by caller
+
+        conv_id = await self._conversation_manager.get_or_create(
+            message.channel, message.sender_id
+        )
+
+        # Append user message to conversation.
+        await self._conversation_manager.append_message(
+            conv_id,
+            {"role": MessageRole.USER.value, "content": message.message},
+        )
+
+        # Load full history for agent context.
+        history = await self._conversation_manager.get_messages(conv_id)
+
+        result = await self._execute_agent(
+            message=message.message,
+            session_id=session_id,
+            conversation_history=history,
+            options=options,
+        )
+
+        # Append assistant reply.
+        await self._conversation_manager.append_message(
+            conv_id,
+            {"role": MessageRole.ASSISTANT.value, "content": result.final_message},
+        )
+
+        # Also persist to legacy store for backward compatibility.
+        final_history = await self._conversation_manager.get_messages(conv_id)
+        await self._conversation_store.save_history(
+            message.channel, message.conversation_id, final_history
+        )
+
+        # Send outbound reply.
+        await self._send_outbound_reply(
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            reply=result.final_message,
+            status=result.status,
+        )
+
+        return GatewayResponse(
+            session_id=session_id,
+            status=result.status,
+            reply=result.final_message,
+            history=final_history,
+            conversation_id=conv_id,
+        )
+
+    async def _send_outbound_reply(
+        self,
+        *,
+        channel: str,
+        conversation_id: str,
+        reply: str,
+        status: str | Any,
+    ) -> None:
+        """Send outbound reply if a sender is configured for the channel."""
+        sender = self._outbound_senders.get(channel)
+        if sender:
+            try:
+                await sender.send(
+                    recipient_id=conversation_id,
+                    message=reply,
+                    metadata={"status": status},
+                )
+            except Exception as exc:
+                self._logger.error(
+                    "gateway.outbound.reply_failed",
+                    channel=channel,
+                    conversation_id=conversation_id,
+                    error=str(exc),
+                )
 
     async def _resolve_session_id(
         self,
