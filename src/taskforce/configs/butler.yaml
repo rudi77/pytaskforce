@@ -15,11 +15,7 @@ runtime:
   work_dir: .taskforce
 
 agent:
-  planning_strategy: spar
-  planning_strategy_params:
-    max_step_iterations: 3
-    max_plan_steps: 12
-    reflect_every_step: true
+  planning_strategy: native_react
   max_steps: 50
   llm_fallback: false  # Set true to let LLM handle unmatched events
 
