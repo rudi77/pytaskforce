@@ -59,6 +59,7 @@ class SimpleChatRunner:
         stream: bool,
         user_context: dict[str, Any] | None,
         telegram_polling: bool = False,
+        conversation_manager: Any | None = None,
     ):
         self.session_id = session_id
         self.profile = profile
@@ -77,6 +78,8 @@ class SimpleChatRunner:
         self._prompt_session: PromptSession[str] | None = None
         self._telegram_poller: Any | None = None
         self._gateway: Any | None = None
+        self._conversation_manager = conversation_manager
+        self._conversation_id: str | None = None
 
         # Wire up Communication Gateway for channel-targeted ask_user
         self._setup_gateway()
@@ -162,6 +165,10 @@ class SimpleChatRunner:
         self._print_banner()
         self._print_session_info()
 
+        # Initialize conversation tracking if manager is available.
+        if self._conversation_manager:
+            self._conversation_id = await self._conversation_manager.get_or_create("cli")
+
         # Start Telegram long-polling if configured
         if self._telegram_poller:
             await self._telegram_poller.start()
@@ -229,6 +236,8 @@ class SimpleChatRunner:
             self._print_system("Export functionality coming soon...", style="warning")
         elif cmd_name in ["exit", "quit", "q"]:
             return True
+        elif cmd_name == "new":
+            await self._start_new_conversation()
         elif cmd_name == "debug":
             self._print_system("Debug mode toggling is not used in simple mode.", style="warning")
         elif cmd_name == "tokens":
@@ -265,6 +274,7 @@ class SimpleChatRunner:
         help_text = (
             "**Commands:**\n"
             "- /help or /h\n"
+            "- /new — start a new conversation\n"
             "- /clear or /c\n"
             "- /export or /e\n"
             "- /tokens\n"
@@ -412,6 +422,13 @@ class SimpleChatRunner:
         history.append({"role": MessageRole.USER.value, "content": content})
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
+
+        # Mirror to conversation manager for persistent conversation tracking.
+        if self._conversation_manager and self._conversation_id:
+            await self._conversation_manager.append_message(
+                self._conversation_id,
+                {"role": MessageRole.USER.value, "content": content},
+            )
 
         await self._stream_response(content, history)
 
@@ -573,6 +590,7 @@ class SimpleChatRunner:
                 )
                 state["conversation_history"] = history
                 await self.agent.state_manager.save_state(self.session_id, state)
+                await self._mirror_assistant_message(question_text)
             return
 
         final_message = "".join(final_tokens) if final_tokens else "No response"
@@ -587,6 +605,7 @@ class SimpleChatRunner:
         )
         state["conversation_history"] = history
         await self.agent.state_manager.save_state(self.session_id, state)
+        await self._mirror_assistant_message(final_message)
 
     def _handle_plan_update(self, update: ProgressUpdate) -> None:
         """Handle plan update events."""
@@ -632,6 +651,29 @@ class SimpleChatRunner:
                 line = line.strip()
                 if line:
                     self.console.print(f"  {line}")
+
+    async def _start_new_conversation(self) -> None:
+        """Start a new conversation, archiving the current one.
+
+        If a ``ConversationManager`` is wired in, this creates a new
+        conversation and resets the local context. Otherwise falls back
+        to a simple context reset.
+        """
+        if self._conversation_manager:
+            self._conversation_id = await self._conversation_manager.create_new("cli")
+            self._print_system(
+                f"New conversation started: {self._conversation_id[:8]}",
+                style="info",
+            )
+        await self._reset_context()
+
+    async def _mirror_assistant_message(self, content: str) -> None:
+        """Mirror an assistant message to the conversation manager."""
+        if self._conversation_manager and self._conversation_id:
+            await self._conversation_manager.append_message(
+                self._conversation_id,
+                {"role": MessageRole.ASSISTANT.value, "content": content},
+            )
 
     async def _reset_context(self) -> None:
         """Reset conversation context to default state.
