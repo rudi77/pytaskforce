@@ -250,6 +250,22 @@ async def test_queue_preserves_gateway_options(queue_setup) -> None:
 
 
 @pytest.mark.asyncio
+async def test_queue_without_processor_raises(queue_setup) -> None:
+    """P2: Gateway raises RuntimeError when no consumer is active on the queue."""
+    gateway, queue, processor, conv_mgr, legacy_store, sender, executor = queue_setup
+
+    # Do NOT start the processor — queue has no consumer.
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="Should fail",
+        sender_id="user-1",
+    )
+    with pytest.raises(RuntimeError, match="no active consumer"):
+        await gateway.handle_message(msg)
+
+
+@pytest.mark.asyncio
 async def test_gateway_without_queue_uses_direct_execution() -> None:
     """When no queue is provided, gateway uses direct execution (Phase 3 path)."""
     legacy_store = InMemoryConversationStore()

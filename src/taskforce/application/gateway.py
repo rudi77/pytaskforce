@@ -457,13 +457,24 @@ class CommunicationGateway:
 
         Creates a conversation via ``ConversationManager``, wraps the message
         in an ``AgentRequest``, enqueues it, and awaits the result Future.
-        The ``RequestProcessor`` on the other end handles execution and
-        conversation history management.
+
+        A ``RequestProcessor`` (or ``PersistentAgentService``) **must** be
+        consuming the queue before this method is called — otherwise the
+        ``await future`` below will block indefinitely.
+
+        Raises:
+            RuntimeError: If no consumer is active on the queue.
         """
         from taskforce.core.domain.request import AgentRequest
 
         assert self._request_queue is not None
         assert self._conversation_manager is not None
+
+        if not self._request_queue.is_running:
+            raise RuntimeError(
+                "RequestQueue has no active consumer. Start a RequestProcessor "
+                "or PersistentAgentService before routing messages through the queue."
+            )
 
         conv_id = await self._conversation_manager.get_or_create(
             message.channel, message.sender_id
