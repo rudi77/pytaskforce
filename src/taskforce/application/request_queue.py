@@ -89,6 +89,14 @@ class RequestQueue:
         """Whether the processing loop is active."""
         return self._running
 
+    def set_running(self, value: bool) -> None:
+        """Mark the queue as having an active consumer.
+
+        Called by ``RequestProcessor.run()`` and ``process_loop()`` to
+        signal that a consumer is attached.
+        """
+        self._running = value
+
     @property
     def pending_count(self) -> int:
         """Number of requests with outstanding Futures."""
@@ -242,6 +250,7 @@ class RequestProcessor:
         queue's ``fail()`` mechanism so the loop continues.
         """
         self._running = True
+        self._queue.set_running(True)
         self._logger.info("request_processor.started")
         try:
             while True:
@@ -252,6 +261,7 @@ class RequestProcessor:
             raise
         finally:
             self._running = False
+            self._queue.set_running(False)
 
     async def _process_request(self, request: AgentRequest) -> None:
         """Process a single request and deliver the result."""
