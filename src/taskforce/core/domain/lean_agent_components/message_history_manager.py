@@ -135,7 +135,7 @@ class MessageHistoryManager:
         if not (should_compress_budget or should_compress_count):
             return messages
 
-        self._logger.warning(
+        self._logger.info(
             "compressing_messages",
             message_count=message_count,
             threshold=self._summary_threshold,
