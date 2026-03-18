@@ -24,7 +24,7 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_executor
+from taskforce.api.dependencies import get_conversation_manager, get_executor
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
@@ -284,6 +284,16 @@ class ExecuteMissionRequest(BaseModel):
         description="Session ID to resume. Auto-generated if omitted.",
         examples=["550e8400-e29b-41d4-a716-446655440000"]
     )
+    conversation_id: str | None = Field(
+        default=None,
+        description=(
+            "Conversation ID for persistent agent mode (ADR-016). "
+            "When provided, conversation history is managed automatically "
+            "via the ConversationManager. Mutually exclusive with "
+            "conversation_history."
+        ),
+        examples=["telegram:user-1:abc123"],
+    )
     conversation_history: list[dict[str, Any]] | None = Field(
         default=None,
         description="Optional conversation history for chat context.",
@@ -346,25 +356,22 @@ class ExecuteMissionResponse(BaseModel):
 
     Attributes:
         session_id: Unique identifier for this execution session.
+        conversation_id: Conversation ID when using persistent agent mode.
         status: Execution status. Possible values:
             - "completed": Mission finished successfully
             - "failed": Mission execution failed
             - "paused": Waiting for user input (ask_user action)
             - "pending": Execution incomplete (timeout/max steps)
         message: Human-readable summary of the execution result.
-
-    Example::
-
-        {
-            "session_id": "550e8400-e29b-41d4-a716-446655440000",
-            "status": "completed",
-            "message": "Found 5 recent AI news articles..."
-        }
     """
 
     session_id: str = Field(
         ...,
         description="Unique session identifier."
+    )
+    conversation_id: str | None = Field(
+        default=None,
+        description="Conversation ID (persistent agent mode, ADR-016).",
     )
     status: str = Field(
         ...,
@@ -493,11 +500,28 @@ async def execute_mission(
     """
     try:
         user_context = _build_user_context(request)
+
+        # ADR-016: conversation_id and conversation_history are mutually exclusive.
+        conversation_history = request.conversation_history
+        conv_id = request.conversation_id
+        if conv_id and conversation_history:
+            raise ValueError(
+                "conversation_id and conversation_history are mutually exclusive"
+            )
+
+        # When conversation_id is provided, load history from ConversationManager.
+        if conv_id:
+            conv_mgr = get_conversation_manager()
+            await conv_mgr.append_message(
+                conv_id, {"role": "user", "content": request.mission}
+            )
+            conversation_history = await conv_mgr.get_messages(conv_id)
+
         result = await executor.execute_mission(
             mission=request.mission,
             profile=request.profile,
             session_id=request.session_id,
-            conversation_history=request.conversation_history,
+            conversation_history=conversation_history,
             user_context=user_context,
             agent_id=request.agent_id,
             planning_strategy=request.planning_strategy,
@@ -506,10 +530,18 @@ async def execute_mission(
             auto_epic=request.auto_epic,
         )
 
+        # Persist assistant reply to conversation.
+        if conv_id:
+            conv_mgr = get_conversation_manager()
+            await conv_mgr.append_message(
+                conv_id, {"role": "assistant", "content": result.final_message}
+            )
+
         return ExecuteMissionResponse(
             session_id=result.session_id,
+            conversation_id=conv_id,
             status=result.status,
-            message=result.final_message
+            message=result.final_message,
         )
     except TaskforceError as e:
         raise _http_exception(

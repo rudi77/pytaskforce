@@ -194,6 +194,80 @@ class TestExecuteMission:
         assert "message" in body
 
 
+class TestConversationIdSupport:
+    """Tests for conversation_id in POST /api/v1/execute (ADR-016)."""
+
+    def test_execute_with_conversation_id(self, tmp_path):
+        """conversation_id loads/stores history via ConversationManager."""
+        import asyncio
+
+        from taskforce.api.dependencies import get_conversation_manager, get_executor
+        from taskforce.application.conversation_manager import ConversationManager
+        from taskforce.infrastructure.persistence.file_conversation_store import (
+            FileConversationStore,
+        )
+
+        store = FileConversationStore(work_dir=str(tmp_path))
+        mgr = ConversationManager(store)
+        conv_id = asyncio.run(mgr.get_or_create("rest", "user-1"))
+
+        mock_exec = AsyncMock()
+        mock_exec.execute_mission = AsyncMock(return_value=_mock_result())
+
+        # Patch lru_cache so the route's direct call returns our manager.
+        original = get_conversation_manager.__wrapped__
+        get_conversation_manager.cache_clear()
+
+        app = create_app()
+        app.dependency_overrides[get_executor] = lambda: mock_exec
+
+        import unittest.mock
+
+        with unittest.mock.patch(
+            "taskforce.api.routes.execution.get_conversation_manager", return_value=mgr
+        ):
+            with TestClient(app) as c:
+                response = c.post(
+                    "/api/v1/execute",
+                    json={"mission": "Hello", "conversation_id": conv_id},
+                )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["conversation_id"] == conv_id
+
+        messages = asyncio.run(mgr.get_messages(conv_id))
+        assert len(messages) == 2
+        assert messages[0]["role"] == "user"
+        assert messages[1]["role"] == "assistant"
+
+    def test_conversation_id_and_history_mutually_exclusive(self, client, mock_executor):
+        response = client.post(
+            "/api/v1/execute",
+            json={
+                "mission": "test",
+                "conversation_id": "conv-1",
+                "conversation_history": [{"role": "user", "content": "hi"}],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "mutually exclusive" in body["message"]
+
+    def test_response_includes_conversation_id_null_by_default(self, client, mock_executor):
+        mock_executor.execute_mission = AsyncMock(return_value=_mock_result())
+
+        response = client.post(
+            "/api/v1/execute",
+            json={"mission": "test"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["conversation_id"] is None
+
+
 class TestExecuteStream:
     """Tests for POST /api/v1/execute/stream."""
 

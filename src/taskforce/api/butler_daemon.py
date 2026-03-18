@@ -4,8 +4,9 @@ The daemon is the top-level process that:
 1. Loads butler profile configuration
 2. Builds all infrastructure components
 3. Starts the ButlerService with event sources, scheduler, and rules
-4. Writes periodic status files for the CLI to read
-5. Handles graceful shutdown
+4. Optionally starts a PersistentAgentService for queue-based execution
+5. Writes periodic status files for the CLI to read
+6. Handles graceful shutdown
 """
 
 from __future__ import annotations
@@ -28,16 +29,24 @@ class ButlerDaemon:
 
     Initializes and manages all butler components based on
     the butler profile YAML configuration.
+
+    When ``persistent_agent=True`` (default), the daemon creates a
+    ``PersistentAgentService`` that processes all mission-execution
+    requests through a central ``RequestQueue``, ensuring sequential
+    agent execution and persistent conversation state (ADR-016).
     """
 
     def __init__(
         self,
         profile: str = "butler",
         work_dir: str = ".taskforce",
+        persistent_agent: bool = True,
     ) -> None:
         self._profile = profile
         self._work_dir = work_dir
+        self._persistent_agent_enabled = persistent_agent
         self._butler: ButlerService | None = None
+        self._agent_service: Any = None  # PersistentAgentService | None
         self._running = False
         self._status_task: asyncio.Task[None] | None = None
         self._status_path = Path(work_dir) / "butler" / "status.json"
@@ -46,6 +55,11 @@ class ButlerDaemon:
     def is_running(self) -> bool:
         """Whether the daemon is active."""
         return self._running
+
+    @property
+    def agent_service(self) -> Any:
+        """The PersistentAgentService, if active."""
+        return self._agent_service
 
     async def start(self) -> None:
         """Start the butler daemon with full component initialization."""
@@ -66,7 +80,7 @@ class ButlerDaemon:
         # Try to wire up communication gateway
         await self._setup_gateway(config)
 
-        # Try to wire up executor
+        # Try to wire up executor (and optionally PersistentAgentService)
         await self._setup_executor(config)
 
         # Set up event sources
@@ -75,8 +89,14 @@ class ButlerDaemon:
         # Load rules from config
         await self._load_rules(config)
 
-        # Start the service
+        # Start the butler service
         await self._butler.start()
+
+        # Start the persistent agent service if wired
+        if self._agent_service:
+            await self._agent_service.start()
+            logger.info("butler_daemon.persistent_agent_started")
+
         self._running = True
 
         # Start periodic status writer
@@ -94,6 +114,10 @@ class ButlerDaemon:
                 await self._status_task
             except asyncio.CancelledError:
                 pass
+
+        # Stop persistent agent service first (drains queue).
+        if self._agent_service:
+            await self._agent_service.stop()
 
         if self._butler:
             await self._butler.stop()
@@ -155,7 +179,7 @@ class ButlerDaemon:
             logger.warning("butler_daemon.gateway_setup_failed", error=str(exc))
 
     async def _setup_executor(self, config: dict[str, Any]) -> None:
-        """Set up the agent executor."""
+        """Set up the agent executor and optionally the PersistentAgentService."""
         if self._butler is None:
             return
 
@@ -165,8 +189,52 @@ class ButlerDaemon:
             executor = AgentExecutor()
             self._butler.set_executor(executor)
             logger.info("butler_daemon.executor_configured")
+
+            # Wire PersistentAgentService when enabled.
+            if self._persistent_agent_enabled:
+                self._agent_service = self._build_persistent_agent_service(
+                    executor, config
+                )
+                if self._agent_service:
+                    logger.info("butler_daemon.persistent_agent_configured")
         except Exception as exc:
             logger.warning("butler_daemon.executor_setup_failed", error=str(exc))
+
+    def _build_persistent_agent_service(
+        self,
+        executor: Any,
+        config: dict[str, Any],
+    ) -> Any:
+        """Build PersistentAgentService with ConversationManager and AgentState."""
+        try:
+            from taskforce.application.conversation_manager import ConversationManager
+            from taskforce.application.persistent_agent_service import (
+                PersistentAgentService,
+            )
+            from taskforce.infrastructure.persistence.file_agent_state import (
+                FileAgentState,
+            )
+            from taskforce.infrastructure.persistence.file_conversation_store import (
+                FileConversationStore,
+            )
+
+            agent_state = FileAgentState(work_dir=self._work_dir)
+            conv_store = FileConversationStore(work_dir=self._work_dir)
+            conv_manager = ConversationManager(conv_store)
+
+            queue_cfg = config.get("request_queue", {})
+            return PersistentAgentService(
+                executor=executor,
+                agent_state=agent_state,
+                conversation_manager=conv_manager,
+                queue_max_size=queue_cfg.get("max_size", 100),
+                drain_timeout=queue_cfg.get("drain_timeout", 30.0),
+            )
+        except Exception as exc:
+            logger.warning(
+                "butler_daemon.persistent_agent_build_failed", error=str(exc)
+            )
+            return None
 
     async def _setup_event_sources(self, config: dict[str, Any]) -> None:
         """Set up event sources from configuration."""
@@ -240,6 +308,20 @@ class ButlerDaemon:
             status = await self._butler.get_status()
             status["updated_at"] = utc_now().isoformat()
             status["profile"] = self._profile
+
+            # Include persistent agent status when available.
+            if self._agent_service:
+                agent_status = await self._agent_service.status()
+                status["persistent_agent"] = {
+                    "running": agent_status.running,
+                    "queue_size": agent_status.queue_size,
+                    "active_conversations": agent_status.active_conversations,
+                    "last_activity": (
+                        agent_status.last_activity.isoformat()
+                        if agent_status.last_activity
+                        else None
+                    ),
+                }
 
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._status_path.with_suffix(".json.tmp")
