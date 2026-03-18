@@ -121,6 +121,37 @@ def get_inbound_adapters() -> dict[str, Any]:
     return get_gateway_components().inbound_adapters
 
 
+# ---------------------------------------------------------------------------
+# Conversation Manager (ADR-016: Persistent Agent Architecture)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_conversation_manager():
+    """Provide a ConversationManager instance backed by file storage."""
+    from taskforce.application.conversation_manager import ConversationManager
+    from taskforce.infrastructure.persistence.file_conversation_store import (
+        FileConversationStore,
+    )
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    store = FileConversationStore(work_dir=work_dir)
+    return ConversationManager(store)
+
+
+@lru_cache(maxsize=1)
+def get_request_queue():
+    """Provide a shared RequestQueue instance."""
+    from taskforce.application.request_queue import RequestQueue
+
+    return RequestQueue()
+
+
+# ---------------------------------------------------------------------------
+# Workflow Runtime Service
+# ---------------------------------------------------------------------------
+
+
 @lru_cache(maxsize=1)
 def get_workflow_runtime_service():
     """Provide a shared WorkflowRuntimeService instance."""
