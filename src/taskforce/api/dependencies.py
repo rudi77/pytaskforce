@@ -99,12 +99,14 @@ def get_gateway():
     components = get_gateway_components()
     executor = get_executor()
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    conversation_manager = get_conversation_manager()
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
         recipient_registry=components.recipient_registry,
         outbound_senders=components.outbound_senders,
         pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
+        conversation_manager=conversation_manager,
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed

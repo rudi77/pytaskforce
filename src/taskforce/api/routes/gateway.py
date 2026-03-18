@@ -101,6 +101,10 @@ class GatewayMessageResponse(BaseModel):
     status: str = Field(..., description="Execution status.")
     reply: str = Field(..., description="Agent reply message.")
     history_length: int = Field(..., description="Total history entries for this conversation.")
+    conversation_id: str | None = Field(
+        default=None,
+        description="Persistent conversation ID (ADR-016). Null when ConversationManager is not configured.",
+    )
 
 
 class NotificationRequestSchema(BaseModel):
@@ -225,6 +229,7 @@ async def handle_message(
         status=response.status,
         reply=response.reply,
         history_length=len(response.history),
+        conversation_id=response.conversation_id,
     )
 
 
@@ -305,6 +310,7 @@ async def handle_webhook(
         status=response.status,
         reply=response.reply,
         history_length=len(response.history),
+        conversation_id=response.conversation_id,
     )
 
 

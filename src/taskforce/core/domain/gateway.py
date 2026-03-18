@@ -63,12 +63,15 @@ class GatewayResponse:
         status: Execution status (completed, failed, paused, pending).
         reply: The agent's reply message.
         history: Full conversation history after this exchange.
+        conversation_id: The persistent conversation ID (ADR-016).
+            ``None`` when the gateway runs without a ConversationManager.
     """
 
     session_id: str
     status: str
     reply: str
     history: list[dict[str, Any]] = field(default_factory=list)
+    conversation_id: str | None = None
 
 
 @dataclass(frozen=True)
