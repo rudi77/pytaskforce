@@ -7,6 +7,7 @@ from taskforce.api.cli.commands import (
     butler,
     chat,
     config,
+    conversations,
     epic,
     memory,
     missions,
@@ -32,6 +33,7 @@ app.add_typer(chat.app, name="chat", help="Interactive chat mode")
 app.add_typer(tools.app, name="tools", help="Tool management")
 app.add_typer(skills.app, name="skills", help="Skill management")
 app.add_typer(sessions.app, name="sessions", help="Session management")
+app.add_typer(conversations.app, name="conversations", help="Conversation management")
 app.add_typer(missions.app, name="missions", help="Mission management")
 app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(epic.app, name="epic", help="Epic orchestration workflows")
