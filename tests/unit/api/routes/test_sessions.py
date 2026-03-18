@@ -1,4 +1,8 @@
-"""Unit tests for the sessions routes."""
+"""Unit tests for the sessions routes (deprecated endpoints).
+
+These tests verify that the session endpoints still work but include
+deprecation headers and are marked as deprecated in OpenAPI (ADR-016).
+"""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -61,6 +65,12 @@ class TestListSessions:
         assert isinstance(body, list)
         assert len(body) == 2
 
+    def test_list_sessions_returns_deprecation_headers(self, client):
+        response = client.get("/api/v1/sessions", params={"profile": "dev"})
+        assert response.headers.get("Deprecation") == "true"
+        assert "Sunset" in response.headers
+        assert "/api/v1/conversations" in response.headers.get("Link", "")
+
     def test_list_sessions_profile_not_found(self):
         factory = MagicMock()
         factory.create_agent = AsyncMock(
@@ -91,6 +101,13 @@ class TestGetSession:
         body = response.json()
         assert body["session_id"] == "s1"
         assert body["status"] == "completed"
+
+    def test_get_session_returns_deprecation_headers(self, client):
+        response = client.get(
+            "/api/v1/sessions/s1", params={"profile": "dev"}
+        )
+        assert response.headers.get("Deprecation") == "true"
+        assert "Sunset" in response.headers
 
     def test_get_session_not_found(self):
         factory = MagicMock()
@@ -127,3 +144,29 @@ class TestCreateSession:
         assert "session_id" in body
         assert body["mission"] == "New mission"
         assert body["status"] == "created"
+
+    def test_create_session_returns_deprecation_headers(self, client):
+        response = client.post(
+            "/api/v1/sessions",
+            params={"profile": "dev", "mission": "New mission"},
+        )
+        assert response.headers.get("Deprecation") == "true"
+        assert "Sunset" in response.headers
+
+
+class TestSessionsOpenAPIDeprecation:
+    """Verify session endpoints are marked deprecated in OpenAPI schema."""
+
+    def test_sessions_marked_deprecated_in_openapi(self, client):
+        response = client.get("/openapi.json")
+        schema = response.json()
+        paths = schema.get("paths", {})
+
+        sessions_list = paths.get("/api/v1/sessions", {}).get("get", {})
+        assert sessions_list.get("deprecated") is True
+
+        sessions_get = paths.get("/api/v1/sessions/{session_id}", {}).get("get", {})
+        assert sessions_get.get("deprecated") is True
+
+        sessions_post = paths.get("/api/v1/sessions", {}).get("post", {})
+        assert sessions_post.get("deprecated") is True

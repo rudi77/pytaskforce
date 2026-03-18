@@ -1,13 +1,36 @@
+"""Session management API routes.
+
+.. deprecated::
+    Session endpoints are deprecated in favour of the Conversation API
+    (ADR-016). Use ``/api/v1/conversations`` instead. These endpoints will
+    be removed in a future major release.
+"""
+
 import uuid
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from taskforce.api.dependencies import get_factory
 from taskforce.api.errors import http_exception as _http_exception
 
+logger = structlog.get_logger(__name__)
+
+_DEPRECATION_NOTICE = (
+    "This endpoint is deprecated. Use /api/v1/conversations instead (ADR-016)."
+)
+
 router = APIRouter()
+
+
+def _add_deprecation_headers(response: JSONResponse) -> None:
+    """Inject standard deprecation headers into a response."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-12-31"
+    response.headers["Link"] = '</api/v1/conversations>; rel="successor-version"'
 
 
 class SessionResponse(BaseModel):
@@ -17,7 +40,7 @@ class SessionResponse(BaseModel):
     created_at: str
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get("/sessions", response_model=list[SessionResponse], deprecated=True)
 async def list_sessions(
     profile: str = Query(
         ...,
@@ -25,7 +48,12 @@ async def list_sessions(
     ),
     factory=Depends(get_factory),
 ):
-    """List all agent sessions."""
+    """List all agent sessions.
+
+    .. deprecated::
+        Use ``GET /api/v1/conversations`` instead.
+    """
+    logger.warning("api.sessions.deprecated", endpoint="GET /sessions", notice=_DEPRECATION_NOTICE)
     try:
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError as e:
@@ -53,12 +81,14 @@ async def list_sessions(
                     )
                 )
 
-        return results
+        response = JSONResponse(content=[r.model_dump() for r in results])
+        _add_deprecation_headers(response)
+        return response
     finally:
         await agent.close()
 
 
-@router.get("/sessions/{session_id}", response_model=SessionResponse)
+@router.get("/sessions/{session_id}", response_model=SessionResponse, deprecated=True)
 async def get_session(
     session_id: str,
     profile: str = Query(
@@ -67,7 +97,16 @@ async def get_session(
     ),
     factory=Depends(get_factory),
 ):
-    """Get session details."""
+    """Get session details.
+
+    .. deprecated::
+        Use ``GET /api/v1/conversations/{conversation_id}/messages`` instead.
+    """
+    logger.warning(
+        "api.sessions.deprecated",
+        endpoint="GET /sessions/{session_id}",
+        notice=_DEPRECATION_NOTICE,
+    )
     try:
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError as e:
@@ -89,17 +128,20 @@ async def get_session(
                 details={"session_id": session_id},
             )
 
-        return SessionResponse(
+        data = SessionResponse(
             session_id=session_id,
             mission=state.get("mission", ""),
             status=state.get("status", ""),
             created_at=state.get("created_at", ""),
         )
+        response = JSONResponse(content=data.model_dump())
+        _add_deprecation_headers(response)
+        return response
     finally:
         await agent.close()
 
 
-@router.post("/sessions", response_model=SessionResponse)
+@router.post("/sessions", response_model=SessionResponse, deprecated=True)
 async def create_session(
     profile: str = Query(
         ...,
@@ -108,7 +150,12 @@ async def create_session(
     mission: str = "",
     factory=Depends(get_factory),
 ):
-    """Create a new session."""
+    """Create a new session.
+
+    .. deprecated::
+        Use ``POST /api/v1/conversations`` instead.
+    """
+    logger.warning("api.sessions.deprecated", endpoint="POST /sessions", notice=_DEPRECATION_NOTICE)
     try:
         agent = await factory.create_agent(profile=profile)
     except FileNotFoundError as e:
@@ -128,12 +175,15 @@ async def create_session(
         }
         await agent.state_manager.save_state(session_id, initial_state)
 
-        return SessionResponse(
+        data = SessionResponse(
             session_id=session_id,
             mission=mission,
             status="created",
             created_at=initial_state["created_at"],
         )
+        response = JSONResponse(content=data.model_dump())
+        _add_deprecation_headers(response)
+        return response
     finally:
         await agent.close()
 

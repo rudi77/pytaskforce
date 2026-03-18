@@ -114,11 +114,33 @@ taskforce tools list
 taskforce tools inspect python
 ```
 
-### Sessions
-View and resume previous agent sessions:
+### Sessions (Deprecated)
+
+> **Deprecated:** The `sessions` command group is deprecated in favour of
+> `conversations` (ADR-016: Persistent Agent Architecture). These commands
+> will be removed in a future major release.
+
 ```powershell
-taskforce sessions list
-taskforce sessions show <session-id>
+taskforce sessions list          # deprecated — use 'taskforce conversations list'
+taskforce sessions show <id>     # deprecated — use 'taskforce conversations show'
+```
+
+### Conversations
+
+Manage persistent agent conversations (ADR-016):
+
+```powershell
+# List active conversations
+taskforce conversations list
+
+# List archived conversations
+taskforce conversations list --archived
+
+# Show messages for a conversation
+taskforce conversations show <conversation-id>
+
+# Archive a conversation
+taskforce conversations archive <conversation-id>
 ```
 
 ### Configuration

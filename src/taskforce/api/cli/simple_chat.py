@@ -416,19 +416,30 @@ class SimpleChatRunner:
         return True
 
     async def _handle_chat_message(self, content: str) -> None:
-        """Handle a regular chat message."""
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
-        history = state.get("conversation_history", [])
-        history.append({"role": MessageRole.USER.value, "content": content})
-        state["conversation_history"] = history
-        await self.agent.state_manager.save_state(self.session_id, state)
+        """Handle a regular chat message.
 
-        # Mirror to conversation manager for persistent conversation tracking.
+        When a ``ConversationManager`` is wired (ADR-016 persistent mode),
+        it is the **primary** store for conversation history. The legacy
+        session-based state is still written for backward compatibility.
+        """
+        user_msg = {"role": MessageRole.USER.value, "content": content}
+
+        # Primary: persist to ConversationManager when available.
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
-                self._conversation_id,
-                {"role": MessageRole.USER.value, "content": content},
+                self._conversation_id, user_msg,
             )
+            # Load history from conversation manager (source of truth).
+            history = await self._conversation_manager.get_messages(
+                self._conversation_id,
+            )
+        else:
+            # Fallback: legacy session-based history.
+            state = await self.agent.state_manager.load_state(self.session_id) or {}
+            history = state.get("conversation_history", [])
+            history.append(user_msg)
+            state["conversation_history"] = history
+            await self.agent.state_manager.save_state(self.session_id, state)
 
         await self._stream_response(content, history)
 
@@ -579,33 +590,11 @@ class SimpleChatRunner:
         if paused_question is not None:
             question_text = str(paused_question.get("question", "")).strip()
             if question_text:
-                state = await self.agent.state_manager.load_state(self.session_id) or {}
-                history = state.get("conversation_history", [])
-                history.append(
-                    {
-                        "role": MessageRole.ASSISTANT.value,
-                        "content": question_text,
-                        "verified": True,
-                    }
-                )
-                state["conversation_history"] = history
-                await self.agent.state_manager.save_state(self.session_id, state)
-                await self._mirror_assistant_message(question_text)
+                await self._persist_assistant_message(question_text)
             return
 
         final_message = "".join(final_tokens) if final_tokens else "No response"
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
-        history = state.get("conversation_history", [])
-        history.append(
-            {
-                "role": MessageRole.ASSISTANT.value,
-                "content": final_message,
-                "verified": True,
-            }
-        )
-        state["conversation_history"] = history
-        await self.agent.state_manager.save_state(self.session_id, state)
-        await self._mirror_assistant_message(final_message)
+        await self._persist_assistant_message(final_message)
 
     def _handle_plan_update(self, update: ProgressUpdate) -> None:
         """Handle plan update events."""
@@ -667,8 +656,35 @@ class SimpleChatRunner:
             )
         await self._reset_context()
 
+    async def _persist_assistant_message(self, content: str) -> None:
+        """Persist an assistant message using the primary store.
+
+        In persistent mode (ADR-016), the ConversationManager is the
+        primary store. Otherwise falls back to the legacy session state.
+        """
+        assistant_msg = {
+            "role": MessageRole.ASSISTANT.value,
+            "content": content,
+            "verified": True,
+        }
+        if self._conversation_manager and self._conversation_id:
+            await self._conversation_manager.append_message(
+                self._conversation_id, assistant_msg,
+            )
+        else:
+            state = await self.agent.state_manager.load_state(self.session_id) or {}
+            history = state.get("conversation_history", [])
+            history.append(assistant_msg)
+            state["conversation_history"] = history
+            await self.agent.state_manager.save_state(self.session_id, state)
+
     async def _mirror_assistant_message(self, content: str) -> None:
-        """Mirror an assistant message to the conversation manager."""
+        """Mirror an assistant message to the conversation manager.
+
+        .. deprecated::
+            Kept for backward compatibility. New code should use
+            ``_persist_assistant_message`` instead.
+        """
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
                 self._conversation_id,
@@ -678,25 +694,36 @@ class SimpleChatRunner:
     async def _reset_context(self) -> None:
         """Reset conversation context to default state.
 
-        Clears conversation history from the state manager and resets
-        in-memory counters (tokens, plan state, dedup signature).
+        Clears conversation history and resets in-memory counters
+        (tokens, plan state, dedup signature). In persistent mode
+        the conversation is archived and a new one started; otherwise
+        the legacy session state is cleared.
         """
         self.total_tokens = 0
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature = None
 
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
-        state["conversation_history"] = []
-        await self.agent.state_manager.save_state(self.session_id, state)
+        if not (self._conversation_manager and self._conversation_id):
+            # Legacy fallback: clear session state.
+            state = await self.agent.state_manager.load_state(self.session_id) or {}
+            state["conversation_history"] = []
+            await self.agent.state_manager.save_state(self.session_id, state)
 
     def _print_banner(self) -> None:
         self.console.print("[info]💬 Taskforce Chat (Simple)[/info]")
         self.console.print("[info]Enter to send, Alt+Enter for newline, /help for commands[/info]")
 
     def _print_session_info(self) -> None:
-        self.console.print(
-            f"[info]Session:[/info] {self.session_id[:8]}  " f"[info]Profile:[/info] {self.profile}"
-        )
+        if self._conversation_id:
+            self.console.print(
+                f"[info]Conversation:[/info] {self._conversation_id[:8]}  "
+                f"[info]Profile:[/info] {self.profile}"
+            )
+        else:
+            self.console.print(
+                f"[info]Session:[/info] {self.session_id[:8]}  "
+                f"[info]Profile:[/info] {self.profile}"
+            )
         if self.telegram_polling:
             self.console.print("[info]Telegram polling:[/info] enabled")
         if self.user_context:
@@ -755,6 +782,7 @@ async def run_simple_chat(
     stream: bool,
     user_context: dict[str, Any] | None,
     telegram_polling: bool = False,
+    conversation_manager: Any | None = None,
 ) -> None:
     """Entry point to run the simple chat loop."""
     runner = SimpleChatRunner(
@@ -764,5 +792,6 @@ async def run_simple_chat(
         stream=stream,
         user_context=user_context,
         telegram_polling=telegram_polling,
+        conversation_manager=conversation_manager,
     )
     await runner.run()

@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -120,6 +121,16 @@ def _run_chat(
         # Create agent using Agent (the standard agent implementation)
         factory = AgentFactory()
 
+        # ADR-016: Wire ConversationManager by default (persistent mode).
+        from taskforce.application.conversation_manager import ConversationManager
+        from taskforce.infrastructure.persistence.file_conversation_store import (
+            FileConversationStore,
+        )
+
+        work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+        conversation_store = FileConversationStore(work_dir=work_dir)
+        conversation_manager = ConversationManager(conversation_store)
+
         # Determine display name for the profile/plugin
         display_profile = profile
 
@@ -151,6 +162,7 @@ def _run_chat(
                 stream=True,
                 user_context=user_context,
                 telegram_polling=telegram_polling,
+                conversation_manager=conversation_manager,
             )
         finally:
             # Clean up agent connections

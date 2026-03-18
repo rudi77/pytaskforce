@@ -1,4 +1,9 @@
-"""Sessions command - Manage agent sessions."""
+"""Sessions command - Manage agent sessions.
+
+.. deprecated::
+    The ``sessions`` command group is deprecated. Use ``taskforce conversations``
+    instead (ADR-016: Persistent Agent Architecture).
+"""
 
 import asyncio
 
@@ -8,8 +13,13 @@ from rich.table import Table
 
 from taskforce.application.factory import AgentFactory
 
-app = typer.Typer(help="Session management")
+app = typer.Typer(help="Session management (deprecated — use 'conversations' instead)")
 console = Console()
+
+_DEPRECATION_MSG = (
+    "[yellow]⚠️  Deprecated:[/yellow] 'taskforce sessions' is deprecated. "
+    "Use 'taskforce conversations' instead (ADR-016)."
+)
 
 
 @app.command("list")
@@ -22,7 +32,8 @@ def list_sessions(
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
 ):
-    """List all agent sessions."""
+    """List all agent sessions (deprecated — use 'taskforce conversations list')."""
+    console.print(_DEPRECATION_MSG)
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
@@ -64,7 +75,8 @@ def show_session(
         help="Profile name (e.g., coding_agent, devops_agent, rag_agent)",
     ),
 ):
-    """Show session details."""
+    """Show session details (deprecated — use 'taskforce conversations')."""
+    console.print(_DEPRECATION_MSG)
     global_opts = ctx.obj or {}
     profile = profile or global_opts.get("profile", "dev")
 
