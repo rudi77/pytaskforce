@@ -474,10 +474,16 @@ class CommunicationGateway:
             message=message.message,
             conversation_id=conv_id,
             sender_id=message.sender_id,
+            session_id=session_id,
             metadata={
                 **message.metadata,
                 "profile": options.profile or "dev",
                 "channel_conversation_id": message.conversation_id,
+                "user_context": options.user_context,
+                "agent_id": options.agent_id,
+                "planning_strategy": options.planning_strategy,
+                "planning_strategy_params": options.planning_strategy_params,
+                "plugin_path": options.plugin_path,
             },
         )
 

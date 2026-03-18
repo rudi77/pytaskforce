@@ -27,6 +27,8 @@ class AgentRequest:
         conversation_id: Optional conversation this request belongs to.
             ``None`` means the agent/queue should resolve or create one.
         sender_id: Optional sender identifier (for reply routing).
+        session_id: Stable session ID for agent state persistence.
+            When ``None``, the processor falls back to ``request_id``.
         metadata: Channel-specific or event-specific extra data.
         created_at: Timestamp of request creation (UTC).
     """
@@ -36,5 +38,6 @@ class AgentRequest:
     request_id: str = field(default_factory=lambda: uuid4().hex)
     conversation_id: str | None = None
     sender_id: str | None = None
+    session_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

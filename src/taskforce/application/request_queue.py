@@ -285,12 +285,21 @@ class RequestProcessor:
             )
             conversation_history = await self._conversation_manager.get_messages(conv_id)
 
-        # Use request_id as session_id for the ephemeral execution.
+        # Reuse stable session_id when provided (gateway passes it through);
+        # fall back to request_id for standalone/event-driven requests.
+        effective_session_id = request.session_id or request.request_id
+        meta = request.metadata
+
         result = await self._executor.execute_mission(
             mission=request.message,
-            profile=request.metadata.get("profile", "dev"),
-            session_id=request.request_id,
+            profile=meta.get("profile", "dev"),
+            session_id=effective_session_id,
             conversation_history=conversation_history,
+            user_context=meta.get("user_context"),
+            agent_id=meta.get("agent_id"),
+            planning_strategy=meta.get("planning_strategy"),
+            planning_strategy_params=meta.get("planning_strategy_params"),
+            plugin_path=meta.get("plugin_path"),
         )
 
         # Store assistant reply in conversation.

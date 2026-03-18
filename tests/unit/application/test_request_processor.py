@@ -255,6 +255,75 @@ class TestRequestProcessor:
         # No conversation_id since no manager
         assert result.conversation_id is None
 
+    async def test_processor_uses_session_id_from_request(self):
+        """P1: Executor receives request.session_id, not request_id."""
+        queue = RequestQueue(max_size=10)
+        executor = FakeExecutor()
+        processor = RequestProcessor(queue, executor)
+
+        request = AgentRequest(
+            channel="cli",
+            message="Test",
+            session_id="stable-sess-42",
+        )
+        future = await queue.enqueue(request)
+        task = asyncio.create_task(processor.run())
+        result = await asyncio.wait_for(future, timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert executor.calls[0]["session_id"] == "stable-sess-42"
+
+    async def test_processor_falls_back_to_request_id_without_session_id(self):
+        """When session_id is None, request_id is used."""
+        queue = RequestQueue(max_size=10)
+        executor = FakeExecutor()
+        processor = RequestProcessor(queue, executor)
+
+        request = AgentRequest(channel="cli", message="Test")
+        future = await queue.enqueue(request)
+        task = asyncio.create_task(processor.run())
+        result = await asyncio.wait_for(future, timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert executor.calls[0]["session_id"] == request.request_id
+
+    async def test_processor_forwards_metadata_options(self):
+        """P2: Executor receives all GatewayOptions from metadata."""
+        queue = RequestQueue(max_size=10)
+        executor = FakeExecutor()
+        processor = RequestProcessor(queue, executor)
+
+        request = AgentRequest(
+            channel="rest",
+            message="Test",
+            metadata={
+                "profile": "coding_agent",
+                "user_context": {"org_id": "acme"},
+                "agent_id": "agent-7",
+                "planning_strategy": "spar",
+                "planning_strategy_params": {"max_plan_steps": 5},
+                "plugin_path": "/plugins/custom",
+            },
+        )
+        future = await queue.enqueue(request)
+        task = asyncio.create_task(processor.run())
+        await asyncio.wait_for(future, timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        call = executor.calls[0]
+        assert call["profile"] == "coding_agent"
+        assert call["user_context"] == {"org_id": "acme"}
+        assert call["agent_id"] == "agent-7"
+        assert call["planning_strategy"] == "spar"
+        assert call["planning_strategy_params"] == {"max_plan_steps": 5}
+        assert call["plugin_path"] == "/plugins/custom"
+
     async def test_running_property(self):
         queue = RequestQueue(max_size=10)
         executor = FakeExecutor()
