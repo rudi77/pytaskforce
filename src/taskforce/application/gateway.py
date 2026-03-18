@@ -73,6 +73,15 @@ class CommunicationGateway:
         result = await gateway.send_notification(notification_req)
     """
 
+    # Commands that reset the conversation (Telegram /start, etc.).
+    RESET_COMMANDS = frozenset({"/start", "/new", "/reset"})
+
+    # Default welcome message sent after a conversation reset.
+    _WELCOME_MESSAGE = (
+        "👋 Willkommen! Die Konversation wurde zurückgesetzt. "
+        "Wie kann ich Ihnen helfen?"
+    )
+
     def __init__(
         self,
         *,
@@ -83,6 +92,7 @@ class CommunicationGateway:
         pending_channel_store: PendingChannelQuestionStoreProtocol | None = None,
         conversation_manager: ConversationManager | None = None,
         request_queue: RequestQueue | None = None,
+        max_conversation_history: int = 30,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -91,6 +101,7 @@ class CommunicationGateway:
         self._pending_channel_store = pending_channel_store
         self._conversation_manager = conversation_manager
         self._request_queue = request_queue
+        self._max_conversation_history = max_conversation_history
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -157,6 +168,11 @@ class CommunicationGateway:
                     history=[],
                 )
 
+        # ------- Reset commands (/start, /new, /reset) -------
+        stripped = message.message.strip().lower()
+        if stripped in self.RESET_COMMANDS:
+            return await self._handle_reset(message)
+
         # ------- Normal inbound message flow -------
         resolved_options = options or GatewayOptions()
 
@@ -202,7 +218,7 @@ class CommunicationGateway:
         result = await self._execute_agent(
             message=message.message,
             session_id=session_id,
-            conversation_history=history_with_user,
+            conversation_history=self._trim_history(history_with_user),
             options=resolved_options,
         )
 
@@ -446,6 +462,65 @@ class CommunicationGateway:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    async def _handle_reset(self, message: InboundMessage) -> GatewayResponse:
+        """Clear conversation history and send a welcome message.
+
+        Handles ``/start``, ``/new``, and ``/reset`` commands by wiping the
+        conversation history in both the legacy store and the conversation
+        manager (ADR-016), then sending a welcome reply via the outbound
+        sender.
+        """
+        self._logger.info(
+            "gateway.conversation_reset",
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            sender_id=message.sender_id,
+        )
+
+        # Delete the entire conversation record (history + session mapping)
+        # so that the next message gets a fresh session ID.
+        await self._conversation_store.delete_conversation(
+            message.channel, message.conversation_id
+        )
+
+        # Archive current conversation and start fresh (ADR-016).
+        conv_id: str | None = None
+        if self._conversation_manager and message.sender_id:
+            conv_id = await self._conversation_manager.create_new(
+                message.channel, message.sender_id
+            )
+
+        # Send welcome message via outbound sender.
+        sender = self._outbound_senders.get(message.channel)
+        if sender:
+            try:
+                await sender.send(
+                    recipient_id=message.conversation_id,
+                    message=self._WELCOME_MESSAGE,
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "gateway.reset.welcome_send_failed",
+                    channel=message.channel,
+                    error=str(exc),
+                )
+
+        return GatewayResponse(
+            session_id="",
+            status="conversation_reset",
+            reply=self._WELCOME_MESSAGE,
+            history=[],
+            conversation_id=conv_id,
+        )
+
+    def _trim_history(
+        self, history: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Trim conversation history to the last N messages."""
+        if len(history) <= self._max_conversation_history:
+            return history
+        return history[-self._max_conversation_history :]
+
     async def _handle_via_queue(
         self,
         *,
@@ -548,13 +623,13 @@ class CommunicationGateway:
             {"role": MessageRole.USER.value, "content": message.message},
         )
 
-        # Load full history for agent context.
+        # Load history for agent context (trimmed to limit).
         history = await self._conversation_manager.get_messages(conv_id)
 
         result = await self._execute_agent(
             message=message.message,
             session_id=session_id,
-            conversation_history=history,
+            conversation_history=self._trim_history(history),
             options=options,
         )
 

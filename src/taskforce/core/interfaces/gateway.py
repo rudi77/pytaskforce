@@ -108,6 +108,14 @@ class ConversationStoreProtocol(Protocol):
         """Persist conversation history."""
         ...
 
+    async def delete_conversation(self, channel: str, conversation_id: str) -> None:
+        """Remove the entire conversation record (history + session mapping).
+
+        Used by reset commands (``/start``, ``/reset``) to ensure the next
+        message starts with a fresh session ID.
+        """
+        ...
+
 
 class RecipientRegistryProtocol(Protocol):
     """Persistent store for push-notification recipient references.

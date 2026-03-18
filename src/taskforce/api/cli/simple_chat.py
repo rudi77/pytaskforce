@@ -125,6 +125,7 @@ class SimpleChatRunner:
                 recipient_registry=components.recipient_registry,
                 outbound_senders=components.outbound_senders,
                 pending_channel_store=pending_store,
+                max_conversation_history=30,
             )
             self.executor._gateway = gateway
             self._gateway = gateway

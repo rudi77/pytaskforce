@@ -169,6 +169,7 @@ class ButlerDaemon:
                     conversation_store=components.conversation_store,
                     recipient_registry=components.recipient_registry,
                     outbound_senders=components.outbound_senders,
+                    max_conversation_history=30,
                 )
                 self._butler.set_gateway(gateway)
                 logger.info(

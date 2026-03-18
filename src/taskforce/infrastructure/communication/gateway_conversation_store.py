@@ -73,6 +73,20 @@ class FileConversationStore:
             raise ValueError("session_id must be set before saving history")
         await self._save_record(channel, conversation_id, session_id, history)
 
+    async def delete_conversation(self, channel: str, conversation_id: str) -> None:
+        """Remove the conversation record file entirely."""
+        path = self._record_path(channel, conversation_id)
+        async with self._get_lock(str(path)):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                self._logger.error(
+                    "conversation_store.delete_failed",
+                    channel=channel,
+                    conversation_id=conversation_id,
+                    error=str(exc),
+                )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -184,3 +198,7 @@ class InMemoryConversationStore:
             history=list(history),
             updated_at=datetime.now().isoformat(),
         )
+
+    async def delete_conversation(self, channel: str, conversation_id: str) -> None:
+        """Remove the conversation record."""
+        self._records.pop((channel, conversation_id), None)

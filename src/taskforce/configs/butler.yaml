@@ -15,7 +15,7 @@ runtime:
   work_dir: .taskforce
 
 agent:
-  planning_strategy: spar
+  planning_strategy: native_react
   planning_strategy_params:
     max_step_iterations: 3
     max_plan_steps: 12
@@ -52,7 +52,7 @@ context_policy:
 # Notification defaults
 notifications:
   default_channel: telegram
-  default_recipient_id: ""  # Set to your Telegram user ID
+  default_recipient_id: "5865840420"  # Set to your Telegram user ID
 
 # Scheduler settings
 scheduler:
