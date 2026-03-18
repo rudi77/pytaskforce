@@ -9,6 +9,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
@@ -196,6 +197,7 @@ class SimpleChatRunner:
         conversation_id: str,
         sender_id: str,
         message: str,
+        attachments: list[dict] | None = None,
     ) -> None:
         """Route unsolicited Telegram messages through CommunicationGateway."""
         if not self._gateway:
@@ -203,11 +205,16 @@ class SimpleChatRunner:
 
         from taskforce.core.domain.gateway import GatewayOptions, InboundMessage
 
+        metadata: dict = {}
+        if attachments:
+            metadata["attachments"] = attachments
+
         inbound = InboundMessage(
             channel="telegram",
             conversation_id=conversation_id,
             message=message,
             sender_id=sender_id,
+            metadata=metadata,
         )
         options = GatewayOptions(profile=self.profile, user_context=self.user_context)
         await self._gateway.handle_message(inbound, options)

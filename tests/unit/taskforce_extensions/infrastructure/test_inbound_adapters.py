@@ -34,7 +34,7 @@ class TestTelegramInboundAdapter:
 
     def test_extract_message_no_text(self) -> None:
         adapter = TelegramInboundAdapter()
-        with pytest.raises(ValueError, match="no 'text' field"):
+        with pytest.raises(ValueError, match="no text or media content"):
             adapter.extract_message({"message": {"chat": {"id": 1}}})
 
     def test_extract_message_no_chat_id(self) -> None:

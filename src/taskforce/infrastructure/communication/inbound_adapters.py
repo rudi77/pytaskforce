@@ -36,17 +36,25 @@ class TelegramInboundAdapter:
 
         Returns:
             Dict with: conversation_id, message, sender_id, metadata.
+            If photos or documents are present, ``metadata["attachment_refs"]``
+            contains a list of ``{"file_id", "mime_type", "type"}`` dicts
+            that must be downloaded separately.
 
         Raises:
-            ValueError: If the payload has no message or text.
+            ValueError: If the payload has no message, or no text/media.
         """
         message_obj = raw_payload.get("message")
         if not message_obj:
             raise ValueError("Telegram payload has no 'message' field")
 
-        text = message_obj.get("text", "")
-        if not text:
-            raise ValueError("Telegram message has no 'text' field")
+        text = (message_obj.get("text") or message_obj.get("caption") or "").strip()
+        attachment_refs = self._extract_attachment_refs(message_obj)
+
+        if not text and not attachment_refs:
+            raise ValueError("Telegram message has no text or media content")
+
+        if attachment_refs and not text:
+            text = "Bitte analysiere diese Datei."
 
         chat = message_obj.get("chat", {})
         chat_id = chat.get("id")
@@ -56,16 +64,54 @@ class TelegramInboundAdapter:
         sender = message_obj.get("from", {})
         sender_id = str(sender.get("id", "")) if sender else None
 
+        metadata: dict[str, Any] = {
+            "update_id": raw_payload.get("update_id"),
+            "chat_type": chat.get("type"),
+            "message_id": message_obj.get("message_id"),
+        }
+        if attachment_refs:
+            metadata["attachment_refs"] = attachment_refs
+
         return {
             "conversation_id": str(chat_id),
             "message": text,
             "sender_id": sender_id,
-            "metadata": {
-                "update_id": raw_payload.get("update_id"),
-                "chat_type": chat.get("type"),
-                "message_id": message_obj.get("message_id"),
-            },
+            "metadata": metadata,
         }
+
+    @staticmethod
+    def _extract_attachment_refs(message_obj: dict[str, Any]) -> list[dict[str, str]]:
+        """Build lightweight attachment references from a Telegram message.
+
+        These contain only ``file_id``, ``mime_type``, and ``type`` — the
+        actual download happens later (in the webhook route handler).
+        """
+        refs: list[dict[str, str]] = []
+
+        photos = message_obj.get("photo")
+        if photos:
+            largest = photos[-1]
+            file_id = largest.get("file_id", "")
+            if file_id:
+                refs.append({"file_id": file_id, "mime_type": "image/jpeg", "type": "image"})
+
+        document = message_obj.get("document")
+        if document:
+            file_id = document.get("file_id", "")
+            mime_type = document.get("mime_type", "application/octet-stream")
+            file_name = document.get("file_name", "document")
+            if file_id:
+                doc_type = "image" if mime_type.startswith("image/") else "document"
+                refs.append(
+                    {
+                        "file_id": file_id,
+                        "mime_type": mime_type,
+                        "type": doc_type,
+                        "file_name": file_name,
+                    }
+                )
+
+        return refs
 
     def verify_signature(self, *, raw_body: bytes, headers: dict[str, str]) -> bool:
         """Verify Telegram webhook secret token.

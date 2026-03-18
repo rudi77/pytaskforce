@@ -149,7 +149,7 @@ async def test_handle_update_no_pending_question(
         reference={"conversation_id": "100"},
     )
     outbound_sender.send.assert_not_called()
-    inbound_message_handler.assert_awaited_once_with("100", "200", "Hello")
+    inbound_message_handler.assert_awaited_once_with("100", "200", "Hello", None)
 
 
 @pytest.mark.asyncio

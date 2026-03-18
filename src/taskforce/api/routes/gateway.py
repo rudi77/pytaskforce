@@ -12,8 +12,10 @@ replacing the previous per-provider integration routes. Supports:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
@@ -25,6 +27,8 @@ from taskforce.core.domain.gateway import (
     InboundMessage,
     NotificationRequest,
 )
+
+_logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/gateway")
 
@@ -294,12 +298,21 @@ async def handle_webhook(
             details={"channel": channel},
         ) from exc
 
+    metadata = extracted.get("metadata", {})
+
+    # Download Telegram attachment refs (photos/documents) if present.
+    attachment_refs = metadata.pop("attachment_refs", None)
+    if attachment_refs and channel == "telegram":
+        attachments = await _download_telegram_attachments(attachment_refs)
+        if attachments:
+            metadata["attachments"] = attachments
+
     inbound = InboundMessage(
         channel=channel,
         conversation_id=extracted["conversation_id"],
         message=extracted["message"],
         sender_id=extracted.get("sender_id"),
-        metadata=extracted.get("metadata", {}),
+        metadata=metadata,
     )
 
     options = GatewayOptions(profile=profile, plugin_path=plugin_path)
@@ -400,3 +413,57 @@ async def list_channels(
     return ChannelsResponseSchema(
         channels=sorted(gateway.supported_channels()),
     )
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+async def _download_telegram_attachments(
+    attachment_refs: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Download Telegram file references into data URLs or temp files.
+
+    Called from the webhook handler to resolve lightweight ``attachment_refs``
+    (containing only ``file_id``, ``mime_type``, ``type``) into full
+    attachment dicts usable by the gateway.
+    """
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not bot_token:
+        _logger.warning("gateway.webhook.no_bot_token_for_download")
+        return []
+
+    from taskforce.infrastructure.communication.telegram_file_downloader import (
+        TelegramFileDownloader,
+    )
+
+    downloader = TelegramFileDownloader(bot_token)
+    attachments: list[dict[str, Any]] = []
+
+    for ref in attachment_refs:
+        file_id = ref.get("file_id", "")
+        mime_type = ref.get("mime_type", "application/octet-stream")
+        ref_type = ref.get("type", "document")
+
+        if not file_id:
+            continue
+
+        if ref_type == "image":
+            data_url = await downloader.download_as_data_url(file_id, mime_type=mime_type)
+            if data_url:
+                attachments.append({"type": "image", "data_url": data_url})
+        else:
+            file_name = ref.get("file_name", "document")
+            tmp_path = await downloader.download_to_temp_file(file_id, file_name=file_name)
+            if tmp_path:
+                attachments.append(
+                    {
+                        "type": "document",
+                        "file_path": tmp_path,
+                        "file_name": file_name,
+                        "mime_type": mime_type,
+                    }
+                )
+
+    return attachments

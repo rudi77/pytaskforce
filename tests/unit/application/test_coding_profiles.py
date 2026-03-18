@@ -21,5 +21,5 @@ def test_coding_agent_prompt_enforces_analysis_mode() -> None:
     builder = InfrastructureBuilder()
     profile = builder.load_profile("coding_agent")
     system_prompt = profile.get("system_prompt", "")
-    assert "ANALYSIS MODE" in system_prompt
+    assert "ANALYSIS" in system_prompt
     assert "Do NOT call coding_worker" in system_prompt

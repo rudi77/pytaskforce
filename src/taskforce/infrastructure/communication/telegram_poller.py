@@ -29,6 +29,9 @@ import structlog
 
 from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
 from taskforce.core.interfaces.gateway import RecipientRegistryProtocol
+from taskforce.infrastructure.communication.telegram_file_downloader import (
+    TelegramFileDownloader,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -52,7 +55,9 @@ class TelegramPoller:
         pending_store: PendingChannelQuestionStoreProtocol,
         outbound_sender: Any | None = None,
         recipient_registry: RecipientRegistryProtocol | None = None,
-        inbound_message_handler: Callable[[str, str, str], Awaitable[None]] | None = None,
+        inbound_message_handler: (
+            Callable[[str, str, str, list[dict[str, Any]] | None], Awaitable[None]] | None
+        ) = None,
         poll_timeout: int = 10,
     ) -> None:
         self._bot_token = bot_token
@@ -62,6 +67,7 @@ class TelegramPoller:
         self._recipient_registry = recipient_registry
         self._inbound_message_handler = inbound_message_handler
         self._poll_timeout = poll_timeout
+        self._file_downloader = TelegramFileDownloader(bot_token)
         self._offset: int = 0
         self._task: asyncio.Task[None] | None = None
         self._session: aiohttp.ClientSession | None = None
@@ -157,9 +163,15 @@ class TelegramPoller:
         if not message_obj:
             return
 
-        text = message_obj.get("text", "").strip()
-        if not text:
+        text = (message_obj.get("text") or message_obj.get("caption") or "").strip()
+        attachments = await self._extract_attachments(message_obj)
+
+        if not text and not attachments:
             return
+
+        # Default prompt when media is sent without text/caption.
+        if attachments and not text:
+            text = "Bitte analysiere diese Datei."
 
         chat = message_obj.get("chat", {})
         chat_id = str(chat.get("id", ""))
@@ -202,6 +214,69 @@ class TelegramPoller:
                 except Exception:
                     pass  # Best-effort acknowledgment
         else:
-            logger.debug("telegram_poller.inbound_message", sender_id=sender_id, text=text[:50])
+            logger.debug(
+                "telegram_poller.inbound_message",
+                sender_id=sender_id,
+                text=text[:50],
+                has_attachments=bool(attachments),
+            )
             if self._inbound_message_handler and chat_id:
-                await self._inbound_message_handler(chat_id, sender_id, text)
+                await self._inbound_message_handler(chat_id, sender_id, text, attachments)
+
+    # ------------------------------------------------------------------
+    # Media extraction
+    # ------------------------------------------------------------------
+
+    _IMAGE_MIME_PREFIXES = ("image/",)
+
+    async def _extract_attachments(
+        self, message_obj: dict[str, Any]
+    ) -> list[dict[str, Any]] | None:
+        """Extract photo/document attachments from a Telegram message.
+
+        Returns a list of attachment dicts or None if no media is present.
+        Each dict has ``type`` ("image" or "document") and either
+        ``data_url`` (base64 data URL) or ``file_path`` + ``file_name``.
+        """
+        attachments: list[dict[str, Any]] = []
+
+        # Photos: Telegram sends an array of sizes; take the largest.
+        photos = message_obj.get("photo")
+        if photos:
+            largest = photos[-1]
+            file_id = largest.get("file_id", "")
+            if file_id:
+                data_url = await self._file_downloader.download_as_data_url(
+                    file_id, mime_type="image/jpeg"
+                )
+                if data_url:
+                    attachments.append({"type": "image", "data_url": data_url})
+
+        # Documents (PDF, images sent as file, etc.)
+        document = message_obj.get("document")
+        if document:
+            file_id = document.get("file_id", "")
+            mime_type = document.get("mime_type", "application/octet-stream")
+            file_name = document.get("file_name", "document")
+            if file_id:
+                if mime_type.startswith(self._IMAGE_MIME_PREFIXES[0]):
+                    data_url = await self._file_downloader.download_as_data_url(
+                        file_id, mime_type=mime_type
+                    )
+                    if data_url:
+                        attachments.append({"type": "image", "data_url": data_url})
+                else:
+                    tmp_path = await self._file_downloader.download_to_temp_file(
+                        file_id, file_name=file_name
+                    )
+                    if tmp_path:
+                        attachments.append(
+                            {
+                                "type": "document",
+                                "file_path": tmp_path,
+                                "file_name": file_name,
+                                "mime_type": mime_type,
+                            }
+                        )
+
+        return attachments or None

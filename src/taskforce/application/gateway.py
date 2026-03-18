@@ -213,7 +213,10 @@ class CommunicationGateway:
         history = await self._conversation_store.load_history(
             message.channel, message.conversation_id
         )
-        history_with_user = _append_message(history, MessageRole.USER.value, message.message)
+        user_content = _build_multimodal_content(
+            message.message, message.metadata.get("attachments")
+        )
+        history_with_user = _append_message(history, MessageRole.USER.value, user_content)
 
         result = await self._execute_agent(
             message=message.message,
@@ -555,22 +558,31 @@ class CommunicationGateway:
             message.channel, message.sender_id
         )
 
+        # Build multimodal content for the queue metadata so the processor
+        # can pass it through to the conversation history.
+        attachments = message.metadata.get("attachments")
+        queue_metadata: dict[str, Any] = {
+            **message.metadata,
+            "profile": options.profile or "dev",
+            "channel_conversation_id": message.conversation_id,
+            "user_context": options.user_context,
+            "agent_id": options.agent_id,
+            "planning_strategy": options.planning_strategy,
+            "planning_strategy_params": options.planning_strategy_params,
+            "plugin_path": options.plugin_path,
+        }
+        if attachments:
+            queue_metadata["multimodal_content"] = _build_multimodal_content(
+                message.message, attachments
+            )
+
         request = AgentRequest(
             channel=message.channel,
             message=message.message,
             conversation_id=conv_id,
             sender_id=message.sender_id,
             session_id=session_id,
-            metadata={
-                **message.metadata,
-                "profile": options.profile or "dev",
-                "channel_conversation_id": message.conversation_id,
-                "user_context": options.user_context,
-                "agent_id": options.agent_id,
-                "planning_strategy": options.planning_strategy,
-                "planning_strategy_params": options.planning_strategy_params,
-                "plugin_path": options.plugin_path,
-            },
+            metadata=queue_metadata,
         )
 
         future = await self._request_queue.enqueue(request)
@@ -618,9 +630,12 @@ class CommunicationGateway:
         )
 
         # Append user message to conversation.
+        user_content = _build_multimodal_content(
+            message.message, message.metadata.get("attachments")
+        )
         await self._conversation_manager.append_message(
             conv_id,
-            {"role": MessageRole.USER.value, "content": message.message},
+            {"role": MessageRole.USER.value, "content": user_content},
         )
 
         # Load history for agent context (trimmed to limit).
@@ -800,6 +815,58 @@ class CommunicationGateway:
         )
 
 
-def _append_message(history: list[dict[str, Any]], role: str, content: str) -> list[dict[str, Any]]:
+def _append_message(
+    history: list[dict[str, Any]],
+    role: str,
+    content: str | list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Return a new history list with the message appended (immutable)."""
     return [*history, {"role": role, "content": content}]
+
+
+def _build_multimodal_content(
+    text: str,
+    attachments: list[dict[str, Any]] | None,
+) -> str | list[dict[str, Any]]:
+    """Build OpenAI-compatible content from text and optional attachments.
+
+    If there are no attachments, returns plain ``text`` (preserving existing
+    behavior). For image attachments, returns a content array with text and
+    ``image_url`` blocks. For document attachments, appends file path
+    references to the text so the agent can use file tools.
+
+    Args:
+        text: The user's message text.
+        attachments: Optional list of attachment dicts from the poller/webhook.
+
+    Returns:
+        Plain string or OpenAI vision-format content array.
+    """
+    if not attachments:
+        return text
+
+    parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    doc_references: list[str] = []
+
+    for att in attachments:
+        if att.get("type") == "image" and att.get("data_url"):
+            parts.append(
+                {"type": "image_url", "image_url": {"url": att["data_url"]}}
+            )
+        elif att.get("type") == "document":
+            file_path = att.get("file_path", "")
+            file_name = att.get("file_name", "document")
+            mime_type = att.get("mime_type", "")
+            doc_references.append(
+                f"[Attached file: {file_name} ({mime_type}) saved at: {file_path}]"
+            )
+
+    # If only document references (no images), return enriched text string.
+    if doc_references and len(parts) == 1:
+        return text + "\n\n" + "\n".join(doc_references)
+
+    # If we have images, append any doc references as text too.
+    if doc_references:
+        parts.append({"type": "text", "text": "\n".join(doc_references)})
+
+    return parts
