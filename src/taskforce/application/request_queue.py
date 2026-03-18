@@ -1,25 +1,65 @@
-"""
-Request Queue
+"""Central request queue and processor for the persistent agent (ADR-016).
 
-Central request queue for the persistent agent (ADR-016). All inbound
-messages — from Telegram, CLI, REST, or internal events — are normalized
-into ``AgentRequest`` objects and processed sequentially by the agent.
+All inbound messages — from Telegram, CLI, REST, or internal events — are
+normalized into ``AgentRequest`` objects and processed sequentially by the
+``RequestProcessor``.
+
+The ``RequestQueue`` provides back-pressure via a bounded ``asyncio.Queue``
+and returns ``asyncio.Future[RequestResult]`` so callers can ``await`` the
+outcome of their enqueued request.
+
+Usage::
+
+    queue = RequestQueue(max_size=100)
+
+    # Producer: enqueue and await result
+    future = await queue.enqueue(request)
+    result = await future  # blocks until processed
+
+    # Consumer: run the processing loop
+    processor = RequestProcessor(queue, executor, conversation_manager)
+    task = asyncio.create_task(processor.run())
+
+    # Graceful shutdown
+    await queue.drain(timeout=30.0)
+    task.cancel()
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from taskforce.core.domain.enums import MessageRole
 from taskforce.core.domain.request import AgentRequest
+
+if TYPE_CHECKING:
+    from taskforce.application.conversation_manager import ConversationManager
+    from taskforce.application.executor import AgentExecutor
 
 logger = structlog.get_logger(__name__)
 
-# Type alias for the handler function.
-RequestHandler = Callable[[AgentRequest], Awaitable[Any]]
+
+@dataclass
+class RequestResult:
+    """Result of processing a single queued request.
+
+    Attributes:
+        request_id: The original request ID.
+        conversation_id: The conversation this request belongs to.
+        status: Execution status (completed, failed, etc.).
+        reply: The agent's reply message.
+        error: Error message if processing failed.
+    """
+
+    request_id: str
+    conversation_id: str | None = None
+    status: str = "completed"
+    reply: str = ""
+    error: str | None = None
 
 
 class RequestQueue:
@@ -30,19 +70,13 @@ class RequestQueue:
     Sub-agents can still run in parallel since they operate on their own
     ephemeral contexts.
 
-    Usage::
-
-        queue = RequestQueue(max_size=100)
-
-        # Producer: enqueue from any channel
-        await queue.enqueue(AgentRequest(channel="telegram", message="Hello"))
-
-        # Consumer: run the processing loop
-        await queue.process_loop(handler=my_handler_fn)
+    Callers receive an ``asyncio.Future[RequestResult]`` from ``enqueue``
+    that resolves once the request has been processed.
     """
 
     def __init__(self, max_size: int = 100) -> None:
         self._queue: asyncio.Queue[AgentRequest] = asyncio.Queue(maxsize=max_size)
+        self._futures: dict[str, asyncio.Future[RequestResult]] = {}
         self._running = False
 
     @property
@@ -55,14 +89,26 @@ class RequestQueue:
         """Whether the processing loop is active."""
         return self._running
 
-    async def enqueue(self, request: AgentRequest) -> None:
-        """Add a request to the queue.
+    @property
+    def pending_count(self) -> int:
+        """Number of requests with outstanding Futures."""
+        return len(self._futures)
+
+    async def enqueue(self, request: AgentRequest) -> asyncio.Future[RequestResult]:
+        """Add a request to the queue and return a Future for its result.
 
         Blocks if the queue is full (back-pressure).
 
         Args:
             request: The ``AgentRequest`` to enqueue.
+
+        Returns:
+            A Future that resolves to ``RequestResult`` when the request
+            has been processed.
         """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[RequestResult] = loop.create_future()
+        self._futures[request.request_id] = future
         await self._queue.put(request)
         logger.debug(
             "request_queue.enqueued",
@@ -70,13 +116,61 @@ class RequestQueue:
             channel=request.channel,
             queue_size=self._queue.qsize(),
         )
+        return future
 
-    async def process_loop(self, handler: RequestHandler) -> None:
+    async def dequeue(self) -> AgentRequest:
+        """Get the next request from the queue (blocks until available)."""
+        return await self._queue.get()
+
+    def complete(self, request_id: str, result: RequestResult) -> None:
+        """Mark a request as completed and resolve its Future.
+
+        Args:
+            request_id: The request to complete.
+            result: The processing result.
+        """
+        future = self._futures.pop(request_id, None)
+        if future and not future.done():
+            future.set_result(result)
+        self._queue.task_done()
+
+    def fail(self, request_id: str, error: str) -> None:
+        """Mark a request as failed and resolve its Future with an error result.
+
+        Args:
+            request_id: The request that failed.
+            error: Error description.
+        """
+        result = RequestResult(request_id=request_id, status="failed", error=error)
+        future = self._futures.pop(request_id, None)
+        if future and not future.done():
+            future.set_result(result)
+        self._queue.task_done()
+
+    async def drain(self, timeout: float = 10.0) -> None:
+        """Wait for all queued requests to be processed.
+
+        Args:
+            timeout: Maximum seconds to wait before giving up.
+
+        Raises:
+            asyncio.TimeoutError: If the queue doesn't drain in time.
+        """
+        await asyncio.wait_for(self._queue.join(), timeout=timeout)
+
+    async def process_loop(
+        self,
+        handler: Any,
+    ) -> None:
         """Main processing loop — runs until cancelled.
 
         Dequeues requests one at a time and passes them to ``handler``.
         If the handler raises an exception, the error is logged and
         processing continues with the next request.
+
+        This method is the **legacy** interface. Prefer ``RequestProcessor``
+        for new code, which provides ConversationManager integration and
+        Future-based result delivery.
 
         Args:
             handler: Async callable that processes a single ``AgentRequest``.
@@ -111,13 +205,104 @@ class RequestQueue:
         finally:
             self._running = False
 
-    async def drain(self, timeout: float = 10.0) -> None:
-        """Wait for all queued requests to be processed.
 
-        Args:
-            timeout: Maximum seconds to wait before giving up.
+class RequestProcessor:
+    """Consumes requests from the ``RequestQueue`` and executes them.
 
-        Raises:
-            asyncio.TimeoutError: If the queue doesn't drain in time.
+    Each request is handled sequentially to prevent race conditions on shared
+    agent state. Results are delivered back via the queue's Future mechanism.
+
+    When a ``ConversationManager`` is provided, the processor appends user
+    and assistant messages to the persistent conversation before/after
+    agent execution.
+    """
+
+    def __init__(
+        self,
+        queue: RequestQueue,
+        executor: AgentExecutor,
+        conversation_manager: ConversationManager | None = None,
+    ) -> None:
+        self._queue = queue
+        self._executor = executor
+        self._conversation_manager = conversation_manager
+        self._running = False
+        self._logger = structlog.get_logger(__name__)
+
+    @property
+    def running(self) -> bool:
+        """Whether the processing loop is currently active."""
+        return self._running
+
+    async def run(self) -> None:
+        """Main processing loop — runs until cancelled.
+
+        Dequeues requests one at a time and processes them. Exceptions in
+        individual request handling are caught and reported via the
+        queue's ``fail()`` mechanism so the loop continues.
         """
-        await asyncio.wait_for(self._queue.join(), timeout=timeout)
+        self._running = True
+        self._logger.info("request_processor.started")
+        try:
+            while True:
+                request = await self._queue.dequeue()
+                await self._process_request(request)
+        except asyncio.CancelledError:
+            self._logger.info("request_processor.stopped")
+            raise
+        finally:
+            self._running = False
+
+    async def _process_request(self, request: AgentRequest) -> None:
+        """Process a single request and deliver the result."""
+        self._logger.info(
+            "request_processor.processing",
+            request_id=request.request_id,
+            channel=request.channel,
+            conversation_id=request.conversation_id,
+        )
+        try:
+            result = await self._execute(request)
+            self._queue.complete(request.request_id, result)
+        except Exception as exc:
+            self._logger.error(
+                "request_processor.failed",
+                request_id=request.request_id,
+                error=str(exc),
+            )
+            self._queue.fail(request.request_id, str(exc))
+
+    async def _execute(self, request: AgentRequest) -> RequestResult:
+        """Execute the request via the agent executor."""
+        conversation_history: list[dict[str, Any]] = []
+        conv_id = request.conversation_id
+
+        # Build conversation context if ConversationManager is available.
+        if self._conversation_manager and conv_id:
+            await self._conversation_manager.append_message(
+                conv_id,
+                {"role": MessageRole.USER.value, "content": request.message},
+            )
+            conversation_history = await self._conversation_manager.get_messages(conv_id)
+
+        # Use request_id as session_id for the ephemeral execution.
+        result = await self._executor.execute_mission(
+            mission=request.message,
+            profile=request.metadata.get("profile", "dev"),
+            session_id=request.request_id,
+            conversation_history=conversation_history,
+        )
+
+        # Store assistant reply in conversation.
+        if self._conversation_manager and conv_id:
+            await self._conversation_manager.append_message(
+                conv_id,
+                {"role": MessageRole.ASSISTANT.value, "content": result.final_message},
+            )
+
+        return RequestResult(
+            request_id=request.request_id,
+            conversation_id=conv_id,
+            status=result.status,
+            reply=result.final_message,
+        )

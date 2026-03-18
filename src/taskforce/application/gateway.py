@@ -37,6 +37,7 @@ from taskforce.core.interfaces.gateway import (
 
 if TYPE_CHECKING:
     from taskforce.application.conversation_manager import ConversationManager
+    from taskforce.application.request_queue import RequestQueue
 
 
 class CommunicationGateway:
@@ -50,6 +51,10 @@ class CommunicationGateway:
     message history and conversation lifecycle instead of the legacy
     ``conversation_store``.
 
+    When ``request_queue`` is provided, inbound messages are routed through
+    the central ``RequestQueue`` for sequential processing instead of
+    direct executor calls.
+
     Usage::
 
         gateway = CommunicationGateway(
@@ -58,6 +63,7 @@ class CommunicationGateway:
             recipient_registry=registry,
             outbound_senders={"telegram": telegram_sender},
             conversation_manager=conv_manager,  # ADR-016
+            request_queue=queue,                # ADR-016 Phase 4
         )
 
         # Handle an inbound message (from any channel)
@@ -76,6 +82,7 @@ class CommunicationGateway:
         outbound_senders: dict[str, OutboundSenderProtocol] | None = None,
         pending_channel_store: PendingChannelQuestionStoreProtocol | None = None,
         conversation_manager: ConversationManager | None = None,
+        request_queue: RequestQueue | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -83,6 +90,7 @@ class CommunicationGateway:
         self._outbound_senders = dict(outbound_senders or {})
         self._pending_channel_store = pending_channel_store
         self._conversation_manager = conversation_manager
+        self._request_queue = request_queue
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -169,7 +177,15 @@ class CommunicationGateway:
                 },
             )
 
-        # --- ADR-016: conversation-managed history ---
+        # --- ADR-016 Phase 4: queue-based routing ---
+        if self._request_queue and self._conversation_manager:
+            return await self._handle_via_queue(
+                message=message,
+                session_id=session_id,
+                options=resolved_options,
+            )
+
+        # --- ADR-016 Phase 3: conversation-managed history ---
         if self._conversation_manager:
             return await self._handle_with_conversation_manager(
                 message=message,
@@ -429,6 +445,67 @@ class CommunicationGateway:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _handle_via_queue(
+        self,
+        *,
+        message: InboundMessage,
+        session_id: str,
+        options: GatewayOptions,
+    ) -> GatewayResponse:
+        """Handle message by routing through the RequestQueue (ADR-016 Phase 4).
+
+        Creates a conversation via ``ConversationManager``, wraps the message
+        in an ``AgentRequest``, enqueues it, and awaits the result Future.
+        The ``RequestProcessor`` on the other end handles execution and
+        conversation history management.
+        """
+        from taskforce.core.domain.request import AgentRequest
+
+        assert self._request_queue is not None
+        assert self._conversation_manager is not None
+
+        conv_id = await self._conversation_manager.get_or_create(
+            message.channel, message.sender_id
+        )
+
+        request = AgentRequest(
+            channel=message.channel,
+            message=message.message,
+            conversation_id=conv_id,
+            sender_id=message.sender_id,
+            metadata={
+                **message.metadata,
+                "profile": options.profile or "dev",
+                "channel_conversation_id": message.conversation_id,
+            },
+        )
+
+        future = await self._request_queue.enqueue(request)
+        result = await future
+
+        # Sync to legacy store for backward compatibility.
+        final_history = await self._conversation_manager.get_messages(conv_id)
+        await self._conversation_store.save_history(
+            message.channel, message.conversation_id, final_history
+        )
+
+        # Send outbound reply.
+        reply = result.reply or ""
+        await self._send_outbound_reply(
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            reply=reply,
+            status=result.status,
+        )
+
+        return GatewayResponse(
+            session_id=session_id,
+            status=result.status,
+            reply=reply,
+            history=final_history,
+            conversation_id=conv_id,
+        )
 
     async def _handle_with_conversation_manager(
         self,
