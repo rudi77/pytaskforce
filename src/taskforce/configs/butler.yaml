@@ -121,5 +121,8 @@ tools:
   - reminder
   - rule_manager
   - ask_user
-  - call_agents_parallel
   - activate_skill
+  # Sub-agent delegation tool (requires dict config for dependency injection)
+  - type: parallel_agent
+    profile: butler
+    max_concurrency: 4
