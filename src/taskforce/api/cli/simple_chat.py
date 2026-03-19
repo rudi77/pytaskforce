@@ -129,6 +129,7 @@ class SimpleChatRunner:
                 max_conversation_history=30,
             )
             self.executor._gateway = gateway
+            self.executor.factory.set_gateway(gateway)
             self._gateway = gateway
 
             # Prepare Telegram poller (started in run())
