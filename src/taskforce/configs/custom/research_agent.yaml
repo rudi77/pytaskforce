@@ -1,0 +1,48 @@
+# Research Agent - Deep web research and report writing
+# Used by Butler for thorough information gathering tasks
+
+agent_id: research_agent
+name: ResearchAgent
+description: Deep web research, data gathering, and report writing
+created_at: '2026-03-19T00:00:00+00:00'
+updated_at: '2026-03-19T00:00:00+00:00'
+profile: research_agent
+specialist: null
+
+agent:
+  planning_strategy: plan_and_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 10
+  max_steps: 40
+
+persistence:
+  type: file
+  work_dir: .taskforce_research
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 12
+  max_chars_per_item: 3000
+  max_total_chars: 20000
+
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - python
+  - memory
+
+system_prompt: >
+  You are a research specialist. Your job is to conduct thorough research
+  on a given topic using web searches and data gathering. You produce
+  well-structured, factual reports with sources. Always verify claims
+  across multiple sources when possible.

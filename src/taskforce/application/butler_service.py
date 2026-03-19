@@ -68,6 +68,7 @@ class ButlerService:
         # External callbacks (injected by butler daemon)
         self._gateway: Any = None
         self._executor: Any = None
+        self._agent_service: Any = None  # PersistentAgentService (preferred over executor)
         self._memory_store: Any = None
         self._learning_service: Any = None
 
@@ -100,6 +101,15 @@ class ButlerService:
     def set_executor(self, executor: Any) -> None:
         """Inject the agent executor for mission execution."""
         self._executor = executor
+
+    def set_agent_service(self, agent_service: Any) -> None:
+        """Inject the PersistentAgentService for queue-based execution.
+
+        When set, events are routed through the central request queue
+        instead of calling the executor directly. This prevents race
+        conditions between event-triggered and user-initiated requests.
+        """
+        self._agent_service = agent_service
 
     def set_memory_store(self, memory_store: Any) -> None:
         """Inject the memory store for learning."""
@@ -237,12 +247,47 @@ class ButlerService:
         mission: str,
         params: dict[str, Any],
     ) -> None:
-        """Execute an agent mission."""
+        """Execute an agent mission.
+
+        When a PersistentAgentService is available, the mission is routed
+        through the central request queue to prevent race conditions with
+        concurrent user requests. Falls back to direct executor call.
+        """
+        profile = params.get("profile", "butler")
+        priority = params.get("priority", 5)  # Scheduled/event tasks default to priority 5
+
+        # Prefer queue-based execution when PersistentAgentService is available.
+        if self._agent_service is not None:
+            try:
+                from taskforce.core.domain.request import AgentRequest
+
+                request = AgentRequest(
+                    channel="event",
+                    message=mission,
+                    metadata={"profile": profile},
+                    priority=priority,
+                )
+                result = await self._agent_service.submit(request)
+                logger.info(
+                    "butler_service.mission_completed",
+                    status=result.status,
+                    mission_preview=mission[:100],
+                    via="queue",
+                )
+                return
+            except Exception as exc:
+                logger.error(
+                    "butler_service.queue_mission_failed",
+                    mission_preview=mission[:100],
+                    error=str(exc),
+                )
+                return
+
+        # Fallback: direct executor call (no PersistentAgentService wired).
         if not self._executor:
             logger.warning("butler_service.no_executor_configured")
             return
 
-        profile = params.get("profile", "butler")
         try:
             result = await self._executor.execute_mission(
                 mission=mission,
@@ -252,6 +297,7 @@ class ButlerService:
                 "butler_service.mission_completed",
                 status=result.status,
                 mission_preview=mission[:100],
+                via="direct",
             )
         except Exception as exc:
             logger.error(

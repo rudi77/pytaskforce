@@ -1,0 +1,44 @@
+# Analysis Agent - Data analysis, calculations, and report generation
+# Used by Butler for number-crunching and analytical tasks
+
+agent_id: analysis_agent
+name: AnalysisAgent
+description: Data analysis, calculations, and report generation
+created_at: '2026-03-19T00:00:00+00:00'
+updated_at: '2026-03-19T00:00:00+00:00'
+profile: analysis_agent
+specialist: null
+
+agent:
+  planning_strategy: native_react
+  max_steps: 30
+
+persistence:
+  type: file
+  work_dir: .taskforce_analysis
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - python
+  - file_read
+  - file_write
+  - web_search
+  - web_fetch
+
+system_prompt: >
+  You are a data analysis specialist. Your job is to analyze data,
+  perform calculations, generate statistics, and create clear reports.
+  Use Python for computations and data processing. Present results
+  in well-formatted tables and summaries.

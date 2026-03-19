@@ -1,5 +1,5 @@
 # Butler Agent Profile
-# Event-driven personal assistant that runs 24/7
+# Personal AI assistant that runs 24/7 as the central coordinator
 # See docs/adr/adr-010-event-driven-butler-agent.md
 
 profile: butler
@@ -49,6 +49,17 @@ context_policy:
   max_chars_per_item: 3000
   max_total_chars: 15000
 
+# Request queue settings (for PersistentAgentService)
+request_queue:
+  max_size: 100
+  drain_timeout: 30.0
+
+# Security / approval settings
+security:
+  auto_approve_risk_levels: [low, medium]
+  require_confirmation: [high, critical]
+  autonomous_mode: false
+
 # Notification defaults
 notifications:
   default_channel: telegram
@@ -95,6 +106,8 @@ rules: []
   #         of upcoming events. Send the summary via Telegram.
 
 # Tools available to the butler agent
+# The butler handles simple tasks directly and delegates complex work
+# to specialized sub-agents via call_agents_parallel
 tools:
   - web_search
   - web_fetch
@@ -108,3 +121,5 @@ tools:
   - reminder
   - rule_manager
   - ask_user
+  - call_agents_parallel
+  - activate_skill

@@ -62,8 +62,34 @@ class RequestResult:
     error: str | None = None
 
 
+class _PrioritizedItem:
+    """Wrapper for priority queue ordering.
+
+    Uses ``(priority, sequence, request)`` so that ties in priority
+    are broken by insertion order (FIFO within same priority level).
+    """
+
+    __slots__ = ("priority", "seq", "request")
+
+    _counter: int = 0
+
+    def __init__(self, request: AgentRequest) -> None:
+        self.priority = request.priority
+        _PrioritizedItem._counter += 1
+        self.seq = _PrioritizedItem._counter
+        self.request = request
+
+    def __lt__(self, other: _PrioritizedItem) -> bool:  # type: ignore[override]
+        if self.priority != other.priority:
+            return self.priority < other.priority
+        return self.seq < other.seq
+
+
 class RequestQueue:
-    """Central FIFO queue for agent requests.
+    """Central priority queue for agent requests.
+
+    Requests are ordered by ``AgentRequest.priority`` (lower = higher priority),
+    with FIFO ordering within the same priority level.
 
     The queue ensures that the singleton agent processes one request
     at a time (sequentially), preventing race conditions on shared state.
@@ -75,7 +101,9 @@ class RequestQueue:
     """
 
     def __init__(self, max_size: int = 100) -> None:
-        self._queue: asyncio.Queue[AgentRequest] = asyncio.Queue(maxsize=max_size)
+        self._queue: asyncio.PriorityQueue[_PrioritizedItem] = asyncio.PriorityQueue(
+            maxsize=max_size
+        )
         self._futures: dict[str, asyncio.Future[RequestResult]] = {}
         self._running = False
 
@@ -105,7 +133,8 @@ class RequestQueue:
     async def enqueue(self, request: AgentRequest) -> asyncio.Future[RequestResult]:
         """Add a request to the queue and return a Future for its result.
 
-        Blocks if the queue is full (back-pressure).
+        Blocks if the queue is full (back-pressure). Requests are ordered
+        by priority (lower value = higher priority).
 
         Args:
             request: The ``AgentRequest`` to enqueue.
@@ -117,18 +146,20 @@ class RequestQueue:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[RequestResult] = loop.create_future()
         self._futures[request.request_id] = future
-        await self._queue.put(request)
+        await self._queue.put(_PrioritizedItem(request))
         logger.debug(
             "request_queue.enqueued",
             request_id=request.request_id,
             channel=request.channel,
+            priority=request.priority,
             queue_size=self._queue.qsize(),
         )
         return future
 
     async def dequeue(self) -> AgentRequest:
-        """Get the next request from the queue (blocks until available)."""
-        return await self._queue.get()
+        """Get the highest-priority request from the queue (blocks until available)."""
+        item = await self._queue.get()
+        return item.request
 
     def complete(self, request_id: str, result: RequestResult) -> None:
         """Mark a request as completed and resolve its Future.
@@ -187,7 +218,8 @@ class RequestQueue:
         logger.info("request_queue.started")
         try:
             while True:
-                request = await self._queue.get()
+                item = await self._queue.get()
+                request = item.request
                 try:
                     logger.info(
                         "request_queue.processing",
@@ -302,7 +334,7 @@ class RequestProcessor:
 
         result = await self._executor.execute_mission(
             mission=request.message,
-            profile=meta.get("profile", "dev"),
+            profile=meta.get("profile", "butler"),
             session_id=effective_session_id,
             conversation_history=conversation_history,
             user_context=meta.get("user_context"),

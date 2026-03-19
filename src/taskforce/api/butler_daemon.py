@@ -197,6 +197,7 @@ class ButlerDaemon:
                     executor, config
                 )
                 if self._agent_service:
+                    self._butler.set_agent_service(self._agent_service)
                     logger.info("butler_daemon.persistent_agent_configured")
         except Exception as exc:
             logger.warning("butler_daemon.executor_setup_failed", error=str(exc))

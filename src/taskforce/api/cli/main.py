@@ -66,5 +66,45 @@ def version():
     console.print(f"[bold blue]Version:[/bold blue] [cyan]{__version__}[/cyan]")
 
 
+# ------------------------------------------------------------------
+# Top-level convenience commands (delegate to butler subcommands)
+# ------------------------------------------------------------------
+
+
+@app.command("start")
+def start(
+    ctx: typer.Context,
+    profile: str = typer.Option("butler", "--profile", "-p", help="Butler profile"),
+    detach: bool = typer.Option(False, "--detach", "-d", help="Run in background"),
+) -> None:
+    """Start the butler daemon (shortcut for 'butler start')."""
+    ctx.obj = ctx.obj or {}
+    ctx.invoke(butler.butler_start, profile=profile, detach=detach)
+
+
+@app.command("status")
+def status(ctx: typer.Context) -> None:
+    """Show butler daemon status (shortcut for 'butler status')."""
+    ctx.invoke(butler.butler_status)
+
+
+@app.command("stop")
+def stop(ctx: typer.Context) -> None:
+    """Stop the butler daemon gracefully."""
+    import json
+    from pathlib import Path
+
+    status_path = Path(".taskforce/butler/status.json")
+    if not status_path.exists():
+        console.print("[yellow]Butler daemon is not running.[/yellow]")
+        return
+
+    # Signal stop by writing a stop request file
+    stop_path = Path(".taskforce/butler/stop_requested")
+    stop_path.parent.mkdir(parents=True, exist_ok=True)
+    stop_path.write_text(json.dumps({"requested_at": str(__import__("datetime").datetime.now())}))
+    console.print("[green]Stop signal sent to butler daemon.[/green]")
+
+
 if __name__ == "__main__":
     app()

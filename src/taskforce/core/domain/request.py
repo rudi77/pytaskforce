@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=False)
 class AgentRequest:
     """A queued request from any channel.
 
@@ -31,6 +31,8 @@ class AgentRequest:
             When ``None``, the processor falls back to ``request_id``.
         metadata: Channel-specific or event-specific extra data.
         created_at: Timestamp of request creation (UTC).
+        priority: Request priority (lower = higher priority).
+            0 = urgent events, 5 = scheduled tasks, 10 = normal user messages.
     """
 
     channel: str
@@ -41,3 +43,4 @@ class AgentRequest:
     session_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    priority: int = 10

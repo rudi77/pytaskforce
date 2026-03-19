@@ -7,6 +7,7 @@ This module provides system prompts for different agent types:
 """
 
 from taskforce.core.prompts.autonomous_prompts import (
+    BUTLER_SPECIALIST_PROMPT,
     CODING_SPECIALIST_PROMPT,
     GENERAL_AUTONOMOUS_KERNEL_PROMPT,
     RAG_SPECIALIST_PROMPT,
@@ -19,6 +20,7 @@ from taskforce.core.prompts.prompt_builder import (
 )
 
 __all__ = [
+    "BUTLER_SPECIALIST_PROMPT",
     "GENERAL_AUTONOMOUS_KERNEL_PROMPT",
     "CODING_SPECIALIST_PROMPT",
     "RAG_SPECIALIST_PROMPT",

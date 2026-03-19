@@ -16,6 +16,7 @@ import structlog
 
 from taskforce.core.prompts import build_system_prompt, format_tools_description
 from taskforce.core.prompts.autonomous_prompts import (
+    BUTLER_SPECIALIST_PROMPT,
     CODING_SPECIALIST_PROMPT,
     LEAN_KERNEL_PROMPT,
     RAG_SPECIALIST_PROMPT,
@@ -31,6 +32,7 @@ logger = structlog.get_logger(__name__)
 
 # Maps specialist keys to their supplemental prompt text.
 _SPECIALIST_PROMPTS: dict[str, str] = {
+    "butler": BUTLER_SPECIALIST_PROMPT,
     "coding": CODING_SPECIALIST_PROMPT,
     "rag": RAG_SPECIALIST_PROMPT,
     "wiki": WIKI_SYSTEM_PROMPT,
