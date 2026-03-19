@@ -175,9 +175,10 @@ class SimpleChatRunner:
         self._print_banner()
         self._print_session_info()
 
-        # Initialize conversation tracking if manager is available.
+        # Start a fresh conversation on each CLI launch.
+        # The previous conversation is auto-archived by create_new().
         if self._conversation_manager:
-            self._conversation_id = await self._conversation_manager.get_or_create("cli")
+            self._conversation_id = await self._conversation_manager.create_new("cli")
 
         # Start Telegram long-polling if configured
         if self._telegram_poller:
