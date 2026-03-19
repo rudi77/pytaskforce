@@ -38,6 +38,7 @@ class MemoryKind(str, Enum):
     SHORT_TERM = "short_term"
     LONG_TERM = "long_term"
     TOOL_RESULT = "tool_result"
+    WORKING = "working"
     PREFERENCE = "preference"
     LEARNED_FACT = "learned_fact"
     CONSOLIDATED = "consolidated"
@@ -64,6 +65,7 @@ _DEFAULT_STRENGTH: dict[MemoryKind, float] = {
     MemoryKind.SHORT_TERM: 0.4,
     MemoryKind.LONG_TERM: 0.8,
     MemoryKind.TOOL_RESULT: 0.3,
+    MemoryKind.WORKING: 1.0,
     MemoryKind.PREFERENCE: 0.9,
     MemoryKind.LEARNED_FACT: 0.85,
     MemoryKind.CONSOLIDATED: 0.75,
@@ -74,6 +76,7 @@ _DEFAULT_DECAY_RATE: dict[MemoryKind, float] = {
     MemoryKind.SHORT_TERM: 0.05,
     MemoryKind.LONG_TERM: 0.002,
     MemoryKind.TOOL_RESULT: 0.08,
+    MemoryKind.WORKING: 0.0,
     MemoryKind.PREFERENCE: 0.001,
     MemoryKind.LEARNED_FACT: 0.003,
     MemoryKind.CONSOLIDATED: 0.002,

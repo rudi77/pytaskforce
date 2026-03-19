@@ -40,6 +40,7 @@ class TestMemoryKind:
         assert MemoryKind.SHORT_TERM.value == "short_term"
         assert MemoryKind.LONG_TERM.value == "long_term"
         assert MemoryKind.TOOL_RESULT.value == "tool_result"
+        assert MemoryKind.WORKING.value == "working"
         assert MemoryKind.PREFERENCE.value == "preference"
         assert MemoryKind.LEARNED_FACT.value == "learned_fact"
 
@@ -48,11 +49,46 @@ class TestMemoryKind:
         assert MemoryKind.SHORT_TERM == "short_term"
 
     def test_member_count(self) -> None:
-        assert len(MemoryKind) == 6
+        assert len(MemoryKind) == 7
 
     def test_lookup_by_value(self) -> None:
         assert MemoryKind("preference") == MemoryKind.PREFERENCE
         assert MemoryKind("learned_fact") == MemoryKind.LEARNED_FACT
+
+
+class TestWorkingMemory:
+    """Tests for WORKING memory kind — no decay, full strength."""
+
+    def test_working_memory_defaults(self) -> None:
+        record = MemoryRecord(
+            scope=MemoryScope.SESSION,
+            kind=MemoryKind.WORKING,
+            content="Current task context",
+        )
+        assert record.strength == 1.0
+        assert record.decay_rate == 0.0
+
+    def test_working_memory_no_decay(self) -> None:
+        """WORKING memories should not lose strength over time."""
+        past = datetime(2026, 1, 1, tzinfo=UTC)
+        record = MemoryRecord(
+            scope=MemoryScope.SESSION,
+            kind=MemoryKind.WORKING,
+            content="Active task",
+            updated_at=past,
+        )
+        # Even weeks later, effective strength stays at 1.0.
+        future = datetime(2026, 3, 1, tzinfo=UTC)
+        assert record.effective_strength(future) == 1.0
+
+    def test_working_memory_importance_floor(self) -> None:
+        record = MemoryRecord(
+            scope=MemoryScope.SESSION,
+            kind=MemoryKind.WORKING,
+            content="Important working context",
+            importance=0.8,
+        )
+        assert record.effective_strength() >= 0.8
 
 
 class TestMemoryRecord:

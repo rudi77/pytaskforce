@@ -27,6 +27,7 @@ from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
 # Kinds that are useful for automatic injection (excludes transient records).
 _DEFAULT_KINDS: list[MemoryKind] = [
+    MemoryKind.WORKING,
     MemoryKind.PREFERENCE,
     MemoryKind.LEARNED_FACT,
     MemoryKind.CONSOLIDATED,
@@ -34,7 +35,7 @@ _DEFAULT_KINDS: list[MemoryKind] = [
 ]
 
 # Strength below which memories are considered too faded to inject.
-_MIN_INJECTION_STRENGTH: float = 0.15
+_MIN_INJECTION_STRENGTH: float = 0.1
 
 _EMOTION_ICONS: dict[EmotionalValence, str] = {
     EmotionalValence.NEUTRAL: "",

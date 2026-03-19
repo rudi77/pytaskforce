@@ -22,6 +22,7 @@ from taskforce.core.interfaces.conversation import (
 
 if TYPE_CHECKING:
     from taskforce.application.topic_detector import TopicDetector
+    from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
 logger = structlog.get_logger(__name__)
 
@@ -43,10 +44,12 @@ class ConversationManager:
         *,
         inactivity_threshold_hours: int = 24,
         topic_detector: TopicDetector | None = None,
+        memory_store: MemoryStoreProtocol | None = None,
     ) -> None:
         self._store = store
         self._inactivity_threshold = timedelta(hours=inactivity_threshold_hours)
         self._topic_detector = topic_detector
+        self._memory_store = memory_store
 
     # ------------------------------------------------------------------
     # Delegation with auto-archival
@@ -112,6 +115,10 @@ class ConversationManager:
         """Inject a topic detector (e.g. after LLM provider is ready)."""
         self._topic_detector = detector
 
+    def set_memory_store(self, memory_store: MemoryStoreProtocol) -> None:
+        """Inject a memory store for working memory cleanup."""
+        self._memory_store = memory_store
+
     async def detect_topic(
         self,
         conversation_id: str,
@@ -160,6 +167,8 @@ class ConversationManager:
                 topic=previous_topic.label,
                 summary=summary[:100] if summary else None,
             )
+            # Clean up working memories associated with the closed topic.
+            await self._cleanup_working_memories(previous_topic.topic_id)
 
         # Start new topic.
         new_seg = conv.start_topic(
@@ -205,6 +214,38 @@ class ConversationManager:
             f"It was interrupted by a {previous_topic.source} event. "
             f"Summary of the previous topic: {user_topic.summary}]"
         )
+
+    async def _cleanup_working_memories(self, topic_id: str) -> None:
+        """Delete working memories tagged with the given topic ID.
+
+        Working memories (kind=WORKING) are temporary scratch-pad entries
+        that exist only for the duration of a topic segment. When a topic
+        is closed, its working memories are no longer needed.
+        """
+        if self._memory_store is None:
+            return
+
+        from taskforce.core.domain.memory import MemoryKind
+
+        try:
+            records = await self._memory_store.list(kind=MemoryKind.WORKING)
+            deleted = 0
+            for record in records:
+                if topic_id in record.tags:
+                    await self._memory_store.delete(record.id)
+                    deleted += 1
+            if deleted:
+                logger.info(
+                    "conversation.working_memories_cleaned",
+                    topic_id=topic_id[:8],
+                    deleted=deleted,
+                )
+        except Exception as exc:
+            logger.warning(
+                "conversation.working_memory_cleanup_failed",
+                topic_id=topic_id[:8],
+                error=str(exc),
+            )
 
     async def _get_conversation_object(self, conversation_id: str) -> Any:
         """Retrieve the Conversation domain object from the store.
