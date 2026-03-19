@@ -64,6 +64,8 @@ class FileMemoryStore(MemoryStoreProtocol):
         # In-memory cache
         self._cache: list[MemoryRecord] | None = None
         self._cache_mtime: float = 0.0
+        # Dirty flag — when True the cache has unflushed changes.
+        self._dirty: bool = False
         # Optional embedding provider for semantic search
         self._embedder = embedding_provider
         # Embedding vector cache: record_id → vector
@@ -79,6 +81,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         record.touch()
         records = self._load_all()
         records.append(record)
+        self._dirty = False  # save_all writes everything, nothing pending after
         self._save_all(records)
         return record
 
@@ -233,19 +236,26 @@ class FileMemoryStore(MemoryStoreProtocol):
         return False
 
     async def update(self, record: MemoryRecord) -> MemoryRecord:
+        """Update a record in the cache and mark as dirty.
+
+        The write to disk is deferred until ``flush()`` is called or
+        another operation (``add``, ``delete``) triggers an immediate
+        save.  This avoids 20+ full-file rewrites during bulk operations
+        like memory consolidation.
+        """
         record.touch()
         records = self._load_all()
         for i, existing in enumerate(records):
             if existing.id == record.id:
-                # Invalidate stale embedding if content changed.
                 if existing.content != record.content:
                     self._embedding_cache.pop(record.id, None)
                 records[i] = record
-                self._save_all(records)
+                self._cache = records
+                self._dirty = True
                 return record
-        # Not found → append as new
         records.append(record)
-        self._save_all(records)
+        self._cache = records
+        self._dirty = True
         return record
 
     async def delete(self, record_id: str) -> bool:
@@ -256,6 +266,17 @@ class FileMemoryStore(MemoryStoreProtocol):
         self._embedding_cache.pop(record_id, None)
         self._save_all(new_records)
         return True
+
+    async def flush(self) -> None:
+        """Write pending cache changes to disk.
+
+        No-op when the cache is clean (no deferred updates).
+        Called automatically on ``add``/``delete`` or can be called
+        explicitly after a batch of ``update`` calls.
+        """
+        if self._dirty and self._cache is not None:
+            self._save_all(self._cache)
+            self._dirty = False
 
     # ------------------------------------------------------------------
     # In-memory cache
@@ -308,43 +329,16 @@ class FileMemoryStore(MemoryStoreProtocol):
         return list(records)
 
     def _save_all(self, records: list[MemoryRecord]) -> None:
-        """Write all records to disk and update the cache.
-
-        Uses atomic write via a temp file with retry to handle Windows
-        file-locking issues (``OSError: [Errno 22]``) that occur when
-        concurrent reads/writes overlap on the same file.
-        """
-        import time
-
+        """Write all records to disk and update the cache."""
         docs = [self._record_to_dict(r) for r in records]
         text = yaml.dump_all(docs, sort_keys=False, allow_unicode=True)
         data = text.encode("utf-8")
         target = self._file.resolve()
-        tmp = target.with_suffix(".md.tmp")
 
-        last_error: OSError | None = None
-        for attempt in range(3):
-            try:
-                tmp.write_bytes(data)
-                if target.exists():
-                    os.replace(str(tmp), str(target))
-                else:
-                    tmp.rename(target)
-                last_error = None
-                break
-            except OSError as exc:
-                last_error = exc
-                logger.debug(
-                    "memory.save_retry",
-                    attempt=attempt + 1,
-                    error=str(exc),
-                )
-                time.sleep(0.1 * (attempt + 1))
+        with open(target, "wb") as f:
+            f.write(data)
 
-        if last_error is not None:
-            logger.error("memory.save_failed", error=str(last_error))
-
-        # Update cache to match what we just wrote.
+        self._dirty = False
         self._cache = list(records)
         try:
             self._cache_mtime = os.path.getmtime(self._file)

@@ -138,6 +138,10 @@ async def run_lightweight_consolidation(
         if set(rec.associations) != assoc_before.get(rec.id, set()):
             await store.update(rec)
 
+    # Flush all deferred writes in a single disk operation.
+    if hasattr(store, "flush"):
+        await store.flush()
+
     elapsed = (datetime.now(UTC) - start).total_seconds() * 1000
     result.duration_ms = int(elapsed)
 

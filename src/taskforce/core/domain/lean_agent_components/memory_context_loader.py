@@ -168,9 +168,12 @@ class MemoryContextLoader:
         active = active[: self._config.max_memories]
 
         # Reinforce injected memories (they are being "recalled").
+        # Updates are batched in the cache — flush once at the end.
         for record in active:
             record.reinforce(now)
             await self._store.update(record)
+        if hasattr(self._store, "flush"):
+            await self._store.flush()
 
         lines: list[str] = []
         total_chars = 0

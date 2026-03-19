@@ -274,6 +274,10 @@ class ConsolidationEngine:
         result.total_tokens = total_tokens
         result.ended_at = datetime.now(UTC)
 
+        # Flush deferred memory writes in a single disk operation.
+        if hasattr(self._memory_store, "flush"):
+            await self._memory_store.flush()
+
         logger.info(
             "consolidation.completed",
             consolidation_id=result.consolidation_id,
