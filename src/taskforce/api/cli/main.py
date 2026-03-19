@@ -78,14 +78,13 @@ def start(
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in background"),
 ) -> None:
     """Start the butler daemon (shortcut for 'butler start')."""
-    ctx.obj = ctx.obj or {}
-    ctx.invoke(butler.butler_start, profile=profile, detach=detach)
+    butler.butler_start(ctx, profile=profile, detach=detach)
 
 
 @app.command("status")
 def status(ctx: typer.Context) -> None:
     """Show butler daemon status (shortcut for 'butler status')."""
-    ctx.invoke(butler.butler_status)
+    butler.butler_status(ctx)
 
 
 @app.command("stop")
