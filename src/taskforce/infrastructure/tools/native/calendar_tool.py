@@ -134,20 +134,31 @@ class CalendarTool:
             return tool_error_payload(ToolError(f"{self.name} failed: {exc}", tool_name=self.name))
 
     def _build_service(self, build: Any, credentials_cls: Any) -> Any:
-        """Build the Google Calendar API service."""
+        """Build the Google Calendar API service.
+
+        Looks for an OAuth token file (result of the authorization flow)
+        at ``~/.taskforce/google_token.json`` first, then falls back to
+        the legacy ``google_credentials.json`` location.
+        """
         import json
         from pathlib import Path
 
+        from google.auth.transport.requests import Request
+
+        # Preferred: token file from OAuth flow.
+        token_path = Path.home() / ".taskforce" / "google_token.json"
         creds_file = self._credentials_file
-        if not creds_file:
-            # Try default location
-            default_path = Path.home() / ".taskforce" / "google_credentials.json"
-            if default_path.exists():
-                creds_file = str(default_path)
+
+        if token_path.exists() and not creds_file:
+            creds_file = str(token_path)
+        elif not creds_file:
+            legacy_path = Path.home() / ".taskforce" / "google_credentials.json"
+            if legacy_path.exists():
+                creds_file = str(legacy_path)
             else:
                 raise ValueError(
-                    "No credentials_file configured. Set the credentials_file parameter "
-                    "or place credentials at ~/.taskforce/google_credentials.json"
+                    "No credentials found. Run 'python scripts/google_auth.py' first, "
+                    "or place a token file at ~/.taskforce/google_token.json"
                 )
 
         creds_path = Path(creds_file)
@@ -158,6 +169,8 @@ class CalendarTool:
             creds_data = json.load(f)
 
         creds = credentials_cls.from_authorized_user_info(creds_data)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
         return build("calendar", "v3", credentials=creds)
 
     async def _list_events(self, service: Any, calendar_id: str, **kwargs: Any) -> dict[str, Any]:
