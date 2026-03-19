@@ -42,8 +42,6 @@ class EventType(str, Enum):
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Communication gateway events
     NOTIFICATION = "notification"
-    # Auto-epic orchestration events
-    EPIC_ESCALATION = "epic_escalation"
     # Butler / event-driven events
     BUTLER_EVENT_RECEIVED = "butler_event_received"
     BUTLER_RULE_FIRED = "butler_rule_fired"

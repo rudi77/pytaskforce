@@ -40,7 +40,6 @@ class TestMemoryKind:
         assert MemoryKind.SHORT_TERM.value == "short_term"
         assert MemoryKind.LONG_TERM.value == "long_term"
         assert MemoryKind.TOOL_RESULT.value == "tool_result"
-        assert MemoryKind.EPIC_LOG.value == "epic_log"
         assert MemoryKind.PREFERENCE.value == "preference"
         assert MemoryKind.LEARNED_FACT.value == "learned_fact"
 
@@ -49,7 +48,7 @@ class TestMemoryKind:
         assert MemoryKind.SHORT_TERM == "short_term"
 
     def test_member_count(self) -> None:
-        assert len(MemoryKind) == 7
+        assert len(MemoryKind) == 6
 
     def test_lookup_by_value(self) -> None:
         assert MemoryKind("preference") == MemoryKind.PREFERENCE

@@ -48,14 +48,6 @@ def run_mission(
     plugin: str | None = typer.Option(
         None, "--plugin", "-P", help="Path to external plugin directory (e.g., examples/accounting_agent)"
     ),
-    auto_epic: bool | None = typer.Option(
-        None,
-        "--auto-epic/--no-auto-epic",
-        help=(
-            "Auto-detect complex missions and escalate to Epic Orchestration "
-            "(planner/worker/judge). Default: from profile config."
-        ),
-    ),
 ):
     """Execute an agent mission.
 
@@ -80,7 +72,7 @@ def run_mission(
     """
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging level based on debug flag
@@ -125,10 +117,6 @@ def run_mission(
         tf_console.print_system_message("Streaming mode enabled", "info")
     if plugin:
         tf_console.print_system_message(f"Plugin: {plugin}", "info")
-    if auto_epic is True:
-        tf_console.print_system_message("Auto-epic detection: enabled", "info")
-    elif auto_epic is False:
-        tf_console.print_system_message("Auto-epic detection: disabled", "info")
     tf_console.print_divider()
 
     # Use streaming or standard execution
@@ -142,7 +130,6 @@ def run_mission(
             planning_strategy_params=planning_strategy_params,
             console=tf_console.console,
             plugin=plugin,
-            auto_epic=auto_epic,
         ))
     else:
         _execute_standard_mission(
@@ -155,7 +142,6 @@ def run_mission(
             planning_strategy_params=planning_strategy_params,
             tf_console=tf_console,
             plugin=plugin,
-            auto_epic=auto_epic,
         )
 
 
@@ -169,7 +155,6 @@ def _execute_standard_mission(
     planning_strategy_params: str | None,
     tf_console: TaskforceConsole,
     plugin: str | None = None,
-    auto_epic: bool | None = None,
 ) -> None:
     """Execute mission with standard progress bar."""
     executor = AgentExecutor()
@@ -198,7 +183,6 @@ def _execute_standard_mission(
                 planning_strategy=planning_strategy,
                 planning_strategy_params=strategy_params,
                 plugin_path=plugin,
-                auto_epic=auto_epic,
             )
         )
 
@@ -233,7 +217,6 @@ async def _execute_streaming_mission(
     planning_strategy: str | None = None,
     planning_strategy_params: str | None = None,
     plugin: str | None = None,
-    auto_epic: bool | None = None,
 ) -> None:
     """Execute mission with streaming Rich Live display."""
     executor = AgentExecutor()
@@ -325,31 +308,11 @@ async def _execute_streaming_mission(
             planning_strategy=planning_strategy,
             planning_strategy_params=strategy_params,
             plugin_path=plugin,
-            auto_epic=auto_epic,
         ):
             event_type = update.event_type
             should_update = False  # Only update display on meaningful changes
 
-            if event_type == "epic_escalation":
-                workers = update.details.get("worker_count", "?")
-                est_tasks = update.details.get("estimated_tasks", "?")
-                reasoning = update.details.get("reasoning", "")
-                console.print(Panel(
-                    (
-                        f"[bold yellow]Mission classified as complex[/]\n"
-                        f"Escalating to Epic Orchestration "
-                        f"(Planner / Worker / Judge)\n\n"
-                        f"Reasoning: {reasoning}\n"
-                        f"Workers: {workers}  |  "
-                        f"Estimated tasks: {est_tasks}"
-                    ),
-                    title="Epic Orchestration",
-                    border_style="yellow",
-                ))
-                status_message = "Running Epic Orchestration..."
-                should_update = True
-
-            elif event_type == "started":
+            if event_type == "started":
                 status_message = "Initializing..."
                 should_update = True
 
@@ -510,7 +473,7 @@ def run_skill(
 
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging

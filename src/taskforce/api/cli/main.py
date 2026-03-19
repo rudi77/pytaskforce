@@ -8,7 +8,6 @@ from taskforce.api.cli.commands import (
     chat,
     config,
     conversations,
-    epic,
     memory,
     missions,
     run,
@@ -19,7 +18,7 @@ from taskforce.api.cli.commands import (
 
 app = typer.Typer(
     name="taskforce",
-    help="Taskforce - Production-ready ReAct agent framework",
+    help="Taskforce - Personal AI Assistant (Butler)",
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -36,7 +35,6 @@ app.add_typer(sessions.app, name="sessions", help="Session management")
 app.add_typer(conversations.app, name="conversations", help="Conversation management")
 app.add_typer(missions.app, name="missions", help="Mission management")
 app.add_typer(config.app, name="config", help="Configuration management")
-app.add_typer(epic.app, name="epic", help="Epic orchestration workflows")
 app.add_typer(butler.app, name="butler", help="Butler agent daemon")
 app.add_typer(memory.app, name="memory", help="Memory management")
 
@@ -44,7 +42,7 @@ app.add_typer(memory.app, name="memory", help="Memory management")
 @app.callback()
 def main(
     ctx: typer.Context,
-    profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
+    profile: str = typer.Option("butler", "--profile", "-p", help="Configuration profile"),
     debug: bool = typer.Option(
         False,
         "--debug",

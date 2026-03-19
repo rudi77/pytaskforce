@@ -9,7 +9,6 @@ from pydantic import ValidationError as PydanticValidationError
 from taskforce.core.domain.config_schema import (
     AgentConfigSchema,
     AgentSourceType,
-    AutoEpicConfig,
     ConfigValidationError,
     MCPServerConfigSchema,
     ProfileConfigSchema,
@@ -195,49 +194,6 @@ class TestAgentConfigSchema:
         ))
         assert config.created_at == now
         assert config.updated_at == now
-
-
-class TestAutoEpicConfig:
-    """Tests for AutoEpicConfig validation."""
-
-    def test_defaults(self) -> None:
-        config = AutoEpicConfig()
-        assert config.enabled is False
-        assert config.confidence_threshold == 0.7
-        assert config.classifier_model is None
-        assert config.default_worker_count == 3
-        assert config.default_max_rounds == 3
-        assert config.planner_profile == "planner"
-        assert config.worker_profile == "worker"
-        assert config.judge_profile == "judge"
-
-    def test_confidence_threshold_bounds(self) -> None:
-        AutoEpicConfig(confidence_threshold=0.0)
-        AutoEpicConfig(confidence_threshold=1.0)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(confidence_threshold=-0.1)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(confidence_threshold=1.1)
-
-    def test_worker_count_bounds(self) -> None:
-        AutoEpicConfig(default_worker_count=1)
-        AutoEpicConfig(default_worker_count=10)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(default_worker_count=0)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(default_worker_count=11)
-
-    def test_max_rounds_bounds(self) -> None:
-        AutoEpicConfig(default_max_rounds=1)
-        AutoEpicConfig(default_max_rounds=10)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(default_max_rounds=0)
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(default_max_rounds=11)
-
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(PydanticValidationError):
-            AutoEpicConfig(unknown_field="bad")
 
 
 class TestProfileConfigSchema:

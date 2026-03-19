@@ -77,9 +77,6 @@ class TestEventType:
     def test_communication_event_values(self) -> None:
         assert EventType.NOTIFICATION.value == "notification"
 
-    def test_epic_event_values(self) -> None:
-        assert EventType.EPIC_ESCALATION.value == "epic_escalation"
-
     def test_butler_event_values(self) -> None:
         assert EventType.BUTLER_EVENT_RECEIVED.value == "butler_event_received"
         assert EventType.BUTLER_RULE_FIRED.value == "butler_rule_fired"

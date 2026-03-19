@@ -11,7 +11,6 @@
 from taskforce.application.config_schema import (  # noqa: F401
     AgentConfigSchema,
     AgentSourceType,
-    AutoEpicConfig,
     ConfigValidationError,
     MCPServerConfigSchema,
     ProfileConfigSchema,
@@ -24,7 +23,6 @@ from taskforce.application.config_schema import (  # noqa: F401
 __all__ = [
     "AgentConfigSchema",
     "AgentSourceType",
-    "AutoEpicConfig",
     "ConfigValidationError",
     "MCPServerConfigSchema",
     "ProfileConfigSchema",

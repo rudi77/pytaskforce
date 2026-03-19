@@ -954,7 +954,7 @@ class AgentFactory:
     async def create_agent_with_plugin(
         self,
         plugin_path: str,
-        profile: str = "dev",
+        profile: str = "butler",
         user_context: dict[str, Any] | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,

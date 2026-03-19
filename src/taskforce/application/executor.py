@@ -23,15 +23,12 @@ from typing import Any
 import structlog
 
 from taskforce.application.factory import AgentFactory
-from taskforce.application.task_complexity_classifier import TaskComplexityClassifier
 from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     PluginAgentDefinition,
 )
-from taskforce.core.domain.config_schema import AutoEpicConfig
 from taskforce.core.domain.enums import EventType, ExecutionStatus
-from taskforce.core.domain.epic import TaskComplexity
 from taskforce.core.domain.errors import (
     CancelledError,
     NotFoundError,
@@ -164,7 +161,7 @@ class AgentExecutor:
     async def execute_mission(
         self,
         mission: str,
-        profile: str = "dev",
+        profile: str = "butler",
         session_id: str | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
         progress_callback: Callable[[ProgressUpdate], None] | None = None,
@@ -173,7 +170,6 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         plugin_path: str | None = None,
-        auto_epic: bool | None = None,
     ) -> ExecutionResult:
         """Execute Agent mission with comprehensive orchestration.
 
@@ -202,8 +198,6 @@ class AgentExecutor:
             planning_strategy_params: Optional params for planning strategy
             plugin_path: Optional path to external plugin directory
                         (e.g., examples/accounting_agent)
-            auto_epic: Auto-epic detection. None=read from profile config,
-                      True=force enabled, False=force disabled.
 
         Returns:
             ExecutionResult with completion status and history
@@ -225,7 +219,6 @@ class AgentExecutor:
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             plugin_path=plugin_path,
-            auto_epic=auto_epic,
         ):
             # Forward progress updates to callback if provided
             if progress_callback:
@@ -296,7 +289,7 @@ class AgentExecutor:
     async def execute_mission_streaming(
         self,
         mission: str,
-        profile: str = "dev",
+        profile: str = "butler",
         session_id: str | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
         user_context: dict[str, Any] | None = None,
@@ -305,16 +298,11 @@ class AgentExecutor:
         planning_strategy_params: dict[str, Any] | None = None,
         agent: Agent | None = None,
         plugin_path: str | None = None,
-        auto_epic: bool | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
         Yields ProgressUpdate objects as execution progresses, enabling
         real-time feedback to consumers (CLI progress bars, API SSE, etc).
-
-        When auto_epic is enabled, the mission is first classified for
-        complexity. If classified as epic with sufficient confidence,
-        execution is delegated to the EpicOrchestrator instead.
 
         Args:
             mission: Mission description
@@ -330,8 +318,6 @@ class AgentExecutor:
                   agent creation and uses this agent directly.
             plugin_path: Optional path to external plugin directory
                         (e.g., examples/accounting_agent)
-            auto_epic: Auto-epic detection. None=read from profile config,
-                      True=force enabled, False=force disabled.
 
         Yields:
             ProgressUpdate objects for each execution event
@@ -366,19 +352,6 @@ class AgentExecutor:
             agent_id=agent_id,
             plugin_path=plugin_path,
         )
-
-        # --- Auto-epic classification ---
-        if agent is None and auto_epic is not False:
-            escalated = await self._try_epic_escalation(mission, profile, auto_epic)
-            if escalated is not None:
-                yield escalated
-                async for update in self._execute_epic_streaming(
-                    mission=mission,
-                    profile=profile,
-                    auto_epic_config=self._resolve_auto_epic_config(profile),
-                ):
-                    yield update
-                return
 
         if agent is None:
             agent = await self._create_agent(
@@ -500,28 +473,6 @@ class AgentExecutor:
                 "agent_id": agent_id,
                 "plugin_path": plugin_path,
             },
-        )
-
-    async def _try_epic_escalation(
-        self,
-        mission: str,
-        profile: str,
-        auto_epic: bool | None,
-    ) -> ProgressUpdate | None:
-        """Attempt auto-epic classification and return escalation update if warranted.
-
-        Args:
-            mission: The mission text.
-            profile: Active profile name.
-            auto_epic: Explicit override (True=force, False=skip, None=from config).
-
-        Returns:
-            ProgressUpdate with EPIC_ESCALATION event, or None for standard execution.
-        """
-        return await self._classify_and_route_epic(
-            mission=mission,
-            profile=profile,
-            auto_epic=auto_epic,
         )
 
     def _handle_cancellation(
@@ -1378,264 +1329,6 @@ class AgentExecutor:
             message=message_fn(event.data),
             details=event.data,
         )
-
-    # ------------------------------------------------------------------
-    # Auto-epic helpers
-    # ------------------------------------------------------------------
-
-    def _resolve_auto_epic_config(self, profile: str) -> AutoEpicConfig | None:
-        """Load auto-epic configuration from profile YAML.
-
-        Args:
-            profile: Profile name to load.
-
-        Returns:
-            AutoEpicConfig if the profile has orchestration.auto_epic settings,
-            otherwise None.
-
-        """
-        try:
-            config = self.factory.profile_loader.load_safe(profile)
-        except (FileNotFoundError, AttributeError):
-            self.logger.debug(
-                "auto_epic.profile_not_found",
-                profile=profile,
-            )
-            return None
-        except Exception as e:
-            self.logger.error(
-                "auto_epic.profile_load_failed",
-                profile=profile,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            return None
-
-        return self._parse_auto_epic_from_config(config, profile)
-
-    def _parse_auto_epic_from_config(
-        self, config: dict[str, Any], profile: str
-    ) -> AutoEpicConfig | None:
-        """Parse AutoEpicConfig from a loaded profile configuration dict.
-
-        Args:
-            config: The loaded profile configuration.
-            profile: Profile name (for logging context).
-
-        Returns:
-            AutoEpicConfig if valid auto_epic settings exist, None otherwise.
-        """
-        orchestration = config.get("orchestration", {}) or {}
-        auto_epic_raw = orchestration.get("auto_epic")
-        if not auto_epic_raw or not isinstance(auto_epic_raw, dict):
-            return None
-
-        try:
-            return AutoEpicConfig(**auto_epic_raw)
-        except Exception as e:
-            self.logger.error(
-                "auto_epic.config_parse_error",
-                profile=profile,
-                error=str(e),
-                error_type=type(e).__name__,
-                raw_config=auto_epic_raw,
-            )
-            return None
-
-    async def _classify_and_route_epic(
-        self,
-        mission: str,
-        profile: str,
-        auto_epic: bool | None,
-    ) -> ProgressUpdate | None:
-        """Classify mission complexity and decide whether to escalate to epic.
-
-        Args:
-            mission: The mission text.
-            profile: Active profile name (for loading config).
-            auto_epic: Explicit override (True=force, False=skip, None=from config).
-
-        Returns:
-            A ProgressUpdate with EPIC_ESCALATION event if escalation is warranted,
-            or None to continue with standard execution.
-        """
-        epic_config = self._resolve_effective_epic_config(profile, auto_epic)
-        if epic_config is None:
-            return None
-
-        llm_provider = self._create_classification_llm_provider(profile)
-        if llm_provider is None:
-            return None
-
-        classification = await self._run_classification(mission, llm_provider, epic_config)
-        if classification is None:
-            return None
-
-        return self._build_escalation_update(classification, epic_config)
-
-    def _resolve_effective_epic_config(
-        self, profile: str, auto_epic: bool | None
-    ) -> AutoEpicConfig | None:
-        """Determine the effective auto-epic config based on override and profile.
-
-        Args:
-            profile: Active profile name.
-            auto_epic: Explicit override (True=force, None=from config).
-
-        Returns:
-            AutoEpicConfig if epic classification should proceed, None otherwise.
-        """
-        epic_config = self._resolve_auto_epic_config(profile)
-
-        if auto_epic is True:
-            if epic_config is None:
-                epic_config = AutoEpicConfig(enabled=True)
-        elif epic_config is None or not epic_config.enabled:
-            return None
-
-        return epic_config
-
-    def _create_classification_llm_provider(self, profile: str) -> Any | None:
-        """Create a lightweight LLM provider for complexity classification.
-
-        Args:
-            profile: Profile name to load LLM configuration from.
-
-        Returns:
-            LLM provider instance, or None if creation fails.
-        """
-        try:
-            profile_config = self.factory.profile_loader.load_safe(profile)
-            return self.factory._create_llm_provider(profile_config)
-        except Exception as e:
-            self.logger.error(
-                "auto_epic.llm_creation_failed",
-                profile=profile,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            return None
-
-    async def _run_classification(
-        self, mission: str, llm_provider: Any, epic_config: AutoEpicConfig
-    ) -> Any | None:
-        """Run the complexity classifier and return the classification result.
-
-        Args:
-            mission: The mission text.
-            llm_provider: LLM provider for the classifier.
-            epic_config: The auto-epic configuration.
-
-        Returns:
-            Classification result if classified as EPIC with sufficient
-            confidence, None otherwise.
-        """
-        classifier = TaskComplexityClassifier(
-            llm_provider=llm_provider,
-            model=epic_config.classifier_model,
-        )
-        classification = await classifier.classify(mission)
-
-        self.logger.info(
-            "auto_epic.classification_result",
-            complexity=classification.complexity.value,
-            confidence=classification.confidence,
-            reasoning=classification.reasoning,
-            threshold=epic_config.confidence_threshold,
-        )
-
-        if (
-            classification.complexity != TaskComplexity.EPIC
-            or classification.confidence < epic_config.confidence_threshold
-        ):
-            return None
-
-        return classification
-
-    def _build_escalation_update(
-        self, classification: Any, epic_config: AutoEpicConfig
-    ) -> ProgressUpdate:
-        """Build the EPIC_ESCALATION progress update from classification results.
-
-        Args:
-            classification: The classification result.
-            epic_config: The auto-epic configuration.
-
-        Returns:
-            ProgressUpdate with EPIC_ESCALATION event type.
-        """
-        worker_count = classification.suggested_worker_count or epic_config.default_worker_count
-        return ProgressUpdate(
-            timestamp=datetime.now(),
-            event_type=EventType.EPIC_ESCALATION,
-            message=(
-                f"Mission classified as complex — escalating to Epic Orchestration "
-                f"({classification.reasoning})"
-            ),
-            details={
-                "complexity": classification.complexity.value,
-                "confidence": classification.confidence,
-                "reasoning": classification.reasoning,
-                "worker_count": worker_count,
-                "estimated_tasks": classification.estimated_task_count,
-            },
-        )
-
-    async def _execute_epic_streaming(
-        self,
-        mission: str,
-        profile: str,
-        auto_epic_config: AutoEpicConfig | None,
-    ) -> AsyncIterator[ProgressUpdate]:
-        """Execute mission via EpicOrchestrator and yield progress updates.
-
-        Args:
-            mission: The mission text.
-            profile: Active profile name.
-            auto_epic_config: Resolved auto-epic configuration.
-
-        Yields:
-            ProgressUpdate events for the epic execution.
-        """
-        from taskforce.application.epic_orchestrator import EpicOrchestrator
-
-        cfg = auto_epic_config or AutoEpicConfig(enabled=True)
-        orchestrator = EpicOrchestrator(factory=self.factory)
-
-        try:
-            result = await orchestrator.run_epic(
-                mission=mission,
-                planner_profile=cfg.planner_profile,
-                worker_profile=cfg.worker_profile,
-                judge_profile=cfg.judge_profile,
-                worker_count=cfg.default_worker_count,
-                max_rounds=cfg.default_max_rounds,
-            )
-
-            completed_count = sum(1 for r in result.worker_results if r.status == "completed")
-
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type=EventType.COMPLETE,
-                message=result.judge_summary or "Epic orchestration completed",
-                details={
-                    "status": result.status,
-                    "session_id": result.run_id,
-                    "run_id": result.run_id,
-                    "tasks_completed": completed_count,
-                    "tasks_total": len(result.tasks),
-                    "rounds": len(result.round_summaries),
-                    "epic_mode": True,
-                },
-            )
-        except Exception as e:
-            self.logger.exception("auto_epic.execution_failed", error=str(e))
-            yield ProgressUpdate(
-                timestamp=datetime.now(),
-                event_type=EventType.ERROR,
-                message=f"Epic orchestration failed: {e}",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
 
     # ------------------------------------------------------------------
     # Error and logging helpers
