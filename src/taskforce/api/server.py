@@ -16,11 +16,10 @@ from taskforce.api.routes import (
     gateway,
     health,
     memory,
-    sessions,
     tools,
     workflows,
 )
-from taskforce.application.plugin_discovery import (
+from taskforce.application.plugin_loader import (
     get_plugin_registry,
     is_enterprise_available,
     load_all_plugins,
@@ -137,7 +136,6 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
 
     # Include core routers
     app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
-    app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
     app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
     app.include_router(tools.router, prefix="/api/v1", tags=["tools"])
     app.include_router(gateway.router, prefix="/api/v1", tags=["gateway"])

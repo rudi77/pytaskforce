@@ -13,7 +13,7 @@ from taskforce.core.domain.agent_definition import (
     AgentSource,
     MCPServerConfig,
 )
-from taskforce.core.domain.config_schema import (
+from taskforce.application.config_schema import (
     MCPServerConfigSchema,
     extract_tool_names,
     validate_agent_config,

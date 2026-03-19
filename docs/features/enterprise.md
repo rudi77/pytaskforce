@@ -19,7 +19,7 @@ Nach Installation von `taskforce-enterprise` werden alle Enterprise-Features **a
 ### Prüfen ob Enterprise aktiv ist
 
 ```python
-from taskforce.application.plugin_discovery import is_enterprise_available
+from taskforce.application.plugin_loader import is_enterprise_available
 
 if is_enterprise_available():
     print("Enterprise-Features verfügbar")
