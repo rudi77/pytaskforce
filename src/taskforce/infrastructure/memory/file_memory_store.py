@@ -310,23 +310,40 @@ class FileMemoryStore(MemoryStoreProtocol):
     def _save_all(self, records: list[MemoryRecord]) -> None:
         """Write all records to disk and update the cache.
 
-        Uses binary-mode write via a temp file to work around Windows
-        ``OSError: [Errno 22]`` that occurs with ``Path.write_text()``
-        and ``open(mode='w')`` on large YAML payloads.
+        Uses atomic write via a temp file with retry to handle Windows
+        file-locking issues (``OSError: [Errno 22]``) that occur when
+        concurrent reads/writes overlap on the same file.
         """
+        import time
+
         docs = [self._record_to_dict(r) for r in records]
         text = yaml.dump_all(docs, sort_keys=False, allow_unicode=True)
         data = text.encode("utf-8")
         target = self._file.resolve()
         tmp = target.with_suffix(".md.tmp")
-        try:
-            tmp.write_bytes(data)
-            if target.exists():
-                target.unlink()
-            tmp.rename(target)
-        except OSError:
-            # Last-resort fallback: write directly in binary mode.
-            target.write_bytes(data)
+
+        last_error: OSError | None = None
+        for attempt in range(3):
+            try:
+                tmp.write_bytes(data)
+                if target.exists():
+                    os.replace(str(tmp), str(target))
+                else:
+                    tmp.rename(target)
+                last_error = None
+                break
+            except OSError as exc:
+                last_error = exc
+                logger.debug(
+                    "memory.save_retry",
+                    attempt=attempt + 1,
+                    error=str(exc),
+                )
+                time.sleep(0.1 * (attempt + 1))
+
+        if last_error is not None:
+            logger.error("memory.save_failed", error=str(last_error))
+
         # Update cache to match what we just wrote.
         self._cache = list(records)
         try:
