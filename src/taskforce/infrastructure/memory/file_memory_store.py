@@ -308,10 +308,25 @@ class FileMemoryStore(MemoryStoreProtocol):
         return list(records)
 
     def _save_all(self, records: list[MemoryRecord]) -> None:
-        """Write all records to disk and update the cache."""
+        """Write all records to disk and update the cache.
+
+        Uses atomic write via a temp file to avoid partial writes and
+        to work around Windows ``OSError: [Errno 22]`` on large
+        ``Path.write_text()`` calls.
+        """
         docs = [self._record_to_dict(r) for r in records]
         text = yaml.dump_all(docs, sort_keys=False, allow_unicode=True)
-        self._file.write_text(text, encoding="utf-8")
+        tmp = self._file.with_suffix(".md.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text)
+            if self._file.exists():
+                self._file.unlink()
+            tmp.rename(self._file)
+        except OSError:
+            # Fallback: write directly if atomic rename fails.
+            with open(self._file, "w", encoding="utf-8") as f:
+                f.write(text)
         # Update cache to match what we just wrote.
         self._cache = list(records)
         try:

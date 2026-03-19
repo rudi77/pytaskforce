@@ -123,6 +123,11 @@ class SendNotificationTool(BaseTool):
             Dict with success status and delivery details.
         """
         if not self._gateway:
+            self._logger.warning(
+                "send_notification.no_gateway",
+                channel=channel,
+                recipient_id=recipient_id,
+            )
             return {
                 "success": False,
                 "error": (
@@ -140,15 +145,34 @@ class SendNotificationTool(BaseTool):
             metadata=metadata or {},
         )
 
+        self._logger.info(
+            "send_notification.sending",
+            channel=channel,
+            recipient_id=recipient_id,
+            message_preview=message[:80],
+        )
+
         result = await self._gateway.send_notification(request)
 
         if result.success:
+            self._logger.info(
+                "send_notification.success",
+                channel=result.channel,
+                recipient_id=result.recipient_id,
+            )
             return {
                 "success": True,
                 "channel": result.channel,
                 "recipient_id": result.recipient_id,
                 "message": f"Notification sent to {result.recipient_id} via {result.channel}",
             }
+
+        self._logger.error(
+            "send_notification.failed",
+            channel=result.channel,
+            recipient_id=result.recipient_id,
+            error=result.error,
+        )
         return {
             "success": False,
             "error": result.error or "Unknown delivery error",
