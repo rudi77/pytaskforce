@@ -133,10 +133,11 @@ class SimpleChatRunner:
             self._gateway = gateway
 
             # Patch gateway into already-instantiated agent tools.
+            # Agent.tools is a dict[str, ToolProtocol].
             if self.agent and hasattr(self.agent, "tools"):
-                for tool in self.agent.tools:
-                    if getattr(tool, "name", "") == "send_notification":
-                        tool._gateway = gateway
+                notif_tool = self.agent.tools.get("send_notification")
+                if notif_tool is not None:
+                    notif_tool._gateway = gateway
 
             # Prepare Telegram poller (started in run())
             sender = components.outbound_senders.get("telegram")
