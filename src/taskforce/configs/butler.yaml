@@ -109,13 +109,14 @@ rules: []
 # The butler handles simple tasks directly and delegates complex work
 # to specialized sub-agents via call_agents_parallel
 tools:
-  - web_search
-  - web_fetch
-  - file_read
-  - file_write
-  - python
+  #- web_search
+  #- web_fetch
+  #- file_read
+  #- file_write
+  - shell
   - memory
   - send_notification
+  - gmail
   - calendar
   - schedule
   - reminder
