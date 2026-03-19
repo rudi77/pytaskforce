@@ -196,6 +196,60 @@ class FileConversationStore:
             for c in archived[:limit]
         ]
 
+    async def get_conversation(self, conversation_id: str) -> Conversation | None:
+        """Load a full Conversation domain object.
+
+        This is used by the ConversationManager for topic segmentation.
+        Returns ``None`` if the conversation is not found.
+        """
+        index = await self._load_index()
+        for entry in index:
+            if entry["conversation_id"] == conversation_id:
+                from datetime import datetime as dt
+
+                started = entry.get("started_at", "")
+                last = entry.get("last_activity", "")
+                conv = Conversation(
+                    channel=entry["channel"],
+                    conversation_id=entry["conversation_id"],
+                    status=ConversationStatus(entry.get("status", "active")),
+                    started_at=(
+                        dt.fromisoformat(started) if isinstance(started, str) and started
+                        else datetime.now(UTC)
+                    ),
+                    last_activity=(
+                        dt.fromisoformat(last) if isinstance(last, str) and last
+                        else datetime.now(UTC)
+                    ),
+                    message_count=entry.get("message_count", 0),
+                    topic=entry.get("topic"),
+                    summary=entry.get("summary"),
+                    sender_id=entry.get("sender_id"),
+                    metadata=entry.get("metadata", {}),
+                )
+                # Load topic segments if stored.
+                segments_data = entry.get("topic_segments", [])
+                if segments_data:
+                    from taskforce.core.domain.conversation import TopicSegment
+
+                    for seg_data in segments_data:
+                        seg = TopicSegment(
+                            label=seg_data.get("label", ""),
+                            topic_id=seg_data.get("topic_id", ""),
+                            summary=seg_data.get("summary"),
+                            source=seg_data.get("source", "user"),
+                            priority=seg_data.get("priority", 0),
+                            message_range=tuple(seg_data.get("message_range", [0, 0])),
+                        )
+                        if seg_data.get("started_at"):
+                            seg.started_at = dt.fromisoformat(seg_data["started_at"])
+                        if seg_data.get("ended_at"):
+                            seg.ended_at = dt.fromisoformat(seg_data["ended_at"])
+                        conv.topic_segments.append(seg)
+                conv.active_topic_id = entry.get("active_topic_id")
+                return conv
+        return None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
