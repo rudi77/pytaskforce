@@ -29,18 +29,17 @@ class GmailTool(BaseTool):
 
     tool_name = "gmail"
     tool_description = (
-        "Read Gmail messages. Actions: list (search/list emails), "
-        "read (get full email content by ID). "
-        "Use list with a query like 'is:unread' or 'from:someone@example.com' "
-        "to find messages, then read to get the full content."
+        "Read Gmail messages and labels. Actions: list (search/list emails), "
+        "read (get full email content by ID), labels (list all Gmail labels/folders). "
+        "Use labels to discover folders, then list with a query to find messages."
     )
     tool_parameters_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list", "read"],
-                "description": "Gmail action: list or read",
+                "enum": ["list", "read", "labels"],
+                "description": "Gmail action: list, read, or labels",
             },
             "query": {
                 "type": "string",
@@ -80,12 +79,14 @@ class GmailTool(BaseTool):
             }
 
         action = kwargs.get("action")
-        if action not in ("list", "read"):
-            return {"success": False, "error": "action must be 'list' or 'read'"}
+        if action not in ("list", "read", "labels"):
+            return {"success": False, "error": "action must be 'list', 'read', or 'labels'"}
 
         try:
             service = _build_service(build, Credentials)
 
+            if action == "labels":
+                return await _list_labels(service)
             if action == "list":
                 return await _list_messages(service, kwargs)
             return await _read_message(service, kwargs)
@@ -96,8 +97,8 @@ class GmailTool(BaseTool):
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         action = kwargs.get("action")
-        if action not in ("list", "read"):
-            return False, "action must be 'list' or 'read'"
+        if action not in ("list", "read", "labels"):
+            return False, "action must be 'list', 'read', or 'labels'"
         if action == "read" and not kwargs.get("message_id"):
             return False, "message_id is required for read action"
         return True, None
@@ -123,6 +124,22 @@ def _build_service(build: Any, credentials_cls: Any) -> Any:
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
     return build("gmail", "v1", credentials=creds)
+
+
+async def _list_labels(service: Any) -> dict[str, Any]:
+    """List all Gmail labels (folders/categories)."""
+    result = await asyncio.to_thread(
+        lambda: service.users().labels().list(userId="me").execute()
+    )
+    labels = []
+    for label in result.get("labels", []):
+        labels.append({
+            "id": label["id"],
+            "name": label["name"],
+            "type": label.get("type", ""),
+        })
+    labels.sort(key=lambda l: l["name"])
+    return {"success": True, "labels": labels, "count": len(labels)}
 
 
 async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
