@@ -186,7 +186,7 @@ register_factory_extension(my_extension)
 ## Prüfen ob Enterprise verfügbar
 
 ```python
-from taskforce.application.plugin_discovery import is_enterprise_available
+from taskforce.application.plugin_loader import is_enterprise_available
 
 if is_enterprise_available():
     print("Enterprise-Features aktiv")

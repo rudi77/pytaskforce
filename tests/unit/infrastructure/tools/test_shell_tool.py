@@ -32,7 +32,8 @@ class TestShellToolMetadata:
         assert tool.name == "shell"
 
     def test_description(self, tool):
-        assert "shell" in tool.description.lower()
+        desc = tool.description.lower()
+        assert "shell" in desc or "bash" in desc
 
     def test_parameters_schema(self, tool):
         schema = tool.parameters_schema
@@ -116,7 +117,7 @@ class TestShellToolDangerousCommands:
 
     async def test_safe_command_not_blocked(self, tool):
         """Test that a normal command is not blocked."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"output", b""))
             mock_proc.returncode = 0
@@ -136,7 +137,7 @@ class TestShellToolExecution:
 
     async def test_successful_command(self, tool):
         """Test executing a successful command."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"hello world\n", b""))
             mock_proc.returncode = 0
@@ -153,7 +154,7 @@ class TestShellToolExecution:
 
     async def test_failed_command(self, tool):
         """Test executing a command that fails."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(
                 return_value=(b"", b"No such file or directory\n")
@@ -170,7 +171,7 @@ class TestShellToolExecution:
 
     async def test_command_timeout(self, tool):
         """Test command timeout handling."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
             mock_proc.kill = MagicMock()
@@ -185,7 +186,7 @@ class TestShellToolExecution:
 
     async def test_custom_cwd(self, tool):
         """Test command execution with custom working directory."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"/tmp\n", b""))
             mock_proc.returncode = 0
@@ -201,7 +202,7 @@ class TestShellToolExecution:
     async def test_exception_returns_error_payload(self, tool):
         """Test that unexpected exceptions produce an error payload."""
         with patch(
-            "asyncio.create_subprocess_shell",
+            "asyncio.create_subprocess_exec",
             side_effect=OSError("Permission denied"),
         ):
             result = await tool.execute(command="restricted_cmd")
@@ -211,7 +212,7 @@ class TestShellToolExecution:
 
     async def test_failed_command_uses_stderr_as_error(self, tool):
         """Test that stderr is used as error message for failed commands."""
-        with patch("asyncio.create_subprocess_shell") as mock_create:
+        with patch("asyncio.create_subprocess_exec") as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"", b""))
             mock_proc.returncode = 2

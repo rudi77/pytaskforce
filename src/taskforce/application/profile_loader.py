@@ -21,7 +21,7 @@ from typing import Any
 import structlog
 import yaml
 
-from taskforce.core.domain.config_schema import (
+from taskforce.application.config_schema import (
     ConfigValidationError,
     validate_profile_config,
 )

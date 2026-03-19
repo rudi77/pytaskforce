@@ -4,7 +4,11 @@ from typing import Any
 
 import pytest
 
-from taskforce.application.gateway import CommunicationGateway
+from taskforce.application.gateway import (
+    CommunicationGateway,
+    _append_message,
+    _build_multimodal_content,
+)
 from taskforce.core.domain.gateway import (
     GatewayOptions,
     InboundMessage,
@@ -625,3 +629,423 @@ async def test_inbound_sends_acknowledgment(gateway_with_pending) -> None:
     # Acknowledgment should have been sent
     assert len(sender.sent) == 1
     assert "Danke" in sender.sent[0][1] or "weitergeleitet" in sender.sent[0][1]
+
+
+# ---------------------------------------------------------------------------
+# Reset command tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["/start", "/new", "/reset", "/RESET", " /start "])
+async def test_reset_commands_clear_history_and_return_welcome(
+    gateway_parts, command: str
+) -> None:
+    """Reset commands (/start, /new, /reset) wipe history and return welcome."""
+    gateway, store, registry, sender = gateway_parts
+
+    # Seed some history first (session_id must be set before saving history)
+    await store.set_session_id("telegram", "chat-42", "old-session")
+    await store.save_history(
+        "telegram",
+        "chat-42",
+        [{"role": "user", "content": "old message"}],
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message=command,
+        sender_id="user-1",
+    )
+    response = await gateway.handle_message(msg)
+
+    assert response.status == "conversation_reset"
+    assert "Willkommen" in response.reply
+    assert response.history == []
+    assert response.session_id == ""
+
+
+@pytest.mark.asyncio
+async def test_reset_sends_welcome_via_outbound(gateway_parts) -> None:
+    """Reset sends a welcome message through the outbound sender."""
+    gateway, store, registry, sender = gateway_parts
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="/start",
+    )
+    await gateway.handle_message(msg)
+
+    assert len(sender.sent) == 1
+    assert sender.sent[0][0] == "chat-42"
+    assert "Willkommen" in sender.sent[0][1]
+
+
+@pytest.mark.asyncio
+async def test_reset_welcome_failure_does_not_raise() -> None:
+    """If outbound sender fails during reset, no exception propagates."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": FailingSender()},
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="/reset",
+    )
+    response = await gateway.handle_message(msg)
+
+    assert response.status == "conversation_reset"
+
+
+@pytest.mark.asyncio
+async def test_reset_without_outbound_sender() -> None:
+    """Reset works even when no outbound sender is configured."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+    )
+
+    msg = InboundMessage(
+        channel="rest",
+        conversation_id="api-1",
+        message="/new",
+    )
+    response = await gateway.handle_message(msg)
+
+    assert response.status == "conversation_reset"
+
+
+# ---------------------------------------------------------------------------
+# History trimming tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_trim_history_limits_messages() -> None:
+    """Conversation history is trimmed to max_conversation_history."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    calls: list[dict[str, Any]] = []
+
+    class CapturingExecutor:
+        async def execute_mission(self, **kwargs: Any) -> ExecutionResult:
+            calls.append(kwargs)
+            return ExecutionResult(
+                session_id=kwargs["session_id"],
+                status="completed",
+                final_message="Reply",
+            )
+
+    gateway = CommunicationGateway(
+        executor=CapturingExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        max_conversation_history=4,
+    )
+
+    # Seed history beyond the limit (session_id must be set before saving history)
+    await store.set_session_id("telegram", "chat-1", "sess-1")
+    big_history = [
+        {"role": "user", "content": f"msg-{i}"} for i in range(10)
+    ]
+    await store.save_history("telegram", "chat-1", big_history)
+
+    msg = InboundMessage(channel="telegram", conversation_id="chat-1", message="new")
+    await gateway.handle_message(msg)
+
+    # The conversation_history passed to execute should be trimmed
+    passed_history = calls[0]["conversation_history"]
+    assert len(passed_history) <= 4
+
+
+# ---------------------------------------------------------------------------
+# Module-level helper function tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildMultimodalContent:
+    """Tests for _build_multimodal_content."""
+
+    def test_no_attachments_returns_plain_text(self) -> None:
+        result = _build_multimodal_content("Hello", None)
+        assert result == "Hello"
+
+    def test_empty_attachments_returns_plain_text(self) -> None:
+        result = _build_multimodal_content("Hello", [])
+        assert result == "Hello"
+
+    def test_image_attachment_returns_content_array(self) -> None:
+        attachments = [
+            {"type": "image", "data_url": "data:image/png;base64,abc123"}
+        ]
+        result = _build_multimodal_content("Look at this", attachments)
+        assert isinstance(result, list)
+        assert result[0] == {"type": "text", "text": "Look at this"}
+        assert result[1]["type"] == "image_url"
+        assert result[1]["image_url"]["url"] == "data:image/png;base64,abc123"
+
+    def test_document_attachment_returns_enriched_text(self) -> None:
+        attachments = [
+            {
+                "type": "document",
+                "file_path": "/tmp/invoice.pdf",
+                "file_name": "invoice.pdf",
+                "mime_type": "application/pdf",
+            }
+        ]
+        result = _build_multimodal_content("Process this", attachments)
+        assert isinstance(result, str)
+        assert "invoice.pdf" in result
+        assert "/tmp/invoice.pdf" in result
+        assert "Process this" in result
+
+    def test_mixed_image_and_document_returns_content_array(self) -> None:
+        attachments = [
+            {"type": "image", "data_url": "data:image/png;base64,abc"},
+            {
+                "type": "document",
+                "file_path": "/tmp/doc.txt",
+                "file_name": "doc.txt",
+                "mime_type": "text/plain",
+            },
+        ]
+        result = _build_multimodal_content("Mixed", attachments)
+        assert isinstance(result, list)
+        assert len(result) == 3  # text + image + doc reference text
+        assert result[0]["type"] == "text"
+        assert result[1]["type"] == "image_url"
+        assert result[2]["type"] == "text"
+        assert "doc.txt" in result[2]["text"]
+
+
+class TestAppendMessage:
+    """Tests for _append_message."""
+
+    def test_appends_to_empty_history(self) -> None:
+        result = _append_message([], "user", "Hello")
+        assert result == [{"role": "user", "content": "Hello"}]
+
+    def test_appends_without_mutating_original(self) -> None:
+        original = [{"role": "user", "content": "first"}]
+        result = _append_message(original, "assistant", "second")
+        assert len(result) == 2
+        assert len(original) == 1  # original not modified
+
+
+# ---------------------------------------------------------------------------
+# Edge cases for poll/clear without pending store
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_poll_channel_response_without_store(gateway_parts) -> None:
+    """poll_channel_response returns None when no pending store is configured."""
+    gateway, _, _, _ = gateway_parts
+    result = await gateway.poll_channel_response(session_id="any-session")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_question_without_store(gateway_parts) -> None:
+    """clear_channel_question is a no-op when no pending store is configured."""
+    gateway, _, _, _ = gateway_parts
+    # Should not raise
+    await gateway.clear_channel_question(session_id="any-session")
+
+
+# ---------------------------------------------------------------------------
+# Notification with metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_notification_passes_metadata(gateway_parts) -> None:
+    """Notification metadata is forwarded to the outbound sender."""
+    gateway, store, registry, sender = gateway_parts
+
+    await registry.register(
+        channel="telegram",
+        user_id="user-1",
+        reference={"conversation_id": "chat-1"},
+    )
+
+    request = NotificationRequest(
+        channel="telegram",
+        recipient_id="user-1",
+        message="Alert!",
+        metadata={"parse_mode": "HTML"},
+    )
+    result = await gateway.send_notification(request)
+
+    assert result.success
+    assert sender.sent[0][2] == {"parse_mode": "HTML"}
+
+
+# ---------------------------------------------------------------------------
+# Broadcast edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_broadcast_empty_recipients(gateway_parts) -> None:
+    """Broadcast with no registered recipients returns empty list."""
+    gateway, store, registry, sender = gateway_parts
+
+    results = await gateway.broadcast(channel="telegram", message="Nobody here")
+    assert results == []
+    assert len(sender.sent) == 0
+
+
+@pytest.mark.asyncio
+async def test_broadcast_partial_failure() -> None:
+    """Broadcast returns per-recipient results even when some fail."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+
+    call_count = 0
+
+    class AlternatingSender:
+        @property
+        def channel(self) -> str:
+            return "telegram"
+
+        async def send(
+            self,
+            *,
+            recipient_id: str,
+            message: str,
+            metadata: dict[str, Any] | None = None,
+        ) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count % 2 == 0:
+                raise ConnectionError("Intermittent failure")
+
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": AlternatingSender()},
+    )
+
+    await registry.register(
+        channel="telegram",
+        user_id="user-1",
+        reference={"conversation_id": "chat-1"},
+    )
+    await registry.register(
+        channel="telegram",
+        user_id="user-2",
+        reference={"conversation_id": "chat-2"},
+    )
+
+    results = await gateway.broadcast(channel="telegram", message="Test")
+    assert len(results) == 2
+    successes = [r for r in results if r.success]
+    failures = [r for r in results if not r.success]
+    assert len(successes) == 1
+    assert len(failures) == 1
+
+
+# ---------------------------------------------------------------------------
+# Supported channels introspection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_supported_channels_empty() -> None:
+    """supported_channels returns empty set when no senders configured."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+    )
+    assert gateway.supported_channels() == set()
+
+
+@pytest.mark.asyncio
+async def test_supported_channels_multiple() -> None:
+    """supported_channels returns all configured channel names."""
+    store = InMemoryConversationStore()
+    registry = InMemoryRecipientRegistry()
+    sender = FakeSender()
+    gateway = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": sender, "teams": sender},
+    )
+    assert gateway.supported_channels() == {"telegram", "teams"}
+
+
+# ---------------------------------------------------------------------------
+# Message handling with attachments (multimodal inbound)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_message_with_image_attachment(gateway_parts) -> None:
+    """Inbound message with image attachment stores multimodal content."""
+    gateway, store, registry, sender = gateway_parts
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="What is this?",
+        metadata={
+            "attachments": [
+                {"type": "image", "data_url": "data:image/png;base64,abc"}
+            ]
+        },
+    )
+    response = await gateway.handle_message(msg)
+    assert response.status == "completed"
+
+    history = await store.load_history("telegram", "chat-42")
+    # User message content should be multimodal (list)
+    assert isinstance(history[0]["content"], list)
+    assert history[0]["content"][0]["type"] == "text"
+    assert history[0]["content"][1]["type"] == "image_url"
+
+
+@pytest.mark.asyncio
+async def test_handle_message_with_document_attachment(gateway_parts) -> None:
+    """Inbound message with document attachment appends file reference."""
+    gateway, store, registry, sender = gateway_parts
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-42",
+        message="Process this file",
+        metadata={
+            "attachments": [
+                {
+                    "type": "document",
+                    "file_path": "/tmp/report.pdf",
+                    "file_name": "report.pdf",
+                    "mime_type": "application/pdf",
+                }
+            ]
+        },
+    )
+    response = await gateway.handle_message(msg)
+    assert response.status == "completed"
+
+    history = await store.load_history("telegram", "chat-42")
+    user_content = history[0]["content"]
+    assert isinstance(user_content, str)
+    assert "report.pdf" in user_content
+    assert "/tmp/report.pdf" in user_content

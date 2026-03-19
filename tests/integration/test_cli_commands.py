@@ -37,12 +37,9 @@ def mock_executor():
 @pytest.fixture
 def mock_factory():
     """Mock AgentFactory for testing."""
-    with patch("taskforce.api.cli.commands.tools.AgentFactory") as mock_tools, patch(
-        "taskforce.api.cli.commands.sessions.AgentFactory"
-    ) as mock_sessions:
+    with patch("taskforce.api.cli.commands.tools.AgentFactory") as mock_tools:
         factory_instance = MagicMock()
         mock_tools.return_value = factory_instance
-        mock_sessions.return_value = factory_instance
 
         # Mock agent with tools
         agent = MagicMock()
@@ -140,36 +137,6 @@ def test_tools_inspect_nonexistent(mock_factory):
     assert "not found" in result.output
 
 
-def test_sessions_list_command(mock_factory):
-    """Test sessions list command displays sessions."""
-    result = runner.invoke(app, ["sessions", "list"])
-
-    assert result.exit_code == 0
-    assert "Agent Sessions" in result.output
-
-
-def test_sessions_show_command(mock_factory):
-    """Test sessions show command displays session details."""
-    result = runner.invoke(app, ["sessions", "show", "session-1"])
-
-    assert result.exit_code == 0
-    assert "Session:" in result.output
-    assert "session-1" in result.output
-
-
-def test_sessions_show_nonexistent(mock_factory):
-    """Test sessions show with non-existent session."""
-    # Mock state manager to return None for non-existent session
-    mock_factory.create_agent.return_value.state_manager.load_state = AsyncMock(
-        return_value=None
-    )
-
-    result = runner.invoke(app, ["sessions", "show", "nonexistent-session"])
-
-    assert result.exit_code == 1
-    assert "not found" in result.output
-
-
 def test_config_list_command():
     """Test config list command displays profiles."""
     result = runner.invoke(app, ["config", "list"])
@@ -201,7 +168,7 @@ def test_help_command():
     assert "Taskforce" in result.output
     assert "run" in result.output
     assert "tools" in result.output
-    assert "sessions" in result.output
+    assert "conversations" in result.output
 
 
 def test_command_group_help():

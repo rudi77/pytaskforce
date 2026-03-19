@@ -60,23 +60,6 @@ def test_execute_mission_endpoint(app, client):
     assert data["message"] == "Hello!"
 
 @pytest.mark.integration
-def test_list_sessions_endpoint(client):
-    response = client.get("/api/v1/sessions", params={"profile": "dev"})
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-@pytest.mark.integration
-def test_create_session_endpoint(client):
-    response = client.post(
-        "/api/v1/sessions",
-        params={"profile": "dev", "mission": "Test Session"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "session_id" in data
-    assert data["mission"] == "Test Session"
-
-@pytest.mark.integration
 def test_streaming_execution(app, client):
     async def mock_stream(*args, **kwargs):
         updates = [

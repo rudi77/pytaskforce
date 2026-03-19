@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from taskforce.core.domain.config_schema import (
+from taskforce.application.config_schema import (
     AgentConfigSchema,
     AgentSourceType,
     ConfigValidationError,
