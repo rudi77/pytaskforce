@@ -106,6 +106,11 @@ class AgentExecutor:
         self._consolidation_service = consolidation_service
         self._consolidation_initialized = experience_tracker is not None
         self.logger = logger.bind(component="agent_executor")
+        # Throttle: track when LLM consolidation last ran.
+        self._last_llm_consolidation: datetime | None = None
+        self._requests_since_consolidation: int = 0
+        self._consolidation_interval_minutes: int = 5
+        self._consolidation_interval_requests: int = 10
 
     def _ensure_consolidation_components(
         self,
@@ -394,21 +399,37 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
-            # Finalize experience tracking with correct status
+            # Finalize experience tracking with correct status.
+            # Consolidation runs in background to avoid blocking the next request.
             if self._experience_tracker is not None:
                 status = ExecutionStatus.FAILED.value if execution_failed else ExecutionStatus.COMPLETED.value
                 experience = await self._experience_tracker.end_session(status)
                 if experience and self._consolidation_service is not None:
-                    await self._consolidation_service.post_execution_hook(
-                        resolved_session_id, experience
-                    )
+                    self._requests_since_consolidation += 1
+                    if self._should_run_llm_consolidation():
+                        self._last_llm_consolidation = datetime.now()
+                        self._requests_since_consolidation = 0
+                        asyncio.create_task(
+                            self._consolidation_service.post_execution_hook(
+                                resolved_session_id, experience
+                            ),
+                            name="consolidation-llm",
+                        )
 
-            # Run lightweight (no-LLM) memory consolidation after each session.
+            # Run lightweight (no-LLM) memory consolidation in background.
             if agent and not execution_failed:
-                await self._run_lightweight_consolidation(agent, mission)
+                asyncio.create_task(
+                    self._run_lightweight_consolidation(agent, mission),
+                    name="consolidation-lightweight",
+                )
 
             if agent and owns_agent:
-                await agent.close()
+                # Defer close so background consolidation tasks can still
+                # access the agent's memory store.
+                asyncio.create_task(
+                    self._deferred_close(agent, delay=10.0),
+                    name="agent-close",
+                )
 
     async def _run_lightweight_consolidation(
         self,
@@ -453,6 +474,26 @@ class AgentExecutor:
                 "lightweight_consolidation.skipped",
                 reason="error during consolidation",
             )
+
+    def _should_run_llm_consolidation(self) -> bool:
+        """Check whether enough time or requests have passed for LLM consolidation."""
+        if self._last_llm_consolidation is None:
+            return True
+        elapsed = (datetime.now() - self._last_llm_consolidation).total_seconds()
+        if elapsed >= self._consolidation_interval_minutes * 60:
+            return True
+        if self._requests_since_consolidation >= self._consolidation_interval_requests:
+            return True
+        return False
+
+    @staticmethod
+    async def _deferred_close(agent: Agent, delay: float = 5.0) -> None:
+        """Close agent after a delay so background consolidation can finish."""
+        await asyncio.sleep(delay)
+        try:
+            await agent.close()
+        except Exception:
+            pass
 
     def _build_started_update(
         self,
