@@ -1,0 +1,20 @@
+{
+  "session_id": "6537a14c-a52b-4466-adf2-fa5cc3b53355--sub_pc-agent_09b2e6da",
+  "timestamp": "2026-03-20T12:25:39.112342",
+  "state_data": {
+    "planner_state": {
+      "tasks": [
+        {
+          "description": "Ordnerinhalt von C:\\Users\\rudi\\Documents\\Private erfassen",
+          "status": "DONE"
+        },
+        {
+          "description": "Dokumente nach Typ/Inhalt sinnvoll kategorisieren und Ordnerstruktur empfehlen",
+          "status": "DONE"
+        }
+      ]
+    },
+    "_version": 1,
+    "_updated_at": "2026-03-20T12:25:39.112342"
+  }
+}

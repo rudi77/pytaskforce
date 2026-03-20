@@ -223,6 +223,8 @@ class CommunicationGateway:
             session_id=session_id,
             conversation_history=self._trim_history(history_with_user),
             options=resolved_options,
+            source_channel=message.channel,
+            source_conversation_id=message.conversation_id,
         )
 
         return await self._finalize_response(
@@ -646,6 +648,8 @@ class CommunicationGateway:
             session_id=session_id,
             conversation_history=self._trim_history(history),
             options=options,
+            source_channel=message.channel,
+            source_conversation_id=message.conversation_id,
         )
 
         # Append assistant reply.
@@ -759,14 +763,27 @@ class CommunicationGateway:
         session_id: str,
         conversation_history: list[dict[str, Any]],
         options: GatewayOptions,
+        source_channel: str | None = None,
+        source_conversation_id: str | None = None,
     ) -> ExecutionResult:
-        """Delegate to AgentExecutor."""
+        """Delegate to AgentExecutor.
+
+        When *source_channel* is provided, it is injected into the user
+        context so that the executor can automatically route non-channel-
+        targeted ``ask_user`` calls back to the originating channel.
+        """
+        user_context = dict(options.user_context) if options.user_context else {}
+        if source_channel:
+            user_context.setdefault("source_channel", source_channel)
+        if source_conversation_id:
+            user_context.setdefault("source_conversation_id", source_conversation_id)
+
         return await self._executor.execute_mission(
             mission=message,
             profile=options.profile,
             session_id=session_id,
             conversation_history=conversation_history,
-            user_context=options.user_context,
+            user_context=user_context or None,
             agent_id=options.agent_id,
             planning_strategy=options.planning_strategy,
             planning_strategy_params=options.planning_strategy_params,

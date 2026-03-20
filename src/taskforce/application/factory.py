@@ -204,10 +204,12 @@ class AgentFactory:
             definition, base_config, infra, user_context
         )
 
+        sub_agents = base_config.get("sub_agents")
         system_prompt = self.prompt_assembler.assemble(
             all_tools,
             specialist=definition.specialist,
             custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
+            sub_agents=sub_agents,
         )
         agent_settings = self._extract_agent_settings(
             base_config, definition, definition.planning_strategy, definition.planning_strategy_params
@@ -232,6 +234,7 @@ class AgentFactory:
                 all_tools,
                 specialist=definition.specialist,
                 custom_prompt=definition.system_prompt if definition.has_custom_prompt else None,
+                sub_agents=sub_agents,
             )
 
         context_mgmt = base_config.get("context_management", {})
@@ -467,6 +470,7 @@ class AgentFactory:
             max_input_tokens=max_input_tokens,
             memory_store=infra.get("memory_store"),
             memory_context_config=infra.get("memory_context_config"),
+            tool_result_store=infra.get("tool_result_store"),
         )
 
     async def _load_plugin_tools_for_definition(

@@ -20,7 +20,7 @@ agent:
     max_step_iterations: 3
     max_plan_steps: 12
     reflect_every_step: true
-  max_steps: 50
+  max_steps: 30
   llm_fallback: false  # Set true to let LLM handle unmatched events
 
 llm:
@@ -48,6 +48,11 @@ context_policy:
   max_items: 10
   max_chars_per_item: 3000
   max_total_chars: 15000
+
+# Context management: raise threshold so the agent doesn't lose context mid-task
+context_management:
+  summary_threshold: 40
+  compression_trigger: 40000
 
 # Request queue settings (for PersistentAgentService)
 request_queue:
@@ -104,6 +109,20 @@ rules: []
   #       mission: >
   #         Check my calendar for today and create a brief summary
   #         of upcoming events. Send the summary via Telegram.
+
+# Sub-agents the butler can delegate to via call_agents_parallel
+# Each entry generates a line in the system prompt so the LLM knows what's available
+sub_agents:
+  - specialist: pc-agent
+    description: "Lokaler PC — Dateien, Ordner, Systeminformationen, Prozesse, App-Steuerung. Für alles was lokale Dateien oder das Betriebssystem betrifft."
+  - specialist: web-agent
+    description: "Web-Zugriff — Suchen, URLs abrufen, News, Scraping. Für alles was Internetzugang benötigt."
+  - specialist: research_agent
+    description: "Mehrstufige Recherche, Datensammlung, Berichte erstellen."
+  - specialist: coding_agent
+    description: "Code schreiben, Skripte, Debugging, technische Automatisierung."
+  - specialist: analysis_agent
+    description: "Datenanalyse, Berechnungen, Reports."
 
 # Tools available to the butler agent
 # The butler handles simple tasks directly and delegates complex work

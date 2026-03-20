@@ -142,8 +142,8 @@ class ShellTool(ToolProtocol):
                 )
 
                 success = process.returncode == 0
-                stdout_text = stdout.decode() if stdout else ""
-                stderr_text = stderr.decode() if stderr else ""
+                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
 
                 resp = {
                     "success": success,
@@ -273,8 +273,8 @@ class BashTool(ToolProtocol):
                 )
 
                 success = process.returncode == 0
-                stdout_text = stdout.decode() if stdout else ""
-                stderr_text = stderr.decode() if stderr else ""
+                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
 
                 resp = {
                     "success": success,
@@ -439,6 +439,14 @@ class PowerShellTool(ToolProtocol):
                 cwd_path = str(p)
 
         try:
+            # Force UTF-8 output from PowerShell to avoid encoding errors
+            # with non-ASCII characters (e.g. German umlauts in file paths).
+            utf8_prefix = (
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                "$OutputEncoding = [System.Text.Encoding]::UTF8; "
+            )
+            wrapped_command = utf8_prefix + command
+
             # Execute command explicitly via PowerShell
             process = await asyncio.create_subprocess_exec(
                 shell_exe,
@@ -447,7 +455,7 @@ class PowerShellTool(ToolProtocol):
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                command,
+                wrapped_command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd_path,
@@ -503,8 +511,8 @@ class PowerShellTool(ToolProtocol):
             )
 
         success = process.returncode == 0
-        stdout_text = stdout.decode() if stdout else ""
-        stderr_text = stderr.decode() if stderr else ""
+        stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
 
         resp = {
             "success": success,

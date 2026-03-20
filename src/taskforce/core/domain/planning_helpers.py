@@ -173,10 +173,11 @@ def _build_retry_nudge(
             "role": MessageRole.USER.value,
             "content": (
                 f"[System: {tools_str} failed again (attempt {attempt}). "
-                "This step may require missing configuration or credentials. "
-                "Options: (1) use ask_user to get help, "
-                "(2) use planner update_plan to skip this step if non-critical, "
-                "(3) try one final alternative approach.]"
+                "STOP retrying the same approach. "
+                "Options: (1) delegate to a sub-agent via call_agents_parallel "
+                "— sub-agents have more tools (file_read, web_search, python, etc.), "
+                "(2) use ask_user to get help, "
+                "(3) provide your best answer with the information you already have.]"
             ),
         }
     return {

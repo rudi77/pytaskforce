@@ -60,6 +60,7 @@ class SystemPromptAssembler:
         *,
         specialist: str | None = None,
         custom_prompt: str | None = None,
+        sub_agents: list[dict[str, str]] | None = None,
     ) -> str:
         """Build a complete system prompt.
 
@@ -72,6 +73,10 @@ class SystemPromptAssembler:
             tools: Available tools (used for the tool description section).
             specialist: Specialist key (``"coding"``, ``"rag"``, ``"wiki"``).
             custom_prompt: Free-form prompt to append to the kernel.
+            sub_agents: Optional list of sub-agent dicts with ``specialist``
+                and ``description`` keys.  When provided, the placeholder
+                ``{{SUB_AGENTS_SECTION}}`` in the specialist prompt is
+                replaced with a formatted list.
 
         Returns:
             Fully assembled system prompt string.
@@ -83,6 +88,15 @@ class SystemPromptAssembler:
             specialist_prompt = _SPECIALIST_PROMPTS.get(specialist or "")
             if specialist_prompt:
                 base_prompt += "\n\n" + specialist_prompt
+
+        # Inject dynamic sub-agent list if the prompt has the placeholder
+        if sub_agents and "{{SUB_AGENTS_SECTION}}" in base_prompt:
+            base_prompt = base_prompt.replace(
+                "{{SUB_AGENTS_SECTION}}",
+                _format_sub_agents_section(sub_agents),
+            )
+        elif "{{SUB_AGENTS_SECTION}}" in base_prompt:
+            base_prompt = base_prompt.replace("{{SUB_AGENTS_SECTION}}", "")
 
         tools_description = format_tools_description(tools) if tools else ""
         system_prompt = build_system_prompt(
@@ -96,6 +110,17 @@ class SystemPromptAssembler:
             has_custom_prompt=custom_prompt is not None,
             tools_count=len(tools),
             prompt_length=len(system_prompt),
+            sub_agent_count=len(sub_agents) if sub_agents else 0,
         )
 
         return system_prompt
+
+
+def _format_sub_agents_section(sub_agents: list[dict[str, str]]) -> str:
+    """Format sub-agent definitions into a prompt section."""
+    lines = ["Available sub-agents:"]
+    for agent in sub_agents:
+        specialist = agent.get("specialist", "unknown")
+        description = agent.get("description", "")
+        lines.append(f"- **{specialist}** (specialist: `{specialist}`): {description}")
+    return "\n".join(lines)

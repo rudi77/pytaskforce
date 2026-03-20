@@ -34,8 +34,8 @@ tools:
   - python
   - file_read
   - file_write
-  - web_search
-  - web_fetch
+  - shell
+  - search
 
 system_prompt: >
   You are a data analysis specialist. Your job is to analyze data,

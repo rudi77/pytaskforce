@@ -376,7 +376,9 @@ class AgentExecutor:
 
         execution_failed = False
         try:
-            async for update in self._execute_streaming(agent, mission, resolved_session_id):
+            async for update in self._execute_streaming(
+                agent, mission, resolved_session_id, user_context=user_context,
+            ):
                 yield update
 
             self.logger.info(
@@ -1001,7 +1003,11 @@ class AgentExecutor:
         return result
 
     async def _execute_streaming(
-        self, agent: Agent, mission: str, session_id: str
+        self,
+        agent: Agent,
+        mission: str,
+        session_id: str,
+        user_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute agent with streaming progress updates.
 
@@ -1014,15 +1020,22 @@ class AgentExecutor:
         polls for the response, and the agent is automatically resumed.
         The consumer (CLI, API) only sees informational progress events.
 
+        Non-channel-targeted ``ask_user`` calls are automatically promoted
+        to channel-targeted calls when a ``source_channel`` is present in
+        the *user_context* (injected by the CommunicationGateway).
+
         Args:
             agent: Agent instance to execute
             mission: Mission description
             session_id: Session identifier
+            user_context: Optional user context (may contain source_channel).
 
         Yields:
             ProgressUpdate objects for execution events
         """
         current_mission = mission
+        source_channel = (user_context or {}).get("source_channel")
+        source_conversation_id = (user_context or {}).get("source_conversation_id")
 
         while True:
             channel_ask: dict[str, Any] | None = None
@@ -1032,6 +1045,16 @@ class AgentExecutor:
                     # Capture experience (non-invasive, sync)
                     if self._experience_tracker is not None:
                         self._experience_tracker.observe(event)
+
+                    # Auto-promote plain ask_user to channel-targeted when
+                    # the message originated from a channel (e.g. Telegram).
+                    if (
+                        source_channel
+                        and self._is_plain_ask_user(event)
+                        and self._gateway
+                    ):
+                        event.data["channel"] = source_channel
+                        event.data["recipient_id"] = source_conversation_id or ""
 
                     if self._is_channel_targeted_ask(event) and self._gateway:
                         channel_ask = event.data
@@ -1095,6 +1118,16 @@ class AgentExecutor:
     # ------------------------------------------------------------------
     # Channel-targeted ask_user routing
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_plain_ask_user(event: StreamEvent) -> bool:
+        """Check whether a StreamEvent is a plain (non-channel) ASK_USER."""
+        evt = event.event_type
+        is_ask = evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
+        if not is_ask:
+            return False
+        data = event.data or {}
+        return not data.get("channel")
 
     @staticmethod
     def _is_channel_targeted_ask(event: StreamEvent) -> bool:
