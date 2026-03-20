@@ -30,7 +30,8 @@ def mock_conversation_manager():
 
 class TestConversationWiring:
     async def test_run_initializes_conversation(self, mock_agent, mock_conversation_manager):
-        """The REPL loop should get_or_create a conversation on startup."""
+        """The REPL loop should create_new a conversation on startup."""
+        mock_conversation_manager.create_new = AsyncMock(return_value="conv-new-123")
         runner = SimpleChatRunner(
             session_id="sess-1",
             profile="dev",
@@ -46,8 +47,8 @@ class TestConversationWiring:
         ), patch.object(runner, "_read_input", new_callable=AsyncMock, return_value="/quit"):
             await runner.run()
 
-        mock_conversation_manager.get_or_create.assert_called_once_with("cli")
-        assert runner._conversation_id == "conv-initial"
+        mock_conversation_manager.create_new.assert_called_once_with("cli")
+        assert runner._conversation_id == "conv-new-123"
 
     async def test_new_command_creates_conversation(
         self, mock_agent, mock_conversation_manager
