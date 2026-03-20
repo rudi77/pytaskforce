@@ -57,6 +57,17 @@ class TelegramOutboundSender:
             message: Text message body.
             metadata: Optional keys: parse_mode ('HTML'|'Markdown').
         """
+        # Telegram has a 4096-char limit per message. Split long messages
+        # into chunks, breaking at newlines when possible.
+        max_len = 4000  # Leave margin below the 4096 hard limit
+        if len(message) > max_len:
+            chunks = _split_message(message, max_len)
+            for chunk in chunks:
+                await self.send(
+                    recipient_id=recipient_id, message=chunk, metadata=metadata
+                )
+            return
+
         payload: dict[str, Any] = {"chat_id": recipient_id, "text": message}
         if metadata and "parse_mode" in metadata:
             payload["parse_mode"] = metadata["parse_mode"]
@@ -131,6 +142,22 @@ class TelegramOutboundSender:
             timeout = aiohttp.ClientTimeout(total=15)
             self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
+
+
+def _split_message(text: str, max_len: int) -> list[str]:
+    """Split a long message into chunks, breaking at newlines when possible."""
+    chunks: list[str] = []
+    while len(text) > max_len:
+        # Try to break at a newline within the last 20% of the chunk
+        split_at = text.rfind("\n", 0, max_len)
+        if split_at < max_len // 2:
+            # No good newline break — just cut at max_len
+            split_at = max_len
+        chunks.append(text[:split_at].rstrip())
+        text = text[split_at:].lstrip("\n")
+    if text.strip():
+        chunks.append(text)
+    return chunks
 
 
 class TeamsOutboundSender:

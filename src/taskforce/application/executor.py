@@ -1053,8 +1053,16 @@ class AgentExecutor:
                         and self._is_plain_ask_user(event)
                         and self._gateway
                     ):
+                        if event.data is None:
+                            event.data = {}
                         event.data["channel"] = source_channel
                         event.data["recipient_id"] = source_conversation_id or ""
+                        self.logger.info(
+                            "ask_user.auto_promoted_to_channel",
+                            channel=source_channel,
+                            recipient_id=source_conversation_id,
+                            question=event.data.get("question", "")[:100],
+                        )
 
                     if self._is_channel_targeted_ask(event) and self._gateway:
                         channel_ask = event.data

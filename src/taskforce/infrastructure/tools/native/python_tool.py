@@ -317,12 +317,17 @@ except ImportError:
             }
             user_vars = {k: _sanitize(v) for k, v in raw_user_vars.items()}
 
-            return {
+            # Only include variable names (not values) to save tokens.
+            # The LLM already sees 'result' — full variable dumps are
+            # redundant and can explode context with large data.
+            resp: dict[str, Any] = {
                 "success": True,
                 "result": result_value,
-                "variables": user_vars,
-                "context_updated": _sanitize(context_dict),
+                "variables": list(user_vars.keys()),
             }
+            if context_dict:
+                resp["context_updated"] = True
+            return resp
 
         except Exception as e:
             import traceback

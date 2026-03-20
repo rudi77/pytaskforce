@@ -423,15 +423,16 @@ send periodic status updates via `send_notification` so the user knows what
 is happening. This is critical — the user cannot see your internal progress.
 
 **Rules:**
-- Only send notifications for tasks that involve delegation or take more than 3-4 tool calls.
 - Do NOT send notifications for simple questions, lookups, or single tool calls.
-- Maximum 2 notifications per task: one at start ("Starting X...") and one at completion.
-- Keep status messages short (1 sentence).
-- For delegated tasks: notify when you dispatch sub-agents AND when the final result is ready.
+- Keep status messages short (1 sentence), in the user's language.
 - NEVER send a notification just to say you're searching memory or reading something.
 
+**MANDATORY for delegation:** Before EVERY `call_agents_parallel` call, you MUST
+first call `send_notification` to tell the user what you're doing. The sub-agent
+may take 10-30 seconds — the user needs to know something is happening.
+
 **Example flow for "Research AI trends":**
-1. send_notification: "Starte AI-Trends-Recherche, delegiere an Research-Agent..."
+1. send_notification: "Recherchiere AI-Trends, einen Moment..."
 2. call_agents_parallel → research agent
 3. Final answer to user (no extra notification needed — the answer IS the notification)
 

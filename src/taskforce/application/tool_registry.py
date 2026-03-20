@@ -61,6 +61,7 @@ class ToolRegistry:
         user_context: dict[str, Any] | None = None,
         memory_store_dir: str | None = None,
         gateway: Any | None = None,
+        notification_defaults: dict[str, str] | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -70,11 +71,14 @@ class ToolRegistry:
             user_context: User context for RAG tools (user_id, org_id, scope)
             memory_store_dir: Directory for file-based memory storage
             gateway: Communication gateway for SendNotificationTool
+            notification_defaults: Default channel/recipient for notifications
+                (keys: ``default_channel``, ``default_recipient_id``).
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
         self._memory_store_dir = memory_store_dir
         self._gateway = gateway
+        self._notification_defaults = notification_defaults or {}
         self._logger = logger.bind(component="ToolRegistry")
         # Caches: avoid re-instantiating the same tool and re-listing all tools.
         self._tool_cache: dict[str, ToolProtocol] = {}
@@ -368,9 +372,19 @@ class ToolRegistry:
             if tool_type == "MemoryTool" and self._memory_store_dir:
                 tool_params.setdefault("store_dir", self._memory_store_dir)
 
-            # Special handling for SendNotificationTool - inject gateway
-            if tool_type == "SendNotificationTool" and self._gateway:
-                tool_params["gateway"] = self._gateway
+            # Special handling for SendNotificationTool - inject gateway + defaults
+            if tool_type == "SendNotificationTool":
+                if self._gateway:
+                    tool_params["gateway"] = self._gateway
+                if self._notification_defaults:
+                    tool_params.setdefault(
+                        "default_channel",
+                        self._notification_defaults.get("default_channel"),
+                    )
+                    tool_params.setdefault(
+                        "default_recipient_id",
+                        self._notification_defaults.get("default_recipient_id"),
+                    )
 
             # Instantiate the tool
             tool_instance: ToolProtocol = tool_class(**tool_params)

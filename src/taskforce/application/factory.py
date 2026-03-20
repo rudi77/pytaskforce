@@ -283,6 +283,9 @@ class AgentFactory:
         memory_store, memory_context_config = self._build_memory_injection(
             base_config, work_dir_override=definition.work_dir
         )
+        work_dir = definition.work_dir or base_config.get("persistence", {}).get(
+            "work_dir", ".taskforce"
+        )
         return {
             "state_manager": ib.build_state_manager(
                 base_config, work_dir_override=definition.work_dir
@@ -295,6 +298,7 @@ class AgentFactory:
             "model_alias": base_config.get("llm", {}).get("default_model", "main"),
             "memory_store": memory_store,
             "memory_context_config": memory_context_config,
+            "tool_result_store": self._build_tool_result_store(work_dir),
             "mcp_contexts": [],
         }
 
@@ -350,6 +354,14 @@ class AgentFactory:
         )
         return memory_store, memory_context_config
 
+    @staticmethod
+    def _build_tool_result_store(work_dir: str) -> Any:
+        """Build a FileToolResultStore for caching large tool outputs."""
+        from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
+
+        store_path = Path(work_dir) / "tool_results"
+        return FileToolResultStore(store_dir=str(store_path))
+
     async def _collect_tools_for_definition(
         self,
         definition: AgentDefinition,
@@ -377,6 +389,7 @@ class AgentFactory:
             user_context=user_context,
             memory_store_dir=memory_store_dir,
             gateway=self._gateway,
+            notification_defaults=base_config.get("notifications"),
         )
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)

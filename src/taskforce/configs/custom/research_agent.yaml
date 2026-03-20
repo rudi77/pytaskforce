@@ -10,11 +10,8 @@ profile: research_agent
 specialist: null
 
 agent:
-  planning_strategy: plan_and_react
-  planning_strategy_params:
-    max_step_iterations: 3
-    max_plan_steps: 10
-  max_steps: 40
+  planning_strategy: native_react
+  max_steps: 20
 
 persistence:
   type: file
@@ -29,17 +26,18 @@ logging:
   format: console
 
 context_policy:
-  max_items: 12
+  max_items: 10
   max_chars_per_item: 3000
-  max_total_chars: 20000
+  max_total_chars: 15000
+
+context_management:
+  summary_threshold: 30
+  compression_trigger: 40000
 
 tools:
   - web_search
   - web_fetch
-  - file_read
-  - file_write
   - python
-  - memory
 
 system_prompt: >
   You are a research specialist. Your job is to conduct thorough research
