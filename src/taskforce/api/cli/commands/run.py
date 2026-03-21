@@ -204,33 +204,25 @@ def _execute_standard_mission(
         tf_console.print_debug(f"Session ID: {result.session_id}")
         tf_console.print_agent_message(result.final_message)
 
-    # Display token usage statistics
-    token_usage = (
-        result.token_usage.to_dict()
-        if hasattr(result.token_usage, "to_dict")
-        else result.token_usage
-    )
-    if token_usage and token_usage.get("total_tokens", 0) > 0:
-        tf_console.print_token_usage(token_usage)
-
-    # Display detailed token analytics from LiteLLM callback
-    _print_callback_analytics(tf_console)
-
-
-def _print_callback_analytics(tf_console: TaskforceConsole) -> None:
-    """Print analytics from the LiteLLM callback if available, then reset."""
-    try:
-        from taskforce.infrastructure.llm.token_analytics_callback import (
-            get_token_analytics,
+    # Display token analytics (prefer detailed callback data, fall back to basic usage)
+    analytics_summary = _get_callback_summary()
+    if analytics_summary is not None:
+        tf_console.print_token_analytics(analytics_summary)
+    else:
+        token_usage = (
+            result.token_usage.to_dict()
+            if hasattr(result.token_usage, "to_dict")
+            else result.token_usage
         )
+        if token_usage and token_usage.get("total_tokens", 0) > 0:
+            tf_console.print_token_usage(token_usage)
 
-        cb = get_token_analytics()
-        if cb and cb.calls:
-            summary = cb.build_summary()
-            tf_console.print_token_analytics(summary.to_dict())
-            cb.reset()
-    except ImportError:
-        pass
+
+def _get_callback_summary():
+    """Retrieve and reset the callback token summary, or return None."""
+    from taskforce.application.token_analytics_facade import get_execution_token_summary
+
+    return get_execution_token_summary()
 
 
 async def _execute_streaming_mission(
@@ -442,8 +434,12 @@ async def _execute_streaming_mission(
         )
     )
 
-    # Display token usage summary
-    if total_token_usage["total_tokens"] > 0:
+    # Display token analytics (prefer detailed callback data, fall back to basic usage)
+    tf_console = TaskforceConsole(console)
+    analytics_summary = _get_callback_summary()
+    if analytics_summary is not None:
+        tf_console.print_token_analytics(analytics_summary)
+    elif total_token_usage["total_tokens"] > 0:
         token_info = (
             f"Prompt Tokens: {total_token_usage['prompt_tokens']:,}  |  "
             f"Completion Tokens: {total_token_usage['completion_tokens']:,}  |  "
@@ -456,9 +452,6 @@ async def _execute_streaming_mission(
                 border_style="cyan",
             )
         )
-
-    # Display detailed token analytics from LiteLLM callback
-    _print_callback_analytics(TaskforceConsole(console))
 
 
 def _parse_strategy_params(raw_params: str | None) -> dict | None:

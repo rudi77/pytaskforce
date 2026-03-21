@@ -6,7 +6,7 @@ collection happens in the infrastructure layer via a LiteLLM callback
 
 Key features:
 - Per-call token breakdown (prompt / completion / total / model / latency)
-- Per-phase aggregation (planning / reasoning / acting / reflecting / summarizing)
+- Per-model aggregation (token totals, call counts, average latency)
 - Efficiency metrics (prompt/completion ratio, tokens per call)
 """
 
