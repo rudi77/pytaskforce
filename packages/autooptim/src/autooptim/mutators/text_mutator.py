@@ -58,7 +58,7 @@ class TextMutator(BaseMutator):
             if change.action == "create":
                 full_path.parent.mkdir(parents=True, exist_ok=True)
 
-            full_path.write_text(change.content)
+            full_path.write_text(change.content, encoding="utf-8")
             modified.append(change.path)
             logger.info("Modified text: %s", change.path)
 

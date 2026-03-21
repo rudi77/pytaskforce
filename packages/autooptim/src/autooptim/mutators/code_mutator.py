@@ -63,7 +63,7 @@ class CodeMutator(BaseMutator):
                 except SyntaxError as e:
                     raise MutationError(f"Syntax error in {change.path}: {e}")
 
-            full_path.write_text(change.content)
+            full_path.write_text(change.content, encoding="utf-8")
             modified.append(change.path)
             logger.info("Modified code: %s", change.path)
 
