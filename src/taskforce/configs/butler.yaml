@@ -130,9 +130,9 @@ sub_agents:
 tools:
   #- web_search
   #- web_fetch
-  - file_read
-  - file_write
-  - shell
+  #- file_read
+  #- file_write
+  - powershell
   - memory
   - send_notification
   - gmail

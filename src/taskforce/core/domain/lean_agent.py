@@ -69,7 +69,7 @@ class Agent:
     MAX_MESSAGES = 50  # Hard limit on message count
     DEFAULT_SUMMARY_THRESHOLD = 20  # Compress when exceeding this message count (legacy fallback)
     # Tool result storage thresholds
-    TOOL_RESULT_STORE_THRESHOLD = 5000  # Store results larger than 5000 chars
+    TOOL_RESULT_STORE_THRESHOLD = 1500  # Store results larger than 1500 chars
     DEFAULT_MAX_PARALLEL_TOOLS = 4  # Conservative parallelism limit for tool execution
     # Token budget defaults
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input

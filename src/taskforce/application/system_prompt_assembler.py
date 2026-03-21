@@ -98,10 +98,13 @@ class SystemPromptAssembler:
         elif "{{SUB_AGENTS_SECTION}}" in base_prompt:
             base_prompt = base_prompt.replace("{{SUB_AGENTS_SECTION}}", "")
 
-        tools_description = format_tools_description(tools) if tools else ""
+        # NOTE: Tool descriptions are NOT injected into the system prompt text.
+        # Tools are already passed via the `tools` API parameter on each LLM call
+        # (as OpenAI-format JSON schemas). Including them here as text would
+        # double the token cost (~3,800 tokens) with no benefit.
         system_prompt = build_system_prompt(
             base_prompt=base_prompt,
-            tools_description=tools_description,
+            tools_description=None,
         )
 
         self._logger.debug(
