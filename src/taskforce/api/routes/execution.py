@@ -73,7 +73,7 @@ REQUEST_EXAMPLES = {
         "value": {
             "mission": "Audit dependencies and flag outdated.",
             "profile": "coding_agent",
-            "agent_id": "web-agent",
+            "agent_id": "research_agent",
         },
     },
     "plugin_agent": {
@@ -331,7 +331,7 @@ class ExecuteMissionRequest(BaseModel):
             "Agent definitions supply their own configuration; "
             "the API uses the default infrastructure profile internally."
         ),
-        examples=["web-agent", "accounting_agent"],
+        examples=["research_agent", "accounting_agent"],
     )
     planning_strategy: str | None = Field(
         default=None,

@@ -126,7 +126,7 @@ class TestHandleMessage:
                 "message": "Hello",
                 "profile": "coding_agent",
                 "session_id": "custom-session",
-                "agent_id": "web-agent",
+                "agent_id": "research_agent",
             },
         )
         assert response.status_code == 200
