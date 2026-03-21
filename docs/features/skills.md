@@ -537,3 +537,54 @@ Common validation issues:
 1. Verify the resource file exists in the skill directory
 2. Check the path is relative to the skill directory
 3. Ensure the skill is active before reading resources
+
+---
+
+## Multi-Agent Workflows as Skills
+
+Complex multi-step processes can be modeled as **context skills** that guide an agent through a sequence of sub-agent delegations and tool calls. This approach replaces the need for a separate workflow engine — the agent's LLM reasoning handles orchestration, while the skill provides the playbook.
+
+### How It Works
+
+1. A context skill describes the workflow steps, including which sub-agents or tools to use
+2. When activated, the instructions are injected into the agent's system prompt
+3. The agent follows the steps, delegating to sub-agents via `parallel_agent` or `call_agent`
+4. Results flow between steps through the agent's conversation context
+
+### Creating Workflow Skills at Runtime
+
+The Butler agent can create new workflow skills interactively using the **workflow-builder** skill:
+
+```
+User: "Create a workflow for daily code review"
+  ↓
+Butler activates workflow-builder skill (context injection)
+  ↓
+Butler asks user for details (steps, tools, specialists)
+  ↓
+Butler writes .taskforce/skills/daily-review/SKILL.md via file_write
+  ↓
+Butler calls activate_skill("daily-review")
+  → Auto-refresh discovers the new file → skill activated
+  ↓
+Butler executes the workflow immediately using sub-agents
+```
+
+The `activate_skill` tool automatically refreshes the skill registry when a skill name is not found, so newly created skills are available without restarting the agent.
+
+### Example: Code Review Pipeline
+
+See `src/taskforce/skills/code-review-pipeline/SKILL.md` for a complete example that:
+- Scans a codebase for structure discovery
+- Runs static analysis via a coding sub-agent
+- Performs security review via a coding sub-agent
+- Evaluates quality metrics via an analysis sub-agent
+- Aggregates findings into a structured Markdown report
+
+### Best Practices
+
+- **Use context type** for workflows the Butler or current agent should follow
+- **Keep steps atomic** — each step does one thing, delegated to one specialist
+- **Handle failures** — include fallback actions for each step
+- **Save intermediate results** — use `file_write` to persist step outputs
+- **Use sub-agents for heavy lifting** — delegate research, coding, analysis to specialists
