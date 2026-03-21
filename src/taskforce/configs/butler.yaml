@@ -13,7 +13,7 @@ agent:
     max_step_iterations: 3
     max_plan_steps: 12
     reflect_every_step: true
-  max_steps: 30
+  max_steps: 12
   llm_fallback: false
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
