@@ -6,7 +6,10 @@ between agent and user messages.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from taskforce.core.domain.token_analytics import ExecutionTokenSummary
 
 from rich.console import Console
 from rich.panel import Panel
@@ -283,21 +286,19 @@ class TaskforceConsole:
         )
         self.console.print(token_panel)
 
-    def print_token_analytics(self, data: dict[str, Any]) -> None:
+    def print_token_analytics(self, summary: ExecutionTokenSummary) -> None:
         """Print detailed token analytics from LiteLLM callback.
 
         Args:
-            data: ExecutionTokenSummary.to_dict() output.
+            summary: Aggregated token analytics for the execution.
         """
-        total = data.get("total_tokens", 0)
-        if total == 0:
+        if summary.total_tokens == 0:
             return
 
         from rich.table import Table
 
         # Model breakdown table
-        model_breakdown = data.get("model_breakdown", {})
-        if model_breakdown:
+        if summary.model_breakdown:
             table = Table(
                 title="Token Analytics - Model Breakdown",
                 border_style="dim cyan",
@@ -312,36 +313,31 @@ class TaskforceConsole:
             table.add_column("Avg/Call", justify="right", style="dim")
             table.add_column("Avg Latency", justify="right", style="dim")
 
-            for _, md in sorted(
-                model_breakdown.items(),
-                key=lambda x: x[1].get("total_tokens", 0) if isinstance(x[1], dict) else 0,
+            for ms in sorted(
+                summary.model_breakdown.values(),
+                key=lambda m: m.total_tokens,
                 reverse=True,
             ):
-                if not isinstance(md, dict):
-                    continue
-                mt = md.get("total_tokens", 0)
-                pct = (mt / total * 100) if total > 0 else 0.0
+                pct = ms.total_tokens / summary.total_tokens * 100
                 table.add_row(
-                    md.get("model", "?"),
-                    f"{mt:,}",
+                    ms.model,
+                    f"{ms.total_tokens:,}",
                     f"{pct:.1f}%",
-                    str(md.get("call_count", 0)),
-                    f"{md.get('avg_tokens_per_call', 0):,.0f}",
-                    f"{md.get('avg_latency_ms', 0):,.0f}ms",
+                    str(ms.call_count),
+                    f"{ms.avg_tokens_per_call:,.0f}",
+                    f"{ms.avg_latency_ms:,.0f}ms",
                 )
             self.console.print(table)
 
         # Efficiency line
-        ratio = data.get("prompt_to_completion_ratio", 0.0)
-        calls = data.get("total_llm_calls", 0)
-        latency = data.get("total_latency_ms", 0)
+        ratio = summary.prompt_to_completion_ratio
         ratio_style = "green" if ratio < 5.0 else "yellow" if ratio < 10.0 else "red"
         ratio_label = (
             "efficient" if ratio < 5.0 else "context-heavy" if ratio < 10.0 else "wasteful"
         )
         info = (
-            f"[info]LLM Calls:[/info] [cyan]{calls}[/cyan]  |  "
-            f"[info]Total Latency:[/info] [cyan]{latency / 1000:.1f}s[/cyan]  |  "
+            f"[info]LLM Calls:[/info] [cyan]{summary.total_llm_calls}[/cyan]  |  "
+            f"[info]Total Latency:[/info] [cyan]{summary.total_latency_ms / 1000:.1f}s[/cyan]  |  "
             f"[info]Prompt/Completion Ratio:[/info] "
             f"[{ratio_style}]{ratio:.1f}x ({ratio_label})[/{ratio_style}]"
         )
