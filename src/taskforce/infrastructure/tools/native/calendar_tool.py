@@ -1,6 +1,7 @@
 """Calendar tool for interacting with Google Calendar.
 
-Provides list and create operations for calendar events.
+Provides list, create, update, delete operations for calendar events,
+plus list_calendars to discover available calendars.
 Promoted from the examples/personal_assistant to a native tool.
 """
 
@@ -34,8 +35,11 @@ class CalendarTool:
     @property
     def description(self) -> str:
         return (
-            "Interact with Google Calendar. List upcoming events or create new ones. "
-            "Actions: list (show upcoming events), create (create a new event). "
+            "Interact with Google Calendar. "
+            "Actions: list_calendars (discover available calendars), "
+            "list (show upcoming events), create (create a new event), "
+            "update (modify an existing event), delete (remove an event). "
+            "Use calendar_id to target a specific calendar (default: 'primary'). "
             "Requires Google Calendar API credentials."
         )
 
@@ -46,8 +50,12 @@ class CalendarTool:
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "create"],
+                    "enum": ["list_calendars", "list", "create", "update", "delete"],
                     "description": "Calendar action to perform",
+                },
+                "event_id": {
+                    "type": "string",
+                    "description": "Event ID (required for update and delete)",
                 },
                 "calendar_id": {
                     "type": "string",
@@ -125,10 +133,16 @@ class CalendarTool:
             service = self._build_service(build, Credentials)
             calendar_id = kwargs.pop("calendar_id", "primary")
 
+            if action == "list_calendars":
+                return await self._list_calendars(service)
             if action == "list":
                 return await self._list_events(service, calendar_id, **kwargs)
             if action == "create":
                 return await self._create_event(service, calendar_id, **kwargs)
+            if action == "update":
+                return await self._update_event(service, calendar_id, **kwargs)
+            if action == "delete":
+                return await self._delete_event(service, calendar_id, **kwargs)
             return {"success": False, "error": f"Unknown action: {action}"}
         except Exception as exc:
             return tool_error_payload(ToolError(f"{self.name} failed: {exc}", tool_name=self.name))
@@ -246,13 +260,98 @@ class CalendarTool:
             "message": f"Event '{title}' created",
         }
 
+    async def _list_calendars(self, service: Any) -> dict[str, Any]:
+        """List all available calendars for the authenticated user."""
+        import asyncio
+
+        result = await asyncio.to_thread(lambda: service.calendarList().list().execute())
+
+        calendars = []
+        for item in result.get("items", []):
+            calendars.append(
+                {
+                    "id": item.get("id", ""),
+                    "summary": item.get("summary", ""),
+                    "description": item.get("description", ""),
+                    "primary": item.get("primary", False),
+                    "access_role": item.get("accessRole", ""),
+                }
+            )
+
+        return {"success": True, "calendars": calendars, "count": len(calendars)}
+
+    async def _update_event(
+        self, service: Any, calendar_id: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Update an existing calendar event."""
+        import asyncio
+
+        event_id = kwargs.get("event_id", "")
+        if not event_id:
+            return {"success": False, "error": "event_id is required for update"}
+
+        # Fetch existing event first
+        existing = await asyncio.to_thread(
+            lambda: service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        )
+
+        # Apply updates
+        if kwargs.get("title"):
+            existing["summary"] = kwargs["title"]
+        if kwargs.get("start"):
+            existing["start"] = {"dateTime": kwargs["start"]}
+        if kwargs.get("end"):
+            existing["end"] = {"dateTime": kwargs["end"]}
+        if kwargs.get("description"):
+            existing["description"] = kwargs["description"]
+        if kwargs.get("location"):
+            existing["location"] = kwargs["location"]
+
+        updated = await asyncio.to_thread(
+            lambda: service.events()
+            .update(calendarId=calendar_id, eventId=event_id, body=existing)
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "event_id": updated.get("id", ""),
+            "html_link": updated.get("htmlLink", ""),
+            "message": f"Event '{updated.get('summary', '')}' updated",
+        }
+
+    async def _delete_event(
+        self, service: Any, calendar_id: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Delete a calendar event."""
+        import asyncio
+
+        event_id = kwargs.get("event_id", "")
+        if not event_id:
+            return {"success": False, "error": "event_id is required for delete"}
+
+        await asyncio.to_thread(
+            lambda: service.events()
+            .delete(calendarId=calendar_id, eventId=event_id)
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "message": f"Event '{event_id}' deleted",
+        }
+
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters."""
         action = kwargs.get("action")
-        if action not in ("list", "create"):
-            return False, "action must be 'list' or 'create'"
+        valid_actions = ("list_calendars", "list", "create", "update", "delete")
+        if action not in valid_actions:
+            return False, f"action must be one of {valid_actions}"
         if action == "create":
             for field in ("title", "start", "end"):
                 if not kwargs.get(field):
                     return False, f"Missing required parameter: {field}"
+        if action in ("update", "delete"):
+            if not kwargs.get("event_id"):
+                return False, "event_id is required for update/delete"
         return True, None
