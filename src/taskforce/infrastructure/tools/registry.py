@@ -164,6 +164,12 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.email_tool",
         "params": {},
     },
+    # Butler tools - Google Drive
+    "google_drive": {
+        "type": "GoogleDriveTool",
+        "module": "taskforce.infrastructure.tools.native.google_drive_tool",
+        "params": {},
+    },
     # Butler tools - Calendar
     "calendar": {
         "type": "CalendarTool",

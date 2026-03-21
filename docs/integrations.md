@@ -287,3 +287,70 @@ class SlackInboundAdapter:
 4. **Add environment variable** -- e.g., `SLACK_BOT_TOKEN`.
 
 No changes to the gateway, domain models, or API routes are needed.
+
+---
+
+## Google Workspace Integration
+
+Taskforce includes built-in tools for **Google Calendar**, **Gmail**, and **Google Drive**.
+All three use the same OAuth2 token stored at `~/.taskforce/google_token.json`.
+
+### Setup
+
+1. **Install dependencies:**
+
+```bash
+uv sync --extra personal-assistant
+```
+
+2. **Create OAuth credentials** in Google Cloud Console (OAuth 2.0 Client ID, type "Desktop app").
+   Download the JSON and save it as `~/.taskforce/google_credentials.json`.
+
+3. **Run the authorization flow:**
+
+```bash
+python scripts/google_auth.py
+```
+
+This opens a browser for consent and saves the token. The following scopes are requested:
+- `calendar` — Google Calendar read/write
+- `gmail.readonly` — Gmail read access
+- `tasks.readonly` — Google Tasks read access
+- `drive` — Google Drive full access
+
+> **Note:** If you authorized before the Drive scope was added, re-run
+> `python scripts/google_auth.py` to update your token.
+
+### Available Tools
+
+| Tool | Short Name | Description |
+|------|-----------|-------------|
+| Google Calendar | `calendar` | List, create, update, delete calendar events |
+| Gmail | `gmail` | List, read emails and labels (read-only) |
+| Google Drive | `google_drive` | List, get, download, upload, update, delete files; create folders; search |
+
+### Google Drive Actions
+
+| Action | Description |
+|--------|-------------|
+| `list` | List files in a folder (default: root) |
+| `get` | Get file metadata |
+| `download` | Download content (exports Google Docs/Sheets/Slides to text) |
+| `upload` | Create a new text file |
+| `update` | Update file content or name |
+| `delete` | Delete a file |
+| `create_folder` | Create a new folder |
+| `search` | Search using Drive query syntax (e.g., `name contains 'report'`) |
+
+### Profile Configuration
+
+Add the tools to your agent profile:
+
+```yaml
+tools:
+  - gmail
+  - google_drive
+  - calendar
+```
+
+The `butler.yaml` profile includes all three tools by default.

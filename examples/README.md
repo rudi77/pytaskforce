@@ -37,24 +37,6 @@ These examples show you:
 
 ---
 
-### 2. Personal Assistant Plugin
-
-**Location**: `personal_assistant/`
-
-**What it demonstrates:**
-- Packaging Gmail, Google Calendar, and task tools as a single plugin
-- Skill-based workflows for briefings and inbox triage
-- Optional slash command templates for quick actions
-- Safe local JSON-backed storage for demo data
-
-**Use case**: Personal assistant workflows with structured tool/skill setup.
-
-**Complexity**: ⭐⭐ (Intermediate)
-
-**[Read full documentation →](personal_assistant/README.md)**
-
----
-
 ## 🚀 Quick Start
 
 ### Prerequisites
