@@ -55,6 +55,7 @@ dependencies = [
     "structlog>=24.2.0",
     # MCP integration
     "mcp>=1.0.0",
+    "ddgs>=9.11.4",
 ]
 
 [project.urls]

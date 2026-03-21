@@ -111,6 +111,7 @@ class AgentFactory:
         self._tool_builder = ToolBuilder(self)
         self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
         self._gateway: Any = None  # Optional CommunicationGateway for SendNotificationTool
+        self._scheduler: Any = None  # Optional scheduler for ScheduleTool/ReminderTool
 
     def set_gateway(self, gateway: Any) -> None:
         """Set the communication gateway for SendNotificationTool injection.
@@ -119,6 +120,14 @@ class AgentFactory:
             gateway: CommunicationGateway instance.
         """
         self._gateway = gateway
+
+    def set_scheduler(self, scheduler: Any) -> None:
+        """Set the scheduler for ScheduleTool and ReminderTool injection.
+
+        Args:
+            scheduler: SchedulerService instance.
+        """
+        self._scheduler = scheduler
 
     @property
     def infra_builder(self) -> Any:
@@ -390,6 +399,7 @@ class AgentFactory:
             memory_store_dir=memory_store_dir,
             gateway=self._gateway,
             notification_defaults=base_config.get("notifications"),
+            scheduler=self._scheduler,
         )
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)
@@ -919,7 +929,9 @@ class AgentFactory:
         infra["mcp_contexts"] = mcp_contexts
 
         tool_registry = ToolRegistry(
-            llm_provider=llm_provider, user_context=user_context,
+            llm_provider=llm_provider,
+            user_context=user_context,
+            scheduler=self._scheduler,
         )
         effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
         all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
@@ -1145,6 +1157,7 @@ class AgentFactory:
             llm_provider=llm_provider,
             memory_store_dir=memory_store_dir,
             gateway=self._gateway,
+            scheduler=self._scheduler,
         )
         # Only resolve names the registry actually knows about —
         # plugin-specific tool names are handled by plugin_loader, not here.

@@ -62,6 +62,7 @@ class ToolRegistry:
         memory_store_dir: str | None = None,
         gateway: Any | None = None,
         notification_defaults: dict[str, str] | None = None,
+        scheduler: Any | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -73,12 +74,14 @@ class ToolRegistry:
             gateway: Communication gateway for SendNotificationTool
             notification_defaults: Default channel/recipient for notifications
                 (keys: ``default_channel``, ``default_recipient_id``).
+            scheduler: Scheduler service for ScheduleTool and ReminderTool.
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
         self._memory_store_dir = memory_store_dir
         self._gateway = gateway
         self._notification_defaults = notification_defaults or {}
+        self._scheduler = scheduler
         self._logger = logger.bind(component="ToolRegistry")
         # Caches: avoid re-instantiating the same tool and re-listing all tools.
         self._tool_cache: dict[str, ToolProtocol] = {}
@@ -422,6 +425,10 @@ class ToolRegistry:
                         self._notification_defaults.get("default_recipient_id"),
                     )
 
+            # Special handling for ScheduleTool / ReminderTool - inject scheduler
+            if tool_type in ("ScheduleTool", "ReminderTool") and self._scheduler:
+                tool_params["scheduler"] = self._scheduler
+
             # Instantiate the tool
             tool_instance: ToolProtocol = tool_class(**tool_params)
 
@@ -456,6 +463,7 @@ def get_tool_registry(
     user_context: dict[str, Any] | None = None,
     memory_store_dir: str | None = None,
     gateway: Any | None = None,
+    scheduler: Any | None = None,
 ) -> ToolRegistry:
     """Get a tool registry instance.
 
@@ -471,6 +479,7 @@ def get_tool_registry(
         user_context: Optional user context for RAG tools.
         memory_store_dir: Optional memory store directory.
         gateway: Optional communication gateway for SendNotificationTool.
+        scheduler: Optional scheduler for ScheduleTool and ReminderTool.
 
     Returns:
         ToolRegistry instance.
@@ -480,6 +489,7 @@ def get_tool_registry(
         or user_context is not None
         or memory_store_dir is not None
         or gateway is not None
+        or scheduler is not None
     )
     if has_params:
         # Always return a fresh, request-scoped instance when DI params given.
@@ -488,6 +498,7 @@ def get_tool_registry(
             user_context=user_context,
             memory_store_dir=memory_store_dir,
             gateway=gateway,
+            scheduler=scheduler,
         )
 
     # Catalog-only path: reuse a shared lightweight instance.

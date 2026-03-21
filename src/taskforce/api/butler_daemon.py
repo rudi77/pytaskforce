@@ -156,6 +156,7 @@ class ButlerDaemon:
 
         try:
             from taskforce.application.executor import AgentExecutor
+            from taskforce.application.factory import AgentFactory
             from taskforce.application.gateway import CommunicationGateway
             from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
@@ -163,7 +164,9 @@ class ButlerDaemon:
                 work_dir=self._work_dir
             )
             if components.outbound_senders:
-                executor = AgentExecutor()
+                factory = AgentFactory()
+                factory.set_scheduler(self._butler.scheduler)
+                executor = AgentExecutor(factory=factory)
                 gateway = CommunicationGateway(
                     executor=executor,
                     conversation_store=components.conversation_store,
@@ -186,8 +189,11 @@ class ButlerDaemon:
 
         try:
             from taskforce.application.executor import AgentExecutor
+            from taskforce.application.factory import AgentFactory
 
-            executor = AgentExecutor()
+            factory = AgentFactory()
+            factory.set_scheduler(self._butler.scheduler)
+            executor = AgentExecutor(factory=factory)
             self._butler.set_executor(executor)
             logger.info("butler_daemon.executor_configured")
 

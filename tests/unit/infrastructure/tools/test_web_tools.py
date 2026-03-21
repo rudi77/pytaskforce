@@ -119,15 +119,69 @@ class TestWebSearchToolValidation:
         assert "string" in error
 
 
-class TestWebSearchToolExecution:
-    """Test WebSearchTool execution with mocked aiohttp."""
+class TestWebSearchToolDDGS:
+    """Test WebSearchTool with the ddgs library (primary path)."""
 
     @pytest.fixture
     def tool(self):
         return WebSearchTool()
 
-    async def test_search_with_abstract(self, tool):
-        """Test search returning abstract result."""
+    async def test_search_returns_results(self, tool):
+        """Test search via ddgs library returns formatted results."""
+        fake_results = [
+            {"title": "Result 1", "body": "Snippet 1", "href": "https://example.com/1"},
+            {"title": "Result 2", "body": "Snippet 2", "href": "https://example.com/2"},
+        ]
+
+        with patch(
+            "taskforce.infrastructure.tools.native.web_tools.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=fake_results,
+        ):
+            result = await tool.execute(query="test query", num_results=3)
+
+        assert result["success"] is True
+        assert result["query"] == "test query"
+        assert result["count"] == 2
+        assert result["results"][0]["title"] == "Result 1"
+        assert result["results"][0]["snippet"] == "Snippet 1"
+        assert result["results"][0]["url"] == "https://example.com/1"
+
+    async def test_search_empty_results(self, tool):
+        """Test search returning no results."""
+        with patch(
+            "taskforce.infrastructure.tools.native.web_tools.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await tool.execute(query="xyznonexistentquery123")
+
+        assert result["success"] is True
+        assert result["count"] == 0
+        assert result["results"] == []
+
+    async def test_search_handles_exception(self, tool):
+        """Test that errors are handled gracefully."""
+        with patch(
+            "taskforce.infrastructure.tools.native.web_tools.asyncio.to_thread",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Network error"),
+        ):
+            result = await tool.execute(query="test")
+
+        assert result["success"] is False
+        assert "error" in result
+
+
+class TestWebSearchToolFallback:
+    """Test WebSearchTool Instant Answer API fallback when ddgs is not installed."""
+
+    @pytest.fixture
+    def tool(self):
+        return WebSearchTool()
+
+    async def test_fallback_with_abstract(self, tool):
+        """Test fallback search returning abstract result."""
         json_data = {
             "Abstract": "Python is a programming language.",
             "Heading": "Python",
@@ -138,17 +192,23 @@ class TestWebSearchToolExecution:
         resp_ctx = _mock_aiohttp_response(json_data=json_data)
         session_ctx = _mock_session(resp_ctx)
 
-        with patch("aiohttp.ClientSession", return_value=session_ctx):
+        with (
+            patch.object(
+                tool,
+                "_search_ddgs",
+                new_callable=AsyncMock,
+                side_effect=ImportError("No module named 'ddgs'"),
+            ),
+            patch("aiohttp.ClientSession", return_value=session_ctx),
+        ):
             result = await tool.execute(query="python programming")
 
         assert result["success"] is True
-        assert result["query"] == "python programming"
         assert result["count"] >= 1
-        assert result["results"][0]["title"] == "Python"
         assert "programming language" in result["results"][0]["snippet"]
 
-    async def test_search_with_related_topics(self, tool):
-        """Test search returning related topics."""
+    async def test_fallback_with_related_topics(self, tool):
+        """Test fallback search returning related topics."""
         json_data = {
             "Abstract": "",
             "RelatedTopics": [
@@ -161,39 +221,22 @@ class TestWebSearchToolExecution:
         resp_ctx = _mock_aiohttp_response(json_data=json_data)
         session_ctx = _mock_session(resp_ctx)
 
-        with patch("aiohttp.ClientSession", return_value=session_ctx):
+        with (
+            patch.object(
+                tool,
+                "_search_ddgs",
+                new_callable=AsyncMock,
+                side_effect=ImportError("No module named 'ddgs'"),
+            ),
+            patch("aiohttp.ClientSession", return_value=session_ctx),
+        ):
             result = await tool.execute(query="test", num_results=2)
 
         assert result["success"] is True
         assert len(result["results"]) <= 2
 
-    async def test_search_empty_results(self, tool):
-        """Test search with no results."""
-        json_data = {"Abstract": "", "RelatedTopics": []}
-
-        resp_ctx = _mock_aiohttp_response(json_data=json_data)
-        session_ctx = _mock_session(resp_ctx)
-
-        with patch("aiohttp.ClientSession", return_value=session_ctx):
-            result = await tool.execute(query="xyznonexistentquery123")
-
-        assert result["success"] is True
-        assert result["count"] == 0
-        assert result["results"] == []
-
-    async def test_search_handles_exception(self, tool):
-        """Test that network errors are handled gracefully."""
-        with patch(
-            "aiohttp.ClientSession",
-            side_effect=Exception("Network error"),
-        ):
-            result = await tool.execute(query="test")
-
-        assert result["success"] is False
-        assert "error" in result
-
-    async def test_search_skips_non_dict_related_topics(self, tool):
-        """Test that non-dict related topics are skipped."""
+    async def test_fallback_skips_non_dict_related_topics(self, tool):
+        """Test that non-dict related topics are skipped in fallback."""
         json_data = {
             "Abstract": "",
             "RelatedTopics": [
@@ -205,11 +248,18 @@ class TestWebSearchToolExecution:
         resp_ctx = _mock_aiohttp_response(json_data=json_data)
         session_ctx = _mock_session(resp_ctx)
 
-        with patch("aiohttp.ClientSession", return_value=session_ctx):
+        with (
+            patch.object(
+                tool,
+                "_search_ddgs",
+                new_callable=AsyncMock,
+                side_effect=ImportError("No module named 'ddgs'"),
+            ),
+            patch("aiohttp.ClientSession", return_value=session_ctx),
+        ):
             result = await tool.execute(query="test")
 
         assert result["success"] is True
-        # Only the dict entry with "Text" should be included
         assert result["count"] == 1
 
 

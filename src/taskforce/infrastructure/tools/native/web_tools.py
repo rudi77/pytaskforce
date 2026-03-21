@@ -2,9 +2,9 @@
 Web Tools
 
 Provides web search (DuckDuckGo) and URL content fetching capabilities.
-Migrated from Agent V2 with full preservation of functionality.
 """
 
+import asyncio
 import re
 from typing import Any
 
@@ -16,7 +16,12 @@ from taskforce.infrastructure.tools.native.url_validator import validate_url_for
 
 
 class WebSearchTool(ToolProtocol):
-    """Web search using DuckDuckGo (no API key required)."""
+    """Web search using DuckDuckGo (no API key required).
+
+    Uses the ``duckduckgo_search`` library for real web search results.
+    Falls back to the DuckDuckGo Instant Answer API when the library
+    is not installed.
+    """
 
     @property
     def name(self) -> str:
@@ -61,76 +66,21 @@ class WebSearchTool(ToolProtocol):
         return f"Tool: {self.name}\nOperation: Web search\nQuery: {query}\nResults: {num_results}"
 
     async def execute(
-        self, query: str, num_results: int = 5, **kwargs
+        self, query: str, num_results: int = 5, **kwargs: Any
     ) -> dict[str, Any]:
-        """
-        Search the web using DuckDuckGo.
+        """Search the web using DuckDuckGo.
 
         Args:
-            query: Search query string
-            num_results: Number of results to return (default: 5)
+            query: Search query string.
+            num_results: Number of results to return (default: 5).
 
         Returns:
-            Dictionary with:
-            - success: bool - True if search succeeded
-            - query: str - The search query
-            - results: List[Dict] - Search results with title, snippet, url
-            - count: int - Number of results returned
-            - error: str - Error message (if failed)
+            Dictionary with success, query, results, count (or error).
         """
-        if not aiohttp:
-            return {"success": False, "error": "aiohttp not installed"}
-
         try:
-            async with aiohttp.ClientSession() as session:
-                params = {
-                    "q": query,
-                    "format": "json",
-                    "no_html": "1",
-                    "skip_disambig": "1",
-                }
-
-                async with session.get(
-                    "https://api.duckduckgo.com/",
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as response:
-                    # DuckDuckGo may return a non-standard JSON Content-Type
-                    # Allow json() to parse regardless of Content-Type
-                    data = await response.json(content_type=None)
-
-                    results = []
-
-                    # Extract abstract if available
-                    if data.get("Abstract"):
-                        results.append(
-                            {
-                                "title": data.get("Heading", ""),
-                                "snippet": data["Abstract"],
-                                "url": data.get("AbstractURL", ""),
-                            }
-                        )
-
-                    # Extract related topics
-                    for topic in data.get("RelatedTopics", [])[:num_results]:
-                        if isinstance(topic, dict) and "Text" in topic:
-                            results.append(
-                                {
-                                    "title": topic.get("Text", "").split(" - ")[0][
-                                        :50
-                                    ],
-                                    "snippet": topic.get("Text", ""),
-                                    "url": topic.get("FirstURL", ""),
-                                }
-                            )
-
-                    return {
-                        "success": True,
-                        "query": query,
-                        "results": results[:num_results],
-                        "count": len(results),
-                    }
-
+            return await self._search_ddgs(query, num_results)
+        except ImportError:
+            return await self._search_instant_answer_api(query, num_results)
         except Exception as e:
             tool_error = ToolError(
                 f"{self.name} failed: {e}",
@@ -138,6 +88,76 @@ class WebSearchTool(ToolProtocol):
                 details={"query": query, "num_results": num_results},
             )
             return tool_error_payload(tool_error)
+
+    async def _search_ddgs(self, query: str, num_results: int) -> dict[str, Any]:
+        """Search using the duckduckgo_search library (real web results)."""
+        from ddgs import DDGS  # noqa: WPS433
+
+        # DDGS is synchronous — run in a thread to avoid blocking the event loop.
+        def _run() -> list[dict[str, str]]:
+            return DDGS().text(query, max_results=num_results)
+
+        raw_results = await asyncio.to_thread(_run)
+
+        results = [
+            {
+                "title": r.get("title", ""),
+                "snippet": r.get("body", ""),
+                "url": r.get("href", ""),
+            }
+            for r in raw_results
+        ]
+
+        return {
+            "success": True,
+            "query": query,
+            "results": results,
+            "count": len(results),
+        }
+
+    async def _search_instant_answer_api(
+        self, query: str, num_results: int
+    ) -> dict[str, Any]:
+        """Fallback: DuckDuckGo Instant Answer API (limited results)."""
+        async with aiohttp.ClientSession() as session:
+            params = {
+                "q": query,
+                "format": "json",
+                "no_html": "1",
+                "skip_disambig": "1",
+            }
+            async with session.get(
+                "https://api.duckduckgo.com/",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                data = await response.json(content_type=None)
+
+                results: list[dict[str, str]] = []
+                if data.get("Abstract"):
+                    results.append(
+                        {
+                            "title": data.get("Heading", ""),
+                            "snippet": data["Abstract"],
+                            "url": data.get("AbstractURL", ""),
+                        }
+                    )
+                for topic in data.get("RelatedTopics", [])[:num_results]:
+                    if isinstance(topic, dict) and "Text" in topic:
+                        results.append(
+                            {
+                                "title": topic.get("Text", "").split(" - ")[0][:50],
+                                "snippet": topic.get("Text", ""),
+                                "url": topic.get("FirstURL", ""),
+                            }
+                        )
+
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": results[:num_results],
+                    "count": len(results),
+                }
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
