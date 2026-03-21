@@ -132,3 +132,68 @@ class TestTokenAnalyticsCallback:
         response = SimpleNamespace(usage=None, choices=[])
         callback.log_success_event({"model": "m"}, response, None, None)
         assert callback.calls[0].total_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_async_log_success_event_records_call(self, callback):
+        """async_log_success_event should record the call just like the sync version."""
+        kwargs = {"model": "gpt-4o"}
+        response = _make_response(prompt_tokens=500, completion_tokens=100, total_tokens=600)
+        start = datetime(2025, 1, 1, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 0, 0, 1, tzinfo=UTC)
+
+        await callback.async_log_success_event(kwargs, response, start, end)
+
+        assert len(callback.calls) == 1
+        record = callback.calls[0]
+        assert record.model == "gpt-4o"
+        assert record.prompt_tokens == 500
+        assert record.completion_tokens == 100
+        assert record.total_tokens == 600
+        assert record.latency_ms == 1000
+
+    @pytest.mark.asyncio
+    async def test_async_log_stream_event_records_call(self, callback):
+        """async_log_stream_event should record the call just like the sync version."""
+        kwargs = {"model": "claude-3"}
+        response = _make_response(prompt_tokens=200, completion_tokens=80, total_tokens=280)
+        start = datetime(2025, 1, 1, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 0, 0, 2, tzinfo=UTC)
+
+        await callback.async_log_stream_event(kwargs, response, start, end)
+
+        assert len(callback.calls) == 1
+        assert callback.calls[0].model == "claude-3"
+        assert callback.calls[0].latency_ms == 2000
+
+    def test_metadata_step_and_phase_extracted(self, callback):
+        """step_number and phase should be extracted from litellm_params.metadata."""
+        kwargs = {
+            "model": "gpt-4o",
+            "litellm_params": {
+                "metadata": {"step_number": 3, "phase": "reasoning"},
+            },
+        }
+        response = _make_response()
+        callback.log_success_event(kwargs, response, None, None)
+
+        record = callback.calls[0]
+        assert record.step_number == 3
+        assert record.phase == "reasoning"
+
+    def test_metadata_missing_defaults_none(self, callback):
+        """Without metadata, step_number and phase should be None."""
+        kwargs = {"model": "m"}
+        callback.log_success_event(kwargs, _make_response(), None, None)
+
+        record = callback.calls[0]
+        assert record.step_number is None
+        assert record.phase is None
+
+    def test_metadata_empty_litellm_params(self, callback):
+        """Empty litellm_params should not break extraction."""
+        kwargs = {"model": "m", "litellm_params": {}}
+        callback.log_success_event(kwargs, _make_response(), None, None)
+
+        record = callback.calls[0]
+        assert record.step_number is None
+        assert record.phase is None

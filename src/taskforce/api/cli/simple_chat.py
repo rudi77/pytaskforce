@@ -696,6 +696,9 @@ class SimpleChatRunner:
         final_message = "".join(final_tokens) if final_tokens else "No response"
         await self._persist_assistant_message(final_message)
 
+        # Display detailed token analytics if available
+        self._print_token_analytics()
+
     def _handle_plan_update(self, update: ProgressUpdate) -> None:
         """Handle plan update events."""
         action = update.details.get("action", "updated")
@@ -832,6 +835,16 @@ class SimpleChatRunner:
 
     def _print_system(self, message: str, style: str = "system") -> None:
         self.console.print(f"[{style}]ℹ️ {message}[/{style}]")
+
+    def _print_token_analytics(self) -> None:
+        """Show detailed token analytics after each agent response."""
+        from taskforce.application.token_analytics_facade import get_execution_token_summary
+        from taskforce.api.cli.output_formatter import TaskforceConsole
+
+        summary = get_execution_token_summary()
+        if summary is not None:
+            tf_console = TaskforceConsole()
+            tf_console.print_token_analytics(summary)
 
     async def _show_context(self, command_args: str) -> None:
         """Render a context snapshot showing what is sent to the LLM."""

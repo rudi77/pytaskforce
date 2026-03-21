@@ -197,7 +197,16 @@
       "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_file_memory_store_cache.py::TestHybridSearch::test_search_keyword_score_normalised -v --timeout=30 --no-header --no-cov)",
       "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/tools/test_shell_tool.py -v --timeout=30 --no-header --no-cov)",
       "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/integration/test_mcp_configuration.py tests/unit/application/test_infrastructure_builder.py::TestBuildLlmProvider::test_builds_llm_with_router tests/unit/core/domain/test_react_loop_resilience.py::TestBuildRetryNudge::test_escalation_on_repeated_failure tests/unit/infrastructure/test_telegram_poller.py::test_handle_update_no_pending_question tests/unit/infrastructure/test_file_memory_store_cache.py::TestHybridSearch::test_search_keyword_score_normalised tests/unit/infrastructure/tools/test_shell_tool.py -v --timeout=30 --no-header --no-cov)",
-      "Bash(.venv/Scripts/python -c \"from pathlib import Path; p = Path\\('/abs/path/llm_config.yaml'\\); print\\(p.is_absolute\\(\\)\\)\")"
+      "Bash(.venv/Scripts/python -c \"from pathlib import Path; p = Path\\('/abs/path/llm_config.yaml'\\); print\\(p.is_absolute\\(\\)\\)\")",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/core/domain/test_token_analytics.py -v)",
+      "Bash(2)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/core/domain/test_message_history_manager.py::TestCompressMessages::test_compression_triggered_by_message_count -v)",
+      "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_message_history_manager.py -v)",
+      "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)"
     ],
     "deny": [
       ".env",

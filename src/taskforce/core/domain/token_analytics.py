@@ -1,4 +1,4 @@
-"""Token Analytics - Per-call token tracking and execution summary.
+"""Token Analytics - Per-call and per-step token tracking and execution summary.
 
 Domain models for fine-grained LLM token usage analysis.  The actual
 collection happens in the infrastructure layer via a LiteLLM callback
@@ -6,6 +6,7 @@ collection happens in the infrastructure layer via a LiteLLM callback
 
 Key features:
 - Per-call token breakdown (prompt / completion / total / model / latency)
+- Per-step aggregation (tokens per agent reasoning step)
 - Per-model aggregation (token totals, call counts, average latency)
 - Efficiency metrics (prompt/completion ratio, tokens per call)
 """
@@ -29,6 +30,8 @@ class LLMCallRecord:
         latency_ms: Request duration in milliseconds.
         tool_call_names: Names of tools the LLM chose to call (if any).
         timestamp: When this call was made.
+        step_number: Agent reasoning step (None for planning/summarizing).
+        phase: Execution phase (planning, reasoning, acting, reflecting, etc.).
     """
 
     model: str
@@ -38,6 +41,8 @@ class LLMCallRecord:
     latency_ms: int = 0
     tool_call_names: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    step_number: int | None = None
+    phase: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -49,6 +54,8 @@ class LLMCallRecord:
             "latency_ms": self.latency_ms,
             "tool_call_names": self.tool_call_names,
             "timestamp": self.timestamp.isoformat(),
+            "step_number": self.step_number,
+            "phase": self.phase,
         }
 
 
@@ -97,6 +104,47 @@ class ModelTokenSummary:
 
 
 @dataclass
+class StepTokenSummary:
+    """Aggregated token usage for a single agent step.
+
+    Groups all LLM calls within one reasoning step (or a named phase
+    like ``planning`` / ``summarizing`` for non-step calls).
+
+    Attributes:
+        step_number: Agent step (None for planning/summarizing/compression).
+        phase: Execution phase name.
+        prompt_tokens: Sum of prompt tokens in this step.
+        completion_tokens: Sum of completion tokens in this step.
+        total_tokens: Sum of total tokens in this step.
+        latency_ms: Sum of LLM latency in this step.
+        tool_call_names: Tool names invoked during this step.
+        llm_calls: Number of LLM calls in this step.
+    """
+
+    step_number: int | None
+    phase: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: int = 0
+    tool_call_names: list[str] = field(default_factory=list)
+    llm_calls: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "step_number": self.step_number,
+            "phase": self.phase,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "latency_ms": self.latency_ms,
+            "tool_call_names": self.tool_call_names,
+            "llm_calls": self.llm_calls,
+        }
+
+
+@dataclass
 class ExecutionTokenSummary:
     """Complete token analytics for one execution session.
 
@@ -113,6 +161,7 @@ class ExecutionTokenSummary:
 
     calls: list[LLMCallRecord] = field(default_factory=list)
     model_breakdown: dict[str, ModelTokenSummary] = field(default_factory=dict)
+    step_breakdown: list[StepTokenSummary] = field(default_factory=list)
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
@@ -125,6 +174,7 @@ class ExecutionTokenSummary:
         return {
             "calls": [c.to_dict() for c in self.calls],
             "model_breakdown": {k: v.to_dict() for k, v in self.model_breakdown.items()},
+            "step_breakdown": [s.to_dict() for s in self.step_breakdown],
             "total_prompt_tokens": self.total_prompt_tokens,
             "total_completion_tokens": self.total_completion_tokens,
             "total_tokens": self.total_tokens,
@@ -171,5 +221,32 @@ def build_summary(calls: list[LLMCallRecord]) -> ExecutionTokenSummary:
         summary.prompt_to_completion_ratio = (
             summary.total_prompt_tokens / summary.total_completion_tokens
         )
+
+    # Per-step aggregation
+    step_map: dict[tuple[int | None, str], StepTokenSummary] = {}
+    for record in calls:
+        key = (record.step_number, record.phase or "unknown")
+        ss = step_map.get(key)
+        if ss is None:
+            ss = StepTokenSummary(step_number=record.step_number, phase=key[1])
+            step_map[key] = ss
+        ss.prompt_tokens += record.prompt_tokens
+        ss.completion_tokens += record.completion_tokens
+        ss.total_tokens += record.total_tokens
+        ss.latency_ms += record.latency_ms
+        ss.tool_call_names.extend(record.tool_call_names)
+        ss.llm_calls += 1
+
+    # Sort: None step_numbers first (planning, compression, summarizing),
+    # then by step_number ascending.  Within same step_number, preserve
+    # insertion order (dict is ordered in Python 3.7+).
+    def _step_sort_key(s: StepTokenSummary) -> tuple[int, int]:
+        if s.step_number is None:
+            # Order named phases: planning < compression < summarizing < other
+            phase_order = {"planning": 0, "compression": 1, "summarizing": 2}
+            return (0, phase_order.get(s.phase, 99))
+        return (1, s.step_number)
+
+    summary.step_breakdown = sorted(step_map.values(), key=_step_sort_key)
 
     return summary

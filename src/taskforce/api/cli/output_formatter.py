@@ -297,56 +297,81 @@ class TaskforceConsole:
 
         from rich.table import Table
 
-        # Model breakdown table
-        if summary.model_breakdown:
+        # Per-step breakdown table (primary view)
+        if summary.step_breakdown:
             table = Table(
-                title="Token Analytics - Model Breakdown",
+                title="Token Analytics",
                 border_style="dim cyan",
                 show_header=True,
                 header_style="bold cyan",
                 padding=(0, 1),
             )
-            table.add_column("Model", style="white")
-            table.add_column("Tokens", justify="right", style="cyan")
-            table.add_column("%", justify="right", style="yellow")
-            table.add_column("Calls", justify="right", style="dim")
-            table.add_column("Avg/Call", justify="right", style="dim")
-            table.add_column("Avg Latency", justify="right", style="dim")
+            table.add_column("Step", style="white", justify="right", width=5)
+            table.add_column("Phase", style="white", width=12)
+            table.add_column("In", justify="right", style="cyan", width=8)
+            table.add_column("Out", justify="right", style="green", width=8)
+            table.add_column("Tools", style="dim", max_width=24, overflow="ellipsis")
+            table.add_column("Latency", justify="right", style="dim", width=8)
 
-            for ms in sorted(
+            for ss in summary.step_breakdown:
+                step_label = str(ss.step_number) if ss.step_number is not None else "-"
+                tools = ", ".join(ss.tool_call_names) if ss.tool_call_names else ""
+                latency = f"{ss.latency_ms / 1000:.1f}s" if ss.latency_ms else "-"
+                table.add_row(
+                    step_label,
+                    ss.phase,
+                    f"{ss.prompt_tokens:,}",
+                    f"{ss.completion_tokens:,}",
+                    tools,
+                    latency,
+                )
+
+            # Total row
+            table.add_section()
+            total_tools = sum(len(ss.tool_call_names) for ss in summary.step_breakdown)
+            table.add_row(
+                "",
+                "[bold]TOTAL[/bold]",
+                f"[bold]{summary.total_prompt_tokens:,}[/bold]",
+                f"[bold]{summary.total_completion_tokens:,}[/bold]",
+                f"{total_tools} tool calls" if total_tools else "",
+                f"[bold]{summary.total_latency_ms / 1000:.1f}s[/bold]",
+            )
+            self.console.print(table)
+
+        # Model breakdown (compact line)
+        if summary.model_breakdown:
+            models = sorted(
                 summary.model_breakdown.values(),
                 key=lambda m: m.total_tokens,
                 reverse=True,
-            ):
-                pct = ms.total_tokens / summary.total_tokens * 100
-                table.add_row(
-                    ms.model,
-                    f"{ms.total_tokens:,}",
-                    f"{pct:.1f}%",
-                    str(ms.call_count),
-                    f"{ms.avg_tokens_per_call:,.0f}",
-                    f"{ms.avg_latency_ms:,.0f}ms",
-                )
-            self.console.print(table)
-
-        # Efficiency line
-        ratio = summary.prompt_to_completion_ratio
-        ratio_style = "green" if ratio < 5.0 else "yellow" if ratio < 10.0 else "red"
-        ratio_label = (
-            "efficient" if ratio < 5.0 else "context-heavy" if ratio < 10.0 else "wasteful"
-        )
-        info = (
-            f"[info]LLM Calls:[/info] [cyan]{summary.total_llm_calls}[/cyan]  |  "
-            f"[info]Total Latency:[/info] [cyan]{summary.total_latency_ms / 1000:.1f}s[/cyan]  |  "
-            f"[info]Prompt/Completion Ratio:[/info] "
-            f"[{ratio_style}]{ratio:.1f}x ({ratio_label})[/{ratio_style}]"
-        )
-        self.console.print(
-            Panel(
-                info,
-                title="[📊 Efficiency]",
-                title_align="left",
-                border_style="dim cyan",
-                padding=(0, 1),
             )
-        )
+            parts = []
+            for ms in models:
+                pct = ms.total_tokens / summary.total_tokens * 100
+                parts.append(f"{ms.model} {pct:.0f}% ({ms.call_count} calls)")
+            model_line = "  |  ".join(parts)
+
+            ratio = summary.prompt_to_completion_ratio
+            ratio_style = (
+                "green" if ratio < 10.0 else "yellow" if ratio < 25.0 else "dim"
+            )
+            ratio_label = (
+                "efficient"
+                if ratio < 10.0
+                else "context-heavy"
+                if ratio < 25.0
+                else "high context reuse"
+            )
+            info = (
+                f"[info]Models:[/info] {model_line}  |  "
+                f"[info]In/Out Ratio:[/info] "
+                f"[{ratio_style}]{ratio:.1f}x ({ratio_label})[/{ratio_style}]"
+            )
+            self.console.print(
+                Panel(
+                    info,
+                    border_style="dim cyan",
+                    padding=(0, 1),
+                )
+            )

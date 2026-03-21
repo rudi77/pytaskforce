@@ -77,6 +77,26 @@ class TokenAnalyticsCallback(litellm.integrations.custom_logger.CustomLogger):
         """Called by LiteLLM after a streaming completion finishes."""
         self._record(kwargs, response_obj, start_time, end_time)
 
+    async def async_log_success_event(
+        self,
+        kwargs: dict[str, Any],
+        response_obj: Any,
+        start_time: Any,
+        end_time: Any,
+    ) -> None:
+        """Called by LiteLLM after every successful async (non-streaming) completion."""
+        self._record(kwargs, response_obj, start_time, end_time)
+
+    async def async_log_stream_event(
+        self,
+        kwargs: dict[str, Any],
+        response_obj: Any,
+        start_time: Any,
+        end_time: Any,
+    ) -> None:
+        """Called by LiteLLM after an async streaming completion finishes."""
+        self._record(kwargs, response_obj, start_time, end_time)
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
@@ -124,6 +144,11 @@ class TokenAnalyticsCallback(litellm.integrations.custom_logger.CustomLogger):
                         if hasattr(tc, "function") and hasattr(tc.function, "name")
                     ]
 
+            # Step context from metadata (passed via litellm metadata param)
+            metadata = kwargs.get("litellm_params", {}).get("metadata") or {}
+            step_number = metadata.get("step_number")
+            phase = metadata.get("phase")
+
             record = LLMCallRecord(
                 model=model,
                 prompt_tokens=usage.get("prompt_tokens", 0),
@@ -132,6 +157,8 @@ class TokenAnalyticsCallback(litellm.integrations.custom_logger.CustomLogger):
                 latency_ms=latency_ms,
                 tool_call_names=tool_call_names,
                 timestamp=datetime.now(UTC),
+                step_number=step_number,
+                phase=phase,
             )
             self._calls.append(record)
 

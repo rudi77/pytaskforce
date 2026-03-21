@@ -334,6 +334,7 @@ async def _generate_plan(
         tools=None,
         tool_choice="none",
         temperature=0.1,
+        metadata={"step_number": None, "phase": "planning"},
     )
     if not result.get("success"):
         return []
@@ -453,6 +454,7 @@ async def _stream_final_response(
             tools=None,
             tool_choice="none",
             temperature=0.2,
+            metadata={"step_number": None, "phase": "summarizing"},
         ):
             if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
                 yield StreamEvent(
@@ -472,6 +474,7 @@ async def _stream_final_response(
             tools=None,
             tool_choice="none",
             temperature=0.2,
+            metadata={"step_number": None, "phase": "summarizing"},
         )
         final = r.get("content", "") if r.get("success") else ""
         if r.get("usage"):
@@ -840,6 +843,7 @@ async def _react_loop(
                     tools=agent._openai_tools,
                     tool_choice="auto",
                     temperature=0.2,
+                    metadata={"step_number": step, "phase": model_hint},
                 ):
                     t = chunk.get("type")
                     if t == LLMStreamEventType.TOKEN.value and chunk.get("content"):
@@ -908,6 +912,7 @@ async def _react_loop(
                 tools=agent._openai_tools,
                 tool_choice="auto",
                 temperature=0.2,
+                metadata={"step_number": step, "phase": model_hint},
             )
             if result.get("usage"):
                 yield StreamEvent(
@@ -1077,6 +1082,7 @@ async def _llm_call_and_process(
         tools=agent._openai_tools,
         tool_choice="auto",
         temperature=0.2,
+        metadata={"step_number": step, "phase": model_hint},
     )
     if result.get("usage"):
         events.append(StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"]))

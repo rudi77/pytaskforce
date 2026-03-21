@@ -186,6 +186,7 @@ Keep it factual and concise."""
                 messages=compression_messages,
                 model=self._model_alias,
                 temperature=0,
+                metadata={"step_number": None, "phase": "compression"},
             )
 
             error = result.get("error", "")
