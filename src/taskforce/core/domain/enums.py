@@ -35,6 +35,7 @@ class EventType(str, Enum):
     ASK_USER = "ask_user"
     PLAN_UPDATED = "plan_updated"
     TOKEN_USAGE = "token_usage"
+    TOKEN_ANALYTICS = "token_analytics"
     FINAL_ANSWER = "final_answer"
     COMPLETE = "complete"
     ERROR = "error"
