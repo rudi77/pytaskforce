@@ -78,7 +78,7 @@ class ActivateSkillTool(BaseTool):
                 },
             },
         },
-        "required": ["skill_name", "input"],
+        "required": ["skill_name"],
     }
     tool_requires_approval = False
     tool_supports_parallelism = False
@@ -121,13 +121,6 @@ class ActivateSkillTool(BaseTool):
                 "input={'file_path': '/path/to/invoice.pdf'})",
             }
 
-        if not input_vars:
-            return {
-                "success": False,
-                "error": f"Missing required parameter 'input' for skill '{skill_name}'. "
-                "For invoice processing, provide: input={'file_path': '<path to PDF>'}",
-            }
-
         if not self._agent_ref:
             return {"success": False, "error": "No agent reference configured"}
 
@@ -138,10 +131,18 @@ class ActivateSkillTool(BaseTool):
         activated = self._agent_ref.activate_skill(skill_name)
 
         if not activated:
+            # Auto-refresh: the skill may have been created at runtime (e.g. via file_write)
+            registry = getattr(self._agent_ref.skill_manager, "_registry", None)
+            if registry is not None and hasattr(registry, "refresh"):
+                logger.info("activate_skill.auto_refresh", skill_name=skill_name)
+                registry.refresh()
+                activated = self._agent_ref.activate_skill(skill_name)
+
+        if not activated:
             available = self._agent_ref.skill_manager.list_skills()
             return {
                 "success": False,
-                "error": f"Skill '{skill_name}' nicht gefunden",
+                "error": f"Skill '{skill_name}' not found",
                 "available_skills": available,
             }
 

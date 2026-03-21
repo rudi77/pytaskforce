@@ -47,11 +47,11 @@ class TestActivateSkillTool:
         assert valid is False
         assert err is not None
 
-    def test_validate_params_missing_input(self, tool):
-        """Test parameter validation without required input."""
+    def test_validate_params_without_input(self, tool):
+        """Test parameter validation without optional input."""
         valid, err = tool.validate_params(skill_name="smart-booking-auto")
-        assert valid is False
-        assert err is not None
+        assert valid is True
+        assert err is None
 
     @pytest.mark.asyncio
     async def test_execute_no_agent_ref(self, tool):
@@ -70,14 +70,6 @@ class TestActivateSkillTool:
         assert "Missing required parameter 'skill_name'" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_execute_missing_input(self, tool):
-        """Test execution without input parameter."""
-        result = await tool.execute(skill_name="test-skill")
-
-        assert result["success"] is False
-        assert "Missing required parameter 'input'" in result["error"]
-
-    @pytest.mark.asyncio
     async def test_execute_no_skill_manager(self, tool):
         """Test execution with agent but no skill manager."""
         mock_agent = MagicMock()
@@ -91,10 +83,11 @@ class TestActivateSkillTool:
 
     @pytest.mark.asyncio
     async def test_execute_skill_not_found(self, tool):
-        """Test execution when skill is not found."""
+        """Test execution when skill is not found even after auto-refresh."""
         mock_agent = MagicMock()
         mock_skill_manager = MagicMock()
         mock_skill_manager.list_skills.return_value = ["skill-a", "skill-b"]
+        mock_skill_manager._registry = MagicMock()
         mock_agent.skill_manager = mock_skill_manager
         mock_agent.activate_skill.return_value = False
 
@@ -102,8 +95,33 @@ class TestActivateSkillTool:
         result = await tool.execute(skill_name="nonexistent-skill", input={"file_path": "test.pdf"})
 
         assert result["success"] is False
-        assert "nicht gefunden" in result["error"]
+        assert "not found" in result["error"]
         assert result["available_skills"] == ["skill-a", "skill-b"]
+        # Verify auto-refresh was attempted
+        mock_skill_manager._registry.refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_skill_found_after_auto_refresh(self, tool):
+        """Test that a newly created skill is found after auto-refresh."""
+        mock_skill = MagicMock()
+        mock_skill.name = "new-skill"
+        mock_skill.has_workflow = False
+
+        mock_skill_manager = MagicMock()
+        mock_skill_manager._registry = MagicMock()
+        mock_skill_manager.active_skill = mock_skill
+
+        mock_agent = MagicMock()
+        mock_agent.skill_manager = mock_skill_manager
+        # First call returns False (not in cache), second call returns True (after refresh)
+        mock_agent.activate_skill.side_effect = [False, True]
+
+        tool.set_agent_ref(mock_agent)
+        result = await tool.execute(skill_name="new-skill", input={"data": "test"})
+
+        assert result["success"] is True
+        assert result["skill_name"] == "new-skill"
+        mock_skill_manager._registry.refresh.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_skill_without_workflow(self, tool):

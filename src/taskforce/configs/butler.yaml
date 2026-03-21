@@ -130,8 +130,8 @@ sub_agents:
 tools:
   #- web_search
   #- web_fetch
-  #- file_read
-  #- file_write
+  - file_read
+  - file_write
   - shell
   - memory
   - send_notification
