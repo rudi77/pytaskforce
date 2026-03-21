@@ -2,37 +2,73 @@
 
 Production-grade multi-agent orchestration framework built with Clean Architecture principles.
 
-## 🚀 Quick Start (Windows/PowerShell)
+## Installation
 
-### 1. Install uv
-```powershell
-# Install the uv package manager if you haven't already
-pip install uv
+### Option A: Install from PyPI (recommended)
+
+```bash
+# Install taskforce
+pip install taskforce
+
+# Run the interactive setup wizard
+taskforce init
 ```
 
-### 2. Setup Environment
-```powershell
-# Clone and enter the repo
-# cd pytaskforce
+Or use `pipx` for an isolated installation (recommended for CLI tools):
 
-# Create virtual environment and install dependencies
-uv venv .venv
-.\.venv\Scripts\Activate.ps1
+```bash
+pipx install taskforce
+taskforce init
+```
+
+Or with `uvx` (zero-install, runs directly):
+
+```bash
+uvx taskforce init
+```
+
+The `taskforce init` wizard guides you through:
+1. LLM provider selection (OpenAI, Anthropic, Gemini, Azure, Ollama)
+2. API key configuration
+3. Model setup
+4. Profile selection
+5. Optional extras (browser, RAG, PDF, etc.)
+
+After setup, verify with:
+```bash
+taskforce doctor
+```
+
+### Option B: Development Setup
+
+```bash
+# Clone and enter the repo
+git clone https://github.com/rudi77/pytaskforce.git
+cd pytaskforce
+
+# Install dependencies (requires uv)
 uv sync
 
-# Setup environment variables
-Copy-Item .env.example .env
-# Now edit .env and add your OPENAI_API_KEY
+# Run the setup wizard
+uv run taskforce init
+
+# Or configure manually
+cp .env.example .env
+# Edit .env and add your API keys
 ```
 
-### 3. Run Your First Mission
-```powershell
-# CLI Mode
+## Quick Start
+
+```bash
+# Interactive chat
+taskforce chat
+
+# Run a mission
 taskforce run mission "Describe the current weather in Vienna"
 
-# API Mode
+# API server
 uvicorn taskforce.api.server:app --reload
-# Documentation: `http://localhost:8000/docs`
+# Documentation: http://localhost:8000/docs
 ```
 
 ### 4. Load a Plugin (Optional)

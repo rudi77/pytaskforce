@@ -8,6 +8,8 @@ from taskforce.api.cli.commands import (
     chat,
     config,
     conversations,
+    doctor,
+    init,
     memory,
     missions,
     run,
@@ -35,6 +37,10 @@ app.add_typer(missions.app, name="missions", help="Mission management")
 app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(butler.app, name="butler", help="Butler agent daemon")
 app.add_typer(memory.app, name="memory", help="Memory management")
+app.add_typer(doctor.app, name="doctor", help="Health check and diagnostics")
+
+# Register init as a top-level command (not a subcommand group)
+app.command("init")(init.init_command)
 
 
 @app.callback()

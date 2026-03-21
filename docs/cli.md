@@ -2,6 +2,49 @@
 
 The `taskforce` CLI is the primary way to interact with the agent framework during development.
 
+## Setup Commands
+
+### `taskforce init`
+
+Interactive setup wizard that configures Taskforce after installation.
+
+```bash
+# Interactive mode (guided wizard)
+taskforce init
+
+# Non-interactive mode (for CI/scripting)
+taskforce init --provider openai --api-key sk-... --profile dev --extras browser,pdf
+taskforce init --provider ollama --no-validate --profile dev
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--provider` | LLM provider: `openai`, `anthropic`, `gemini`, `azure`, `ollama` |
+| `--api-key` | Primary API key for the selected provider |
+| `--profile` | Default profile: `dev`, `coding_agent`, `butler`, `rag_agent`, `security` |
+| `--extras` | Comma-separated optional extras to install: `browser`, `rag`, `pdf`, `postgres`, `personal-assistant` |
+| `--no-validate` | Skip LLM connection test |
+| `--work-dir` | Workspace directory (default: `.taskforce`) |
+
+**What it creates:**
+```
+.env                              # API keys
+.taskforce/config/llm_config.yaml # LLM configuration
+.taskforce/config/profile.yaml    # Profile override
+```
+
+### `taskforce doctor`
+
+Health check that validates the installation and configuration.
+
+```bash
+taskforce doctor
+taskforce doctor --profile coding_agent
+```
+
+Checks Python version, package installation, workspace, `.env` file, LLM config, API keys, profile validity, and installed optional extras.
+
 ## 🛠 Basic Commands
 
 ### Running a Mission
