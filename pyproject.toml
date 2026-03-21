@@ -121,6 +121,9 @@ evals = [
     "inspect-ai>=0.3.130",
     "inspect-evals[swe_bench]>=0.3.0",
 ]
+auth = [
+    "cryptography>=41.0.0",
+]
 
 [dependency-groups]
 dev = [

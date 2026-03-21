@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.base_tool import BaseTool
+
+if TYPE_CHECKING:
+    from taskforce.core.interfaces.auth import AuthManagerProtocol
 
 logger = structlog.get_logger(__name__)
 
@@ -64,6 +67,10 @@ class GmailTool(BaseTool):
     tool_approval_risk_level = ApprovalRiskLevel.LOW
     tool_supports_parallelism = True
 
+    def __init__(self, auth_manager: AuthManagerProtocol | None = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._auth_manager = auth_manager
+
     async def _execute(self, **kwargs: Any) -> dict[str, Any]:
         """Execute a Gmail action."""
         try:
@@ -73,8 +80,7 @@ class GmailTool(BaseTool):
             return {
                 "success": False,
                 "error": (
-                    "Google API not available. Install with: "
-                    "uv sync --extra personal-assistant"
+                    "Google API not available. Install with: " "uv sync --extra personal-assistant"
                 ),
             }
 
@@ -83,7 +89,7 @@ class GmailTool(BaseTool):
             return {"success": False, "error": "action must be 'list', 'read', or 'labels'"}
 
         try:
-            service = _build_service(build, Credentials)
+            service = await _build_service_async(build, Credentials, self._auth_manager)
 
             if action == "labels":
                 return await _list_labels(service)
@@ -91,9 +97,7 @@ class GmailTool(BaseTool):
                 return await _list_messages(service, kwargs)
             return await _read_message(service, kwargs)
         except Exception as exc:
-            return tool_error_payload(
-                ToolError(f"gmail failed: {exc}", tool_name="gmail")
-            )
+            return tool_error_payload(ToolError(f"gmail failed: {exc}", tool_name="gmail"))
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         action = kwargs.get("action")
@@ -104,8 +108,26 @@ class GmailTool(BaseTool):
         return True, None
 
 
+async def _build_service_async(build: Any, credentials_cls: Any, auth_manager: Any = None) -> Any:
+    """Build Gmail API service, preferring AuthManager if available."""
+    if auth_manager:
+        token = await auth_manager.get_token("google")
+        if token:
+            creds = credentials_cls.from_authorized_user_info(
+                {
+                    "token": token.access_token,
+                    "refresh_token": token.refresh_token,
+                    "token_uri": token.token_uri,
+                    "client_id": token.client_id,
+                    "client_secret": token.client_secret,
+                }
+            )
+            return build("gmail", "v1", credentials=creds)
+    return _build_service(build, credentials_cls)
+
+
 def _build_service(build: Any, credentials_cls: Any) -> Any:
-    """Build Gmail API service using the shared OAuth token."""
+    """Build Gmail API service using the shared OAuth token (legacy)."""
     import json
     from pathlib import Path
 
@@ -113,9 +135,7 @@ def _build_service(build: Any, credentials_cls: Any) -> Any:
 
     token_path = Path.home() / ".taskforce" / "google_token.json"
     if not token_path.exists():
-        raise ValueError(
-            "No credentials found. Run 'python scripts/google_auth.py' first."
-        )
+        raise ValueError("No credentials found. Run 'python scripts/google_auth.py' first.")
 
     with open(token_path) as f:
         creds_data = json.load(f)
@@ -128,17 +148,17 @@ def _build_service(build: Any, credentials_cls: Any) -> Any:
 
 async def _list_labels(service: Any) -> dict[str, Any]:
     """List all Gmail labels (folders/categories)."""
-    result = await asyncio.to_thread(
-        lambda: service.users().labels().list(userId="me").execute()
-    )
+    result = await asyncio.to_thread(lambda: service.users().labels().list(userId="me").execute())
     labels = []
     for label in result.get("labels", []):
-        labels.append({
-            "id": label["id"],
-            "name": label["name"],
-            "type": label.get("type", ""),
-        })
-    labels.sort(key=lambda l: l["name"])
+        labels.append(
+            {
+                "id": label["id"],
+                "name": label["name"],
+                "type": label.get("type", ""),
+            }
+        )
+    labels.sort(key=lambda lbl: lbl["name"])
     return {"success": True, "labels": labels, "count": len(labels)}
 
 
@@ -169,18 +189,22 @@ async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]
         msg = await asyncio.to_thread(
             lambda mid=msg_ref["id"]: service.users()
             .messages()
-            .get(userId="me", id=mid, format="metadata", metadataHeaders=["From", "Subject", "Date"])
+            .get(
+                userId="me", id=mid, format="metadata", metadataHeaders=["From", "Subject", "Date"]
+            )
             .execute()
         )
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
-        messages.append({
-            "id": msg["id"],
-            "snippet": msg.get("snippet", ""),
-            "from": headers.get("From", ""),
-            "subject": headers.get("Subject", ""),
-            "date": headers.get("Date", ""),
-            "labels": msg.get("labelIds", []),
-        })
+        messages.append(
+            {
+                "id": msg["id"],
+                "snippet": msg.get("snippet", ""),
+                "from": headers.get("From", ""),
+                "subject": headers.get("Subject", ""),
+                "date": headers.get("Date", ""),
+                "labels": msg.get("labelIds", []),
+            }
+        )
 
     return {
         "success": True,
@@ -195,10 +219,7 @@ async def _read_message(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
     message_id = kwargs["message_id"]
 
     msg = await asyncio.to_thread(
-        lambda: service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="full")
-        .execute()
+        lambda: service.users().messages().get(userId="me", id=message_id, format="full").execute()
     )
 
     headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
@@ -239,6 +260,7 @@ def _extract_body(payload: dict[str, Any]) -> str:
             html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", errors="replace")
             # Strip HTML tags for plain text approximation
             import re
+
             return re.sub(r"<[^>]+>", "", html).strip()
 
     return "(no body content)"

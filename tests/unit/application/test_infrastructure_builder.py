@@ -264,10 +264,12 @@ class TestBuildStateManager:
 class TestBuildLlmProvider:
     """Tests for build_llm_provider."""
 
-    def test_builds_llm_with_router(self, builder: InfrastructureBuilder) -> None:
+    def test_builds_llm_with_router(self, builder: InfrastructureBuilder, tmp_path: Path) -> None:
+        # Use a platform-native absolute path to avoid cross-platform issues.
+        abs_config = str(tmp_path / "llm_config.yaml")
         config: dict[str, Any] = {
             "llm": {
-                "config_path": "/abs/path/llm_config.yaml",
+                "config_path": abs_config,
                 "default_model": "main",
             }
         }
@@ -287,7 +289,7 @@ class TestBuildLlmProvider:
             ) as mock_build_router,
         ):
             result = builder.build_llm_provider(config)
-            mock_svc_cls.assert_called_once_with(config_path="/abs/path/llm_config.yaml")
+            mock_svc_cls.assert_called_once_with(config_path=abs_config)
             mock_build_router.assert_called_once_with(mock_service, {}, "main")
             assert result is mock_router
 

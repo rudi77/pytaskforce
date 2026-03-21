@@ -120,13 +120,13 @@ class TestHybridSearch:
         self, store: FileMemoryStore
     ) -> None:
         """More keyword hits → higher score."""
-        one_hit = _make_record("python guide", tags=["coding"])
+        one_hit = _make_record("python guide", tags=["general"])
         two_hits = _make_record("python coding patterns", tags=["python"])
         await store.add(one_hit)
         await store.add(two_hits)
         results = await store.search("python coding")
         assert len(results) == 2
-        # two_hits matches both words, should be first.
+        # two_hits matches both words in content, one_hit only matches "python".
         assert "patterns" in results[0].content
 
 

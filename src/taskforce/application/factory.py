@@ -112,6 +112,7 @@ class AgentFactory:
         self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
         self._gateway: Any = None  # Optional CommunicationGateway for SendNotificationTool
         self._scheduler: Any = None  # Optional scheduler for ScheduleTool/ReminderTool
+        self._auth_manager: Any = None  # Optional AuthManager for AuthTool
 
     def set_gateway(self, gateway: Any) -> None:
         """Set the communication gateway for SendNotificationTool injection.
@@ -128,6 +129,14 @@ class AgentFactory:
             scheduler: SchedulerService instance.
         """
         self._scheduler = scheduler
+
+    def set_auth_manager(self, auth_manager: Any) -> None:
+        """Set the auth manager for AuthTool injection.
+
+        Args:
+            auth_manager: AuthManager instance.
+        """
+        self._auth_manager = auth_manager
 
     @property
     def infra_builder(self) -> Any:
@@ -400,6 +409,7 @@ class AgentFactory:
             gateway=self._gateway,
             notification_defaults=base_config.get("notifications"),
             scheduler=self._scheduler,
+            auth_manager=self._auth_manager,
         )
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)
@@ -1158,6 +1168,7 @@ class AgentFactory:
             memory_store_dir=memory_store_dir,
             gateway=self._gateway,
             scheduler=self._scheduler,
+            auth_manager=self._auth_manager,
         )
         # Only resolve names the registry actually knows about —
         # plugin-specific tool names are handled by plugin_loader, not here.

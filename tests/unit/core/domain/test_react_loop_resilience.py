@@ -83,7 +83,7 @@ class TestBuildRetryNudge:
     def test_escalation_on_repeated_failure(self) -> None:
         nudge = _build_retry_nudge(["file_read"], attempt=2)
         assert "ask_user" in nudge["content"]
-        assert "update_plan" in nudge["content"]
+        assert "STOP retrying" in nudge["content"]
         assert "attempt 2" in nudge["content"]
 
     def test_multiple_tools(self) -> None:

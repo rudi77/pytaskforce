@@ -8,12 +8,15 @@ Promoted from the examples/personal_assistant to a native tool.
 from __future__ import annotations
 
 from datetime import UTC
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
+
+if TYPE_CHECKING:
+    from taskforce.core.interfaces.auth import AuthManagerProtocol
 
 logger = structlog.get_logger(__name__)
 
@@ -25,8 +28,13 @@ class CalendarTool:
     Requires Google Calendar API credentials.
     """
 
-    def __init__(self, credentials_file: str | None = None) -> None:
+    def __init__(
+        self,
+        credentials_file: str | None = None,
+        auth_manager: AuthManagerProtocol | None = None,
+    ) -> None:
         self._credentials_file = credentials_file
+        self._auth_manager = auth_manager
 
     @property
     def name(self) -> str:
@@ -130,7 +138,7 @@ class CalendarTool:
 
         action = kwargs.pop("action", None)
         try:
-            service = self._build_service(build, Credentials)
+            service = await self._build_service_async(build, Credentials)
             calendar_id = kwargs.pop("calendar_id", "primary")
 
             if action == "list_calendars":
@@ -147,8 +155,29 @@ class CalendarTool:
         except Exception as exc:
             return tool_error_payload(ToolError(f"{self.name} failed: {exc}", tool_name=self.name))
 
+    async def _build_service_async(self, build: Any, credentials_cls: Any) -> Any:
+        """Build the Google Calendar API service with auth_manager support.
+
+        Tries the AuthManager first (if available), then falls back to
+        the legacy file-based credential loading.
+        """
+        if self._auth_manager:
+            token = await self._auth_manager.get_token("google")
+            if token:
+                creds = credentials_cls.from_authorized_user_info(
+                    {
+                        "token": token.access_token,
+                        "refresh_token": token.refresh_token,
+                        "token_uri": token.token_uri,
+                        "client_id": token.client_id,
+                        "client_secret": token.client_secret,
+                    }
+                )
+                return build("calendar", "v3", credentials=creds)
+        return self._build_service(build, credentials_cls)
+
     def _build_service(self, build: Any, credentials_cls: Any) -> Any:
-        """Build the Google Calendar API service.
+        """Build the Google Calendar API service (legacy file-based).
 
         Looks for an OAuth token file (result of the authorization flow)
         at ``~/.taskforce/google_token.json`` first, then falls back to
@@ -280,9 +309,7 @@ class CalendarTool:
 
         return {"success": True, "calendars": calendars, "count": len(calendars)}
 
-    async def _update_event(
-        self, service: Any, calendar_id: str, **kwargs: Any
-    ) -> dict[str, Any]:
+    async def _update_event(self, service: Any, calendar_id: str, **kwargs: Any) -> dict[str, Any]:
         """Update an existing calendar event."""
         import asyncio
 
@@ -320,9 +347,7 @@ class CalendarTool:
             "message": f"Event '{updated.get('summary', '')}' updated",
         }
 
-    async def _delete_event(
-        self, service: Any, calendar_id: str, **kwargs: Any
-    ) -> dict[str, Any]:
+    async def _delete_event(self, service: Any, calendar_id: str, **kwargs: Any) -> dict[str, Any]:
         """Delete a calendar event."""
         import asyncio
 
@@ -331,9 +356,7 @@ class CalendarTool:
             return {"success": False, "error": "event_id is required for delete"}
 
         await asyncio.to_thread(
-            lambda: service.events()
-            .delete(calendarId=calendar_id, eventId=event_id)
-            .execute()
+            lambda: service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
         )
 
         return {

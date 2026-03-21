@@ -128,13 +128,13 @@ class TestCalendarToolProperties:
 
     def test_parameters_schema_action_enum(self, tool: CalendarTool) -> None:
         action_prop = tool.parameters_schema["properties"]["action"]
-        assert set(action_prop["enum"]) == {"list", "create"}
+        assert set(action_prop["enum"]) == {"list_calendars", "list", "create", "update", "delete"}
 
     def test_parameters_schema_has_expected_keys(self, tool: CalendarTool) -> None:
         props = tool.parameters_schema["properties"]
         expected = {
-            "action", "calendar_id", "time_min", "time_max", "max_results",
-            "title", "start", "end", "description", "location",
+            "action", "event_id", "calendar_id", "time_min", "time_max",
+            "max_results", "title", "start", "end", "description", "location",
         }
         assert expected == set(props.keys())
 
@@ -194,7 +194,7 @@ class TestCalendarToolValidateParams:
         assert error is None
 
     def test_invalid_action(self, tool: CalendarTool) -> None:
-        valid, error = tool.validate_params(action="delete")
+        valid, error = tool.validate_params(action="nonexistent")
         assert valid is False
         assert error is not None
 
@@ -450,7 +450,7 @@ class TestCalendarToolErrorHandling:
         mock_service = _build_mock_service()
         tool._build_service = MagicMock(return_value=mock_service)
 
-        result = await tool.execute(action="delete")
+        result = await tool.execute(action="nonexistent")
 
         assert result["success"] is False
         assert "unknown" in result["error"].lower() or "Unknown" in result["error"]

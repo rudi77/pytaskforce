@@ -142,6 +142,10 @@ async def test_handle_update_no_pending_question(
     )
     await poller._handle_update(update)
 
+    # The inbound handler is fire-and-forget via asyncio.create_task,
+    # so we need to let the event loop run the background task.
+    await asyncio.sleep(0)
+
     pending_store.resolve.assert_called_once()
     recipient_registry.register.assert_called_once_with(
         channel="telegram",
