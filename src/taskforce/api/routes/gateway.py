@@ -300,17 +300,28 @@ async def handle_webhook(
 
     metadata = extracted.get("metadata", {})
 
-    # Download Telegram attachment refs (photos/documents) if present.
+    # Download Telegram attachment refs (photos/documents/voice) if present.
     attachment_refs = metadata.pop("attachment_refs", None)
+    message_text = extracted["message"]
     if attachment_refs and channel == "telegram":
         attachments = await _download_telegram_attachments(attachment_refs)
         if attachments:
-            metadata["attachments"] = attachments
+            # Extract voice transcriptions and merge into message text.
+            voice_texts = [a["text"] for a in attachments if a.get("type") == "voice_transcription"]
+            if voice_texts:
+                transcribed = " ".join(voice_texts)
+                if not message_text.strip() or message_text == "Bitte analysiere diese Datei.":
+                    message_text = transcribed
+                else:
+                    message_text = f"{message_text}\n\n[Voice message]: {transcribed}"
+                attachments = [a for a in attachments if a.get("type") != "voice_transcription"]
+            if attachments:
+                metadata["attachments"] = attachments
 
     inbound = InboundMessage(
         channel=channel,
         conversation_id=extracted["conversation_id"],
-        message=extracted["message"],
+        message=message_text,
         sender_id=extracted.get("sender_id"),
         metadata=metadata,
     )
@@ -453,6 +464,14 @@ async def _download_telegram_attachments(
             data_url = await downloader.download_as_data_url(file_id, mime_type=mime_type)
             if data_url:
                 attachments.append({"type": "image", "data_url": data_url})
+        elif ref_type in ("voice", "audio"):
+            audio_bytes = await downloader.download_bytes(file_id)
+            if audio_bytes:
+                transcribed = await _transcribe_audio(
+                    audio_bytes,
+                    file_name=ref.get("file_name", "voice.ogg"),
+                )
+                attachments.append({"type": "voice_transcription", "text": transcribed})
         else:
             file_name = ref.get("file_name", "document")
             tmp_path = await downloader.download_to_temp_file(file_id, file_name=file_name)
@@ -467,3 +486,21 @@ async def _download_telegram_attachments(
                 )
 
     return attachments
+
+
+async def _transcribe_audio(audio_bytes: bytes, file_name: str = "voice.ogg") -> str:
+    """Transcribe audio bytes using the configured STT service.
+
+    Falls back to a placeholder message if transcription fails.
+    """
+    try:
+        from taskforce.infrastructure.llm.speech_to_text_service import (
+            LiteLLMSpeechToTextService,
+        )
+
+        stt_model = os.getenv("TASKFORCE_STT_MODEL", "whisper-1")
+        service = LiteLLMSpeechToTextService(model=stt_model)
+        return await service.transcribe(audio_bytes, file_name=file_name)
+    except Exception as exc:
+        _logger.error("gateway.voice_transcription_failed", error=str(exc))
+        return "[Voice message could not be transcribed]"

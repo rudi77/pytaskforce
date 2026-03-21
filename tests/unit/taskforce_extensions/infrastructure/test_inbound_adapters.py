@@ -50,6 +50,76 @@ class TestTelegramInboundAdapter:
         adapter = TelegramInboundAdapter()
         assert adapter.channel == "telegram"
 
+    def test_extract_voice_message(self) -> None:
+        adapter = TelegramInboundAdapter()
+        payload = {
+            "update_id": 100,
+            "message": {
+                "message_id": 200,
+                "from": {"id": 300},
+                "chat": {"id": 400, "type": "private"},
+                "voice": {
+                    "file_id": "voice-file-id-123",
+                    "duration": 5,
+                    "mime_type": "audio/ogg",
+                    "file_size": 12345,
+                },
+            },
+        }
+        result = adapter.extract_message(payload)
+        # Voice-only message gets default text placeholder.
+        assert result["message"] == "Bitte analysiere diese Datei."
+        refs = result["metadata"]["attachment_refs"]
+        assert len(refs) == 1
+        assert refs[0]["type"] == "voice"
+        assert refs[0]["file_id"] == "voice-file-id-123"
+        assert refs[0]["mime_type"] == "audio/ogg"
+        assert refs[0]["duration"] == "5"
+
+    def test_extract_audio_message(self) -> None:
+        adapter = TelegramInboundAdapter()
+        payload = {
+            "update_id": 100,
+            "message": {
+                "message_id": 200,
+                "from": {"id": 300},
+                "chat": {"id": 400, "type": "private"},
+                "audio": {
+                    "file_id": "audio-file-id-456",
+                    "duration": 120,
+                    "mime_type": "audio/mpeg",
+                    "file_name": "recording.mp3",
+                    "file_size": 500000,
+                },
+            },
+        }
+        result = adapter.extract_message(payload)
+        refs = result["metadata"]["attachment_refs"]
+        assert len(refs) == 1
+        assert refs[0]["type"] == "audio"
+        assert refs[0]["file_id"] == "audio-file-id-456"
+        assert refs[0]["mime_type"] == "audio/mpeg"
+        assert refs[0]["file_name"] == "recording.mp3"
+
+    def test_extract_voice_with_caption(self) -> None:
+        adapter = TelegramInboundAdapter()
+        payload = {
+            "update_id": 100,
+            "message": {
+                "message_id": 200,
+                "from": {"id": 300},
+                "chat": {"id": 400, "type": "private"},
+                "caption": "Check this audio",
+                "voice": {
+                    "file_id": "voice-id",
+                    "duration": 3,
+                },
+            },
+        }
+        result = adapter.extract_message(payload)
+        assert result["message"] == "Check this audio"
+        assert len(result["metadata"]["attachment_refs"]) == 1
+
 
 class TestTeamsInboundAdapter:
     def test_extract_message_success(self) -> None:

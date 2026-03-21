@@ -111,6 +111,34 @@ class TelegramInboundAdapter:
                     }
                 )
 
+        # Voice messages (OGG Opus, typically speech recordings).
+        voice = message_obj.get("voice")
+        if voice:
+            file_id = voice.get("file_id", "")
+            if file_id:
+                refs.append(
+                    {
+                        "file_id": file_id,
+                        "mime_type": "audio/ogg",
+                        "type": "voice",
+                        "duration": str(voice.get("duration", 0)),
+                    }
+                )
+
+        # Audio file messages (MP3 or other formats).
+        audio = message_obj.get("audio")
+        if audio:
+            file_id = audio.get("file_id", "")
+            if file_id:
+                refs.append(
+                    {
+                        "file_id": file_id,
+                        "mime_type": audio.get("mime_type", "audio/mpeg"),
+                        "type": "audio",
+                        "file_name": audio.get("file_name", "audio.mp3"),
+                    }
+                )
+
         return refs
 
     def verify_signature(self, *, raw_body: bytes, headers: dict[str, str]) -> bool:

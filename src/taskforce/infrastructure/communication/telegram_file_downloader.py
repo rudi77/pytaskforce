@@ -41,9 +41,7 @@ class TelegramFileDownloader:
             self._session = aiohttp.ClientSession()
         return self._session
 
-    async def download_as_data_url(
-        self, file_id: str, mime_type: str = "image/jpeg"
-    ) -> str | None:
+    async def download_as_data_url(self, file_id: str, mime_type: str = "image/jpeg") -> str | None:
         """Download a Telegram file and return it as a base64 data URL.
 
         Args:
@@ -64,9 +62,21 @@ class TelegramFileDownloader:
         b64 = base64.b64encode(data).decode("ascii")
         return f"data:{mime_type};base64,{b64}"
 
-    async def download_to_temp_file(
-        self, file_id: str, file_name: str = "document"
-    ) -> str | None:
+    async def download_bytes(self, file_id: str) -> bytes | None:
+        """Download a Telegram file and return raw bytes.
+
+        Args:
+            file_id: Telegram file_id from the message object.
+
+        Returns:
+            Raw file bytes, or None on failure.
+        """
+        file_path = await self._get_file_path(file_id)
+        if not file_path:
+            return None
+        return await self._download_bytes(file_path)
+
+    async def download_to_temp_file(self, file_id: str, file_name: str = "document") -> str | None:
         """Download a Telegram file and save to a temporary file.
 
         Args:

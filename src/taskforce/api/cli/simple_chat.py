@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -19,8 +20,6 @@ from taskforce.api.cli.tool_display_formatter import (
     format_tool_change_preview,
     format_tool_result,
 )
-import structlog
-
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.context_display_service import ContextDisplayService
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
@@ -28,7 +27,6 @@ from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
 from taskforce.core.domain.agent_definition import AgentSource
 from taskforce.core.domain.enums import EventType, MessageRole, SkillType, TaskStatus
-
 
 logger = structlog.get_logger(__name__)
 
@@ -133,9 +131,7 @@ class SimpleChatRunner:
                 from taskforce.core.domain.gateway import NotificationRequest
 
                 params = action.get("params", {})
-                channel = params.get("channel") or notif_defaults.get(
-                    "default_channel", "telegram"
-                )
+                channel = params.get("channel") or notif_defaults.get("default_channel", "telegram")
                 recipient_id = params.get("recipient_id") or notif_defaults.get(
                     "default_recipient_id", ""
                 )
@@ -218,12 +214,28 @@ class SimpleChatRunner:
 
             # Prepare Telegram poller (started in run())
             sender = components.outbound_senders.get("telegram")
+
+            # Create Speech-to-Text service for voice message transcription.
+            stt_service = None
+            try:
+                import os
+
+                from taskforce.infrastructure.llm.speech_to_text_service import (
+                    LiteLLMSpeechToTextService,
+                )
+
+                stt_model = os.getenv("TASKFORCE_STT_MODEL", "whisper-1")
+                stt_service = LiteLLMSpeechToTextService(model=stt_model)
+            except Exception:
+                pass  # STT not available; voice messages will be skipped.
+
             self._telegram_poller = TelegramPoller(
                 bot_token=telegram_token,
                 pending_store=pending_store,
                 outbound_sender=sender,
                 recipient_registry=components.recipient_registry,
                 inbound_message_handler=self._handle_telegram_inbound_message,
+                speech_to_text=stt_service,
             )
 
             self.console.print("[info]📡 Telegram channel configured (long-polling mode)[/info]")
@@ -527,7 +539,8 @@ class SimpleChatRunner:
         # Primary: persist to ConversationManager when available.
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
-                self._conversation_id, user_msg,
+                self._conversation_id,
+                user_msg,
             )
             # Load history from conversation manager (source of truth).
             history = await self._conversation_manager.get_messages(
@@ -769,7 +782,8 @@ class SimpleChatRunner:
         }
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
-                self._conversation_id, assistant_msg,
+                self._conversation_id,
+                assistant_msg,
             )
         else:
             state = await self.agent.state_manager.load_state(self.session_id) or {}

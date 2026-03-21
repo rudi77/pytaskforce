@@ -29,6 +29,7 @@ import structlog
 
 from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
 from taskforce.core.interfaces.gateway import RecipientRegistryProtocol
+from taskforce.core.interfaces.speech_to_text import SpeechToTextProtocol
 from taskforce.infrastructure.communication.telegram_file_downloader import (
     TelegramFileDownloader,
 )
@@ -58,6 +59,7 @@ class TelegramPoller:
         inbound_message_handler: (
             Callable[[str, str, str, list[dict[str, Any]] | None], Awaitable[None]] | None
         ) = None,
+        speech_to_text: SpeechToTextProtocol | None = None,
         poll_timeout: int = 10,
     ) -> None:
         self._bot_token = bot_token
@@ -66,6 +68,7 @@ class TelegramPoller:
         self._outbound_sender = outbound_sender
         self._recipient_registry = recipient_registry
         self._inbound_message_handler = inbound_message_handler
+        self._speech_to_text = speech_to_text
         self._poll_timeout = poll_timeout
         self._file_downloader = TelegramFileDownloader(bot_token)
         self._offset: int = 0
@@ -143,9 +146,7 @@ class TelegramPoller:
         if self._offset:
             params["offset"] = self._offset
 
-        async with session.get(
-            f"{self._base_url}/getUpdates", params=params
-        ) as resp:
+        async with session.get(f"{self._base_url}/getUpdates", params=params) as resp:
             if resp.status >= 400:
                 body = await resp.text()
                 logger.error(
@@ -173,6 +174,19 @@ class TelegramPoller:
 
         if not text and not attachments:
             return
+
+        # Merge voice transcriptions into text.
+        if attachments:
+            voice_texts = [a["text"] for a in attachments if a.get("type") == "voice_transcription"]
+            if voice_texts:
+                transcribed = " ".join(voice_texts)
+                if not text:
+                    text = transcribed
+                else:
+                    text = f"{text}\n\n[Voice message]: {transcribed}"
+                attachments = [a for a in attachments if a.get("type") != "voice_transcription"]
+                if not attachments:
+                    attachments = None
 
         # Default prompt when media is sent without text/caption.
         if attachments and not text:
@@ -294,4 +308,40 @@ class TelegramPoller:
                             }
                         )
 
+        # Voice messages (OGG Opus speech recordings).
+        voice = message_obj.get("voice")
+        if voice and self._speech_to_text:
+            file_id = voice.get("file_id", "")
+            if file_id:
+                transcribed = await self._transcribe_voice(file_id, file_name="voice.ogg")
+                if transcribed:
+                    attachments.append({"type": "voice_transcription", "text": transcribed})
+
+        # Audio file messages (MP3 or other formats).
+        audio = message_obj.get("audio")
+        if audio and self._speech_to_text:
+            file_id = audio.get("file_id", "")
+            if file_id:
+                file_name = audio.get("file_name", "audio.mp3")
+                transcribed = await self._transcribe_voice(file_id, file_name=file_name)
+                if transcribed:
+                    attachments.append({"type": "voice_transcription", "text": transcribed})
+
         return attachments or None
+
+    async def _transcribe_voice(self, file_id: str, file_name: str = "voice.ogg") -> str | None:
+        """Download and transcribe a voice/audio file.
+
+        Returns:
+            Transcribed text, or None on failure.
+        """
+        if not self._speech_to_text:
+            return None
+        try:
+            audio_bytes = await self._file_downloader.download_bytes(file_id)
+            if not audio_bytes:
+                return None
+            return await self._speech_to_text.transcribe(audio_bytes, file_name=file_name)
+        except Exception as exc:
+            logger.error("telegram_poller.transcription_failed", error=str(exc))
+            return None
