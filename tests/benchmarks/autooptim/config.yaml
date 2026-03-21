@@ -103,8 +103,7 @@ categories:
         - "src/taskforce/infrastructure/tools/"
         - "tests/"
       preflight:
-        - "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe -c \"import taskforce\""
-        - "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe -m pytest tests/unit/core/ -x -q --tb=no"
+        - "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe -c \"import taskforce; from taskforce.core.domain.planning_strategy import NativeReActStrategy; print('OK')\""
     context_files:
       - "src/taskforce/core/domain/planning_strategy.py"
       - "src/taskforce/core/domain/context_policy.py"

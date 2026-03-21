@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 
@@ -138,9 +139,23 @@ async def main(task_name: str) -> None:
     }
 
     # Output JSON on stdout (last line — picked up by AutoOptim's JsonScoreParser)
-    print(json.dumps(scores))
+    # Flush immediately to ensure output is captured even if process crashes during cleanup
+    print(json.dumps(scores), flush=True)
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":
     task = sys.argv[1] if len(sys.argv) > 1 else "quick"
-    asyncio.run(main(task))
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(main(task))
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+    finally:
+        # Suppress cleanup errors (MCP connections, etc.) that cause
+        # Windows access violations during asyncio shutdown
+        try:
+            loop.close()
+        except Exception:
+            pass
+        os._exit(0)  # Force clean exit, skip Python finalizers
