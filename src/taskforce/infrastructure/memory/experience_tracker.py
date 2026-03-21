@@ -101,8 +101,6 @@ class ExperienceTracker:
             self._handle_ask_user(event)
         elif event_type == EventType.TOKEN_USAGE.value:
             self._handle_token_usage(event)
-        elif event_type == EventType.TOKEN_ANALYTICS.value:
-            self._handle_token_analytics(event)
         elif event_type == EventType.FINAL_ANSWER.value:
             self._handle_final_answer(event)
         elif event_type == EventType.ERROR.value:
@@ -223,9 +221,6 @@ class ExperienceTracker:
 
     def _handle_token_usage(self, event: StreamEvent) -> None:
         self._current.total_tokens += event.data.get("total_tokens", 0)
-
-    def _handle_token_analytics(self, event: StreamEvent) -> None:
-        self._current.metadata["token_analytics"] = event.data
 
     def _handle_final_answer(self, event: StreamEvent) -> None:
         answer = event.data.get("answer", event.data.get("content", ""))

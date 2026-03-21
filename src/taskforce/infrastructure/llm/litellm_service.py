@@ -121,6 +121,15 @@ class LiteLLMService:
         self._config = LLMConfigLoader(config_path)
         self._parser = LLMResponseParser()
 
+        # Install token analytics callback for automatic per-call tracking
+        from taskforce.infrastructure.llm.token_analytics_callback import (
+            TokenAnalyticsCallback,
+            get_token_analytics,
+        )
+
+        if get_token_analytics() is None:
+            TokenAnalyticsCallback().install()
+
     # ------------------------------------------------------------------
     # Config attribute delegation — preserve existing public interface
     # ------------------------------------------------------------------

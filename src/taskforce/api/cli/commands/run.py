@@ -213,9 +213,24 @@ def _execute_standard_mission(
     if token_usage and token_usage.get("total_tokens", 0) > 0:
         tf_console.print_token_usage(token_usage)
 
-    # Display detailed token analytics if available
-    if result.token_analytics:
-        tf_console.print_token_analytics(result.token_analytics)
+    # Display detailed token analytics from LiteLLM callback
+    _print_callback_analytics(tf_console)
+
+
+def _print_callback_analytics(tf_console: TaskforceConsole) -> None:
+    """Print analytics from the LiteLLM callback if available, then reset."""
+    try:
+        from taskforce.infrastructure.llm.token_analytics_callback import (
+            get_token_analytics,
+        )
+
+        cb = get_token_analytics()
+        if cb and cb.calls:
+            summary = cb.build_summary()
+            tf_console.print_token_analytics(summary.to_dict())
+            cb.reset()
+    except ImportError:
+        pass
 
 
 async def _execute_streaming_mission(
@@ -241,7 +256,6 @@ async def _execute_streaming_mission(
     status_message = "Starting..."
     plan_steps: list[dict[str, str]] = []
     plan_text: str | None = None
-    token_analytics_data: dict | None = None
     total_token_usage = {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -391,10 +405,6 @@ async def _execute_streaming_mission(
                 total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
                 should_update = True
 
-            elif event_type == "token_analytics":
-                # Store detailed analytics for display at end
-                token_analytics_data = update.details
-
             elif event_type == "final_answer":
                 # If we didn't get streaming tokens, use the full content
                 if not final_answer_tokens:
@@ -447,10 +457,8 @@ async def _execute_streaming_mission(
             )
         )
 
-    # Display detailed token analytics if available
-    if token_analytics_data:
-        tf_console = TaskforceConsole(console)
-        tf_console.print_token_analytics(token_analytics_data)
+    # Display detailed token analytics from LiteLLM callback
+    _print_callback_analytics(TaskforceConsole(console))
 
 
 def _parse_strategy_params(raw_params: str | None) -> dict | None:

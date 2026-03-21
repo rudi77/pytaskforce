@@ -36,7 +36,6 @@ from taskforce.core.domain.enums import (
     PlannerAction,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
-from taskforce.core.domain.token_analytics import TokenAnalyticsCollector
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.tools.tool_converter import assistant_tool_calls_to_message
 
@@ -642,25 +641,17 @@ async def _process_tool_calls(
         requests.append(ToolCallRequest(tc_id, name, args))
 
     for req, res in await _execute_tool_calls(agent, requests, session_id):
-        # Record tool call + result size in analytics
-        agent.token_analytics.record_tool_call(req.tool_name)
-        result_json = json.dumps(res, ensure_ascii=False, default=str)
         async for e in _emit_tool_result(agent, req, res):
             yield e
-        msg = await agent.tool_result_message_factory.build_message(
-            tool_call_id=req.tool_call_id,
-            tool_name=req.tool_name,
-            tool_result=res,
-            session_id=session_id,
-            step=step,
+        messages.append(
+            await agent.tool_result_message_factory.build_message(
+                tool_call_id=req.tool_call_id,
+                tool_name=req.tool_name,
+                tool_result=res,
+                session_id=session_id,
+                step=step,
+            )
         )
-        context_chars = len(msg.get("content", ""))
-        agent.token_analytics.record_tool_result(
-            tool_name=req.tool_name,
-            result_chars=len(result_json),
-            context_chars=context_chars,
-        )
-        messages.append(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -813,9 +804,6 @@ async def _react_loop(
     repeated_signature_count = 0
     tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
 
-    # Initialise token analytics with the real session ID
-    agent.token_analytics = TokenAnalyticsCollector(session_id=session_id)
-
     while step < agent.max_steps:
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
         _rebuild_system_prompt(agent, messages, mission, state)
@@ -836,10 +824,7 @@ async def _react_loop(
             )
 
         if use_stream:
-            pre_compress_len = len(messages)
             messages = await agent.message_history_manager.compress_messages(messages)
-            if len(messages) < pre_compress_len:
-                agent.token_analytics.record_compression()
             messages = agent.message_history_manager.preflight_budget_check(messages)
 
         tool_calls: list[dict[str, Any]] = []
@@ -883,20 +868,9 @@ async def _react_loop(
                             tc_acc[chunk["index"]]["arguments"],
                         )
                     elif t == LLMStreamEventType.DONE.value and chunk.get("usage"):
-                        usage = chunk["usage"]
                         yield StreamEvent(
                             event_type=EventType.TOKEN_USAGE,
-                            data=usage,
-                        )
-                        agent.token_analytics.record_llm_call(
-                            step=step,
-                            phase=model_hint,
-                            model=chunk.get("actual_model", model_hint),
-                            prompt_tokens=usage.get("prompt_tokens", 0),
-                            completion_tokens=usage.get("completion_tokens", 0),
-                            total_tokens=usage.get("total_tokens", 0),
-                            message_count=len(messages),
-                            tool_schemas_count=len(agent._openai_tools),
+                            data=chunk["usage"],
                         )
                     elif t == "error":
                         yield StreamEvent(
@@ -936,20 +910,9 @@ async def _react_loop(
                 temperature=0.2,
             )
             if result.get("usage"):
-                usage = result["usage"]
                 yield StreamEvent(
                     event_type=EventType.TOKEN_USAGE,
-                    data=usage,
-                )
-                agent.token_analytics.record_llm_call(
-                    step=step,
-                    phase=model_hint,
-                    model=result.get("actual_model", model_hint),
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    total_tokens=usage.get("total_tokens", 0),
-                    message_count=len(messages),
-                    tool_schemas_count=len(agent._openai_tools),
+                    data=result["usage"],
                 )
             if not result.get("success"):
                 messages.append(
@@ -1060,13 +1023,6 @@ async def _react_loop(
             data={"message": f"Exceeded max steps ({agent.max_steps})"},
         )
 
-    # Emit token analytics summary at end of execution
-    summary = agent.token_analytics.build_summary()
-    yield StreamEvent(
-        event_type=EventType.TOKEN_ANALYTICS,
-        data=summary.to_dict(),
-    )
-
 
 async def _llm_call_and_process(
     agent: Agent,
@@ -1123,18 +1079,7 @@ async def _llm_call_and_process(
         temperature=0.2,
     )
     if result.get("usage"):
-        usage = result["usage"]
-        events.append(StreamEvent(event_type=EventType.TOKEN_USAGE, data=usage))
-        agent.token_analytics.record_llm_call(
-            step=step,
-            phase=model_hint,
-            model=result.get("actual_model", model_hint),
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
-            total_tokens=usage.get("total_tokens", 0),
-            message_count=len(messages),
-            tool_schemas_count=len(agent._openai_tools),
-        )
+        events.append(StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"]))
 
     if not result.get("success"):
         messages.append(

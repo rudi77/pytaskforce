@@ -4,11 +4,12 @@ Provides beautiful, eye-catching console output with clear visual separation
 between agent and user messages.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
@@ -282,120 +283,74 @@ class TaskforceConsole:
         )
         self.console.print(token_panel)
 
-    def print_token_analytics(self, analytics: dict[str, Any] | Any) -> None:
-        """Print detailed token analytics breakdown.
+    def print_token_analytics(self, data: dict[str, Any]) -> None:
+        """Print detailed token analytics from LiteLLM callback.
 
         Args:
-            analytics: ExecutionTokenSummary dict or object with to_dict().
+            data: ExecutionTokenSummary.to_dict() output.
         """
-        if analytics is None:
-            return
-
-        data: dict[str, Any] = analytics.to_dict() if hasattr(analytics, "to_dict") else analytics
-
         total = data.get("total_tokens", 0)
         if total == 0:
             return
 
-        # Phase breakdown table
-        phase_breakdown = data.get("phase_breakdown", {})
-        if phase_breakdown:
+        from rich.table import Table
+
+        # Model breakdown table
+        model_breakdown = data.get("model_breakdown", {})
+        if model_breakdown:
             table = Table(
-                title="Token Analytics - Phase Breakdown",
+                title="Token Analytics - Model Breakdown",
                 border_style="dim cyan",
                 show_header=True,
                 header_style="bold cyan",
                 padding=(0, 1),
             )
-            table.add_column("Phase", style="white")
+            table.add_column("Model", style="white")
             table.add_column("Tokens", justify="right", style="cyan")
             table.add_column("%", justify="right", style="yellow")
             table.add_column("Calls", justify="right", style="dim")
             table.add_column("Avg/Call", justify="right", style="dim")
+            table.add_column("Avg Latency", justify="right", style="dim")
 
-            for phase_name, phase_data in sorted(
-                phase_breakdown.items(),
+            for _, md in sorted(
+                model_breakdown.items(),
                 key=lambda x: x[1].get("total_tokens", 0) if isinstance(x[1], dict) else 0,
                 reverse=True,
             ):
-                if isinstance(phase_data, dict):
-                    phase_tokens = phase_data.get("total_tokens", 0)
-                    pct = (phase_tokens / total * 100) if total > 0 else 0.0
-                    calls = phase_data.get("call_count", 0)
-                    avg = phase_data.get("avg_tokens_per_call", 0.0)
-                    table.add_row(
-                        phase_name,
-                        f"{phase_tokens:,}",
-                        f"{pct:.1f}%",
-                        str(calls),
-                        f"{avg:,.0f}",
-                    )
-
+                if not isinstance(md, dict):
+                    continue
+                mt = md.get("total_tokens", 0)
+                pct = (mt / total * 100) if total > 0 else 0.0
+                table.add_row(
+                    md.get("model", "?"),
+                    f"{mt:,}",
+                    f"{pct:.1f}%",
+                    str(md.get("call_count", 0)),
+                    f"{md.get('avg_tokens_per_call', 0):,.0f}",
+                    f"{md.get('avg_latency_ms', 0):,.0f}ms",
+                )
             self.console.print(table)
 
-        # Efficiency metrics
+        # Efficiency line
         ratio = data.get("prompt_to_completion_ratio", 0.0)
-        tokens_per_step = data.get("tokens_per_step_avg", 0.0)
-        compressions = data.get("compression_events", 0)
-        total_steps = data.get("total_steps", 0)
-        total_calls = data.get("total_llm_calls", 0)
-        most_expensive_step = data.get("most_expensive_step")
-        most_expensive_tool = data.get("most_expensive_tool", "")
-
-        lines = []
-        lines.append(
-            f"[info]Steps:[/info] [cyan]{total_steps}[/cyan]  |  "
-            f"[info]LLM Calls:[/info] [cyan]{total_calls}[/cyan]  |  "
-            f"[info]Avg Tokens/Step:[/info] [cyan]{tokens_per_step:,.0f}[/cyan]"
-        )
-
+        calls = data.get("total_llm_calls", 0)
+        latency = data.get("total_latency_ms", 0)
         ratio_style = "green" if ratio < 5.0 else "yellow" if ratio < 10.0 else "red"
         ratio_label = (
             "efficient" if ratio < 5.0 else "context-heavy" if ratio < 10.0 else "wasteful"
         )
-        lines.append(
-            f"[info]Prompt/Completion Ratio:[/info] [{ratio_style}]{ratio:.1f}x[/{ratio_style}]"
-            f" ({ratio_label})"
+        info = (
+            f"[info]LLM Calls:[/info] [cyan]{calls}[/cyan]  |  "
+            f"[info]Total Latency:[/info] [cyan]{latency / 1000:.1f}s[/cyan]  |  "
+            f"[info]Prompt/Completion Ratio:[/info] "
+            f"[{ratio_style}]{ratio:.1f}x ({ratio_label})[/{ratio_style}]"
         )
-
-        if compressions > 0:
-            lines.append(f"[info]Compressions Triggered:[/info] [yellow]{compressions}[/yellow]")
-
-        if most_expensive_step is not None:
-            lines.append(f"[info]Most Expensive Step:[/info] [cyan]#{most_expensive_step}[/cyan]")
-
-        if most_expensive_tool:
-            lines.append(f"[info]Highest Context Tool:[/info] [cyan]{most_expensive_tool}[/cyan]")
-
-        # Tool impact summary (top 5)
-        tool_impact = data.get("tool_impact", {})
-        if tool_impact:
-            sorted_tools = sorted(
-                tool_impact.items(),
-                key=lambda x: (
-                    x[1].get("estimated_tokens_added", 0) if isinstance(x[1], dict) else 0
-                ),
-                reverse=True,
-            )[:5]
-            tool_lines = []
-            for tool_name, tool_data in sorted_tools:
-                if isinstance(tool_data, dict):
-                    est_tokens = tool_data.get("estimated_tokens_added", 0)
-                    calls = tool_data.get("call_count", 0)
-                    avg_chars = tool_data.get("avg_result_chars", 0.0)
-                    tool_lines.append(
-                        f"  {tool_name}: ~{est_tokens:,} tokens "
-                        f"({calls} calls, avg {avg_chars:,.0f} chars)"
-                    )
-            if tool_lines:
-                lines.append("[info]Top Tools by Context Impact:[/info]")
-                lines.extend(tool_lines)
-
-        analytics_panel = Panel(
-            "\n".join(lines),
-            title="[📊 Token Analytics]",
-            title_align="left",
-            border_style="dim cyan",
-            padding=(0, 1),
+        self.console.print(
+            Panel(
+                info,
+                title="[📊 Efficiency]",
+                title_align="left",
+                border_style="dim cyan",
+                padding=(0, 1),
+            )
         )
-        self.console.print(analytics_panel)
