@@ -136,6 +136,7 @@ tools:
   - memory
   - send_notification
   - gmail
+  - google_drive
   - calendar
   - schedule
   - reminder

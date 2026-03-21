@@ -8,7 +8,7 @@ Usage:
     python scripts/google_auth.py
 
 The token file will be used automatically by the calendar, gmail,
-and tasks tools.
+tasks, and google_drive tools.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/tasks.readonly",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 CREDENTIALS_FILE = Path.home() / ".taskforce" / "google_credentials.json"
@@ -64,7 +65,7 @@ def main() -> None:
     }
     TOKEN_FILE.write_text(json.dumps(token_data, indent=2))
     print(f"\nToken saved to {TOKEN_FILE}")
-    print("Taskforce tools (calendar, gmail, tasks) can now use this token.")
+    print("Taskforce tools (calendar, gmail, tasks, google_drive) can now use this token.")
 
 
 if __name__ == "__main__":

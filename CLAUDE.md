@@ -81,7 +81,7 @@ src/taskforce/
 │   ├── memory/                # File-based memory store
 │   ├── cache/                 # Tool result caching
 │   ├── tools/
-│   │   ├── native/            # 19 built-in tools
+│   │   ├── native/            # 20 built-in tools
 │   │   ├── mcp/               # MCP server connections
 │   │   ├── rag/               # Azure AI Search tools
 │   │   └── orchestration/     # Agent/sub-agent tools
@@ -359,7 +359,7 @@ When routing is disabled (default), the router transparently maps all hints back
 
 ## Native Tools
 
-19 built-in tools in `infrastructure/tools/native/`:
+20 built-in tools in `infrastructure/tools/native/`:
 
 | Tool | File | Description |
 |------|------|-------------|
@@ -377,6 +377,7 @@ When routing is disabled (default), the router transparently maps all hints back
 | Ask User | `ask_user_tool.py` | Interactive user prompts |
 | Activate Skill | `activate_skill_tool.py` | Runtime skill activation |
 | Send Notification | `send_notification_tool.py` | Proactive push notifications via Communication Gateway |
+| Google Drive | `google_drive_tool.py` | Google Drive file operations (list, download, upload, search, etc.) |
 | Calendar | `calendar_tool.py` | Google Calendar list/create (butler) |
 | Schedule | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
 | Reminder | `reminder_tool.py` | One-shot reminder creation (butler) |
@@ -1208,8 +1209,8 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
 - `src/taskforce/infrastructure/tools/base_tool.py` - `BaseTool` convenience base class (reduces boilerplate for new tools)
-- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry (19 native + RAG tools)
-- `src/taskforce/infrastructure/tools/native/*.py` - 19 native tools (incl. browser, send_notification, butler tools)
+- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry (20 native + RAG tools)
+- `src/taskforce/infrastructure/tools/native/*.py` - 20 native tools (incl. browser, send_notification, butler tools)
 - `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
 - `src/taskforce/infrastructure/scheduler/scheduler_service.py` - Asyncio-based job scheduler (butler)
 - `src/taskforce/infrastructure/scheduler/job_store.py` - File-based job persistence (butler)
@@ -1266,7 +1267,6 @@ See `docs/architecture/section-10-deployment.md` for:
 ### Examples
 - `examples/accounting_agent/` - Full accounting agent with custom tools, skills, rules
 - `examples/customer_support_agent/` - Customer support agent example
-- `examples/personal_assistant/` - Personal assistant with calendar, email, task tools and skills
 
 ### MCP Servers
 - `servers/document-extraction-mcp/` - Document extraction MCP server (OCR, layout analysis, etc.)
