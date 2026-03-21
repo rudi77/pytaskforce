@@ -209,8 +209,11 @@ class SchedulerService:
         if delay > 0:
             await asyncio.sleep(delay)
         await self._fire_job(job)
-        job.enabled = False
-        await self._store.save(job)
+        # Clean up: remove completed one-shot job from memory and disk.
+        self._jobs.pop(job.job_id, None)
+        self._tasks.pop(job.job_id, None)
+        await self._store.delete(job.job_id)
+        logger.info("scheduler.one_shot_completed", job_id=job.job_id, name=job.name)
 
     async def _run_interval(self, job: ScheduleJob) -> None:
         """Execute an interval job repeatedly."""

@@ -429,6 +429,17 @@ class ToolRegistry:
             if tool_type in ("ScheduleTool", "ReminderTool") and self._scheduler:
                 tool_params["scheduler"] = self._scheduler
 
+            # Special handling for ReminderTool - inject notification defaults
+            if tool_type == "ReminderTool" and self._notification_defaults:
+                tool_params.setdefault(
+                    "default_channel",
+                    self._notification_defaults.get("default_channel"),
+                )
+                tool_params.setdefault(
+                    "default_recipient_id",
+                    self._notification_defaults.get("default_recipient_id"),
+                )
+
             # Instantiate the tool
             tool_instance: ToolProtocol = tool_class(**tool_params)
 

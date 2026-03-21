@@ -166,7 +166,11 @@
       "Bash(echo $TELEGRAM_BOT_TOKEN)",
       "Bash(uv remove:*)",
       "Bash(PYTHONPATH=src pytest -q -c /dev/null tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py tests/unit/infrastructure/tools/test_butler_tools.py tests/unit/application/test_butler_service.py tests/unit/api/test_butler_daemon_persistent.py tests/unit/infrastructure/test_tool_registry.py)",
-      "Bash(.venv/Scripts/python -m pytest tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py tests/unit/infrastructure/tools/test_butler_tools.py tests/unit/application/test_butler_service.py tests/unit/api/test_butler_daemon_persistent.py tests/unit/infrastructure/test_tool_registry.py -x -q --no-header)"
+      "Bash(.venv/Scripts/python -m pytest tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py tests/unit/infrastructure/tools/test_butler_tools.py tests/unit/application/test_butler_service.py tests/unit/api/test_butler_daemon_persistent.py tests/unit/infrastructure/test_tool_registry.py -x -q --no-header)",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py tests/unit/infrastructure/test_tool_registry.py tests/unit/api/ -x -q --no-header)",
+      "Bash(.venv/Scripts/python -c \"from taskforce.api.cli.simple_chat import SimpleChatRunner; print\\(''OK''\\)\")",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/infrastructure/scheduler/ tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py -x -q --no-header)",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/infrastructure/tools/test_reminder_tool.py tests/unit/infrastructure/tools/test_schedule_tool.py tests/unit/infrastructure/tools/test_butler_tools.py tests/unit/infrastructure/test_tool_registry.py tests/unit/api/ -x -q --no-header)"
     ],
     "deny": [
       ".env",

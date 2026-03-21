@@ -19,6 +19,8 @@ from taskforce.api.cli.tool_display_formatter import (
     format_tool_change_preview,
     format_tool_result,
 )
+import structlog
+
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.context_display_service import ContextDisplayService
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
@@ -26,6 +28,9 @@ from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
 from taskforce.core.domain.agent_definition import AgentSource
 from taskforce.core.domain.enums import EventType, MessageRole, SkillType, TaskStatus
+
+
+logger = structlog.get_logger(__name__)
 
 
 def _build_key_bindings() -> KeyBindings:
@@ -79,11 +84,83 @@ class SimpleChatRunner:
         self._prompt_session: PromptSession[str] | None = None
         self._telegram_poller: Any | None = None
         self._gateway: Any | None = None
+        self._scheduler: Any | None = None
         self._conversation_manager = conversation_manager
         self._conversation_id: str | None = None
 
+        # Wire up scheduler for ScheduleTool / ReminderTool
+        self._setup_scheduler()
+
         # Wire up Communication Gateway for channel-targeted ask_user
         self._setup_gateway()
+
+    def _setup_scheduler(self) -> None:
+        """Build a SchedulerService so ScheduleTool/ReminderTool can create jobs.
+
+        When a scheduled job fires, the notification callback sends the
+        message via the CommunicationGateway (wired later in _setup_gateway).
+        """
+        import os
+
+        try:
+            from taskforce.infrastructure.scheduler.scheduler_service import (
+                SchedulerService,
+            )
+
+            work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+
+            # Load notification defaults from butler profile for fallback.
+            notif_defaults: dict[str, str] = {}
+            try:
+                from taskforce.application.profile_loader import ProfileLoader
+
+                butler_cfg = ProfileLoader(self.executor.factory.config_dir).load("butler")
+                notif_defaults = butler_cfg.get("notifications", {})
+            except Exception:
+                pass
+
+            async def _on_scheduler_event(event: Any) -> None:
+                """Handle scheduler events by sending notifications via gateway."""
+                payload = event.payload or {}
+                action = payload.get("action", {})
+                action_type = action.get("action_type", "")
+                if action_type != "send_notification":
+                    return
+                if not self._gateway:
+                    logger.warning("scheduler.notification_skipped", reason="no gateway")
+                    return
+
+                from taskforce.core.domain.gateway import NotificationRequest
+
+                params = action.get("params", {})
+                channel = params.get("channel") or notif_defaults.get(
+                    "default_channel", "telegram"
+                )
+                recipient_id = params.get("recipient_id") or notif_defaults.get(
+                    "default_recipient_id", ""
+                )
+                request = NotificationRequest(
+                    channel=channel,
+                    recipient_id=recipient_id,
+                    message=params.get("message", ""),
+                    metadata={},
+                )
+                result = await self._gateway.send_notification(request)
+                if not result.success:
+                    logger.error(
+                        "scheduler.notification_failed",
+                        channel=channel,
+                        recipient_id=recipient_id,
+                        error=result.error,
+                    )
+
+            self._scheduler = SchedulerService(
+                work_dir=work_dir,
+                event_callback=_on_scheduler_event,
+            )
+            self.executor.factory.set_scheduler(self._scheduler)
+        except Exception as exc:
+            logger.warning("simple_chat.scheduler_setup_failed", error=str(exc))
 
     def _setup_gateway(self) -> None:
         """Build Communication Gateway when channel credentials are available.
@@ -180,6 +257,10 @@ class SimpleChatRunner:
         if self._conversation_manager:
             self._conversation_id = await self._conversation_manager.create_new("cli")
 
+        # Start scheduler for reminder/schedule tools
+        if self._scheduler:
+            await self._scheduler.start()
+
         # Start Telegram long-polling if configured
         if self._telegram_poller:
             await self._telegram_poller.start()
@@ -200,6 +281,8 @@ class SimpleChatRunner:
         finally:
             if self._telegram_poller:
                 await self._telegram_poller.stop()
+            if self._scheduler:
+                await self._scheduler.stop()
 
     async def _handle_telegram_inbound_message(
         self,

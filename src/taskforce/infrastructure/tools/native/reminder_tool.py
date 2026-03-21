@@ -30,8 +30,15 @@ class ReminderTool:
     at the specified time.
     """
 
-    def __init__(self, scheduler: Any = None) -> None:
+    def __init__(
+        self,
+        scheduler: Any = None,
+        default_channel: str | None = None,
+        default_recipient_id: str | None = None,
+    ) -> None:
         self._scheduler = scheduler
+        self._default_channel = default_channel or "telegram"
+        self._default_recipient_id = default_recipient_id or ""
 
     @property
     def name(self) -> str:
@@ -95,8 +102,8 @@ class ReminderTool:
         try:
             remind_at = kwargs["remind_at"]
             message = kwargs["message"]
-            channel = kwargs.get("channel", "telegram")
-            recipient_id = kwargs.get("recipient_id", "")
+            channel = kwargs.get("channel") or self._default_channel
+            recipient_id = kwargs.get("recipient_id") or self._default_recipient_id
 
             job = ScheduleJob(
                 name=f"reminder_{remind_at}",
