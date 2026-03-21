@@ -34,6 +34,7 @@ context_policy:
 tools:
   - web_search
   - web_fetch
+  - browser
   - python
 
 system_prompt: |
