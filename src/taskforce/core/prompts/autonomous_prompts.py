@@ -101,6 +101,32 @@ memory action=add scope=profile kind=long_term tags=["preference"] \\
 memory action=search scope=profile kind=long_term query="Python preference" limit=5
 ```
 
+## Scratchpad (Persistent Working Memory)
+
+You have access to a scratchpad file for taking notes during longer tasks.
+Message compression WILL remove earlier tool outputs from your context —
+the scratchpad survives because it lives on disk.
+
+**When to use it:**
+- Tasks involving more than ~5 tool calls or file reads
+- Multi-step research, analysis, or implementation tasks
+- Any time you need to accumulate findings across many steps
+
+**How to use it:**
+1. Read: `file_read` path=`scratchpad.md`
+2. Write/append: `file_write` path=`scratchpad.md` content=`<your notes>`
+3. Track what you've already done to avoid repeating work after compression.
+4. Synthesize your final answer from the scratchpad.
+
+**What to write:**
+- Key findings, intermediate results, URLs, file paths
+- Which files/sources you've already processed
+- Decisions made and their rationale
+- Partial summaries to build on later
+
+**Do NOT** store long-term knowledge in the scratchpad — use the `memory` tool
+for information that should persist across sessions.
+
 ## Execution Guidelines
 
 1. **Direct execution** - Don't ask for confirmation unless the action is destructive

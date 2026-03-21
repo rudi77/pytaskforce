@@ -31,15 +31,6 @@ system_prompt: |
     3. Only start implementation AFTER the user confirms.
   - Adapt the plan during execution: mark steps done, add/remove steps as needed.
 
-  ## SCRATCHPAD (MANDATORY for analysis with >5 files)
-
-  You WILL lose earlier file contents due to message compression.
-  Use the scratchpad as persistent working memory:
-  1. Read: shell: if (Test-Path .taskforce_coding/scratchpad.md) { Get-Content .taskforce_coding/scratchpad.md } else { "No scratchpad yet" }
-  2. Create/append: shell: New-Item -ItemType Directory -Force .taskforce_coding | Out-Null; Add-Content .taskforce_coding/scratchpad.md "your findings here"
-  3. Track which files you've already analyzed to avoid re-reading.
-  4. Synthesize your final answer from the scratchpad.
-
   ## MEMORY
 
   Use the memory tool to store and recall important information across sessions:
