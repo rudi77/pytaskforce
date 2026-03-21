@@ -276,8 +276,9 @@ async def run_workflow(*, tool_executor, input_vars, workflow):
 
         assert result["success"] is True
         assert result["workflow_completed"] is True
-        assert result["recommendation"] == "auto_book"
-        assert result["rules_applied"] == 1
+        # Domain-specific outputs are in the generic "outputs" dict
+        assert "confidence_result" in result["outputs"]
+        assert "rule_result" in result["outputs"]
 
     @pytest.mark.asyncio
     async def test_workflow_abort_on_error(self, tool):

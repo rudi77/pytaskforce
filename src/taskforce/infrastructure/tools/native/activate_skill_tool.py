@@ -47,11 +47,10 @@ class ActivateSkillTool(BaseTool):
 
     tool_name = "activate_skill"
     tool_description = (
-        "Activate a skill by name to execute its COMPLETE workflow automatically. "
-        "IMPORTANT: The workflow runs ALL steps without further LLM interaction. "
-        "For invoice processing, use skill_name='smart-booking-auto' with "
-        "input={'file_path': '<path to PDF>'}. The workflow handles extraction, "
-        "compliance check, accounting rules, and confidence evaluation automatically."
+        "Activate a skill by name to inject its instructions or execute its "
+        "workflow automatically. If the skill defines a workflow, ALL steps run "
+        "without further LLM interaction. Use only skill names listed in the "
+        "AVAILABLE SKILLS section of the system prompt."
     )
     tool_parameters_schema = {
         "type": "object",
@@ -59,23 +58,14 @@ class ActivateSkillTool(BaseTool):
             "skill_name": {
                 "type": "string",
                 "description": (
-                    "Name of the skill to activate. "
-                    "Use 'smart-booking-auto' for invoice processing."
+                    "Exact name of the skill to activate. Must match one of the "
+                    "skill names listed in the system prompt."
                 ),
             },
             "input": {
                 "type": "object",
-                "description": (
-                    "Input variables for the workflow. "
-                    "For invoices: {'file_path': '<path to PDF>'}"
-                ),
+                "description": "Input variables for the skill workflow (skill-specific).",
                 "additionalProperties": True,
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "Path to the invoice file (PDF or image)",
-                    }
-                },
             },
         },
         "required": ["skill_name"],
@@ -114,11 +104,13 @@ class ActivateSkillTool(BaseTool):
 
         # Validate required parameters
         if not skill_name:
+            available = []
+            if self._agent_ref and hasattr(self._agent_ref, "skill_manager") and self._agent_ref.skill_manager:
+                available = self._agent_ref.skill_manager.list_skills()
             return {
                 "success": False,
-                "error": "Missing required parameter 'skill_name'. "
-                "Example: activate_skill(skill_name='smart-booking-auto', "
-                "input={'file_path': '/path/to/invoice.pdf'})",
+                "error": "Missing required parameter 'skill_name'.",
+                "available_skills": available,
             }
 
         if not self._agent_ref:
@@ -219,32 +211,12 @@ class ActivateSkillTool(BaseTool):
             "outputs": context.outputs,
         }
 
-        # Extract key decision info for LLM
-        confidence_result = context.outputs.get("confidence_result", {})
-        if confidence_result:
-            result["recommendation"] = confidence_result.get("recommendation", "unknown")
-            result["overall_confidence"] = confidence_result.get("overall_confidence", 0)
-            result["force_auto_book"] = confidence_result.get("force_auto_book", False)
-
-        # Add booking info if available
-        rule_result = context.outputs.get("rule_result", {})
-        if rule_result:
-            result["rules_applied"] = rule_result.get("rules_applied", 0)
-            result["booking_proposals"] = rule_result.get("booking_proposals", [])
-
         if context.aborted:
             result["error"] = context.error
 
         if context.switch_to_skill:
             result["switch_to_skill"] = context.switch_to_skill
             result["message"] = f"Workflow wechselt zu Skill: {context.switch_to_skill}"
-
-        # Add clear message for auto-book case
-        if result.get("recommendation") == "auto_book" and result.get("workflow_completed"):
-            result["message"] = (
-                "AUTO_BOOK: Buchung kann automatisch durchgeführt werden "
-                "(bekannte Regel mit hoher Confidence)"
-            )
 
         return result
 
@@ -314,17 +286,6 @@ class ActivateSkillTool(BaseTool):
             "outputs": outputs,
         }
 
-        confidence_result = outputs.get("confidence_result", {})
-        if confidence_result:
-            result["recommendation"] = confidence_result.get("recommendation", "unknown")
-            result["overall_confidence"] = confidence_result.get("overall_confidence", 0)
-            result["force_auto_book"] = confidence_result.get("force_auto_book", False)
-
-        rule_result = outputs.get("rule_result", {})
-        if rule_result:
-            result["rules_applied"] = rule_result.get("rules_applied", 0)
-            result["booking_proposals"] = rule_result.get("booking_proposals", [])
-
         if aborted:
             result["error"] = external_result.get("error", "Workflow aborted")
 
@@ -349,12 +310,6 @@ class ActivateSkillTool(BaseTool):
             result["required_inputs"] = checkpoint.required_inputs
             result["blocking_reason"] = checkpoint.blocking_reason
             result["message"] = checkpoint.question or "Workflow wartet auf externe Eingabe"
-
-        if result.get("recommendation") == "auto_book" and result.get("workflow_completed"):
-            result["message"] = (
-                "AUTO_BOOK: Buchung kann automatisch durchgeführt werden "
-                "(bekannte Regel mit hoher Confidence)"
-            )
 
         logger.info(
             "workflow.external.completed",
