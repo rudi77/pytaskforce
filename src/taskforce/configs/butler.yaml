@@ -132,7 +132,6 @@ tools:
   #- web_fetch
   #- file_read
   #- file_write
-  - powershell
   - memory
   - send_notification
   - gmail
