@@ -516,6 +516,48 @@ class TestContextPackDeduplication:
         visible_ids = builder._get_visible_tool_ids(messages, visible_window_size=10)
         assert len(visible_ids) == 0
 
+    def test_get_visible_tool_ids_handles_non_dict_json(self):
+        """_get_visible_tool_ids handles compact text that parses as non-dict JSON.
+
+        With the compact tool output format, tool content can be plain text
+        like '200\\n' which json.loads() parses as the integer 200.
+        """
+        policy = ContextPolicy()
+        builder = ContextBuilder(policy)
+
+        messages = [
+            {"role": "tool", "content": "200\n"},       # int after json.loads
+            {"role": "tool", "content": '"just a string"'},  # str after json.loads
+            {"role": "tool", "content": "[1, 2, 3]"},   # list after json.loads
+            {"role": "tool", "content": "true"},         # bool after json.loads
+        ]
+
+        visible_ids = builder._get_visible_tool_ids(messages, visible_window_size=10)
+        assert len(visible_ids) == 0
+
+    def test_extract_tool_previews_handles_non_dict_json(self):
+        """_extract_tool_previews skips compact text content that parses as non-dict."""
+        policy = ContextPolicy()
+        builder = ContextBuilder(policy)
+
+        messages = [
+            {"role": "tool", "tool_call_id": "c1", "content": "200\n"},
+            {"role": "tool", "tool_call_id": "c2", "content": "plain text output"},
+            {
+                "role": "tool",
+                "tool_call_id": "c3",
+                "content": json.dumps({
+                    "handle": {"id": "h1", "tool": "python", "size_chars": 50},
+                    "preview_text": "Valid preview",
+                    "truncated": False,
+                }),
+            },
+        ]
+
+        previews = builder._extract_tool_previews(messages)
+        assert len(previews) == 1
+        assert previews[0]["preview"] == "Valid preview"
+
 
 class TestContextPolicyDeduplication:
     """Test ContextPolicy deduplicate_visible_window field."""

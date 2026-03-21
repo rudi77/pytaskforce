@@ -131,12 +131,14 @@ class ContextBuilder:
                 continue
             try:
                 parsed = json.loads(content)
+                if not isinstance(parsed, dict):
+                    continue
                 handle_data = parsed.get("handle")
                 if handle_data:
                     handle_id = handle_data.get("id", "")
                     if handle_id:
                         visible_ids.add(handle_id)
-            except (json.JSONDecodeError, KeyError, TypeError):
+            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
                 continue
         return visible_ids
 
@@ -175,6 +177,8 @@ class ContextBuilder:
             # Try to parse as JSON (preview format)
             try:
                 parsed = json.loads(content)
+                if not isinstance(parsed, dict):
+                    continue
                 if "handle" in parsed and "preview_text" in parsed:
                     # This is a preview message
                     handle_data = parsed["handle"]
@@ -201,7 +205,7 @@ class ContextBuilder:
                     # Stop when we have enough
                     if len(previews) >= self.policy.include_latest_tool_previews_n:
                         break
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
                 # Not a preview message, skip
                 continue
 

@@ -107,8 +107,8 @@ def tool_result_to_message(
     # Truncate large outputs to prevent token overflow
     truncated_result = _truncate_tool_result(result, max_output_chars)
 
-    # Serialize result to JSON string for the message content
-    content = json.dumps(truncated_result, ensure_ascii=False, default=str)
+    # Convert to compact text (strips redundant JSON boilerplate)
+    content = _result_to_compact_text(truncated_result)
 
     return {
         "role": "tool",
@@ -116,6 +116,54 @@ def tool_result_to_message(
         "name": tool_name,
         "content": content,
     }
+
+
+def _result_to_compact_text(result: dict[str, Any]) -> str:
+    """Convert a tool result dict to a compact text representation.
+
+    Strips redundant wrapper keys (success, returncode, path, size, etc.)
+    and returns only the primary content value. This saves ~40-50 tokens
+    per tool call compared to full JSON serialization.
+
+    Rules:
+    - Error results: return ``"ERROR: <message>"``
+    - Success results: extract the first found content key
+      (``output`` > ``content`` > ``result`` > ``stdout``), append
+      ``stderr`` if present.
+    - Fallback: compact JSON (no indent) when no known content field exists.
+
+    Args:
+        result: Tool result dictionary.
+
+    Returns:
+        Compact text string for the message ``content`` field.
+    """
+    # Error path: only the error message matters
+    if not result.get("success", True):
+        error = result.get("error", "Unknown error")
+        return f"ERROR: {error}"
+
+    # Extract primary content value
+    content_keys = ("output", "content", "result", "stdout")
+    primary = None
+    for key in content_keys:
+        if key in result and result[key] is not None:
+            val = result[key]
+            primary = (
+                val if isinstance(val, str) else json.dumps(val, ensure_ascii=False, default=str)
+            )
+            break
+
+    if primary is None:
+        # No known content field – fall back to compact JSON
+        return json.dumps(result, ensure_ascii=False, default=str)
+
+    # Append stderr if present
+    stderr = result.get("stderr")
+    if stderr and isinstance(stderr, str) and stderr.strip():
+        primary = f"{primary}\n[stderr] {stderr}"
+
+    return primary
 
 
 def _truncate_tool_result(
@@ -226,39 +274,36 @@ def create_tool_result_preview(
         >>> print(len(preview.preview_text))  # <= 500
         >>> print(preview.truncated)  # True
     """
-    # Build preview from key fields
-    preview_parts = []
-
-    # Success status
+    # Build compact preview – skip boilerplate, show content directly
     success = result.get("success", False)
-    preview_parts.append(f"Success: {success}")
 
-    # Error message if present
-    if not success and "error" in result:
-        error_msg = str(result["error"])[:200]
-        preview_parts.append(f"Error: {error_msg}")
+    if not success:
+        error_msg = str(result.get("error", "Unknown error"))[:max_preview_chars]
+        preview_text = f"ERROR: {error_msg}"
+        truncated = len(str(result.get("error", ""))) > max_preview_chars
+    else:
+        # Extract primary content (same priority as _result_to_compact_text)
+        content_keys = ("output", "content", "result", "stdout")
+        raw = None
+        for key in content_keys:
+            if key in result and result[key] is not None:
+                raw = str(result[key])
+                break
 
-    # Output preview
-    if "output" in result:
-        output = str(result["output"])
-        if len(output) > max_preview_chars - 100:  # Reserve space for other fields
-            output_preview = output[: max_preview_chars - 100] + "..."
+        if raw is None:
+            raw = json.dumps(result, ensure_ascii=False, default=str)
+
+        if len(raw) > max_preview_chars:
+            preview_text = raw[:max_preview_chars] + "..."
             truncated = True
         else:
-            output_preview = output
-            truncated = len(output) > max_preview_chars - 100
+            preview_text = raw
+            truncated = False
 
-        preview_parts.append(f"Output: {output_preview}")
-    else:
-        truncated = False
-
-    # Join parts
-    preview_text = " | ".join(preview_parts)
-
-    # Final truncation if still too long
-    if len(preview_text) > max_preview_chars:
-        preview_text = preview_text[:max_preview_chars] + "..."
-        truncated = True
+    # Append size hint for large results
+    total_chars = handle.size_chars
+    if total_chars > max_preview_chars:
+        preview_text += f"\n[{total_chars} chars total, handle: {handle.id[:8]}]"
 
     return ToolResultPreview(
         handle=handle,

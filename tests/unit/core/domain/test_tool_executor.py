@@ -156,9 +156,7 @@ class TestToolExecutorExecute:
         await executor.execute("file_write", {"path": "/tmp/out.txt", "content": "data"})
 
         # Should log tool_execute with tool name and args keys
-        execute_logs = [
-            log for log in logger.logs if log[1].get("event") == "tool_execute"
-        ]
+        execute_logs = [log for log in logger.logs if log[1].get("event") == "tool_execute"]
         assert len(execute_logs) == 1
         assert execute_logs[0][1]["tool"] == "file_write"
         assert set(execute_logs[0][1]["args_keys"]) == {"path", "content"}
@@ -171,9 +169,7 @@ class TestToolExecutorExecute:
 
         await executor.execute("my_tool", {"input": "test"})
 
-        complete_logs = [
-            log for log in logger.logs if log[1].get("event") == "tool_complete"
-        ]
+        complete_logs = [log for log in logger.logs if log[1].get("event") == "tool_complete"]
         assert len(complete_logs) == 1
         assert complete_logs[0][1]["success"] is True
 
@@ -188,9 +184,7 @@ class TestToolExecutorExecute:
 
         await executor.execute("failing_tool", {})
 
-        error_logs = [
-            log for log in logger.logs if log[1].get("event") == "tool_exception"
-        ]
+        error_logs = [log for log in logger.logs if log[1].get("event") == "tool_exception"]
         assert len(error_logs) == 1
         assert "Boom" in error_logs[0][1]["error"]
 
@@ -244,10 +238,8 @@ class TestToolResultMessageFactoryBuildMessage:
         assert result["role"] == "tool"
         assert result["tool_call_id"] == "call_123"
         assert result["name"] == "file_read"
-        # Content should be JSON string of the result
-        content = json.loads(result["content"])
-        assert content["success"] is True
-        assert content["output"] == "Hello"
+        # Content is compact text (primary output value)
+        assert result["content"] == "Hello"
 
     async def test_standard_message_without_store(self) -> None:
         """Without tool_result_store, always returns standard message."""
@@ -267,10 +259,9 @@ class TestToolResultMessageFactoryBuildMessage:
         )
 
         assert result["role"] == "tool"
-        # Should still be the full result (truncated by tool_result_to_message),
+        # Should still be the full result (compact text, truncated),
         # not a handle-based preview
-        content = json.loads(result["content"])
-        assert content["success"] is True
+        assert result["content"].startswith("x" * 100)
 
     async def test_handle_based_message_for_large_result(self) -> None:
         """Large results use the tool result store and produce handle+preview."""
@@ -327,8 +318,8 @@ class TestToolResultMessageFactoryBuildMessage:
         )
 
         store.put.assert_not_awaited()
-        content = json.loads(result["content"])
-        assert content["output"] == "small"
+        # Compact text: primary output value directly
+        assert result["content"] == "small"
 
     async def test_message_includes_correct_tool_call_id(self) -> None:
         """The returned message always includes the correct tool_call_id."""
@@ -395,9 +386,7 @@ class TestToolResultMessageFactoryBuildMessage:
         )
 
         handle_logs = [
-            log
-            for log in logger.logs
-            if log[1].get("event") == "tool_result_stored_with_handle"
+            log for log in logger.logs if log[1].get("event") == "tool_result_stored_with_handle"
         ]
         assert len(handle_logs) == 1
         assert handle_logs[0][1]["handle_id"] == "logged-handle"

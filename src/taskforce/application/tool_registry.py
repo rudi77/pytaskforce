@@ -111,15 +111,17 @@ class ToolRegistry:
             if tool is None:
                 continue
             risk_level = getattr(tool, "approval_risk_level", None)
-            tools.append({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters_schema": tool.parameters_schema,
-                "requires_approval": getattr(tool, "requires_approval", False),
-                "approval_risk_level": risk_level.value if risk_level else "low",
-                "supports_parallelism": getattr(tool, "supports_parallelism", False),
-                "origin": "native",
-            })
+            tools.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters_schema": tool.parameters_schema,
+                    "requires_approval": getattr(tool, "requires_approval", False),
+                    "approval_risk_level": risk_level.value if risk_level else "low",
+                    "supports_parallelism": getattr(tool, "supports_parallelism", False),
+                    "origin": "native",
+                }
+            )
 
         self._native_tools_cache = tools
         return tools
@@ -133,9 +135,7 @@ class ToolRegistry:
         """
         return set(get_all_tool_names())
 
-    def validate_native_tools(
-        self, tool_names: list[str]
-    ) -> tuple[bool, list[str]]:
+    def validate_native_tools(self, tool_names: list[str]) -> tuple[bool, list[str]]:
         """
         Validate that tool names exist in the registry.
 
@@ -146,9 +146,7 @@ class ToolRegistry:
             Tuple of (is_valid, invalid_tool_names)
         """
         available_tools = self.get_native_tool_names()
-        invalid_tools = [
-            name for name in tool_names if name not in available_tools
-        ]
+        invalid_tools = [name for name in tool_names if name not in available_tools]
         return len(invalid_tools) == 0, invalid_tools
 
     # -------------------------------------------------------------------------
@@ -207,6 +205,10 @@ class ToolRegistry:
         """
         Resolve tool names to tool instances.
 
+        If ``python`` is among the requested tools and other tools are present,
+        a :class:`ToolBridge` is automatically created and injected into the
+        ``PythonTool`` so the LLM can chain tools within a single Python call.
+
         Args:
             tool_names: List of tool names (registry keys) to resolve
             plugin_tools: Optional list of pre-loaded plugin tools to include
@@ -242,6 +244,9 @@ class ToolRegistry:
             if tool:
                 tools.append(tool)
 
+        # Wire ToolBridge into PythonTool if both python and other tools exist
+        self._maybe_inject_tool_bridge(tools)
+
         self._logger.info(
             "tools_resolved",
             requested=len(tool_names),
@@ -250,6 +255,37 @@ class ToolRegistry:
         )
 
         return tools
+
+    def _maybe_inject_tool_bridge(self, tools: list[ToolProtocol]) -> None:
+        """Inject a ToolBridge into PythonTool when other tools are available."""
+        from taskforce.infrastructure.tools.native.python_tool import PythonTool
+
+        python_tool = None
+        other_tools: dict[str, ToolProtocol] = {}
+
+        for tool in tools:
+            if isinstance(tool, PythonTool):
+                python_tool = tool
+            else:
+                other_tools[tool.name] = tool
+
+        if python_tool is None or not other_tools:
+            return
+
+        try:
+            from taskforce.infrastructure.tools.native.tool_bridge import ToolBridge
+
+            bridge = ToolBridge(tools=other_tools)
+            python_tool._tool_bridge = bridge
+            self._logger.debug(
+                "tool_bridge_injected",
+                bridged_tools=bridge.available_tool_names,
+            )
+        except Exception as exc:
+            self._logger.warning(
+                "tool_bridge_injection_failed",
+                error=str(exc),
+            )
 
     def resolve_single(self, tool_name: str) -> ToolProtocol | None:
         """

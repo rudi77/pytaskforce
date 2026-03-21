@@ -71,6 +71,7 @@ class TelegramPoller:
         self._offset: int = 0
         self._task: asyncio.Task[None] | None = None
         self._session: aiohttp.ClientSession | None = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -94,6 +95,10 @@ class TelegramPoller:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        # Cancel any in-flight inbound message handlers.
+        for t in list(self._background_tasks):
+            t.cancel()
+        self._background_tasks.clear()
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
@@ -221,7 +226,17 @@ class TelegramPoller:
                 has_attachments=bool(attachments),
             )
             if self._inbound_message_handler and chat_id:
-                await self._inbound_message_handler(chat_id, sender_id, text, attachments)
+                # Fire-and-forget: do NOT await the handler.  The handler may
+                # trigger agent execution that enters a channel-question polling
+                # loop, which in turn waits for the *next* Telegram message.
+                # If we awaited here the poller would be blocked and could never
+                # fetch that next message → deadlock.
+                task = asyncio.create_task(
+                    self._inbound_message_handler(chat_id, sender_id, text, attachments),
+                    name=f"telegram-inbound-{sender_id}",
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
     # ------------------------------------------------------------------
     # Media extraction

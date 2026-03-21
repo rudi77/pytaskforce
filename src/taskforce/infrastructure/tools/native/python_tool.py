@@ -17,13 +17,24 @@ from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 class PythonTool(ToolProtocol):
     """Execute Python code in isolated namespace with pre-imported libraries."""
 
+    def __init__(self, tool_bridge: Any | None = None) -> None:
+        """Initialize PythonTool.
+
+        Args:
+            tool_bridge: Optional ToolBridge instance for tool-chaining support.
+                When provided, bridge functions (``tool_<name>(**kwargs)``) are
+                injected into the execution namespace so the LLM can chain
+                multiple tools in a single Python call.
+        """
+        self._tool_bridge = tool_bridge
+
     @property
     def name(self) -> str:
         return "python"
 
     @property
     def description(self) -> str:
-        return (
+        base = (
             "Execute Python code for complex logic, data processing, and custom operations. "
             "Your code must assign the final output to a variable named 'result'. "
             "Pre-imported modules: os, sys, json, re, pathlib, shutil, subprocess, datetime, time, random, "
@@ -33,6 +44,9 @@ class PythonTool(ToolProtocol):
             "sum, min, max, abs, round, sorted, reversed, zip, map, filter, next, any, all, isinstance, open, __import__, locals). "
             "If you need input variables (e.g., 'data'), pass them in via the 'context' dict; its keys are exposed as top-level variables."
         )
+        if self._tool_bridge:
+            base += self._tool_bridge.description_suffix()
+        return base
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -223,12 +237,12 @@ except ImportError:
         # Expose context keys as top-level variables
         if context_dict:
             for key, value in context_dict.items():
-                if (
-                    isinstance(key, str)
-                    and key.isidentifier()
-                    and key not in safe_namespace
-                ):
+                if isinstance(key, str) and key.isidentifier() and key not in safe_namespace:
                     safe_namespace[key] = value
+
+        # Inject tool-bridge functions (tool_file_read, tool_shell, etc.)
+        if self._tool_bridge:
+            safe_namespace.update(self._tool_bridge.get_namespace())
 
         try:
             # Execute imports first
@@ -340,18 +354,12 @@ except ImportError:
             if error_type == "NameError" and "not defined" in error_msg:
                 var_name = error_msg.split("'")[1] if "'" in error_msg else "unknown"
                 hints.append(f"Variable '{var_name}' is not defined.")
-                hints.append(
-                    "REMEMBER: Each Python call has an ISOLATED namespace!"
-                )
+                hints.append("REMEMBER: Each Python call has an ISOLATED namespace!")
                 hints.append(f"  1. If '{var_name}' is from a previous step, you must:")
                 hints.append("     → Re-read the source data (CSV, JSON, etc.), OR")
                 hints.append("     → Request it via 'context' parameter")
-                hints.append(
-                    f"  2. If '{var_name}' should be created here, define it in your code"
-                )
-                hints.append(
-                    "  3. Check the file path and make sure the data source exists"
-                )
+                hints.append(f"  2. If '{var_name}' should be created here, define it in your code")
+                hints.append("  3. Check the file path and make sure the data source exists")
 
             elif error_type == "KeyError":
                 hints.append("KeyError: Check if the key exists in the dictionary")
@@ -368,9 +376,7 @@ except ImportError:
                 hints.append("Try using pd, plt, or other pre-imported libraries")
 
             elif error_type == "AttributeError":
-                hints.append(
-                    "AttributeError: Check if you're calling the right method/attribute"
-                )
+                hints.append("AttributeError: Check if you're calling the right method/attribute")
                 hints.append("Make sure the object is of the expected type")
                 hints.append("Use type() or isinstance() to verify object types")
 

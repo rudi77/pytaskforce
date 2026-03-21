@@ -58,9 +58,7 @@ class FileToolResultStore:
         self.store_dir = Path(store_dir)
         self.results_dir = self.store_dir / "results"
         self.handles_dir = self.store_dir / "handles"
-        self.logger = structlog.get_logger().bind(
-            component="tool_result_store"
-        )
+        self.logger = structlog.get_logger().bind(component="tool_result_store")
 
         # Locks for concurrent access (per handle ID)
         self._locks: dict[str, asyncio.Lock] = {}
@@ -119,10 +117,8 @@ class FileToolResultStore:
         lock = await self._get_lock(handle_id)
 
         async with lock:
-            # Serialize result
-            result_json = json.dumps(
-                result, ensure_ascii=False, indent=2, default=str
-            )
+            # Serialize result (compact – no indent to save storage/tokens)
+            result_json = json.dumps(result, ensure_ascii=False, default=str)
             size_bytes = len(result_json.encode("utf-8"))
             size_chars = len(result_json)
 
@@ -151,7 +147,7 @@ class FileToolResultStore:
 
             # Write handle file
             handle_path = self._handle_path(handle_id)
-            handle_json = json.dumps(handle.to_dict(), indent=2)
+            handle_json = json.dumps(handle.to_dict())
             async with aiofiles.open(handle_path, "w", encoding="utf-8") as f:
                 await f.write(handle_json)
 
@@ -248,9 +244,7 @@ class FileToolResultStore:
             if field in truncated and isinstance(truncated[field], str):
                 field_limit = max_chars // len(large_fields)
                 if len(truncated[field]) > field_limit:
-                    truncated[field] = (
-                        truncated[field][:field_limit] + "... [TRUNCATED]"
-                    )
+                    truncated[field] = truncated[field][:field_limit] + "... [TRUNCATED]"
 
         return truncated
 
@@ -319,9 +313,7 @@ class FileToolResultStore:
 
         for handle_path in handle_files:
             try:
-                async with aiofiles.open(
-                    handle_path, encoding="utf-8"
-                ) as f:
+                async with aiofiles.open(handle_path, encoding="utf-8") as f:
                     handle_data = json.loads(await f.read())
 
                 # Check if this handle belongs to the session
@@ -338,9 +330,7 @@ class FileToolResultStore:
                     error=str(e),
                 )
 
-        self.logger.info(
-            "session_cleanup_complete", session_id=session_id, count=count
-        )
+        self.logger.info("session_cleanup_complete", session_id=session_id, count=count)
         return count
 
     async def get_stats(self) -> dict[str, Any]:
@@ -361,18 +351,14 @@ class FileToolResultStore:
         result_files = list(self.results_dir.glob("*.json"))
         handle_files = list(self.handles_dir.glob("*.json"))
 
-        total_bytes = sum(
-            f.stat().st_size for f in result_files if f.exists()
-        )
+        total_bytes = sum(f.stat().st_size for f in result_files if f.exists())
         total_results = len(result_files)
 
         # Find oldest and newest
         timestamps = []
         for handle_path in handle_files:
             try:
-                async with aiofiles.open(
-                    handle_path, encoding="utf-8"
-                ) as f:
+                async with aiofiles.open(handle_path, encoding="utf-8") as f:
                     handle_data = json.loads(await f.read())
                     timestamps.append(handle_data.get("created_at", ""))
             except (FileNotFoundError, json.JSONDecodeError, OSError):

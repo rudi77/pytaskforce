@@ -11,7 +11,6 @@ Test Scenario:
 4. Verify that agent can complete the mission successfully
 """
 
-
 import pytest
 import structlog
 
@@ -110,9 +109,7 @@ async def test_large_tool_output_stays_small_in_messages(integration_setup):
     # Calculate total message size
     import json
 
-    total_message_chars = sum(
-        len(json.dumps(msg, ensure_ascii=False)) for msg in messages
-    )
+    total_message_chars = sum(len(json.dumps(msg, ensure_ascii=False)) for msg in messages)
 
     # Assert - total message size is reasonable (not 50KB+)
     # With handle+preview, should be < 10KB even with large tool output
@@ -231,9 +228,7 @@ async def test_multiple_large_outputs_accumulate_in_store_not_messages(integrati
 
     import json
 
-    total_message_chars = sum(
-        len(json.dumps(msg, ensure_ascii=False)) for msg in messages
-    )
+    total_message_chars = sum(len(json.dumps(msg, ensure_ascii=False)) for msg in messages)
 
     # Even with 3 large outputs, message history should stay < 20KB
     assert total_message_chars < 20000, (
@@ -352,14 +347,11 @@ async def test_backward_compatibility_without_store(integration_setup):
     tool_messages = [m for m in messages if m.get("role") == "tool"]
     assert len(tool_messages) == 1
 
-    import json
+    # Standard compact text format (not handle-based JSON)
+    tool_text = tool_messages[0]["content"]
 
-    tool_content = json.loads(tool_messages[0]["content"])
-
-    # Standard format (not handle format)
-    assert "success" in tool_content
-    assert "result" in tool_content
-    assert "handle" not in tool_content
+    # Should NOT be a handle-based preview (no JSON handle key)
+    assert "handle" not in tool_text
 
     # Output should be truncated
-    assert "TRUNCATED" in tool_content["result"]
+    assert "TRUNCATED" in tool_text
