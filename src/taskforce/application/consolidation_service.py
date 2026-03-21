@@ -60,7 +60,7 @@ def build_consolidation_components(
         engine = ConsolidationEngine(
             llm_provider=llm_provider,
             memory_store=memory_store,
-            model_alias=consol_config.get("model_alias", "main"),
+            model_alias=consol_config.get("model_alias", "fast"),
         )
         service = ConsolidationService(
             experience_store=experience_store,

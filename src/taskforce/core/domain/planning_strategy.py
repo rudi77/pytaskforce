@@ -46,9 +46,7 @@ class PlanningStrategy(Protocol):
 
     name: str
 
-    async def execute(
-        self, agent: Agent, mission: str, session_id: str
-    ) -> ExecutionResult: ...
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult: ...
 
     async def execute_stream(
         self, agent: Agent, mission: str, session_id: str
@@ -75,20 +73,14 @@ class NativeReActStrategy:
         self.max_plan_steps = max_plan_steps
         self._logger = logger
 
-    async def execute(
-        self, agent: Agent, mission: str, session_id: str
-    ) -> ExecutionResult:
-        return await _collect_result(
-            session_id, self.execute_stream(agent, mission, session_id)
-        )
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
+        return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
     async def execute_stream(
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self._logger or agent.logger
-        state, resume = await _load_and_resume_state(
-            agent, mission, session_id, logger
-        )
+        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
             messages = resume.messages
@@ -96,8 +88,12 @@ class NativeReActStrategy:
         else:
             if self.generate_plan_first:
                 async for item in _generate_and_register_plan(
-                    agent, mission, logger, self.max_plan_steps,
-                    session_id=session_id, state=state,
+                    agent,
+                    mission,
+                    logger,
+                    self.max_plan_steps,
+                    session_id=session_id,
+                    state=state,
                 ):
                     if isinstance(item, StreamEvent):
                         yield item
@@ -106,14 +102,17 @@ class NativeReActStrategy:
             step = 0
 
         async for e in _react_loop(
-            agent, mission, session_id, messages, state,
-            start_step=step, logger=logger,
+            agent,
+            mission,
+            session_id,
+            messages,
+            state,
+            start_step=step,
+            logger=logger,
         ):
             yield e
 
-        await agent.state_store.save(
-            session_id=session_id, state=state, planner=agent.planner
-        )
+        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
 
 
 # ---------------------------------------------------------------------------
@@ -136,20 +135,14 @@ class PlanAndExecuteStrategy:
         self.max_plan_steps = max_plan_steps
         self.logger = logger
 
-    async def execute(
-        self, agent: Agent, mission: str, session_id: str
-    ) -> ExecutionResult:
-        return await _collect_result(
-            session_id, self.execute_stream(agent, mission, session_id)
-        )
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
+        return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
     async def execute_stream(
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state, resume = await _load_and_resume_state(
-            agent, mission, session_id, logger
-        )
+        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
             messages = resume.messages
@@ -161,7 +154,10 @@ class PlanAndExecuteStrategy:
             messages = agent._build_initial_messages(mission, state)
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
-                agent, mission, logger, self.max_plan_steps,
+                agent,
+                mission,
+                logger,
+                self.max_plan_steps,
                 state=state,
             ):
                 if isinstance(item, list):
@@ -171,6 +167,8 @@ class PlanAndExecuteStrategy:
             progress = 0
             start_idx = 1
             start_it = 1
+
+        tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
 
         for idx, desc in enumerate(plan, 1):
             if idx < start_idx:
@@ -194,17 +192,23 @@ class PlanAndExecuteStrategy:
                     {
                         "role": MessageRole.USER.value,
                         "content": (
-                            f"Execute step {idx}: {desc}\n"
-                            "Call tools or respond when done."
+                            f"Execute step {idx}: {desc}\n" "Call tools or respond when done."
                         ),
                     }
                 )
 
                 async for outcome, events in _llm_call_and_process(
-                    agent, messages, session_id, progress + 1,
-                    state, logger, model_hint="acting",
-                    plan=plan, plan_step_idx=idx,
+                    agent,
+                    messages,
+                    session_id,
+                    progress + 1,
+                    state,
+                    logger,
+                    model_hint="acting",
+                    plan=plan,
+                    plan_step_idx=idx,
                     plan_iteration=it,
+                    tool_failure_counts=tool_failure_counts,
                 ):
                     for event in events:
                         yield event
@@ -235,9 +239,7 @@ class PlanAndExecuteStrategy:
             async for e in _stream_final_response(agent, messages):
                 yield e
 
-        async for e in _save_and_emit_max_steps(
-            agent, session_id, state, progress
-        ):
+        async for e in _save_and_emit_max_steps(agent, session_id, state, progress):
             yield e
 
 
@@ -262,17 +264,13 @@ class PlanAndReactStrategy:
             logger=logger,
         )
 
-    async def execute(
-        self, agent: Agent, mission: str, session_id: str
-    ) -> ExecutionResult:
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
         return await self._delegate.execute(agent, mission, session_id)
 
     async def execute_stream(
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
-        async for e in self._delegate.execute_stream(
-            agent, mission, session_id
-        ):
+        async for e in self._delegate.execute_stream(agent, mission, session_id):
             yield e
 
 
@@ -300,20 +298,14 @@ class SparStrategy:
         self.max_reflection_iterations = max_reflection_iterations
         self.logger = logger
 
-    async def execute(
-        self, agent: Agent, mission: str, session_id: str
-    ) -> ExecutionResult:
-        return await _collect_result(
-            session_id, self.execute_stream(agent, mission, session_id)
-        )
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
+        return await _collect_result(session_id, self.execute_stream(agent, mission, session_id))
 
     async def execute_stream(
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state, resume = await _load_and_resume_state(
-            agent, mission, session_id, logger
-        )
+        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
             messages = resume.messages
@@ -326,7 +318,10 @@ class SparStrategy:
             messages = agent._build_initial_messages(mission, state)
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
-                agent, mission, logger, self.max_plan_steps,
+                agent,
+                mission,
+                logger,
+                self.max_plan_steps,
                 state=state,
             ):
                 if isinstance(item, list):
@@ -337,6 +332,8 @@ class SparStrategy:
             start_idx = 1
             start_it = 1
             start_phase = "act"
+
+        tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
 
         for idx, desc in enumerate(plan, 1):
             if idx < start_idx:
@@ -357,25 +354,20 @@ class SparStrategy:
                 )
                 _rebuild_system_prompt(agent, messages, mission, state)
 
-                reflect_only = (
-                    idx == start_idx
-                    and it == start_it
-                    and start_phase == "reflect"
-                )
+                reflect_only = idx == start_idx and it == start_it and start_phase == "reflect"
                 if not reflect_only:
-                    action_done, used_tools, paused, events = (
-                        await _run_spar_action(
-                            agent=agent,
-                            messages=messages,
-                            desc=desc,
-                            session_id=session_id,
-                            step=progress + 1,
-                            state=state,
-                            logger=logger,
-                            plan=plan,
-                            plan_step_idx=idx,
-                            plan_iteration=it,
-                        )
+                    action_done, used_tools, paused, events = await _run_spar_action(
+                        agent=agent,
+                        messages=messages,
+                        desc=desc,
+                        session_id=session_id,
+                        step=progress + 1,
+                        state=state,
+                        logger=logger,
+                        plan=plan,
+                        plan_step_idx=idx,
+                        plan_iteration=it,
+                        tool_failure_counts=tool_failure_counts,
                     )
                     for event in events:
                         yield event
@@ -402,30 +394,29 @@ class SparStrategy:
                         )
 
                 if self.reflect_every_step:
-                    reflect_used, paused, events = (
-                        await _run_reflection_cycle(
-                            agent=agent,
-                            messages=messages,
-                            prompt=(
-                                "REFLECT: Review the result of the last "
-                                "action step. Check correctness, edge cases, "
-                                "tests, and security. If more info is needed, "
-                                "ask_user. If validation tools should be "
-                                "used, call them. "
-                                "If the step failed due to missing configuration "
-                                "or infrastructure issues, use the planner tool "
-                                "with update_plan to remove or adapt the step "
-                                "rather than retrying indefinitely."
-                            ),
-                            session_id=session_id,
-                            step=progress + 1,
-                            state=state,
-                            logger=logger,
-                            plan=plan,
-                            plan_step_idx=idx,
-                            plan_iteration=it,
-                            max_reflections=self.max_reflection_iterations,
-                        )
+                    reflect_used, paused, events = await _run_reflection_cycle(
+                        agent=agent,
+                        messages=messages,
+                        prompt=(
+                            "REFLECT: Review the result of the last "
+                            "action step. Check correctness, edge cases, "
+                            "tests, and security. If more info is needed, "
+                            "ask_user. If validation tools should be "
+                            "used, call them. "
+                            "If the step failed due to missing configuration "
+                            "or infrastructure issues, use the planner tool "
+                            "with update_plan to remove or adapt the step "
+                            "rather than retrying indefinitely."
+                        ),
+                        session_id=session_id,
+                        step=progress + 1,
+                        state=state,
+                        logger=logger,
+                        plan=plan,
+                        plan_step_idx=idx,
+                        plan_iteration=it,
+                        max_reflections=self.max_reflection_iterations,
+                        tool_failure_counts=tool_failure_counts,
                     )
                     for event in events:
                         yield event
@@ -437,26 +428,25 @@ class SparStrategy:
                 break
 
         if progress < agent.max_steps:
-            reflect_used, paused, events = (
-                await _run_reflection_cycle(
-                    agent=agent,
-                    messages=messages,
-                    prompt=(
-                        "REFLECT: Review the overall outcome for the "
-                        "mission. Verify quality, tests, and completeness. "
-                        "If anything is missing, ask_user or call tools "
-                        "to validate. If any plan steps were skipped due "
-                        "to failures, mention them in the final summary."
-                    ),
-                    session_id=session_id,
-                    step=progress + 1,
-                    state=state,
-                    logger=logger,
-                    plan=None,
-                    plan_step_idx=None,
-                    plan_iteration=None,
-                    max_reflections=self.max_reflection_iterations,
-                )
+            reflect_used, paused, events = await _run_reflection_cycle(
+                agent=agent,
+                messages=messages,
+                prompt=(
+                    "REFLECT: Review the overall outcome for the "
+                    "mission. Verify quality, tests, and completeness. "
+                    "If anything is missing, ask_user or call tools "
+                    "to validate. If any plan steps were skipped due "
+                    "to failures, mention them in the final summary."
+                ),
+                session_id=session_id,
+                step=progress + 1,
+                state=state,
+                logger=logger,
+                plan=None,
+                plan_step_idx=None,
+                plan_iteration=None,
+                max_reflections=self.max_reflection_iterations,
+                tool_failure_counts=tool_failure_counts,
             )
             for event in events:
                 yield event
@@ -469,9 +459,7 @@ class SparStrategy:
             async for e in _stream_final_response(agent, messages):
                 yield e
 
-        async for e in _save_and_emit_max_steps(
-            agent, session_id, state, progress
-        ):
+        async for e in _save_and_emit_max_steps(agent, session_id, state, progress):
             yield e
 
 
@@ -491,6 +479,7 @@ async def _run_spar_action(
     plan: list[str],
     plan_step_idx: int,
     plan_iteration: int,
+    tool_failure_counts: dict[str, int] | None = None,
 ) -> tuple[bool, bool, bool, list[StreamEvent]]:
     """Run the Act phase for a single plan step.
 
@@ -504,16 +493,23 @@ async def _run_spar_action(
         {
             "role": MessageRole.USER.value,
             "content": (
-                f"ACT: Execute step {plan_step_idx}: {desc}\n"
-                "Call tools or respond when done."
+                f"ACT: Execute step {plan_step_idx}: {desc}\n" "Call tools or respond when done."
             ),
         }
     )
     async for outcome, events in _llm_call_and_process(
-        agent, messages, session_id, step,
-        state, logger, model_hint="acting",
-        plan=plan, plan_step_idx=plan_step_idx,
-        plan_iteration=plan_iteration, paused_phase="act",
+        agent,
+        messages,
+        session_id,
+        step,
+        state,
+        logger,
+        model_hint="acting",
+        plan=plan,
+        plan_step_idx=plan_step_idx,
+        plan_iteration=plan_iteration,
+        paused_phase="act",
+        tool_failure_counts=tool_failure_counts,
     ):
         if outcome == "paused":
             return False, True, True, events
@@ -540,6 +536,7 @@ async def _run_reflection_cycle(
     plan_step_idx: int | None,
     plan_iteration: int | None,
     max_reflections: int,
+    tool_failure_counts: dict[str, int] | None = None,
 ) -> tuple[bool, bool, list[StreamEvent]]:
     """Execute reflection with optional tool calls.
 
@@ -553,14 +550,20 @@ async def _run_reflection_cycle(
     all_events: list[StreamEvent] = []
     used_tools = False
     for _ in range(max_reflections):
-        messages.append(
-            {"role": MessageRole.USER.value, "content": prompt}
-        )
+        messages.append({"role": MessageRole.USER.value, "content": prompt})
         async for outcome, events in _llm_call_and_process(
-            agent, messages, session_id, step,
-            state, logger, model_hint="reflecting",
-            plan=plan, plan_step_idx=plan_step_idx,
-            plan_iteration=plan_iteration, paused_phase="reflect",
+            agent,
+            messages,
+            session_id,
+            step,
+            state,
+            logger,
+            model_hint="reflecting",
+            plan=plan,
+            plan_step_idx=plan_step_idx,
+            plan_iteration=plan_iteration,
+            paused_phase="reflect",
+            tool_failure_counts=tool_failure_counts,
         ):
             all_events.extend(events)
 

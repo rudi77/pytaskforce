@@ -38,7 +38,7 @@ consolidation:
   auto_consolidate: true
   strategy: batch
   max_sessions: 50
-  model_alias: main
+  model_alias: fast
 
 logging:
   level: INFO

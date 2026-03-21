@@ -638,7 +638,44 @@ class LiteLLMService:
             stream_usage: dict[str, Any] = {}
             stream_actual_model: str | None = None
 
-            async for chunk in response:
+            # Per-chunk timeout: detect mid-stream hangs where the API
+            # stops sending data.  Reuses the connection timeout value so
+            # operators only need a single knob.
+            stream_chunk_timeout = float(self._config.retry_policy.timeout)
+            chunk_iter = response.__aiter__()
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        chunk_iter.__anext__(), timeout=stream_chunk_timeout
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    self.logger.warning(
+                        "llm_stream_chunk_timeout",
+                        model=resolved_model,
+                        timeout_seconds=stream_chunk_timeout,
+                        latency_ms=latency_ms,
+                        content_so_far=len(content_accumulated),
+                    )
+                    yield {
+                        "type": "error",
+                        "message": (
+                            f"Stream timed out after {stream_chunk_timeout}s"
+                            " between chunks"
+                        ),
+                    }
+                    asyncio.create_task(
+                        self._trace_failure(
+                            messages,
+                            resolved_model,
+                            latency_ms,
+                            "stream_chunk_timeout",
+                        )
+                    )
+                    return
+
                 # Capture usage from any chunk that carries it.
                 # Some providers send usage on the last content chunk
                 # (with choices), others send a final chunk with empty

@@ -155,9 +155,7 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
     return steps
 
 
-def _build_retry_nudge(
-    failed_tool_names: list[str], attempt: int = 1
-) -> dict[str, Any]:
+def _build_retry_nudge(failed_tool_names: list[str], attempt: int = 1) -> dict[str, Any]:
     """Build a user-role message nudging the agent to retry after tool failures.
 
     Args:
@@ -714,10 +712,9 @@ async def _generate_and_register_plan(
     # If no explicit context, try extracting from state
     if conversation_context is None and state:
         conversation_context = state.get("conversation_history")
-    steps = (
-        await _generate_plan(agent, mission, logger, conversation_context)
-        or DEFAULT_PLAN
-    )[:max_plan_steps]
+    steps = (await _generate_plan(agent, mission, logger, conversation_context) or DEFAULT_PLAN)[
+        :max_plan_steps
+    ]
 
     if agent._planner:
         await agent._planner.execute(action=PlannerAction.CREATE_PLAN.value, tasks=steps)
@@ -805,10 +802,26 @@ async def _react_loop(
     consecutive_no_progress_steps = 0
     last_tool_signature: str | None = None
     repeated_signature_count = 0
+    tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
 
     while step < agent.max_steps:
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
         _rebuild_system_prompt(agent, messages, mission, state)
+
+        # Inject circuit breaker info for tools that have failed too many times
+        broken_tools = [name for name, count in tool_failure_counts.items() if count >= 3]
+        if broken_tools:
+            messages.append(
+                {
+                    "role": MessageRole.USER.value,
+                    "content": (
+                        "[System: The following tools are currently unavailable due to "
+                        f"repeated failures: {', '.join(broken_tools)}. Do NOT call "
+                        "these tools. Use alternative tools or provide your best "
+                        "answer without them.]"
+                    ),
+                }
+            )
 
         if use_stream:
             messages = await agent.message_history_manager.compress_messages(messages)
@@ -935,12 +948,16 @@ async def _react_loop(
                     paused = True
                 elif event_type == EventType.TOOL_RESULT:
                     tool_result_events += 1
+                    tool_name = str(evt.data.get("tool", "unknown"))
                     output = str(evt.data.get("output", ""))
                     if not evt.data.get("success", False):
                         no_progress_tool_results += 1
-                        failed_tool_names.append(str(evt.data.get("tool", "unknown")))
-                    elif _is_no_progress_tool_output(output):
-                        no_progress_tool_results += 1
+                        failed_tool_names.append(tool_name)
+                        tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                    else:
+                        tool_failure_counts[tool_name] = 0  # reset on success
+                        if _is_no_progress_tool_output(output):
+                            no_progress_tool_results += 1
                 yield evt
             if paused:
                 return
@@ -956,7 +973,7 @@ async def _react_loop(
                 repeated_signature_count = 0
             last_tool_signature = tool_signature or None
 
-            if consecutive_no_progress_steps >= 3 or repeated_signature_count >= 3:
+            if consecutive_no_progress_steps >= 2 or repeated_signature_count >= 3:
                 logger.warning(
                     "react_loop_stalled",
                     consecutive_no_progress_steps=consecutive_no_progress_steps,
@@ -1019,6 +1036,7 @@ async def _llm_call_and_process(
     plan_step_idx: int | None = None,
     plan_iteration: int | None = None,
     paused_phase: str | None = None,
+    tool_failure_counts: dict[str, int] | None = None,
 ) -> AsyncIterator[tuple[str, list[StreamEvent]]]:
     """Single non-streaming LLM call with tool processing.
 
@@ -1028,7 +1046,30 @@ async def _llm_call_and_process(
 
     This consolidates the repeated pattern shared by
     PlanAndExecuteStrategy and SparStrategy's action phase.
+
+    Args:
+        tool_failure_counts: Optional shared per-tool failure counter for
+            circuit breaker logic.  When a tool has failed >= 3 times a
+            system message is injected telling the LLM to avoid it.
     """
+    if tool_failure_counts is None:
+        tool_failure_counts = {}
+
+    # Inject circuit breaker info for tools that have failed too many times
+    broken_tools = [name for name, count in tool_failure_counts.items() if count >= 3]
+    if broken_tools:
+        messages.append(
+            {
+                "role": MessageRole.USER.value,
+                "content": (
+                    "[System: The following tools are currently unavailable due to "
+                    f"repeated failures: {', '.join(broken_tools)}. Do NOT call "
+                    "these tools. Use alternative tools or provide your best "
+                    "answer without them.]"
+                ),
+            }
+        )
+
     events: list[StreamEvent] = []
     result = await agent.llm_provider.complete(
         messages=messages,
@@ -1069,8 +1110,13 @@ async def _llm_call_and_process(
             event_type = _ensure_event_type(e)
             if event_type == EventType.ASK_USER:
                 paused = True
-            elif event_type == EventType.TOOL_RESULT and not e.data.get("success", False):
-                failed_tool_names.append(str(e.data.get("tool", "unknown")))
+            elif event_type == EventType.TOOL_RESULT:
+                tool_name = str(e.data.get("tool", "unknown"))
+                if not e.data.get("success", False):
+                    failed_tool_names.append(tool_name)
+                    tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                else:
+                    tool_failure_counts[tool_name] = 0  # reset on success
             events.append(e)
         if not paused and failed_tool_names:
             messages.append(_build_retry_nudge(failed_tool_names))
