@@ -87,7 +87,6 @@ class TestActivateSkillTool:
         mock_agent = MagicMock()
         mock_skill_manager = MagicMock()
         mock_skill_manager.list_skills.return_value = ["skill-a", "skill-b"]
-        mock_skill_manager._registry = MagicMock()
         mock_agent.skill_manager = mock_skill_manager
         mock_agent.activate_skill.return_value = False
 
@@ -97,8 +96,8 @@ class TestActivateSkillTool:
         assert result["success"] is False
         assert "not found" in result["error"]
         assert result["available_skills"] == ["skill-a", "skill-b"]
-        # Verify auto-refresh was attempted
-        mock_skill_manager._registry.refresh.assert_called_once()
+        # Verify auto-refresh was attempted via public method
+        mock_skill_manager.refresh.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_skill_found_after_auto_refresh(self, tool):
@@ -108,7 +107,6 @@ class TestActivateSkillTool:
         mock_skill.has_workflow = False
 
         mock_skill_manager = MagicMock()
-        mock_skill_manager._registry = MagicMock()
         mock_skill_manager.active_skill = mock_skill
 
         mock_agent = MagicMock()
@@ -121,7 +119,7 @@ class TestActivateSkillTool:
 
         assert result["success"] is True
         assert result["skill_name"] == "new-skill"
-        mock_skill_manager._registry.refresh.assert_called_once()
+        mock_skill_manager.refresh.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_skill_without_workflow(self, tool):
@@ -143,7 +141,7 @@ class TestActivateSkillTool:
         assert result["success"] is True
         assert result["skill_name"] == "simple-skill"
         assert result["has_workflow"] is False
-        assert "aktiviert" in result["message"]
+        assert "activated" in result["message"]
 
     @pytest.mark.asyncio
     async def test_execute_skill_with_workflow(self, tool):

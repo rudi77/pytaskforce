@@ -132,11 +132,9 @@ class ActivateSkillTool(BaseTool):
 
         if not activated:
             # Auto-refresh: the skill may have been created at runtime (e.g. via file_write)
-            registry = getattr(self._agent_ref.skill_manager, "_registry", None)
-            if registry is not None and hasattr(registry, "refresh"):
-                logger.info("activate_skill.auto_refresh", skill_name=skill_name)
-                registry.refresh()
-                activated = self._agent_ref.activate_skill(skill_name)
+            logger.info("activate_skill.auto_refresh", skill_name=skill_name)
+            self._agent_ref.skill_manager.refresh()
+            activated = self._agent_ref.activate_skill(skill_name)
 
         if not activated:
             available = self._agent_ref.skill_manager.list_skills()
@@ -158,7 +156,7 @@ class ActivateSkillTool(BaseTool):
             "skill_name": skill.name,
             "has_workflow": False,
             "message": (
-                f"Skill '{skill.name}' aktiviert. " "Folge den Skill-Anweisungen im System-Prompt."
+                f"Skill '{skill.name}' activated. Follow the skill instructions in the system prompt."
             ),
         }
 
