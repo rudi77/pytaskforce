@@ -63,7 +63,7 @@ class AppendMessageRequest(BaseModel):
     """Message to send to the agent within a conversation."""
 
     message: str = Field(..., max_length=32_000, description="User message content.")
-    profile: str = Field(default="dev", description="Agent profile.")
+    profile: str = Field(default="butler", description="Agent profile.")
 
 
 class AppendMessageResponse(BaseModel):

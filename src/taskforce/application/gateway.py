@@ -565,7 +565,7 @@ class CommunicationGateway:
         attachments = message.metadata.get("attachments")
         queue_metadata: dict[str, Any] = {
             **message.metadata,
-            "profile": options.profile or "dev",
+            "profile": options.profile or "butler",
             "channel_conversation_id": message.conversation_id,
             "user_context": options.user_context,
             "agent_id": options.agent_id,

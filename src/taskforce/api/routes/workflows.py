@@ -40,7 +40,7 @@ class ResumeWorkflowRequest(BaseModel):
 class ResumeAndContinueRequest(ResumeWorkflowRequest):
     """Payload for resuming and immediately continuing workflow execution."""
 
-    profile: str = Field(default="dev")
+    profile: str = Field(default="butler")
 
 
 @router.post("/wait")

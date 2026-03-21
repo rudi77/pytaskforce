@@ -20,7 +20,7 @@ def list_tools(
     """List available tools."""
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
 
     async def _list_tools():
         factory = AgentFactory()
@@ -51,7 +51,7 @@ def inspect_tool(
     """Inspect tool details and parameters."""
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
 
     async def _inspect_tool():
         factory = AgentFactory()

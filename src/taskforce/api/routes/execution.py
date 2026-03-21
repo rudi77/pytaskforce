@@ -80,7 +80,7 @@ REQUEST_EXAMPLES = {
         "summary": "Plugin agent (automatically discovered)",
         "value": {
             "mission": "Prüfe die Rechnung invoice.pdf",
-            "profile": "dev",
+            "profile": "butler",
             "agent_id": "accounting_agent",
         },
     },
@@ -259,7 +259,7 @@ class ExecuteMissionRequest(BaseModel):
         user_id: User identifier for RAG security filtering (optional).
         org_id: Organization identifier for RAG security filtering.
         scope: Access scope for RAG security filtering (optional).
-        profile: Agent profile to use (default: "dev").
+        profile: Agent profile to use (default: "butler").
         planning_strategy: Optional Agent planning strategy override.
         planning_strategy_params: Optional parameters for planning strategy.
 
@@ -319,8 +319,8 @@ class ExecuteMissionRequest(BaseModel):
         description="Access scope for RAG security filtering."
     )
     profile: str = Field(
-        default="dev",
-        description="Agent profile to use (e.g., dev, coding_agent, rag_agent).",
+        default="butler",
+        description="Agent profile to use (e.g., butler, coding_agent, rag_agent).",
     )
     agent_id: str | None = Field(
         default=None,

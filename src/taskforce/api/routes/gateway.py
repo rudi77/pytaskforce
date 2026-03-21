@@ -61,7 +61,7 @@ class GatewayMessageRequest(BaseModel):
         description="Optional session ID override.",
     )
     profile: str = Field(
-        default="dev",
+        default="butler",
         description="Agent profile to use.",
     )
     user_id: str | None = Field(
@@ -246,7 +246,7 @@ async def handle_webhook(
     channel: str,
     request: Request,
     profile: str = Query(
-        default="dev",
+        default="butler",
         description="Agent profile to use for this channel's webhook.",
     ),
     plugin_path: str | None = Query(

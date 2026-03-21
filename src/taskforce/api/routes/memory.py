@@ -20,7 +20,7 @@ router = APIRouter(prefix="/memory")
 class ConsolidateRequest(BaseModel):
     """Request body for triggering consolidation."""
 
-    profile: str = Field("dev", description="Profile to load config from")
+    profile: str = Field("butler", description="Profile to load config from")
     strategy: str = Field("batch", description="Consolidation strategy")
     max_sessions: int = Field(20, description="Max sessions to process")
     session_ids: list[str] | None = Field(None, description="Specific sessions")
@@ -109,7 +109,7 @@ async def trigger_consolidation(body: ConsolidateRequest) -> ConsolidateResponse
 
 @router.get("/experiences", response_model=list[ExperienceSummary])
 async def list_experiences(
-    profile: str = "dev",
+    profile: str = "butler",
     limit: int = 20,
     unprocessed: bool = False,
 ) -> list[ExperienceSummary]:
@@ -139,7 +139,7 @@ async def list_experiences(
 
 @router.get("/consolidations", response_model=list[ConsolidationHistoryItem])
 async def list_consolidations(
-    profile: str = "dev",
+    profile: str = "butler",
     limit: int = 10,
 ) -> list[ConsolidationHistoryItem]:
     """List past consolidation runs."""

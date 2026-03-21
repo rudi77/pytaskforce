@@ -190,7 +190,7 @@ class AgentExecutor:
 
         Args:
             mission: Mission description (what to accomplish)
-            profile: Configuration profile (dev/staging/prod)
+            profile: Configuration profile (butler/coding_agent/rag_agent)
             session_id: Optional existing session to resume
             conversation_history: Optional conversation history for chat context
             progress_callback: Optional callback for progress updates
@@ -311,7 +311,7 @@ class AgentExecutor:
 
         Args:
             mission: Mission description
-            profile: Configuration profile (dev/staging/prod)
+            profile: Configuration profile (butler/coding_agent/rag_agent)
             session_id: Optional existing session to resume
             conversation_history: Optional conversation history for chat context
             user_context: Optional user context for RAG security filtering
@@ -949,7 +949,7 @@ class AgentExecutor:
 
         return await self.factory.create_agent_with_plugin(
             plugin_path=str(plugin_path_abs),
-            profile="dev",
+            profile="butler",
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,

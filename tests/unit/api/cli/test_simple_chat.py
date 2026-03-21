@@ -113,7 +113,7 @@ class DummyFactory:
 def _build_runner(agent: DummyAgent, telegram_polling: bool = False) -> SimpleChatRunner:
     runner = SimpleChatRunner(
         session_id="session-id",
-        profile="dev",
+        profile="butler",
         agent=agent,
         stream=True,
         user_context=None,
@@ -317,7 +317,7 @@ async def test_telegram_inbound_message_routes_via_gateway() -> None:
     assert inbound_message.conversation_id == "12345"
     assert inbound_message.sender_id == "67890"
     assert inbound_message.message == "Hallo Agent"
-    assert options.profile == "dev"
+    assert options.profile == "butler"
 
 
 @pytest.mark.asyncio

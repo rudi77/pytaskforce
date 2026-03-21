@@ -32,7 +32,7 @@ def consolidate(
 ) -> None:
     """Trigger memory consolidation of captured experiences."""
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
 
     async def _consolidate() -> None:
         from taskforce.application.consolidation_service import (
@@ -101,7 +101,7 @@ def experiences(
 ) -> None:
     """List captured session experiences."""
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
 
     async def _list() -> None:
         from taskforce.application.infrastructure_builder import InfrastructureBuilder
@@ -148,7 +148,7 @@ def stats(
 ) -> None:
     """Show memory and consolidation statistics."""
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
 
     async def _stats() -> None:
         from taskforce.application.infrastructure_builder import InfrastructureBuilder

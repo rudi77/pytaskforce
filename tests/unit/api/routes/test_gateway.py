@@ -200,7 +200,7 @@ class TestHandleWebhook:
         app.dependency_overrides.clear()
 
     def test_webhook_default_profile(self):
-        """Webhook without profile query param defaults to 'dev'."""
+        """Webhook without profile query param defaults to 'butler'."""
         from taskforce.api.dependencies import get_gateway, get_inbound_adapters
 
         gw = _mock_gateway()
@@ -218,7 +218,7 @@ class TestHandleWebhook:
         call_args = gw.handle_message.call_args
         options = call_args.args[1] if len(call_args.args) > 1 else None
         assert options is not None
-        assert options.profile == "dev"
+        assert options.profile == "butler"
         assert options.plugin_path is None
         app.dependency_overrides.clear()
 

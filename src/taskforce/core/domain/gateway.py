@@ -36,7 +36,7 @@ class GatewayOptions:
     """Execution options passed through the gateway to the agent.
 
     Attributes:
-        profile: Agent profile to use (e.g. 'dev', 'coding_agent').
+        profile: Agent profile to use (e.g. 'butler', 'coding_agent').
         session_id: Optional explicit session ID override.
         user_context: Optional RAG security context (user_id, org_id, scope).
         agent_id: Optional agent ID override.
@@ -45,7 +45,7 @@ class GatewayOptions:
         plugin_path: Optional plugin path for external agent tools.
     """
 
-    profile: str = "dev"
+    profile: str = "butler"
     session_id: str | None = None
     user_context: dict[str, Any] | None = None
     agent_id: str | None = None

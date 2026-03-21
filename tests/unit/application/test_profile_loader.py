@@ -19,14 +19,14 @@ from taskforce.application.profile_loader import (
 
 @pytest.fixture
 def config_dir(tmp_path: Path) -> Path:
-    """Create a temporary config directory with a dev.yaml profile."""
-    dev_config = {
-        "profile": "dev",
+    """Create a temporary config directory with a butler.yaml profile."""
+    butler_config = {
+        "profile": "butler",
         "persistence": {"type": "file", "work_dir": ".taskforce"},
         "agent": {"max_steps": 30},
         "tools": DEFAULT_TOOL_NAMES,
     }
-    (tmp_path / "dev.yaml").write_text(yaml.dump(dev_config))
+    (tmp_path / "butler.yaml").write_text(yaml.dump(butler_config))
     return tmp_path
 
 
@@ -80,12 +80,12 @@ class TestProfileLoaderLoad:
     """Tests for ProfileLoader.load()."""
 
     def test_load_existing_profile(self, loader: ProfileLoader) -> None:
-        config = loader.load("dev")
-        assert config["profile"] == "dev"
+        config = loader.load("butler")
+        assert config["profile"] == "butler"
         assert config["agent"]["max_steps"] == 30
 
     def test_load_returns_all_keys(self, loader: ProfileLoader) -> None:
-        config = loader.load("dev")
+        config = loader.load("butler")
         assert "tools" in config
         assert config["tools"] == DEFAULT_TOOL_NAMES
 
@@ -184,8 +184,8 @@ class TestProfileLoaderLoadSafe:
     """Tests for ProfileLoader.load_safe()."""
 
     def test_load_safe_existing_profile(self, loader: ProfileLoader) -> None:
-        config = loader.load_safe("dev")
-        assert config["profile"] == "dev"
+        config = loader.load_safe("butler")
+        assert config["profile"] == "butler"
 
     def test_load_safe_missing_returns_fallback(
         self, loader: ProfileLoader
@@ -214,11 +214,11 @@ class TestProfileLoaderLoadSafe:
 class TestProfileLoaderGetDefaults:
     """Tests for ProfileLoader.get_defaults()."""
 
-    def test_get_defaults_loads_dev(self, loader: ProfileLoader) -> None:
+    def test_get_defaults_loads_butler(self, loader: ProfileLoader) -> None:
         config = loader.get_defaults()
-        assert config["profile"] == "dev"
+        assert config["profile"] == "butler"
 
-    def test_get_defaults_fallback_when_no_dev(self, tmp_path: Path) -> None:
+    def test_get_defaults_fallback_when_no_butler(self, tmp_path: Path) -> None:
         loader = ProfileLoader(tmp_path)
         config = loader.get_defaults()
         assert config == _FALLBACK_CONFIG

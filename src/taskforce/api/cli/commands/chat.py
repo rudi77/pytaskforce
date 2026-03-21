@@ -75,7 +75,7 @@ def _run_chat(
     """
     # Get global options from context, allow local override
     global_opts = ctx.obj or {}
-    profile = profile or global_opts.get("profile", "dev")
+    profile = profile or global_opts.get("profile", "butler")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
     # Configure logging to file to avoid interfering with console output

@@ -80,7 +80,7 @@ class TestExecuteMission:
 
         assert response.status_code == 200
         call_kwargs = mock_executor.execute_mission.call_args
-        assert call_kwargs.kwargs["profile"] == "dev"
+        assert call_kwargs.kwargs["profile"] == "butler"
 
     def test_execute_missing_mission_returns_422(self, client):
         response = client.post("/api/v1/execute", json={})

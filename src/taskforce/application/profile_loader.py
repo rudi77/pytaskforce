@@ -40,7 +40,7 @@ DEFAULT_TOOL_NAMES: list[str] = [
     "ask_user",
 ]
 
-# Minimal fallback config when no ``dev.yaml`` profile exists.
+# Minimal fallback config when no profile YAML file exists.
 _FALLBACK_CONFIG: dict[str, Any] = {
     "persistence": {"type": "file", "work_dir": ".taskforce"},
     "llm": {
@@ -96,7 +96,7 @@ class ProfileLoader:
         2. ``{config_dir}/custom/{profile}.yaml``
 
         Args:
-            profile: Profile name (e.g. ``"dev"``, ``"coding_agent"``).
+            profile: Profile name (e.g. ``"butler"``, ``"coding_agent"``).
 
         Returns:
             Parsed YAML configuration dictionary.
@@ -161,12 +161,12 @@ class ProfileLoader:
             return copy.deepcopy(_FALLBACK_CONFIG)
 
     def get_defaults(self) -> dict[str, Any]:
-        """Return default configuration (loads ``dev`` or falls back).
+        """Return default configuration (loads ``butler`` or falls back).
 
         Returns:
             Configuration dictionary.
         """
-        return self.load_safe("dev")
+        return self.load_safe("butler")
 
     # ------------------------------------------------------------------
     # Plugin config merging
