@@ -1,0 +1,166 @@
+# AutoOptim config: Butler Agent Efficiency Optimization
+#
+# Optimizes the Butler multi-agent system for fewer steps, fewer tokens,
+# and faster execution while maintaining task completion quality.
+#
+# Usage:
+#   cd C:\Users\rudi\source\pytaskforce
+#   autooptim run --config tests/benchmarks/autooptim/config.yaml
+
+name: butler-efficiency-optimization
+description: >
+  Optimize the Butler coordinator agent and its sub-agents for execution
+  efficiency: fewer LLM round-trips, fewer tokens, less wall-clock time,
+  while maintaining correct task completion.
+
+project_root: "C:/Users/rudi/source/pytaskforce"
+
+categories:
+  # --- Category 1: YAML config parameters (low risk) ---
+  config:
+    weight: 0.40
+    mutator:
+      type: yaml
+      allowed_paths:
+        - "src/taskforce/configs/butler.yaml"
+        - "src/taskforce/configs/custom/pc-agent.yaml"
+        - "src/taskforce/configs/custom/research_agent.yaml"
+        - "src/taskforce/configs/custom/doc-agent.yaml"
+      safe_keys:
+        agent:
+          - planning_strategy
+          - max_steps
+          - planning_strategy_params
+          - max_parallel_tools
+        context_policy:
+          - max_items
+          - max_chars_per_item
+          - max_total_chars
+        context_management:
+          - summary_threshold
+          - compression_trigger
+        logging:
+          - level
+        # NOTE: 'tools' is deliberately ABSENT — tool lists must not change
+      validation_rules:
+        agent.max_steps:
+          type: int
+          min: 1
+          max: 50
+        agent.planning_strategy:
+          type: str
+          choices: [native_react, plan_and_execute, plan_and_react, spar]
+        agent.planning_strategy_params.reflect_every_step:
+          type: bool
+        agent.planning_strategy_params.max_step_iterations:
+          type: int
+          min: 1
+          max: 10
+        context_policy.max_items:
+          type: positive_int
+        context_policy.max_chars_per_item:
+          type: positive_int
+        context_policy.max_total_chars:
+          type: positive_int
+        context_management.summary_threshold:
+          type: positive_int
+        context_management.compression_trigger:
+          type: positive_int
+    context_files:
+      - "src/taskforce/configs/butler.yaml"
+      - "src/taskforce/configs/custom/pc-agent.yaml"
+
+  # --- Category 2: System prompts (medium risk) ---
+  prompt:
+    weight: 0.40
+    mutator:
+      type: text
+      allowed_paths:
+        - "src/taskforce/core/prompts/"
+        - "src/taskforce/configs/custom/"
+    context_files:
+      - "src/taskforce/core/prompts/autonomous_prompts.py"
+      - "src/taskforce/configs/custom/pc-agent.yaml"
+      - "src/taskforce/configs/custom/research_agent.yaml"
+      - "src/taskforce/configs/custom/doc-agent.yaml"
+
+  # --- Category 3: Core agent logic (higher risk) ---
+  code:
+    weight: 0.20
+    mutator:
+      type: code
+      allowed_paths:
+        - "src/taskforce/core/domain/planning_strategy.py"
+        - "src/taskforce/core/domain/lean_agent_components/"
+        - "src/taskforce/core/domain/context_builder.py"
+        - "src/taskforce/core/domain/context_policy.py"
+        - "src/taskforce/core/domain/token_budgeter.py"
+      blocked_paths:
+        - "src/taskforce/application/factory.py"
+        - "src/taskforce/application/executor.py"
+        - "src/taskforce/api/"
+        - "src/taskforce/core/interfaces/"
+        - "src/taskforce/infrastructure/tools/"
+        - "tests/"
+      preflight:
+        - "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe -c \"import taskforce\""
+        - "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe -m pytest tests/unit/core/ -x -q --tb=no"
+    context_files:
+      - "src/taskforce/core/domain/planning_strategy.py"
+      - "src/taskforce/core/domain/context_policy.py"
+      - "src/taskforce/core/domain/lean_agent_components/message_history_manager.py"
+
+# --- Evaluator ---
+evaluator:
+  type: command
+  command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
+  quick_task: "quick"
+  full_task: "full"
+  timeout: 300
+
+# --- Metrics ---
+metric:
+  scores:
+    - name: task_completion
+      range: [0.0, 1.0]
+    - name: avg_steps
+      type: lower_is_better
+    - name: avg_input_tokens
+      type: lower_is_better
+    - name: avg_ratio
+      type: lower_is_better
+    - name: avg_wall_seconds
+      type: lower_is_better
+    - name: total_tool_calls
+      type: lower_is_better
+  composite:
+    quality:
+      weight: 0.40
+      components:
+        task_completion: 1.0
+    efficiency:
+      weight: 0.60
+      type: ratio_to_baseline
+      components:
+        - avg_steps
+        - avg_input_tokens
+        - avg_wall_seconds
+        - total_tool_calls
+
+# --- Proposer ---
+proposer:
+  model: "azure/gpt-5.4"
+  temperature: 0.7
+  max_tokens: 6000
+  system_prompt_file: "proposer_system.md"
+  user_template_file: "proposer_user.md"
+
+# --- Runner settings ---
+runner:
+  max_iterations: 20
+  max_cost_usd: 30.0
+  eval_runs: 2
+  tolerance: 0.01
+  full_eval_every_n: 5
+  large_improvement_threshold: 0.05
+  eval_mode: quick
