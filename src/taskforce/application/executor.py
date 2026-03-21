@@ -37,6 +37,7 @@ from taskforce.core.domain.errors import (
 )
 from taskforce.core.domain.exceptions import AgentExecutionError
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
+from taskforce.core.domain.token_analytics import ExecutionTokenSummary
 
 logger = structlog.get_logger()
 
@@ -213,6 +214,7 @@ class AgentExecutor:
         # Delegate to streaming implementation and collect result
         result: ExecutionResult | None = None
         accumulated_usage = TokenUsage()
+        token_analytics_data: dict | None = None
         latest_final_answer: str | None = None
         async for update in self.execute_mission_streaming(
             mission=mission,
@@ -231,19 +233,22 @@ class AgentExecutor:
 
             # Accumulate token usage from TOKEN_USAGE events
             evt = update.event_type
-            is_token_usage = (
-                evt == EventType.TOKEN_USAGE or evt == EventType.TOKEN_USAGE.value
-            )
+            is_token_usage = evt == EventType.TOKEN_USAGE or evt == EventType.TOKEN_USAGE.value
             if is_token_usage:
                 usage = update.details
                 accumulated_usage.prompt_tokens += usage.get("prompt_tokens", 0)
                 accumulated_usage.completion_tokens += usage.get("completion_tokens", 0)
                 accumulated_usage.total_tokens += usage.get("total_tokens", 0)
 
-            # Keep track of FINAL_ANSWER to avoid leaking generic COMPLETE text
-            is_final_answer = (
-                evt == EventType.FINAL_ANSWER or evt == EventType.FINAL_ANSWER.value
+            # Capture detailed token analytics (emitted once at end of execution)
+            is_token_analytics = (
+                evt == EventType.TOKEN_ANALYTICS or evt == EventType.TOKEN_ANALYTICS.value
             )
+            if is_token_analytics:
+                token_analytics_data = update.details
+
+            # Keep track of FINAL_ANSWER to avoid leaking generic COMPLETE text
+            is_final_answer = evt == EventType.FINAL_ANSWER or evt == EventType.FINAL_ANSWER.value
             if is_final_answer:
                 answer = str(update.details.get("content") or update.message or "").strip()
                 if answer:
@@ -265,6 +270,14 @@ class AgentExecutor:
         # Attach accumulated token usage to result
         if accumulated_usage.total_tokens > 0:
             result.token_usage = accumulated_usage
+
+        # Attach detailed token analytics
+        if token_analytics_data:
+            try:
+                result.token_analytics = ExecutionTokenSummary.from_dict(token_analytics_data)
+            except Exception:
+                # Store raw dict as fallback
+                result.token_analytics = token_analytics_data
 
         return result
 
@@ -377,7 +390,10 @@ class AgentExecutor:
         execution_failed = False
         try:
             async for update in self._execute_streaming(
-                agent, mission, resolved_session_id, user_context=user_context,
+                agent,
+                mission,
+                resolved_session_id,
+                user_context=user_context,
             ):
                 yield update
 
@@ -404,7 +420,11 @@ class AgentExecutor:
             # Finalize experience tracking with correct status.
             # Consolidation runs in background to avoid blocking the next request.
             if self._experience_tracker is not None:
-                status = ExecutionStatus.FAILED.value if execution_failed else ExecutionStatus.COMPLETED.value
+                status = (
+                    ExecutionStatus.FAILED.value
+                    if execution_failed
+                    else ExecutionStatus.COMPLETED.value
+                )
                 experience = await self._experience_tracker.end_session(status)
                 if experience and self._consolidation_service is not None:
                     self._requests_since_consolidation += 1
@@ -1048,11 +1068,7 @@ class AgentExecutor:
 
                     # Auto-promote plain ask_user to channel-targeted when
                     # the message originated from a channel (e.g. Telegram).
-                    if (
-                        source_channel
-                        and self._is_plain_ask_user(event)
-                        and self._gateway
-                    ):
+                    if source_channel and self._is_plain_ask_user(event) and self._gateway:
                         if event.data is None:
                             event.data = {}
                         event.data["channel"] = source_channel

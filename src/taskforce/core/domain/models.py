@@ -86,9 +86,7 @@ class StreamEvent:
             Dictionary with event_type, data, and ISO-formatted timestamp.
         """
         event_type_value = (
-            self.event_type.value
-            if isinstance(self.event_type, EventType)
-            else self.event_type
+            self.event_type.value if isinstance(self.event_type, EventType) else self.event_type
         )
         return {
             "event_type": event_type_value,
@@ -204,9 +202,8 @@ class ExecutionResult:
     execution_history: list[dict[str, Any]] = field(default_factory=list)
     todolist_id: str | None = None
     pending_question: PendingQuestion | dict[str, Any] | None = None
-    token_usage: TokenUsage | dict[str, int] = field(
-        default_factory=lambda: TokenUsage()
-    )
+    token_usage: TokenUsage | dict[str, int] = field(default_factory=lambda: TokenUsage())
+    token_analytics: Any | None = None  # ExecutionTokenSummary (optional)
 
     @property
     def status_value(self) -> str:
@@ -238,5 +235,9 @@ class ExecutionResult:
             "todolist_id": self.todolist_id,
             "pending_question": pending_q,
             "token_usage": token_usage_dict,
+            "token_analytics": (
+                self.token_analytics.to_dict()
+                if self.token_analytics and hasattr(self.token_analytics, "to_dict")
+                else self.token_analytics
+            ),
         }
-
