@@ -202,6 +202,11 @@ class SkillManager:
             return []
         return self._registry.list_skills()
 
+    def refresh(self) -> None:
+        """Re-scan skill directories to discover newly created skills."""
+        if self._registry is not None:
+            self._registry.refresh()
+
     def get_skill(self, name: str) -> Skill | None:
         """Get a skill by name."""
         if not self._registry:
