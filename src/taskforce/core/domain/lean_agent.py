@@ -37,7 +37,6 @@ from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
     PlanningStrategy,
 )
-from taskforce.core.domain.token_analytics import TokenAnalyticsCollector
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.logging import LoggerProtocol
@@ -225,10 +224,6 @@ class Agent:
 
         # Resource cleanup helper
         self.resource_closer = ResourceCloser(logger=self.logger)
-
-        # Token analytics collector (initialised with placeholder session ID;
-        # reset with the real session ID when execution starts).
-        self.token_analytics = TokenAnalyticsCollector(session_id="pending")
 
     @property
     def system_prompt(self) -> str:
