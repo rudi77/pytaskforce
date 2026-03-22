@@ -44,8 +44,12 @@ class ConfigurableMetric:
         efficiency_value = self._compute_group(
             self.config.efficiency, scores, baseline_scores
         )
+        extra_value = sum(
+            self._compute_group(group, scores, baseline_scores)
+            for group in self.config.extra_groups.values()
+        )
 
-        return quality_value + efficiency_value
+        return quality_value + efficiency_value + extra_value
 
     def _compute_group(
         self,

@@ -134,6 +134,7 @@ class MetricConfig:
             weight=0.1, components=[], type="ratio_to_baseline"
         )
     )
+    extra_groups: dict[str, CompositeGroup] = field(default_factory=dict)
 
 
 @dataclass

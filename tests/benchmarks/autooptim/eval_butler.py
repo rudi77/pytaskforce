@@ -21,13 +21,19 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from taskforce.application.executor import AgentExecutor
+from taskforce.application.factory import AgentFactory
 from taskforce.application.token_analytics_facade import get_execution_token_summary
 from taskforce.core.domain.enums import EventType
+
+if TYPE_CHECKING:
+    from taskforce.core.domain.lean_agent import Agent
 
 # ---------------------------------------------------------------------------
 # Mission definitions: (display_name, score_prefix, prompt)
@@ -344,6 +350,7 @@ async def _llm_quality_grade(answer: str, mission: str) -> float:
 async def run_mission(
     name: str, prefix: str, mission: str, executor: AgentExecutor,
     session_id: str | None = None,
+    agent: "Agent | None" = None,
 ) -> dict:
     """Run a single mission and return metrics + tool trace."""
     # Drain leftover analytics
@@ -360,6 +367,7 @@ async def run_mission(
         mission=mission,
         profile=PROFILE,
         session_id=session_id,
+        agent=agent,
     ):
         event = update.event_type
         details = update.details or {}
@@ -399,7 +407,7 @@ async def run_mission(
         "prefix": prefix,
         "wall_seconds": wall_seconds,
         "completed": bool(final_answer) and not had_error,
-        "final_answer": final_answer[:300],
+        "final_answer": final_answer[:2000],
         "tool_trace": tool_trace,
         "errors": errors,
         "notification_count": notification_count,
@@ -433,28 +441,33 @@ async def run_memory_sequence(
 ) -> dict:
     """Run a multi-turn memory sequence and check the final answer.
 
-    All steps in the sequence share the same executor (and thus the same
-    session/memory state). Only the final "test" step is scored.
+    Each sequence runs in an isolated temporary work directory so that
+    memory from other sequences does not leak in. All steps within the
+    sequence share the same agent and session for memory continuity.
     """
     steps = seq["sequence"]
     prefix = seq["prefix"]
     all_results: list[dict] = []
 
-    # All steps in a memory sequence share the same session so that
-    # memory written in early turns is visible in later turns.
     shared_session_id = f"bench-mem-{prefix}-{uuid.uuid4().hex[:8]}"
 
-    for step_name, prompt in steps:
-        r = await run_mission(
-            f"{seq['name']}/{step_name}", prefix, prompt, executor,
-            session_id=shared_session_id,
-        )
-        all_results.append(r)
-        print(
-            f"    [{seq['name']}/{step_name}] steps={r['steps']} "
-            f"ok={r['completed']}",
-            file=sys.stderr,
-        )
+    # Isolated work_dir per sequence prevents memory leakage between sequences
+    with tempfile.TemporaryDirectory(prefix=f"bench_{prefix}_") as tmp_dir:
+        factory = AgentFactory()
+        agent = await factory.create_agent(profile=PROFILE, work_dir=tmp_dir)
+
+        for step_name, prompt in steps:
+            r = await run_mission(
+                f"{seq['name']}/{step_name}", prefix, prompt, executor,
+                session_id=shared_session_id,
+                agent=agent,
+            )
+            all_results.append(r)
+            print(
+                f"    [{seq['name']}/{step_name}] steps={r['steps']} "
+                f"ok={r['completed']}",
+                file=sys.stderr,
+            )
 
     last = all_results[-1]
 
@@ -491,7 +504,7 @@ async def run_memory_sequence(
         "prefix": prefix,
         "wall_seconds": total_wall,
         "completed": all_completed,
-        "final_answer": last.get("final_answer", "")[:300],
+        "final_answer": last.get("final_answer", "")[:2000],
         "tool_trace": merged_trace,
         "errors": [e for r in all_results for e in r["errors"]],
         "notification_count": total_notif,
@@ -708,8 +721,7 @@ async def main(task_name: str) -> None:
     if run_memory:
         print("\n  --- Memory & Learning Sequences ---", file=sys.stderr)
         for seq in MEMORY_MISSIONS:
-            seq_executor = AgentExecutor()  # Fresh executor per sequence for isolation
-            r = await run_memory_sequence(seq, seq_executor)
+            r = await run_memory_sequence(seq, executor)
             memory_results.append(r)
             recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
             print(

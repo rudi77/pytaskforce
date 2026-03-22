@@ -140,7 +140,23 @@ def _parse_metric(raw: dict) -> MetricConfig:
         type=efficiency_raw.get("type", "ratio_to_baseline"),
     )
 
-    return MetricConfig(scores=scores, quality=quality, efficiency=efficiency)
+    # Parse any additional composite groups (e.g. future_readiness)
+    extra_groups: dict[str, CompositeGroup] = {}
+    for group_name, group_raw in composite.items():
+        if group_name in ("quality", "efficiency"):
+            continue
+        if not isinstance(group_raw, dict):
+            continue
+        extra_groups[group_name] = CompositeGroup(
+            weight=group_raw.get("weight", 0.0),
+            components=group_raw.get("components", {}),
+            type=group_raw.get("type", "weighted_sum"),
+        )
+
+    return MetricConfig(
+        scores=scores, quality=quality, efficiency=efficiency,
+        extra_groups=extra_groups,
+    )
 
 
 def _parse_proposer(raw: dict, config_dir: Path) -> ProposerConfig:
