@@ -141,7 +141,7 @@ class ButlerDaemon:
         if config_path.exists():
             import yaml  # type: ignore[import-untyped]
 
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
         else:
             logger.warning(

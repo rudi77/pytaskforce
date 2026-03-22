@@ -81,7 +81,7 @@ async def _show_status() -> None:
         console.print("[yellow]Butler daemon is not running (no status file found).[/yellow]")
         return
 
-    data = json.loads(status_path.read_text())
+    data = json.loads(status_path.read_text(encoding="utf-8"))
     table = Table(title="Butler Status")
     table.add_column("Component", style="cyan")
     table.add_column("Status", style="green")

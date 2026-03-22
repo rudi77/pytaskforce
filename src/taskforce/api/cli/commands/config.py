@@ -67,7 +67,7 @@ def show_profile(profile: str = typer.Argument(..., help="Profile name")):
         console.print(f"[red]Profile not found: {profile}[/red]")
         raise typer.Exit(1)
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     console.print(f"\n[bold]Profile:[/bold] {profile}")

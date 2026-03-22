@@ -120,7 +120,7 @@ class ProfileLoader:
                     f"Profile not found: {profile_path} or {custom_path}"
                 )
 
-        with open(profile_path) as f:
+        with open(profile_path, encoding="utf-8") as f:
             config: dict[str, Any] = yaml.safe_load(f)
 
         # Validate against Pydantic schema — logs a warning on failure

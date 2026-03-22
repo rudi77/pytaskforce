@@ -208,7 +208,7 @@ class CalendarTool:
         if not creds_path.exists():
             raise FileNotFoundError(f"Credentials file not found: {creds_path}")
 
-        with open(creds_path) as f:
+        with open(creds_path, encoding="utf-8") as f:
             creds_data = json.load(f)
 
         creds = credentials_cls.from_authorized_user_info(creds_data)

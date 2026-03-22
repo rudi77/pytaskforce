@@ -137,7 +137,7 @@ def _build_service(build: Any, credentials_cls: Any) -> Any:
     if not token_path.exists():
         raise ValueError("No credentials found. Run 'python scripts/google_auth.py' first.")
 
-    with open(token_path) as f:
+    with open(token_path, encoding="utf-8") as f:
         creds_data = json.load(f)
 
     creds = credentials_cls.from_authorized_user_info(creds_data)

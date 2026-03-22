@@ -36,7 +36,7 @@ class FileJobStore:
         path = self._dir / f"{job.job_id}.json"
         data = json.dumps(job.to_dict(), indent=2, default=str)
         tmp = path.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w") as f:
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
             await f.write(data)
         tmp.replace(path)
         logger.debug("job_store.saved", job_id=job.job_id, name=job.name)
@@ -56,7 +56,7 @@ class FileJobStore:
         jobs: list[ScheduleJob] = []
         for path in sorted(self._dir.glob("*.json")):
             try:
-                async with aiofiles.open(path) as f:
+                async with aiofiles.open(path, encoding="utf-8") as f:
                     raw = await f.read()
                 jobs.append(ScheduleJob.from_dict(json.loads(raw)))
             except Exception as exc:

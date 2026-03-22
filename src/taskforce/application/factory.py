@@ -832,7 +832,7 @@ class AgentFactory:
     async def _load_yaml_config(self, path: Path) -> dict[str, Any]:
         """Load and parse a YAML config file asynchronously."""
         try:
-            async with aiofiles.open(path) as f:
+            async with aiofiles.open(path, encoding="utf-8") as f:
                 content = await f.read()
             config = yaml.safe_load(content)
         except yaml.YAMLError as e:

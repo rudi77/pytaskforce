@@ -46,7 +46,7 @@ def show_mission(name: str = typer.Argument(..., help="Mission template name")):
         console.print(f"[red]Mission template not found: {name}[/red]")
         raise typer.Exit(1)
 
-    with open(mission_path) as f:
+    with open(mission_path, encoding="utf-8") as f:
         content = f.read()
 
     console.print(f"\n[bold]Mission:[/bold] {name}")

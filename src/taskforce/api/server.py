@@ -94,7 +94,7 @@ def _load_plugin_config() -> dict[str, Any]:
     if config_path and os.path.exists(config_path):
         import yaml
 
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
     # Return empty config - plugins can use their own defaults

@@ -113,7 +113,7 @@ class RuleEngine:
         if not self._store_path.exists():
             return
         try:
-            async with aiofiles.open(self._store_path) as f:
+            async with aiofiles.open(self._store_path, encoding="utf-8") as f:
                 raw = await f.read()
             data = json.loads(raw)
             for item in data:
@@ -129,7 +129,7 @@ class RuleEngine:
         data = [r.to_dict() for r in self._rules.values()]
         raw = json.dumps(data, indent=2, default=str)
         tmp = self._store_path.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w") as f:
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
             await f.write(raw)
         tmp.replace(self._store_path)
 

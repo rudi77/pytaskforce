@@ -206,7 +206,9 @@
       "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/)",
       "Bash(PYTHONPATH=src pytest -q -c /dev/null -p pytest_asyncio tests/unit/core/domain/test_message_history_manager.py::TestCompressMessages::test_compression_triggered_by_message_count -v)",
       "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_message_history_manager.py -v)",
-      "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)"
+      "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
+      "Bash(GIT_EDITOR=true git rebase --continue 2>&1)",
+      "Bash(GIT_EDITOR=true git rebase --continue)"
     ],
     "deny": [
       ".env",

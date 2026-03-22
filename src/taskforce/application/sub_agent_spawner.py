@@ -152,7 +152,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         config_path = self._find_agent_config(spec.specialist)
         if not config_path:
             return None
-        async with aiofiles.open(config_path) as handle:
+        async with aiofiles.open(config_path, encoding="utf-8") as handle:
             content = await handle.read()
             return yaml.safe_load(content) or None
 
