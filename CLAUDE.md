@@ -70,7 +70,7 @@ src/taskforce/
 ├── core/                      # LAYER 1: Pure Domain Logic
 │   ├── domain/                # Agent, LeanAgent, Planning, Events, Models
 │   │   └── lean_agent_components/  # Modular agent components
-│   ├── interfaces/            # Protocols (18 interface files, ~30 protocol definitions)
+│   ├── interfaces/            # Protocols (22 interface files, ~40 protocol definitions)
 │   ├── prompts/               # System prompts and templates
 │   ├── tools/                 # Core tool abstractions (converter, planner)
 │   └── utils/                 # Path and time utilities
@@ -186,7 +186,7 @@ from taskforce.api.routes.execution import execute_mission       # VIOLATION!
 
 All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base classes.
 
-**18 interface files** in `core/interfaces/` with **~30 protocol definitions**:
+**22 interface files** in `core/interfaces/` with **~40 protocol definitions**:
 
 | Protocol(s) | File | Purpose |
 |-------------|------|---------|
@@ -207,6 +207,15 @@ All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base
 | `SchedulerProtocol` | `scheduler.py` | Job scheduling (butler) |
 | `RuleEngineProtocol` | `rule_engine.py` | Rule evaluation (butler) |
 | `LearningStrategyProtocol` | `learning.py` | Automatic learning (butler) |
+| `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` | `auth.py` | OAuth2 authentication |
+| `ConsolidationProtocol` | `consolidation.py` | Memory consolidation |
+| `AgentStateProtocol` | `agent_state.py` | Agent state persistence |
+| `ChannelAskProtocol` | `channel_ask.py` | Channel-based user interaction |
+| `ExperienceProtocol` | `experience.py` | Session experience tracking |
+| `TokenEstimatorProtocol` | `token_estimator.py` | Token counting |
+| `ConversationProtocol` | `conversation.py` | Conversation management |
+| `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
+| `ButlerProtocol` | `butler.py` | Butler agent lifecycle |
 
 ```python
 # core/interfaces/state.py
@@ -253,7 +262,7 @@ agent = await factory.create_agent(
 **Rules:**
 - `config` and inline parameters are **mutually exclusive**
 - If `config` provided → all settings loaded from YAML file
-- If inline parameters → settings from parameters (with sensible defaults from `dev.yaml`)
+- If inline parameters → settings from parameters (with sensible defaults)
 
 ### 3. Planning Strategies
 
@@ -827,7 +836,7 @@ async def test_file_state_manager_saves_and_loads(tmp_path: Path):
 Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce/configs/`:
 
 - `butler.yaml` - **Default profile.** Event-driven personal assistant daemon (scheduling, rules, Google Workspace)
-- `dev.yaml` - Development profile with file-based persistence
+- `dev` - Development profile (resolved from built-in defaults, no physical YAML file)
 - `coding_agent.yaml` - Multi-agent coding orchestrator with sub-agents
 - `coding_analysis.yaml` - Code analysis specialist
 - `rag_agent.yaml` - RAG-enabled agent (Azure AI Search)
@@ -838,9 +847,9 @@ Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskfo
 - `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, test_engineer, doc_writer, research_agent, etc.)
 
 ```yaml
-# src/taskforce/configs/dev.yaml
-profile: dev
-specialist: null
+# Example: src/taskforce/configs/butler.yaml (default profile)
+profile: butler
+specialist: butler
 
 persistence:
   type: file
@@ -1219,6 +1228,15 @@ See `docs/architecture/section-10-deployment.md` for:
 - `scheduler.py` - `SchedulerProtocol` - job scheduling (butler)
 - `rule_engine.py` - `RuleEngineProtocol` - rule evaluation (butler)
 - `learning.py` - `LearningStrategyProtocol` - automatic learning (butler)
+- `auth.py` - `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` - OAuth2 authentication
+- `consolidation.py` - `ConsolidationProtocol` - memory consolidation
+- `agent_state.py` - `AgentStateProtocol` - agent state persistence
+- `channel_ask.py` - `ChannelAskProtocol` - channel-based user interaction
+- `experience.py` - `ExperienceProtocol` - session experience tracking
+- `token_estimator.py` - `TokenEstimatorProtocol` - token counting
+- `conversation.py` - `ConversationProtocol` - conversation management
+- `embeddings.py` - `EmbeddingsProtocol` - text embeddings
+- `butler.py` - `ButlerProtocol` - butler agent lifecycle
 
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
