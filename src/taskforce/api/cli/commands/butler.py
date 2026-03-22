@@ -16,6 +16,7 @@ console = Console()
 def butler_start(
     ctx: typer.Context,
     profile: str = typer.Option("butler", "--profile", "-p", help="Butler profile"),
+    role: str = typer.Option("", "--role", "-r", help="Butler role (e.g. accountant)"),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in background"),
 ) -> None:
     """Start the butler daemon."""
@@ -37,15 +38,19 @@ def butler_start(
             wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         )
 
-    console.print(f"[bold green]Starting butler daemon[/bold green] (profile: {profile})")
-    asyncio.run(_run_butler(profile))
+    role_name = role or None
+    role_info = f", role: {role_name}" if role_name else ""
+    console.print(
+        f"[bold green]Starting butler daemon[/bold green] (profile: {profile}{role_info})"
+    )
+    asyncio.run(_run_butler(profile, role_name))
 
 
-async def _run_butler(profile: str) -> None:
+async def _run_butler(profile: str, role: str | None = None) -> None:
     """Initialize and run the butler daemon."""
     from taskforce.api.butler_daemon import ButlerDaemon
 
-    daemon = ButlerDaemon(profile=profile)
+    daemon = ButlerDaemon(profile=profile, role=role)
     try:
         await daemon.start()
         console.print("[bold green]Butler daemon is running.[/bold green] Press Ctrl+C to stop.")
@@ -258,3 +263,85 @@ async def _list_schedules() -> None:
             job.last_run.isoformat()[:19] if job.last_run else "Never",
         )
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Roles sub-commands
+# ---------------------------------------------------------------------------
+
+roles_app = typer.Typer(help="Manage butler roles")
+app.add_typer(roles_app, name="roles")
+
+
+@roles_app.command("list")
+def roles_list(ctx: typer.Context) -> None:
+    """List available butler roles."""
+    from taskforce.application.butler_role_loader import ButlerRoleLoader
+    from taskforce.application.factory import AgentFactory
+
+    factory = AgentFactory()
+    loader = ButlerRoleLoader(config_dir=factory.config_dir)
+    roles = loader.list_available()
+
+    if not roles:
+        console.print("[yellow]No butler roles found.[/yellow]")
+        return
+
+    table = Table(title="Available Butler Roles")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="white")
+    table.add_column("Sub-Agents", style="green")
+    table.add_column("Tools", style="yellow")
+
+    for role in roles:
+        agent_names = ", ".join(a.get("specialist", "?") for a in role.sub_agents)
+        tool_count = str(len(role.tools))
+        table.add_row(role.name, role.description, agent_names, tool_count)
+
+    console.print(table)
+
+
+@roles_app.command("show")
+def roles_show(
+    ctx: typer.Context,
+    name: str = typer.Argument(help="Role name to show"),
+) -> None:
+    """Show details of a butler role."""
+    from taskforce.application.butler_role_loader import ButlerRoleLoader
+    from taskforce.application.factory import AgentFactory
+
+    factory = AgentFactory()
+    loader = ButlerRoleLoader(config_dir=factory.config_dir)
+
+    try:
+        role = loader.load(name)
+    except FileNotFoundError:
+        console.print(f"[red]Role '{name}' not found.[/red]")
+        raise typer.Exit(1) from None
+
+    console.print(f"\n[bold cyan]{role.name}[/bold cyan]")
+    if role.description:
+        console.print(f"  {role.description}\n")
+
+    if role.sub_agents:
+        console.print("[bold]Sub-Agents:[/bold]")
+        for agent in role.sub_agents:
+            spec = agent.get("specialist", "?")
+            desc = agent.get("description", "")
+            console.print(f"  - [cyan]{spec}[/cyan]: {desc}")
+        console.print()
+
+    if role.tools:
+        tool_names = []
+        for t in role.tools:
+            if isinstance(t, str):
+                tool_names.append(t)
+            elif isinstance(t, dict):
+                tool_names.append(t.get("type", str(t)))
+        console.print(f"[bold]Tools:[/bold] {', '.join(tool_names)}")
+
+    if role.persona_prompt:
+        preview = role.persona_prompt[:200].replace("\n", " ")
+        if len(role.persona_prompt) > 200:
+            preview += "..."
+        console.print(f"\n[bold]Persona prompt:[/bold] {preview}")

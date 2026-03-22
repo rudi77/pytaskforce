@@ -90,7 +90,9 @@ class SystemPromptAssembler:
             if specialist_prompt:
                 base_prompt += "\n\n" + specialist_prompt
 
-        # Inject dynamic sub-agent list if the prompt has the placeholder
+        # Inject dynamic sub-agent list if the prompt has the placeholder.
+        # This works for both specialist prompts and custom prompts (e.g.
+        # from butler role definitions that include {{SUB_AGENTS_SECTION}}).
         if sub_agents and "{{SUB_AGENTS_SECTION}}" in base_prompt:
             base_prompt = base_prompt.replace(
                 "{{SUB_AGENTS_SECTION}}",
