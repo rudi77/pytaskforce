@@ -9,6 +9,8 @@ and returned as a batch.
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -17,6 +19,11 @@ from taskforce.core.domain.sub_agents import SubAgentSpec
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.base_tool import BaseTool
+
+# Per-agent result summary limit (chars). If a sub-agent's final_message
+# exceeds this, the full result is persisted to disk and the inline version
+# is truncated with a pointer to the file.
+_INLINE_RESULT_LIMIT = 3000
 
 
 class ParallelAgentTool(BaseTool):
@@ -168,13 +175,60 @@ class ParallelAgentTool(BaseTool):
             failed=failed,
         )
 
+        # Build compact results: persist large outputs to disk, keep inline summaries
+        compact_results = []
+        for r in results:
+            compact_results.append(self._compact_result(r, parent_session))
+
         return {
             "success": failed == 0,
             "total": len(results),
             "succeeded": succeeded,
             "failed": failed,
-            "results": results,
+            "results": compact_results,
         }
+
+    def _compact_result(
+        self, result: dict[str, Any], parent_session: str
+    ) -> dict[str, Any]:
+        """Compact a sub-agent result for the calling agent's context.
+
+        If the result text is small enough, return it inline unchanged.
+        If it exceeds _INLINE_RESULT_LIMIT, persist the full result to a
+        file and return a truncated inline version with a file pointer.
+        The full result is NEVER lost — it is always on disk.
+        """
+        full_text = result.get("result") or ""
+        if not full_text or len(full_text) <= _INLINE_RESULT_LIMIT:
+            return result
+
+        # Persist full result to disk
+        specialist = result.get("specialist") or "agent"
+        session_id = result.get("session_id") or "unknown"
+        work_dir = self._work_dir or ".taskforce"
+        result_dir = Path(work_dir) / "sub_agent_results"
+        result_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{specialist}_{session_id[-8:]}.md"
+        result_path = result_dir / filename
+        result_path.write_text(full_text, encoding="utf-8")
+
+        self._logger.info(
+            "sub_agent_result_persisted",
+            specialist=specialist,
+            path=str(result_path),
+            full_chars=len(full_text),
+            inline_chars=_INLINE_RESULT_LIMIT,
+        )
+
+        # Truncate inline and append pointer
+        truncated = full_text[:_INLINE_RESULT_LIMIT]
+        truncated += (
+            f"\n\n[... truncated at {_INLINE_RESULT_LIMIT} chars, "
+            f"full result ({len(full_text)} chars) saved to: {result_path}]"
+        )
+
+        return {**result, "result": truncated}
 
     async def _run_with_semaphore(
         self,
