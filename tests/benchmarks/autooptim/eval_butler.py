@@ -36,6 +36,48 @@ if TYPE_CHECKING:
     from taskforce.core.domain.lean_agent import Agent
 
 # ---------------------------------------------------------------------------
+# Dateiverwaltung benchmark setup
+# ---------------------------------------------------------------------------
+
+_datei_work_dir: Path | None = None
+
+
+def _setup_datei_benchmark() -> Path:
+    """Set up the Dateiverwaltung benchmark with real test documents."""
+    global _datei_work_dir
+    from tests.benchmarks.autooptim.fixtures.setup_datei_benchmark import setup
+    _datei_work_dir = setup()
+    return _datei_work_dir
+
+
+def _cleanup_datei_benchmark() -> None:
+    """Clean up the Dateiverwaltung benchmark temp directory."""
+    global _datei_work_dir
+    if _datei_work_dir:
+        from tests.benchmarks.autooptim.fixtures.setup_datei_benchmark import cleanup
+        cleanup(_datei_work_dir)
+        _datei_work_dir = None
+
+
+def _build_datei_mission(work_dir: Path) -> tuple[str, str, str]:
+    """Build the Dateiverwaltung mission with the actual temp directory path."""
+    inbox = work_dir / "inbox"
+    sorted_dir = work_dir / "sorted"
+    return (
+        "Dateiverwaltung",
+        "datei",
+        f"Im Ordner {inbox} liegen 15 unsortierte Dokumente (PDFs und ein DOCX). "
+        f"Gehe wie folgt vor:\n"
+        f"1. Lies die erste Seite jedes Dokuments um den Inhalt zu verstehen.\n"
+        f"2. Kategorisiere jedes Dokument in eine passende Kategorie "
+        f"(z.B. Gesundheit, Finanzen, Vertraege, Behoerden, Ausweise, Formulare, Sonstiges).\n"
+        f"3. Erstelle fuer jede Kategorie einen Unterordner in {sorted_dir}.\n"
+        f"4. Kopiere (nicht verschieben!) jedes Dokument in den passenden Kategorie-Ordner.\n"
+        f"5. Gib mir am Ende eine Uebersicht welches Dokument in welche Kategorie einsortiert wurde.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Mission definitions: (display_name, score_prefix, prompt)
 # ---------------------------------------------------------------------------
 
@@ -77,13 +119,8 @@ DAILY_MISSIONS = [
         "Was steht heute an? Schau in meinen Kalender und meine E-Mails "
         "und erstelle mir eine priorisierte Tagesuebersicht.",
     ),
-    (
-        "Dateiverwaltung",
-        "datei",
-        "Liste alle PDF-Dateien in meinem Downloads-Ordner auf und "
-        "schlage vor, sie nach Documents/Rechnungen zu verschieben. "
-        "Fuehre die Aktion aber NICHT aus ohne meine explizite Bestaetigung.",
-    ),
+    # Dateiverwaltung is dynamically generated — see _build_datei_mission()
+    None,  # placeholder, replaced at runtime
     (
         "Recherche + Briefing",
         "recherche",
@@ -704,6 +741,23 @@ async def main(task_name: str) -> None:
         )
         standard_missions = list(QUICK_MISSIONS)
 
+    # Set up Dateiverwaltung benchmark if daily missions are included
+    datei_work_dir: Path | None = None
+    has_daily = any(m is None for m in standard_missions)  # None = datei placeholder
+    if has_daily:
+        try:
+            datei_work_dir = _setup_datei_benchmark()
+            datei_mission = _build_datei_mission(datei_work_dir)
+            # Replace None placeholder with actual mission
+            standard_missions = [
+                datei_mission if m is None else m for m in standard_missions
+            ]
+            print(f"  [Datei benchmark] setup: {datei_work_dir}", file=sys.stderr)
+        except Exception as e:
+            print(f"  [Datei benchmark] setup failed: {e}", file=sys.stderr)
+            # Remove placeholder so we don't crash
+            standard_missions = [m for m in standard_missions if m is not None]
+
     executor = AgentExecutor()
     results: list[dict] = []
     memory_results: list[dict] = []
@@ -802,6 +856,23 @@ async def main(task_name: str) -> None:
 
     # Compute and output scores
     scores = compute_scores(results, memory_results)
+
+    # Clean up Dateiverwaltung benchmark temp directory
+    if datei_work_dir:
+        # Check how many files were sorted (for scoring)
+        sorted_dir = datei_work_dir / "sorted"
+        if sorted_dir.exists():
+            sorted_files = list(sorted_dir.rglob("*"))
+            sorted_docs = [f for f in sorted_files if f.is_file()]
+            categories_created = [d for d in sorted_dir.iterdir() if d.is_dir()]
+            scores["datei_files_sorted"] = float(len(sorted_docs))
+            scores["datei_categories"] = float(len(categories_created))
+            print(
+                f"  [Datei benchmark] {len(sorted_docs)} files sorted into "
+                f"{len(categories_created)} categories",
+                file=sys.stderr,
+            )
+        _cleanup_datei_benchmark()
 
     print(json.dumps(scores), flush=True)
     sys.stdout.flush()
