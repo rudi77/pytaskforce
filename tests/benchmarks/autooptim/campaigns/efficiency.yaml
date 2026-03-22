@@ -63,6 +63,8 @@ categories:
       allowed_paths:
         - "src/taskforce/core/prompts/"
         - "src/taskforce/configs/custom/"
+      blocked_paths:
+        - "src/taskforce/core/prompts/autonomous_prompts.py"
     context_files:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - "src/taskforce/configs/custom/pc-agent.yaml"

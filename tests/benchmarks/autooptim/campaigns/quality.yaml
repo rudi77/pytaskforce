@@ -21,6 +21,8 @@ categories:
       allowed_paths:
         - "src/taskforce/core/prompts/"
         - "src/taskforce/configs/custom/"
+      blocked_paths:
+        - "src/taskforce/core/prompts/autonomous_prompts.py"
     context_files:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - "src/taskforce/configs/custom/pc-agent.yaml"
@@ -47,6 +49,13 @@ categories:
           - max_items
           - max_chars_per_item
           - max_total_chars
+        scheduler:
+          - enabled
+          - store
+          - work_dir
+        memory:
+          - store_dir
+          - auto_extract
       validation_rules:
         agent.max_steps:
           type: int

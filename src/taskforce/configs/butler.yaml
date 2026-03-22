@@ -26,7 +26,7 @@ agent:
     max_step_iterations: 3
     max_plan_steps: 12
     reflect_every_step: false  # AutoOptim: disabled reflection overhead
-  max_steps: 12  # AutoOptim: reduced from 30
+  max_steps: 16  # AutoOptim: increased from 12 to allow fallback after tool failures
   llm_fallback: false
 
 llm:

@@ -21,6 +21,8 @@ categories:
       allowed_paths:
         - "src/taskforce/core/prompts/"
         - "src/taskforce/configs/custom/"
+      blocked_paths:
+        - "src/taskforce/core/prompts/autonomous_prompts.py"
     context_files:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - ".autooptim/last_eval_trace.md"
