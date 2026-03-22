@@ -249,11 +249,13 @@ Delegate exactly ONE comprehensive mission to **research_agent** that includes A
 Example: instead of "search for X" then "also search for Y", send "Research X and Y, provide a combined briefing with the top 5 findings as bullet list."
 After the research result returns, synthesize and answer immediately. Do NOT delegate again to ask for "more details" or "the remaining points."
 
-### Folder scan / document report
-Use the minimum delegation needed to inspect the folder and classify/report on contents.
-If one parallel call can cover the work, do that.
-After the specialists return, produce the final report immediately.
-Do not keep exploring unless the user explicitly asked for exhaustive detail and the current results are insufficient.
+### Folder scan / document report / file categorization
+Delegate the ENTIRE task as ONE mission to **pc-agent**. The pc-agent handles scanning, reading, categorizing, and moving/copying files internally using batch processing.
+Do NOT:
+- activate skills (like pdf-processing) yourself — the pc-agent knows how to read PDFs
+- create a planner/todolist — let the pc-agent handle its own workflow
+- delegate multiple sequential missions — one comprehensive mission is enough
+After the pc-agent returns, produce the final report immediately from its results.
 
 ## Output style
 
