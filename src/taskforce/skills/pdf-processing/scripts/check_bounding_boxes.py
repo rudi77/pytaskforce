@@ -111,7 +111,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        with open(sys.argv[1]) as f:
+        with open(sys.argv[1], encoding="utf-8") as f:
             messages = get_bounding_box_messages(f)
         for msg in messages:
             print(msg)

@@ -91,7 +91,7 @@ def fill_pdf_fields(input_pdf_path: str, fields_json_path: str, output_pdf_path:
         fields_json_path: Path to JSON file with field values.
         output_pdf_path: Path to output PDF.
     """
-    with open(fields_json_path) as f:
+    with open(fields_json_path, encoding="utf-8") as f:
         fields = json.load(f)
 
     # Group by page number

@@ -130,11 +130,11 @@ class ExperimentProposer:
         if pc.system_prompt_file:
             path = Path(pc.system_prompt_file)
             if path.exists():
-                return path.read_text()
+                return path.read_text(encoding="utf-8")
         # Try default prompts dir
         default = DEFAULT_PROMPTS_DIR / "default_system.md"
         if default.exists():
-            return default.read_text()
+            return default.read_text(encoding="utf-8")
         return DEFAULT_SYSTEM_PROMPT
 
     def _load_user_template(self) -> str:
@@ -145,10 +145,10 @@ class ExperimentProposer:
         if pc.user_template_file:
             path = Path(pc.user_template_file)
             if path.exists():
-                return path.read_text()
+                return path.read_text(encoding="utf-8")
         default = DEFAULT_PROMPTS_DIR / "default_user.md"
         if default.exists():
-            return default.read_text()
+            return default.read_text(encoding="utf-8")
         return DEFAULT_USER_TEMPLATE
 
     def select_category(self) -> str:

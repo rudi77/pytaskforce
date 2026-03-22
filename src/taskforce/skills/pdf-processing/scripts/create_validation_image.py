@@ -27,7 +27,7 @@ def create_validation_image(
         input_path: Path to input image (PNG).
         output_path: Path to save output image.
     """
-    with open(fields_json_path) as f:
+    with open(fields_json_path, encoding="utf-8") as f:
         data = json.load(f)
 
     img = Image.open(input_path)

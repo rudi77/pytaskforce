@@ -159,7 +159,7 @@ def write_field_info(pdf_path: str, json_output_path: str) -> None:
     reader = PdfReader(pdf_path)
     field_info = get_field_info(reader)
 
-    with open(json_output_path, "w") as f:
+    with open(json_output_path, "w", encoding="utf-8") as f:
         json.dump(field_info, f, indent=2)
 
     print(f"Wrote {len(field_info)} fields to {json_output_path}")

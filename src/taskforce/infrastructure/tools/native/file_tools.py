@@ -217,7 +217,7 @@ class FileWriteTool(ToolProtocol):
             backed_up = False
             if backup and file_path.exists():
                 backup_path = file_path.with_suffix(file_path.suffix + ".bak")
-                backup_path.write_text(file_path.read_text(), encoding="utf-8")
+                backup_path.write_text(file_path.read_text(encoding="utf-8"), encoding="utf-8")
                 backed_up = True
 
             file_path.write_text(content, encoding="utf-8")

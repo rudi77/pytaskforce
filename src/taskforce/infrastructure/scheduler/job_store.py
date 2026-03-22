@@ -46,7 +46,7 @@ class FileJobStore:
         path = self._dir / f"{job_id}.json"
         if not path.exists():
             return None
-        async with aiofiles.open(path) as f:
+        async with aiofiles.open(path, encoding="utf-8") as f:
             raw = await f.read()
         return ScheduleJob.from_dict(json.loads(raw))
 

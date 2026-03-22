@@ -68,7 +68,7 @@ class InspectAIParser:
 
     def _parse_eval_log(self, log_path: Path) -> Scores:
         """Parse an Inspect AI .eval log file and extract scores."""
-        with open(log_path) as f:
+        with open(log_path, encoding="utf-8") as f:
             data = json.load(f)
 
         results = data.get("results", {})

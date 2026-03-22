@@ -62,7 +62,7 @@ def fill_pdf_form(
         fields_json_path: Path to fields.json file.
         output_pdf_path: Path to save output PDF.
     """
-    with open(fields_json_path) as f:
+    with open(fields_json_path, encoding="utf-8") as f:
         fields_data: dict[str, Any] = json.load(f)
 
     reader = PdfReader(input_pdf_path)

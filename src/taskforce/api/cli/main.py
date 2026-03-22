@@ -99,7 +99,7 @@ def stop(ctx: typer.Context) -> None:
     # Signal stop by writing a stop request file
     stop_path = Path(".taskforce/butler/stop_requested")
     stop_path.parent.mkdir(parents=True, exist_ok=True)
-    stop_path.write_text(json.dumps({"requested_at": str(__import__("datetime").datetime.now())}))
+    stop_path.write_text(json.dumps({"requested_at": str(__import__("datetime").datetime.now())}), encoding="utf-8")
     console.print("[green]Stop signal sent to butler daemon.[/green]")
 
 

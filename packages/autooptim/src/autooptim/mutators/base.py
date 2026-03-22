@@ -52,7 +52,7 @@ class BaseMutator:
         full_path = self.project_root / path
         if not full_path.exists():
             return f"# File not found: {path}"
-        return full_path.read_text()
+        return full_path.read_text(encoding="utf-8")
 
     def run_preflight(self, modified_files: list[str]) -> None:
         """Run configured preflight commands.

@@ -355,7 +355,7 @@ class ButlerDaemon:
 
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._status_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(status, indent=2, default=str))
+            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
             tmp.rename(self._status_path)
         except Exception as exc:
             logger.warning("butler_daemon.status_write_failed", error=str(exc))

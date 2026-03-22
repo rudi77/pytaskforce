@@ -116,7 +116,7 @@ def _save_state(
         "baseline_composite": baseline_composite,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    state_file.write_text(json.dumps(state, indent=2))
+    state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def _cleanup_state(state_file: Path) -> None:
