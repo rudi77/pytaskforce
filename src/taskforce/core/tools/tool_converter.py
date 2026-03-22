@@ -251,7 +251,7 @@ def assistant_tool_calls_to_message(
 def create_tool_result_preview(
     handle: ToolResultHandle,
     result: dict[str, Any],
-    max_preview_chars: int = 500,
+    max_preview_chars: int = 2000,
 ) -> ToolResultPreview:
     """
     Create a preview of a tool result for message history.

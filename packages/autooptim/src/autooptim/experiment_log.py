@@ -41,6 +41,7 @@ class ExperimentLog:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _ensure_header(self) -> None:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.log_path.exists() or self.log_path.stat().st_size == 0:
             with open(self.log_path, "w", newline="") as f:
                 writer = csv.writer(f, delimiter="\t")

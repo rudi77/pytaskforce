@@ -294,7 +294,10 @@ def run(config: RunConfig) -> None:
                 files_modified=[f.path for f in plan.files],
                 duration_seconds=time.time() - exp_start,
             )
-            experiment_log.append(error_result)
+            try:
+                experiment_log.append(error_result)
+            except OSError as log_err:
+                logger.warning("Failed to write error result to log: %s", log_err)
             continue
 
         if not modified_files:

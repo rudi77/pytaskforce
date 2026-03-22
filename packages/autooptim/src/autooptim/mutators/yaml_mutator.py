@@ -88,8 +88,10 @@ class YamlMutator(BaseMutator):
                 self._validate_config(config)
 
             # Write back
-            with open(full_path, "w") as f:
-                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            with open(full_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
+                )
 
             modified.append(change.path)
             logger.info("Modified config: %s", change.path)
