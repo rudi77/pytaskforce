@@ -24,7 +24,6 @@ categories:
         - "src/taskforce/core/prompts/autonomous_prompts.py"
     context_files:
       - "src/taskforce/configs/custom/pc-agent.yaml"
-      - "src/taskforce/configs/custom/doc-agent.yaml"
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - ".autooptim/last_eval_trace.md"
       - ".autooptim/experiments_history.md"
@@ -36,8 +35,7 @@ categories:
       allowed_paths:
         - "src/taskforce/configs/butler.yaml"
         - "src/taskforce/configs/custom/pc-agent.yaml"
-        - "src/taskforce/configs/custom/doc-agent.yaml"
-      safe_keys:
+        safe_keys:
         agent:
           - planning_strategy
           - max_steps

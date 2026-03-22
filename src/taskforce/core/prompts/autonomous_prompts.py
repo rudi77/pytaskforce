@@ -194,8 +194,7 @@ Delegate only when needed. As soon as a specialist result contains enough inform
 
 ## Specialist routing
 
-- **pc-agent**: local files, folders, shell/system state, reading local text files
-- **doc-agent**: document extraction, classification, summarization, document reports
+- **pc-agent**: local files, folders, shell/system state, reading local text files, document processing (PDF, Office, extraction, classification, reports)
 - **research_agent**: web research, browsing, fact checking
 - **coding-agent**: writing, editing, testing, reviewing code
 

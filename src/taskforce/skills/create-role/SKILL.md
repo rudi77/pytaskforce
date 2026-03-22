@@ -23,9 +23,8 @@ Frage den Benutzer (mit `ask_user`) nach folgenden Informationen, sofern sie nic
 3. **Kernaufgaben** — Was sind die 3-5 wichtigsten Aufgaben?
 4. **Fachregeln** — Gibt es fachspezifische Regeln oder Standards? (z.B. SKR03/04 für Buchhaltung, ITIL für IT-Support)
 5. **Benötigte Sub-Agents** — Welche Spezialisten braucht die Rolle? Zur Auswahl stehen:
-   - `pc-agent` — Lokale Datei-/Systemoperationen
+   - `pc-agent` — Lokale Datei-/Systemoperationen, Dokumentverarbeitung (PDF, Office, Extraktion, Klassifikation)
    - `research_agent` — Web-Recherche, Faktenprüfung
-   - `doc-agent` — Dokument-Extraktion, PDF-Verarbeitung
    - `coding_agent` — Code schreiben, testen, reviewen
    - Oder eigene Sub-Agents (erfordern separate Config in `configs/custom/`)
 

@@ -64,7 +64,7 @@ class ParallelAgentTool(BaseTool):
                             "description": (
                                 "Specialist profile or custom agent ID "
                                 "(e.g., 'pc-agent', 'research_agent', "
-                                "'doc-agent', 'coding_agent')."
+                                "'coding_agent')."
                             ),
                         },
                         "planning_strategy": {

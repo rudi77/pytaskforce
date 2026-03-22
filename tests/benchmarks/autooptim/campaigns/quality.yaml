@@ -27,7 +27,6 @@ categories:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - "src/taskforce/configs/custom/pc-agent.yaml"
       - "src/taskforce/configs/custom/research_agent.yaml"
-      - "src/taskforce/configs/custom/doc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
       - ".autooptim/experiments_history.md"
 
@@ -39,8 +38,7 @@ categories:
         - "src/taskforce/configs/butler.yaml"
         - "src/taskforce/configs/custom/pc-agent.yaml"
         - "src/taskforce/configs/custom/research_agent.yaml"
-        - "src/taskforce/configs/custom/doc-agent.yaml"
-      safe_keys:
+        safe_keys:
         agent:
           - planning_strategy
           - max_steps

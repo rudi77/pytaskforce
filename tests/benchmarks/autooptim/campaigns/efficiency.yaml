@@ -22,7 +22,6 @@ categories:
         - "src/taskforce/configs/butler.yaml"
         - "src/taskforce/configs/custom/pc-agent.yaml"
         - "src/taskforce/configs/custom/research_agent.yaml"
-        - "src/taskforce/configs/custom/doc-agent.yaml"
       safe_keys:
         agent:
           - planning_strategy

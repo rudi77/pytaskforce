@@ -44,7 +44,7 @@ class TestButlerRoleLoader:
                 "name": "accountant",
                 "description": "Accounting assistant",
                 "persona_prompt": "You are an accountant.",
-                "sub_agents": [{"specialist": "doc-agent", "description": "Docs"}],
+                "sub_agents": [{"specialist": "pc-agent", "description": "Docs"}],
                 "tools": ["memory", "ask_user"],
             },
         )
@@ -195,14 +195,14 @@ class TestButlerRoleLoaderMerge:
     def test_merge_replaces_sub_agents(self) -> None:
         role = ButlerRole(
             name="accountant",
-            sub_agents=({"specialist": "doc-agent", "description": "Docs"},),
+            sub_agents=({"specialist": "pc-agent", "description": "Docs"},),
         )
 
         loader = ButlerRoleLoader(config_dir=Path("/nonexistent"))
         merged = loader.merge_into_config(self._base_config(), role)
 
         assert len(merged["sub_agents"]) == 1
-        assert merged["sub_agents"][0]["specialist"] == "doc-agent"
+        assert merged["sub_agents"][0]["specialist"] == "pc-agent"
 
     def test_merge_replaces_tools(self) -> None:
         role = ButlerRole(

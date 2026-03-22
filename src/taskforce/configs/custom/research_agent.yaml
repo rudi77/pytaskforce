@@ -60,7 +60,7 @@ system_prompt: |
   ## Abgrenzung (was du NICHT machst)
 
   - **Keine lokale Systemautomation**: Dateien verschieben, Programme starten → PC-Agent
-  - **Keine Dokumententransformation**: PDFs konvertieren, Office-Dateien verarbeiten → Doc-Agent
+  - **Keine Dokumententransformation**: PDFs konvertieren, Office-Dateien verarbeiten → PC-Agent
   - **Keine Code-Änderungen**: Quellcode bearbeiten, debuggen → Coding-Agent
   - **Keine generischen Dateioperationen** außerhalb von Recherche-Artefakten
 

@@ -24,7 +24,7 @@ class TestButlerRole:
             name="accountant",
             description="Accounting assistant",
             persona_prompt="You are an accountant.",
-            sub_agents=({"specialist": "doc-agent", "description": "Documents"},),
+            sub_agents=({"specialist": "pc-agent", "description": "Documents"},),
             tools=("memory", "ask_user"),
             event_sources=({"type": "calendar"},),
             rules=({"name": "invoice_rule"},),
@@ -34,7 +34,7 @@ class TestButlerRole:
         assert role.description == "Accounting assistant"
         assert role.persona_prompt == "You are an accountant."
         assert len(role.sub_agents) == 1
-        assert role.sub_agents[0]["specialist"] == "doc-agent"
+        assert role.sub_agents[0]["specialist"] == "pc-agent"
         assert len(role.tools) == 2
         assert len(role.event_sources) == 1
         assert len(role.rules) == 1
@@ -50,14 +50,14 @@ class TestButlerRole:
             name="accountant",
             description="Accounting",
             persona_prompt="You are an accountant.",
-            sub_agents=({"specialist": "doc-agent", "description": "Docs"},),
+            sub_agents=({"specialist": "pc-agent", "description": "Docs"},),
             tools=("memory",),
         )
         d = role.to_dict()
         assert d["name"] == "accountant"
         assert d["description"] == "Accounting"
         assert d["persona_prompt"] == "You are an accountant."
-        assert d["sub_agents"] == [{"specialist": "doc-agent", "description": "Docs"}]
+        assert d["sub_agents"] == [{"specialist": "pc-agent", "description": "Docs"}]
         assert d["tools"] == ["memory"]
         assert d["event_sources"] == []
         assert d["rules"] == []
@@ -105,7 +105,7 @@ class TestButlerRole:
             description="Accounting assistant",
             persona_prompt="# Accountant\nYou handle invoices.",
             sub_agents=(
-                {"specialist": "doc-agent", "description": "Documents"},
+                {"specialist": "pc-agent", "description": "Documents"},
                 {"specialist": "research_agent", "description": "Research"},
             ),
             tools=("memory", "ask_user", "calendar"),
