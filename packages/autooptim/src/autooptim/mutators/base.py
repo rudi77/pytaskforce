@@ -78,6 +78,8 @@ class BaseMutator:
             )
             logger.info("Pre-flight: %s", cmd)
 
+            env = subprocess.os.environ.copy()
+            env["PYTHONPATH"] = str(self.project_root / "src")
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -85,7 +87,7 @@ class BaseMutator:
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env={"PATH": subprocess.os.environ.get("PATH", ""), "PYTHONPATH": str(self.project_root / "src")},
+                env=env,
             )
 
             if result.returncode != 0:
