@@ -118,10 +118,9 @@ evaluator:
   command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
   quick_task: "quick"
   full_task: "full"
-  # Additional task names (documentation only — AutoOptim uses quick_task/full_task):
-  # daily_task: "daily"
-  # memory_task: "memory"
-  # future_task: "future"
+  daily_task: "daily"
+  memory_task: "memory"
+  future_task: "future"
   timeout: 600
 
 # --- Metrics ---
@@ -193,20 +192,6 @@ metric:
     - name: docreport_tools
       type: lower_is_better
     - name: docreport_completed
-      range: [0.0, 1.0]
-
-    # ---------------------------------------------------------------
-    # Per-mission: multistep (multi-step tool chain, full mode only)
-    # ---------------------------------------------------------------
-    - name: multistep_steps
-      type: lower_is_better
-    - name: multistep_tokens
-      type: lower_is_better
-    - name: multistep_wall
-      type: lower_is_better
-    - name: multistep_tools
-      type: lower_is_better
-    - name: multistep_completed
       range: [0.0, 1.0]
 
     # ---------------------------------------------------------------
@@ -401,7 +386,7 @@ metric:
         answer_quality: 0.3
         memory_recall: 0.2
     efficiency:
-      weight: 0.60
+      weight: 0.45
       type: ratio_to_baseline
       components:
         - avg_steps
@@ -411,7 +396,7 @@ metric:
         - notification_spam
         - delegation_efficiency
     future_readiness:
-      weight: 0.05  # Low weight until future features are implemented
+      weight: 0.20
       components:
         self_improvement_score: 1.0
 
