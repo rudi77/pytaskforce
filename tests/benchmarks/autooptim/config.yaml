@@ -69,6 +69,7 @@ categories:
     context_files:
       - "src/taskforce/configs/butler.yaml"
       - "src/taskforce/configs/custom/pc-agent.yaml"
+      - ".autooptim/last_eval_trace.md"
 
   # --- Category 2: System prompts (medium risk) ---
   prompt:
@@ -83,6 +84,7 @@ categories:
       - "src/taskforce/configs/custom/pc-agent.yaml"
       - "src/taskforce/configs/custom/research_agent.yaml"
       - "src/taskforce/configs/custom/doc-agent.yaml"
+      - ".autooptim/last_eval_trace.md"
 
   # --- Category 3: Core agent logic (higher risk) ---
   code:
@@ -108,6 +110,7 @@ categories:
       - "src/taskforce/core/domain/planning_strategy.py"
       - "src/taskforce/core/domain/context_policy.py"
       - "src/taskforce/core/domain/lean_agent_components/message_history_manager.py"
+      - ".autooptim/last_eval_trace.md"
 
 # --- Evaluator ---
 evaluator:
@@ -115,11 +118,12 @@ evaluator:
   command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
   quick_task: "quick"
   full_task: "full"
-  timeout: 300
+  timeout: 360
 
 # --- Metrics ---
 metric:
   scores:
+    # Aggregate scores
     - name: task_completion
       range: [0.0, 1.0]
     - name: avg_steps
@@ -132,6 +136,41 @@ metric:
       type: lower_is_better
     - name: total_tool_calls
       type: lower_is_better
+    - name: notification_spam
+      type: lower_is_better
+    # Per-mission: baseline (zero-tool question)
+    - name: baseline_steps
+      type: lower_is_better
+    - name: baseline_tokens
+      type: lower_is_better
+    - name: baseline_wall
+      type: lower_is_better
+    - name: baseline_tools
+      type: lower_is_better
+    - name: baseline_completed
+      range: [0.0, 1.0]
+    # Per-mission: singletool (file read via delegation)
+    - name: singletool_steps
+      type: lower_is_better
+    - name: singletool_tokens
+      type: lower_is_better
+    - name: singletool_wall
+      type: lower_is_better
+    - name: singletool_tools
+      type: lower_is_better
+    - name: singletool_completed
+      range: [0.0, 1.0]
+    # Per-mission: docreport (multi-agent delegation + synthesis)
+    - name: docreport_steps
+      type: lower_is_better
+    - name: docreport_tokens
+      type: lower_is_better
+    - name: docreport_wall
+      type: lower_is_better
+    - name: docreport_tools
+      type: lower_is_better
+    - name: docreport_completed
+      range: [0.0, 1.0]
   composite:
     quality:
       weight: 0.40
@@ -145,6 +184,7 @@ metric:
         - avg_input_tokens
         - avg_wall_seconds
         - total_tool_calls
+        - notification_spam
 
 # --- Proposer ---
 proposer:
