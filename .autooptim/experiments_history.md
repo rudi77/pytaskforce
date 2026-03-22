@@ -22,3 +22,11 @@ The proposer uses this to avoid repeating failed approaches.
   - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
   - **Composite:** 0.7871 (baseline: 0.8781)
 
+## Campaign: butler-dateiverwaltung (2026-03-22 15:47 UTC)
+
+- ⚠️ **Exp #10** [prompt] **ERROR** (-0.5000)
+  - **Change:** Tighten Butler specialist prompt to enforce single-shot delegation, correct filesystem-vs-document routing, and immediate synthesis after first usable sub-agent result.
+  - **Hypothesis:** The trace shows the largest prompt-fixable efficiency loss is Butler's delegation wording and retry behavior on file tasks: Single Tool needlessly delegated twice with PowerShell-centric wording, and 
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Composite:** 0.0000 (baseline: 0.5000)
+
