@@ -35,10 +35,10 @@ class ContextPolicy:
             skipped from the context pack. Set to 0 to disable. Default: 10.
     """
 
-    max_items: int = 10
-    max_chars_per_item: int = 500
-    max_total_chars: int = 3000
-    include_latest_tool_previews_n: int = 5
+    max_items: int = 6  # AutoOptim: reduced from 10 for less context overhead
+    max_chars_per_item: int = 300  # AutoOptim: reduced from 500
+    max_total_chars: int = 1800  # AutoOptim: reduced from 3000
+    include_latest_tool_previews_n: int = 3  # AutoOptim: reduced from 5
     allow_tools: list[str] | None = None
     allow_selectors: list[str] | None = field(default_factory=lambda: ["first_chars"])
     deduplicate_visible_window: int = 10
@@ -107,10 +107,10 @@ class ContextPolicy:
             ContextPolicy instance
         """
         return cls(
-            max_items=data.get("max_items", 10),
-            max_chars_per_item=data.get("max_chars_per_item", 500),
-            max_total_chars=data.get("max_total_chars", 3000),
-            include_latest_tool_previews_n=data.get("include_latest_tool_previews_n", 5),
+            max_items=data.get("max_items", 6),
+            max_chars_per_item=data.get("max_chars_per_item", 300),
+            max_total_chars=data.get("max_total_chars", 1800),
+            include_latest_tool_previews_n=data.get("include_latest_tool_previews_n", 3),
             allow_tools=data.get("allow_tools"),
             allow_selectors=data.get("allow_selectors", ["first_chars"]),
             deduplicate_visible_window=data.get("deduplicate_visible_window", 10),

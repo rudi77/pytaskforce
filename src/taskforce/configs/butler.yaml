@@ -23,7 +23,7 @@ runtime:
 agent:
   planning_strategy: native_react
   planning_strategy_params:
-    max_step_iterations: 3
+    max_step_iterations: 2  # AutoOptim: reduced from 3 to discourage extra turns after delegation
     max_plan_steps: 12
     reflect_every_step: false  # AutoOptim: disabled reflection overhead
   max_steps: 16  # AutoOptim: increased from 12 to allow fallback after tool failures
