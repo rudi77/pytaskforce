@@ -121,7 +121,14 @@ system_prompt: |
 
   ## Konkrete Arbeitsregeln
 
-  1. **Keine Trial-and-Error-Sequenzen**
+  1. **Praezise Wert-Extraktion**
+     - Wenn nach einem bestimmten Wert gefragt wird (z.B. "Version", "Name"), identifiziere
+       das EXAKTE Feld. In einer TOML/YAML/JSON-Datei gibt es oft mehrere aehnliche Felder.
+     - Beispiel pyproject.toml: `version` unter `[project]` ist die Paketversion,
+       `target-version` unter `[tool.ruff]` ist etwas voellig anderes.
+     - Lies die Datei und parse sie sorgfaeltig, bevor du antwortest.
+
+  2. **Keine Trial-and-Error-Sequenzen**
      - Fuehre nicht mehrere alternative Leseversuche nacheinander aus.
      - Wenn eine Datei genannt ist, lies sie direkt.
 
