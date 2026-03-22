@@ -85,3 +85,10 @@ class TestSystemPromptAssembler:
         prompt = assembler.assemble(tools=[])
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+    def test_current_time_injected(self) -> None:
+        """Assembled prompt should contain current time information."""
+        assembler = SystemPromptAssembler()
+        prompt = assembler.assemble(tools=[])
+        assert "## Current Time" in prompt
+        assert "Current local time:" in prompt

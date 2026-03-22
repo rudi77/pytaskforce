@@ -22,6 +22,7 @@ from taskforce.core.prompts.autonomous_prompts import (
     RAG_SPECIALIST_PROMPT,
     WIKI_SYSTEM_PROMPT,
 )
+from taskforce.core.utils.time import local_now
 
 if TYPE_CHECKING:
     from taskforce.core.interfaces.tools import ToolProtocol
@@ -97,6 +98,16 @@ class SystemPromptAssembler:
             )
         elif "{{SUB_AGENTS_SECTION}}" in base_prompt:
             base_prompt = base_prompt.replace("{{SUB_AGENTS_SECTION}}", "")
+
+        # Inject current local time so the agent can handle relative time
+        # references (e.g. "in one hour") without asking the user.
+        now = local_now()
+        time_section = (
+            f"\n\n## Current Time\n\n"
+            f"Current local time: {now.strftime('%Y-%m-%dT%H:%M:%S%z')} "
+            f"({now.strftime('%A, %d %B %Y, %H:%M %Z')})"
+        )
+        base_prompt += time_section
 
         # NOTE: Tool descriptions are NOT injected into the system prompt text.
         # Tools are already passed via the `tools` API parameter on each LLM call

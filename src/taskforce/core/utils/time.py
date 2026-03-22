@@ -13,3 +13,8 @@ from datetime import UTC, datetime
 def utc_now() -> datetime:
     """Return the current UTC timestamp."""
     return datetime.now(UTC)
+
+
+def local_now() -> datetime:
+    """Return the current local timestamp with timezone info."""
+    return datetime.now().astimezone()
