@@ -3,11 +3,15 @@
 Usage:
     autooptim run --config my_optimization.yaml
     autooptim run --config config.yaml --max-iterations 20 --resume
+    autooptim dashboard                           # auto-detect latest log
+    autooptim dashboard --log .autooptim/logs/run-20260322.tsv
+    autooptim dashboard --config config.yaml      # adds budget info
 """
 
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from autooptim.config_loader import load_config
 from autooptim.runner import run
@@ -75,6 +79,20 @@ def main() -> None:
         help="Logging level",
     )
 
+    # 'dashboard' command
+    dash_parser = subparsers.add_parser("dashboard", help="Live TUI dashboard for monitoring runs")
+    dash_parser.add_argument(
+        "--log",
+        default=None,
+        help="Path to a specific TSV log file (auto-detects latest if omitted)",
+    )
+    dash_parser.add_argument(
+        "--config",
+        "-c",
+        default=None,
+        help="Path to config YAML (adds budget/iteration info to dashboard)",
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -114,6 +132,58 @@ def main() -> None:
         except Exception:
             logger.exception("AutoOptim failed with unexpected error")
             sys.exit(1)
+
+    elif args.command == "dashboard":
+        _run_dashboard(args)
+
+
+def _run_dashboard(args: argparse.Namespace) -> None:
+    """Launch the live TUI dashboard."""
+    try:
+        from autooptim.dashboard.app import run_dashboard
+    except ImportError:
+        print(
+            "Dashboard requires the 'dashboard' extra.\n"
+            "Install it with: uv sync --extra dashboard\n"
+            "  (or: pip install autooptim[dashboard])",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Resolve log path
+    log_path: Path | None = None
+    if args.log:
+        log_path = Path(args.log)
+        if not log_path.exists():
+            print(f"Log file not found: {log_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Auto-detect latest log in .autooptim/logs/
+        log_dir = Path(".autooptim") / "logs"
+        if log_dir.exists():
+            logs = sorted(
+                log_dir.glob("run-*.tsv"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if logs:
+                log_path = logs[0]
+
+        if log_path is None:
+            print(
+                "No log files found in .autooptim/logs/\n"
+                "Run 'autooptim run --config <config.yaml>' first, or specify --log <path>.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Optionally load config for budget info
+    config = None
+    if args.config:
+        config = load_config(args.config)
+
+    print(f"Opening dashboard for: {log_path}")
+    run_dashboard(log_path, config)
 
 
 if __name__ == "__main__":
