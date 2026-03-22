@@ -2,26 +2,128 @@
 
 The `taskforce` CLI is the primary way to interact with the agent framework during development.
 
-## 🛠 Basic Commands
+> **Note:** The default profile is `butler`. Override with `--profile <name>` or `TASKFORCE_PROFILE` env var.
 
-### Running a Mission
+## Global Options
+
+```bash
+taskforce --profile <name>   # Configuration profile (default: butler)
+taskforce --debug            # Enable debug output (agent thoughts, actions, observations)
+```
+
+## Top-Level Commands
+
+### Version
+```bash
+taskforce version            # Show Taskforce version and banner
+```
+
+### Butler Shortcuts
+Convenience commands that delegate to `taskforce butler`:
+
+```bash
+taskforce start              # Start the butler daemon (shortcut for 'butler start')
+taskforce start --detach     # Start in background
+taskforce status             # Show butler daemon status
+taskforce stop               # Stop the butler daemon gracefully
+```
+
+---
+
+## Running a Mission
+
 The `run mission` command starts a new agent task.
-```powershell
+
+```bash
 taskforce run mission "Summarize the latest trends in AI"
 ```
 
-### Interactive Chat
+### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--profile` | `-p` | Configuration profile |
+| `--session` | `-s` | Resume an existing session ID |
+| `--stream` | `-S` | Enable streaming output |
+| `--plugin` | `-P` | Load a plugin agent |
+| `--debug` | | Enable debug output |
+| `--lean` | `-l` | Use LeanAgent instead of full Agent |
+| `--planning-strategy` | | Override planning strategy (native_react, plan_and_execute, plan_and_react, spar) |
+| `--planning-strategy-params` | | JSON string of strategy parameters |
+
+### Examples
+
+```bash
+# With specific profile
+taskforce run mission "Analyze code quality" --profile coding_agent
+
+# With streaming
+taskforce run mission "Build a REST API" --stream
+
+# With planning strategy override
+taskforce run mission "Complex task" --planning-strategy spar
+
+# Resume a session
+taskforce run mission "Continue analysis" --session abc-123
+```
+
+### Running a Skill
+
+Execute a skill directly from the command line:
+
+```bash
+taskforce run skill <skill_name> [arguments]
+```
+
+Options: `--profile`, `--debug`, `--stream`
+
+```bash
+# Run a skill
+taskforce run skill pdf-processing "Extract text from invoice.pdf"
+taskforce run skill code-review "Review src/main.py"
+```
+
+---
+
+## Interactive Chat
+
 Open a continuous conversation with an agent.
-```powershell
+
+```bash
 taskforce chat
 ```
-Use `Enter` to send messages (simple REPL-style input).
-Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color. The chat also shows an explicit "💭 Thinking..." state before reasoning events arrive and prints compact `Update(...)` / `Write(...)` previews for file-editing tool calls so you can see what changed.
-Within the chat, you can use **Slash Commands** (e.g., `/help`, `/clear`) to interact with the system or trigger custom workflows. Built-ins include `/plugins` and `/skills` to list available plugin agents and skills, and you can switch to a plugin agent by typing `/<plugin_name>` after selecting it from `/plugins`. See the **[Slash Commands Guide](slash-commands.md)** for details on creating your own. Use `/context` to inspect the currently assembled LLM context with token estimates by section (system prompt, conversation history, active skill instructions, and tool definitions). Use `/context full` to include full content in the output.
+
+Use `Enter` to send messages (simple REPL-style input). Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color.
+
+### Chat Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--profile` | `-p` | Configuration profile |
+| `--plugin` | `-P` | Load a plugin agent |
+| `--lean` | `-l` | Use LeanAgent |
+| `--debug` | | Enable debug output |
+| `--user-id` | | User ID for identity context |
+| `--org-id` | | Organization ID for scoping |
+| `--scope` | | RAG scope context |
+| `--telegram-polling` | | Enable Telegram polling mode |
+
+### Slash Commands in Chat
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/clear` | Clear conversation history |
+| `/plugins` | List available plugin agents |
+| `/<plugin_name>` | Switch to a plugin agent |
+| `/skills` | List available skills |
+| `/<skill_name> [args]` | Invoke a prompt/agent skill |
+| `/context` | Inspect LLM context with token estimates |
+| `/context full` | Full context with content |
 
 ### Loading Plugins
-Load external agent plugins with custom tools:
-```powershell
+
+```bash
 taskforce chat --plugin examples/accounting_agent
 ```
 
@@ -31,105 +133,47 @@ The `--plugin` option accepts a path to a plugin directory containing:
 
 See **[Plugin Development Guide](plugins.md)** for creating your own plugins.
 
-### Profile Selection
-By default, Taskforce uses the `dev` profile. You can override this:
-```powershell
-taskforce run mission "..." --profile prod
-```
+---
 
-### Multi-Agent Orchestration
-Use the `orchestrator` profile to enable multi-agent coordination:
-```powershell
+## Multi-Agent Orchestration
+
+Use the `coding_agent` profile to enable multi-agent coordination:
+
+```bash
 taskforce run mission "Research Python FastAPI and React, create comparison" \
-  --profile orchestrator
+  --profile coding_agent
 ```
 
-The orchestrator agent can delegate subtasks to specialist sub-agents:
-- **coding**: File operations, shell, Git
-- **rag**: Semantic search, document retrieval
-- **wiki**: Wikipedia research
-- **Custom agents**: Your own specialists from `configs/custom/`
+The coding agent orchestrator delegates to specialist sub-agents:
+- **coding_planner**: Task decomposition and planning
+- **coding_worker**: Implementation with tooling access
+- **coding_reviewer**: Code review and quality checks
 
-**Example with custom agent:**
-```powershell
-# First, create configs/custom/security_auditor.yaml with custom prompt and tools
+Additional sub-agents available in `src/taskforce/configs/custom/`:
+- `test_engineer`, `doc_writer`, `research_agent`, `doc-agent`, `pc-agent`
 
-# Then use the orchestrator
-taskforce run mission "Perform security audit on codebase" --profile orchestrator
-
-# The orchestrator will automatically spawn the security_auditor specialist
-```
-
-**Direct specialist usage:**
-```powershell
+```bash
 # Use specialist directly (without orchestrator)
 taskforce run mission "Review code quality in src/" --profile code_reviewer
 ```
 
 See [Multi-Agent Orchestration Plan](architecture/multi-agent-orchestration-plan.md) for details.
 
-### Epic Orchestration (Planner → Workers → Judge)
-Run epic-scale workflows that generate tasks, execute them in parallel, and
-consolidate changes with a judge agent:
+---
 
-```powershell
-taskforce epic run "Implement epic: billing export overhaul" \
-  --scope "backend export pipeline" \
-  --scope "frontend export UI" \
-  --workers 4 \
-  --rounds 3 \
-  --auto-commit \
-  --commit-message "Epic: billing export overhaul"
-```
-
-Profiles used by default:
-- `planner` (task generation)
-- `worker` (implementation)
-- `judge` (review/commit)
-
-### Auto-Epic Detection
-
-Instead of choosing the execution mode manually, let the agent decide automatically:
-
-```powershell
-# Enable auto-detection (overrides profile setting)
-taskforce run mission "Build a full user management system" --auto-epic --stream
-
-# Disable auto-detection explicitly
-taskforce run mission "Fix typo in docs" --no-auto-epic
-```
-
-When `--auto-epic` is set (or enabled in the profile via `orchestration.auto_epic.enabled`),
-the executor classifies the mission before execution. Complex missions are automatically
-routed to Epic Orchestration. Simple missions use the standard single-agent path.
-
-See [Epic Orchestration](architecture/epic-orchestration.md) for profile configuration details.
-
-## 🔍 Inspection & Management
+## Inspection & Management
 
 ### Tools
 List and inspect available tools:
-```powershell
+```bash
 taskforce tools list
 taskforce tools inspect python
 ```
 
-### Sessions (Deprecated)
-
-> **Deprecated:** The `sessions` command group is deprecated in favour of
-> `conversations` (ADR-016: Persistent Agent Architecture). These commands
-> will be removed in a future major release.
-
-```powershell
-taskforce sessions list          # deprecated — use 'taskforce conversations list'
-taskforce sessions show <id>     # deprecated — use 'taskforce conversations show'
-```
-
 ### Conversations
-
 Manage persistent agent conversations (ADR-016):
 
-```powershell
+```bash
 # List active conversations
 taskforce conversations list
 
@@ -143,16 +187,25 @@ taskforce conversations show <conversation-id>
 taskforce conversations archive <conversation-id>
 ```
 
+### Missions
+View past mission runs:
+
+```bash
+taskforce missions list
+taskforce missions show <mission-id>
+```
+
 ### Configuration
 View the current active configuration:
-```powershell
+```bash
 taskforce config show
+taskforce config list             # List all available profiles
 ```
 
 ### Skills
 Manage and inspect agent skills:
 
-```powershell
+```bash
 # List all available skills
 taskforce skills list
 
@@ -187,6 +240,69 @@ Skills are modular capabilities that extend agent functionality with domain-spec
 - `pdf-processing` - PDF manipulation (extract text, fill forms, merge/split)
 
 See **[Skills Documentation](features/skills.md)** for creating custom skills.
+
+### Memory
+Manage long-term memory consolidation:
+
+```bash
+# Trigger memory consolidation
+taskforce memory consolidate
+
+# Consolidation options
+taskforce memory consolidate --strategy <strategy> --max-sessions <n>
+taskforce memory consolidate --sessions <id1> <id2>   # specific sessions
+taskforce memory consolidate --dry-run                 # preview only
+
+# List captured session experiences
+taskforce memory experiences
+taskforce memory experiences --unprocessed             # only unconsolidated
+
+# View consolidation statistics
+taskforce memory stats
+```
+
+### Butler
+Manage the butler daemon, trigger rules, schedules, and roles:
+
+```bash
+# Daemon management
+taskforce butler start --profile butler
+taskforce butler start --detach          # run in background
+taskforce butler status
+
+# Trigger rules
+taskforce butler rules list
+taskforce butler rules add --name "calendar_reminder" --source calendar --type calendar.upcoming
+
+# Scheduled jobs
+taskforce butler schedules list
+
+# Butler roles
+taskforce butler roles list
+taskforce butler roles show accountant
+taskforce butler roles show personal_assistant
+```
+
+---
+
+## Profile Selection
+
+1. **Environment Variable**: `export TASKFORCE_PROFILE=dev`
+2. **CLI Flag**: `taskforce run mission "..." --profile dev`
+
+### Available Profiles
+
+| Profile | Description |
+|---------|-------------|
+| `butler` (default) | Event-driven personal assistant daemon |
+| `dev` | Development profile with file-based persistence |
+| `coding_agent` | Multi-agent coding orchestrator |
+| `coding_analysis` | Code analysis specialist |
+| `rag_agent` | RAG-enabled agent (Azure AI Search) |
+| `security` | Security-hardened profile |
+| `swe_bench` | SWE-Bench evaluation profile |
+
+See **[Profiles & Config](profiles.md)** for full configuration details.
 
 ---
 *For full command details, run `taskforce --help`.*

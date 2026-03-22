@@ -17,7 +17,7 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Epic Orchestration](architecture/epic-orchestration.md)**: Planner → worker → judge workflow.
 - **[Sub-Agent Communication](architecture/sub-agent-communication.md)**: Technischer Deep-Dive: Session-Hierarchie, State-Isolation, Datenfluss.
 - **[Plugin System](architecture/plugin-system.md)**: Entry-Point-basiertes Erweiterungssystem.
-- **[Configuration Profiles](profiles.md)**: Managing dev, staging, and production settings.
+- **[Configuration Profiles](profiles.md)**: Managing profiles and configuration settings.
 - **[ADRs (Architecture Decision Records)](adr/index.md)**: Why we made certain technical choices.
 
 ### 🧠 Agent Capabilities
@@ -32,7 +32,10 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 
 - **[Enterprise Features](features/enterprise.md)**: Multi-tenant identity, RBAC, compliance, and governance.
 
-### 🛠 Development & Community
+### Butler Agent
+- **[Butler Roles](features/butler-roles.md)**: Butler agent role specialization (accountant, personal assistant).
+
+### Development & Community
 - **[Testing Guide](testing.md)**: How to run and write tests for Taskforce.
 - **[Examples & Tutorials](examples.md)**: Real-world use cases and code samples.
 - **[Contributing](https://github.com/rudi77/pytaskforce)**: Join the development on GitHub.

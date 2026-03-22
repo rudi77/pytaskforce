@@ -2,54 +2,111 @@
 
 Taskforce includes a production-ready REST API built with **FastAPI**.
 
-## 🚀 Starting the Server
+## Starting the Server
 
 Run the server using `uvicorn`:
-```powershell
+```bash
 uvicorn taskforce.api.server:app --reload
 ```
 
-## 📖 API Documentation
+## API Documentation
 
 Once the server is running, you can access the interactive documentation at:
 
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-## 🛣 Key Endpoints
+## Key Endpoints
+
+### Health Check
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Basic liveness check |
+| `GET` | `/health/ready` | Readiness check with dependency health |
 
 ### Execution
-- `POST /api/v1/execution/execute`: Run a mission synchronously.
-- `POST /api/v1/execution/execute/stream`: Run a mission with real-time SSE progress updates.
 
-Both execution endpoints accept an optional `auto_epic` field in the request body:
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/execution/execute` | Run a mission synchronously |
+| `POST` | `/api/v1/execution/execute/stream` | Run a mission with real-time SSE progress |
+
+**Request body:**
 
 ```json
 {
-  "mission": "Build a REST API with auth, database, and tests",
-  "auto_epic": true
+  "mission": "Build a REST API with auth",
+  "profile": "butler",
+  "conversation_id": "optional-id",
+  "agent_id": "optional-agent-id",
+  "planning_strategy": "native_react",
+  "planning_strategy_params": {},
+  "user_id": "optional",
+  "org_id": "optional",
+  "scope": "optional"
 }
 ```
 
-| Value   | Behavior |
-|---------|----------|
-| `null`  | Read from profile configuration (`orchestration.auto_epic.enabled`) |
-| `true`  | Force auto-epic detection (escalates if mission is classified as complex) |
-| `false` | Disable auto-epic detection (always use single-agent execution) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `mission` | string | **Required.** The task to execute |
+| `profile` | string | Configuration profile (default: `butler`) |
+| `conversation_id` | string | Resume or tag a conversation |
+| `agent_id` | string | Use a specific agent (custom, profile, or plugin) |
+| `planning_strategy` | string | Override strategy (native_react, plan_and_execute, plan_and_react, spar) |
+| `planning_strategy_params` | object | Strategy-specific parameters |
+| `user_id` | string | User ID for identity context |
+| `org_id` | string | Organization ID for scoping |
+| `scope` | string | RAG scope context |
+| `session_id` | string | **Deprecated.** Use `conversation_id` instead |
 
-When a mission is escalated, the streaming endpoint emits an `epic_escalation` SSE event
-before the epic execution begins. See [Epic Orchestration](architecture/epic-orchestration.md) for details.
+**Response (sync):**
+
+```json
+{
+  "session_id": "abc-123",
+  "conversation_id": "conv-456",
+  "status": "completed",
+  "message": "Task completed successfully..."
+}
+```
+
+**Error responses:**
+
+| Status | Description |
+|--------|-------------|
+| 400 | Invalid request or configuration |
+| 404 | Agent or profile not found |
+| 409 | Execution cancelled |
+| 500 | Unexpected server error |
+| 502 | LLM or tool upstream error |
+
+#### Streaming pause on `ask_user`
+
+If the agent needs missing information, it emits an SSE event with `event_type: "ask_user"` and **stops streaming** (the agent is paused until you provide input). The event payload contains:
+
+- **`details.question`**: the question to show the user
+- **`details.missing`**: optional list of missing info items
+
+To resume, call the same endpoint again with the same `conversation_id` and include the user's answer in `mission`.
 
 ### Communication Gateway (Telegram/MS Teams)
-- `POST /api/v1/gateway/{channel}/messages`: Handle normalized inbound messages from any channel.
-- `POST /api/v1/gateway/{channel}/webhook`: Handle raw provider webhooks (Telegram, Teams).
-- `POST /api/v1/gateway/notify`: Send proactive push notification to a registered user.
-- `POST /api/v1/gateway/broadcast`: Broadcast to all recipients on a channel.
-- `GET  /api/v1/gateway/channels`: List configured communication channels.
-  - Supported channels: `telegram`, `teams`
-  - The gateway manages conversation history, session mapping, and outbound replies.
-  - Setup guide: see [External Integrations](integrations.md).
-  - Telegram requires `TELEGRAM_BOT_TOKEN` in `.env`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/gateway/{channel}/messages` | Handle normalized inbound messages |
+| `POST` | `/api/v1/gateway/{channel}/webhook` | Handle raw provider webhooks |
+| `POST` | `/api/v1/gateway/notify` | Send proactive push notification |
+| `POST` | `/api/v1/gateway/broadcast` | Broadcast to all recipients on a channel |
+| `GET` | `/api/v1/gateway/channels` | List configured communication channels |
+
+Supported channels: `telegram`, `teams`
+
+The gateway manages conversation history, session mapping, and outbound replies.
+
+- Setup guide: see [External Integrations](integrations.md)
+- Telegram requires `TELEGRAM_BOT_TOKEN` in `.env`
 
 **Example: Send a Telegram message**
 ```python
@@ -59,35 +116,28 @@ response = requests.post(
     "http://localhost:8000/api/v1/gateway/telegram/messages",
     json={
         "conversation_id": "123456789",
-        "message": "Was haben wir zuletzt besprochen?",
+        "message": "What did we discuss last time?",
         "sender_id": "user-42"
     }
 )
 print(response.json())
 ```
 
-#### Streaming pause on `ask_user`
-
-If the agent needs missing information, it emits an SSE event with `event_type: "ask_user"` and **stops streaming** (the agent is paused until you provide input). The event payload contains:
-
-- **`details.question`**: the question to show the user
-- **`details.missing`**: optional list of missing info items
-
-To resume, call the same endpoint again with the same `session_id` (deprecated) or `conversation_id` (preferred, ADR-016) and include the user's answer in `mission` (or in `conversation_history`).
-
 ### Workflow Resume (Human-in-the-Loop)
-- `POST /api/v1/workflows/wait`: Persist a waiting checkpoint (`run_id`, `node_id`, `blocking_reason`, `required_inputs`).
-- `GET /api/v1/workflows/{run_id}`: Fetch checkpoint state.
-- `POST /api/v1/workflows/{run_id}/resume`: Submit resume payload and transition checkpoint to `resumed`.
-- `POST /api/v1/workflows/{run_id}/resume-and-continue`: Resume and continue execution via `activate_skill` in one call.
 
-Example resume request:
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/workflows/wait` | Persist a waiting checkpoint |
+| `GET` | `/api/v1/workflows/{run_id}` | Fetch checkpoint state |
+| `POST` | `/api/v1/workflows/{run_id}/resume` | Submit resume payload, transition to `resumed` |
+| `POST` | `/api/v1/workflows/{run_id}/resume-and-continue` | Resume and continue via `activate_skill` |
 
+**Example resume request:**
 ```json
 {
   "input_type": "supplier_reply",
   "payload": {
-    "supplier_reply": "USt-ID DE123456789"
+    "supplier_reply": "VAT-ID DE123456789"
   },
   "sender_metadata": {
     "channel": "telegram",
@@ -97,11 +147,14 @@ Example resume request:
 ```
 
 ### Agents
-- `GET /api/v1/agents`: List all available agents (custom, profile, and plugin agents).
-- `GET /api/v1/agents/{agent_id}`: Get a specific agent definition.
-- `POST /api/v1/agents`: Create a new custom agent.
-- `PUT /api/v1/agents/{agent_id}`: Update an existing custom agent.
-- `DELETE /api/v1/agents/{agent_id}`: Delete a custom agent.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/agents` | List all agents (custom, profile, plugin) |
+| `GET` | `/api/v1/agents/{agent_id}` | Get a specific agent definition |
+| `POST` | `/api/v1/agents` | Create a new custom agent |
+| `PUT` | `/api/v1/agents/{agent_id}` | Update an existing custom agent |
+| `DELETE` | `/api/v1/agents/{agent_id}` | Delete a custom agent |
 
 #### Plugin Agent Discovery
 
@@ -118,116 +171,82 @@ agents = response.json()["agents"]
 plugin_agents = [a for a in agents if a["source"] == "plugin"]
 for agent in plugin_agents:
     print(f"{agent['agent_id']}: {agent['name']}")
-    print(f"  Path: {agent['plugin_path']}")
-    print(f"  Tools: {agent['tool_classes']}")
 ```
 
-**Example: Execute with plugin agent**
-```python
-import requests
+### Tool Catalog
 
-# Use plugin agent by agent_id (plugin path is automatically resolved)
-response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
-    json={
-        "mission": "Prüfe die Rechnung invoice.pdf",
-        "agent_id": "accounting_agent"  # Plugin is automatically loaded
-    }
-)
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tools` | List all available tools with metadata |
 
-### Sessions (Deprecated)
-
-> **Deprecated (ADR-016):** Session endpoints are deprecated. Use the
-> Conversation endpoints below instead. Responses include `Deprecation`
-> and `Sunset` headers. These endpoints will be removed in a future
-> major release.
-
-- `GET /api/v1/sessions`: List all active sessions.
-- `GET /api/v1/sessions/{session_id}`: Retrieve full state for a specific session.
-- `POST /api/v1/sessions`: Create a new session.
+Returns the full tool catalog including native, RAG, and plugin tools.
 
 ### Conversations (ADR-016)
 
 Persistent conversation management — the replacement for sessions.
 
-- `POST /api/v1/conversations`: Create a new conversation.
-- `GET  /api/v1/conversations`: List active conversations.
-- `GET  /api/v1/conversations/archived`: List archived conversations.
-- `GET  /api/v1/conversations/{id}/messages`: Get messages for a conversation.
-- `POST /api/v1/conversations/{id}/messages`: Send a message (runs agent, returns reply).
-- `POST /api/v1/conversations/{id}/archive`: Archive a conversation.
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/conversations` | Create a new conversation |
+| `GET` | `/api/v1/conversations` | List active conversations |
+| `GET` | `/api/v1/conversations/archived` | List archived conversations |
+| `GET` | `/api/v1/conversations/{id}/messages` | Get messages for a conversation |
+| `POST` | `/api/v1/conversations/{id}/messages` | Send a message (runs agent, returns reply) |
+| `POST` | `/api/v1/conversations/{id}/archive` | Archive a conversation |
 
-### System
-- `GET /health`: Basic liveness check.
+### Memory Consolidation
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/memory/consolidate` | Trigger memory consolidation pipeline |
+| `GET` | `/api/v1/memory/experiences` | List captured session experiences |
+| `GET` | `/api/v1/memory/consolidations` | List past consolidation runs |
+
+**Consolidation request:**
+```json
+{
+  "profile": "butler",
+  "strategy": "default",
+  "max_sessions": 10,
+  "session_ids": ["optional-specific-session"]
+}
+```
 
 ### Admin APIs (Enterprise - Optional)
 
-> **Hinweis**: Diese Endpoints sind nur verfügbar wenn `taskforce-enterprise` installiert ist.
->
-> ```bash
-> pip install taskforce-enterprise
-> ```
->
-> Nach Installation werden die Admin-Endpoints automatisch registriert via Plugin-System.
+> **Note:** These endpoints are only available when `taskforce-enterprise` is installed.
+> After installation, admin endpoints are automatically registered via the plugin system.
 
-Die Admin APIs bieten Multi-Tenant-Management für Enterprise-Deployments.
-
-#### Authentifizierung
-
-Alle Admin-Endpoints erfordern Authentifizierung via:
+All admin endpoints require authentication via:
 - **JWT Bearer Token**: `Authorization: Bearer <token>`
 - **API Key**: `X-API-Key: <key>`
 
-```python
-import requests
-
-# Mit JWT Token
-headers = {"Authorization": "Bearer eyJ..."}
-
-# Mit API Key
-headers = {"X-API-Key": "tk_..."}
-
-response = requests.get(
-    "http://localhost:8000/api/v1/admin/users",
-    headers=headers
-)
-```
-
 #### Tenant Management
-- `GET /api/v1/admin/tenants`: List all tenants (requires `TENANT_MANAGE` permission).
-- `POST /api/v1/admin/tenants`: Create a new tenant.
-- `GET /api/v1/admin/tenants/{tenant_id}`: Get tenant details.
-- `PUT /api/v1/admin/tenants/{tenant_id}`: Update tenant settings.
-- `DELETE /api/v1/admin/tenants/{tenant_id}`: Delete a tenant.
+- `GET /api/v1/admin/tenants` — List all tenants
+- `POST /api/v1/admin/tenants` — Create a new tenant
+- `GET /api/v1/admin/tenants/{tenant_id}` — Get tenant details
+- `PUT /api/v1/admin/tenants/{tenant_id}` — Update tenant settings
+- `DELETE /api/v1/admin/tenants/{tenant_id}` — Delete a tenant
 
 #### User Management
-- `GET /api/v1/admin/users`: List users for a tenant.
-- `POST /api/v1/admin/users`: Create a new user.
-- `GET /api/v1/admin/users/{user_id}`: Get user details.
-- `PUT /api/v1/admin/users/{user_id}`: Update user profile.
-- `DELETE /api/v1/admin/users/{user_id}`: Deactivate a user.
+- `GET /api/v1/admin/users` — List users for a tenant
+- `POST /api/v1/admin/users` — Create a new user
+- `GET /api/v1/admin/users/{user_id}` — Get user details
+- `PUT /api/v1/admin/users/{user_id}` — Update user profile
+- `DELETE /api/v1/admin/users/{user_id}` — Deactivate a user
 
 #### Role Management
-- `GET /api/v1/admin/roles`: List all roles (system and custom).
-- `POST /api/v1/admin/roles`: Create a custom role.
-- `GET /api/v1/admin/roles/{role_id}`: Get role details with permissions.
-- `PUT /api/v1/admin/roles/{role_id}`: Update role permissions.
-- `DELETE /api/v1/admin/roles/{role_id}`: Delete a custom role.
+- `GET /api/v1/admin/roles` — List all roles
+- `POST /api/v1/admin/roles` — Create a custom role
+- `GET /api/v1/admin/roles/{role_id}` — Get role details
+- `PUT /api/v1/admin/roles/{role_id}` — Update role permissions
+- `DELETE /api/v1/admin/roles/{role_id}` — Delete a custom role
 
-#### System Roles (vordefiniert)
+See [Enterprise Features](features/enterprise.md) for details on the RBAC system.
 
-| Role | Permissions |
-|------|-------------|
-| `admin` | Alle Berechtigungen |
-| `agent_designer` | Agent CRUD, Tool Read |
-| `operator` | Agent Execute, Session CRUD |
-| `auditor` | Read-only, Audit Read |
-| `viewer` | Basis Read-only |
+---
 
-> **Siehe auch:** [Enterprise Features](features/enterprise.md) für Details zum RBAC-System und [Plugin System](architecture/plugin-system.md) für die Architektur.
-
-## 🔧 Integration Examples
+## Integration Examples
 
 ### Basic Mission Execution
 
@@ -246,8 +265,6 @@ print(response.json()["message"])
 
 ### Using Plugin Agents
 
-Plugin agents are automatically discovered and can be used by their `agent_id`:
-
 ```python
 import requests
 
@@ -255,23 +272,14 @@ import requests
 agents_response = requests.get("http://localhost:8000/api/v1/agents")
 all_agents = agents_response.json()["agents"]
 
-# Find plugin agents
-plugin_agents = [a for a in all_agents if a["source"] == "plugin"]
-print("Available plugin agents:")
-for agent in plugin_agents:
-    print(f"  - {agent['agent_id']}: {agent['name']}")
-
 # Execute with a plugin agent
 response = requests.post(
     "http://localhost:8000/api/v1/execution/execute",
     json={
-        "mission": "Prüfe die Rechnung invoice.pdf auf Vollständigkeit",
-        "agent_id": "accounting_agent"  # Plugin is automatically loaded
+        "mission": "Check invoice.pdf for completeness",
+        "agent_id": "accounting_agent"
     }
 )
-result = response.json()
-print(f"Status: {result['status']}")
-print(f"Message: {result['message']}")
 ```
 
 ### Custom Agent Management
@@ -290,7 +298,6 @@ create_response = requests.post(
         "tool_allowlist": ["web_search", "web_fetch", "python"]
     }
 )
-print(f"Created agent: {create_response.json()['agent_id']}")
 
 # Use the custom agent
 execute_response = requests.post(
