@@ -190,10 +190,14 @@ def run(config: RunConfig) -> None:
     project_root = Path(config.project_root).resolve()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
-    # Set up log directory
+    # Set up log directory — use a stable campaign-based name so the log
+    # persists across runs and crashes instead of starting fresh each time.
+    # A timestamped copy is also kept for archival purposes.
     log_dir = project_root / ".autooptim" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"run-{timestamp}.tsv"
+    # Sanitize campaign name for filename
+    safe_name = config.name.replace(" ", "-").replace("/", "-")
+    log_path = log_dir / f"{safe_name}.tsv"
 
     state_file = project_root / ".autooptim_state.json"
 
