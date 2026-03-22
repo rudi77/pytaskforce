@@ -63,6 +63,12 @@ class ToolResultMessageFactory:
         self._result_store_threshold = result_store_threshold
         self._logger = logger
 
+    # Tools whose output must always be fully visible to the calling agent.
+    # These are never stored behind a handle, regardless of size.
+    INLINE_ALWAYS_TOOLS: frozenset[str] = frozenset({
+        "call_agents_parallel",
+    })
+
     async def build_message(
         self,
         *,
@@ -78,11 +84,21 @@ class ToolResultMessageFactory:
         If tool_result_store is available and the result is large, stores the
         result and returns a handle+preview message. Otherwise, returns a
         standard message with the full result (truncated).
+
+        Tools listed in INLINE_ALWAYS_TOOLS always return the full result
+        inline, because the calling agent needs the complete output to
+        synthesize an answer (e.g., sub-agent delegation results).
         """
         result_json = json.dumps(tool_result, ensure_ascii=False, default=str)
         result_size = len(result_json)
 
-        if self._tool_result_store and result_size > self._result_store_threshold:
+        force_inline = tool_name in self.INLINE_ALWAYS_TOOLS
+
+        if (
+            self._tool_result_store
+            and result_size > self._result_store_threshold
+            and not force_inline
+        ):
             handle = await self._tool_result_store.put(
                 tool_name=tool_name,
                 result=tool_result,
