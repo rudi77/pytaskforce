@@ -5,6 +5,12 @@
 profile: butler
 specialist: butler
 
+# Optional: Butler role specialization.
+# When set, loads a role YAML from configs/butler_roles/{role}.yaml
+# that overrides persona prompt, sub-agents, and tools.
+# Examples: personal_assistant, accountant
+# role: personal_assistant
+
 persistence:
   type: file
   work_dir: .taskforce

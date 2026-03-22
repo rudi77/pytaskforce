@@ -20,6 +20,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 014: Resumable Human-in-the-Loop Workflow Checkpoints](adr-014-resumable-human-in-the-loop-workflows.md)**
 - **[ADR 015: Parallel Sub-Agent Execution](adr-015-parallel-sub-agent-execution.md)**
 - **[ADR 016: Persistent Agent Architecture (Sessionless Orchestrator)](adr-016-persistent-agent-architecture.md)**
+- **[ADR 017: Butler Role Specialization](adr-017-butler-role-specialization.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*

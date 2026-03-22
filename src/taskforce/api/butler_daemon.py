@@ -41,10 +41,12 @@ class ButlerDaemon:
         profile: str = "butler",
         work_dir: str = ".taskforce",
         persistent_agent: bool = True,
+        role: str | None = None,
     ) -> None:
         self._profile = profile
         self._work_dir = work_dir
         self._persistent_agent_enabled = persistent_agent
+        self._role_override = role
         self._butler: ButlerService | None = None
         self._agent_service: Any = None  # PersistentAgentService | None
         self._running = False
@@ -130,7 +132,7 @@ class ButlerDaemon:
         logger.info("butler_daemon.stopped")
 
     def _load_config(self) -> dict[str, Any]:
-        """Load butler profile configuration."""
+        """Load butler profile configuration and apply role overlay if set."""
         from taskforce.application.factory import AgentFactory
 
         factory = AgentFactory()
@@ -140,14 +142,38 @@ class ButlerDaemon:
             import yaml  # type: ignore[import-untyped]
 
             with open(config_path) as f:
-                return yaml.safe_load(f) or {}
+                config = yaml.safe_load(f) or {}
+        else:
+            logger.warning(
+                "butler_daemon.config_not_found",
+                profile=self._profile,
+                path=str(config_path),
+            )
+            config = {}
 
-        logger.warning(
-            "butler_daemon.config_not_found",
-            profile=self._profile,
-            path=str(config_path),
-        )
-        return {}
+        # Resolve and apply butler role overlay
+        role_name = self._role_override or config.get("role")
+        if role_name:
+            from taskforce.application.butler_role_loader import ButlerRoleLoader
+
+            role_loader = ButlerRoleLoader(
+                config_dir=factory.config_dir,
+                project_dir=Path(self._work_dir),
+            )
+            try:
+                role = role_loader.load(role_name)
+                config = role_loader.merge_into_config(config, role)
+                logger.info(
+                    "butler_daemon.role_applied",
+                    role=role_name,
+                )
+            except FileNotFoundError:
+                logger.error(
+                    "butler_daemon.role_not_found",
+                    role=role_name,
+                )
+
+        return config
 
     async def _setup_gateway(self, config: dict[str, Any]) -> None:
         """Set up the communication gateway if configured."""
@@ -160,9 +186,7 @@ class ButlerDaemon:
             from taskforce.application.gateway import CommunicationGateway
             from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
-            components = InfrastructureBuilder().build_gateway_components(
-                work_dir=self._work_dir
-            )
+            components = InfrastructureBuilder().build_gateway_components(work_dir=self._work_dir)
             if components.outbound_senders:
                 factory = AgentFactory()
                 factory.set_scheduler(self._butler.scheduler)
@@ -199,9 +223,7 @@ class ButlerDaemon:
 
             # Wire PersistentAgentService when enabled.
             if self._persistent_agent_enabled:
-                self._agent_service = self._build_persistent_agent_service(
-                    executor, config
-                )
+                self._agent_service = self._build_persistent_agent_service(executor, config)
                 if self._agent_service:
                     self._butler.set_agent_service(self._agent_service)
                     logger.info("butler_daemon.persistent_agent_configured")
@@ -239,9 +261,7 @@ class ButlerDaemon:
                 drain_timeout=queue_cfg.get("drain_timeout", 30.0),
             )
         except Exception as exc:
-            logger.warning(
-                "butler_daemon.persistent_agent_build_failed", error=str(exc)
-            )
+            logger.warning("butler_daemon.persistent_agent_build_failed", error=str(exc))
             return None
 
     async def _setup_event_sources(self, config: dict[str, Any]) -> None:
@@ -316,6 +336,8 @@ class ButlerDaemon:
             status = await self._butler.get_status()
             status["updated_at"] = utc_now().isoformat()
             status["profile"] = self._profile
+            if self._role_override:
+                status["role"] = self._role_override
 
             # Include persistent agent status when available.
             if self._agent_service:
