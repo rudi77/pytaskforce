@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.5
-**Date:** 2026-02-22
+**Version:** 1.6
+**Date:** 2026-03-22
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---
@@ -81,7 +81,7 @@ src/taskforce/
 │   ├── memory/                # File-based memory store
 │   ├── cache/                 # Tool result caching
 │   ├── tools/
-│   │   ├── native/            # 20 built-in tools
+│   │   ├── native/            # 27 built-in tools
 │   │   ├── mcp/               # MCP server connections
 │   │   ├── rag/               # Azure AI Search tools
 │   │   └── orchestration/     # Agent/sub-agent tools
@@ -359,29 +359,37 @@ When routing is disabled (default), the router transparently maps all hints back
 
 ## Native Tools
 
-20 built-in tools in `infrastructure/tools/native/`:
+27 built-in tools in `infrastructure/tools/native/`:
 
-| Tool | File | Description |
-|------|------|-------------|
-| File Read/Write | `file_tools.py` | File operations |
-| Shell | `shell_tool.py` | Shell command execution (shell + powershell) |
-| Python | `python_tool.py` | Python code execution (isolated namespace) |
-| Git | `git_tools.py` | Git and GitHub operations |
-| Web | `web_tools.py` | HTTP requests, web crawling (web_search + web_fetch) |
-| Browser | `browser_tool.py` | Headless browser automation via Playwright (requires `uv sync --extra browser && playwright install chromium`) |
-| Search | `search_tools.py` | Grep/glob-style search |
-| Edit | `edit_tool.py` | Targeted file editing |
-| LLM | `llm_tool.py` | Delegated LLM calls |
-| Memory | `memory_tool.py` | Long-term memory CRUD |
-| Multimedia | `multimedia_tool.py` | Image/media handling |
-| Ask User | `ask_user_tool.py` | Interactive user prompts |
-| Activate Skill | `activate_skill_tool.py` | Runtime skill activation |
-| Send Notification | `send_notification_tool.py` | Proactive push notifications via Communication Gateway |
-| Google Drive | `google_drive_tool.py` | Google Drive file operations (list, download, upload, search, etc.) |
-| Calendar | `calendar_tool.py` | Google Calendar list/create (butler) |
-| Schedule | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
-| Reminder | `reminder_tool.py` | One-shot reminder creation (butler) |
-| Rule Manager | `rule_manager_tool.py` | Event-to-action trigger rule management (butler) |
+| Short Name | Tool | File | Description |
+|------------|------|------|-------------|
+| `file_read` | FileReadTool | `file_tools.py` | Read file contents |
+| `file_write` | FileWriteTool | `file_tools.py` | Write file contents |
+| `edit` | EditTool | `edit_tool.py` | Targeted file editing (search/replace) |
+| `shell` | ShellTool | `shell_tool.py` | Platform-agnostic shell execution |
+| `bash` | BashTool | `shell_tool.py` | Bash-specific shell execution (Linux/macOS) |
+| `powershell` | PowerShellTool | `shell_tool.py` | Windows PowerShell execution |
+| `python` | PythonTool | `python_tool.py` | Python code execution (isolated namespace) |
+| `git` | GitTool | `git_tools.py` | Git CLI operations |
+| `github` | GitHubTool | `git_tools.py` | GitHub API operations (issues, PRs, etc.) |
+| `web_search` | WebSearchTool | `web_tools.py` | Web search via DuckDuckGo |
+| `web_fetch` | WebFetchTool | `web_tools.py` | HTTP requests, web crawling |
+| `browser` | BrowserTool | `browser_tool.py` | Headless browser automation via Playwright (requires `uv sync --extra browser && playwright install chromium`) |
+| `grep` | GrepTool | `search_tools.py` | Content search (grep-style) |
+| `glob` | GlobTool | `search_tools.py` | File pattern search (glob-style) |
+| `llm` | LLMTool | `llm_tool.py` | Delegated LLM calls |
+| `memory` | MemoryTool | `memory_tool.py` | Long-term memory CRUD |
+| `multimedia` | MultimediaTool | `multimedia_tool.py` | Image/media handling |
+| `ask_user` | AskUserTool | `ask_user_tool.py` | Interactive user prompts |
+| `activate_skill` | ActivateSkillTool | `activate_skill_tool.py` | Runtime skill activation |
+| `authenticate` | AuthTool | `auth_tool.py` | OAuth2 authentication for external services (Google, Microsoft, GitHub) |
+| `send_notification` | SendNotificationTool | `send_notification_tool.py` | Proactive push notifications via Communication Gateway |
+| `google_drive` | GoogleDriveTool | `google_drive_tool.py` | Google Drive file operations (list, download, upload, search) |
+| `gmail` | GmailTool | `email_tool.py` | Gmail message reading and search (butler) |
+| `calendar` | CalendarTool | `calendar_tool.py` | Google Calendar list/create (butler) |
+| `schedule` | ScheduleTool | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
+| `reminder` | ReminderTool | `reminder_tool.py` | One-shot reminder creation (butler) |
+| `rule_manager` | RuleManagerTool | `rule_manager_tool.py` | Event-to-action trigger rule management (butler) |
 
 Additional tool categories:
 - **RAG Tools** (`infrastructure/tools/rag/`): Azure AI Search integration (semantic search, document retrieval, global analysis)
@@ -818,13 +826,16 @@ async def test_file_state_manager_saves_and_loads(tmp_path: Path):
 
 Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce/configs/`:
 
-- `dev.yaml` - Default development profile
-- `coding_agent.yaml` - Coding specialist with sub-agents
-- `rag_agent.yaml` - RAG-enabled agent
+- `butler.yaml` - **Default profile.** Event-driven personal assistant daemon (scheduling, rules, Google Workspace)
+- `dev.yaml` - Development profile with file-based persistence
+- `coding_agent.yaml` - Multi-agent coding orchestrator with sub-agents
+- `coding_analysis.yaml` - Code analysis specialist
+- `rag_agent.yaml` - RAG-enabled agent (Azure AI Search)
 - `security.yaml` - Security-hardened profile
-- `orchestrator.yaml`, `planner.yaml`, `worker.yaml`, `judge.yaml` - Epic orchestration roles
-- `butler.yaml` - Butler daemon profile (event sources, scheduler, notifications)
-- `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, etc.)
+- `swe_bench.yaml` - SWE-Bench evaluation profile
+- `butler_roles/accountant.yaml` - Butler role: financial document processing
+- `butler_roles/personal_assistant.yaml` - Butler role: general personal assistant
+- `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, test_engineer, doc_writer, research_agent, etc.)
 
 ```yaml
 # src/taskforce/configs/dev.yaml
@@ -877,8 +888,18 @@ Defined in `pyproject.toml` under `[project.optional-dependencies]`:
 | `rag` | Azure AI Search integration | `uv sync --extra rag` |
 | `pdf` | PDF processing (pypdf, pdfplumber, reportlab) | `uv sync --extra pdf` |
 | `personal-assistant` | Google Calendar/API integration | `uv sync --extra personal-assistant` |
-| `dev` | Testing and linting tools | `uv sync --extra dev` |
+| `postgres` | PostgreSQL persistence (SQLAlchemy, Alembic, AsyncPG) | `uv sync --extra postgres` |
+| `tokenizer` | Tiktoken token counting | `uv sync --extra tokenizer` |
+| `tracing` | Arize Phoenix OTEL + LiteLLM instrumentation | `uv sync --extra tracing` |
+| `auth` | Cryptography for authentication/security | `uv sync --extra auth` |
+| `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
+
+Dev dependencies are managed separately via `[dependency-groups]`:
+
+```bash
+uv sync --group dev   # pytest, ruff, black, mypy, pyinstaller
+```
 
 ### Environment Variables
 
@@ -1330,5 +1351,5 @@ See `docs/architecture/section-10-deployment.md` for:
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-03-22
 **For Questions:** See `docs/` or create an issue in the repository
