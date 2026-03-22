@@ -193,4 +193,4 @@ class RunConfig:
     full_eval_every_n: int = 5
     large_improvement_threshold: float = 0.05
     resume: bool = False
-    eval_mode: str = "quick"  # "quick" | "full"
+    eval_mode: str = "quick"  # task name passed to evaluator (e.g. "quick", "full", "daily")

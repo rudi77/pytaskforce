@@ -83,18 +83,24 @@ def _build_evaluator(
 
 
 def _get_eval_task_name(config: RunConfig, experiment_id: int) -> str:
-    """Determine which eval task to run based on mode and experiment number."""
-    if config.eval_mode == "full":
-        return config.evaluator.full_task
+    """Determine which eval task to run based on mode and experiment number.
 
-    # Quick mode: periodically do a full eval
-    if experiment_id > 0 and experiment_id % config.full_eval_every_n == 0:
-        logger.info(
-            "Periodic full eval (every %d experiments)", config.full_eval_every_n
-        )
-        return config.evaluator.full_task
+    eval_mode is passed directly as the task name to the evaluator command.
+    The special values "quick" and "full" map to evaluator.quick_task and
+    evaluator.full_task for backward compatibility; any other value (e.g.
+    "daily", "memory", "all") is forwarded as-is.
+    """
+    # Map legacy names to configured task names
+    mode = config.eval_mode
+    if mode == "quick":
+        base_task = config.evaluator.quick_task
+    elif mode == "full":
+        base_task = config.evaluator.full_task
+    else:
+        # Custom mode (daily, memory, all, etc.) — use directly
+        base_task = mode
 
-    return config.evaluator.quick_task
+    return base_task
 
 
 def _save_state(
@@ -178,9 +184,10 @@ def run(config: RunConfig) -> None:
         logger.info("  BASELINE EVALUATION")
         logger.info("=" * 60)
 
+        baseline_task = _get_eval_task_name(config, 0)
         baseline_start = time.time()
         baseline_scores, baseline_composite, baseline_cost = evaluator.evaluate(
-            task_name=config.evaluator.full_task,
+            task_name=baseline_task,
             num_runs=config.eval_runs,
         )
         baseline_duration = time.time() - baseline_start
@@ -335,6 +342,9 @@ def run(config: RunConfig) -> None:
         )
 
         # 5. Keep or discard
+        pre_experiment_composite = baseline_composite
+        pre_experiment_scores = baseline_scores
+        pre_experiment_sha = baseline_sha
         if composite >= baseline_composite - config.tolerance:
             status = ExperimentStatus.KEPT
             baseline_scores = scores
@@ -366,11 +376,15 @@ def run(config: RunConfig) -> None:
         experiment_log.append(result)
         _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
 
-        # If large improvement on quick eval, validate with full
+        # If large improvement on quick eval, validate with full eval to catch
+        # overfitting. Only applies when eval_mode is "quick" (the fast smoke-test
+        # mode). For broader modes (daily, full, all) the eval is already
+        # comprehensive enough that a separate validation pass adds cost without
+        # value.
         if (
             status == ExperimentStatus.KEPT
             and delta > config.large_improvement_threshold
-            and task_name != config.evaluator.full_task
+            and config.eval_mode == "quick"
         ):
             logger.info(
                 "Large improvement (+%.4f). Running full eval to validate...", delta
@@ -378,7 +392,6 @@ def run(config: RunConfig) -> None:
             full_scores, full_composite, full_cost = evaluator.evaluate(
                 task_name=config.evaluator.full_task,
                 num_runs=config.eval_runs,
-                baseline_scores=baseline_scores,
             )
             total_cost += full_cost
             logger.info(
@@ -386,6 +399,27 @@ def run(config: RunConfig) -> None:
                 full_composite,
                 composite,
             )
+
+            # If full eval shows regression vs pre-experiment baseline, discard
+            if full_composite < pre_experiment_composite - config.tolerance:
+                logger.warning(
+                    "Full eval REGRESSED (%.4f < %.4f). Reverting experiment.",
+                    full_composite,
+                    pre_experiment_composite,
+                )
+                git.discard_last_commit()
+                # Restore baseline to pre-experiment state
+                baseline_scores = pre_experiment_scores
+                baseline_composite = pre_experiment_composite
+                baseline_sha = pre_experiment_sha
+            else:
+                # Full eval confirms improvement — use full eval scores as new baseline
+                baseline_scores = full_scores
+                baseline_composite = full_composite
+                baseline_sha = commit_sha
+                logger.info("Full eval CONFIRMED. New baseline: %.4f", baseline_composite)
+
+            _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
 
     # --- Summary ---
     logger.info("")
