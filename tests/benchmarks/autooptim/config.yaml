@@ -118,12 +118,17 @@ evaluator:
   command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
   quick_task: "quick"
   full_task: "full"
-  timeout: 360
+  daily_task: "daily"
+  memory_task: "memory"
+  future_task: "future"
+  timeout: 600
 
 # --- Metrics ---
 metric:
   scores:
+    # ---------------------------------------------------------------
     # Aggregate scores
+    # ---------------------------------------------------------------
     - name: task_completion
       range: [0.0, 1.0]
     - name: avg_steps
@@ -138,7 +143,18 @@ metric:
       type: lower_is_better
     - name: notification_spam
       type: lower_is_better
+    - name: delegation_efficiency
+      type: lower_is_better
+    - name: answer_quality
+      range: [0.0, 1.0]
+    - name: memory_recall
+      range: [0.0, 1.0]
+    - name: self_improvement_score
+      range: [0.0, 1.0]
+
+    # ---------------------------------------------------------------
     # Per-mission: baseline (zero-tool question)
+    # ---------------------------------------------------------------
     - name: baseline_steps
       type: lower_is_better
     - name: baseline_tokens
@@ -149,7 +165,10 @@ metric:
       type: lower_is_better
     - name: baseline_completed
       range: [0.0, 1.0]
+
+    # ---------------------------------------------------------------
     # Per-mission: singletool (file read via delegation)
+    # ---------------------------------------------------------------
     - name: singletool_steps
       type: lower_is_better
     - name: singletool_tokens
@@ -160,7 +179,10 @@ metric:
       type: lower_is_better
     - name: singletool_completed
       range: [0.0, 1.0]
+
+    # ---------------------------------------------------------------
     # Per-mission: docreport (multi-agent delegation + synthesis)
+    # ---------------------------------------------------------------
     - name: docreport_steps
       type: lower_is_better
     - name: docreport_tokens
@@ -171,13 +193,200 @@ metric:
       type: lower_is_better
     - name: docreport_completed
       range: [0.0, 1.0]
+
+    # ---------------------------------------------------------------
+    # Per-mission: Daily Assistant (tagesplan, datei, recherche, reminder, praeferenz)
+    # ---------------------------------------------------------------
+    - name: tagesplan_steps
+      type: lower_is_better
+    - name: tagesplan_tokens
+      type: lower_is_better
+    - name: tagesplan_wall
+      type: lower_is_better
+    - name: tagesplan_tools
+      type: lower_is_better
+    - name: tagesplan_completed
+      range: [0.0, 1.0]
+    - name: tagesplan_quality
+      range: [0.0, 1.0]
+
+    - name: datei_steps
+      type: lower_is_better
+    - name: datei_tokens
+      type: lower_is_better
+    - name: datei_wall
+      type: lower_is_better
+    - name: datei_tools
+      type: lower_is_better
+    - name: datei_completed
+      range: [0.0, 1.0]
+    - name: datei_quality
+      range: [0.0, 1.0]
+
+    - name: recherche_steps
+      type: lower_is_better
+    - name: recherche_tokens
+      type: lower_is_better
+    - name: recherche_wall
+      type: lower_is_better
+    - name: recherche_tools
+      type: lower_is_better
+    - name: recherche_completed
+      range: [0.0, 1.0]
+    - name: recherche_quality
+      range: [0.0, 1.0]
+
+    - name: reminder_steps
+      type: lower_is_better
+    - name: reminder_tokens
+      type: lower_is_better
+    - name: reminder_wall
+      type: lower_is_better
+    - name: reminder_tools
+      type: lower_is_better
+    - name: reminder_completed
+      range: [0.0, 1.0]
+    - name: reminder_quality
+      range: [0.0, 1.0]
+
+    - name: praeferenz_steps
+      type: lower_is_better
+    - name: praeferenz_tokens
+      type: lower_is_better
+    - name: praeferenz_wall
+      type: lower_is_better
+    - name: praeferenz_tools
+      type: lower_is_better
+    - name: praeferenz_completed
+      range: [0.0, 1.0]
+    - name: praeferenz_quality
+      range: [0.0, 1.0]
+
+    # ---------------------------------------------------------------
+    # Per-mission: Memory & Learning (multi-turn sequences)
+    # ---------------------------------------------------------------
+    - name: mem_pref_completed
+      range: [0.0, 1.0]
+    - name: mem_pref_recall
+      range: [0.0, 1.0]
+    - name: mem_pref_steps
+      type: lower_is_better
+    - name: mem_pref_tokens
+      type: lower_is_better
+    - name: mem_pref_wall
+      type: lower_is_better
+
+    - name: mem_fact_completed
+      range: [0.0, 1.0]
+    - name: mem_fact_recall
+      range: [0.0, 1.0]
+    - name: mem_fact_steps
+      type: lower_is_better
+    - name: mem_fact_tokens
+      type: lower_is_better
+    - name: mem_fact_wall
+      type: lower_is_better
+
+    - name: mem_contra_completed
+      range: [0.0, 1.0]
+    - name: mem_contra_recall
+      range: [0.0, 1.0]
+    - name: mem_contra_steps
+      type: lower_is_better
+    - name: mem_contra_tokens
+      type: lower_is_better
+    - name: mem_contra_wall
+      type: lower_is_better
+
+    - name: mem_search_completed
+      range: [0.0, 1.0]
+    - name: mem_search_recall
+      range: [0.0, 1.0]
+    - name: mem_search_steps
+      type: lower_is_better
+    - name: mem_search_tokens
+      type: lower_is_better
+    - name: mem_search_wall
+      type: lower_is_better
+
+    - name: mem_proactive_completed
+      range: [0.0, 1.0]
+    - name: mem_proactive_recall
+      range: [0.0, 1.0]
+    - name: mem_proactive_steps
+      type: lower_is_better
+    - name: mem_proactive_tokens
+      type: lower_is_better
+    - name: mem_proactive_wall
+      type: lower_is_better
+
+    # ---------------------------------------------------------------
+    # Per-mission: Future / Aspirational (expected to score 0 today)
+    # ---------------------------------------------------------------
+    - name: fut_agent_completed
+      range: [0.0, 1.0]
+    - name: fut_agent_steps
+      type: lower_is_better
+    - name: fut_agent_tokens
+      type: lower_is_better
+    - name: fut_agent_wall
+      type: lower_is_better
+    - name: fut_agent_tools
+      type: lower_is_better
+
+    - name: fut_tool_completed
+      range: [0.0, 1.0]
+    - name: fut_tool_steps
+      type: lower_is_better
+    - name: fut_tool_tokens
+      type: lower_is_better
+    - name: fut_tool_wall
+      type: lower_is_better
+    - name: fut_tool_tools
+      type: lower_is_better
+
+    - name: fut_meta_completed
+      range: [0.0, 1.0]
+    - name: fut_meta_steps
+      type: lower_is_better
+    - name: fut_meta_tokens
+      type: lower_is_better
+    - name: fut_meta_wall
+      type: lower_is_better
+    - name: fut_meta_tools
+      type: lower_is_better
+
+    - name: fut_learn_completed
+      range: [0.0, 1.0]
+    - name: fut_learn_steps
+      type: lower_is_better
+    - name: fut_learn_tokens
+      type: lower_is_better
+    - name: fut_learn_wall
+      type: lower_is_better
+    - name: fut_learn_tools
+      type: lower_is_better
+
+    - name: fut_workflow_completed
+      range: [0.0, 1.0]
+    - name: fut_workflow_steps
+      type: lower_is_better
+    - name: fut_workflow_tokens
+      type: lower_is_better
+    - name: fut_workflow_wall
+      type: lower_is_better
+    - name: fut_workflow_tools
+      type: lower_is_better
+
   composite:
     quality:
-      weight: 0.40
+      weight: 0.35
       components:
-        task_completion: 1.0
+        task_completion: 0.5
+        answer_quality: 0.3
+        memory_recall: 0.2
     efficiency:
-      weight: 0.60
+      weight: 0.45
       type: ratio_to_baseline
       components:
         - avg_steps
@@ -185,6 +394,11 @@ metric:
         - avg_wall_seconds
         - total_tool_calls
         - notification_spam
+        - delegation_efficiency
+    future_readiness:
+      weight: 0.20
+      components:
+        self_improvement_score: 1.0
 
 # --- Proposer ---
 proposer:
