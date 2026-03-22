@@ -10,9 +10,9 @@ Testet Effizienz, Delegation, Memory, Lernfaehigkeit und zukuenftige Self-Improv
 | `quick` | 3 | CI smoke test (Baseline-Effizienz) | ~2min |
 | `full` | 4 | Volle Effizienz-Eval | ~6min |
 | `daily` | 9 | Full + Daily-Assistant-Missions | ~10min |
-| `memory` | 5 Sequenzen | Multi-Turn Memory & Learning | ~12min |
+| `memory` | 5 Sequenzen | Multi-Turn Memory & Learning | ~25min |
 | `future` | 5 | Aspirational Self-Improvement | ~5min |
-| `all` | 14 + 5 Seq. | Alles zusammen | ~25min |
+| `all` | 14 + 5 Seq. | Alles zusammen | ~45min |
 
 ```bash
 python tests/benchmarks/autooptim/eval_butler.py quick
@@ -142,7 +142,7 @@ Jede Sequenz besteht aus Setup-Steps (Information geben) und einem Test-Step (In
 | **Test** | "Exportiere eine Liste meiner naechsten 3 Termine. Nutze mein bevorzugtes Format." |
 
 **Prueft:** Recall nach 2 Filler-Missions → Antwort muss "CSV" enthalten
-**Metrik:** `mem_pref_recall` (0 oder 1), `preference_recall_accuracy`
+**Metrik:** `mem_pref_recall` (0 oder 1)
 
 ### Sequenz 2: Fact Retention (`mem_fact`)
 
@@ -153,7 +153,7 @@ Jede Sequenz besteht aus Setup-Steps (Information geben) und einem Test-Step (In
 | **Test** | "Wie heisst mein Steuerberater und was ist seine Telefonnummer?" |
 
 **Prueft:** Fakten-Recall → Antwort muss "Mueller" enthalten
-**Metrik:** `mem_fact_recall` (0 oder 1), `fact_recall_accuracy`
+**Metrik:** `mem_fact_recall` (0 oder 1)
 
 ### Sequenz 3: Contradiction Handling (`mem_contra`)
 
@@ -188,7 +188,7 @@ Jede Sequenz besteht aus Setup-Steps (Information geben) und einem Test-Step (In
 
 **Prueft:** Nach 3x gleicher Anfrage: Schlaegt der Butler vor, das zu automatisieren?
 **Bewertung:** LLM-as-Judge (prueft ob Automatisierungs-Vorschlag gemacht wurde)
-**Metrik:** `mem_proactive_recall` (0 oder 1), `proactive_suggestion_rate`
+**Metrik:** `mem_proactive_recall` (0 oder 1)
 
 ---
 
