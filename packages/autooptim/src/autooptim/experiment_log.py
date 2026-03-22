@@ -43,14 +43,14 @@ class ExperimentLog:
     def _ensure_header(self) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.log_path.exists() or self.log_path.stat().st_size == 0:
-            with open(self.log_path, "w", newline="") as f:
+            with open(self.log_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f, delimiter="\t")
                 writer.writerow(FIXED_COLUMNS)
 
     def append(self, result: ExperimentResult) -> None:
         """Append a single experiment result to the log."""
         self._ensure_header()
-        with open(self.log_path, "a", newline="") as f:
+        with open(self.log_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow([
                 result.experiment_id,
@@ -76,7 +76,7 @@ class ExperimentLog:
             return []
 
         results: list[ExperimentResult] = []
-        with open(self.log_path, newline="") as f:
+        with open(self.log_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
                 scores_json = row.get("scores_json", "{}")

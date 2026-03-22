@@ -78,7 +78,7 @@ class YamlMutator(BaseMutator):
                 self._validate_keys(new_values)
 
             # Load existing config
-            with open(full_path) as f:
+            with open(full_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
             if config is None:
                 config = {}
