@@ -845,7 +845,10 @@ async def main(task_name: str) -> None:
     if daily_results:
         for r in daily_results:
             mission_prompt = ""
-            for name, prefix, prompt in DAILY_MISSIONS:
+            for m in DAILY_MISSIONS:
+                if m is None:
+                    continue
+                name, prefix, prompt = m
                 if prefix == r["prefix"]:
                     mission_prompt = prompt
                     break
