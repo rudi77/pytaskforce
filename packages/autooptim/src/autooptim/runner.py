@@ -119,6 +119,59 @@ def _save_state(
     state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def _append_global_history(
+    project_root: Path,
+    campaign_name: str,
+    results: list[ExperimentResult],
+) -> None:
+    """Append experiment results to a global Markdown history file.
+
+    This file persists across runs so the proposer LLM can learn from
+    all past experiments, not just the current run.
+    """
+    history_path = project_root / ".autooptim" / "experiments_history.md"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Skip baseline-only runs with no real experiments
+    real_results = [r for r in results if r.status != ExperimentStatus.BASELINE]
+    if not real_results:
+        return
+
+    lines: list[str] = []
+
+    # Add header if file doesn't exist yet
+    if not history_path.exists():
+        lines.append("# AutoOptim Experiment History\n")
+        lines.append("Persistent log of all experiments across campaigns and runs.\n")
+        lines.append("The proposer uses this to avoid repeating failed approaches.\n\n")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f"## Campaign: {campaign_name} ({timestamp})\n\n")
+
+    for r in real_results:
+        delta = r.composite_score - r.baseline_composite
+        sign = "+" if delta >= 0 else ""
+        status_icon = {"kept": "✅", "discarded": "❌", "error": "⚠️"}.get(
+            r.status.value, "?"
+        )
+        lines.append(
+            f"- {status_icon} **Exp #{r.experiment_id}** [{r.category}] "
+            f"**{r.status.value.upper()}** ({sign}{delta:.4f})\n"
+        )
+        lines.append(f"  - **Change:** {r.description}\n")
+        lines.append(f"  - **Hypothesis:** {r.hypothesis[:200]}\n")
+        lines.append(f"  - **Files:** {', '.join(r.files_modified)}\n")
+        lines.append(f"  - **Composite:** {r.composite_score:.4f} (baseline: {r.baseline_composite:.4f})\n")
+        lines.append("\n")
+
+    try:
+        with open(history_path, "a", encoding="utf-8") as f:
+            f.writelines(lines)
+        logger.info("Global experiment history updated: %s", history_path)
+    except OSError as exc:
+        logger.warning("Failed to update global history: %s", exc)
+
+
 def _cleanup_state(state_file: Path) -> None:
     """Remove state file after clean exit."""
     if state_file.exists():
@@ -459,5 +512,8 @@ def run(config: RunConfig) -> None:
                 r.description,
                 r.composite_score,
             )
+
+    # Append results to global experiment history (persists across runs)
+    _append_global_history(project_root, config.name, all_results)
 
     _cleanup_state(state_file)

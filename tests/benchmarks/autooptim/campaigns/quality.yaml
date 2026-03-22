@@ -27,6 +27,7 @@ categories:
       - "src/taskforce/configs/custom/research_agent.yaml"
       - "src/taskforce/configs/custom/doc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   config:
     weight: 0.30
@@ -57,6 +58,7 @@ categories:
     context_files:
       - "src/taskforce/configs/butler.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
 evaluator:
   type: command

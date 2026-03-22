@@ -24,6 +24,7 @@ categories:
     context_files:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   config:
     weight: 0.40
@@ -50,6 +51,7 @@ categories:
     context_files:
       - "src/taskforce/configs/butler.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
 evaluator:
   type: command

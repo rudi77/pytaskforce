@@ -54,6 +54,7 @@ categories:
       - "src/taskforce/configs/butler.yaml"
       - "src/taskforce/configs/custom/pc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   prompt:
     weight: 0.50
@@ -66,6 +67,7 @@ categories:
       - "src/taskforce/core/prompts/autonomous_prompts.py"
       - "src/taskforce/configs/custom/pc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   code:
     weight: 0.20
@@ -90,6 +92,7 @@ categories:
       - "src/taskforce/core/domain/planning_strategy.py"
       - "src/taskforce/core/domain/context_policy.py"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
 evaluator:
   type: command

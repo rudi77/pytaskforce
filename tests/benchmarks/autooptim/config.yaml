@@ -70,6 +70,7 @@ categories:
       - "src/taskforce/configs/butler.yaml"
       - "src/taskforce/configs/custom/pc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   # --- Category 2: System prompts (medium risk) ---
   prompt:
@@ -85,6 +86,7 @@ categories:
       - "src/taskforce/configs/custom/research_agent.yaml"
       - "src/taskforce/configs/custom/doc-agent.yaml"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
   # --- Category 3: Core agent logic (higher risk) ---
   code:
@@ -111,6 +113,7 @@ categories:
       - "src/taskforce/core/domain/context_policy.py"
       - "src/taskforce/core/domain/lean_agent_components/message_history_manager.py"
       - ".autooptim/last_eval_trace.md"
+      - ".autooptim/experiments_history.md"
 
 # --- Evaluator ---
 evaluator:
