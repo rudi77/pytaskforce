@@ -26,6 +26,18 @@ taskforce butler start --role accountant
 
 ## Creating a Custom Role
 
+### Interactive (recommended)
+
+Use the built-in skill to create a role interactively:
+
+```
+/create-role Buchhalter für tägliche Belegverarbeitung
+```
+
+The Butler will guide you through defining name, persona, sub-agents, tools and save the YAML file.
+
+### Manual
+
 Create a YAML file in one of these locations:
 
 1. `src/taskforce/configs/butler_roles/{name}.yaml` — package-bundled (for shared/default roles)
