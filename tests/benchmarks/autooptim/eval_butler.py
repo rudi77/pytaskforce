@@ -881,16 +881,126 @@ async def main(task_name: str) -> None:
     sys.stdout.flush()
 
 
-if __name__ == "__main__":
-    task = sys.argv[1] if len(sys.argv) > 1 else "quick"
-    loop = asyncio.new_event_loop()
+async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None:
+    """Run a single dynamic mission and output detailed JSON results.
+
+    This mode is used by the Teacher-Student PoC to test arbitrary missions
+    against the current agent configuration.
+
+    Args:
+        mission_text: The mission prompt to execute.
+        mission_name: Display name for the mission (default: "dynamic").
+    """
+    executor = AgentExecutor()
+    prefix = "dyn"
+
     try:
-        loop.run_until_complete(main(task))
+        r = await asyncio.wait_for(
+            run_mission(mission_name, prefix, mission_text, executor),
+            timeout=300,
+        )
+    except asyncio.TimeoutError:
+        r = {
+            "name": mission_name, "prefix": prefix, "wall_seconds": 300.0,
+            "completed": False, "final_answer": "", "tool_trace": [],
+            "errors": ["Mission timed out after 300s"],
+            "notification_count": 0, "delegation_steps": -1,
+            "steps": 0, "input_tokens": 0, "output_tokens": 0,
+            "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+        }
+        print(f"  [{mission_name}] TIMEOUT after 300s", file=sys.stderr)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-    finally:
+        r = {
+            "name": mission_name, "prefix": prefix, "wall_seconds": 0.0,
+            "completed": False, "final_answer": "", "tool_trace": [],
+            "errors": [f"Mission error: {str(e)[:200]}"],
+            "notification_count": 0, "delegation_steps": -1,
+            "steps": 0, "input_tokens": 0, "output_tokens": 0,
+            "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+        }
+        print(f"  [{mission_name}] ERROR: {e}", file=sys.stderr)
+
+    # Grade answer quality via LLM judge
+    if r["final_answer"]:
+        r["answer_quality"] = await _llm_quality_grade(r["final_answer"], mission_text)
+
+    print(
+        f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
+        f"tools={r['tool_calls']} wall={r['wall_seconds']:.1f}s "
+        f"ok={r['completed']} quality={r.get('answer_quality', 'N/A')}",
+        file=sys.stderr,
+    )
+
+    # Output full result as JSON (includes tool_trace for Teacher analysis)
+    print(json.dumps(r, default=str), flush=True)
+    sys.stdout.flush()
+
+
+def _parse_args() -> tuple[str, str | None, str | None]:
+    """Parse CLI arguments.
+
+    Returns:
+        Tuple of (mode, mission_text, mission_name).
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="AutoOptim Butler evaluator")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="quick",
+        help="Eval mode: quick|full|daily|memory|future|all|dynamic",
+    )
+    parser.add_argument(
+        "--mission",
+        type=str,
+        default=None,
+        help="Mission text for dynamic mode",
+    )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="Mission display name for dynamic mode (default: 'dynamic')",
+    )
+
+    args = parser.parse_args()
+    return args.mode, args.mission, args.name
+
+
+if __name__ == "__main__":
+    mode, mission_text, mission_name = _parse_args()
+
+    # Dynamic mode: run a single mission from --mission arg or EVAL_MISSION env var
+    if mode == "dynamic":
+        mission_text = mission_text or os.environ.get("EVAL_MISSION")
+        if not mission_text:
+            print(
+                "Error: dynamic mode requires --mission '...' or EVAL_MISSION env var",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        mission_name = mission_name or "dynamic"
+        loop = asyncio.new_event_loop()
         try:
-            loop.close()
-        except Exception:
-            pass
-        os._exit(0)
+            loop.run_until_complete(main_dynamic(mission_text, mission_name))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)
+    else:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(main(mode))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)
