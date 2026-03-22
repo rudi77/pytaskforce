@@ -1,73 +1,137 @@
-# Phase 3: Session-Deprecation — Implementation Plan
+# Butler Role Specialization - Implementation Plan
 
-## Scope (from ADR-016)
+## Problem
 
-1. Session-Endpoints als Deprecated markieren
-2. CLI Default wechselt auf Persistent-Modus
-3. Session-Code bleibt für Sub-Agent-interne Nutzung
+Der Butler ist aktuell ein Alleskönner mit hardcoded Sub-Agents (pc-agent, research_agent, doc-agent, coding_agent), einem festen `BUTLER_SPECIALIST_PROMPT` und einer fixen Tool-Liste. Es gibt keine saubere Möglichkeit, ihn für einen bestimmten Zweck zu konfigurieren (z.B. Buchhalter, IT-Support).
+
+## Design: Role = Overlay YAML
+
+Eine **Butler Role** ist eine separate YAML-Datei, die definiert WAS der Butler ist (Persona, Sub-Agents, Tools), während `butler.yaml` definiert WIE er läuft (Persistence, LLM, Scheduler, Security).
+
+```
+butler.yaml (Chassis)      +    accountant.yaml (Rolle)
+├── persistence             │    ├── persona_prompt (System-Anweisungen)
+├── llm                     │    ├── sub_agents (spezialisierte Agenten)
+├── scheduler               │    ├── tools (erlaubte Werkzeuge)
+├── security                │    ├── event_sources (optionale Quellen)
+├── notifications           │    ├── rules (optionale Trigger-Regeln)
+└── context_policy          │    └── mcp_servers (optionale MCP-Server)
+                            │
+                  ──────────┘
+                  = vollständige Butler-Konfiguration
+```
+
+### Suchpfade für Rollen-YAMLs
+1. `src/taskforce/configs/butler_roles/{name}.yaml` (mitgeliefert)
+2. `.taskforce/butler_roles/{name}.yaml` (projekt-lokal)
+
+### Merge-Semantik
+- `sub_agents`: **REPLACED** (Rolle definiert komplett)
+- `tools`: **REPLACED** (Rolle definiert komplett)
+- `event_sources`: **APPENDED** (Basis + Rolle)
+- `rules`: **APPENDED** (Basis + Rolle)
+- `mcp_servers`: **APPENDED** (Basis + Rolle)
+- `system_prompt`: **SET** aus `persona_prompt` der Rolle
+- `specialist`: **CLEARED** → `None` (Rolle ersetzt den Specialist-Lookup)
+
+### Backward Compatibility
+- Kein `role` in `butler.yaml` → `specialist: butler` + hardcoded Prompt → **exakt wie bisher**
+- `role: accountant` → Rolle wird geladen und gemerged → neues Verhalten
 
 ---
 
-## Step 1: Deprecate REST Session Endpoints
+## Implementierungsschritte
 
-**File:** `src/taskforce/api/routes/sessions.py`
+### Step 1: Domain Model — `src/taskforce/core/domain/butler_role.py` (NEU)
 
-- Add `deprecated=True` to all 3 route decorators (OpenAPI will show them as deprecated)
-- Add `Deprecation` + `Sunset` response headers
-- Log a `structlog` warning on each call pointing to conversation endpoints
+Pures frozen Dataclass ohne Dependencies:
 
-No deletion — endpoints stay functional.
+```python
+@dataclass(frozen=True)
+class ButlerRole:
+    name: str
+    description: str = ""
+    persona_prompt: str = ""
+    sub_agents: list[dict[str, str]] = field(default_factory=list)
+    tools: list[str | dict[str, Any]] = field(default_factory=list)
+    event_sources: list[dict[str, Any]] = field(default_factory=list)
+    rules: list[dict[str, Any]] = field(default_factory=list)
+    skills_directories: list[str] = field(default_factory=list)
+    mcp_servers: list[dict[str, Any]] = field(default_factory=list)
+```
 
-## Step 2: Deprecate `session_id` in Execution API
+### Step 2: Role Loader — `src/taskforce/application/butler_role_loader.py` (NEU)
 
-**File:** `src/taskforce/api/routes/execution.py`
+Application-Layer Service:
+- `load(role_name: str) -> ButlerRole` — Sucht YAML in Suchpfaden, erstellt ButlerRole
+- `merge_into_config(base: dict, role: ButlerRole) -> dict` — Merged Rolle in Butler-Config
+- `list_available() -> list[ButlerRole]` — Listet verfügbare Rollen mit Name+Description
 
-- Update `session_id` Field description to include deprecation notice, recommend `conversation_id`
-- Log warning when `session_id` is provided without `conversation_id`
+### Step 3: Default-Rolle — `src/taskforce/configs/butler_roles/personal_assistant.yaml` (NEU)
 
-## Step 3: Deprecate CLI `sessions` Command
+Extrahiert den aktuellen `BUTLER_SPECIALIST_PROMPT`-Inhalt und die Sub-Agents/Tools aus `butler.yaml` in eine Rollen-Datei. Nutzt `{{SUB_AGENTS_SECTION}}` Placeholder für dynamische Sub-Agent-Liste.
 
-**File:** `src/taskforce/api/cli/commands/sessions.py`
+### Step 4: Beispiel-Rolle — `src/taskforce/configs/butler_roles/accountant.yaml` (NEU)
 
-- Add deprecation warning (`console.print`) at start of `list` and `show` commands
-- Point users to `taskforce conversations` as replacement
+Buchhalter-Rolle mit:
+- Persona-Prompt für Buchhaltung
+- Eigene Sub-Agents (doc-agent für Belege, research_agent für Steuerrecht)
+- Reduziertes Tool-Set (memory, ask_user, file_read, calendar, schedule)
 
-## Step 4: CLI Chat Default to Persistent Mode
+### Step 5: `butler.yaml` anpassen
 
-**File:** `src/taskforce/api/cli/simple_chat.py`
+Neues optionales Feld `role:` hinzufügen. Kein Default-Wert (= Backward Compat). Kommentar zur Nutzung.
 
-Currently: `session_id` + `StateManager` is primary, `ConversationManager` is optional mirror.
-Change: `ConversationManager` becomes primary, `session_id` kept as internal plumbing.
+### Step 6: `ButlerDaemon` anpassen — `src/taskforce/api/butler_daemon.py`
 
-- On startup: always initialize `ConversationManager` (not just when explicitly wired)
-- History read/write goes through `ConversationManager.get_messages()` / `append_message()`
-- Session state still saved for backward compat but conversation is the source of truth
-- Status line shows conversation_id instead of session_id
+- `__init__` bekommt `role: str | None = None` Parameter
+- `_load_config()`: Wenn `role` (aus CLI oder YAML), dann `ButlerRoleLoader.load()` + `merge_into_config()`
+- Die gemergte Config setzt `system_prompt` + `sub_agents` → der bestehende Factory-Pfad übernimmt
 
-**File:** `src/taskforce/api/cli/commands/chat.py`
+### Step 7: `SystemPromptAssembler` minimal anpassen
 
-- Wire `ConversationManager` by default when launching chat
+Der Assembler unterstützt bereits `custom_prompt` und `{{SUB_AGENTS_SECTION}}`. Einzige Änderung: `{{SUB_AGENTS_SECTION}}` muss auch im `custom_prompt`-Pfad ersetzt werden (aktuell nur im `specialist`-Pfad).
 
-## Step 5: Add Conversation REST Endpoints
+### Step 8: Butler CLI anpassen — `src/taskforce/api/cli/commands/butler.py`
 
-**File:** `src/taskforce/api/routes/conversations.py` (NEW)
+- `taskforce butler start --role accountant` (neuer `--role` Parameter)
+- `taskforce butler roles list` — Zeigt verfügbare Rollen
+- `taskforce butler roles show <name>` — Zeigt Rollen-Details
 
-REST counterpart to the conversations CLI (replacement for sessions endpoints):
-- `GET /api/v1/conversations` — list active (query param `archived=true` for archived)
-- `GET /api/v1/conversations/{conversation_id}/messages` — get messages
-- `POST /api/v1/conversations/{conversation_id}/archive` — archive
-- `POST /api/v1/conversations` — create new conversation (params: channel, sender_id)
+### Step 9: Tests
 
-Register in `server.py` with `tags=["conversations"]`.
+- `tests/unit/core/domain/test_butler_role.py` — ButlerRole Dataclass
+- `tests/unit/application/test_butler_role_loader.py` — Laden, Merge, Suchpfade, Fehlerfall
 
-## Step 6: Update Documentation
+### Step 10: Dokumentation
 
-- `docs/cli.md` — deprecation notice on sessions, add conversations commands
-- `docs/api.md` — deprecation notice on session endpoints, document conversation endpoints
+- `docs/adr/adr-013-butler-role-specialization.md` — ADR
+- `docs/features/butler-roles.md` — Feature-Guide
+- `docs/adr/index.md` aktualisieren
+- `CLAUDE.md` Butler-Sektion aktualisieren
 
-## Step 7: Tests
+---
 
-- Verify deprecation headers on session endpoints
-- Tests for new conversation REST endpoints
-- Verify CLI chat uses ConversationManager by default
-- Full regression suite
+## Dateien
+
+### Neu erstellen
+- `src/taskforce/core/domain/butler_role.py`
+- `src/taskforce/application/butler_role_loader.py`
+- `src/taskforce/configs/butler_roles/personal_assistant.yaml`
+- `src/taskforce/configs/butler_roles/accountant.yaml`
+- `tests/unit/core/domain/test_butler_role.py`
+- `tests/unit/application/test_butler_role_loader.py`
+- `docs/adr/adr-013-butler-role-specialization.md`
+- `docs/features/butler-roles.md`
+
+### Modifizieren
+- `src/taskforce/configs/butler.yaml` — `role:` Feld
+- `src/taskforce/api/butler_daemon.py` — Role-Loading
+- `src/taskforce/application/system_prompt_assembler.py` — `{{SUB_AGENTS_SECTION}}` im custom_prompt-Pfad
+- `src/taskforce/api/cli/commands/butler.py` — `--role` + `roles` Subcommand
+- `docs/adr/index.md`
+- `CLAUDE.md`
+
+### Nicht modifizieren (nutzt bestehende Flows)
+- `application/factory.py` — Versteht bereits `system_prompt` + `sub_agents` in Config
+- `core/prompts/autonomous_prompts.py` — `BUTLER_SPECIALIST_PROMPT` bleibt als Fallback
