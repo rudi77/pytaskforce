@@ -168,7 +168,7 @@ class ExperimentProposer:
         full_path = self.project_root / path
         if not full_path.exists():
             return f"# File not found: {path}"
-        content = full_path.read_text()
+        content = full_path.read_text(encoding="utf-8", errors="replace")
         if len(content) > 8000:
             content = content[:8000] + "\n\n... (truncated) ..."
         return content
