@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from taskforce.application.executor import AgentExecutor
@@ -156,7 +157,12 @@ MEMORY_MISSIONS: list[dict] = [
                 "Nutze mein Lieblingsformat.",
             ),
         ],
-        "check": "excel",
+        "check_type": "llm_judge",
+        "check_prompt": (
+            "The user initially set their preferred report format to CSV, then "
+            "corrected it to Excel. Does the assistant's final report use Excel "
+            "format (not CSV)? Answer YES or NO."
+        ),
     },
     {
         "name": "Memory Search",
@@ -254,12 +260,12 @@ def _summarize_args(args: dict) -> str:
     return result[:120]
 
 
-def _count_delegation_steps(tool_trace: list[dict]) -> int:
-    """Count steps from start to first sub-agent delegation call.
+def _count_tool_calls_before_delegation(tool_trace: list[dict]) -> int:
+    """Count tool calls before the first sub-agent delegation.
 
     Returns the number of tool calls before the first ``call_agents_parallel``
     (or ``parallel_agent``) invocation. Lower is better — the butler should
-    delegate quickly without unnecessary reasoning tool calls.
+    delegate quickly without unnecessary tool calls.
     Returns -1 if no delegation occurred.
     """
     delegation_tools = {"call_agents_parallel", "parallel_agent"}
@@ -293,6 +299,7 @@ async def _llm_judge(answer: str, question: str) -> bool:
                 "You are a strict evaluator. Only respond with valid JSON. "
                 "Evaluate objectively based on the content of the answer."
             ),
+            model="fast",
         )
         return bool(result.get("pass", False))
     except Exception as e:
@@ -321,6 +328,7 @@ async def _llm_quality_grade(answer: str, mission: str) -> float:
                 'Respond with JSON: {"quality": 0.X, "reason": "..."}'
             ),
             system_prompt="You are a strict answer quality evaluator. Respond only with JSON.",
+            model="fast",
         )
         score = float(result.get("quality", 0.0))
         return max(0.0, min(1.0, score))
@@ -334,7 +342,8 @@ async def _llm_quality_grade(answer: str, mission: str) -> float:
 
 
 async def run_mission(
-    name: str, prefix: str, mission: str, executor: AgentExecutor
+    name: str, prefix: str, mission: str, executor: AgentExecutor,
+    session_id: str | None = None,
 ) -> dict:
     """Run a single mission and return metrics + tool trace."""
     # Drain leftover analytics
@@ -350,6 +359,7 @@ async def run_mission(
     async for update in executor.execute_mission_streaming(
         mission=mission,
         profile=PROFILE,
+        session_id=session_id,
     ):
         event = update.event_type
         details = update.details or {}
@@ -382,7 +392,7 @@ async def run_mission(
     wall_seconds = time.monotonic() - wall_start
     summary = get_execution_token_summary()
 
-    delegation_steps = _count_delegation_steps(tool_trace)
+    delegation_steps = _count_tool_calls_before_delegation(tool_trace)
 
     result = {
         "name": name,
@@ -430,9 +440,14 @@ async def run_memory_sequence(
     prefix = seq["prefix"]
     all_results: list[dict] = []
 
+    # All steps in a memory sequence share the same session so that
+    # memory written in early turns is visible in later turns.
+    shared_session_id = f"bench-mem-{prefix}-{uuid.uuid4().hex[:8]}"
+
     for step_name, prompt in steps:
         r = await run_mission(
-            f"{seq['name']}/{step_name}", prefix, prompt, executor
+            f"{seq['name']}/{step_name}", prefix, prompt, executor,
+            session_id=shared_session_id,
         )
         all_results.append(r)
         print(
@@ -598,6 +613,11 @@ def compute_scores(results: list[dict], memory_results: list[dict]) -> dict[str,
         if recall_vals:
             scores["memory_recall"] = sum(recall_vals) / len(recall_vals)
 
+    # Answer quality (aggregate from per-mission LLM grading)
+    quality_vals = [r["answer_quality"] for r in all_results if "answer_quality" in r]
+    if quality_vals:
+        scores["answer_quality"] = sum(quality_vals) / len(quality_vals)
+
     # Self-improvement score (future missions that actually completed)
     future_results = [r for r in results if r["prefix"].startswith("fut_")]
     if future_results:
@@ -613,6 +633,8 @@ def compute_scores(results: list[dict], memory_results: list[dict]) -> dict[str,
         scores[f"{p}_wall"] = round(r["wall_seconds"], 1)
         scores[f"{p}_tools"] = float(r["tool_calls"])
         scores[f"{p}_completed"] = 1.0 if r["completed"] else 0.0
+        if "answer_quality" in r:
+            scores[f"{p}_quality"] = r["answer_quality"]
 
     for r in memory_results:
         p = r["prefix"]
@@ -686,7 +708,8 @@ async def main(task_name: str) -> None:
     if run_memory:
         print("\n  --- Memory & Learning Sequences ---", file=sys.stderr)
         for seq in MEMORY_MISSIONS:
-            r = await run_memory_sequence(seq, executor)
+            seq_executor = AgentExecutor()  # Fresh executor per sequence for isolation
+            r = await run_memory_sequence(seq, seq_executor)
             memory_results.append(r)
             recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
             print(
@@ -699,28 +722,25 @@ async def main(task_name: str) -> None:
     # Write trace file for proposer context
     write_trace(results + memory_results, task_name)
 
-    # Compute and output scores
-    scores = compute_scores(results, memory_results)
-
-    # Grade answer quality for daily missions via LLM judge
+    # Grade answer quality for daily missions via LLM judge (BEFORE compute_scores
+    # so that answer_quality values are available for scoring).
     daily_results = [r for r in results if r["prefix"] in {
         "tagesplan", "datei", "recherche", "reminder", "praeferenz",
     }]
     if daily_results:
-        quality_scores = []
         for r in daily_results:
-            # Find the original mission prompt for grading
             mission_prompt = ""
             for name, prefix, prompt in DAILY_MISSIONS:
                 if prefix == r["prefix"]:
                     mission_prompt = prompt
                     break
             if r["final_answer"] and mission_prompt:
-                q = await _llm_quality_grade(r["final_answer"], mission_prompt)
-                quality_scores.append(q)
-                scores[f"{r['prefix']}_quality"] = q
-        if quality_scores:
-            scores["answer_quality"] = sum(quality_scores) / len(quality_scores)
+                r["answer_quality"] = await _llm_quality_grade(
+                    r["final_answer"], mission_prompt
+                )
+
+    # Compute and output scores
+    scores = compute_scores(results, memory_results)
 
     print(json.dumps(scores), flush=True)
     sys.stdout.flush()
