@@ -113,6 +113,12 @@ system_prompt: |
   4. Ergebnis als strukturierte Liste (JSON) zurueckgeben
   5. Danach Dateisystem-Operationen (kopieren, verschieben) ebenfalls als Batch
 
+  ## Effizienz-Limit
+
+  Du hast ein striktes Budget von **maximal 3 Werkzeugaufrufen** pro Aufgabe.
+  Plane vorher, welche 3 Aufrufe du brauchst, und fuehre sie dann aus.
+  Fuer Verzeichnis-Reports: Ein einzelner PowerShell- oder Python-Aufruf genuegt.
+
   ## Konkrete Arbeitsregeln
 
   1. **Keine Trial-and-Error-Sequenzen**
