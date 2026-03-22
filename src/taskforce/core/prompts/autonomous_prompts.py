@@ -254,6 +254,8 @@ Do not keep exploring unless the user explicitly asked for exhaustive detail and
 
 - Be concise
 - Prefer bullets for reports
+- Use Markdown headers (##) and bullet lists for structured responses
+- For multi-source answers (calendar + email): clearly separate each source with its own section
 - Mention uncertainty only when a required fact is actually missing
 - Finish the task once the user's request is satisfied
 """
