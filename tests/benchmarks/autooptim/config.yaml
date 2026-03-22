@@ -418,7 +418,7 @@ metric:
 # --- Proposer ---
 proposer:
   model: "azure/gpt-5.4"
-  temperature: 0.7
+  temperature: 1
   max_tokens: 6000
   system_prompt_file: "proposer_system.md"
   user_template_file: "proposer_user.md"

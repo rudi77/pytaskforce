@@ -61,11 +61,14 @@ class YamlMutator(BaseMutator):
             if not change.path.endswith((".yaml", ".yml")):
                 raise MutationError(f"Not a YAML file: {change.path}")
 
-            # Parse proposed changes
-            try:
-                new_values = yaml.safe_load(change.content)
-            except yaml.YAMLError as e:
-                raise MutationError(f"Invalid YAML in change content: {e}")
+            # Parse proposed changes (content may already be a dict from JSON)
+            if isinstance(change.content, dict):
+                new_values = change.content
+            else:
+                try:
+                    new_values = yaml.safe_load(change.content)
+                except yaml.YAMLError as e:
+                    raise MutationError(f"Invalid YAML in change content: {e}")
 
             if not isinstance(new_values, dict):
                 raise MutationError("Change content must be a YAML dict of keys to modify")

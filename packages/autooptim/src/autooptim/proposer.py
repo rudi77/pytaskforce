@@ -255,6 +255,7 @@ class ExperimentProposer:
                 ],
                 temperature=self.config.proposer.temperature,
                 max_tokens=self.config.proposer.max_tokens,
+                drop_params=True,
             )
         except Exception as e:
             raise ProposerError(f"LLM call failed: {e}")
