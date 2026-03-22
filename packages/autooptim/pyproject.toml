@@ -15,6 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dashboard = [
+    "textual>=0.50",
+    "textual-plotext>=0.2",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
