@@ -307,7 +307,8 @@ async def _llm_judge(answer: str, question: str) -> bool:
             ),
             model="fast",
         )
-        return bool(result.get("pass", False))
+        data = result.get("data", result) if result.get("success") else {}
+        return bool(data.get("pass", False))
     except Exception as e:
         print(f"  [LLM judge error: {e}]", file=sys.stderr)
         return False
@@ -336,7 +337,8 @@ async def _llm_quality_grade(answer: str, mission: str) -> float:
             system_prompt="You are a strict answer quality evaluator. Respond only with JSON.",
             model="fast",
         )
-        score = float(result.get("quality", 0.0))
+        data = result.get("data", result) if result.get("success") else {}
+        score = float(data.get("quality", 0.0))
         return max(0.0, min(1.0, score))
     except Exception:
         return 0.0
