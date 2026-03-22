@@ -260,166 +260,176 @@ def run(config: RunConfig) -> None:
         )
         logger.info("=" * 60)
 
-        exp_start = time.time()
-
-        # 1. Propose experiment
         try:
-            plan = proposer.propose(baseline_scores)
-        except ProposerError as e:
-            logger.error("Proposer failed: %s", e)
-            continue
+            exp_start = time.time()
 
-        logger.info("Proposed [%s]: %s", plan.category, plan.description)
-        logger.info("Hypothesis: %s", plan.hypothesis)
+            # 1. Propose experiment
+            try:
+                plan = proposer.propose(baseline_scores)
+            except ProposerError as e:
+                logger.error("Proposer failed: %s", e)
+                continue
 
-        # 2. Apply experiment
-        modified_files: list[str] = []
-        mutator = mutators.get(plan.category)
-        if mutator is None:
-            logger.error("No mutator for category: %s", plan.category)
-            continue
+            logger.info("Proposed [%s]: %s", plan.category, plan.description)
+            logger.info("Hypothesis: %s", plan.hypothesis)
 
-        try:
-            modified_files = mutator.apply(plan)
-        except (MutationError, PreflightError) as e:
-            logger.error("Mutation failed: %s", e)
-            git.clean_working_tree()
+            # 2. Apply experiment
+            modified_files: list[str] = []
+            mutator = mutators.get(plan.category)
+            if mutator is None:
+                logger.error("No mutator for category: %s", plan.category)
+                continue
 
-            error_result = ExperimentResult(
+            try:
+                modified_files = mutator.apply(plan)
+            except (MutationError, PreflightError) as e:
+                logger.error("Mutation failed: %s", e)
+                git.clean_working_tree()
+
+                error_result = ExperimentResult(
+                    experiment_id=experiment_id,
+                    timestamp=datetime.now(timezone.utc),
+                    category=plan.category,
+                    description=plan.description,
+                    hypothesis=plan.hypothesis,
+                    git_sha=git.get_current_sha(),
+                    status=ExperimentStatus.ERROR,
+                    scores=Scores(),
+                    composite_score=0.0,
+                    baseline_composite=baseline_composite,
+                    eval_runs=0,
+                    eval_cost_usd=0.0,
+                    files_modified=[f.path for f in plan.files],
+                    duration_seconds=time.time() - exp_start,
+                )
+                try:
+                    experiment_log.append(error_result)
+                except OSError as log_err:
+                    logger.warning("Failed to write error result to log: %s", log_err)
+                continue
+
+            if not modified_files:
+                logger.warning("No files were modified. Skipping eval.")
+                continue
+
+            # 3. Commit experiment
+            try:
+                commit_sha = git.commit_experiment(
+                    experiment_id, plan.description, modified_files
+                )
+            except GitError as e:
+                logger.error("Git commit failed: %s", e)
+                git.clean_working_tree()
+                continue
+
+            # 4. Run eval
+            task_name = _get_eval_task_name(config, experiment_id)
+            logger.info("Running eval: %s (%d runs)", task_name, config.eval_runs)
+
+            scores, composite, eval_cost = evaluator.evaluate(
+                task_name=task_name,
+                num_runs=config.eval_runs,
+                baseline_scores=baseline_scores,
+            )
+            total_cost += eval_cost
+            exp_duration = time.time() - exp_start
+
+            delta = composite - baseline_composite
+            logger.info(
+                "Result: composite=%.4f (delta=%+.4f, threshold=%+.4f)",
+                composite,
+                delta,
+                -config.tolerance,
+            )
+
+            # 5. Keep or discard
+            pre_experiment_composite = baseline_composite
+            pre_experiment_scores = baseline_scores
+            pre_experiment_sha = baseline_sha
+            if composite >= baseline_composite - config.tolerance:
+                status = ExperimentStatus.KEPT
+                baseline_scores = scores
+                baseline_composite = composite
+                baseline_sha = commit_sha
+                logger.info("KEPT — new baseline: %.4f", baseline_composite)
+            else:
+                status = ExperimentStatus.DISCARDED
+                git.discard_last_commit()
+                logger.info("DISCARDED — baseline unchanged: %.4f", baseline_composite)
+
+            # 6. Log result
+            result = ExperimentResult(
                 experiment_id=experiment_id,
                 timestamp=datetime.now(timezone.utc),
                 category=plan.category,
                 description=plan.description,
                 hypothesis=plan.hypothesis,
-                git_sha=git.get_current_sha(),
-                status=ExperimentStatus.ERROR,
-                scores=Scores(),
-                composite_score=0.0,
+                git_sha=commit_sha,
+                status=status,
+                scores=scores,
+                composite_score=composite,
                 baseline_composite=baseline_composite,
-                eval_runs=0,
-                eval_cost_usd=0.0,
-                files_modified=[f.path for f in plan.files],
-                duration_seconds=time.time() - exp_start,
+                eval_runs=config.eval_runs,
+                eval_cost_usd=eval_cost,
+                files_modified=modified_files,
+                duration_seconds=exp_duration,
+            )
+            experiment_log.append(result)
+            _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
+
+            # If large improvement on quick eval, validate with full eval to catch
+            # overfitting. Only applies when eval_mode is "quick" (the fast smoke-test
+            # mode). For broader modes (daily, full, all) the eval is already
+            # comprehensive enough that a separate validation pass adds cost without
+            # value.
+            if (
+                status == ExperimentStatus.KEPT
+                and delta > config.large_improvement_threshold
+                and config.eval_mode == "quick"
+            ):
+                logger.info(
+                    "Large improvement (+%.4f). Running full eval to validate...", delta
+                )
+                full_scores, full_composite, full_cost = evaluator.evaluate(
+                    task_name=config.evaluator.full_task,
+                    num_runs=config.eval_runs,
+                )
+                total_cost += full_cost
+                logger.info(
+                    "Full eval validation: composite=%.4f (quick was %.4f)",
+                    full_composite,
+                    composite,
+                )
+
+                # If full eval shows regression vs pre-experiment baseline, discard
+                if full_composite < pre_experiment_composite - config.tolerance:
+                    logger.warning(
+                        "Full eval REGRESSED (%.4f < %.4f). Reverting experiment.",
+                        full_composite,
+                        pre_experiment_composite,
+                    )
+                    git.discard_last_commit()
+                    # Restore baseline to pre-experiment state
+                    baseline_scores = pre_experiment_scores
+                    baseline_composite = pre_experiment_composite
+                    baseline_sha = pre_experiment_sha
+                else:
+                    # Full eval confirms improvement — use full eval scores as new baseline
+                    baseline_scores = full_scores
+                    baseline_composite = full_composite
+                    baseline_sha = commit_sha
+                    logger.info("Full eval CONFIRMED. New baseline: %.4f", baseline_composite)
+
+                _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
+        except Exception as exc:
+            logger.error(
+                "Unexpected error in experiment #%d: %s", experiment_id, exc
             )
             try:
-                experiment_log.append(error_result)
-            except OSError as log_err:
-                logger.warning("Failed to write error result to log: %s", log_err)
+                git.clean_working_tree()
+            except Exception:
+                pass
             continue
-
-        if not modified_files:
-            logger.warning("No files were modified. Skipping eval.")
-            continue
-
-        # 3. Commit experiment
-        try:
-            commit_sha = git.commit_experiment(
-                experiment_id, plan.description, modified_files
-            )
-        except GitError as e:
-            logger.error("Git commit failed: %s", e)
-            git.clean_working_tree()
-            continue
-
-        # 4. Run eval
-        task_name = _get_eval_task_name(config, experiment_id)
-        logger.info("Running eval: %s (%d runs)", task_name, config.eval_runs)
-
-        scores, composite, eval_cost = evaluator.evaluate(
-            task_name=task_name,
-            num_runs=config.eval_runs,
-            baseline_scores=baseline_scores,
-        )
-        total_cost += eval_cost
-        exp_duration = time.time() - exp_start
-
-        delta = composite - baseline_composite
-        logger.info(
-            "Result: composite=%.4f (delta=%+.4f, threshold=%+.4f)",
-            composite,
-            delta,
-            -config.tolerance,
-        )
-
-        # 5. Keep or discard
-        pre_experiment_composite = baseline_composite
-        pre_experiment_scores = baseline_scores
-        pre_experiment_sha = baseline_sha
-        if composite >= baseline_composite - config.tolerance:
-            status = ExperimentStatus.KEPT
-            baseline_scores = scores
-            baseline_composite = composite
-            baseline_sha = commit_sha
-            logger.info("KEPT — new baseline: %.4f", baseline_composite)
-        else:
-            status = ExperimentStatus.DISCARDED
-            git.discard_last_commit()
-            logger.info("DISCARDED — baseline unchanged: %.4f", baseline_composite)
-
-        # 6. Log result
-        result = ExperimentResult(
-            experiment_id=experiment_id,
-            timestamp=datetime.now(timezone.utc),
-            category=plan.category,
-            description=plan.description,
-            hypothesis=plan.hypothesis,
-            git_sha=commit_sha,
-            status=status,
-            scores=scores,
-            composite_score=composite,
-            baseline_composite=baseline_composite,
-            eval_runs=config.eval_runs,
-            eval_cost_usd=eval_cost,
-            files_modified=modified_files,
-            duration_seconds=exp_duration,
-        )
-        experiment_log.append(result)
-        _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
-
-        # If large improvement on quick eval, validate with full eval to catch
-        # overfitting. Only applies when eval_mode is "quick" (the fast smoke-test
-        # mode). For broader modes (daily, full, all) the eval is already
-        # comprehensive enough that a separate validation pass adds cost without
-        # value.
-        if (
-            status == ExperimentStatus.KEPT
-            and delta > config.large_improvement_threshold
-            and config.eval_mode == "quick"
-        ):
-            logger.info(
-                "Large improvement (+%.4f). Running full eval to validate...", delta
-            )
-            full_scores, full_composite, full_cost = evaluator.evaluate(
-                task_name=config.evaluator.full_task,
-                num_runs=config.eval_runs,
-            )
-            total_cost += full_cost
-            logger.info(
-                "Full eval validation: composite=%.4f (quick was %.4f)",
-                full_composite,
-                composite,
-            )
-
-            # If full eval shows regression vs pre-experiment baseline, discard
-            if full_composite < pre_experiment_composite - config.tolerance:
-                logger.warning(
-                    "Full eval REGRESSED (%.4f < %.4f). Reverting experiment.",
-                    full_composite,
-                    pre_experiment_composite,
-                )
-                git.discard_last_commit()
-                # Restore baseline to pre-experiment state
-                baseline_scores = pre_experiment_scores
-                baseline_composite = pre_experiment_composite
-                baseline_sha = pre_experiment_sha
-            else:
-                # Full eval confirms improvement — use full eval scores as new baseline
-                baseline_scores = full_scores
-                baseline_composite = full_composite
-                baseline_sha = commit_sha
-                logger.info("Full eval CONFIRMED. New baseline: %.4f", baseline_composite)
-
-            _save_state(state_file, experiment_id + 1, baseline_sha, baseline_composite)
 
     # --- Summary ---
     logger.info("")

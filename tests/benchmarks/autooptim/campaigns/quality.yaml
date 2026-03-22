@@ -1,0 +1,134 @@
+# AutoOptim Campaign: Answer Quality Optimization
+#
+# Focuses on improving answer_quality scores across the 5 daily
+# assistant missions while maintaining efficiency.
+#
+# Usage:
+#   autooptim run --config tests/benchmarks/autooptim/campaigns/quality.yaml
+
+name: butler-quality
+description: >
+  Optimize Butler answer quality: better responses, correct tool usage,
+  and appropriate delegation across daily assistant scenarios.
+
+project_root: "C:/Users/rudi/source/pytaskforce"
+
+categories:
+  prompt:
+    weight: 0.70
+    mutator:
+      type: text
+      allowed_paths:
+        - "src/taskforce/core/prompts/"
+        - "src/taskforce/configs/custom/"
+    context_files:
+      - "src/taskforce/core/prompts/autonomous_prompts.py"
+      - "src/taskforce/configs/custom/pc-agent.yaml"
+      - "src/taskforce/configs/custom/research_agent.yaml"
+      - "src/taskforce/configs/custom/doc-agent.yaml"
+      - ".autooptim/last_eval_trace.md"
+
+  config:
+    weight: 0.30
+    mutator:
+      type: yaml
+      allowed_paths:
+        - "src/taskforce/configs/butler.yaml"
+        - "src/taskforce/configs/custom/pc-agent.yaml"
+        - "src/taskforce/configs/custom/research_agent.yaml"
+        - "src/taskforce/configs/custom/doc-agent.yaml"
+      safe_keys:
+        agent:
+          - planning_strategy
+          - max_steps
+          - planning_strategy_params
+        context_policy:
+          - max_items
+          - max_chars_per_item
+          - max_total_chars
+      validation_rules:
+        agent.max_steps:
+          type: int
+          min: 1
+          max: 50
+        agent.planning_strategy:
+          type: str
+          choices: [native_react, plan_and_execute, plan_and_react, spar]
+    context_files:
+      - "src/taskforce/configs/butler.yaml"
+      - ".autooptim/last_eval_trace.md"
+
+evaluator:
+  type: command
+  command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
+  quick_task: "quick"
+  full_task: "daily"
+  timeout: 1200
+
+metric:
+  scores:
+    - name: task_completion
+      range: [0.0, 1.0]
+    - name: answer_quality
+      range: [0.0, 1.0]
+    - name: avg_steps
+      type: lower_is_better
+    - name: avg_input_tokens
+      type: lower_is_better
+    - name: avg_wall_seconds
+      type: lower_is_better
+    - name: total_tool_calls
+      type: lower_is_better
+    - name: notification_spam
+      type: lower_is_better
+    - name: tagesplan_completed
+      range: [0.0, 1.0]
+    - name: tagesplan_quality
+      range: [0.0, 1.0]
+    - name: datei_completed
+      range: [0.0, 1.0]
+    - name: datei_quality
+      range: [0.0, 1.0]
+    - name: recherche_completed
+      range: [0.0, 1.0]
+    - name: recherche_quality
+      range: [0.0, 1.0]
+    - name: reminder_completed
+      range: [0.0, 1.0]
+    - name: reminder_quality
+      range: [0.0, 1.0]
+    - name: praeferenz_completed
+      range: [0.0, 1.0]
+    - name: praeferenz_quality
+      range: [0.0, 1.0]
+  composite:
+    quality:
+      weight: 0.60
+      components:
+        task_completion: 0.4
+        answer_quality: 0.6
+    efficiency:
+      weight: 0.40
+      type: ratio_to_baseline
+      components:
+        - avg_steps
+        - avg_input_tokens
+        - avg_wall_seconds
+        - total_tool_calls
+        - notification_spam
+
+proposer:
+  model: "azure/gpt-5.4"
+  temperature: 1
+  max_tokens: 6000
+  system_prompt_file: "../proposer_system.md"
+  user_template_file: "../proposer_user.md"
+
+runner:
+  max_iterations: 10
+  max_cost_usd: 25.0
+  eval_runs: 1
+  tolerance: 0.01
+  full_eval_every_n: 5
+  large_improvement_threshold: 0.05
+  eval_mode: daily

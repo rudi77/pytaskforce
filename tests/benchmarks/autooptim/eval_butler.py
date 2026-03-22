@@ -710,7 +710,31 @@ async def main(task_name: str) -> None:
 
     # Run standard (single-turn) missions
     for name, prefix, mission_text in standard_missions:
-        r = await run_mission(name, prefix, mission_text, executor)
+        try:
+            r = await asyncio.wait_for(
+                run_mission(name, prefix, mission_text, executor),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            r = {
+                "name": name, "prefix": prefix, "wall_seconds": 300.0,
+                "completed": False, "final_answer": "", "tool_trace": [],
+                "errors": ["Mission timed out after 300s"],
+                "notification_count": 0, "delegation_steps": -1,
+                "steps": 0, "input_tokens": 0, "output_tokens": 0,
+                "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+            }
+            print(f"  [{name}] TIMEOUT after 300s", file=sys.stderr)
+        except Exception as e:
+            r = {
+                "name": name, "prefix": prefix, "wall_seconds": 0.0,
+                "completed": False, "final_answer": "", "tool_trace": [],
+                "errors": [f"Mission error: {str(e)[:200]}"],
+                "notification_count": 0, "delegation_steps": -1,
+                "steps": 0, "input_tokens": 0, "output_tokens": 0,
+                "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+            }
+            print(f"  [{name}] ERROR: {e}", file=sys.stderr)
         results.append(r)
         print(
             f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
@@ -723,15 +747,38 @@ async def main(task_name: str) -> None:
     if run_memory:
         print("\n  --- Memory & Learning Sequences ---", file=sys.stderr)
         for seq in MEMORY_MISSIONS:
-            r = await run_memory_sequence(seq, executor)
+            seq_executor = AgentExecutor()  # Fresh executor per sequence for isolation
+            try:
+                r = await asyncio.wait_for(
+                    run_memory_sequence(seq, seq_executor),
+                    timeout=300,
+                )
+                recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
+                print(
+                    f"  [{r['name']}] recall={recall_tag} steps={r['steps']} "
+                    f"tokens={r['input_tokens']:,} turns={r['sequence_turns']} "
+                    f"wall={r['wall_seconds']:.1f}s ok={r['completed']}",
+                    file=sys.stderr,
+                )
+            except asyncio.TimeoutError:
+                r = {
+                    "name": seq["name"], "prefix": seq["prefix"],
+                    "wall_seconds": 300.0, "completed": False,
+                    "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
+                    "output_tokens": 0, "sequence_turns": 0,
+                    "errors": ["Memory sequence timed out after 300s"],
+                }
+                print(f"  [{seq['name']}] TIMEOUT after 300s", file=sys.stderr)
+            except Exception as e:
+                r = {
+                    "name": seq["name"], "prefix": seq["prefix"],
+                    "wall_seconds": 0.0, "completed": False,
+                    "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
+                    "output_tokens": 0, "sequence_turns": 0,
+                    "errors": [f"Sequence error: {str(e)[:200]}"],
+                }
+                print(f"  [{seq['name']}] ERROR: {e}", file=sys.stderr)
             memory_results.append(r)
-            recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
-            print(
-                f"  [{r['name']}] recall={recall_tag} steps={r['steps']} "
-                f"tokens={r['input_tokens']:,} turns={r['sequence_turns']} "
-                f"wall={r['wall_seconds']:.1f}s ok={r['completed']}",
-                file=sys.stderr,
-            )
 
     # Write trace file for proposer context
     write_trace(results + memory_results, task_name)

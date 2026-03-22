@@ -122,7 +122,7 @@ evaluator:
   # daily_task: "daily"
   # memory_task: "memory"
   # future_task: "future"
-  timeout: 600
+  timeout: 1200
 
 # --- Metrics ---
 metric:
@@ -427,7 +427,7 @@ proposer:
 runner:
   max_iterations: 5
   max_cost_usd: 30.0
-  eval_runs: 2
+  eval_runs: 1
   tolerance: 0.01
   full_eval_every_n: 5
   large_improvement_threshold: 0.05

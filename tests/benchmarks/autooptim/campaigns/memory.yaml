@@ -1,0 +1,121 @@
+# AutoOptim Campaign: Memory & Learning Optimization
+#
+# Focuses on improving memory recall, preference retention, and
+# proactive suggestion capabilities.
+#
+# Usage:
+#   autooptim run --config tests/benchmarks/autooptim/campaigns/memory.yaml
+
+name: butler-memory
+description: >
+  Optimize Butler memory capabilities: preference recall, fact retention,
+  contradiction handling, and proactive suggestions.
+
+project_root: "C:/Users/rudi/source/pytaskforce"
+
+categories:
+  prompt:
+    weight: 0.60
+    mutator:
+      type: text
+      allowed_paths:
+        - "src/taskforce/core/prompts/"
+        - "src/taskforce/configs/custom/"
+    context_files:
+      - "src/taskforce/core/prompts/autonomous_prompts.py"
+      - ".autooptim/last_eval_trace.md"
+
+  config:
+    weight: 0.40
+    mutator:
+      type: yaml
+      allowed_paths:
+        - "src/taskforce/configs/butler.yaml"
+      safe_keys:
+        agent:
+          - planning_strategy
+          - max_steps
+        context_policy:
+          - max_items
+          - max_chars_per_item
+          - max_total_chars
+        memory:
+          - store_dir
+          - consolidation_strategy
+      validation_rules:
+        agent.max_steps:
+          type: int
+          min: 1
+          max: 50
+    context_files:
+      - "src/taskforce/configs/butler.yaml"
+      - ".autooptim/last_eval_trace.md"
+
+evaluator:
+  type: command
+  command: "C:/Users/rudi/source/pytaskforce/.venv/Scripts/python.exe tests/benchmarks/autooptim/eval_butler.py {task_name}"
+  quick_task: "memory"
+  full_task: "memory"
+  timeout: 1200
+
+metric:
+  scores:
+    - name: memory_recall
+      range: [0.0, 1.0]
+    - name: task_completion
+      range: [0.0, 1.0]
+    - name: avg_steps
+      type: lower_is_better
+    - name: avg_input_tokens
+      type: lower_is_better
+    - name: avg_wall_seconds
+      type: lower_is_better
+    - name: mem_pref_completed
+      range: [0.0, 1.0]
+    - name: mem_pref_recall
+      range: [0.0, 1.0]
+    - name: mem_fact_completed
+      range: [0.0, 1.0]
+    - name: mem_fact_recall
+      range: [0.0, 1.0]
+    - name: mem_contra_completed
+      range: [0.0, 1.0]
+    - name: mem_contra_recall
+      range: [0.0, 1.0]
+    - name: mem_search_completed
+      range: [0.0, 1.0]
+    - name: mem_search_recall
+      range: [0.0, 1.0]
+    - name: mem_proactive_completed
+      range: [0.0, 1.0]
+    - name: mem_proactive_recall
+      range: [0.0, 1.0]
+  composite:
+    quality:
+      weight: 0.70
+      components:
+        memory_recall: 0.6
+        task_completion: 0.4
+    efficiency:
+      weight: 0.30
+      type: ratio_to_baseline
+      components:
+        - avg_steps
+        - avg_input_tokens
+        - avg_wall_seconds
+
+proposer:
+  model: "azure/gpt-5.4"
+  temperature: 1
+  max_tokens: 6000
+  system_prompt_file: "../proposer_system.md"
+  user_template_file: "../proposer_user.md"
+
+runner:
+  max_iterations: 10
+  max_cost_usd: 25.0
+  eval_runs: 1
+  tolerance: 0.01
+  full_eval_every_n: 5
+  large_improvement_threshold: 0.05
+  eval_mode: memory
