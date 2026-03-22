@@ -425,7 +425,7 @@ proposer:
 
 # --- Runner settings ---
 runner:
-  max_iterations: 10
+  max_iterations: 5
   max_cost_usd: 30.0
   eval_runs: 2
   tolerance: 0.01
