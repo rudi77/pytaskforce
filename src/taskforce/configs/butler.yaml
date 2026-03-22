@@ -1,86 +1,127 @@
+# Butler Agent Profile
+# Personal AI assistant that runs 24/7 as the central coordinator
+# See docs/adr/adr-010-event-driven-butler-agent.md
+
 profile: butler
 specialist: butler
+
 persistence:
   type: file
   work_dir: .taskforce
+
 runtime:
   enabled: true
   store: file
   work_dir: .taskforce
+
 agent:
   planning_strategy: native_react
   planning_strategy_params:
     max_step_iterations: 3
     max_plan_steps: 12
-    reflect_every_step: false
-  max_steps: 12
-  llm_fallback: false
+    reflect_every_step: false  # AutoOptim: disabled (was true), +27% composite
+  max_steps: 12  # AutoOptim: reduced from 30
+  llm_fallback: false  # Set true to let LLM handle unmatched events
+
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
+
 memory:
   store_dir: .taskforce/memory
   auto_extract: true
   compaction_interval_hours: 24
+
+# Memory consolidation (auto_capture defaults to true for all profiles)
+# Butler uses auto_consolidate to learn from interactions automatically
 consolidation:
   auto_consolidate: true
   strategy: batch
   max_sessions: 50
   model_alias: fast
+
 logging:
   level: INFO
   format: console
+
+# AutoOptim: tightened context policy (reduced from 10/3000/15000)
 context_policy:
   max_items: 6
   max_chars_per_item: 1800
   max_total_chars: 8000
+
+# Context management: raise threshold so the agent doesn't lose context mid-task
 context_management:
   summary_threshold: 40
   compression_trigger: 40000
+
+# Request queue settings (for PersistentAgentService)
 request_queue:
   max_size: 100
   drain_timeout: 30.0
+
+# Security / approval settings
 security:
-  auto_approve_risk_levels:
-  - low
-  - medium
-  require_confirmation:
-  - high
-  - critical
+  auto_approve_risk_levels: [low, medium]
+  require_confirmation: [high, critical]
   autonomous_mode: false
+
+# Notification defaults
 notifications:
   default_channel: telegram
-  default_recipient_id: '5865840420'
+  default_recipient_id: "5865840420"  # Set to your Telegram user ID
+
+# Scheduler settings
 scheduler:
   enabled: true
   store: file
+
+# Event sources (uncomment and configure as needed)
 event_sources: []
+  # - type: calendar
+  #   provider: google
+  #   poll_interval_minutes: 5
+  #   lookahead_minutes: 60
+  #   calendar_id: primary
+  #   credentials_file: ~/.taskforce/google_credentials.json
+
+  # - type: webhook
+  #   enabled: true
+
+# Trigger rules (examples - customize for your needs)
 rules: []
+
+# Sub-agents the butler can delegate to via call_agents_parallel
+# Each entry generates a line in the system prompt so the LLM knows what's available
 sub_agents:
-- specialist: pc-agent
-  description: "Lokaler PC \xE2\u20AC\u201D System- und Umgebungsaktionen: Dateien\
-    \ verschieben/kopieren/organisieren, Systeminformationen, Prozesse, App-Steuerung,\
-    \ Screenshots."
-- specialist: research_agent
-  description: "Wissen & Web \xE2\u20AC\u201D Recherche, Faktenpr\xC3\xBCfung, Quellenvergleich,\
-    \ News, Datensammlung, Briefings und Reports."
-- specialist: doc-agent
-  description: "Dokumente & Inhalte \xE2\u20AC\u201D PDFs/Office extrahieren, konvertieren,\
-    \ zusammenfassen, klassifizieren, strukturieren, Reports erstellen."
-- specialist: coding_agent
-  description: "Entwicklung \xE2\u20AC\u201D Code erstellen, \xC3\xA4ndern, testen,\
-    \ reviewen, debuggen, refactoren."
+  - specialist: pc-agent
+    description: "Lokaler PC — System- und Umgebungsaktionen: Dateien verschieben/kopieren/organisieren, Systeminformationen, Prozesse, App-Steuerung, Screenshots."
+  - specialist: research_agent
+    description: "Wissen & Web — Recherche, Faktenprüfung, Quellenvergleich, News, Datensammlung, Briefings und Reports."
+  - specialist: doc-agent
+    description: "Dokumente & Inhalte — PDFs/Office extrahieren, konvertieren, zusammenfassen, klassifizieren, strukturieren, Reports erstellen."
+  - specialist: coding_agent
+    description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
+
+# Tools available to the butler agent
+# The butler handles simple tasks directly and delegates complex work
+# to specialized sub-agents via call_agents_parallel
 tools:
-- memory
-- send_notification
-- gmail
-- google_drive
-- calendar
-- schedule
-- reminder
-- rule_manager
-- ask_user
-- activate_skill
-- type: parallel_agent
-  profile: butler
-  max_concurrency: 4
+  #- web_search
+  #- web_fetch
+  #- file_read
+  #- file_write
+  - memory
+  - send_notification
+  - gmail
+  - google_drive
+  - calendar
+  - schedule
+  - reminder
+  - rule_manager
+  - ask_user
+  - activate_skill
+  # Sub-agent delegation tool (requires dict config for dependency injection)
+  - type: parallel_agent
+    profile: butler
+    max_concurrency: 4
