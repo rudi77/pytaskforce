@@ -2,180 +2,184 @@
 name: evolve
 type: prompt
 description: >
-  Evolutionary agent optimization using parallel worktree variants. Invoke with
-  /evolve to start a Teacher-Student optimization session. Use when the user wants
-  to improve agent performance, optimize prompts, reduce steps/tokens, fix failing
-  missions, or run benchmark-driven iterative improvement. Also triggers for
-  "optimize the butler", "make the agent faster", "reduce token usage",
-  "fix the failing mission", or "run optimization cycles".
+  Evolutionary agent optimization with curriculum learning. You act as Teacher,
+  Proposer, and Judge: generate missions of increasing difficulty, test 3 mutation
+  variants in parallel git worktrees, merge the winners. Use /evolve to start.
+  Triggers for: "optimize the butler", "make the agent faster", "reduce token usage",
+  "fix the failing mission", "run optimization cycles", "improve agent performance",
+  or any request to iteratively improve agent prompts/configs/code.
 slash-name: evolve
 ---
 
-# Evolutionary Agent Optimization
+# Evolutionary Agent Optimization with Curriculum Learning
 
-You are the **Teacher, Proposer, and Judge** in an evolutionary optimization loop.
-You iteratively improve any Taskforce agent by analyzing execution traces, designing
-competing mutations, testing them in parallel git worktrees, and merging the winners.
+You are the **Teacher, Proposer, and Judge** in an evolutionary optimization loop
+that improves Taskforce agents through iteratively harder challenges.
 
-This is inspired by evolutionary algorithms:
-- **Mutation**: each variant tests ONE hypothesis
-- **Selection**: best variant survives (tournament selection)
-- **Recombination**: when multiple variants improve different things, merge all (crossover)
+This combines two powerful ideas:
+- **Evolutionary algorithms**: 3 competing mutations, tournament selection, recombination
+- **Curriculum learning**: you generate missions of increasing difficulty, adapting to
+  what the student (agent) has already mastered
 
 ## Your Three Roles
 
-**Teacher** — Analyze traces to identify the weakest mission or skill dimension.
-Design targeted missions that expose specific weaknesses. Skill dimensions to track:
-tool_usage, delegation, error_recovery, efficiency, memory, formatting, multi_step_reasoning.
+### Teacher (Mission Designer)
+You generate missions dynamically at runtime — not just static benchmarks. Each mission
+targets a specific **skill dimension** at an appropriate **difficulty level**.
 
-**Proposer** — Design 2-3 mutation variants per weakness. Each variant changes ONE variable.
-Mutation targets (in order of preference):
-1. Prompt changes (most effective, lowest risk)
-2. Config changes (moderate effect)
-3. Code changes (highest effect, highest risk — only when prompt/config insufficient)
+**Skill dimensions** to track:
+- `tool_usage` — picks the right tool on first try
+- `delegation` — sends ONE comprehensive mission to the right sub-agent
+- `error_recovery` — handles tool failures gracefully (fallback, not stall)
+- `efficiency` — minimal steps and tokens for the task
+- `multi_source` — combines data from multiple tools (calendar + email, etc.)
+- `memory` — stores and recalls user preferences
+- `formatting` — structures output as requested (tables, lists, sections)
 
-**Judge** — Read traces and final answers yourself. You are the judge because you have
-full context of the system, the mission intent, and what a good answer looks like.
-Do NOT rely on the automated `_llm_quality_grade()` — it uses a cheap model and is inconsistent.
+**Difficulty progression** per dimension:
+- **Beginner**: single tool, clear instruction ("read this file")
+- **Intermediate**: multi-step, some ambiguity ("check my schedule and suggest priorities")
+- **Advanced**: error conditions, edge cases, competing constraints
+- **Expert**: novel combinations the agent hasn't seen before
+
+When a dimension scores well 3 times in a row, increase difficulty.
+When it fails 2 times in a row, try a different mutation approach (don't regress difficulty).
+
+### Proposer (Mutation Designer)
+For each weakness found, design exactly **3 mutation variants**. Each variant changes
+ONE variable so you can isolate what works.
+
+Mutation targets (in order of effectiveness — prompts work best):
+1. **Prompt changes** — Butler prompt, sub-agent prompts
+2. **Config changes** — YAML parameters
+3. **Code changes** — only when prompt/config insufficient
+
+### Judge (Evaluator)
+You read traces and answers yourself. You are more accurate than the automated LLM
+quality judge because you have full context of the mission intent and system architecture.
+
+Evaluation criteria (priority order):
+1. **completed** — must be true, otherwise disqualified
+2. **steps** — fewer is better
+3. **tokens** — fewer is better
+4. **tool_trace** — correct tools? unnecessary calls? delegation count?
+5. **answer quality** — does it actually answer well? (your judgment)
 
 ## Cycle Workflow
 
-Each optimization cycle follows this exact sequence:
+Every cycle follows these 9 steps. Always create exactly 3 worktrees.
 
 ### 1. DIAGNOSE
-Run a baseline eval or read the last trace to find the weakest mission.
+Run baseline eval or read the last trace to identify the weakest mission.
 ```bash
 python tests/benchmarks/autooptim/eval_butler.py daily 2>&1 | tail -15
-```
-Read the detailed trace:
-```bash
 cat .autooptim/last_eval_trace.md
 ```
-Identify: Which mission has the most steps? Highest tokens? Failed? Worst answer quality?
+Then generate a **Teacher mission** targeting the weakness at the right difficulty level.
 
 ### 2. DESIGN
-Create 2-3 mutation hypotheses targeting the weakness. For each variant, describe:
-- What you're changing and why
-- Which file(s) to modify
-- Expected impact on the metric
+Create exactly 3 mutation hypotheses. Example:
+- **Variant A**: Prompt change to Butler specialist prompt
+- **Variant B**: Prompt change to sub-agent config
+- **Variant C**: Combined (A+B) or a config change
 
 ### 3. WORKTREE
-Create worktrees at the SAME LEVEL as the repo (never inside it).
-**Important**: Always create worktrees from the CURRENT branch so they include all
-previous optimizations AND the latest eval tooling (dynamic mode, etc.).
+Create 3 worktrees at the SAME LEVEL as the repo (never inside it):
 ```bash
 git worktree add ../pytaskforce-variant-a -b variant-a $(git branch --show-current)
 git worktree add ../pytaskforce-variant-b -b variant-b $(git branch --show-current)
+git worktree add ../pytaskforce-variant-c -b variant-c $(git branch --show-current)
 ```
 
 ### 4. MUTATE
-Apply each variant's changes in its worktree. You must `Read` each file from the
-worktree path before editing it (the Edit tool requires this).
+Apply each variant's changes in its worktree. Read each file from the worktree path
+before editing (Edit tool requires this).
 
 ### 5. EVALUATE
-Run the target mission in each worktree in parallel.
-
-**For dynamic missions** (arbitrary mission text):
+Run the mission in all 3 worktrees in parallel using background Bash commands:
 ```bash
-echo 'Mission text here' > /tmp/mission.txt
-MISSION=$(cat /tmp/mission.txt) && cd <worktree-path> && \
-  EVAL_MISSION="$MISSION" python tests/benchmarks/autooptim/eval_butler.py dynamic \
-  --name <VariantName> 2>/dev/null
-```
+echo '<mission text>' > /tmp/mission.txt
+MISSION=$(cat /tmp/mission.txt)
 
-**For standard missions** (quick/full/daily):
-```bash
-cd <worktree-path> && python tests/benchmarks/autooptim/eval_butler.py quick 2>/dev/null
+# All 3 in parallel:
+cd ../pytaskforce-variant-a && EVAL_MISSION="$MISSION" python tests/benchmarks/autooptim/eval_butler.py dynamic --name <Name>-A 2>/dev/null &
+cd ../pytaskforce-variant-b && EVAL_MISSION="$MISSION" python tests/benchmarks/autooptim/eval_butler.py dynamic --name <Name>-B 2>/dev/null &
+cd ../pytaskforce-variant-c && EVAL_MISSION="$MISSION" python tests/benchmarks/autooptim/eval_butler.py dynamic --name <Name>-C 2>/dev/null &
 ```
+Write mission text to a file first to avoid shell quoting issues with German text.
 
-Run all variants as background Bash commands. Parse results with:
+Parse results by finding the JSON line in each output:
 ```python
 import json
-# Find the JSON line in the output
 for line in open(output_file, encoding='utf-8', errors='replace'):
     if line.strip().startswith('{"name"'):
         d = json.loads(line.strip())
-        # d has: completed, steps, input_tokens, wall_seconds, tool_trace, final_answer, errors
+        # d has: completed, steps, input_tokens, wall_seconds, tool_trace, final_answer
 ```
 
 ### 6. JUDGE
-Compare results across variants. Evaluation criteria (in priority order):
-1. **completed** — must be true. Failed = disqualified.
-2. **steps** — fewer is better (measures reasoning efficiency)
-3. **input_tokens** — fewer is better (measures cost)
-4. **tool_trace** — correct tool selection? unnecessary calls? delegation count?
-5. **final_answer** — does it actually answer the question well? (your judgment)
+Compare all 3 variants. Present results as a comparison table:
+```
+| | Baseline | A | B | C |
+|---|---|---|---|---|
+| Steps | ... | ... | ... | ... |
+| Tokens | ... | ... | ... | ... |
+| OK | ... | ... | ... | ... |
+```
 
 ### 7. SELECT & RECOMBINE
-- If ONE variant is best: commit its changes in the worktree, merge into current branch
-- If MULTIPLE variants improve DIFFERENT files: **RECOMBINE** — commit and merge ALL
-  (e.g., Variant A improved Butler prompt, Variant B improved research_agent config → merge both)
-- If NO variant improves: discard all, try different hypotheses next cycle
+- **One winner**: commit in its worktree, merge into current branch
+- **Multiple winners improving different files**: RECOMBINE — merge ALL (crossover operator)
+- **No improvement**: discard all, design different mutations next cycle
 
 ```bash
-# Commit winner in worktree
-cd <worktree> && git add <files> && git commit -m "feat: <description> (cycle N)"
-
-# Merge into current branch
-cd <main-repo> && git merge <variant-branch> --no-edit
+# Commit winner
+cd ../pytaskforce-variant-a && git add <files> && git commit -m "feat: <desc> (cycle N)"
+# Merge
+cd <main-repo> && git merge variant-a --no-edit
 ```
 
 ### 8. CLEANUP
 ```bash
 git worktree remove ../pytaskforce-variant-a --force
 git worktree remove ../pytaskforce-variant-b --force
-git branch -D variant-a variant-b 2>/dev/null
+git worktree remove ../pytaskforce-variant-c --force
+git branch -D variant-a variant-b variant-c 2>/dev/null
 ```
 
 ### 9. REPEAT
-Go to step 1 with the improved baseline. Continue until:
-- User says stop
-- All missions pass with acceptable efficiency
-- No more improvements found (diminishing returns)
+Update skill profile (advance/regress difficulty), go to step 1.
 
 ## Key Files to Mutate
 
 | Target | File | What to change |
 |--------|------|----------------|
-| Butler delegation & coordination | `src/taskforce/core/prompts/autonomous_prompts.py` → `BUTLER_SPECIALIST_PROMPT` | Task patterns, delegation rules, output style, error recovery |
-| PC-Agent (files, system, docs) | `src/taskforce/configs/custom/pc-agent.yaml` → `system_prompt` | Tool selection hierarchy, batch processing, efficiency limits |
-| Research-Agent (web, facts) | `src/taskforce/configs/custom/research_agent.yaml` → `system_prompt` | Search strategy, completeness, source quality |
+| Butler coordination | `src/taskforce/core/prompts/autonomous_prompts.py` → `BUTLER_SPECIALIST_PROMPT` | Task patterns, delegation, error recovery, output style |
+| PC-Agent (files, docs) | `src/taskforce/configs/custom/pc-agent.yaml` → `system_prompt` | Tool hierarchy, batch processing, efficiency |
+| Research-Agent (web) | `src/taskforce/configs/custom/research_agent.yaml` → `system_prompt` | Completeness, search strategy |
 | Butler config | `src/taskforce/configs/butler.yaml` | max_steps, planning_strategy_params, context_policy |
-| Sub-agent configs | `src/taskforce/configs/custom/*.yaml` | max_steps, tools, context_management |
 
-## Proven Optimization Patterns
+## Proven Patterns (from PoC sessions)
 
-These patterns consistently produced improvements across multiple PoC cycles:
+These consistently produced improvements:
 
-1. **Prompt instructions > config limits** — "max 3 tool calls" in prompt works;
-   `max_steps: 8` in config causes premature abort and retries (worse overall).
+1. **Prompt > config** — "max 3 tool calls" in prompt works. `max_steps: 8` in config causes abort+retry (worse).
+2. **Concrete fallbacks > generic** — "if reminder fails → calendar event" works. "try alternatives" doesn't.
+3. **"ONE comprehensive delegation"** — biggest single improvement. Eliminates redundant steps/tokens.
+4. **"No planner/skills before delegating"** — Butler was creating overhead before delegating to agents who manage their own workflow.
+5. **Sub-agent completeness** — "deliver ALL requested points in one pass" prevents re-delegation.
+6. **Parallel direct tools** — For multi-source (calendar+email), Butler calls both directly. No delegation needed.
 
-2. **Concrete fallback paths > generic error handling** — "if reminder fails, create
-   a calendar event" works; "try alternatives" doesn't survive the no-progress stall detector.
+## Anti-Patterns
 
-3. **"ONE comprehensive delegation"** — Telling the Butler to send one complete mission
-   instead of multiple sequential ones eliminates the biggest source of wasted steps/tokens.
-
-4. **"No planner/skills before delegating"** — The Butler was activating skills and
-   creating plans before delegating to sub-agents who handle their own workflow.
-   Removing this overhead cut DocReport from 7 to 2 steps.
-
-5. **Sub-agent completeness rules** — "Deliver ALL requested points in one pass"
-   prevents the Butler from re-delegating for "the remaining items".
-
-6. **Parallel tool calls at Butler level** — For multi-source tasks (calendar + email),
-   the Butler can call both tools in one step. No delegation needed.
-
-## Anti-Patterns to Avoid
-
-- Don't reduce `max_steps` to force efficiency — it causes abort + retry loops
-- Don't add generic "try harder" instructions — they have no measurable effect
-- Don't test mutations against the wrong eval mode (ensure worktrees have `dynamic` mode)
-- Don't pipe eval output through `tail` with German text — use env vars and file redirects
-- Don't create worktrees before committing eval tooling changes to the branch
+- Hard config limits (max_steps reduction) → abort+retry loops
+- Generic "try harder" instructions → no measurable effect
+- Testing in worktrees that lack the latest eval tooling → "Unknown mode: dynamic"
+- Shell piping with German text → quoting issues. Use env vars + file redirects.
 
 ## Session Start
 
 $ARGUMENTS
 
-If no arguments provided, start with a baseline evaluation and analyze the trace.
+If no arguments: run baseline eval, analyze trace, identify weakest dimension,
+generate a Teacher mission at the right difficulty, and start Cycle 1 with 3 variants.
