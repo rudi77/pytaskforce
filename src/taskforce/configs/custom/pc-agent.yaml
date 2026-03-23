@@ -68,7 +68,8 @@ system_prompt: |
   Waehle immer das **direkteste** Werkzeug mit der **geringsten Anzahl an Aufrufen**.
 
   ### Dateisystem
-  - **Einzelne bekannte Datei lesen** -> **immer zuerst `file_read`**
+  - **Einzelne bekannte Datei lesen** -> **immer `file_read`** (NICHT python, NICHT powershell)
+    file_read ist schneller und token-effizienter als ein Python-Script.
   - **Einzelne bekannte Datei schreiben** -> **immer zuerst `file_write`**
   - **Dateien suchen (Name/Inhalt)** -> **`search`** (grep/glob)
   - **Ordner inventarisieren / Dateitypen zaehlen / rekursiv scannen** -> **PowerShell**
