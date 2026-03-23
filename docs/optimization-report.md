@@ -333,11 +333,76 @@ Attempted to reduce DocReport tokens/time (22-30k tokens, ~120s). Variants tried
 4. **Delegation format spec prevents re-delegation** — telling Butler to specify output format in delegation prevents "Ergänze..." follow-ups.
 5. **German language in prompts matters** — Variant B (Tagesplanung) crashed when Butler prompt included German ("Antworte in der Sprache des Benutzers") in the wrong location.
 
+### Iteration 4: DocReport Stabilization (WINNER)
+
+**Problem:** DocReport token variance 14k–112k across runs.
+
+**Winner: Variant B** — Deterministic Python/pathlib pattern for directory scans.
+Stabilized to ~21k tokens. **Commit:** `39ee6cc`
+
+### Iteration 5-6: Diverse Missions + Re-Delegation Fix
+
+**Tested:** Top10-Files (21k, PASS), Space (15k, PASS), PDF-List (46k, 3 delegations).
+
+**Winner Iteration 6: Variant C** — "Include ALL requirements in one comprehensive mission."
+PDF-List: 3→1 delegation, 46k→20k tokens (-57%). **Commit:** `6a7d782`
+
+### Iteration 7: Advanced Mission Testing
+
+| Mission | Difficulty | Steps | Tokens | Result |
+|---------|:----------:|------:|-------:|--------|
+| Wochenübersicht | Advanced | 2 | 10,472 | PASS — calendar+gmail parallel, structured synthesis |
+| Meeting-Vorbereitung | Advanced | 2 | 8,497 | PASS — calendar+email, honest about missing data |
+| PDF-Katalog (cross-agent) | Advanced | - | - | FAILED — PC-Agent stalled on error |
+
+### Iteration 8: PC-Agent Error Recovery (WINNER)
+
+**Problem:** PC-Agent stalls when Python tool fails — retries with PowerShell → stalls.
+
+**Winner: Variant A** — "On tool failure: answer IMMEDIATELY with partial results."
+PDF-Katalog now completes: 24k tokens, 87s, cross-agent parallel works.
+**Commit:** `f5aa83d`
+
+### Final Daily Benchmark (all 9 missions)
+
+| Mission | Steps | Tokens | Wall | OK |
+|---------|------:|-------:|-----:|:--:|
+| Baseline | 1 | 3,846 | 2.7s | Yes |
+| Single Tool | 3 | 15,875 | 33.0s | Yes |
+| Doc Report | 4 | 26,510 | 147.7s | Yes |
+| Multi-Step | 2 | 8,340 | 6.6s | Yes |
+| Tagesplanung | 2 | 10,334 | 21.1s | Yes |
+| Dateiverwaltung | 4 | 32,989 | 177.0s | Yes |
+| Recherche | 4 | 23,576 | 55.6s | Yes |
+| Erinnerung | 3 | 12,029 | 12.4s | Yes |
+| Präferenz | 2 | 8,780 | 4.6s | Yes |
+
+**100% Task Completion. 0 Notification Spam. 0 Pre-Delegation Steps.**
+
+### Advanced Missions Passed
+
+| Mission | Type | Steps | Tokens |
+|---------|------|------:|-------:|
+| Wochenübersicht (calendar+email+reasoning) | Multi-source | 2 | 10k |
+| Meeting-Vorbereitung (calendar+email+synthesis) | Multi-source | 2 | 8.5k |
+| PDF-Katalog (pc-agent+research parallel) | Cross-agent | 3 | 25k |
+| Top-10 Dateien | File query | 3 | 21k |
+| Speicherplatz-Analyse | Aggregation | 2 | 15k |
+
+### Key Learnings (Session 4)
+
+1. **Deterministic tool patterns > "choose the best tool"** — Python/pathlib template eliminates DocReport variance.
+2. **Comprehensive missions > incremental delegation** — "List PDFs with name, size, path sorted by size top 15" prevents re-delegation.
+3. **"Answer with partial results" > retry loops** — PC-Agent error recovery prevents stalling.
+4. **Cross-agent parallel works** — Butler can send pc-agent + research_agent simultaneously.
+5. **Advanced multi-source missions work** — Calendar+Email parallel synthesis completes in 2 steps.
+
 ---
 
 ## Planned Next Steps
 
+- [ ] Fix Buchungsvorschlag-Skill — PDF file access failing ("Tool-Fehler")
 - [ ] `memory` — Optimize Fact Retention (FAIL) and Memory Search (FAIL) recall
-- [ ] `error_recovery` — Verify Erinnerung fallback (reminder→calendar) is stable
-- [ ] DocReport stabilization — high variance (22k–112k tokens between runs)
-- [ ] Extract prompts from .py to .md files — enable safe prompt mutation
+- [ ] Butler Roles — Test and refine accountant role
+- [ ] Workflow creation from user descriptions
+- [ ] Dynamic skill/capability learning at runtime

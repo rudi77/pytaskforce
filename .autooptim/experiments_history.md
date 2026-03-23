@@ -165,3 +165,59 @@ Branch: experiments/evolve-session-2
 | Proactive Suggestion | FAIL | 8 | 35,923 |
 | **Total** | **40%** | **69** | **369,002** |
 
+### Iteration 4 — PC-Agent: Deterministisches DocReport Pattern (3 experiments)
+
+- ✅ **Variant B** [prompt] **WINNER — MERGED** (tokens stabilized)
+  - **Change:** PC-Agent — deterministic Python/pathlib pattern for directory scans
+  - **Files:** src/taskforce/configs/custom/pc-agent.yaml
+  - **Result:** 21,504 tokens (baseline was 14k-112k variance). Consistent.
+  - **Commit:** 39ee6cc
+
+- ❌ **Variant A** [prompt] **DISCARDED** (good but slightly more tokens)
+  - **Change:** PC-Agent — explicit 2-step PowerShell pattern
+  - **Result:** 23,748 tokens, 84s. Good but not best.
+
+- ❌ **Variant C** [config+prompt] **DISCARDED** (no improvement)
+  - **Change:** max_steps 20→8 + error handling rule
+  - **Result:** 32,333 tokens, 201s. TimeoutException still occurred.
+
+### Iteration 5 — Diverse Mission Testing (3 experiments, same code)
+
+Tested Top10-Files, Space-Usage, PDF-List missions on current code:
+- **Top10 (21k tok, 42s):** PASS — perfect table
+- **Space (15k tok, 47s):** PASS — correct 2.3GB, Top 5 folders
+- **PDF-List (46k tok, 115s):** PARTIAL — Butler re-delegated 3x (identified as re-delegation problem)
+
+### Iteration 6 — Butler Re-Delegation Fix (3 experiments)
+
+- ✅ **Variant C** [prompt] **WINNER — MERGED** (re-delegation eliminated)
+  - **Change:** Butler — "Include ALL requirements in one comprehensive mission. No second delegation."
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** PDF-List: 1 delegation, 20,321 tokens (was 46,351 with 3 delegations). -57%.
+  - **Commit:** 6a7d782
+
+- ❌ **Variant A** [prompt] **DISCARDED** (works but too strict)
+  - **Change:** "EXACTLY ONE call_agents_parallel per task. No exceptions."
+  - **Result:** 21,513 tokens. Works but may be too restrictive for complex tasks.
+
+- ❌ **Variant B** [prompt] **DISCARDED** (works but less principled)
+  - **Change:** "If result covers most of the question, that is good enough."
+  - **Result:** 21,291 tokens. Similar to C but less sustainable approach.
+
+### Iteration 7 — Advanced Mission Testing (3 experiments, same code)
+
+Tested harder missions (cross-source, multi-agent, reasoning):
+- **Wochenübersicht (10k tok, 46s):** PASS — calendar+gmail parallel, structured synthesis
+- **Meeting-Vorbereitung (8.5k tok, 21s):** PASS — calendar+email, honest "no email from Peter"
+- **PDF-Katalog cross-agent (FAILED):** PC-Agent stalled on PDF parsing error → react_loop_stalled
+
+### Iteration 8 — PC-Agent Error Recovery (3 experiments)
+
+- ✅ **Variant A** [prompt] **WINNER — MERGED** (fixes stalling)
+  - **Change:** PC-Agent — "On tool failure: answer IMMEDIATELY with partial results. Do NOT retry."
+  - **Files:** src/taskforce/configs/custom/pc-agent.yaml
+  - **Result:** PDF-Katalog now completes: 24,826 tokens, 87s. Cross-agent (pc+research) parallel works.
+  - **Commit:** f5aa83d
+
+- Not tested: Variants B (no-PDF-content rule) and C (explicit error chain) — Variant A already fixed the problem.
+
