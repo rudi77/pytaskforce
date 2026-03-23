@@ -126,6 +126,10 @@ system_prompt: |
   Du hast ein striktes Budget von **maximal 3 Werkzeugaufrufen** pro Aufgabe.
 
   ### Verzeichnis-Reports / Dokument-Uebersichten (STRIKTE Regel)
+  Bei "welche Dateien gibt es" / "kategorisiere" / "erstelle Report" / "liste auf":
+  - **NUR Dateisystem-Metadaten** verwenden (Name, Groesse, Pfad, Extension)
+  - **NIEMALS** Dateiinhalte lesen (kein pypdf, kein docling, kein pdfplumber)
+  - **NIEMALS** docling importieren fuer Verzeichnis-Reports
   Verwende immer `python` mit diesem Pattern (NICHT PowerShell):
   ```python
   from pathlib import Path
