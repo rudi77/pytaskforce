@@ -221,3 +221,33 @@ Tested harder missions (cross-source, multi-agent, reasoning):
 
 - Not tested: Variants B (no-PDF-content rule) and C (explicit error chain) — Variant A already fixed the problem.
 
+### Infrastructure: Docling OCR Integration
+
+- Added `docling` as optional dependency group in pyproject.toml
+- Added `extract_text_with_ocr.py` script to pdf-processing skill (pypdf + docling fallback)
+- Updated PC-Agent prompt to use docling for scanned PDFs
+- Installed CUDA-enabled PyTorch (torch 2.5.1+cu121) for GPU OCR
+- **Commit:** 3be0546
+
+### Iteration 9 — DocReport crash after docling integration (3 experiments)
+
+- ✅ **Variant C** [prompt] **WINNER — MERGED** (fixes DocReport crash)
+  - **Change:** PC-Agent — "NIEMALS docling importieren fuer Verzeichnis-Reports"
+  - **Files:** src/taskforce/configs/custom/pc-agent.yaml
+  - **Result:** DocReport: 18,015 tokens, 64s (was crashing)
+  - **Commit:** 58f8050
+
+### Iteration 10 — Dateiverwaltung crash fix (3 experiments)
+
+- ✅ **Variant A** [prompt] **WINNER — MERGED** (robust batch with try/except + docling fallback)
+  - **Change:** Batch-PDF script uses pypdf first, try/except per file, docling for unreadable, timeout=120
+  - **Files:** src/taskforce/configs/custom/pc-agent.yaml
+  - **Result:** 34,499 tokens, 239s. 15 files categorized into 6 folders.
+  - **Commit:** de401f6
+
+- ✅ **Variant B** [prompt] **RECOMBINED** (Butler delegation hint)
+  - **Change:** Butler tells pc-agent "use pypdf for batch, NOT docling"
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** 36,793 tokens, 122s. Fastest.
+  - **Commit:** f7419d8
+
