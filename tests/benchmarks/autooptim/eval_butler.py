@@ -423,7 +423,7 @@ async def run_mission(
         "prefix": prefix,
         "wall_seconds": wall_seconds,
         "completed": bool(final_answer) and not had_error,
-        "final_answer": final_answer[:2000],
+        "final_answer": final_answer,
         "tool_trace": tool_trace,
         "errors": errors,
         "notification_count": notification_count,
@@ -520,7 +520,7 @@ async def run_memory_sequence(
         "prefix": prefix,
         "wall_seconds": total_wall,
         "completed": all_completed,
-        "final_answer": last.get("final_answer", "")[:2000],
+        "final_answer": last.get("final_answer", ""),
         "tool_trace": merged_trace,
         "errors": [e for r in all_results for e in r["errors"]],
         "notification_count": total_notif,
@@ -590,7 +590,7 @@ def write_trace(results: list[dict], mode: str) -> None:
         # Final answer
         answer = r.get("final_answer", "")
         if answer:
-            lines.append(f"\nAnswer: {answer[:200]}")
+            lines.append(f"\nAnswer: {answer}")
         else:
             lines.append("\nAnswer: (none - mission did not produce a final answer)")
 
