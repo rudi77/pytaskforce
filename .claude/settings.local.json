@@ -209,7 +209,9 @@
       "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
       "Bash(GIT_EDITOR=true git rebase --continue 2>&1)",
       "Bash(GIT_EDITOR=true git rebase --continue)",
-      "Bash(GIT_EDITOR=true git cherry-pick --continue)"
+      "Bash(GIT_EDITOR=true git cherry-pick --continue)",
+      "Bash(mkdir -p .claude/skills/evolve)",
+      "Bash(cp src/taskforce/skills/evolve/SKILL.md .claude/skills/evolve/SKILL.md)"
     ],
     "deny": [
       ".env",
