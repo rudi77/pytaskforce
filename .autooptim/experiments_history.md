@@ -251,3 +251,30 @@ Tested harder missions (cross-source, multi-agent, reasoning):
   - **Result:** 36,793 tokens, 122s. Fastest.
   - **Commit:** f7419d8
 
+### Iteration 11 — Single Tool token efficiency (3 experiments, ALL RECOMBINED)
+
+- ✅ **All 3** [prompt] **RECOMBINED** (cumulative -17% tokens on Single Tool)
+  - **A:** PC-Agent — enforce file_read over python/powershell for single files
+  - **B:** PC-Agent — compact value extraction responses
+  - **C:** Butler — request value-only responses for simple extraction
+  - **Result:** Single Tool: 18k→15k tokens, 3→2 steps
+  - **Commits:** 3545388, 8de708d, c7dc783
+
+### Iterations 12-13 — Advanced + Expert Mission Stress Testing (9 missions, no code changes)
+
+Tested 9 new Teacher-designed missions across all difficulty levels. All passed without code changes:
+
+| Mission | Difficulty | Steps | Tokens | OK |
+|---------|:----------:|------:|-------:|:--:|
+| Tageszusammenfassung (Kalender+E-Mail+Dateien) | Advanced | 3 | 23,747 | Yes |
+| Memory (Präferenz merken) | Intermediate | 3 | 12,012 | Yes |
+| Google Drive Vergleich | Advanced | 3 | 21,301 | Yes |
+| Rechnungen suchen (E-Mail Filter) | Intermediate | 2 | 7,908 | Yes |
+| DOCX-Liste (File Query) | Intermediate | 2 | 17,404 | Yes |
+| Wetter → Datei (Cross-Agent) | Advanced | 4 | 36,153 | Yes |
+| Meeting-Briefing (3 Quellen) | Expert | 3 | 20,699 | Yes |
+| Steuerdokumente sortieren | Expert | 3 | 25,700 | Yes |
+| Dashboard-Script erstellen | Expert | 2 | 17,622 | Yes |
+
+**Conclusion:** Agent handles Beginner → Expert missions reliably. No further prompt changes needed for these scenarios.
+
