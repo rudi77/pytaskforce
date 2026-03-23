@@ -351,34 +351,11 @@ async def _llm_judge(answer: str, question: str) -> bool:
         return False
 
 
-async def _llm_quality_grade(answer: str, mission: str) -> float:
-    """LLM-graded answer quality on a 0.0-1.0 scale.
 
-    Evaluates correctness, completeness, and formatting.
-    """
-    try:
-        from taskforce.infrastructure.llm.litellm_service import LiteLLMService
-
-        llm = LiteLLMService()
-        result = await llm.complete_json(
-            prompt=(
-                f"## Mission\n{mission[:300]}\n\n"
-                f"## Agent Answer\n{answer[:500]}\n\n"
-                "Rate the answer quality on a scale from 0.0 to 1.0:\n"
-                "- 1.0 = correct, complete, well-formatted\n"
-                "- 0.7 = mostly correct but missing minor details\n"
-                "- 0.4 = partially correct or poorly formatted\n"
-                "- 0.0 = wrong, empty, or completely off-topic\n\n"
-                'Respond with JSON: {"quality": 0.X, "reason": "..."}'
-            ),
-            system_prompt="You are a strict answer quality evaluator. Respond only with JSON.",
-            model="fast",
-        )
-        data = result.get("data", result) if result.get("success") else {}
-        score = float(data.get("quality", 0.0))
-        return max(0.0, min(1.0, score))
-    except Exception:
-        return 0.0
+# NOTE: Answer quality grading removed — the /evolve Teacher (Claude) acts as
+# the Judge directly, reading traces and answers with full context.  This is
+# more accurate than an automated LLM judge which suffered from truncation,
+# wrong model choice, and language mismatch issues.
 
 
 # ---------------------------------------------------------------------------
@@ -665,11 +642,6 @@ def compute_scores(results: list[dict], memory_results: list[dict]) -> dict[str,
         if recall_vals:
             scores["memory_recall"] = sum(recall_vals) / len(recall_vals)
 
-    # Answer quality (aggregate from per-mission LLM grading)
-    quality_vals = [r["answer_quality"] for r in all_results if "answer_quality" in r]
-    if quality_vals:
-        scores["answer_quality"] = sum(quality_vals) / len(quality_vals)
-
     # Self-improvement score (future missions that actually completed)
     future_results = [r for r in results if r["prefix"].startswith("fut_")]
     if future_results:
@@ -685,8 +657,6 @@ def compute_scores(results: list[dict], memory_results: list[dict]) -> dict[str,
         scores[f"{p}_wall"] = round(r["wall_seconds"], 1)
         scores[f"{p}_tools"] = float(r["tool_calls"])
         scores[f"{p}_completed"] = 1.0 if r["completed"] else 0.0
-        if "answer_quality" in r:
-            scores[f"{p}_quality"] = r["answer_quality"]
 
     for r in memory_results:
         p = r["prefix"]
@@ -843,26 +813,6 @@ async def main(task_name: str) -> None:
     # Write trace file for proposer context
     write_trace(results + memory_results, task_name)
 
-    # Grade answer quality for daily missions via LLM judge (BEFORE compute_scores
-    # so that answer_quality values are available for scoring).
-    daily_results = [r for r in results if r["prefix"] in {
-        "tagesplan", "datei", "recherche", "reminder", "praeferenz",
-    }]
-    if daily_results:
-        for r in daily_results:
-            mission_prompt = ""
-            for m in DAILY_MISSIONS:
-                if m is None:
-                    continue
-                name, prefix, prompt = m
-                if prefix == r["prefix"]:
-                    mission_prompt = prompt
-                    break
-            if r["final_answer"] and mission_prompt:
-                r["answer_quality"] = await _llm_quality_grade(
-                    r["final_answer"], mission_prompt
-                )
-
     # Compute and output scores
     scores = compute_scores(results, memory_results)
 
@@ -926,14 +876,10 @@ async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None
         }
         print(f"  [{mission_name}] ERROR: {e}", file=sys.stderr)
 
-    # Grade answer quality via LLM judge
-    if r["final_answer"]:
-        r["answer_quality"] = await _llm_quality_grade(r["final_answer"], mission_text)
-
     print(
         f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
         f"tools={r['tool_calls']} wall={r['wall_seconds']:.1f}s "
-        f"ok={r['completed']} quality={r.get('answer_quality', 'N/A')}",
+        f"ok={r['completed']}",
         file=sys.stderr,
     )
 
