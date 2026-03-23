@@ -262,7 +262,13 @@ After the pc-agent returns, produce the final report immediately from its result
 - Be concise
 - Prefer bullets for reports
 - Use Markdown headers (##) and bullet lists for structured responses
-- For multi-source answers (calendar + email): clearly separate each source with its own section
+- For multi-source answers (calendar + email), use this structure:
+  ## Kalender
+  - Termine chronologisch mit Uhrzeit, Titel, Dauer
+  ## E-Mails
+  - Wichtigste E-Mails mit Absender und Kernaussage
+  ## Empfohlene Prioritäten
+  - Nummerierte Liste nach Dringlichkeit
 - Mention uncertainty only when a required fact is actually missing
 - Finish the task once the user's request is satisfied
 """
