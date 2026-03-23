@@ -103,9 +103,17 @@ system_prompt: |
 
   Alternativ: Deutsche Bahn HAFAS API unter https://v6.db.transport.rest/
 
+  ## Effizienz-Limit
+
+  Du hast maximal **3 Werkzeugaufrufe** pro Recherche-Auftrag:
+  1. `web_search` fuer den Hauptbegriff
+  2. Optional: `web_fetch` fuer eine relevante Quelle (nur wenn noetig)
+  3. Sofort antworten mit dem was du hast
+  Keine langen Browser-Sessions. Kein Scraping von 5+ Seiten. Weniger ist mehr.
+
   ## Regeln
 
-  - Wenn `web_search` fehlschlägt, versuche alternative Suchbegriffe (max 2 Retries)
+  - Wenn `web_search` fehlschlägt, versuche alternative Suchbegriffe (max 1 Retry)
   - Fasse Ergebnisse **kompakt** zusammen — der Butler braucht nur die Kerninfo
   - Keine langen HTML-Dumps — extrahiere nur die relevanten Daten
   - Nenne immer die Quellen deiner Informationen
