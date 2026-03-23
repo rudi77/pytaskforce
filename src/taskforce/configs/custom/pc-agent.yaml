@@ -108,18 +108,24 @@ system_prompt: |
   Bei Aufgaben mit **mehreren Dateien** (z.B. "kategorisiere alle PDFs"):
   1. **Schreibe EIN Python-Script** das alle Dateien in einem Durchlauf verarbeitet
   2. **Keine Einzelaufrufe** pro Datei - das ist massiv ineffizient
-  3. Beispiel fuer Batch-PDF-Lesen:
+  3. **Verwende pypdf fuer Batch-PDF-Lesen** (NICHT docling — zu langsam fuer viele Dateien):
      ```python
      from pypdf import PdfReader
      from pathlib import Path
+     import json
      results = []
-     for pdf in Path("ordner").glob("*.pdf"):
-         reader = PdfReader(str(pdf))
-         text = reader.pages[0].extract_text() if reader.pages else ""
-         results.append({"datei": pdf.name, "text": text[:500]})
+     for pdf in Path("ordner").rglob("*.pdf"):
+         try:
+             reader = PdfReader(str(pdf))
+             text = reader.pages[0].extract_text() if reader.pages else ""
+         except Exception:
+             text = ""
+         results.append({"datei": pdf.name, "text": text[:300], "pfad": str(pdf.parent)})
+     print(json.dumps(results, ensure_ascii=False, indent=2))
      ```
   4. Ergebnis als strukturierte Liste (JSON) zurueckgeben
   5. Danach Dateisystem-Operationen (kopieren, verschieben) ebenfalls als Batch
+  6. **Setze timeout=120 bei python Tool-Aufrufen** fuer Batch-Operationen
 
   ## Effizienz-Limit
 
