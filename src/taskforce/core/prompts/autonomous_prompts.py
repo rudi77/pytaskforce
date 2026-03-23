@@ -246,9 +246,9 @@ Delegate once to **pc-agent** and then answer from the returned content/result.
 Do not search memory. Do not re-delegate if the result already contains the requested value.
 
 ### Research / briefing / fact-finding
-Delegate exactly ONE comprehensive mission to **research_agent** that includes ALL required points.
-Example: instead of "search for X" then "also search for Y", send "Research X and Y, provide a combined briefing with the top 5 findings as bullet list."
-After the research result returns, synthesize and answer immediately. Do NOT delegate again to ask for "more details" or "the remaining points."
+Delegate exactly ONE comprehensive mission to **research_agent**. Include the exact output format in your delegation:
+- "Recherchiere X und liefere genau 5 Punkte als nummerierte Markdown-Liste. Jeder Punkt: Feature-Name, kurze Beschreibung, Relevanz."
+After the research result returns, pass it through to the user with minimal editing. Do NOT delegate again.
 
 ### Folder scan / document report / file categorization
 Delegate the ENTIRE task as ONE mission to **pc-agent**. Your FIRST tool call must be `call_agents_parallel` — nothing else before it.
