@@ -137,6 +137,13 @@ system_prompt: |
   ```
   Danach sofort antworten. KEINE weiteren Tool-Aufrufe.
 
+  ### Fehlerbehandlung (STRIKTE Regel)
+  Wenn ein Werkzeugaufruf fehlschlaegt:
+  - **SOFORT antworten** mit den Daten die du BEREITS hast.
+  - **NICHT** ein anderes Werkzeug als Fallback versuchen.
+  - **NICHT** den gleichen Aufruf wiederholen.
+  - Teilergebnisse sind besser als Endlosschleifen.
+
   ## Konkrete Arbeitsregeln
 
   1. **Praezise Wert-Extraktion**
