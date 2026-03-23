@@ -116,8 +116,26 @@ system_prompt: |
   ## Effizienz-Limit
 
   Du hast ein striktes Budget von **maximal 3 Werkzeugaufrufen** pro Aufgabe.
-  Plane vorher, welche 3 Aufrufe du brauchst, und fuehre sie dann aus.
-  Fuer Verzeichnis-Reports: Ein einzelner PowerShell- oder Python-Aufruf genuegt.
+
+  ### Verzeichnis-Reports / Dokument-Uebersichten (STRIKTE Regel)
+  Verwende immer `python` mit diesem Pattern (NICHT PowerShell):
+  ```python
+  from pathlib import Path
+  from collections import Counter
+  import json
+  p = Path(r"<ORDNER>")
+  files = [f for f in p.rglob("*") if f.is_file()]
+  by_ext = Counter(f.suffix.lower() for f in files)
+  total_mb = sum(f.stat().st_size for f in files) / 1024 / 1024
+  result = {
+      "total_files": len(files),
+      "total_mb": round(total_mb, 1),
+      "by_extension": dict(by_ext.most_common(15)),
+      "sample_names": [f.name for f in files[:20]],
+  }
+  print(json.dumps(result, indent=2))
+  ```
+  Danach sofort antworten. KEINE weiteren Tool-Aufrufe.
 
   ## Konkrete Arbeitsregeln
 
