@@ -199,9 +199,62 @@ The agent now writes a single Python batch script to read all PDFs, categorizes 
 
 ---
 
+## Optimization Session 3 — 2026-03-22 (evening, /evolve skill)
+
+### Method Change: /evolve Evolutionary Optimization
+
+Switched from AutoOptim (LLM proposer) to **/evolve** (Teacher-Student evolutionary optimization):
+- 3 competing mutation variants per cycle in parallel git worktrees
+- Tournament selection: best variant wins, gets merged
+- Human (Claude Code) acts as Teacher, Proposer, and Judge — more accurate than automated LLM judge
+
+### Cycle 1: PC-Agent Precise Value Extraction (WINNER)
+
+**Problem:** Single Tool mission asked for taskforce version from `pyproject.toml`. Agent returned **"py311"** (ruff's `target-version`) instead of the actual package version **"0.1.0"**.
+
+**3 Variants Tested:**
+
+| Variant | Target | Answer | Steps | Tokens | Wall |
+|---------|--------|--------|------:|-------:|-----:|
+| Baseline | — | py311 (WRONG) | 3 | 16,359 | 9.3s |
+| A (Butler prompt) | Precise delegation | 0.1.0 | 3 | 18,388 | 25.7s |
+| **B (PC-agent prompt)** | **Value extraction rule** | **0.1.0** | **2** | **14,140** | **18.4s** |
+| C (Both A+B) | Combined | FAILED | 1 | 3,832 | 10.0s |
+
+**Winner: Variant B** — Added rule to PC-agent: "When asked for a specific value, identify the EXACT field. `version` under `[project]` is the package version, `target-version` under `[tool.ruff]` is something different."
+
+**Commit:** `f115c85`
+**File:** `src/taskforce/configs/custom/pc-agent.yaml`
+
+### Cycle 2: Single Tool Efficiency (NO WINNER)
+
+Attempted to reduce the ~14k token floor for Single Tool. All 3 variants (file_read preference, max_steps reduction, concise delegation) produced marginal differences within noise. **Conclusion: ~14k tokens is the structural floor** for the Butler→PC-agent delegation pattern.
+
+### Cycle 3: Document Report Efficiency (NO WINNER)
+
+Attempted to reduce DocReport tokens/time (22-30k tokens, ~120s). Variants tried: PowerShell one-scan emphasis, Butler format specification, Python-first reports. None improved efficiency; some regressed. **Conclusion: ~22-30k tokens is inherent complexity** of scanning 1200+ files with categorization.
+
+### Verification Run (Final Quick Benchmark)
+
+| Mission | Before Session 3 | After Session 3 | Change |
+|---------|------------------:|----------------:|--------|
+| Baseline | 1 step, 3,757 tok | 1 step, 3,757 tok | Same |
+| Single Tool | 3 steps, **"py311" WRONG** | 4 steps, **"0.1.0" CORRECT** | **Answer fixed** |
+| Doc Report | 4 steps, 22,884 tok | 4 steps, 32,652 tok | Variance |
+
+### Key Learnings
+
+1. **PC-agent prompt > Butler prompt** for sub-agent behavior — the sub-agent's own instructions are more reliable than Butler's delegation wording
+2. **Combined mutations (A+B) can regress** — Variant C (both changes) caused Butler to refuse acting. Isolated changes are safer.
+3. **Token floors exist** — delegation pattern has inherent overhead (~14k for simple tasks, ~22k for complex ones). Further reduction requires architectural changes (e.g., direct tool access without delegation).
+4. **DocReport efficiency is content-bound** — scanning 1200+ real files drives the cost; prompt changes can't reduce it significantly.
+
+---
+
 ## Planned Next Steps
 
-- [ ] Memory campaign — evaluate and optimize recall, fact retention, contradiction handling
-- [ ] Quality campaign re-run — Tagesplanung (0.0) and Recherche (0.15) quality still low
-- [ ] Erinnerung fix — scheduler backend not initializing correctly (reminder always fails)
+- [ ] `error_recovery` — Reminder/Schedule missions fail ("Scheduler not configured"); test fallback to calendar events
+- [ ] `multi_source` — Tagesplanung mission (calendar + email combined); test parallel direct tool calls
+- [ ] `memory` — 5 memory sequences (Preference Recall, Fact Retention, Contradiction Handling, Memory Search, Proactive Suggestion)
+- [ ] Quality campaign — Tagesplanung (0.0) and Recherche (0.15) answer quality still low
 - [ ] Extract prompts from .py to .md files — enable safe prompt mutation by text mutator
