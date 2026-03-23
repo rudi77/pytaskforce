@@ -93,3 +93,75 @@ Method: /evolve skill (Teacher-Student evolutionary optimization with 3-worktree
 
 **Conclusion:** DocReport ~22-30k tokens is inherent complexity (scanning 1200+ files). Not prompt-fixable.
 
+## Campaign: evolve-session-2 (2026-03-23 06:46 UTC)
+
+Method: /evolve skill (Teacher-Student evolutionary optimization with 3-worktree tournament)
+Branch: experiments/evolve-session-2
+
+### Cycle 1 — delegation reliability: file access refusal + activate_skill overhead (3 experiments)
+
+- ✅ **Variant B** [prompt] **WINNER — MERGED** (fixes activate_skill overhead)
+  - **Change:** Butler prompt — "Your FIRST tool call must be call_agents_parallel — nothing else before it"
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** Correct delegation, no activate_skill before delegation
+  - **Commit:** baafb45
+
+- ✅ **Variant A** [prompt] **RECOMBINED** (fixes file access refusal)
+  - **Change:** Butler prompt — "You CAN access local files via pc-agent. NEVER refuse."
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** Butler delegates instead of refusing. Answer "0.1.0" correct.
+  - **Commit:** c4829b1
+
+- ❌ **Variant C** [prompt] **DISCARDED** (combined A+B as "CRITICAL" section)
+  - **Result:** All 3 delegated correctly, but C had highest tokens (14,348). No advantage over separate A+B.
+
+### Cycle 2 — multi_source quality: Tagesplanung answer quality (3 experiments)
+
+- ✅ **Variant A** [prompt] **WINNER — MERGED** (quality 0.1 → 0.4)
+  - **Change:** Butler output style — structured Kalender/E-Mails/Prioritäten template for multi-source answers
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** Quality 0.4 (4x improvement), structured output with 3 clear sections
+  - **Commit:** cdfa370
+
+- ❌ **Variant B** [prompt] **DISCARDED** (CRASHED)
+  - **Change:** Butler — "Antworte in der Sprache des Benutzers"
+  - **Result:** Butler delegated to research_agent instead of using direct tools. Timed out.
+
+- ❌ **Variant C** [prompt] **DISCARDED** (quality unchanged)
+  - **Change:** Butler — explicit "Daily planning" task pattern
+  - **Result:** Quality 0.1 (unchanged despite good-looking answer). Fewest tokens (9,830).
+
+### Cycle 3 — delegation efficiency: Recherche re-delegation (3 experiments)
+
+- ✅ **Variant C** [prompt] **WINNER — MERGED** (tokens -14%, no re-delegation)
+  - **Change:** Butler — specify exact output format in research delegation
+  - **Files:** src/taskforce/core/prompts/autonomous_prompts.py
+  - **Result:** 20,832 tokens (was 24,179), single delegation, 5 numbered points with Relevanz
+  - **Commit:** 8c21589
+
+- ✅ **Variant B** [config] **RECOMBINED** (research agent efficiency)
+  - **Change:** Research agent — max 3 tool calls per task
+  - **Files:** src/taskforce/configs/custom/research_agent.yaml
+  - **Result:** 39,562 tokens (still re-delegated but research agent more focused)
+  - **Commit:** d6d7faf
+
+- ❌ **Variant A** [prompt] **DISCARDED** (tokens 3.5x worse)
+  - **Change:** Research agent — briefing output template
+  - **Result:** 84,392 tokens. Butler re-delegated ("Ergänze..."), doubling work.
+
+### Infrastructure fixes
+
+- **fix:** Memory benchmark error/timeout dicts missing fields (22b01fe)
+- **refactor:** Removed automated LLM quality judge — /evolve Teacher acts as Judge directly (a852228)
+
+### Memory Benchmark Baseline (established, not optimized)
+
+| Sequence | Recall | Steps | Tokens |
+|----------|:------:|------:|-------:|
+| Preference Recall | PASS | 14 | 70,966 |
+| Fact Retention | FAIL | 13 | 83,480 |
+| Contradiction Handling | PASS | 14 | 87,847 |
+| Memory Search | FAIL | 20 | 90,786 |
+| Proactive Suggestion | FAIL | 8 | 35,923 |
+| **Total** | **40%** | **69** | **369,002** |
+

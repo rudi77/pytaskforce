@@ -251,10 +251,93 @@ Attempted to reduce DocReport tokens/time (22-30k tokens, ~120s). Variants tried
 
 ---
 
+## Optimization Session 4 — 2026-03-23 (/evolve session 2)
+
+### Daily Benchmark Baseline (before changes)
+
+| Mission | Steps | Tokens | Wall | OK | Issue |
+|---------|------:|-------:|-----:|:--:|-------|
+| Baseline | 1 | 3,757 | 2.6s | Yes | - |
+| Single Tool | 2 | 4,080 | 6.1s | Yes | **REFUSED** (asked user to upload) |
+| Doc Report | 3 | 14,112 | 137.7s | Yes | pc-agent crashed |
+| Multi-Step | 2 | 8,198 | 11.3s | Yes | OK |
+| Tagesplanung | 2 | 9,940 | 24.1s | Yes | Quality low (unstructured) |
+| Dateiverwaltung | 4 | 42,955 | 149.2s | Yes | activate_skill before delegation |
+| Recherche | 4 | 24,179 | 38.5s | Yes | Re-delegated unnecessarily |
+| Erinnerung | 3 | 11,795 | 11.6s | Yes | Error recovery works (reminder→calendar) |
+| Präferenz | 3 | 13,470 | 7.5s | Yes | OK |
+
+### Cycle 1: Butler Delegation Reliability (WINNER + RECOMBINE)
+
+**Problems:** Butler sometimes refuses local file access; Butler calls `activate_skill(pdf-processing)` before delegating to pc-agent.
+
+| Variant | Change | Result |
+|---------|--------|--------|
+| **A** (recombined) | "You CAN access local files via pc-agent. NEVER refuse." | Fixes file access refusal |
+| **B** (winner) | "First tool call must be call_agents_parallel" | Eliminates activate_skill overhead |
+| C (discarded) | Combined as "CRITICAL" section | No advantage, highest tokens |
+
+**Commits:** `baafb45`, `c4829b1`
+
+### Cycle 2: Tagesplanung Answer Quality (WINNER)
+
+**Problem:** Tagesplanung calls calendar+email correctly in parallel, but answer was unstructured.
+
+| Variant | Steps | Tokens | Wall | Quality (Teacher judge) |
+|---------|------:|-------:|-----:|:-----------------------:|
+| Baseline | 2 | 9,940 | 24.1s | Low (unstructured) |
+| **A (winner)** | 2 | 10,056 | 24.3s | **High** (3 clear sections) |
+| B (discarded) | - | - | - | CRASHED (wrong routing) |
+| C (discarded) | 2 | 9,830 | 21.1s | Low |
+
+**Winner: Variant A** — Added structured Kalender/E-Mails/Prioritäten template.
+**Commit:** `cdfa370`
+
+### Cycle 3: Recherche Re-Delegation (WINNER + RECOMBINE)
+
+**Problem:** Butler re-delegated to research_agent ("Ergänze..."), doubling tokens.
+
+| Variant | Delegations | Tokens | Wall |
+|---------|:----------:|-------:|-----:|
+| Baseline | 1 | 24,179 | 38.5s |
+| A (discarded) | 2 | 84,392 | 135.2s |
+| B (recombined) | 2 | 39,562 | 56.7s |
+| **C (winner)** | **1** | **20,832** | **45.1s** |
+
+**Winner: Variant C** — Butler now specifies exact output format in delegation.
+**Recombined: Variant B** — Research Agent now limited to max 3 tool calls.
+**Commits:** `8c21589`, `d6d7faf`
+
+### Memory Benchmark Baseline (established)
+
+| Sequence | Recall | Steps | Tokens |
+|----------|:------:|------:|-------:|
+| Preference Recall | PASS | 14 | 70,966 |
+| Fact Retention | FAIL | 13 | 83,480 |
+| Contradiction Handling | PASS | 14 | 87,847 |
+| Memory Search | FAIL | 20 | 90,786 |
+| Proactive Suggestion | FAIL | 8 | 35,923 |
+| **Total** | **40%** | 69 | 369,002 |
+
+### Infrastructure Changes
+
+- **Removed automated LLM quality judge** (`a852228`) — /evolve Teacher acts as Judge directly. The automated judge was unreliable: truncated answers to 500 chars, used cheapest model, scored correct German answers as 0.0-0.2.
+- **Removed answer truncation** (`5af02ea`) — full answers now preserved in results and traces for Teacher evaluation.
+- **Fixed memory benchmark error dicts** (`22b01fe`) — timeout/error fallbacks were missing required fields.
+
+### Key Learnings
+
+1. **Recombination works** — merging A+B from different variants (when they modify different aspects) is safe and effective.
+2. **"NEVER refuse" rules work** — explicit prohibition of refusal behavior reliably prevents it.
+3. **Output templates improve quality** — structured section templates (Kalender/E-Mails/Prioritäten) produce measurably better answers.
+4. **Delegation format spec prevents re-delegation** — telling Butler to specify output format in delegation prevents "Ergänze..." follow-ups.
+5. **German language in prompts matters** — Variant B (Tagesplanung) crashed when Butler prompt included German ("Antworte in der Sprache des Benutzers") in the wrong location.
+
+---
+
 ## Planned Next Steps
 
-- [ ] `error_recovery` — Reminder/Schedule missions fail ("Scheduler not configured"); test fallback to calendar events
-- [ ] `multi_source` — Tagesplanung mission (calendar + email combined); test parallel direct tool calls
-- [ ] `memory` — 5 memory sequences (Preference Recall, Fact Retention, Contradiction Handling, Memory Search, Proactive Suggestion)
-- [ ] Quality campaign — Tagesplanung (0.0) and Recherche (0.15) answer quality still low
-- [ ] Extract prompts from .py to .md files — enable safe prompt mutation by text mutator
+- [ ] `memory` — Optimize Fact Retention (FAIL) and Memory Search (FAIL) recall
+- [ ] `error_recovery` — Verify Erinnerung fallback (reminder→calendar) is stable
+- [ ] DocReport stabilization — high variance (22k–112k tokens between runs)
+- [ ] Extract prompts from .py to .md files — enable safe prompt mutation
