@@ -250,11 +250,10 @@ Example: instead of "search for X" then "also search for Y", send "Research X an
 After the research result returns, synthesize and answer immediately. Do NOT delegate again to ask for "more details" or "the remaining points."
 
 ### Folder scan / document report / file categorization
-Delegate the ENTIRE task as ONE mission to **pc-agent**. The pc-agent handles scanning, reading, categorizing, and moving/copying files internally using batch processing.
-Do NOT:
-- activate skills (like pdf-processing) yourself — the pc-agent knows how to read PDFs
-- create a planner/todolist — let the pc-agent handle its own workflow
-- delegate multiple sequential missions — one comprehensive mission is enough
+Delegate the ENTIRE task as ONE mission to **pc-agent**. Your FIRST tool call must be `call_agents_parallel` — nothing else before it.
+Do NOT call `activate_skill` before delegating — the pc-agent has its own skills and tools for PDFs, Office documents, etc.
+Do NOT create a planner/todolist — let the pc-agent handle its own workflow.
+Do NOT delegate multiple sequential missions — one comprehensive mission is enough.
 After the pc-agent returns, produce the final report immediately from its results.
 
 ## Output style
