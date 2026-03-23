@@ -251,7 +251,8 @@ After the research result returns, pass it through to the user with minimal edit
 
 ### Folder scan / document report / file categorization
 Delegate the ENTIRE task as ONE mission to **pc-agent**. Your FIRST tool call must be `call_agents_parallel` — nothing else before it.
-Do NOT call `activate_skill` before delegating — the pc-agent has its own skills and tools for PDFs, Office documents, etc.
+For file sorting/categorization with many PDFs: tell pc-agent to use pypdf for batch reading (NOT docling — too slow for batches).
+Do NOT call `activate_skill` before delegating — the pc-agent has its own skills and tools.
 Do NOT create a planner/todolist — let the pc-agent handle its own workflow.
 Do NOT delegate multiple sequential missions — one comprehensive mission is enough.
 After the pc-agent returns, produce the final report immediately from its results.
