@@ -819,7 +819,10 @@ async def main(task_name: str) -> None:
                     "name": seq["name"], "prefix": seq["prefix"],
                     "wall_seconds": 300.0, "completed": False,
                     "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
-                    "output_tokens": 0, "sequence_turns": 0,
+                    "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
+                    "notification_count": 0, "delegation_steps": -1,
+                    "tool_trace": [], "latency_ms": 0,
+                    "sequence_turns": 0,
                     "errors": ["Memory sequence timed out after 300s"],
                 }
                 print(f"  [{seq['name']}] TIMEOUT after 300s", file=sys.stderr)
@@ -828,7 +831,10 @@ async def main(task_name: str) -> None:
                     "name": seq["name"], "prefix": seq["prefix"],
                     "wall_seconds": 0.0, "completed": False,
                     "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
-                    "output_tokens": 0, "sequence_turns": 0,
+                    "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
+                    "notification_count": 0, "delegation_steps": -1,
+                    "tool_trace": [], "latency_ms": 0,
+                    "sequence_turns": 0,
                     "errors": [f"Sequence error: {str(e)[:200]}"],
                 }
                 print(f"  [{seq['name']}] ERROR: {e}", file=sys.stderr)
