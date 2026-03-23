@@ -76,12 +76,20 @@ system_prompt: |
   - **Bilder/Medien analysieren** -> `multimedia`
 
   ### Dokumentverarbeitung
-  - **PDF lesen** -> `python` mit pypdf oder pdfplumber:
+  - **PDF lesen** -> `python` mit docling (funktioniert auch fuer gescannte PDFs!):
+    ```python
+    from docling.document_converter import DocumentConverter
+    converter = DocumentConverter()
+    result = converter.convert("datei.pdf")
+    text = result.document.export_to_markdown()
+    ```
+    Fallback fuer reine Text-PDFs (schneller):
     ```python
     from pypdf import PdfReader
     reader = PdfReader("datei.pdf")
-    text = reader.pages[0].extract_text()  # Erste Seite
+    text = reader.pages[0].extract_text()
     ```
+    **Regel:** Wenn pypdf leeren Text liefert -> immer docling verwenden (OCR).
   - **DOCX lesen** -> `python` mit python-docx:
     ```python
     from docx import Document

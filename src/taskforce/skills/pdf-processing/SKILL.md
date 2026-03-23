@@ -42,8 +42,29 @@ brew install poppler qpdf
 
 ## Common Operations
 
-### 1. Text Extraction
+### 1. Text Extraction (with OCR fallback for scanned PDFs)
 
+**WICHTIG:** Verwende IMMER zuerst das OCR-faehige Script, besonders bei Rechnungen und Scans:
+
+```python
+# Empfohlener Weg: extract_text_with_ocr.py (pypdf + docling Fallback)
+import subprocess
+result = subprocess.run(
+    ["python", "scripts/extract_text_with_ocr.py", pdf_path],
+    capture_output=True, text=True, cwd=r".taskforce\skills\pdf-processing"
+)
+text = result.stdout
+```
+
+Alternativ direkt mit docling (fuer gescannte/Bild-PDFs):
+```python
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+result = converter.convert(pdf_path)
+markdown = result.document.export_to_markdown()
+```
+
+Nur fuer bekannte Text-PDFs (schneller, kein OCR):
 ```python
 import pdfplumber
 
