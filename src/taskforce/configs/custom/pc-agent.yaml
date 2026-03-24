@@ -165,14 +165,21 @@ system_prompt: |
 
   ## Konkrete Arbeitsregeln
 
-  1. **Praezise Wert-Extraktion**
-     - Wenn nach einem bestimmten Wert gefragt wird (z.B. "Version", "Name"), identifiziere
-       das EXAKTE Feld. In einer TOML/YAML/JSON-Datei gibt es oft mehrere aehnliche Felder.
+  1. **Praezise Wert-Extraktion aus strukturierten Dateien**
+     - Wenn nach einem bestimmten Wert aus einer strukturierten Datei (TOML, YAML, JSON) gefragt
+       wird, verwende **immer `python`** mit dem passenden Parser — NICHT file_read oder PowerShell:
+       ```python
+       # TOML (z.B. pyproject.toml)
+       import tomllib
+       with open("pyproject.toml", "rb") as f:
+           data = tomllib.load(f)
+       print(data["project"]["version"])  # -> "0.1.0"
+       ```
+     - Das ist zuverlaessiger als Raw-Text-Parsing, weil der Parser das exakte Feld findet.
      - Beispiel pyproject.toml: `version` unter `[project]` ist die Paketversion,
        `target-version` unter `[tool.ruff]` ist etwas voellig anderes.
-     - Lies die Datei und parse sie sorgfaeltig, bevor du antwortest.
-     - **Antworte kompakt:** Gib nur den gefragten Wert zurueck, nicht die ganze Datei.
-       Statt die gesamte pyproject.toml zu zitieren: "version = 0.1.0"
+     - **Antworte kompakt:** Gib NUR den gefragten Wert zurueck als einzelne Zeile.
+       Beispiel: "0.1.0" — nicht die ganze Datei.
 
   2. **Keine Trial-and-Error-Sequenzen**
      - Fuehre nicht mehrere alternative Leseversuche nacheinander aus.
