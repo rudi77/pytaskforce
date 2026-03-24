@@ -152,9 +152,16 @@ Present comparison table:
 4. If multiple variants improve different files → RECOMBINE (merge all)
 5. If no variant improves >= 5% → NO WINNER, try different mutations next cycle
 
-### Step 7: MERGE + CLEANUP
+### Step 7: REGRESSION GATE + MERGE + CLEANUP
 
-**If winner:**
+**Before merging, run regression smoke test on the winner worktree:**
+```
+cd ../pytaskforce-evolve-{x} && uv run python tests/benchmarks/autooptim/eval_butler.py regression
+```
+This runs 6 core capability tests (~2 min): text file read, PDF read, web search, email, memory, delegation.
+If ANY test fails → **REJECT the variant**. Do NOT merge.
+
+**If winner AND regression passes:**
 ```bash
 cd ../pytaskforce-evolve-{x} && git add <changed_files> && git commit -m "feat: <desc> (evolve <objective> cycle N)"
 cd <REPO_DIR> && git merge evolve-{x} --no-edit

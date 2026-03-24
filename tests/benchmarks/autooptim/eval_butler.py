@@ -4,6 +4,7 @@ Runs efficiency benchmark missions and outputs JSON scores to stdout.
 Also writes a detailed trace file for the proposer LLM.
 
 Eval modes:
+  - "regression": Core capability smoke test (~2 min). MUST pass before any merge.
   - "quick"  : Baseline + Single Tool + Document Report (3 missions)
   - "full"   : All 4 missions including Multi-Step Tool Chain
   - "daily"  : Full + 5 daily assistant missions (parallelization, delegation, memory)
@@ -236,6 +237,75 @@ MEMORY_MISSIONS: list[dict] = [
         ),
     },
 ]
+
+# --- Regression Tests: Core capabilities that MUST always work ---
+# Each test has a mission, a check function, and a description.
+# The check function receives the final_answer string and returns True if passed.
+# These are FAST (~2 min total) and gate every /evolve merge.
+REGRESSION_TESTS: list[dict] = [
+    {
+        "name": "Text File Read",
+        "prefix": "reg_textfile",
+        "mission": (
+            "Lies die Datei pyproject.toml und nenne mir die Version von taskforce. "
+            "Antworte nur mit der Versionsnummer."
+        ),
+        "check": lambda answer: "0.1.0" in answer,
+        "description": "Can read a text file and extract a value",
+    },
+    {
+        "name": "PDF Read (pypdf)",
+        "prefix": "reg_pdf",
+        "mission": (
+            "Lies die erste Seite der PDF-Datei "
+            "C:\\Users\\rudi\\Documents\\Private\\Rechnungen\\invoice0.pdf "
+            "und fasse den Inhalt in 2-3 Saetzen zusammen."
+        ),
+        "check": lambda answer: len(answer) > 50 and "nicht" not in answer.lower()[:100],
+        "description": "Can read a text-based PDF with pypdf",
+    },
+    {
+        "name": "Web Search",
+        "prefix": "reg_websearch",
+        "mission": "Wer ist der aktuelle deutsche Bundeskanzler? Antworte in einem Satz.",
+        "check": lambda answer: any(
+            name in answer.lower() for name in ["scholz", "merz"]
+        ),
+        "description": "Can search the web for current facts",
+    },
+    {
+        "name": "Email Access",
+        "prefix": "reg_email",
+        "mission": "Zeige mir die letzte E-Mail in meinem Postfach. Nur Betreff und Absender.",
+        "check": lambda answer: (
+            len(answer) > 20
+            and "error" not in answer.lower()[:50]
+            and "nicht" not in answer.lower()[:50]
+        ),
+        "description": "Can access Gmail and read emails",
+    },
+    {
+        "name": "Memory Save",
+        "prefix": "reg_memory",
+        "mission": "Merke dir: Mein Lieblingsessen ist Pizza.",
+        "check": lambda answer: any(
+            w in answer.lower()
+            for w in ["merke", "gespeichert", "notiert", "pizza"]
+        ),
+        "description": "Can save user preferences to memory",
+    },
+    {
+        "name": "Delegation",
+        "prefix": "reg_delegation",
+        "mission": (
+            "Welche .pdf Dateien gibt es in C:\\Users\\rudi\\Documents\\Private\\Rechnungen? "
+            "Liste nur die Dateinamen auf."
+        ),
+        "check": lambda answer: ".pdf" in answer.lower() or "invoice" in answer.lower(),
+        "description": "Can delegate file tasks to PC-Agent",
+    },
+]
+
 
 # --- Tier 4: Future / Aspirational (expected to score 0 today) ---
 # These missions test capabilities that Taskforce does not yet support.
@@ -837,6 +907,81 @@ async def main(task_name: str) -> None:
     sys.stdout.flush()
 
 
+async def main_regression() -> None:
+    """Run regression smoke tests and output pass/fail JSON.
+
+    Each test runs a mission and checks the answer with a lambda.
+    Output: {"passed": N, "failed": N, "total": N, "all_passed": bool, "details": [...]}
+    Exit code: 0 if all passed, 1 if any failed.
+    """
+    executor = AgentExecutor()
+    details: list[dict] = []
+    passed = 0
+    failed = 0
+
+    for test in REGRESSION_TESTS:
+        name = test["name"]
+        prefix = test["prefix"]
+        mission = test["mission"]
+        check_fn = test["check"]
+
+        try:
+            r = await asyncio.wait_for(
+                run_mission(name, prefix, mission, executor),
+                timeout=120,
+            )
+            answer = r.get("final_answer", "")
+            check_ok = bool(check_fn(answer)) if answer else False
+        except asyncio.TimeoutError:
+            answer = ""
+            check_ok = False
+            print(f"  [{name}] TIMEOUT", file=sys.stderr)
+        except Exception as e:
+            answer = ""
+            check_ok = False
+            print(f"  [{name}] ERROR: {e}", file=sys.stderr)
+
+        status = "PASS" if check_ok else "FAIL"
+        if check_ok:
+            passed += 1
+        else:
+            failed += 1
+
+        print(
+            f"  [{name}] {status} — answer: {answer[:80]}",
+            file=sys.stderr,
+        )
+        details.append({
+            "name": name,
+            "prefix": prefix,
+            "passed": check_ok,
+            "answer_preview": answer[:200],
+            "description": test["description"],
+        })
+
+    result = {
+        "passed": passed,
+        "failed": failed,
+        "total": passed + failed,
+        "all_passed": failed == 0,
+        "details": details,
+    }
+    print(json.dumps(result), flush=True)
+    sys.stdout.flush()
+
+    if failed > 0:
+        print(
+            f"\n  REGRESSION FAILED: {failed}/{passed + failed} tests failed",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    else:
+        print(
+            f"\n  REGRESSION PASSED: {passed}/{passed} tests passed",
+            file=sys.stderr,
+        )
+
+
 async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None:
     """Run a single dynamic mission and output detailed JSON results.
 
@@ -922,6 +1067,23 @@ def _parse_args() -> tuple[str, str | None, str | None]:
 
 if __name__ == "__main__":
     mode, mission_text, mission_name = _parse_args()
+
+    # Regression mode: fast smoke test for core capabilities
+    if mode == "regression":
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(main_regression())
+        except SystemExit as e:
+            sys.exit(e.code)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)
 
     # Dynamic mode: run a single mission from --mission arg or EVAL_MISSION env var
     if mode == "dynamic":
