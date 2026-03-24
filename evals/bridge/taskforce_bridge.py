@@ -40,6 +40,11 @@ def _collect_events(update: Any, acc: dict[str, Any]) -> None:
         acc["prompt_tokens"] += usage.get("prompt_tokens", 0)
         acc["completion_tokens"] += usage.get("completion_tokens", 0)
         acc["total_tokens"] += usage.get("total_tokens", 0)
+    elif evt_str == EventType.LLM_TOKEN.value:
+        # Accumulate LLM response text as fallback for answer extraction
+        token = (update.details or {}).get("content") or update.message or ""
+        if token:
+            acc["last_llm_text"] += str(token)
     elif evt_str == EventType.FINAL_ANSWER.value:
         content = (update.details or {}).get("content", "")
         if content:
@@ -71,16 +76,43 @@ def _new_accumulator() -> dict[str, Any]:
         "completion_tokens": 0,
         "total_tokens": 0,
         "final_message": "",
+        "last_llm_text": "",
         "status": "unknown",
         "session_id": "",
         "history_types": [],
     }
 
 
+_STATUS_STRINGS = {"execution completed", "status: completed", "status: failed"}
+
+
+def _extract_best_answer(acc: dict[str, Any]) -> str:
+    """Extract the best available answer from accumulated events.
+
+    Priority: final_message (if substantive) > last_llm_text > final_message (raw).
+    Filters out status-only strings like "Execution completed. Status: failed".
+    """
+    answer = acc["final_message"]
+
+    # If answer looks like an internal status string, use LLM text as fallback
+    if answer and any(s in answer.lower() for s in _STATUS_STRINGS):
+        llm_text = acc.get("last_llm_text", "").strip()
+        if llm_text and len(llm_text) > 5:
+            return llm_text
+
+    # If no final_message at all, use last LLM text
+    if not answer:
+        llm_text = acc.get("last_llm_text", "").strip()
+        if llm_text:
+            return llm_text
+
+    return answer
+
+
 def _write_metadata(state: TaskState, acc: dict[str, Any]) -> TaskState:
     """Write accumulated metrics into Inspect state metadata."""
     state.output = state.output.model_copy(
-        update={"completion": acc["final_message"]}
+        update={"completion": _extract_best_answer(acc)}
     )
     state.metadata = state.metadata or {}
     state.metadata["taskforce_status"] = str(acc["status"])

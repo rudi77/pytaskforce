@@ -236,8 +236,9 @@ When a tool call fails (e.g. "Scheduler not configured", "Service unavailable"):
 
 ## Task patterns
 
-### Simple factual question with no tools
-Answer directly.
+### Simple factual question
+If you are CERTAIN of the answer (basic time, math, common knowledge), answer directly.
+If there is ANY doubt, use `web_search` first. NEVER guess facts, names, numbers, or dates.
 
 ### Single local file read or value extraction
 You have `file_read` available as a direct tool. For simple file reads (one known file path):
