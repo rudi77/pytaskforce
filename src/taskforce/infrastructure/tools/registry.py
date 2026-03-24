@@ -140,6 +140,12 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.multimedia_tool",
         "params": {},
     },
+    # Native tools - Result Retrieval
+    "fetch_result": {
+        "type": "FetchResultTool",
+        "module": "taskforce.infrastructure.tools.native.fetch_result_tool",
+        "params": {},
+    },
     # Native tools - Memory
     "memory": {
         "type": "MemoryTool",

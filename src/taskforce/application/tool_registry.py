@@ -64,6 +64,7 @@ class ToolRegistry:
         notification_defaults: dict[str, str] | None = None,
         scheduler: Any | None = None,
         auth_manager: Any | None = None,
+        tool_result_store: Any | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -77,6 +78,7 @@ class ToolRegistry:
                 (keys: ``default_channel``, ``default_recipient_id``).
             scheduler: Scheduler service for ScheduleTool and ReminderTool.
             auth_manager: Authentication manager for AuthTool.
+            tool_result_store: Store for retrieving full tool results by handle.
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
@@ -85,6 +87,7 @@ class ToolRegistry:
         self._notification_defaults = notification_defaults or {}
         self._scheduler = scheduler
         self._auth_manager = auth_manager
+        self._tool_result_store = tool_result_store
         self._logger = logger.bind(component="ToolRegistry")
         # Caches: avoid re-instantiating the same tool and re-listing all tools.
         self._tool_cache: dict[str, ToolProtocol] = {}
@@ -409,6 +412,10 @@ class ToolRegistry:
             ]:
                 if self._user_context:
                     tool_params["user_context"] = self._user_context
+
+            # Special handling for FetchResultTool - inject tool_result_store
+            if tool_type == "FetchResultTool" and self._tool_result_store:
+                tool_params["tool_result_store"] = self._tool_result_store
 
             # Special handling for MemoryTool - inject store_dir
             if tool_type == "MemoryTool" and self._memory_store_dir:

@@ -410,6 +410,7 @@ class AgentFactory:
             notification_defaults=base_config.get("notifications"),
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,
+            tool_result_store=infra.get("tool_result_store"),
         )
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)
@@ -942,6 +943,7 @@ class AgentFactory:
             llm_provider=llm_provider,
             user_context=user_context,
             scheduler=self._scheduler,
+            tool_result_store=infra.get("tool_result_store"),
         )
         effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
         all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
