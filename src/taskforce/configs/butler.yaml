@@ -89,7 +89,6 @@ sub_agents:
 
 tools:
   - file_read
-  - fetch_result
   - memory
   - send_notification
   - gmail

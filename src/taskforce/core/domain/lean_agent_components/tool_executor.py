@@ -76,8 +76,9 @@ class ToolResultMessageFactory:
         Create a tool message for message history.
 
         If tool_result_store is available and the result is large, stores the
-        result and returns a handle+preview message. Otherwise, returns a
-        standard message with the full result (truncated).
+        full result to a file and returns a short message with the file path.
+        The agent can use file_read to access the complete data.
+        Otherwise, returns the result inline.
         """
         result_json = json.dumps(tool_result, ensure_ascii=False, default=str)
         result_size = len(result_json)
@@ -93,16 +94,25 @@ class ToolResultMessageFactory:
                 },
             )
 
-            preview = create_tool_result_preview(handle, tool_result)
+            # Return a simple file reference — agent uses file_read to get full data
+            result_file = self._tool_result_store._result_path(handle.id)
+            file_ref = {
+                "success": tool_result.get("success", False),
+                "result_file": str(result_file),
+                "size_chars": result_size,
+                "message": (
+                    f"Result too large for inline response ({result_size} chars). "
+                    f"Full data saved to: {result_file} — use file_read to access."
+                ),
+            }
 
             self._logger.info(
-                "tool_result_stored_with_handle",
+                "tool_result_stored_to_file",
                 tool=tool_name,
-                handle_id=handle.id,
+                file=str(result_file),
                 size_chars=result_size,
-                preview_length=len(preview.preview_text),
             )
 
-            return tool_result_preview_to_message(tool_call_id, tool_name, preview)
+            return tool_result_to_message(tool_call_id, tool_name, file_ref)
 
         return tool_result_to_message(tool_call_id, tool_name, tool_result)
