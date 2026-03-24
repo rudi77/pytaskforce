@@ -773,6 +773,47 @@ def _rebuild_system_prompt(
     }
 
 
+async def _salvage_answer(
+    agent: Agent,
+    messages: list[dict[str, Any]],
+    logger: LoggerProtocol,
+) -> str:
+    """Force a final answer from the LLM when execution stalls or exceeds max steps.
+
+    Makes one last LLM call WITHOUT tools, asking the model to produce the best
+    answer it can from the conversation context so far. This prevents returning
+    empty "Execution failed" responses.
+
+    Returns:
+        The salvage answer text, or empty string if the LLM call fails.
+    """
+    try:
+        salvage_messages = messages + [
+            {
+                "role": MessageRole.USER.value,
+                "content": (
+                    "[System: Execution is ending. You MUST provide your best answer NOW "
+                    "based on all information gathered so far. Do NOT call any tools. "
+                    "Respond with ONLY the answer, nothing else.]"
+                ),
+            }
+        ]
+        result = await agent.llm_provider.complete(
+            messages=salvage_messages,
+            model="summarizing",
+            tools=None,
+            tool_choice=None,
+            temperature=0.0,
+        )
+        answer = (result.get("content") or "").strip()
+        if answer:
+            logger.info("salvage_answer_generated", length=len(answer))
+        return answer
+    except Exception as e:
+        logger.warning("salvage_answer_failed", error=str(e))
+        return ""
+
+
 async def _react_loop(
     agent: Agent,
     mission: str,
@@ -985,15 +1026,23 @@ async def _react_loop(
                     repeated_signature_count=repeated_signature_count,
                     session_id=session_id,
                 )
-                yield StreamEvent(
-                    event_type=EventType.ERROR,
-                    data={
-                        "message": (
-                            "Execution stalled due to repeated no-progress tool calls. "
-                            "Please refine scope, path, or constraints and retry."
-                        )
-                    },
-                )
+                # Salvage: force a final answer from the LLM with available context
+                salvage = await _salvage_answer(agent, messages, logger)
+                if salvage:
+                    yield StreamEvent(
+                        event_type=EventType.FINAL_ANSWER,
+                        data={"content": salvage},
+                    )
+                else:
+                    yield StreamEvent(
+                        event_type=EventType.ERROR,
+                        data={
+                            "message": (
+                                "Execution stalled due to repeated no-progress tool calls. "
+                                "Please refine scope, path, or constraints and retry."
+                            )
+                        },
+                    )
                 return
 
             # Nudge the LLM to retry with alternative tools after failures
@@ -1023,10 +1072,18 @@ async def _react_loop(
             )
 
     if step >= agent.max_steps and not final:
-        yield StreamEvent(
-            event_type=EventType.ERROR,
-            data={"message": f"Exceeded max steps ({agent.max_steps})"},
-        )
+        # Salvage: force a final answer before giving up
+        salvage = await _salvage_answer(agent, messages, logger)
+        if salvage:
+            yield StreamEvent(
+                event_type=EventType.FINAL_ANSWER,
+                data={"content": salvage},
+            )
+        else:
+            yield StreamEvent(
+                event_type=EventType.ERROR,
+                data={"message": f"Exceeded max steps ({agent.max_steps})"},
+            )
 
 
 async def _llm_call_and_process(
