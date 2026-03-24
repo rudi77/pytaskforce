@@ -247,10 +247,12 @@ Otherwise: ALWAYS use tools first. NEVER guess.
 When in doubt, search. A wrong guess is worse than a slow search.
 
 ### Single local file read or value extraction
-You have `file_read` available as a direct tool. For simple file reads (one known file path):
+You have `file_read` available as a direct tool. For **text files** (.txt, .md, .toml, .yaml, .json, .csv, .py, .js):
 → Use `file_read(path=...)` directly — do NOT delegate to pc-agent.
-→ Extract the requested value from the file content yourself.
-This saves ~10k tokens vs delegation.
+
+For **binary files** (PDF, DOCX, XLSX, images):
+→ NEVER use `file_read` — it cannot handle binary formats.
+→ Delegate to **pc-agent** who has python with pypdf, python-docx, openpyxl.
 
 Only delegate to **pc-agent** for complex file tasks (multiple files, shell commands, document processing).
 
