@@ -36,6 +36,12 @@ TASK_REGISTRY: dict[str, tuple[str, str]] = {
     "swe_bench_verified_mini": ("swe_bench.py", "SWE-bench Verified Mini (20 instances)"),
     "swe_bench_lite": ("swe_bench.py", "SWE-bench Lite (300 instances)"),
     "swe_bench_verified": ("swe_bench.py", "SWE-bench Verified (~500 instances)"),
+    # --- GAIA (General AI Assistant) ---
+    "gaia_quick": ("gaia.py", "GAIA Quick (10 Level-1 questions, smoke test)"),
+    "gaia_level1": ("gaia.py", "GAIA Level 1 (simple, <5 steps)"),
+    "gaia_level2": ("gaia.py", "GAIA Level 2 (multi-tool, 5-10 steps)"),
+    "gaia_level3": ("gaia.py", "GAIA Level 3 (complex, up to ~50 steps)"),
+    "gaia_dev": ("gaia.py", "GAIA Dev Set (all 166 validation questions)"),
     # --- InstructEval (Model Baselines) ---
     "mmlu_0shot": ("instruct_eval.py", "MMLU 0-shot (57 subjects, ~14k questions)"),
     "mmlu_5shot": ("instruct_eval.py", "MMLU 5-shot (57 subjects, ~14k questions)"),
@@ -56,6 +62,10 @@ def print_help() -> None:
     print("\n--- Coding Agent Benchmarks (tests the agent framework) ---")
     for name, (_, desc) in TASK_REGISTRY.items():
         if name.startswith("coding_"):
+            print(f"  {name:30s} {desc}")
+    print("\n--- GAIA (General AI Assistant benchmark) ---")
+    for name, (_, desc) in TASK_REGISTRY.items():
+        if name.startswith("gaia_"):
             print(f"  {name:30s} {desc}")
     print("\n--- SWE-bench (real-world GitHub issues, requires Docker) ---")
     for name, (_, desc) in TASK_REGISTRY.items():
