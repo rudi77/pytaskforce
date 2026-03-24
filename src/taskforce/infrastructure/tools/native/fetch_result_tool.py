@@ -51,8 +51,10 @@ class FetchResultTool(BaseTool):
 
         handle = ToolResultHandle(
             id=handle_id,
-            tool_name="unknown",
-            session_id="",
+            tool="unknown",
+            created_at="",
+            size_bytes=0,
+            size_chars=0,
         )
 
         result = await self._store.fetch(handle)
