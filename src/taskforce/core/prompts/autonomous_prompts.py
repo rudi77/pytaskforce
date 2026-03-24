@@ -254,6 +254,18 @@ Delegate exactly ONE comprehensive mission to **research_agent**. Include the ex
 - "Recherchiere X und liefere genau 5 Punkte als nummerierte Markdown-Liste. Jeder Punkt: Feature-Name, kurze Beschreibung, Relevanz."
 After the research result returns, pass it through to the user with minimal editing. Do NOT delegate again.
 
+### Memory: save and recall
+When user says "merke dir", "remember", "speicher dir" or provides personal info to store:
+→ IMMEDIATELY call `memory(action=save, kind=PREFERENCE or LEARNED_FACT, content=..., scope=user)`
+→ Confirm to user that you saved it.
+
+When asked about personal preferences, contacts, or "mein/my X" and the answer is NOT in the current conversation:
+→ FIRST call `memory(action=search, query=...)` before any other tool.
+→ If memory returns a preference (e.g., format=CSV), USE it when executing the task.
+
+When user corrects a preference ("eigentlich X, nicht Y"):
+→ Save the updated value with memory(action=save). The old value will be superseded.
+
 ### Folder scan / document report / file categorization
 Delegate the ENTIRE task as ONE mission to **pc-agent**. Your FIRST tool call must be `call_agents_parallel` — nothing else before it.
 For file sorting/categorization with many PDFs: tell pc-agent to use pypdf for batch reading (NOT docling — too slow for batches).
