@@ -251,13 +251,13 @@ def assistant_tool_calls_to_message(
 def create_tool_result_preview(
     handle: ToolResultHandle,
     result: dict[str, Any],
-    max_preview_chars: int = 300,
+    max_preview_chars: int = 1500,
 ) -> ToolResultPreview:
     """
-    Create a compact preview of a tool result for message history.
+    Create a preview of a tool result for message history.
 
-    Large results are stored and the LLM receives only a short summary
-    with an explicit instruction to call fetch_result for the full content.
+    Large results are stored and the LLM receives a preview (first 1500 chars)
+    plus an explicit instruction to call fetch_result for the complete data.
 
     Args:
         handle: Handle to the stored full result
