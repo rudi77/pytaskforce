@@ -88,6 +88,7 @@ sub_agents:
     description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
 
 tools:
+  - file_read
   - memory
   - send_notification
   - gmail
