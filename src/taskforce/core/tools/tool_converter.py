@@ -251,30 +251,22 @@ def assistant_tool_calls_to_message(
 def create_tool_result_preview(
     handle: ToolResultHandle,
     result: dict[str, Any],
-    max_preview_chars: int = 2000,
+    max_preview_chars: int = 300,
 ) -> ToolResultPreview:
     """
-    Create a preview of a tool result for message history.
+    Create a compact preview of a tool result for message history.
 
-    Extracts a short preview from the tool result to give the LLM context
-    without overwhelming the prompt. The preview focuses on the most
-    important fields (output, error, success status).
+    Large results are stored and the LLM receives only a short summary
+    with an explicit instruction to call fetch_result for the full content.
 
     Args:
         handle: Handle to the stored full result
         result: Full tool result dictionary
-        max_preview_chars: Maximum characters for preview text (default: 500)
+        max_preview_chars: Maximum characters for preview text (default: 300)
 
     Returns:
         ToolResultPreview with handle and short preview text
-
-    Example:
-        >>> result = {"success": True, "output": "..." * 10000}
-        >>> preview = create_tool_result_preview(handle, result)
-        >>> print(len(preview.preview_text))  # <= 500
-        >>> print(preview.truncated)  # True
     """
-    # Build compact preview – skip boilerplate, show content directly
     success = result.get("success", False)
 
     if not success:
@@ -282,7 +274,7 @@ def create_tool_result_preview(
         preview_text = f"ERROR: {error_msg}"
         truncated = len(str(result.get("error", ""))) > max_preview_chars
     else:
-        # Extract primary content (same priority as _result_to_compact_text)
+        # Extract primary content
         content_keys = ("output", "content", "result", "stdout")
         raw = None
         for key in content_keys:
@@ -300,10 +292,13 @@ def create_tool_result_preview(
             preview_text = raw
             truncated = False
 
-    # Append size hint for large results
-    total_chars = handle.size_chars
-    if total_chars > max_preview_chars:
-        preview_text += f"\n[{total_chars} chars total, handle: {handle.id[:8]}]"
+    # For truncated results: add explicit fetch instruction
+    if truncated:
+        total_chars = handle.size_chars
+        preview_text += (
+            f"\n\n[Result truncated: {total_chars} chars total. "
+            f"Call fetch_result(handle_id=\"{handle.id}\") for complete data.]"
+        )
 
     return ToolResultPreview(
         handle=handle,
