@@ -83,7 +83,12 @@ class ToolResultMessageFactory:
         result_json = json.dumps(tool_result, ensure_ascii=False, default=str)
         result_size = len(result_json)
 
-        if self._tool_result_store and result_size > self._result_store_threshold:
+        # Never store file_read results — the agent explicitly asked for this content.
+        # Storing it again would create an infinite loop (read file → too large → store
+        # to new file → agent reads new file → too large → ...).
+        is_read_tool = tool_name in ("file_read", "fetch_result")
+
+        if self._tool_result_store and result_size > self._result_store_threshold and not is_read_tool:
             handle = await self._tool_result_store.put(
                 tool_name=tool_name,
                 result=tool_result,
