@@ -29,6 +29,7 @@ class ScheduleActionType(str, Enum):
     EXECUTE_MISSION = "execute_mission"
     SEND_NOTIFICATION = "send_notification"
     PUBLISH_EVENT = "publish_event"
+    RUN_DREAM_CYCLE = "run_dream_cycle"
 
 
 @dataclass

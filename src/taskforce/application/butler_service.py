@@ -71,6 +71,7 @@ class ButlerService:
         self._agent_service: Any = None  # PersistentAgentService (preferred over executor)
         self._memory_store: Any = None
         self._learning_service: Any = None
+        self._dream_service: Any = None
 
         self._running = False
 
@@ -118,6 +119,11 @@ class ButlerService:
     def set_learning_service(self, learning_service: Any) -> None:
         """Inject the learning service for auto-extraction."""
         self._learning_service = learning_service
+
+    def set_dream_service(self, dream_service: Any) -> None:
+        """Inject the dream service for generative dreaming cycles."""
+        self._dream_service = dream_service
+        self._event_router._dream_callback = self._run_dream_cycle
 
     def add_event_source(self, source: Any) -> None:
         """Register an event source.
@@ -326,6 +332,26 @@ class ButlerService:
         )
         await self._memory_store.add(record)
         logger.info("butler_service.memory_logged", content_preview=content[:100])
+
+    async def _run_dream_cycle(self, params: dict[str, Any]) -> None:
+        """Run a generative dream cycle."""
+        if not self._dream_service:
+            logger.warning("butler_service.no_dream_service_configured")
+            return
+
+        from taskforce.core.domain.dream import DreamTrigger
+
+        trigger = DreamTrigger(params.get("trigger", "scheduled"))
+        try:
+            cycle = await self._dream_service.trigger_dream(trigger=trigger)
+            logger.info(
+                "butler_service.dream_completed",
+                dream_id=cycle.dream_id,
+                insights=len(cycle.insights),
+                memories_created=cycle.memories_created,
+            )
+        except Exception as exc:
+            logger.error("butler_service.dream_failed", error=str(exc))
 
     async def get_status(self) -> dict[str, Any]:
         """Get the current butler service status."""

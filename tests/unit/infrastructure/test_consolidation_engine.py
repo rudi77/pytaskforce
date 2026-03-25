@@ -79,14 +79,13 @@ class TestConsolidationEngine:
     async def test_consolidate_immediate_creates_memories(
         self, engine, mock_llm, mock_memory_store
     ):
-        """Immediate strategy: summarize + write, skip pattern detection."""
+        """Immediate strategy: distill + persist, no integration when no existing."""
         exp = _make_experience()
 
-        # Configure LLM responses for each phase.
-        # Phase 3 (contradictions) is skipped when existing_memories is empty,
-        # so only phase 1 (summarize) and phase 5 (quality) call the LLM.
+        # Simplified pipeline: Phase 2 (Distill) calls LLM once per session.
+        # Phase 3 (Integrate) is skipped when existing_memories is empty.
         responses = [
-            # Phase 1: Summarize
+            # Phase 2: Distill
             {
                 "content": json.dumps(
                     {
@@ -98,11 +97,6 @@ class TestConsolidationEngine:
                 ),
                 "usage": {"total_tokens": 100},
             },
-            # Phase 5: Quality
-            {
-                "content": json.dumps({"score": 0.8, "reasoning": "Good"}),
-                "usage": {"total_tokens": 30},
-            },
         ]
         mock_llm.complete = AsyncMock(side_effect=responses)
 
@@ -110,21 +104,21 @@ class TestConsolidationEngine:
 
         assert result.sessions_processed == 1
         assert result.memories_created >= 1
-        assert result.quality_score == 0.8
+        # Quality score is now algorithmic (not LLM-based)
+        assert result.quality_score > 0.0
         assert result.ended_at is not None
         mock_memory_store.add.assert_awaited()
 
     async def test_consolidate_batch_includes_pattern_detection(
         self, engine, mock_llm, mock_memory_store
     ):
-        """Batch strategy: includes cross-session pattern detection."""
+        """Batch strategy: distill + integrate (patterns+contradictions+schemas)."""
         exp1 = _make_experience("sess-1")
         exp2 = _make_experience("sess-2")
 
-        # Phase 3 (contradictions) is skipped when existing_memories=[],
-        # so LLM calls are: summarize1, summarize2, pattern_detect, quality.
+        # Simplified pipeline: 2 Distill calls + 1 Integrate call.
         responses = [
-            # Phase 1: Summarize sess-1
+            # Phase 2: Distill sess-1
             {
                 "content": json.dumps(
                     {
@@ -136,7 +130,7 @@ class TestConsolidationEngine:
                 ),
                 "usage": {"total_tokens": 100},
             },
-            # Phase 1: Summarize sess-2
+            # Phase 2: Distill sess-2
             {
                 "content": json.dumps(
                     {
@@ -148,25 +142,25 @@ class TestConsolidationEngine:
                 ),
                 "usage": {"total_tokens": 100},
             },
-            # Phase 2: Pattern detection
+            # Phase 3: Integrate (combined patterns + contradictions + schemas)
             {
                 "content": json.dumps(
-                    [
-                        {
-                            "pattern": "Agent consistently uses Python.",
-                            "frequency": 2,
-                            "confidence": 0.9,
-                            "memory_kind": "procedural",
-                            "tags": ["python"],
-                        }
-                    ]
+                    {
+                        "patterns": [
+                            {
+                                "pattern": "Agent consistently uses Python.",
+                                "frequency": 2,
+                                "confidence": 0.9,
+                                "memory_kind": "procedural",
+                                "tags": ["python"],
+                                "importance": 0.8,
+                            }
+                        ],
+                        "contradictions": [],
+                        "schemas": [],
+                    }
                 ),
                 "usage": {"total_tokens": 80},
-            },
-            # Phase 5: Quality
-            {
-                "content": json.dumps({"score": 0.9, "reasoning": "Great"}),
-                "usage": {"total_tokens": 30},
             },
         ]
         mock_llm.complete = AsyncMock(side_effect=responses)
@@ -176,7 +170,8 @@ class TestConsolidationEngine:
         assert result.sessions_processed == 2
         # 2 learnings from summaries + 1 pattern
         assert result.memories_created >= 3
-        assert result.quality_score == 0.9
+        # Quality is now algorithmic
+        assert result.quality_score > 0.0
 
     async def test_contradiction_resolution(self, engine, mock_llm, mock_memory_store):
         """Test that contradictions are handled (update/retire)."""
@@ -189,7 +184,7 @@ class TestConsolidationEngine:
         )
 
         responses = [
-            # Phase 1: Summarize
+            # Phase 2: Distill
             {
                 "content": json.dumps(
                     {
@@ -201,25 +196,22 @@ class TestConsolidationEngine:
                 ),
                 "usage": {"total_tokens": 100},
             },
-            # Phase 3: Contradiction detected
+            # Phase 3: Integrate — contradiction detected
             {
                 "content": json.dumps(
                     {
+                        "patterns": [],
                         "contradictions": [
                             {
                                 "new_learning": "Use pandas instead of numpy",
                                 "existing_memory_id": "existing-1",
                                 "resolution": "keep_new",
                             }
-                        ]
+                        ],
+                        "schemas": [],
                     }
                 ),
                 "usage": {"total_tokens": 50},
-            },
-            # Phase 5: Quality
-            {
-                "content": json.dumps({"score": 0.7, "reasoning": "OK"}),
-                "usage": {"total_tokens": 30},
             },
         ]
         mock_llm.complete = AsyncMock(side_effect=responses)

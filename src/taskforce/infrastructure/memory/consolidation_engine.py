@@ -1,28 +1,16 @@
-"""LLM-powered memory consolidation engine with human-like sleep-cycle.
+"""LLM-powered memory consolidation engine — simplified sleep-cycle.
 
-Processes raw session experiences through a multi-phase pipeline that
-mirrors how human memory consolidation works during sleep:
+Processes raw session experiences through a streamlined 4-phase pipeline:
 
-1. **Decay phase** — Apply the forgetting curve: weaken memories that
-   haven't been accessed, archive those below threshold.
-2. **Strengthen phase** — Reinforce memories accessed during the current
-   session (spaced repetition effect).
-3. **Summarize** — Distill each session into a structured narrative.
-4. **Detect patterns** — Find recurring themes across sessions and
-   create semantic/procedural memories.
-5. **Build associations** — Create links between thematically related
-   memories (associative network).
-6. **Resolve contradictions** — Merge or retire conflicting memories.
-7. **Schema formation** — When 3+ episodic memories share a pattern,
-   abstract into a semantic memory.
-8. **Write** — Persist new ``MemoryRecord`` entries with appropriate
-   emotional valence, importance, and strength.
-9. **Assess quality** — Score the consolidation run.
+1. **Maintain** — Single pass: decay + strengthen + build associations (no LLM).
+2. **Distill** — LLM summarises each session into key learnings.
+3. **Integrate** — LLM resolves contradictions, detects patterns, and forms
+   schemas in one combined call.
+4. **Persist** — Write/update/retire ``MemoryRecord`` entries.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -42,6 +30,11 @@ from taskforce.core.domain.memory import (
 )
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
+from taskforce.infrastructure.memory.llm_helpers import (
+    call_llm_json,
+    resolve_memory_kind,
+    resolve_valence,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -85,96 +78,50 @@ Output a JSON object with:
 Output JSON only:
 """
 
-_PATTERN_DETECTION_PROMPT = """\
-Analyze these session summaries and identify recurring patterns, common \
-strategies, and consistent preferences across sessions.
+_INTEGRATE_PROMPT = """\
+Analyse the following session summaries and existing memories.
+Perform three tasks in one pass:
+
+1. **Patterns**: Identify recurring themes across sessions.
+2. **Contradictions**: Compare new learnings against existing memories \
+and flag conflicts.
+3. **Schemas**: When 3+ learnings share a theme, extract an abstract principle.
 
 Session summaries:
 {summaries}
 
-Existing consolidated memories (for context):
-{existing_memories}
-
-Output a JSON array of detected patterns, each with:
-- "pattern": string describing the pattern (1-2 sentences)
-- "frequency": number of sessions exhibiting this pattern
-- "confidence": float 0.0-1.0
-- "memory_kind": one of "procedural", "episodic", "semantic", "meta_cognitive"
-- "tags": list of relevant tags
-- "importance": float 0.0-1.0
-
-Output JSON array only:
-"""
-
-_CONTRADICTION_PROMPT = """\
-Compare these new learnings against existing consolidated memories.
-Identify any contradictions or superseded information.
-
 New learnings:
 {new_learnings}
 
-Existing memories:
+Existing consolidated memories:
 {existing_memories}
 
-Output a JSON object with:
-- "contradictions": list of objects, each with:
-  - "new_learning": the new information
-  - "existing_memory_id": ID of the conflicting existing memory
-  - "resolution": "keep_new" | "keep_existing" | "merge"
-  - "merged_content": string (only if resolution is "merge")
+Output a single JSON object with:
+- "patterns": list of objects, each with "pattern" (string), "frequency" (int), \
+"confidence" (float 0-1), "memory_kind" (string), "tags" (list), "importance" (float 0-1)
+- "contradictions": list of objects, each with "new_learning" (string), \
+"existing_memory_id" (string), "resolution" ("keep_new"|"keep_existing"|"merge"), \
+"merged_content" (string, only if merge)
+- "schemas": list of objects, each with "schema" (string, 1-2 sentences), \
+"tags" (list), "importance" (float 0-1)
 
 Output JSON only:
 """
 
-_SCHEMA_FORMATION_PROMPT = """\
-These episodic memories share common themes. Extract an abstract principle \
-or generalised rule that captures the underlying pattern.
-
-Episodic memories:
-{episodes}
-
-Output a JSON object with:
-- "schema": string (1-2 sentences describing the abstract principle)
-- "tags": list of relevant keyword tags
-- "importance": float 0.0-1.0
-
-Output JSON only:
-"""
-
-_QUALITY_PROMPT = """\
-Assess the quality of this memory consolidation run.
-
-Sessions processed: {sessions_processed}
-Memories created: {memories_created}
-Memories updated: {memories_updated}
-Contradictions resolved: {contradictions_resolved}
-
-New memories:
-{new_memories}
-
-Rate the consolidation quality from 0.0 to 1.0 considering:
-- Relevance and usefulness of extracted memories
-- Diversity of knowledge types
-- Absence of redundancy
-
-Output a single JSON object: {{"score": <float>, "reasoning": "<brief explanation>"}}
-"""
-
-
-# Threshold below which memories are archived during decay phase.
+# Threshold below which memories are archived during the maintain phase.
 _DECAY_ARCHIVE_THRESHOLD = 0.10
 
-# Minimum episodic memories with shared tags to trigger schema formation.
-_SCHEMA_MIN_EPISODES = 3
+# Minimum keyword overlap to trigger reinforcement.
+_REINFORCE_MIN_OVERLAP = 2
 
 
 class ConsolidationEngine:
-    """Multi-phase LLM-powered experience consolidation with sleep-cycle.
+    """Simplified 4-phase consolidation pipeline.
 
     Args:
-        llm_provider: LLM service for analysis (must implement ``complete()``).
-        memory_store: Memory store for persisting consolidated memories.
-        model_alias: Model alias to use for LLM calls.
+        llm_provider: LLM service for analysis.
+        memory_store: Memory store for persistence.
+        model_alias: Model alias for LLM calls.
     """
 
     def __init__(
@@ -193,12 +140,12 @@ class ConsolidationEngine:
         existing_memories: list[MemoryRecord],
         strategy: str = "immediate",
     ) -> ConsolidationResult:
-        """Run the full sleep-cycle consolidation pipeline.
+        """Run the simplified consolidation pipeline.
 
         Args:
             experiences: Session experiences to consolidate.
             existing_memories: Current consolidated memories.
-            strategy: ``immediate`` (skip pattern detection) or ``batch``.
+            strategy: ``immediate`` or ``batch`` (batch enables patterns).
 
         Returns:
             Consolidation result with metrics.
@@ -216,65 +163,48 @@ class ConsolidationEngine:
             return result
 
         total_tokens = 0
+        session_keywords = _extract_session_keywords(experiences)
 
-        # Phase 1: DECAY — apply forgetting curve to existing memories
-        decayed, archived = await self._phase_decay(existing_memories)
-        result.memories_retired += archived
-        logger.info("consolidation.decay_phase", decayed=decayed, archived=archived)
+        # Phase 1: MAINTAIN — decay + strengthen + associations (no LLM)
+        maintain = await self._phase_maintain(existing_memories, session_keywords)
+        result.memories_retired += maintain["archived"]
+        logger.info(
+            "consolidation.maintain_phase",
+            decayed=maintain["decayed"],
+            archived=maintain["archived"],
+            strengthened=maintain["strengthened"],
+            associations=maintain["associations"],
+        )
 
-        # Phase 2: STRENGTHEN — reinforce memories accessed in recent sessions
-        strengthened = await self._phase_strengthen(experiences, existing_memories)
-        logger.info("consolidation.strengthen_phase", strengthened=strengthened)
-
-        # Phase 3: SUMMARIZE — distill each session experience
-        summaries = await self._phase_summarize(experiences)
+        # Phase 2: DISTILL — LLM summarises sessions
+        summaries = await self._phase_distill(experiences)
         total_tokens += sum(s.get("_tokens", 0) for s in summaries)
 
-        # Phase 4: PATTERN DETECTION (batch only)
-        patterns: list[dict[str, Any]] = []
-        if strategy == "batch" and len(experiences) > 1:
-            patterns = await self._phase_detect_patterns(summaries, existing_memories)
-            total_tokens += sum(p.get("_tokens", 0) for p in patterns)
+        # Phase 3: INTEGRATE — patterns + contradictions + schemas (1 LLM call)
+        new_learnings = _collect_learnings(summaries)
+        integration: dict[str, Any] = {"patterns": [], "contradictions": [], "schemas": []}
+        if new_learnings:
+            integration = await self._phase_integrate(
+                summaries, new_learnings, existing_memories, strategy
+            )
+            total_tokens += integration.get("_tokens", 0)
 
-        # Phase 5: CONTRADICTION RESOLUTION
-        new_learnings = self._collect_learnings(summaries, patterns)
-        contradictions = await self._phase_resolve_contradictions(
-            new_learnings, existing_memories
-        )
-        total_tokens += contradictions.get("_tokens", 0)
-
-        # Phase 6: WRITE MEMORIES (with emotional valence and strength)
-        created, updated, retired = await self._phase_write_memories(
+        # Phase 4: PERSIST — write/update/retire memories
+        created, updated, retired = await self._phase_persist(
             summaries=summaries,
-            patterns=patterns,
-            contradictions=contradictions,
+            integration=integration,
             consolidation_id=result.consolidation_id,
         )
         result.memories_created = created
         result.memories_updated = updated
         result.memories_retired += retired
-        result.contradictions_resolved = len(contradictions.get("contradictions", []))
+        result.contradictions_resolved = len(integration.get("contradictions", []))
 
-        # Phase 7: ASSOCIATION BUILDING
-        assoc_count = await self._phase_build_associations()
-        logger.info("consolidation.associations_built", count=assoc_count)
-
-        # Phase 8: SCHEMA FORMATION
-        schema_tokens, schemas_created = await self._phase_schema_formation(
-            result.consolidation_id
-        )
-        total_tokens += schema_tokens
-        result.memories_created += schemas_created
-
-        # Phase 9: QUALITY ASSESSMENT
-        score = await self._phase_assess_quality(result)
-        total_tokens += score.get("_tokens", 0)
-        result.quality_score = score.get("score", 0.0)
-
+        # Algorithmic quality score (replaces old LLM quality assessment)
+        result.quality_score = _compute_quality_score(result)
         result.total_tokens = total_tokens
         result.ended_at = datetime.now(UTC)
 
-        # Flush deferred memory writes in a single disk operation.
         if hasattr(self._memory_store, "flush"):
             await self._memory_store.flush()
 
@@ -287,21 +217,26 @@ class ConsolidationEngine:
             updated=result.memories_updated,
             quality=result.quality_score,
         )
-
         return result
 
     # ------------------------------------------------------------------
-    # Pipeline phases
+    # Phase 1: MAINTAIN (no LLM)
     # ------------------------------------------------------------------
 
-    async def _phase_decay(
+    async def _phase_maintain(
         self,
         existing_memories: list[MemoryRecord],
-    ) -> tuple[int, int]:
-        """Phase 1: Apply forgetting curve and archive weak memories."""
+        session_keywords: set[str],
+    ) -> dict[str, int]:
+        """Decay, strengthen, and build associations in a single pass.
+
+        Returns:
+            Dict with counts: decayed, archived, strengthened, associations.
+        """
         now = datetime.now(UTC)
-        decayed = 0
-        archived = 0
+        counts = {"decayed": 0, "archived": 0, "strengthened": 0, "associations": 0}
+        active: list[MemoryRecord] = []
+
         for record in existing_memories:
             eff = record.effective_strength(now)
             if eff < _DECAY_ARCHIVE_THRESHOLD:
@@ -309,129 +244,99 @@ class ConsolidationEngine:
                     record.tags.append("archived")
                     record.strength = eff
                     await self._memory_store.update(record)
-                    archived += 1
-            elif eff < record.strength * 0.9:
+                    counts["archived"] += 1
+                continue
+
+            if eff < record.strength * 0.9:
                 record.strength = eff
                 await self._memory_store.update(record)
-                decayed += 1
-        return decayed, archived
+                counts["decayed"] += 1
 
-    async def _phase_strengthen(
-        self,
-        experiences: list[SessionExperience],
-        existing_memories: list[MemoryRecord],
-    ) -> int:
-        """Phase 2: Reinforce memories referenced during recent sessions."""
-        now = datetime.now(UTC)
-        strengthened = 0
-        # Collect tool names and mission keywords from sessions.
-        session_keywords: set[str] = set()
-        for exp in experiences:
-            session_keywords.update(exp.mission.lower().split()[:20])
-            for tc in exp.tool_calls:
-                session_keywords.add(tc.tool_name.lower())
-        if not session_keywords:
-            return 0
-        for record in existing_memories:
-            if "archived" in record.tags:
-                continue
-            haystack = f"{record.content} {' '.join(record.tags)}".lower()
-            overlap = sum(1 for kw in session_keywords if kw in haystack)
-            if overlap >= 2:
-                record.reinforce(now)
-                await self._memory_store.update(record)
-                strengthened += 1
-        return strengthened
+            # Strengthen if session keywords overlap
+            if "archived" not in record.tags and session_keywords:
+                haystack = f"{record.content} {' '.join(record.tags)}".lower()
+                overlap = sum(1 for kw in session_keywords if kw in haystack)
+                if overlap >= _REINFORCE_MIN_OVERLAP:
+                    record.reinforce(now)
+                    await self._memory_store.update(record)
+                    counts["strengthened"] += 1
 
-    async def _phase_summarize(
+            if "archived" not in record.tags:
+                active.append(record)
+
+        # Build tag-based associations
+        counts["associations"] = _build_associations(active)
+        for mem in active:
+            if mem.associations:
+                await self._memory_store.update(mem)
+
+        return counts
+
+    # ------------------------------------------------------------------
+    # Phase 2: DISTILL (1 LLM call per session)
+    # ------------------------------------------------------------------
+
+    async def _phase_distill(
         self,
         experiences: list[SessionExperience],
     ) -> list[dict[str, Any]]:
-        """Phase 3: Summarize each session experience."""
+        """Summarise each session experience via LLM."""
         summaries: list[dict[str, Any]] = []
         for exp in experiences:
-            tool_details = "\n".join(
-                f"- {tc.tool_name}: {'success' if tc.success else 'FAILED'}"
-                f" ({tc.duration_ms}ms)"
-                for tc in exp.tool_calls[:20]
-            )
-            plan_text = "\n".join(
-                f"- Step {pu.get('step', '?')}: {pu.get('action', '')}"
-                for pu in exp.plan_updates[:10]
-            )
-
-            prompt = _SUMMARIZE_PROMPT.format(
-                mission=exp.mission[:500],
-                profile=exp.profile,
-                steps=exp.total_steps,
-                tool_calls=len(exp.tool_calls),
-                errors=len(exp.errors),
-                tool_details=tool_details or "(none)",
-                plan_updates=plan_text or "(none)",
-                final_answer=exp.final_answer[:300] if exp.final_answer else "(none)",
-            )
-
-            parsed = await self._call_llm_json(prompt)
+            prompt = _format_summarize_prompt(exp)
+            parsed = await call_llm_json(self._llm, prompt, self._model_alias)
             parsed["session_id"] = exp.session_id
             summaries.append(parsed)
-
         return summaries
 
-    async def _phase_detect_patterns(
+    # ------------------------------------------------------------------
+    # Phase 3: INTEGRATE (1 combined LLM call)
+    # ------------------------------------------------------------------
+
+    async def _phase_integrate(
         self,
         summaries: list[dict[str, Any]],
+        new_learnings: list[str],
         existing_memories: list[MemoryRecord],
-    ) -> list[dict[str, Any]]:
-        """Phase 4: Detect cross-session patterns."""
+        strategy: str,
+    ) -> dict[str, Any]:
+        """Detect patterns, resolve contradictions, form schemas."""
+        if strategy == "immediate" and not existing_memories:
+            return {"patterns": [], "contradictions": [], "schemas": [], "_tokens": 0}
+
         summary_text = "\n\n".join(
             f"Session {s.get('session_id', '?')}:\n{s.get('narrative', '')}"
             for s in summaries
         )
+        learnings_text = "\n".join(f"- {item}" for item in new_learnings[:20])
         memory_text = "\n".join(
             f"- [{m.id[:8]}] {m.content}" for m in existing_memories[:20]
         )
 
-        prompt = _PATTERN_DETECTION_PROMPT.format(
+        prompt = _INTEGRATE_PROMPT.format(
             summaries=summary_text,
+            new_learnings=learnings_text,
             existing_memories=memory_text or "(none)",
         )
 
-        parsed = await self._call_llm_json(prompt)
-        if isinstance(parsed, list):
-            return parsed
-        if "items" in parsed:
-            return parsed["items"]
-        return parsed.get("patterns", [])
+        parsed = await call_llm_json(self._llm, prompt, self._model_alias)
+        # Normalise: ensure all expected keys exist
+        parsed.setdefault("patterns", [])
+        parsed.setdefault("contradictions", [])
+        parsed.setdefault("schemas", [])
+        return parsed
 
-    async def _phase_resolve_contradictions(
-        self,
-        new_learnings: list[str],
-        existing_memories: list[MemoryRecord],
-    ) -> dict[str, Any]:
-        """Phase 5: Find and resolve contradictions."""
-        if not new_learnings or not existing_memories:
-            return {"contradictions": [], "_tokens": 0}
+    # ------------------------------------------------------------------
+    # Phase 4: PERSIST
+    # ------------------------------------------------------------------
 
-        learnings_text = "\n".join(f"- {item}" for item in new_learnings[:20])
-        memory_text = "\n".join(
-            f"- [{m.id}] {m.content}" for m in existing_memories[:20]
-        )
-
-        prompt = _CONTRADICTION_PROMPT.format(
-            new_learnings=learnings_text,
-            existing_memories=memory_text,
-        )
-
-        return await self._call_llm_json(prompt)
-
-    async def _phase_write_memories(
+    async def _phase_persist(
         self,
         summaries: list[dict[str, Any]],
-        patterns: list[dict[str, Any]],
-        contradictions: dict[str, Any],
+        integration: dict[str, Any],
         consolidation_id: str,
     ) -> tuple[int, int, int]:
-        """Phase 6: Create/update/retire memory records with emotional valence.
+        """Write, update, and retire memory records.
 
         Returns:
             Tuple of (created, updated, retired) counts.
@@ -440,43 +345,79 @@ class ConsolidationEngine:
         updated = 0
         retired = 0
 
-        # Handle contradictions first (update or retire existing)
-        for contradiction in contradictions.get("contradictions", []):
+        # Handle contradictions
+        c_upd, c_ret = await self._handle_contradictions(
+            integration.get("contradictions", []), consolidation_id
+        )
+        updated += c_upd
+        retired += c_ret
+
+        # Create memories from session summaries
+        created += await self._write_summary_memories(summaries, consolidation_id)
+
+        # Create memories from patterns
+        created += await self._write_pattern_memories(
+            integration.get("patterns", []), consolidation_id
+        )
+
+        # Create memories from schemas
+        created += await self._write_schema_memories(
+            integration.get("schemas", []), consolidation_id
+        )
+
+        return created, updated, retired
+
+    async def _handle_contradictions(
+        self,
+        contradictions: list[dict[str, Any]],
+        consolidation_id: str,
+    ) -> tuple[int, int]:
+        """Process contradiction resolutions.
+
+        Returns:
+            Tuple of (updated, retired) counts.
+        """
+        updated = 0
+        retired = 0
+        for contradiction in contradictions:
             resolution = contradiction.get("resolution", "keep_new")
             existing_id = contradiction.get("existing_memory_id", "")
-
-            if resolution == "keep_existing":
+            if resolution == "keep_existing" or not existing_id:
                 continue
-            elif resolution == "merge" and existing_id:
-                existing = await self._memory_store.get(existing_id)
-                if existing:
-                    existing.content = contradiction.get(
-                        "merged_content", existing.content
-                    )
-                    existing.metadata["last_consolidation"] = consolidation_id
-                    existing.reinforce()
-                    await self._memory_store.update(existing)
-                    updated += 1
-            elif resolution == "keep_new" and existing_id:
-                existing = await self._memory_store.get(existing_id)
-                if existing:
-                    existing.metadata["retired_by"] = consolidation_id
-                    existing.tags.append("retired")
-                    existing.tags.append("archived")
-                    existing.strength = 0.0
-                    await self._memory_store.update(existing)
-                    retired += 1
 
-        # Create memories from summaries with emotional valence
-        for summary in summaries:
-            valence = self._resolve_valence(
-                summary.get("emotional_valence", "neutral")
-            )
-            importance = min(1.0, max(0.0, summary.get("importance", 0.5)))
-            for learning in summary.get("key_learnings", []):
-                kind = self._resolve_memory_kind(
-                    summary.get("memory_kind", "semantic")
+            existing = await self._memory_store.get(existing_id)
+            if not existing:
+                continue
+
+            if resolution == "merge":
+                existing.content = contradiction.get(
+                    "merged_content", existing.content
                 )
+                existing.metadata["last_consolidation"] = consolidation_id
+                existing.reinforce()
+                await self._memory_store.update(existing)
+                updated += 1
+            elif resolution == "keep_new":
+                existing.metadata["retired_by"] = consolidation_id
+                existing.tags.extend(["retired", "archived"])
+                existing.strength = 0.0
+                await self._memory_store.update(existing)
+                retired += 1
+        return updated, retired
+
+    async def _write_summary_memories(
+        self,
+        summaries: list[dict[str, Any]],
+        consolidation_id: str,
+    ) -> int:
+        """Create memory records from session summaries."""
+        created = 0
+        for summary in summaries:
+            valence = resolve_valence(summary.get("emotional_valence", "neutral"))
+            importance = min(1.0, max(0.0, summary.get("importance", 0.5)))
+            kind = resolve_memory_kind(summary.get("memory_kind", "semantic"))
+
+            for learning in summary.get("key_learnings", []):
                 record = MemoryRecord(
                     scope=MemoryScope.USER,
                     kind=MemoryKind.CONSOLIDATED,
@@ -493,14 +434,19 @@ class ConsolidationEngine:
                 )
                 await self._memory_store.add(record)
                 created += 1
+        return created
 
-        # Create memories from cross-session patterns
+    async def _write_pattern_memories(
+        self,
+        patterns: list[dict[str, Any]],
+        consolidation_id: str,
+    ) -> int:
+        """Create memory records from detected patterns."""
+        created = 0
         for pattern in patterns:
             if pattern.get("confidence", 0) < 0.5:
                 continue
-            kind = self._resolve_memory_kind(
-                pattern.get("memory_kind", "procedural")
-            )
+            kind = resolve_memory_kind(pattern.get("memory_kind", "procedural"))
             importance = min(1.0, max(0.0, pattern.get("importance", 0.6)))
             record = MemoryRecord(
                 scope=MemoryScope.USER,
@@ -518,222 +464,114 @@ class ConsolidationEngine:
             )
             await self._memory_store.add(record)
             created += 1
+        return created
 
-        return created, updated, retired
-
-    async def _phase_build_associations(self) -> int:
-        """Phase 7: Build associations between thematically related memories.
-
-        Scans all non-archived memories and creates bidirectional links
-        between those sharing tags.
-        """
-        all_memories = await self._memory_store.list()
-        active = [m for m in all_memories if "archived" not in m.tags]
-        associations_created = 0
-
-        for i, mem_a in enumerate(active):
-            if not mem_a.tags:
-                continue
-            tags_a = set(mem_a.tags)
-            for mem_b in active[i + 1 :]:
-                if not mem_b.tags:
-                    continue
-                shared = tags_a & set(mem_b.tags)
-                if shared and mem_b.id not in mem_a.associations:
-                    mem_a.associate_with(mem_b.id)
-                    mem_b.associate_with(mem_a.id)
-                    associations_created += 1
-
-        # Persist updated associations
-        for mem in active:
-            if mem.associations:
-                await self._memory_store.update(mem)
-
-        return associations_created
-
-    async def _phase_schema_formation(
+    async def _write_schema_memories(
         self,
+        schemas: list[dict[str, Any]],
         consolidation_id: str,
-    ) -> tuple[int, int]:
-        """Phase 8: Form abstract schemas from groups of episodic memories.
-
-        When 3+ episodic/consolidated memories share common tags, use
-        the LLM to extract an abstract principle — similar to how the
-        hippocampus generalises from specific episodes to form semantic
-        knowledge during sleep.
-
-        Returns:
-            Tuple of (total_tokens_used, schemas_created).
-        """
-        all_memories = await self._memory_store.list(kind=MemoryKind.CONSOLIDATED)
-        active = [m for m in all_memories if "archived" not in m.tags]
-
-        # Group by tags
-        tag_groups: dict[str, list[MemoryRecord]] = {}
-        for mem in active:
-            for tag in mem.tags:
-                if tag in ("cross_session", "retired", "archived"):
-                    continue
-                tag_groups.setdefault(tag, []).append(mem)
-
-        total_tokens = 0
-        schemas_created = 0
-
-        for tag, group in tag_groups.items():
-            if len(group) < _SCHEMA_MIN_EPISODES:
-                continue
-            # Check if a schema for this tag already exists
-            existing_schemas = [
-                m
-                for m in active
-                if m.metadata.get("source") == "schema_formation"
-                and tag in m.tags
-            ]
-            if existing_schemas:
-                continue
-
-            episodes_text = "\n".join(
-                f"- {m.content}" for m in group[:8]
-            )
-            prompt = _SCHEMA_FORMATION_PROMPT.format(episodes=episodes_text)
-            parsed = await self._call_llm_json(prompt)
-            total_tokens += parsed.get("_tokens", 0)
-
-            schema_text = parsed.get("schema", "")
+    ) -> int:
+        """Create memory records from extracted schemas."""
+        created = 0
+        for schema in schemas:
+            schema_text = schema.get("schema", "")
             if not schema_text:
                 continue
-
-            importance = min(1.0, max(0.0, parsed.get("importance", 0.7)))
-            schema_tags = parsed.get("tags", [tag])[:5]
-            if tag not in schema_tags:
-                schema_tags.append(tag)
-
+            importance = min(1.0, max(0.0, schema.get("importance", 0.7)))
             record = MemoryRecord(
                 scope=MemoryScope.USER,
                 kind=MemoryKind.CONSOLIDATED,
                 content=schema_text,
-                tags=schema_tags,
+                tags=schema.get("tags", [])[:5],
                 metadata={
                     "source": "schema_formation",
                     "consolidation_id": consolidation_id,
                     "consolidation_kind": ConsolidatedMemoryKind.SEMANTIC.value,
-                    "source_count": len(group),
                 },
                 importance=importance,
                 emotional_valence=EmotionalValence.NEUTRAL,
             )
             await self._memory_store.add(record)
-            schemas_created += 1
+            created += 1
+        return created
 
-        return total_tokens, schemas_created
 
-    async def _phase_assess_quality(
-        self,
-        result: ConsolidationResult,
-    ) -> dict[str, Any]:
-        """Phase 9: Assess consolidation quality."""
-        if result.memories_created == 0 and result.memories_updated == 0:
-            return {"score": 0.0, "reasoning": "No memories produced", "_tokens": 0}
+# ------------------------------------------------------------------
+# Module-level helpers
+# ------------------------------------------------------------------
 
-        all_memories = await self._memory_store.list(
-            scope=MemoryScope.USER, kind=MemoryKind.CONSOLIDATED
-        )
-        recent = [
-            m
-            for m in all_memories
-            if m.metadata.get("consolidation_id") == result.consolidation_id
-        ]
-        memory_text = "\n".join(f"- {m.content}" for m in recent[:20])
 
-        prompt = _QUALITY_PROMPT.format(
-            sessions_processed=result.sessions_processed,
-            memories_created=result.memories_created,
-            memories_updated=result.memories_updated,
-            contradictions_resolved=result.contradictions_resolved,
-            new_memories=memory_text or "(none)",
-        )
+def _extract_session_keywords(experiences: list[SessionExperience]) -> set[str]:
+    """Extract keywords from session missions and tool calls."""
+    keywords: set[str] = set()
+    for exp in experiences:
+        keywords.update(exp.mission.lower().split()[:20])
+        for tc in exp.tool_calls:
+            keywords.add(tc.tool_name.lower())
+    return keywords
 
-        return await self._call_llm_json(prompt)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+def _collect_learnings(summaries: list[dict[str, Any]]) -> list[str]:
+    """Collect all new learnings from session summaries."""
+    learnings: list[str] = []
+    for s in summaries:
+        learnings.extend(s.get("key_learnings", []))
+    return learnings
 
-    @staticmethod
-    def _collect_learnings(
-        summaries: list[dict[str, Any]],
-        patterns: list[dict[str, Any]],
-    ) -> list[str]:
-        """Collect all new learnings for contradiction checking."""
-        learnings: list[str] = []
-        for s in summaries:
-            learnings.extend(s.get("key_learnings", []))
-        for p in patterns:
-            if p.get("pattern"):
-                learnings.append(p["pattern"])
-        return learnings
 
-    @staticmethod
-    def _resolve_memory_kind(kind_str: str) -> ConsolidatedMemoryKind:
-        """Resolve a string to a ``ConsolidatedMemoryKind`` enum value."""
-        try:
-            return ConsolidatedMemoryKind(kind_str)
-        except ValueError:
-            return ConsolidatedMemoryKind.SEMANTIC
+def _build_associations(active_memories: list[MemoryRecord]) -> int:
+    """Build bidirectional tag-based associations between memories."""
+    associations_created = 0
+    for i, mem_a in enumerate(active_memories):
+        if not mem_a.tags:
+            continue
+        tags_a = set(mem_a.tags)
+        for mem_b in active_memories[i + 1 :]:
+            if not mem_b.tags:
+                continue
+            shared = tags_a & set(mem_b.tags)
+            if shared and mem_b.id not in mem_a.associations:
+                mem_a.associate_with(mem_b.id)
+                mem_b.associate_with(mem_a.id)
+                associations_created += 1
+    return associations_created
 
-    @staticmethod
-    def _resolve_valence(valence_str: str) -> EmotionalValence:
-        """Resolve a string to an ``EmotionalValence`` enum value."""
-        try:
-            return EmotionalValence(valence_str)
-        except ValueError:
-            return EmotionalValence.NEUTRAL
 
-    async def _call_llm_json(self, prompt: str) -> dict[str, Any]:
-        """Call the LLM and parse the response as JSON.
+def _format_summarize_prompt(exp: SessionExperience) -> str:
+    """Format the summarize prompt for a single session."""
+    tool_details = "\n".join(
+        f"- {tc.tool_name}: {'success' if tc.success else 'FAILED'}"
+        f" ({tc.duration_ms}ms)"
+        for tc in exp.tool_calls[:20]
+    )
+    plan_text = "\n".join(
+        f"- Step {pu.get('step', '?')}: {pu.get('action', '')}"
+        for pu in exp.plan_updates[:10]
+    )
+    return _SUMMARIZE_PROMPT.format(
+        mission=exp.mission[:500],
+        profile=exp.profile,
+        steps=exp.total_steps,
+        tool_calls=len(exp.tool_calls),
+        errors=len(exp.errors),
+        tool_details=tool_details or "(none)",
+        plan_updates=plan_text or "(none)",
+        final_answer=exp.final_answer[:300] if exp.final_answer else "(none)",
+    )
 
-        Returns a dict on success.  On parse failure returns a dict
-        with ``"_raw"`` containing the raw content.
-        """
-        try:
-            response = await self._llm.complete(
-                messages=[{"role": "user", "content": prompt}],
-                model=self._model_alias,
-            )
-            content = response.get("content", "")
-            tokens = response.get("usage", {}).get("total_tokens", 0)
 
-            parsed = self._parse_json(content)
-            if isinstance(parsed, dict):
-                parsed["_tokens"] = tokens
-            elif isinstance(parsed, list):
-                return {"items": parsed, "_tokens": tokens}
-            else:
-                return {"_raw": content, "_tokens": tokens}
-            return parsed
+def _compute_quality_score(result: ConsolidationResult) -> float:
+    """Compute a simple algorithmic quality score.
 
-        except Exception as exc:
-            logger.warning("consolidation.llm_call_failed", error=str(exc))
-            return {"_error": str(exc), "_tokens": 0}
-
-    @staticmethod
-    def _parse_json(content: str) -> Any:
-        """Parse JSON from LLM response, handling common formatting.
-
-        Tries ``[`` before ``{`` when the content starts with an array
-        bracket, so that ``[{"key": "value"}]`` is correctly parsed as
-        a list rather than extracting the inner dict.
-        """
-        content = content.strip()
-        pairs: list[tuple[str, str]] = [("{", "}"), ("[", "]")]
-        if content.startswith("["):
-            pairs = [("[", "]"), ("{", "}")]
-        for start_char, end_char in pairs:
-            start = content.find(start_char)
-            end = content.rfind(end_char)
-            if start != -1 and end != -1 and end > start:
-                try:
-                    return json.loads(content[start : end + 1])
-                except json.JSONDecodeError:
-                    continue
-        return {}
+    Replaces the old LLM-based quality assessment with a heuristic
+    based on consolidation output counts.
+    """
+    if result.memories_created == 0 and result.memories_updated == 0:
+        return 0.0
+    # Score based on: memories produced per session, contradiction handling
+    per_session = result.memories_created / max(result.sessions_processed, 1)
+    # 1-3 memories per session is ideal; more is diminishing
+    production_score = min(per_session / 3.0, 1.0)
+    # Bonus for handling contradictions
+    contradiction_bonus = min(result.contradictions_resolved * 0.1, 0.2)
+    return min(production_score + contradiction_bonus, 1.0)

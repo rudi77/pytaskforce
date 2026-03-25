@@ -78,22 +78,23 @@ taskforce memory stats
 
 ## Consolidation Pipeline
 
-The engine runs 5 phases:
+The engine runs a simplified 4-phase pipeline (see [ADR-014](../adr/adr-014-generative-dreaming.md)):
 
-### Phase 1: Summarize
-Each session experience is summarized into a structured narrative with key learnings and tool patterns.
+### Phase 1: Maintain (no LLM)
+Single pass over all existing memories: apply the forgetting curve (decay), archive weak memories, reinforce session-related memories, and build tag-based associations.
 
-### Phase 2: Detect Patterns (Batch Only)
-Cross-session analysis identifies recurring patterns, strategies, and preferences.
+### Phase 2: Distill (1 LLM call per session)
+Each session experience is summarized into a structured narrative with key learnings, tool patterns, memory kind, emotional valence, and importance.
 
-### Phase 3: Resolve Contradictions
-New learnings are compared against existing consolidated memories. Contradictions are resolved by keeping the newer information, keeping the existing, or merging.
+### Phase 3: Integrate (1 combined LLM call)
+A single LLM call detects cross-session patterns, resolves contradictions with existing memories, and forms abstract schemas from groups of related learnings.
 
-### Phase 4: Write Memories
-Consolidated memories are written as `MemoryRecord` entries with `kind=CONSOLIDATED` and metadata including `consolidation_kind` (procedural, episodic, semantic, meta_cognitive).
+### Phase 4: Persist
+Write, update, and retire `MemoryRecord` entries with `kind=CONSOLIDATED` and metadata including `consolidation_kind` (procedural, episodic, semantic, meta_cognitive). Quality is scored algorithmically.
 
-### Phase 5: Quality Assessment
-The consolidation run is scored on a 0.0–1.0 scale for relevance, diversity, and non-redundancy.
+## Generative Dreaming
+
+After consolidation, an optional **dreaming** phase can generate genuinely new knowledge by recombining existing memories. See [Generative Dreaming](./generative-dreaming.md) for details.
 
 ## Memory Kinds
 
