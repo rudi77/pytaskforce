@@ -127,6 +127,11 @@ evals = [
 auth = [
     "cryptography>=41.0.0",
 ]
+office = [
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "openpyxl>=3.1.0",
+]
 
 [dependency-groups]
 dev = [
@@ -215,6 +220,9 @@ module = [
     "PIL.*",
     "playwright.*",
     "yaml.*",
+    "docx.*",
+    "pptx.*",
+    "openpyxl.*",
 ]
 ignore_missing_imports = true
 

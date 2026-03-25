@@ -205,6 +205,22 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
         "params": {},
     },
+    # Office document tools
+    "docx": {
+        "type": "DocxTool",
+        "module": "taskforce.infrastructure.tools.native.docx_tool",
+        "params": {},
+    },
+    "pptx": {
+        "type": "PptxTool",
+        "module": "taskforce.infrastructure.tools.native.pptx_tool",
+        "params": {},
+    },
+    "excel": {
+        "type": "ExcelTool",
+        "module": "taskforce.infrastructure.tools.native.excel_tool",
+        "params": {},
+    },
 }
 
 # Pre-built reverse index: tool class name → short name (O(1) lookups).
