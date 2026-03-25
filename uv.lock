@@ -5624,6 +5624,11 @@ evals = [
     { name = "inspect-ai" },
     { name = "inspect-evals", extra = ["swe-bench"] },
 ]
+office = [
+    { name = "openpyxl" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+]
 pdf = [
     { name = "pdf2image" },
     { name = "pdfplumber" },
@@ -5688,6 +5693,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.7.7" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'", specifier = ">=0.1.0" },
+    { name = "openpyxl", marker = "extra == 'office'", specifier = ">=3.1.0" },
     { name = "pdf2image", marker = "extra == 'pdf'", specifier = ">=1.16.0" },
     { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.10.0" },
     { name = "pillow", marker = "extra == 'pdf'", specifier = ">=10.0.0" },
@@ -5696,6 +5702,8 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4.0.0" },
+    { name = "python-docx", marker = "extra == 'office'", specifier = ">=1.1.0" },
+    { name = "python-pptx", marker = "extra == 'office'", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0.0" },
     { name = "rich", specifier = ">=13.0.0" },
@@ -5706,7 +5714,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.9.0" },
     { name = "uvicorn", specifier = ">=0.25" },
 ]
-provides-extras = ["personal-assistant", "rag", "browser", "pdf", "docling", "postgres", "tokenizer", "tracing", "build", "evals", "auth"]
+provides-extras = ["personal-assistant", "rag", "browser", "pdf", "docling", "postgres", "tokenizer", "tracing", "build", "evals", "auth", "office"]
 
 [package.metadata.requires-dev]
 dev = [
