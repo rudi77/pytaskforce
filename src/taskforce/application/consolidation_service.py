@@ -97,6 +97,11 @@ class ConsolidationService:
         self._memory_store = memory_store
         self._auto_consolidate = auto_consolidate
         self._default_strategy = strategy
+        self._dream_service: Any = None
+
+    def set_dream_service(self, dream_service: Any) -> None:
+        """Inject a dream service for post-consolidation dreaming."""
+        self._dream_service = dream_service
 
     async def trigger_consolidation(
         self,
@@ -160,6 +165,9 @@ class ConsolidationService:
         if hasattr(store, "save_consolidation"):
             await store.save_consolidation(result)
 
+        # Trigger dreaming after consolidation if configured
+        await self._maybe_dream_after_consolidation()
+
         return result
 
     async def post_execution_hook(
@@ -189,6 +197,24 @@ class ConsolidationService:
                 "consolidation.post_execution_failed",
                 session_id=session_id,
             )
+
+    async def _maybe_dream_after_consolidation(self) -> None:
+        """Trigger a dream cycle if a dream service is configured."""
+        if not self._dream_service:
+            return
+
+        try:
+            from taskforce.core.domain.dream import DreamTrigger
+
+            config = getattr(self._dream_service, "_config", None)
+            if config and not getattr(config, "trigger_after_consolidation", True):
+                return
+
+            await self._dream_service.trigger_dream(
+                trigger=DreamTrigger.POST_CONSOLIDATION
+            )
+        except Exception:
+            logger.exception("consolidation.dream_after_consolidation_failed")
 
     async def get_consolidation_history(self, limit: int = 10) -> list[ConsolidationResult]:
         """Retrieve past consolidation run results.

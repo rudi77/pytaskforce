@@ -44,6 +44,20 @@ consolidation:
   max_sessions: 50
   model_alias: fast
 
+# Generative dreaming — creates new knowledge by recombining memories.
+# Runs after consolidation or on schedule. See docs/adr/adr-014-generative-dreaming.md
+dreaming:
+  enabled: false
+  max_memories_per_phase: 20
+  max_llm_calls: 4
+  replay_variations: 3
+  recombination_pairs: 4
+  emotional_decay_factor: 0.15
+  novelty_threshold: 0.4
+  model_alias: fast
+  schedule_expression: "0 3 * * *"
+  trigger_after_consolidation: true
+
 logging:
   level: INFO
   format: console

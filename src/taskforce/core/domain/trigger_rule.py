@@ -21,6 +21,7 @@ class RuleActionType(str, Enum):
     NOTIFY = "notify"
     EXECUTE_MISSION = "execute_mission"
     LOG_MEMORY = "log_memory"
+    RUN_DREAM_CYCLE = "run_dream_cycle"
 
 
 @dataclass
