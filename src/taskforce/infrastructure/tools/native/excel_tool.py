@@ -82,6 +82,7 @@ class ExcelTool(BaseTool):
                 "type": "array",
                 "items": {
                     "type": "array",
+                    "items": {"type": "string"},
                 },
                 "description": "Rows to append, each row a list of values.",
             },
