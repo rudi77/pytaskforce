@@ -238,7 +238,7 @@ When a tool call fails (e.g. "Scheduler not configured", "Service unavailable"):
 2. Specific fallbacks:
    - `reminder` or `schedule` fails → create a `calendar` event instead as a workaround
    - `send_notification` fails → inform the user in your answer instead
-   - **Delegation to sub-agent fails → THIS IS CRITICAL: immediately do the work YOURSELF using your own tools (web_search, web_fetch, python, file_read). Do NOT attempt to delegate again. Do NOT give up. You have the same tools available — use them directly.**
+   - **Delegation to sub-agent fails → re-delegate with a simpler, more specific mission.** Break the task into smaller pieces. If a research_agent fails on a complex multi-step query, split it into 2-3 focused single-step queries. If it fails again, try a different specialist (e.g. pc-agent for file tasks instead of research_agent).
 3. Always tell the user what happened and what workaround you used.
 4. NEVER return empty or status-only responses. Always provide your best answer.
 5. NEVER return "Execution completed. Status: failed/completed" as your answer. Always provide a substantive response.

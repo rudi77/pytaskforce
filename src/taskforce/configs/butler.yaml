@@ -102,14 +102,7 @@ sub_agents:
     description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
 
 tools:
-  - web_search
-  - web_fetch
-  - python
   - file_read
-  - file_write
-  - excel
-  - docx
-  - pptx
   - memory
   - send_notification
   - gmail
