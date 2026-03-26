@@ -42,6 +42,8 @@ class ToolExecutor:
         try:
             self._logger.info("tool_execute", tool=tool_name, args_keys=list(tool_args.keys()))
             result = await tool.execute(**tool_args)
+            if not isinstance(result, dict):
+                result = {"success": True, "data": result}
             self._logger.info("tool_complete", tool=tool_name, success=result.get("success"))
             return result
         except Exception as error:
@@ -80,6 +82,8 @@ class ToolResultMessageFactory:
         The agent can use file_read to access the complete data.
         Otherwise, returns the result inline.
         """
+        if not isinstance(tool_result, dict):
+            tool_result = {"success": True, "data": tool_result}
         result_json = json.dumps(tool_result, ensure_ascii=False, default=str)
         result_size = len(result_json)
 
