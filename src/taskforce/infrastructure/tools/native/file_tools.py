@@ -93,6 +93,34 @@ class FileReadTool(ToolProtocol):
                     "error": f"File too large: {file_size_mb:.2f}MB > {max_size_mb}MB",
                 }
 
+            # Detect binary files and return actionable guidance
+            binary_extensions = {
+                ".pdf": "Use the python tool with pypdf to read PDFs.",
+                ".docx": "Use the docx tool to read Word documents.",
+                ".xlsx": "Use the excel tool to read Excel files.",
+                ".xls": "Use the excel tool or python with openpyxl.",
+                ".pptx": "Use the pptx tool to read PowerPoint files.",
+                ".png": "Use the multimedia tool to analyze images.",
+                ".jpg": "Use the multimedia tool to analyze images.",
+                ".jpeg": "Use the multimedia tool to analyze images.",
+                ".gif": "Use the multimedia tool to analyze images.",
+                ".bmp": "Use the multimedia tool to analyze images.",
+                ".mp3": "Use the python tool with a speech-to-text library.",
+                ".mp4": "Use the python tool with a video processing library.",
+                ".wav": "Use the python tool with a speech-to-text library.",
+                ".zip": "Use the python tool with zipfile to extract contents.",
+                ".pdb": "Use the python tool with Biopython to parse PDB files.",
+            }
+            suffix = file_path.suffix.lower()
+            if suffix in binary_extensions:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Cannot read binary file '{file_path.name}' as text. "
+                        f"{binary_extensions[suffix]}"
+                    ),
+                }
+
             content = file_path.read_text(encoding=encoding)
             return {
                 "success": True,
