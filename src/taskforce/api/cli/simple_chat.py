@@ -139,10 +139,18 @@ class SimpleChatRunner:
                 recipient_id = params.get("recipient_id") or notif_defaults.get(
                     "default_recipient_id", ""
                 )
+                message = params.get("message", "") or payload.get("job_name", "")
+                if not message:
+                    logger.warning(
+                        "scheduler.notification_skipped",
+                        reason="empty message",
+                        job_id=payload.get("job_id"),
+                    )
+                    return
                 request = NotificationRequest(
                     channel=channel,
                     recipient_id=recipient_id,
-                    message=params.get("message", ""),
+                    message=message,
                     metadata={},
                 )
                 result = await self._gateway.send_notification(request)

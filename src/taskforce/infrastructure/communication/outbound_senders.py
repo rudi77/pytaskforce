@@ -13,6 +13,10 @@ import aiohttp
 import structlog
 
 
+class _TelegramClientError(Exception):
+    """Non-retryable Telegram API error (4xx except 429)."""
+
+
 class TelegramOutboundSender:
     """Send messages via the Telegram Bot API.
 
@@ -56,7 +60,14 @@ class TelegramOutboundSender:
             recipient_id: Telegram chat_id.
             message: Text message body.
             metadata: Optional keys: parse_mode ('HTML'|'Markdown').
+
+        Raises:
+            ValueError: If the message text is empty.
+            ConnectionError: If all retry attempts fail.
         """
+        if not message or not message.strip():
+            raise ValueError("Cannot send empty message to Telegram")
+
         # Telegram has a 4096-char limit per message. Split long messages
         # into chunks, breaking at newlines when possible.
         max_len = 4000  # Leave margin below the 4096 hard limit
@@ -88,9 +99,10 @@ class TelegramOutboundSender:
                             response=body,
                             recipient_id=recipient_id,
                         )
-                        # 4xx errors (except 429) are not retryable.
+                        # 4xx errors (except 429) are not retryable — raise
+                        # a non-OSError to escape the retry loop immediately.
                         if response.status != 429 and response.status < 500:
-                            raise ConnectionError(
+                            raise _TelegramClientError(
                                 f"Telegram API returned HTTP {response.status}: {body}"
                             )
                         last_error = ConnectionError(
@@ -104,6 +116,8 @@ class TelegramOutboundSender:
                                 recipient_id=recipient_id,
                             )
                         return  # Success
+            except _TelegramClientError:
+                raise  # Non-retryable 4xx — propagate immediately
             except (TimeoutError, aiohttp.ClientError, OSError) as exc:
                 last_error = exc
                 if attempt < self._max_retries:
