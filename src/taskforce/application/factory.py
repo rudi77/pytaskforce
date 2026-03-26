@@ -304,11 +304,12 @@ class AgentFactory:
         work_dir = definition.work_dir or base_config.get("persistence", {}).get(
             "work_dir", ".taskforce"
         )
+        llm_provider = ib.build_llm_provider(base_config)
         return {
             "state_manager": ib.build_state_manager(
                 base_config, work_dir_override=definition.work_dir
             ),
-            "llm_provider": ib.build_llm_provider(base_config),
+            "llm_provider": llm_provider,
             "context_policy": ib.build_context_policy(base_config),
             "runtime_tracker": self._create_runtime_tracker(
                 base_config, work_dir_override=definition.work_dir
@@ -317,6 +318,9 @@ class AgentFactory:
             "memory_store": memory_store,
             "memory_context_config": memory_context_config,
             "tool_result_store": self._build_tool_result_store(work_dir),
+            "context_enricher": self._build_context_enricher(
+                base_config, llm_provider
+            ),
             "mcp_contexts": [],
         }
 
@@ -371,6 +375,42 @@ class AgentFactory:
             else MemoryContextConfig()
         )
         return memory_store, memory_context_config
+
+    @staticmethod
+    def _build_context_enricher(
+        config: dict[str, Any],
+        llm_provider: Any,
+    ) -> Any:
+        """Build an SLM context enricher if configured.
+
+        Returns an ``SLMContextEnricher`` when the ``context_enricher``
+        section is present and enabled, otherwise ``None``.
+        """
+        from taskforce.core.domain.context_enricher import (
+            EnricherConfig,
+            EnrichmentCategory,
+        )
+
+        enricher_cfg = config.get("context_enricher", {})
+        if not enricher_cfg.get("enabled", False):
+            return None
+
+        from taskforce.infrastructure.memory.slm_context_enricher import (
+            SLMContextEnricher,
+        )
+
+        categories = [
+            EnrichmentCategory(c)
+            for c in enricher_cfg.get("categories", ["factual", "behavioral", "dreamed"])
+        ]
+        ec = EnricherConfig(
+            enabled=True,
+            model_alias=enricher_cfg.get("model_alias", "slm"),
+            max_tokens=enricher_cfg.get("max_tokens", 200),
+            categories=categories,
+            timeout_seconds=enricher_cfg.get("timeout_seconds", 5.0),
+        )
+        return SLMContextEnricher(llm_provider=llm_provider, config=ec)
 
     @staticmethod
     def _build_tool_result_store(work_dir: str) -> Any:
@@ -505,6 +545,7 @@ class AgentFactory:
             memory_store=infra.get("memory_store"),
             memory_context_config=infra.get("memory_context_config"),
             tool_result_store=infra.get("tool_result_store"),
+            context_enricher=infra.get("context_enricher"),
         )
 
     async def _load_plugin_tools_for_definition(
@@ -917,17 +958,21 @@ class AgentFactory:
         mem_store, mem_cfg = self._build_memory_injection(
             merged_config, work_dir_override=work_dir
         )
+        inline_llm_provider = ib.build_llm_provider(merged_config)
         infra: dict[str, Any] = {
             "state_manager": ib.build_state_manager(
                 merged_config, work_dir_override=work_dir
             ),
-            "llm_provider": ib.build_llm_provider(merged_config),
+            "llm_provider": inline_llm_provider,
             "context_policy": self._create_context_policy(merged_config),
             "runtime_tracker": self._create_runtime_tracker(
                 merged_config, work_dir_override=work_dir
             ),
             "memory_store": mem_store,
             "memory_context_config": mem_cfg,
+            "context_enricher": self._build_context_enricher(
+                merged_config, inline_llm_provider
+            ),
             "mcp_contexts": [],
         }
 
@@ -1095,6 +1140,9 @@ class AgentFactory:
             ),
             "memory_store": plugin_mem_store,
             "memory_context_config": plugin_mem_cfg,
+            "context_enricher": self._build_context_enricher(
+                merged_config, llm_provider
+            ),
             "mcp_contexts": [],
         }
 

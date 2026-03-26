@@ -44,6 +44,7 @@ from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
+from taskforce.core.interfaces.context_enricher import ContextEnricherProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 from taskforce.core.tools.planner_tool import PlannerTool
@@ -96,6 +97,7 @@ class Agent:
         summary_threshold: int | None = None,
         memory_store: MemoryStoreProtocol | None = None,
         memory_context_config: MemoryContextConfig | None = None,
+        context_enricher: ContextEnricherProtocol | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -130,6 +132,9 @@ class Agent:
                          start and injected into the system prompt.
             memory_context_config: Optional configuration for memory injection
                                   budget (max memories, char limits, kinds).
+            context_enricher: Optional SLM-based context enricher.
+                             When provided, generates associative intuitions
+                             from memories before the ReAct loop starts.
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -145,6 +150,10 @@ class Agent:
         self._memory_store = memory_store
         self._memory_context_config = memory_context_config or MemoryContextConfig()
         self._memory_context: str | None = None
+
+        # SLM context enrichment (bio-mimetic intuition)
+        self._context_enricher = context_enricher
+        self._enrichment_context: str | None = None
 
         # Skill suffix cache: (active_skill_name, suffix_string)
         self._cached_skill_suffix: tuple[str | None, str] | None = None
@@ -285,6 +294,29 @@ class Agent:
         )
         self._memory_context = await loader.load_memory_context(mission=mission)
 
+    async def run_context_enrichment(self, mission: str) -> None:
+        """Run SLM-based context enrichment and cache the result.
+
+        Called once at session start (from planning helpers), after memory
+        context has been loaded.  The enricher generates associative
+        intuitions that are appended to the system prompt.
+
+        Args:
+            mission: Current mission text for contextual enrichment.
+        """
+        if not self._context_enricher or not self._memory_store:
+            return
+
+        try:
+            memories = await self._memory_store.list(scope=None, kind=None)
+            self._enrichment_context = await self._context_enricher.enrich(
+                mission=mission,
+                memories=memories,
+            )
+        except Exception as exc:
+            self.logger.warning("context_enrichment.failed", error=str(exc))
+            self._enrichment_context = None
+
     def _build_system_prompt(
         self,
         mission: str | None = None,
@@ -301,6 +333,10 @@ class Agent:
         # Inject cached long-term memory section
         if self._memory_context:
             base_prompt += self._memory_context
+
+        # Inject SLM-generated intuition (bio-mimetic context enrichment)
+        if self._enrichment_context:
+            base_prompt += self._enrichment_context
 
         # Inject active skill instructions if skill manager is configured
         # Uses a cache keyed on the active skill name to avoid rebuilding
