@@ -12,11 +12,71 @@ Provides two solver variants:
 """
 
 import logging
+import os
+import re
+import shutil
+from pathlib import Path
 from typing import Any
 
 from inspect_ai.solver import Solver, TaskState, solver
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# File provisioning for sandbox-free execution
+# ---------------------------------------------------------------------------
+
+def _get_gaia_cache() -> Path:
+    """Resolve the GAIA dataset cache directory."""
+    try:
+        from inspect_evals.gaia.dataset import INSPECT_EVALS_CACHE_PATH
+
+        return INSPECT_EVALS_CACHE_PATH
+    except ImportError:
+        # Fallback: platform-specific default
+        if os.name == "nt":
+            return Path.home() / "AppData" / "Local" / "inspect_evals" / "inspect_evals" / "Cache"
+        return Path.home() / ".cache" / "inspect_evals"
+
+_SHARED_FILES_RE = re.compile(r"/shared_files/([\w.-]+)")
+
+
+def _provision_sample_files(prompt: str) -> None:
+    """Copy referenced GAIA dataset files to /shared_files/ on the host.
+
+    When running without a sandbox (sandbox=None), Inspect AI skips file
+    provisioning. This function finds file references in the prompt, locates
+    them in the GAIA dataset cache, and copies them to a local shared_files
+    directory so the agent's file_read tool can access them.
+    """
+    matches = _SHARED_FILES_RE.findall(prompt)
+    if not matches:
+        return
+
+    # Search common dataset splits for the file
+    gaia_cache = _get_gaia_cache()
+    search_dirs = [
+        gaia_cache / "gaia_dataset" / "GAIA" / "2023" / "validation",
+        gaia_cache / "gaia_dataset" / "GAIA" / "2023" / "test",
+    ]
+
+    dest_dir = Path("shared_files")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for filename in matches:
+        dest = dest_dir / filename
+        if dest.exists():
+            continue  # already provisioned (parallel samples)
+
+        for search_dir in search_dirs:
+            src = search_dir / filename
+            if src.exists():
+                shutil.copy2(src, dest)
+                logger.info(f"Provisioned sample file: {src} -> {dest}")
+                break
+        else:
+            logger.warning(f"Sample file not found in cache: {filename}")
 
 
 # ---------------------------------------------------------------------------
@@ -86,25 +146,52 @@ def _new_accumulator() -> dict[str, Any]:
 _STATUS_STRINGS = {"execution completed", "status: completed", "status: failed"}
 
 
+def _is_status_string(text: str) -> bool:
+    """Check if text is an internal status string rather than a real answer."""
+    if not text:
+        return True
+    lowered = text.lower().strip()
+    return any(s in lowered for s in _STATUS_STRINGS)
+
+
+def _extract_last_substantive_text(llm_text: str) -> str:
+    """Extract the last substantive segment from accumulated LLM text.
+
+    The LLM text stream accumulates all tokens across the entire run.
+    The final answer is typically the last paragraph or sentence.
+    """
+    if not llm_text:
+        return ""
+    # Split on double newlines to find paragraphs, take the last non-empty one
+    paragraphs = [p.strip() for p in llm_text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return llm_text.strip()
+    # Walk backwards to find the last substantive paragraph
+    for p in reversed(paragraphs):
+        if not _is_status_string(p) and len(p) > 1:
+            return p
+    return paragraphs[-1]
+
+
 def _extract_best_answer(acc: dict[str, Any]) -> str:
     """Extract the best available answer from accumulated events.
 
-    Priority: final_message (if substantive) > last_llm_text > final_message (raw).
+    Priority: final_message (if substantive) > last LLM paragraph > final_message (raw).
     Filters out status-only strings like "Execution completed. Status: failed".
     """
     answer = acc["final_message"]
 
     # If answer looks like an internal status string, use LLM text as fallback
-    if answer and any(s in answer.lower() for s in _STATUS_STRINGS):
+    if _is_status_string(answer):
         llm_text = acc.get("last_llm_text", "").strip()
-        if llm_text and len(llm_text) > 5:
-            return llm_text
+        if llm_text and len(llm_text) > 3:
+            return _extract_last_substantive_text(llm_text)
 
     # If no final_message at all, use last LLM text
     if not answer:
         llm_text = acc.get("last_llm_text", "").strip()
         if llm_text:
-            return llm_text
+            return _extract_last_substantive_text(llm_text)
 
     return answer
 
@@ -171,6 +258,14 @@ def taskforce_solver(
         from taskforce.application.factory import AgentFactory
 
         prompt = state.input_text
+
+        # Provision sample files for sandbox-free execution
+        _provision_sample_files(prompt)
+
+        # Rewrite /shared_files/ paths to the actual local directory
+        local_shared = str(Path("shared_files").resolve()).replace("\\", "/")
+        prompt = prompt.replace("/shared_files/", f"{local_shared}/")
+
         factory = AgentFactory()
         executor = AgentExecutor(factory)
         acc = _new_accumulator()

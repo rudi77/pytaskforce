@@ -52,8 +52,9 @@ TASK_REGISTRY: dict[str, tuple[str, str]] = {
 
 TASKS_DIR = project_root / "evals" / "tasks"
 
-# Windows cleanup crash exit codes (0xC0000005 access violation)
-WINDOWS_CRASH_CODES = {-1073741819, 3221225477}
+# Windows cleanup crash exit codes (results are still valid)
+# 0xC0000005 = access violation, 0xC0000409 = stack buffer overrun
+WINDOWS_CRASH_CODES = {-1073741819, 3221225477, 3221226505, -1073740791}
 
 
 def print_help() -> None:
@@ -109,6 +110,10 @@ def main() -> None:
     # Default model if not specified
     if "--model" not in extra_args:
         extra_args.extend(["--model", DEFAULT_MODEL])
+
+    # Default max-samples to avoid memory crashes from too much parallelism
+    if "--max-samples" not in extra_args:
+        extra_args.extend(["--max-samples", "4"])
 
     model_name = extra_args[extra_args.index("--model") + 1]
     results: list[tuple[str, int]] = []

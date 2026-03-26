@@ -225,3 +225,6 @@ evals/autoresearch/logs/*.tsv
 
 # Inspect AI eval logs
 logs/
+
+# GAIA eval provisioned files
+shared_files/
