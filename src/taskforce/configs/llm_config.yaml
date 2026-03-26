@@ -26,6 +26,9 @@ models:
   claude-sonnet: "anthropic/claude-sonnet-4-6"
   claude-haiku: "anthropic/claude-haiku-4-5-20251001"
 
+  # ── SLM for context enrichment (uncomment to use) ───────────────────
+  # slm: "ollama/qwen2:1.5b"        # Local SLM for bio-mimetic memory enrichment
+
   # ── Multi-provider examples (uncomment to use) ──────────────────────
   # gemini-pro: "gemini/gemini-2.5-pro"
   # azure-main: "azure/my-gpt4-deployment"
@@ -155,6 +158,8 @@ routing:
       model: main
     - condition: "hint:summarizing"
       model: fast
+    # - condition: "hint:enrichment"    # Uncomment with slm alias to route enrichment to SLM
+    #   model: slm
 
 # ============================================================================
 # Environment Variable Quick Reference

@@ -304,6 +304,46 @@ Enable via `consolidation.enabled: true` in your profile YAML.
 
 ---
 
+## Context Enricher (SLM-Based)
+
+An optional **generative pre-processing step** that uses a Small Language Model (SLM) to produce associative "intuitions" before the ReAct loop starts. Unlike keyword/semantic retrieval, the enricher *generates* novel associations from existing memories.
+
+### How It Works
+
+1. After `load_memory_context()` retrieves relevant memories, the enricher calls a local SLM
+2. The SLM produces a concise block covering three categories:
+   - **Factual** — past facts, decisions, events relevant to the current mission
+   - **Behavioural** — recognised user preferences and habits
+   - **Dreamed** — optimisations from dream/sleep cycles
+3. The output is injected as `## Internal Intuition` into the system prompt
+
+### Configuration
+
+```yaml
+# In profile YAML
+context_enricher:
+  enabled: false          # Disabled by default
+  model_alias: slm        # Points to SLM in llm_config.yaml
+  max_tokens: 200
+  timeout_seconds: 5.0
+  categories:
+    - factual
+    - behavioral
+    - dreamed
+```
+
+Requires a local SLM alias in `llm_config.yaml` (e.g., `slm: "ollama/qwen2:1.5b"`).
+
+### Design
+
+- **Disabled by default** — no impact on existing agents
+- **Graceful degradation** — timeout and error handling ensure no agent disruption
+- **Protocol-based** — `ContextEnricherProtocol` allows custom implementations
+
+See [ADR-014](../adr/adr-014-slm-context-enricher.md) for the full architecture decision.
+
+---
+
 ## Roadmap
 
 - [x] Automatic summarization/compaction via Memory Consolidation
@@ -312,6 +352,8 @@ Enable via `consolidation.enabled: true` in your profile YAML.
 - [x] Emotional valence encoding
 - [x] Associative memory network with spreading activation
 - [x] Schema formation from episodic patterns
+- [x] SLM-based context enricher (bio-mimetic intuition)
+- [ ] LoRA fine-tuning of SLM on agent experiences
 - [ ] Optional vector index for semantic recall
 - [ ] Multi-user memory with access control
 - [ ] Web UI for memory visualization and network graph

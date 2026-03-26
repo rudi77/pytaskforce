@@ -684,6 +684,8 @@ async def _load_and_resume_state(
     # Load long-term memories once at session start for prompt injection (lazy).
     # Pass the mission so contextually relevant memories are boosted.
     await agent.load_memory_context(mission=mission)
+    # Run SLM context enrichment if configured (bio-mimetic intuition).
+    await agent.run_context_enrichment(mission=mission)
     resume = _resume_from_pause(state, mission, logger, session_id)
     return state, resume
 
