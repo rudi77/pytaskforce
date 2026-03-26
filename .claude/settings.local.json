@@ -212,7 +212,8 @@
       "Bash(GIT_EDITOR=true git cherry-pick --continue)",
       "Bash(mkdir -p .claude/skills/evolve)",
       "Bash(cp src/taskforce/skills/evolve/SKILL.md .claude/skills/evolve/SKILL.md)",
-      "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_lightweight_consolidation.py -q)"
+      "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_lightweight_consolidation.py -q)",
+      "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_lightweight_consolidation.py tests/ -k \"consolidat\" -q)"
     ],
     "deny": [
       ".env",

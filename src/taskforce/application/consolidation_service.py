@@ -68,6 +68,7 @@ def build_consolidation_components(
             memory_store=memory_store,
             auto_consolidate=consol_config.get("auto_consolidate", False),
             strategy=consol_config.get("strategy", "immediate"),
+            max_sessions=consol_config.get("max_sessions", 20),
         )
 
     return tracker, service
@@ -82,6 +83,7 @@ class ConsolidationService:
         memory_store: Target store for consolidated memories.
         auto_consolidate: Trigger consolidation after each session.
         strategy: Default consolidation strategy.
+        max_sessions: Maximum sessions per batch consolidation.
     """
 
     def __init__(
@@ -91,13 +93,17 @@ class ConsolidationService:
         memory_store: MemoryStoreProtocol,
         auto_consolidate: bool = False,
         strategy: str = "immediate",
+        max_sessions: int = 20,
     ) -> None:
         self._experience_store = experience_store
         self._engine = consolidation_engine
         self._memory_store = memory_store
         self._auto_consolidate = auto_consolidate
         self._default_strategy = strategy
+        self._max_sessions = max_sessions
         self._dream_service: Any = None
+        # Track accumulated sessions for batch strategy.
+        self._pending_session_count: int = 0
 
     def set_dream_service(self, dream_service: Any) -> None:
         """Inject a dream service for post-consolidation dreaming."""
@@ -177,7 +183,12 @@ class ConsolidationService:
     ) -> None:
         """Called after each agent execution when auto_consolidate is enabled.
 
-        Triggers an immediate single-session consolidation.
+        For ``immediate`` strategy: triggers a single-session consolidation
+        right away.
+
+        For ``batch`` strategy: accumulates sessions and only triggers
+        consolidation when ``max_sessions`` threshold is reached.  This
+        avoids expensive LLM consolidation after every single request.
 
         Args:
             session_id: The completed session ID.
@@ -186,6 +197,33 @@ class ConsolidationService:
         if not self._auto_consolidate:
             return
 
+        # Batch strategy: accumulate and only consolidate when threshold reached.
+        if self._default_strategy == ConsolidationStrategy.BATCH.value:
+            self._pending_session_count += 1
+            if self._pending_session_count < self._max_sessions:
+                logger.debug(
+                    "consolidation.batch_accumulating",
+                    session_id=session_id,
+                    pending=self._pending_session_count,
+                    threshold=self._max_sessions,
+                )
+                return
+
+            # Threshold reached — consolidate all unprocessed sessions.
+            self._pending_session_count = 0
+            try:
+                await self.trigger_consolidation(
+                    strategy=ConsolidationStrategy.BATCH.value,
+                    max_sessions=self._max_sessions,
+                )
+            except Exception:
+                logger.exception(
+                    "consolidation.batch_post_execution_failed",
+                    session_id=session_id,
+                )
+            return
+
+        # Immediate strategy: consolidate this session now.
         try:
             await self.trigger_consolidation(
                 session_ids=[session_id],
