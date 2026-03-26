@@ -111,6 +111,9 @@ class AgentExecutor:
         self._requests_since_consolidation: int = 0
         self._consolidation_interval_minutes: int = 5
         self._consolidation_interval_requests: int = 10
+        # Throttle: track lightweight association building separately.
+        self._requests_since_associations: int = 0
+        self._association_interval_requests: int = 10
 
     def _ensure_consolidation_components(
         self,
@@ -419,9 +422,19 @@ class AgentExecutor:
                         )
 
             # Run lightweight (no-LLM) memory consolidation in background.
+            # Only decay+reinforce run every time; expensive association
+            # building is throttled to every N requests.
             if agent and not execution_failed:
+                self._requests_since_associations += 1
+                run_associations = (
+                    self._requests_since_associations >= self._association_interval_requests
+                )
+                if run_associations:
+                    self._requests_since_associations = 0
                 asyncio.create_task(
-                    self._run_lightweight_consolidation(agent, mission),
+                    self._run_lightweight_consolidation(
+                        agent, mission, build_associations=run_associations
+                    ),
                     name="consolidation-lightweight",
                 )
 
@@ -429,7 +442,7 @@ class AgentExecutor:
                 # Defer close so background consolidation tasks can still
                 # access the agent's memory store.
                 asyncio.create_task(
-                    self._deferred_close(agent, delay=10.0),
+                    self._deferred_close(agent, delay=2.0),
                     name="agent-close",
                 )
 
@@ -437,12 +450,17 @@ class AgentExecutor:
         self,
         agent: Agent,
         mission: str,
+        *,
+        build_associations: bool = False,
     ) -> None:
         """Run lightweight memory consolidation after a successful session.
 
         Extracts keywords from the mission to reinforce related memories.
-        Runs decay sweep, reinforcement, and association building without
-        any LLM calls.  Failures are logged but never propagated.
+        Runs decay sweep and reinforcement every time.  The expensive
+        association building phase (O(n²) embeddings) only runs when
+        *build_associations* is True (throttled by the caller).
+
+        Failures are logged but never propagated.
         """
         memory_store = getattr(agent, "_memory_store", None)
         if not memory_store:
@@ -456,13 +474,16 @@ class AgentExecutor:
             # Extract keywords from mission for selective reinforcement.
             keywords = {w.lower() for w in mission.split() if len(w) > 2}
 
-            # Use the agent's embedding provider if available.
-            embedder = getattr(memory_store, "_embedder", None)
+            # Only pass the embedding provider when associations are needed.
+            embedder = None
+            if build_associations:
+                embedder = getattr(memory_store, "_embedder", None)
 
             result = await run_lightweight_consolidation(
                 store=memory_store,
                 session_keywords=keywords if keywords else None,
                 embedding_provider=embedder,
+                build_associations=build_associations,
             )
             self.logger.debug(
                 "lightweight_consolidation.done",
@@ -489,7 +510,7 @@ class AgentExecutor:
         return False
 
     @staticmethod
-    async def _deferred_close(agent: Agent, delay: float = 5.0) -> None:
+    async def _deferred_close(agent: Agent, delay: float = 2.0) -> None:
         """Close agent after a delay so background consolidation can finish."""
         await asyncio.sleep(delay)
         try:

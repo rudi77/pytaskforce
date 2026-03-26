@@ -123,7 +123,7 @@ class TestReinforcePhase:
 
 
 # ------------------------------------------------------------------
-# Phase 3: Build associations
+# Phase 3: Build associations (opt-in via build_associations=True)
 # ------------------------------------------------------------------
 
 
@@ -132,7 +132,7 @@ class TestAssociationPhase:
         r1 = _make_record(content="A", record_id="a", tags=["python"])
         r2 = _make_record(content="B", record_id="b", tags=["python"])
         store = _mock_store([r1, r2])
-        result = await run_lightweight_consolidation(store)
+        result = await run_lightweight_consolidation(store, build_associations=True)
         assert result.associations_created >= 1
         assert "b" in r1.associations
         assert "a" in r2.associations
@@ -141,7 +141,7 @@ class TestAssociationPhase:
         r1 = _make_record(content="A", record_id="a", tags=["python"])
         r2 = _make_record(content="B", record_id="b", tags=["rust"])
         store = _mock_store([r1, r2])
-        result = await run_lightweight_consolidation(store)
+        result = await run_lightweight_consolidation(store, build_associations=True)
         assert result.associations_created == 0
 
     async def test_existing_association_not_duplicated(self) -> None:
@@ -152,12 +152,20 @@ class TestAssociationPhase:
             content="B", record_id="b", tags=["python"], associations=["a"]
         )
         store = _mock_store([r1, r2])
+        result = await run_lightweight_consolidation(store, build_associations=True)
+        assert result.associations_created == 0
+
+    async def test_no_associations_by_default(self) -> None:
+        """Without build_associations=True, no associations are built."""
+        r1 = _make_record(content="A", record_id="a", tags=["python"])
+        r2 = _make_record(content="B", record_id="b", tags=["python"])
+        store = _mock_store([r1, r2])
         result = await run_lightweight_consolidation(store)
         assert result.associations_created == 0
 
 
 # ------------------------------------------------------------------
-# Result summary
+# Embedding-based associations
 # ------------------------------------------------------------------
 
 
@@ -177,7 +185,7 @@ class TestEmbeddingAssociations:
         )
 
         result = await run_lightweight_consolidation(
-            store, embedding_provider=embedder
+            store, embedding_provider=embedder, build_associations=True
         )
         assert result.associations_created >= 1
         assert "b" in r1.associations
@@ -196,7 +204,7 @@ class TestEmbeddingAssociations:
         )
 
         result = await run_lightweight_consolidation(
-            store, embedding_provider=embedder
+            store, embedding_provider=embedder, build_associations=True
         )
         assert result.associations_created == 0
 
@@ -210,7 +218,7 @@ class TestEmbeddingAssociations:
         embedder.embed_batch = AsyncMock(side_effect=RuntimeError("API error"))
 
         result = await run_lightweight_consolidation(
-            store, embedding_provider=embedder
+            store, embedding_provider=embedder, build_associations=True
         )
         # Should still create tag-based association.
         assert result.associations_created >= 1
@@ -223,7 +231,7 @@ class TestEmbeddingAssociations:
         embedder = AsyncMock()
 
         await run_lightweight_consolidation(
-            store, embedding_provider=embedder
+            store, embedding_provider=embedder, build_associations=True
         )
         # embed_batch should not be called with < 2 records.
         embedder.embed_batch.assert_not_called()

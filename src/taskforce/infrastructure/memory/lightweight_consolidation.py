@@ -42,6 +42,9 @@ _MIN_TAG_OVERLAP: int = 1
 # Maximum associations per memory.
 _MAX_ASSOCIATIONS: int = 10
 
+# Maximum memories to consider for association building (caps O(n²) cost).
+_MAX_ASSOCIATION_CANDIDATES: int = 500
+
 
 @dataclass
 class LightweightConsolidationResult:
@@ -59,17 +62,24 @@ async def run_lightweight_consolidation(
     session_keywords: set[str] | None = None,
     archive_threshold: float = _ARCHIVE_THRESHOLD,
     embedding_provider: Any | None = None,
+    *,
+    build_associations: bool = False,
+    max_association_candidates: int = _MAX_ASSOCIATION_CANDIDATES,
 ) -> LightweightConsolidationResult:
     """Run a lightweight consolidation pass (no LLM required).
 
-    Four phases:
+    Phases that always run:
 
     1. **Decay sweep** — Apply the forgetting curve.  Archive memories
        whose effective strength falls below *archive_threshold*.
     2. **Reinforce** — Strengthen memories whose content matches any
        of the *session_keywords* (e.g. tool names, mission words).
+
+    Optional phases (only when *build_associations* is True):
+
     3. **Associate (embedding)** — When an embedding provider is available,
        build associations based on cosine similarity between memory contents.
+       Limited to the *max_association_candidates* most recent memories.
     4. **Associate (tag fallback)** — For memories without embeddings,
        fall back to tag-overlap heuristic.
 
@@ -81,6 +91,12 @@ async def run_lightweight_consolidation(
             are archived.
         embedding_provider: Optional ``EmbeddingProviderProtocol`` for
             semantic association discovery.
+        build_associations: Whether to run the expensive association
+            building phases.  Defaults to False so that the cheap
+            decay+reinforce pass can run after every session without
+            incurring O(n²) or embedding API costs.
+        max_association_candidates: Maximum number of memories to
+            consider for association building.  Limits O(n²) cost.
 
     Returns:
         Result summary with counts of each operation.
@@ -118,25 +134,32 @@ async def run_lightweight_consolidation(
                 await store.update(record)
                 result.strengthened += 1
 
-    # Phase 3: Build associations
-    active = [r for r in all_records if "archived" not in r.tags]
+    # Phase 3: Build associations (only when explicitly requested)
+    if build_associations:
+        active = [r for r in all_records if "archived" not in r.tags]
 
-    # Snapshot existing associations so we only persist records that changed.
-    assoc_before: dict[str, set[str]] = {
-        r.id: set(r.associations) for r in active
-    }
+        # Cap the candidate set to avoid O(n²) blowup on large stores.
+        # Keep the most recently accessed memories for best relevance.
+        if len(active) > max_association_candidates:
+            active.sort(key=lambda r: r.last_accessed or r.created_at, reverse=True)
+            active = active[:max_association_candidates]
 
-    if embedding_provider and len(active) >= 2:
-        result.associations_created += await _build_embedding_associations(
-            active, embedding_provider, store
-        )
-    else:
-        result.associations_created += _build_tag_associations(active)
+        # Snapshot existing associations so we only persist records that changed.
+        assoc_before: dict[str, set[str]] = {
+            r.id: set(r.associations) for r in active
+        }
 
-    # Persist only records whose association list actually changed.
-    for rec in active:
-        if set(rec.associations) != assoc_before.get(rec.id, set()):
-            await store.update(rec)
+        if embedding_provider and len(active) >= 2:
+            result.associations_created += await _build_embedding_associations(
+                active, embedding_provider, store
+            )
+        else:
+            result.associations_created += _build_tag_associations(active)
+
+        # Persist only records whose association list actually changed.
+        for rec in active:
+            if set(rec.associations) != assoc_before.get(rec.id, set()):
+                await store.update(rec)
 
     # Flush all deferred writes in a single disk operation.
     if hasattr(store, "flush"):
@@ -178,6 +201,8 @@ async def _build_embedding_associations(
         return _build_tag_associations(active)
 
     for i, rec_a in enumerate(active):
+        if len(rec_a.associations) >= _MAX_ASSOCIATIONS:
+            continue
         for j in range(i + 1, len(active)):
             rec_b = active[j]
             if (
