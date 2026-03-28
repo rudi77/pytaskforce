@@ -492,9 +492,83 @@ Tested 9 new Teacher-designed missions. All passed without code changes:
 
 ---
 
+## Optimization Session 6 — 2026-03-28 (Evolve Session 4: memory_recall)
+
+**Objective:** `memory_recall` — improve memory save/search/update/recall
+**Method:** `/evolve` evolutionary optimization (3 cycles, 3 variants each)
+**Branch:** `experiments/evolve-session-4`
+
+### Baseline
+
+Memory Benchmark (5 multi-turn sequences), median of 2 runs:
+
+| Sequence | Recall | Status |
+|----------|--------|--------|
+| Preference Recall | 0.0 | FAIL |
+| Fact Retention | 1.0 | PASS |
+| Contradiction Handling | 0.0 | FAIL |
+| Memory Search | 0.0 | FAIL |
+| Proactive Suggestion | 0.0 | FAIL |
+| **Aggregate memory_recall** | **0.2** | **1/5** |
+
+### Cycle 1 — Fix critical `action=save` bug
+
+**Root cause:** Butler prompt referenced `memory(action=save)` but the memory tool only supports `action=add`. Every "merke dir" instruction silently failed.
+
+**Winner:** Variant C — structured memory operation recipes with correct action names.
+
+| Metric | Baseline | After C1 |
+|--------|----------|----------|
+| memory_recall | 0.2 | **0.4** (+100%) |
+| Preference Recall | FAIL | PASS |
+
+### Cycle 2 — Broaden memory search trigger
+
+**Root cause:** Search trigger only matched "mein/my X" but Memory Search test uses "unser" (our). Trigger was too narrow.
+
+**Winner:** Variant A — broadened trigger to "any question about previously stored information".
+
+| Metric | After C1 | After C2 |
+|--------|----------|----------|
+| memory_recall | 0.4 | **0.6** (+50%) |
+| Memory Search | FAIL | PASS (3/3 runs) |
+
+### Cycle 3 — Explicit contradiction handling
+
+**Root cause:** `update` action required parsing record_id from JSON — fragile. Replaced with simpler delete→add flow.
+
+**Winner:** Variant B — explicit "requires exactly 3 tool calls" with "Do NOT skip" guardrails.
+
+| Metric | After C2 | After C3 |
+|--------|----------|----------|
+| memory_recall | 0.6 | **0.8** (+33%) |
+| Contradiction Handling | FAIL | PASS (2/2 runs) |
+
+### Session 6 Summary
+
+| Sequence | Before | After | Status |
+|----------|--------|-------|--------|
+| Preference Recall | FAIL | **PASS** | Fixed (Cycle 1) |
+| Fact Retention | PASS | **PASS** | Stable |
+| Contradiction Handling | FAIL | **PASS** | Fixed (Cycle 3) |
+| Memory Search | FAIL | **PASS** | Fixed (Cycle 2) |
+| Proactive Suggestion | FAIL | FAIL | Requires code changes |
+| **memory_recall** | **0.2** | **0.8** | **+300%** |
+
+**Files changed:** `src/taskforce/core/prompts/autonomous_prompts.py` (Butler prompt only)
+
+**Key learnings:**
+1. Wrong action names in prompts cause silent failures — always verify tool API matches prompt instructions
+2. Broad search triggers > narrow pattern matching for memory recall
+3. Delete+add > update for preference corrections (fewer steps, no ID parsing)
+4. "Do NOT skip any step" guardrails significantly improve multi-step tool flows
+
+---
+
 ## Planned Next Steps
 
-- [ ] `memory` — Optimize Fact Retention (FAIL) and Memory Search (FAIL) recall
+- [x] `memory` — ~~Optimize Fact Retention (FAIL) and Memory Search (FAIL) recall~~ → Fixed (Session 6)
+- [ ] `memory` — Proactive Suggestion (requires pattern detection code, not just prompt)
 - [ ] Butler Roles — Test and refine accountant role with docling OCR
 - [ ] Workflow creation from user descriptions
 - [ ] Dynamic skill/capability learning at runtime
