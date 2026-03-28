@@ -5,11 +5,8 @@ import json
 from typing import Any
 
 import typer
-from rich.console import Console, Group
-from rich.live import Live
-from rich.panel import Panel
+from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
 
 from taskforce.api.cli.output_formatter import TaskforceConsole
 from taskforce.application.executor import AgentExecutor
@@ -236,222 +233,21 @@ async def _execute_streaming_mission(
     plugin: str | None = None,
 ) -> None:
     """Execute mission with streaming Rich Live display."""
-    executor = AgentExecutor()
+    from taskforce.api.cli.streaming_renderer import StreamingMissionRenderer
 
+    executor = AgentExecutor()
     strategy_params = _parse_strategy_params(planning_strategy_params)
 
-    # State for live display
-    current_step = 0
-    current_tool: str | None = None
-    tool_results: list[str] = []
-    final_answer_tokens: list[str] = []
-    status_message = "Starting..."
-    plan_steps: list[dict[str, str]] = []
-    plan_text: str | None = None
-    total_token_usage = {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-    }
-
-    def format_plan() -> str | None:
-        """Format current plan for display."""
-        if plan_steps:
-            lines = []
-            for index, step in enumerate(plan_steps, start=1):
-                description = step.get("description", "").strip()
-                status = step.get("status", "PENDING").upper()
-                checkbox = "x" if status in {"DONE", "COMPLETED"} else " "
-                lines.append(f"[{checkbox}] {index}. {description}")
-            return "\n".join(lines)
-        return plan_text
-
-    def build_display() -> Group:
-        """Build Rich display group for current state."""
-        elements = []
-
-        # Header
-        mission_display = mission[:60] + "..." if len(mission) > 60 else mission
-        elements.append(Text(f"🚀 Mission: {mission_display}", style="bold cyan"))
-
-        # Status line with token usage
-        status_line = f"📋 Step: {current_step}  |  {status_message}"
-        if total_token_usage["total_tokens"] > 0:
-            status_line += f"  |  🎯 Tokens: {total_token_usage['total_tokens']}"
-        elements.append(Text(status_line, style="dim"))
-        elements.append(Text())
-
-        # Current tool (if any)
-        if current_tool:
-            elements.append(
-                Panel(
-                    Text(f"🔧 {current_tool}", style="yellow"),
-                    title="Current Tool",
-                    border_style="yellow",
-                )
-            )
-
-        # Recent tool results (last 5)
-        if tool_results:
-            results_text = "\n".join(tool_results[-5:])
-            elements.append(
-                Panel(
-                    Text(results_text),
-                    title="Tool Results",
-                    border_style="green",
-                )
-            )
-
-        plan_display = format_plan()
-        if plan_display:
-            elements.append(
-                Panel(
-                    Text(plan_display),
-                    title="🧭 Plan",
-                    border_style="magenta",
-                )
-            )
-
-        # Streaming final answer
-        if final_answer_tokens:
-            answer_text = "".join(final_answer_tokens)
-            elements.append(
-                Panel(
-                    Text(answer_text, style="white"),
-                    title="💬 Answer",
-                    border_style="blue",
-                )
-            )
-
-        return Group(*elements)
-
-    with Live(build_display(), console=console, refresh_per_second=4) as live:
-        async for update in executor.execute_mission_streaming(
-            mission=mission,
-            profile=profile,
-            session_id=session_id,
-            planning_strategy=planning_strategy,
-            planning_strategy_params=strategy_params,
-            plugin_path=plugin,
-        ):
-            event_type = update.event_type
-            should_update = False  # Only update display on meaningful changes
-
-            if event_type == "started":
-                status_message = "Initializing..."
-                should_update = True
-
-            elif event_type == "step_start":
-                current_step = update.details.get("step", current_step + 1)
-                current_tool = None
-                status_message = "Thinking..."
-                should_update = True
-
-            elif event_type == "tool_call":
-                current_tool = update.details.get("tool", "unknown")
-                status_message = f"Calling {current_tool}..."
-                should_update = True
-
-            elif event_type == "tool_result":
-                tool = update.details.get("tool", "unknown")
-                success = "✅" if update.details.get("success") else "❌"
-                output = str(update.details.get("output", ""))[:100]
-                tool_results.append(f"{success} {tool}: {output}")
-                current_tool = None
-                status_message = "Processing result..."
-                should_update = True
-
-            elif event_type == "llm_token":
-                # Tokens are accumulated but we let Rich Live auto-refresh
-                # Don't force update on every token to avoid terminal spam
-                if not current_tool:
-                    token = update.details.get("content", "")
-                    if token:
-                        final_answer_tokens.append(token)
-                        status_message = "Generating response..."
-                # No should_update = True - Rich Live refreshes automatically
-
-            elif event_type == "plan_updated":
-                action = update.details.get("action", "updated")
-                if update.details.get("steps"):
-                    plan_steps = [
-                        {"description": step, "status": "PENDING"}
-                        for step in update.details.get("steps", [])
-                    ]
-                    plan_text = None
-                if update.details.get("plan"):
-                    plan_text = update.details.get("plan")
-                    plan_steps = []
-                if update.details.get("step") and update.details.get("status"):
-                    step_index = update.details.get("step") - 1
-                    if 0 <= step_index < len(plan_steps):
-                        plan_steps[step_index]["status"] = update.details.get("status", "PENDING")
-                status_message = f"Plan {action}"
-                should_update = True
-
-            elif event_type == "token_usage":
-                # Accumulate token usage from LLM calls
-                usage = update.details
-                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
-                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
-                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
-                should_update = True
-
-            elif event_type == "final_answer":
-                # If we didn't get streaming tokens, use the full content
-                if not final_answer_tokens:
-                    content = update.details.get("content", "")
-                    if content:
-                        final_answer_tokens.append(content)
-                status_message = "Complete!"
-                should_update = True
-
-            elif event_type == "complete":
-                status_message = "Complete!"
-                # If no final answer yet, use the message
-                if not final_answer_tokens and update.message:
-                    final_answer_tokens.append(update.message)
-                should_update = True
-
-            elif event_type == "error":
-                status_message = f"Error: {update.message}"
-                console.print(f"[red]Error: {update.message}[/red]")
-                should_update = True
-
-            # Only force update on meaningful state changes
-            # For llm_token, Rich Live auto-refreshes at 4fps
-            if should_update:
-                live.update(build_display())
-
-    # Final summary
-    console.print()
-    final_text = "".join(final_answer_tokens) if final_answer_tokens else "No answer generated"
-    console.print(
-        Panel(
-            final_text,
-            title="✅ Final Answer",
-            border_style="green",
-        )
+    renderer = StreamingMissionRenderer(console, mission)
+    event_stream = executor.execute_mission_streaming(
+        mission=mission,
+        profile=profile,
+        session_id=session_id,
+        planning_strategy=planning_strategy,
+        planning_strategy_params=strategy_params,
+        plugin_path=plugin,
     )
-
-    # Display token analytics (prefer detailed callback data, fall back to basic usage)
-    tf_console = TaskforceConsole(console)
-    analytics_summary = _get_callback_summary()
-    if analytics_summary is not None:
-        tf_console.print_token_analytics(analytics_summary)
-    elif total_token_usage["total_tokens"] > 0:
-        token_info = (
-            f"Prompt Tokens: {total_token_usage['prompt_tokens']:,}  |  "
-            f"Completion Tokens: {total_token_usage['completion_tokens']:,}  |  "
-            f"Total: {total_token_usage['total_tokens']:,}"
-        )
-        console.print(
-            Panel(
-                token_info,
-                title="🎯 Token Usage",
-                border_style="cyan",
-            )
-        )
+    await renderer.render(event_stream)
 
 
 def _parse_strategy_params(raw_params: str | None) -> dict | None:
