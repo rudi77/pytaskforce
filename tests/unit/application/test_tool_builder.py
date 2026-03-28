@@ -20,9 +20,29 @@ def mock_factory() -> MagicMock:
 
 
 @pytest.fixture
+def mock_resolver() -> MagicMock:
+    """Create a mock ToolResolverProtocol."""
+    resolver = MagicMock()
+    mock_tool = MagicMock()
+    mock_tool.name = "mock_tool"
+    resolver.resolve.return_value = [mock_tool]
+    resolver.resolve_single.return_value = mock_tool
+    resolver.get_available_tools.return_value = ["mock_tool", "file_read"]
+    return resolver
+
+
+@pytest.fixture
 def builder(mock_factory: MagicMock) -> ToolBuilder:
     """Create a ToolBuilder instance with mock factory."""
     return ToolBuilder(mock_factory)
+
+
+@pytest.fixture
+def builder_with_resolver(
+    mock_factory: MagicMock, mock_resolver: MagicMock
+) -> ToolBuilder:
+    """Create a ToolBuilder with a mock resolver."""
+    return ToolBuilder(mock_factory, tool_resolver=mock_resolver)
 
 
 class TestHydrateMemoryToolSpec:
@@ -241,3 +261,115 @@ class TestInstantiateSubAgentTool:
             kwargs = mock_agent_tool_cls.call_args.kwargs
             assert kwargs["summarize_results"] is False
             assert kwargs["summary_max_length"] == 1500
+
+
+class TestResolverDelegation:
+    """Tests verifying ToolBuilder delegates to resolver when available."""
+
+    def test_create_default_tools_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.create_default_tools(llm_provider)
+        mock_resolver.resolve.assert_called_once_with(
+            ToolBuilder._DEFAULT_TOOL_NAMES
+        )
+        assert len(tools) == 1  # mock returns [mock_tool]
+
+    def test_get_all_native_tools_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.get_all_native_tools(llm_provider)
+        mock_resolver.get_available_tools.assert_called_once()
+        mock_resolver.resolve.assert_called_once_with(
+            ["mock_tool", "file_read"]
+        )
+        assert len(tools) == 1
+
+    def test_create_native_tools_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        config: dict[str, Any] = {"tools": ["file_read", "python"]}
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.create_native_tools(config, llm_provider)
+        mock_resolver.resolve.assert_called_once_with(
+            ["file_read", "python"]
+        )
+        assert len(tools) == 1
+
+    def test_create_specialist_tools_coding_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.create_specialist_tools(
+            "coding", {}, llm_provider
+        )
+        mock_resolver.resolve.assert_called_once_with(
+            ["file_read", "file_write", "powershell", "ask_user"]
+        )
+        assert len(tools) == 1
+
+    def test_create_specialist_tools_rag_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.create_specialist_tools(
+            "rag", {}, llm_provider, user_context={"user_id": "u1"}
+        )
+        mock_resolver.resolve.assert_called_once_with(
+            ["rag_semantic_search", "rag_list_documents", "rag_get_document", "ask_user"]
+        )
+        assert len(tools) == 1
+
+    def test_create_specialist_tools_unknown_raises(
+        self, builder_with_resolver: ToolBuilder
+    ) -> None:
+        llm_provider = AsyncMock()
+        with pytest.raises(ValueError, match="Unknown specialist profile"):
+            builder_with_resolver.create_specialist_tools(
+                "unknown", {}, llm_provider
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_tools_from_allowlist_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = await builder_with_resolver.create_tools_from_allowlist(
+            tool_allowlist=["file_read", "python"],
+            mcp_servers=[],
+            mcp_tool_allowlist=[],
+            llm_provider=llm_provider,
+        )
+        mock_resolver.resolve.assert_called_once_with(
+            ["file_read", "python"]
+        )
+        assert len(tools) == 1
+
+    def test_set_resolver_updates_resolver(
+        self, builder: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        """Test that set_resolver changes behavior from legacy to delegation."""
+        llm_provider = AsyncMock()
+
+        # Without resolver: falls back to ToolRegistry (creates 9 defaults)
+        tools_legacy = builder.create_default_tools(llm_provider)
+        assert len(tools_legacy) == 9
+
+        # Set resolver and verify delegation
+        builder.set_resolver(mock_resolver)
+        tools_resolved = builder.create_default_tools(llm_provider)
+        mock_resolver.resolve.assert_called_once()
+        assert len(tools_resolved) == 1
+
+    def test_create_native_tools_empty_falls_back_to_defaults(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        """Empty tools config should still delegate via create_default_tools."""
+        config: dict[str, Any] = {"tools": []}
+        llm_provider = AsyncMock()
+        builder_with_resolver.create_native_tools(config, llm_provider)
+        mock_resolver.resolve.assert_called_once_with(
+            ToolBuilder._DEFAULT_TOOL_NAMES
+        )

@@ -11,12 +11,14 @@ Handles all tool instantiation, resolution, and filtering logic:
 from __future__ import annotations
 
 import importlib
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.tool_resolver import ToolResolverProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 
 if TYPE_CHECKING:
@@ -35,11 +37,29 @@ class ToolBuilder:
         agent_factory: Reference to the parent factory (needed for
             sub-agent tool creation which requires the factory for
             spawning child agents).
+        tool_resolver: Optional resolver for tool name → instance resolution.
+            When provided, all tool resolution delegates to this resolver
+            instead of creating ad-hoc ToolRegistry instances. This ensures
+            consistent dependency injection across all code paths.
     """
 
-    def __init__(self, agent_factory: AgentFactory) -> None:
+    def __init__(
+        self,
+        agent_factory: AgentFactory,
+        tool_resolver: ToolResolverProtocol | None = None,
+    ) -> None:
         self._factory = agent_factory
+        self._resolver = tool_resolver
         self._logger = logger.bind(component="tool_builder")
+
+    def set_resolver(self, resolver: ToolResolverProtocol | None) -> None:
+        """Set or update the tool resolver for subsequent operations.
+
+        This allows the factory to wire a properly-configured resolver
+        before each tool-building operation, since DI dependencies
+        vary per agent creation context.
+        """
+        self._resolver = resolver
 
     # -------------------------------------------------------------------------
     # High-level builders
@@ -109,12 +129,13 @@ class ToolBuilder:
         tools: list[ToolProtocol] = []
 
         if tool_allowlist:
-            # Resolve only the requested tools directly — no need to
-            # instantiate all 30+ native tools just to filter them.
-            from taskforce.application.tool_registry import ToolRegistry
+            if self._resolver:
+                tools = self._resolver.resolve(tool_allowlist)
+            else:
+                from taskforce.application.tool_registry import ToolRegistry
 
-            registry = ToolRegistry(llm_provider=llm_provider)
-            tools = registry.resolve(tool_allowlist)
+                registry = ToolRegistry(llm_provider=llm_provider)
+                tools = registry.resolve(tool_allowlist)
             for tool in tools:
                 self._logger.debug(
                     "native_tool_added",
@@ -167,14 +188,11 @@ class ToolBuilder:
         if not tools_config:
             return self.create_default_tools(llm_provider)
 
-        tools: list[ToolProtocol] = []
-        for tool_spec in tools_config:
-            resolved_spec = self.hydrate_memory_tool_spec(tool_spec, config)
-            tool = self.instantiate_tool(
-                resolved_spec, llm_provider, user_context=user_context
-            )
-            if tool:
-                tools.append(tool)
+        if self._resolver:
+            tool_names = self._extract_tool_names(tools_config, config)
+            tools = self._resolver.resolve(tool_names)
+        else:
+            tools = self._instantiate_tools_legacy(tools_config, config, llm_provider, user_context)
 
         orchestration_tool = self.build_orchestration_tool(config)
         if orchestration_tool:
@@ -195,6 +213,40 @@ class ToolBuilder:
 
         return tools
 
+    def _extract_tool_names(
+        self,
+        tools_config: list[Any],
+        config: dict[str, Any],
+    ) -> list[str]:
+        """Extract tool names from config specs for resolver-based resolution."""
+        names: list[str] = []
+        for tool_spec in tools_config:
+            if isinstance(tool_spec, str):
+                names.append(tool_spec)
+            elif isinstance(tool_spec, dict):
+                name = tool_spec.get("name") or tool_spec.get("type", "")
+                if name:
+                    names.append(name)
+        return names
+
+    def _instantiate_tools_legacy(
+        self,
+        tools_config: list[Any],
+        config: dict[str, Any],
+        llm_provider: LLMProviderProtocol,
+        user_context: dict[str, Any] | None,
+    ) -> list[ToolProtocol]:
+        """Legacy tool instantiation path (no resolver)."""
+        tools: list[ToolProtocol] = []
+        for tool_spec in tools_config:
+            resolved_spec = self.hydrate_memory_tool_spec(tool_spec, config)
+            tool = self.instantiate_tool(
+                resolved_spec, llm_provider, user_context=user_context
+            )
+            if tool:
+                tools.append(tool)
+        return tools
+
     # Default tool names used by ``create_default_tools``.
     _DEFAULT_TOOL_NAMES: list[str] = [
         "web_search",
@@ -213,15 +265,18 @@ class ToolBuilder:
     ) -> list[ToolProtocol]:
         """Create default tool set (fallback when no config provided).
 
-        Delegates to ``ToolRegistry.resolve()`` to avoid duplicating
-        tool instantiation logic.
+        Delegates to the injected resolver (preferred) or falls back
+        to creating an ad-hoc ``ToolRegistry``.
 
         Args:
-            llm_provider: LLM provider (unused - kept for API compatibility).
+            llm_provider: LLM provider (unused when resolver is set).
 
         Returns:
             List of default tool instances.
         """
+        if self._resolver:
+            return self._resolver.resolve(self._DEFAULT_TOOL_NAMES)
+
         from taskforce.application.tool_registry import ToolRegistry
 
         registry = ToolRegistry(llm_provider=llm_provider)
@@ -232,9 +287,8 @@ class ToolBuilder:
     ) -> list[ToolProtocol]:
         """Get all available native tools.
 
-        Delegates to ``ToolRegistry.resolve()`` to avoid duplicating
-        tool instantiation logic.  Uses the cached registry from the
-        factory when available to avoid redundant instantiation.
+        Delegates to the injected resolver (preferred) or falls back
+        to creating an ad-hoc ``ToolRegistry``.
 
         Args:
             llm_provider: LLM provider for tools that need it.
@@ -242,11 +296,26 @@ class ToolBuilder:
         Returns:
             List of all native tool instances.
         """
+        if self._resolver:
+            all_names = self._resolver.get_available_tools()
+            return self._resolver.resolve(all_names)
+
         from taskforce.application.tool_registry import ToolRegistry
 
         registry = ToolRegistry(llm_provider=llm_provider)
         all_names = registry.get_available_tools()
         return registry.resolve(all_names)
+
+    # Specialist tool name mappings for resolver-based resolution.
+    _SPECIALIST_TOOLS: dict[str, list[str]] = {
+        "coding": ["file_read", "file_write", "powershell", "ask_user"],
+        "rag": [
+            "rag_semantic_search",
+            "rag_list_documents",
+            "rag_get_document",
+            "ask_user",
+        ],
+    }
 
     def create_specialist_tools(
         self,
@@ -256,6 +325,9 @@ class ToolBuilder:
         user_context: dict[str, Any] | None = None,
     ) -> list[ToolProtocol]:
         """Create tools specific to a specialist profile.
+
+        When a resolver is available, delegates to it for consistent DI.
+        Otherwise falls back to direct instantiation.
 
         Args:
             specialist: Specialist profile ("coding" or "rag").
@@ -269,6 +341,29 @@ class ToolBuilder:
         Raises:
             ValueError: If specialist profile is unknown.
         """
+        if specialist not in self._SPECIALIST_TOOLS:
+            raise ValueError(f"Unknown specialist profile: {specialist}")
+
+        if self._resolver:
+            tool_names = self._SPECIALIST_TOOLS[specialist]
+            self._logger.debug(
+                "creating_specialist_tools",
+                specialist=specialist,
+                tools=tool_names,
+                via="resolver",
+            )
+            return self._resolver.resolve(tool_names)
+
+        return self._create_specialist_tools_legacy(
+            specialist, user_context
+        )
+
+    def _create_specialist_tools_legacy(
+        self,
+        specialist: str,
+        user_context: dict[str, Any] | None,
+    ) -> list[ToolProtocol]:
+        """Legacy specialist tool creation via direct imports."""
         from taskforce.infrastructure.tools.native.ask_user_tool import (
             AskUserTool,
         )
@@ -285,53 +380,33 @@ class ToolBuilder:
             self._logger.debug(
                 "creating_specialist_tools",
                 specialist="coding",
-                tools=[
-                    "FileReadTool",
-                    "FileWriteTool",
-                    "PowerShellTool",
-                    "AskUserTool",
-                ],
+                tools=["FileReadTool", "FileWriteTool", "PowerShellTool", "AskUserTool"],
             )
+            return [FileReadTool(), FileWriteTool(), PowerShellTool(), AskUserTool()]
 
-            return [
-                FileReadTool(),
-                FileWriteTool(),
-                PowerShellTool(),
-                AskUserTool(),
-            ]
+        # specialist == "rag"
+        from taskforce.infrastructure.tools.rag.get_document_tool import (
+            GetDocumentTool,
+        )
+        from taskforce.infrastructure.tools.rag.list_documents_tool import (
+            ListDocumentsTool,
+        )
+        from taskforce.infrastructure.tools.rag.semantic_search_tool import (
+            SemanticSearchTool,
+        )
 
-        elif specialist == "rag":
-            from taskforce.infrastructure.tools.rag.get_document_tool import (
-                GetDocumentTool,
-            )
-            from taskforce.infrastructure.tools.rag.list_documents_tool import (
-                ListDocumentsTool,
-            )
-            from taskforce.infrastructure.tools.rag.semantic_search_tool import (
-                SemanticSearchTool,
-            )
-
-            self._logger.debug(
-                "creating_specialist_tools",
-                specialist="rag",
-                tools=[
-                    "SemanticSearchTool",
-                    "ListDocumentsTool",
-                    "GetDocumentTool",
-                    "AskUserTool",
-                ],
-                has_user_context=user_context is not None,
-            )
-
-            return [
-                SemanticSearchTool(user_context=user_context),
-                ListDocumentsTool(user_context=user_context),
-                GetDocumentTool(user_context=user_context),
-                AskUserTool(),
-            ]
-
-        else:
-            raise ValueError(f"Unknown specialist profile: {specialist}")
+        self._logger.debug(
+            "creating_specialist_tools",
+            specialist="rag",
+            tools=["SemanticSearchTool", "ListDocumentsTool", "GetDocumentTool", "AskUserTool"],
+            has_user_context=user_context is not None,
+        )
+        return [
+            SemanticSearchTool(user_context=user_context),
+            ListDocumentsTool(user_context=user_context),
+            GetDocumentTool(user_context=user_context),
+            AskUserTool(),
+        ]
 
     # -------------------------------------------------------------------------
     # Tool instantiation
@@ -346,6 +421,11 @@ class ToolBuilder:
     ) -> ToolProtocol | None:
         """Instantiate a tool from configuration specification.
 
+        .. deprecated::
+            Use a ``ToolResolverProtocol`` (e.g. ``ToolRegistry``) instead.
+            This method has incomplete DI compared to ToolRegistry and will
+            be removed in a future release.
+
         Args:
             tool_spec: Tool specification dict or short tool name.
             llm_provider: LLM provider for tools that need it.
@@ -355,6 +435,12 @@ class ToolBuilder:
         Returns:
             Tool instance or None if instantiation fails.
         """
+        warnings.warn(
+            "ToolBuilder.instantiate_tool() is deprecated. "
+            "Use a ToolResolverProtocol (e.g. ToolRegistry) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         from taskforce.infrastructure.tools.registry import resolve_tool_spec
 
         if isinstance(tool_spec, dict) and tool_spec.get("type") in {

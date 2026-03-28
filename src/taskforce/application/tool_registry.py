@@ -439,11 +439,9 @@ class ToolRegistry:
             if tool_type in ("AuthTool", "CalendarTool", "GmailTool") and self._auth_manager:
                 tool_params["auth_manager"] = self._auth_manager
 
-            # Special handling for ScheduleTool / ReminderTool - inject scheduler
+            # Special handling for ScheduleTool / ReminderTool
             if tool_type in ("ScheduleTool", "ReminderTool") and self._scheduler:
                 tool_params["scheduler"] = self._scheduler
-
-            # Special handling for ReminderTool - inject notification defaults
             if tool_type == "ReminderTool" and self._notification_defaults:
                 tool_params.setdefault(
                     "default_channel",

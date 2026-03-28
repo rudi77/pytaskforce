@@ -412,6 +412,7 @@ class AgentFactory:
             auth_manager=self._auth_manager,
             tool_result_store=infra.get("tool_result_store"),
         )
+        self._tool_builder.set_resolver(tool_registry)
         native_tools = tool_registry.resolve(definition.tools)
         self._add_orchestration_tool(native_tools, base_config)
         self._add_sub_agent_tools(native_tools, definition.sub_agent_specs)
@@ -945,6 +946,7 @@ class AgentFactory:
             scheduler=self._scheduler,
             tool_result_store=infra.get("tool_result_store"),
         )
+        self._tool_builder.set_resolver(tool_registry)
         effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
         all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
 
@@ -1172,6 +1174,7 @@ class AgentFactory:
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,
         )
+        self._tool_builder.set_resolver(registry)
         # Only resolve names the registry actually knows about —
         # plugin-specific tool names are handled by plugin_loader, not here.
         available = set(registry.get_available_tools())
