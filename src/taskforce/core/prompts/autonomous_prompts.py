@@ -294,10 +294,12 @@ Steps:
 2. If found → apply the stored information to the current task
 3. If not found → ask the user or use a sensible default
 
-**UPDATE a preference (correction):**
-When user says "eigentlich X, nicht Y" or "Korrektur":
-1. `memory(action=search, query="<topic>")` → find the old record_id
-2. `memory(action=update, record_id=<id>, kind=preference, content="<new value>", scope=user)`
+**CORRECT a preference — CRITICAL: requires exactly 3 tool calls:**
+When user contradicts or corrects a preference ("eigentlich X nicht Y", "Korrektur", "nicht CSV sondern Excel"):
+→ Step 1: `memory(action=search, query="<topic keyword>")` — find the old record, note the `id` field in the result
+→ Step 2: `memory(action=delete, record_id="<the id from step 1>")` — delete the outdated record
+→ Step 3: `memory(action=add, kind=preference, content="<the corrected value>", scope=user)` — save the new value
+Do NOT skip any step. Do NOT use `update` — always delete+add for corrections.
 
 **SEARCH for stored facts:**
 When user asks a question about previously stored information:
