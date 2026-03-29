@@ -269,7 +269,6 @@ uv run mypy src/taskforce
 uv sync --extra browser           # Playwright browser automation
 uv sync --extra rag               # Azure AI Search
 uv sync --extra pdf               # PDF processing
-uv sync --extra personal-assistant # Google Calendar/API
 uv sync --extra postgres           # PostgreSQL persistence
 uv sync --extra tokenizer          # Tiktoken token counting
 uv sync --extra tracing            # Arize Phoenix OTEL tracing

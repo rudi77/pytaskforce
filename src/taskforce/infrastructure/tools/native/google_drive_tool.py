@@ -122,7 +122,7 @@ class GoogleDriveTool(BaseTool):
             return {
                 "success": False,
                 "error": (
-                    "Google API not available. Install with: " "uv sync --extra personal-assistant"
+                    "Google API not available. Run: uv sync"
                 ),
             }
 

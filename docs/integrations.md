@@ -300,7 +300,7 @@ All three use the same OAuth2 token stored at `~/.taskforce/google_token.json`.
 1. **Install dependencies:**
 
 ```bash
-uv sync --extra personal-assistant
+uv sync
 ```
 
 2. **Create OAuth credentials** in Google Cloud Console (OAuth 2.0 Client ID, type "Desktop app").

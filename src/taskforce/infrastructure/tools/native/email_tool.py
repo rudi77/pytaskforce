@@ -3,12 +3,18 @@
 Provides list, read, send, and draft operations for Gmail messages.
 Uses the same OAuth token as the calendar tool
 (~/.taskforce/google_token.json).
+
+The ``list`` action supports a ``since_last_check`` flag that filters
+out messages already reported in a previous call, enabling reliable
+periodic email-check scheduler jobs without duplicate notifications.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -21,6 +27,11 @@ if TYPE_CHECKING:
     from taskforce.core.interfaces.auth import AuthManagerProtocol
 
 logger = structlog.get_logger(__name__)
+
+# Default location for the seen-message-IDs state file.
+_DEFAULT_SEEN_PATH = Path(".taskforce") / "gmail_seen.json"
+# Cap the persisted set so the file doesn't grow unbounded.
+_MAX_SEEN_IDS = 500
 
 
 class GmailTool(BaseTool):
@@ -35,7 +46,9 @@ class GmailTool(BaseTool):
         "Gmail email tool. Actions: list (search/list emails), "
         "read (get full email content by ID), labels (list all Gmail labels/folders), "
         "send (send an email), draft (create a draft without sending). "
-        "Use labels to discover folders, then list with a query to find messages."
+        "Use labels to discover folders, then list with a query to find messages. "
+        "For periodic checks, use since_last_check=true with list to only "
+        "see emails that haven't been reported yet."
     )
     tool_parameters_schema: dict[str, Any] = {
         "type": "object",
@@ -56,6 +69,13 @@ class GmailTool(BaseTool):
             "max_results": {
                 "type": "integer",
                 "description": "Maximum messages to return (default: 10, max: 25)",
+            },
+            "since_last_check": {
+                "type": "boolean",
+                "description": (
+                    "Only return messages not seen in a previous call (for list). "
+                    "Use this for periodic scheduled checks to avoid duplicates."
+                ),
             },
             "message_id": {
                 "type": "string",
@@ -97,7 +117,7 @@ class GmailTool(BaseTool):
             return {
                 "success": False,
                 "error": (
-                    "Google API not available. Install with: " "uv sync --extra personal-assistant"
+                    "Google API not available. Run: uv sync"
                 ),
             }
 
@@ -207,9 +227,15 @@ async def _list_labels(service: Any) -> dict[str, Any]:
 
 
 async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
-    """List Gmail messages matching a search query."""
+    """List Gmail messages matching a search query.
+
+    When ``since_last_check`` is *True*, previously reported message IDs
+    are filtered out and the current set is persisted so the next call
+    only returns genuinely new messages.
+    """
     query = kwargs.get("query", "")
     max_results = min(int(kwargs.get("max_results", 10)), 25)
+    since_last_check = bool(kwargs.get("since_last_check", False))
 
     result = await asyncio.to_thread(
         lambda: service.users()
@@ -218,18 +244,34 @@ async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]
         .execute()
     )
 
-    message_ids = result.get("messages", [])
-    if not message_ids:
+    message_refs = result.get("messages", [])
+    if not message_refs:
         return {
             "success": True,
             "messages": [],
             "count": 0,
             "query": query,
+            "since_last_check": since_last_check,
         }
+
+    # --- dedup filtering ---
+    seen_ids: set[str] = set()
+    if since_last_check:
+        seen_ids = _load_seen_ids()
+        message_refs = [m for m in message_refs if m["id"] not in seen_ids]
+        if not message_refs:
+            return {
+                "success": True,
+                "messages": [],
+                "count": 0,
+                "query": query,
+                "since_last_check": True,
+                "info": "No new messages since last check.",
+            }
 
     # Fetch snippet/headers for each message for useful preview.
     messages = []
-    for msg_ref in message_ids[:max_results]:
+    for msg_ref in message_refs[:max_results]:
         msg = await asyncio.to_thread(
             lambda mid=msg_ref["id"]: service.users()
             .messages()
@@ -250,12 +292,46 @@ async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]
             }
         )
 
+    # --- persist seen IDs ---
+    if since_last_check:
+        new_ids = {m["id"] for m in messages}
+        _save_seen_ids(seen_ids | new_ids)
+
     return {
         "success": True,
         "messages": messages,
         "count": len(messages),
         "query": query,
+        "since_last_check": since_last_check,
     }
+
+
+# ---------------------------------------------------------------------------
+# Seen-ID persistence (simple JSON file)
+# ---------------------------------------------------------------------------
+
+
+def _load_seen_ids(path: Path | None = None) -> set[str]:
+    """Load previously seen message IDs from disk."""
+    p = path or _DEFAULT_SEEN_PATH
+    if not p.exists():
+        return set()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return set(data.get("seen_ids", []))
+    except Exception:
+        return set()
+
+
+def _save_seen_ids(ids: set[str], path: Path | None = None) -> None:
+    """Persist seen message IDs to disk, pruning if necessary."""
+    p = path or _DEFAULT_SEEN_PATH
+    # Prune to cap — keep the most recent IDs (arbitrary, but bounded).
+    id_list = list(ids)
+    if len(id_list) > _MAX_SEEN_IDS:
+        id_list = id_list[-_MAX_SEEN_IDS:]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"seen_ids": id_list}), encoding="utf-8")
 
 
 async def _read_message(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:

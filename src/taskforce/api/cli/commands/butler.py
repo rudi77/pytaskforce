@@ -223,13 +223,48 @@ async def _manage_rules(
         console.print(f"[red]Unknown action: {action}[/red]")
 
 
-@app.command("schedules")
-def butler_schedules(
-    ctx: typer.Context,
-    action: str = typer.Argument("list", help="Action: list"),
-) -> None:
-    """List butler scheduled jobs."""
+schedules_app = typer.Typer(help="Manage butler scheduled jobs")
+app.add_typer(schedules_app, name="schedules")
+
+
+@schedules_app.callback(invoke_without_command=True)
+def schedules_default(ctx: typer.Context) -> None:
+    """List scheduled jobs (default action)."""
+    if ctx.invoked_subcommand is not None:
+        return
     asyncio.run(_list_schedules())
+
+
+@schedules_app.command("list")
+def schedules_list(ctx: typer.Context) -> None:
+    """List all scheduled jobs."""
+    asyncio.run(_list_schedules())
+
+
+@schedules_app.command("delete")
+def schedules_delete(
+    ctx: typer.Context,
+    job_id: str = typer.Argument(help="Job ID (or prefix) to delete"),
+) -> None:
+    """Delete a scheduled job by ID."""
+    asyncio.run(_delete_schedule(job_id))
+
+
+async def _delete_schedule(job_id: str) -> None:
+    """Delete a scheduled job from the file store."""
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+    store = InfrastructureBuilder().build_job_store(work_dir=".taskforce")
+    jobs = await store.load_all()
+
+    # Support prefix matching
+    match = next((j for j in jobs if j.job_id.startswith(job_id)), None)
+    if not match:
+        console.print(f"[red]No job found matching '{job_id}'.[/red]")
+        raise typer.Exit(1)
+
+    await store.delete(match.job_id)
+    console.print(f"[green]Deleted job '{match.name}' ({match.job_id[:8]})[/green]")
 
 
 async def _list_schedules() -> None:

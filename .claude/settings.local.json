@@ -215,7 +215,8 @@
       "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_lightweight_consolidation.py -q)",
       "Bash(PYTHONPATH=src .venv/Scripts/python -m pytest tests/unit/infrastructure/test_lightweight_consolidation.py tests/ -k \"consolidat\" -q)",
       "Bash(PYTHONPATH=src pytest -q -c /dev/null tests/ -k \"telegram or outbound_sender or scheduler\" --no-header)",
-      "Bash(PYTHONPATH=src pytest -q tests/ -k \"telegram or outbound_sender or scheduler\" --no-header -p asyncio)"
+      "Bash(PYTHONPATH=src pytest -q tests/ -k \"telegram or outbound_sender or scheduler\" --no-header -p asyncio)",
+      "Bash(grep -rn \"\\\\.get\\(\" src/taskforce/application/*.py)"
     ],
     "deny": [
       ".env",

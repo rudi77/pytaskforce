@@ -33,7 +33,7 @@ def main() -> None:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError:
         print("ERROR: Missing dependency. Install with:")
-        print("  uv sync --extra personal-assistant")
+        print("  uv sync")
         print("  # or: pip install google-auth-oauthlib")
         return
 
