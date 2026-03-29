@@ -110,6 +110,101 @@ class TestButlerService:
 
         await butler.stop()
 
+    async def test_schedule_event_dispatches_notification_directly(
+        self, butler: ButlerService
+    ) -> None:
+        """Scheduler events with send_notification action dispatch without rules."""
+        mock_gateway = AsyncMock()
+        mock_gateway.send_notification = AsyncMock(
+            return_value=NotificationResult(
+                success=True, channel="telegram", recipient_id="42"
+            )
+        )
+        butler.set_gateway(mock_gateway)
+        await butler.start()
+
+        event = AgentEvent(
+            source="scheduler",
+            event_type=AgentEventType.SCHEDULE_TRIGGERED,
+            payload={
+                "job_id": "abc123",
+                "job_name": "Daily reminder",
+                "action": {
+                    "action_type": "send_notification",
+                    "params": {
+                        "channel": "telegram",
+                        "recipient_id": "42",
+                        "message": "Hello from scheduler!",
+                    },
+                },
+            },
+        )
+        await butler._on_event(event)
+
+        mock_gateway.send_notification.assert_called_once()
+        call_args = mock_gateway.send_notification.call_args[0][0]
+        assert call_args.message == "Hello from scheduler!"
+        await butler.stop()
+
+    async def test_schedule_event_dispatches_execute_mission(
+        self, butler: ButlerService
+    ) -> None:
+        """Scheduler events with execute_mission action dispatch without rules."""
+        mock_agent_service = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.status = "completed"
+        mock_agent_service.submit = AsyncMock(return_value=mock_result)
+        butler.set_agent_service(mock_agent_service)
+        await butler.start()
+
+        event = AgentEvent(
+            source="scheduler",
+            event_type=AgentEventType.SCHEDULE_TRIGGERED,
+            payload={
+                "job_id": "xyz789",
+                "job_name": "E-Mail-Prüfung mit Benachrichtigung",
+                "action": {
+                    "action_type": "execute_mission",
+                    "params": {},
+                },
+            },
+        )
+        await butler._on_event(event)
+
+        mock_agent_service.submit.assert_called_once()
+        submitted_request = mock_agent_service.submit.call_args[0][0]
+        assert "E-Mail-Prüfung mit Benachrichtigung" in submitted_request.message
+        await butler.stop()
+
+    async def test_schedule_event_with_explicit_mission(
+        self, butler: ButlerService
+    ) -> None:
+        """Scheduler events with explicit mission text use it verbatim."""
+        mock_agent_service = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.status = "completed"
+        mock_agent_service.submit = AsyncMock(return_value=mock_result)
+        butler.set_agent_service(mock_agent_service)
+        await butler.start()
+
+        event = AgentEvent(
+            source="scheduler",
+            event_type=AgentEventType.SCHEDULE_TRIGGERED,
+            payload={
+                "job_id": "m001",
+                "job_name": "Custom job",
+                "action": {
+                    "action_type": "execute_mission",
+                    "params": {"mission": "Check emails and notify me"},
+                },
+            },
+        )
+        await butler._on_event(event)
+
+        submitted_request = mock_agent_service.submit.call_args[0][0]
+        assert submitted_request.message == "Check emails and notify me"
+        await butler.stop()
+
     async def test_add_event_source(self, butler: ButlerService) -> None:
         mock_source = AsyncMock()
         mock_source.source_name = "test_source"

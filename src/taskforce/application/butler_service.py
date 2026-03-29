@@ -215,8 +215,78 @@ class ButlerService:
         return await self._rule_engine.add_rule(rule)
 
     async def _on_event(self, event: AgentEvent) -> None:
-        """Handle an incoming event from any source."""
+        """Handle an incoming event from any source.
+
+        For scheduler events, the job's action is embedded in the event
+        payload and dispatched directly — no matching rule is required.
+        The event is still forwarded to the event router so that
+        additional user-defined rules can fire as well.
+        """
+        from taskforce.core.domain.agent_event import AgentEventType
+        from taskforce.core.domain.schedule import ScheduleActionType
+
+        if event.event_type == AgentEventType.SCHEDULE_TRIGGERED:
+            await self._dispatch_schedule_action(event)
+
         await self._event_router.route(event)
+
+    async def _dispatch_schedule_action(self, event: AgentEvent) -> None:
+        """Dispatch the action embedded in a scheduler event directly.
+
+        Scheduled jobs carry their own action definition in
+        ``event.payload["action"]``.  This method extracts that action
+        and delegates to the appropriate handler so that jobs work even
+        when no trigger rules are configured.
+        """
+        from taskforce.core.domain.schedule import ScheduleActionType
+
+        action_data = event.payload.get("action")
+        if not action_data:
+            logger.warning(
+                "butler_service.schedule_event_missing_action",
+                event_id=event.event_id,
+            )
+            return
+
+        action_type_str = action_data.get("action_type", "")
+        params: dict[str, Any] = action_data.get("params", {})
+        job_name = event.payload.get("job_name", "")
+
+        try:
+            action_type = ScheduleActionType(action_type_str)
+        except ValueError:
+            logger.warning(
+                "butler_service.unknown_schedule_action",
+                action_type=action_type_str,
+                event_id=event.event_id,
+            )
+            return
+
+        logger.info(
+            "butler_service.dispatching_schedule_action",
+            job_name=job_name,
+            action_type=action_type_str,
+        )
+
+        if action_type == ScheduleActionType.SEND_NOTIFICATION:
+            channel = params.get("channel", self._default_channel)
+            recipient_id = params.get("recipient_id", self._default_recipient_id)
+            message = params.get("message", "")
+            if not message:
+                message = f"Scheduled notification: {job_name}"
+            await self._send_notification(channel, recipient_id, message, params)
+
+        elif action_type == ScheduleActionType.EXECUTE_MISSION:
+            mission = params.get("mission", "")
+            if not mission:
+                mission = (
+                    f"Scheduled task '{job_name}' triggered. "
+                    f"Execute the task described by its name and report results."
+                )
+            await self._execute_mission(mission, params)
+
+        elif action_type == ScheduleActionType.RUN_DREAM_CYCLE:
+            await self._run_dream_cycle(params)
 
     async def _send_notification(
         self,
