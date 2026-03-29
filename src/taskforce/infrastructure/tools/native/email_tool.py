@@ -1,6 +1,6 @@
-"""Gmail tool for reading emails.
+"""Gmail tool for reading and sending emails.
 
-Provides list and read operations for Gmail messages.
+Provides list, read, send, and draft operations for Gmail messages.
 Uses the same OAuth token as the calendar tool
 (~/.taskforce/google_token.json).
 """
@@ -24,16 +24,17 @@ logger = structlog.get_logger(__name__)
 
 
 class GmailTool(BaseTool):
-    """Tool for reading Gmail messages.
+    """Tool for reading and sending Gmail messages.
 
-    Supports listing messages (with search queries) and reading
-    individual messages. Requires Google OAuth credentials.
+    Supports listing, reading, sending, and drafting messages.
+    Requires Google OAuth credentials with gmail.send scope.
     """
 
     tool_name = "gmail"
     tool_description = (
-        "Read Gmail messages and labels. Actions: list (search/list emails), "
-        "read (get full email content by ID), labels (list all Gmail labels/folders). "
+        "Gmail email tool. Actions: list (search/list emails), "
+        "read (get full email content by ID), labels (list all Gmail labels/folders), "
+        "send (send an email), draft (create a draft without sending). "
         "Use labels to discover folders, then list with a query to find messages."
     )
     tool_parameters_schema: dict[str, Any] = {
@@ -41,8 +42,8 @@ class GmailTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list", "read", "labels"],
-                "description": "Gmail action: list, read, or labels",
+                "enum": ["list", "read", "labels", "send", "draft"],
+                "description": "Gmail action: list, read, labels, send, or draft",
             },
             "query": {
                 "type": "string",
@@ -59,6 +60,22 @@ class GmailTool(BaseTool):
             "message_id": {
                 "type": "string",
                 "description": "Message ID (required for read action)",
+            },
+            "to": {
+                "type": "string",
+                "description": "Recipient email address (required for send/draft)",
+            },
+            "subject": {
+                "type": "string",
+                "description": "Email subject line (required for send/draft)",
+            },
+            "body": {
+                "type": "string",
+                "description": "Email body text (required for send/draft)",
+            },
+            "cc": {
+                "type": "string",
+                "description": "CC recipients (comma-separated, optional)",
             },
         },
         "required": ["action"],
@@ -85,8 +102,9 @@ class GmailTool(BaseTool):
             }
 
         action = kwargs.get("action")
-        if action not in ("list", "read", "labels"):
-            return {"success": False, "error": "action must be 'list', 'read', or 'labels'"}
+        valid_actions = ("list", "read", "labels", "send", "draft")
+        if action not in valid_actions:
+            return {"success": False, "error": f"action must be one of: {', '.join(valid_actions)}"}
 
         try:
             service = await _build_service_async(build, Credentials, self._auth_manager)
@@ -95,17 +113,43 @@ class GmailTool(BaseTool):
                 return await _list_labels(service)
             if action == "list":
                 return await _list_messages(service, kwargs)
+            if action == "send":
+                return await _send_message(service, kwargs)
+            if action == "draft":
+                return await _create_draft(service, kwargs)
             return await _read_message(service, kwargs)
         except Exception as exc:
             return tool_error_payload(ToolError(f"gmail failed: {exc}", tool_name="gmail"))
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         action = kwargs.get("action")
-        if action not in ("list", "read", "labels"):
-            return False, "action must be 'list', 'read', or 'labels'"
+        valid_actions = ("list", "read", "labels", "send", "draft")
+        if action not in valid_actions:
+            return False, f"action must be one of: {', '.join(valid_actions)}"
         if action == "read" and not kwargs.get("message_id"):
             return False, "message_id is required for read action"
+        if action in ("send", "draft"):
+            if not kwargs.get("to"):
+                return False, "'to' is required for send/draft"
+            if not kwargs.get("subject"):
+                return False, "'subject' is required for send/draft"
+            if not kwargs.get("body"):
+                return False, "'body' is required for send/draft"
         return True, None
+
+    @property
+    def requires_approval(self) -> bool:
+        """Send/draft require approval, read operations don't."""
+        return False
+
+    def approval_risk_level_for(self, **kwargs: Any) -> ApprovalRiskLevel:
+        """Return HIGH risk for send (actually sends email), LOW for read ops."""
+        action = kwargs.get("action", "")
+        if action == "send":
+            return ApprovalRiskLevel.HIGH
+        if action == "draft":
+            return ApprovalRiskLevel.MEDIUM
+        return ApprovalRiskLevel.LOW
 
 
 async def _build_service_async(build: Any, credentials_cls: Any, auth_manager: Any = None) -> Any:
@@ -264,3 +308,57 @@ def _extract_body(payload: dict[str, Any]) -> str:
             return re.sub(r"<[^>]+>", "", html).strip()
 
     return "(no body content)"
+
+
+def _build_email_message(kwargs: dict[str, Any]) -> str:
+    """Build an RFC 2822 email message from parameters."""
+    from email.mime.text import MIMEText
+
+    msg = MIMEText(kwargs["body"], "plain", "utf-8")
+    msg["To"] = kwargs["to"]
+    msg["Subject"] = kwargs["subject"]
+    if kwargs.get("cc"):
+        msg["Cc"] = kwargs["cc"]
+    return msg.as_string()
+
+
+async def _send_message(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Send an email via Gmail API."""
+    raw_message = _build_email_message(kwargs)
+    encoded = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode("ascii")
+
+    result = await asyncio.to_thread(
+        lambda: service.users()
+        .messages()
+        .send(userId="me", body={"raw": encoded})
+        .execute()
+    )
+
+    return {
+        "success": True,
+        "message_id": result.get("id", ""),
+        "to": kwargs["to"],
+        "subject": kwargs["subject"],
+        "info": "Email sent successfully.",
+    }
+
+
+async def _create_draft(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Create a draft email in Gmail without sending."""
+    raw_message = _build_email_message(kwargs)
+    encoded = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode("ascii")
+
+    result = await asyncio.to_thread(
+        lambda: service.users()
+        .drafts()
+        .create(userId="me", body={"message": {"raw": encoded}})
+        .execute()
+    )
+
+    return {
+        "success": True,
+        "draft_id": result.get("id", ""),
+        "to": kwargs["to"],
+        "subject": kwargs["subject"],
+        "info": "Draft created. Open Gmail to review and send.",
+    }
