@@ -27,6 +27,11 @@ class ConsolidationOrchestrator:
     lightweight (cheap) consolidation cycles.
     """
 
+    # Defaults for throttle intervals (overridable via config).
+    _DEFAULT_INTERVAL_MINUTES = 60
+    _DEFAULT_INTERVAL_REQUESTS = 50
+    _DEFAULT_ASSOCIATION_INTERVAL = 25
+
     def __init__(
         self,
         experience_tracker: Any | None = None,
@@ -39,11 +44,11 @@ class ConsolidationOrchestrator:
         # Throttle: LLM consolidation.
         self._last_llm_consolidation: datetime | None = None
         self._requests_since_consolidation: int = 0
-        self._consolidation_interval_minutes: int = 5
-        self._consolidation_interval_requests: int = 10
+        self._consolidation_interval_minutes: int = self._DEFAULT_INTERVAL_MINUTES
+        self._consolidation_interval_requests: int = self._DEFAULT_INTERVAL_REQUESTS
         # Throttle: lightweight association building.
         self._requests_since_associations: int = 0
-        self._association_interval_requests: int = 10
+        self._association_interval_requests: int = self._DEFAULT_ASSOCIATION_INTERVAL
 
     @property
     def experience_tracker(self) -> Any | None:
@@ -90,6 +95,26 @@ class ConsolidationOrchestrator:
                 "auto_capture", True
             ):
                 return
+
+            # Apply throttle settings from config.
+            throttle = consol_config.get("throttle", {})
+            if throttle:
+                self._consolidation_interval_minutes = throttle.get(
+                    "interval_minutes", self._DEFAULT_INTERVAL_MINUTES
+                )
+                self._consolidation_interval_requests = throttle.get(
+                    "interval_requests", self._DEFAULT_INTERVAL_REQUESTS
+                )
+                self._association_interval_requests = throttle.get(
+                    "association_interval_requests",
+                    self._DEFAULT_ASSOCIATION_INTERVAL,
+                )
+                self._logger.info(
+                    "consolidation.throttle_configured",
+                    interval_minutes=self._consolidation_interval_minutes,
+                    interval_requests=self._consolidation_interval_requests,
+                    association_interval=self._association_interval_requests,
+                )
 
             from taskforce.application.infrastructure_builder import (
                 InfrastructureBuilder,

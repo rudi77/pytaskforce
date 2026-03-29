@@ -60,11 +60,14 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             finally:
                 await agent.close()
         except Exception as exc:
+            import traceback
+
             self._logger.error(
                 "sub_agent_spawn_failed",
                 session_id=session_id,
                 error=str(exc),
                 error_type=type(exc).__name__,
+                traceback=traceback.format_exc(),
             )
             return SubAgentResult(
                 session_id=session_id,

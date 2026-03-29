@@ -43,6 +43,10 @@ consolidation:
   strategy: batch
   max_sessions: 50
   model_alias: fast
+  throttle:
+    interval_minutes: 60        # Min minutes between LLM consolidation runs
+    interval_requests: 50       # Min requests between LLM consolidation runs
+    association_interval_requests: 25  # Min requests between lightweight association runs
 
 # Generative dreaming — creates new knowledge by recombining memories.
 # Runs after consolidation or on schedule. See docs/adr/adr-014-generative-dreaming.md

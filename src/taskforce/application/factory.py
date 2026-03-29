@@ -265,6 +265,7 @@ class AgentFactory:
             summary_threshold=context_mgmt.get("summary_threshold"),
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
+            agent_id=definition.agent_id or definition.specialist or definition.base_profile,
         )
 
         if activate_skill_tool is not None:
@@ -483,9 +484,13 @@ class AgentFactory:
         summary_threshold: int | None = None,
         compression_trigger: int | None = None,
         max_input_tokens: int | None = None,
+        agent_id: str | None = None,
     ) -> Agent:
         """Create an Agent instance from resolved infrastructure and settings."""
-        agent_logger = structlog.get_logger().bind(component="agent")
+        agent_logger = structlog.get_logger().bind(
+            component="agent",
+            agent_id=agent_id or "default",
+        )
         return Agent(
             state_manager=infra["state_manager"],
             llm_provider=infra["llm_provider"],
@@ -986,6 +991,7 @@ class AgentFactory:
             infra=infra, all_tools=all_tools,
             system_prompt=final_system_prompt, settings=settings,
             skill_manager=skill_manager,
+            agent_id=specialist,
         )
 
         if activate_skill_tool is not None:
@@ -1129,6 +1135,7 @@ class AgentFactory:
             summary_threshold=context_mgmt.get("summary_threshold"),
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
+            agent_id=manifest.name,
         )
 
         _set_mcp_contexts(agent, mcp_contexts)
