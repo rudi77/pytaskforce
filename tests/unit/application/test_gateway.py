@@ -8,6 +8,7 @@ from taskforce.application.gateway import (
     CommunicationGateway,
     _append_message,
     _build_multimodal_content,
+    _sanitize_reply,
 )
 from taskforce.core.domain.gateway import (
     GatewayOptions,
@@ -1049,3 +1050,49 @@ async def test_handle_message_with_document_attachment(gateway_parts) -> None:
     assert isinstance(user_content, str)
     assert "report.pdf" in user_content
     assert "/tmp/report.pdf" in user_content
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_reply tests
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeReply:
+    """Tests for the reply sanitizer that prevents status strings from reaching users."""
+
+    def test_normal_reply_passes_through(self):
+        assert _sanitize_reply("Hier ist deine Antwort.", "completed") == "Hier ist deine Antwort."
+
+    def test_empty_reply_returns_fallback(self):
+        result = _sanitize_reply("", "completed")
+        assert "Antwort" in result or "Aufgabe" in result
+
+    def test_whitespace_only_returns_fallback(self):
+        result = _sanitize_reply("   \n  ", "failed")
+        assert "Problem" in result
+
+    def test_execution_completed_status_blocked(self):
+        result = _sanitize_reply("Execution completed. Status: completed", "completed")
+        assert "Execution completed" not in result
+        assert len(result) > 20
+
+    def test_execution_completed_failed_blocked(self):
+        result = _sanitize_reply("Execution completed. Status: failed", "failed")
+        assert "Execution completed" not in result
+        assert "Problem" in result
+
+    def test_status_prefix_blocked(self):
+        result = _sanitize_reply("Status: completed", "completed")
+        assert result != "Status: completed"
+
+    def test_exceeded_max_steps_blocked(self):
+        result = _sanitize_reply("Exceeded max steps (30)", "failed")
+        assert "Exceeded" not in result
+
+    def test_none_reply_returns_fallback(self):
+        result = _sanitize_reply(None, "failed")  # type: ignore[arg-type]
+        assert len(result) > 10
+
+    def test_substantive_reply_with_status_word_passes(self):
+        reply = "Der Status deines Pakets: unterwegs. Lieferung morgen erwartet."
+        assert _sanitize_reply(reply, "completed") == reply

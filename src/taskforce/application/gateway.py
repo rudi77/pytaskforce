@@ -39,6 +39,42 @@ if TYPE_CHECKING:
     from taskforce.application.conversation_manager import ConversationManager
     from taskforce.application.request_queue import RequestQueue
 
+import re
+
+# Patterns that indicate a status-string response rather than a real answer.
+# These should never be sent to users as the final reply.
+_STATUS_PATTERNS = [
+    re.compile(r"^Execution completed\.?\s*Status:", re.IGNORECASE),
+    re.compile(r"^Status:\s*(completed|failed|error|unknown)", re.IGNORECASE),
+    re.compile(r"^Exceeded max steps", re.IGNORECASE),
+]
+
+_FALLBACK_MESSAGES = {
+    "completed": (
+        "Ich habe die Aufgabe bearbeitet, konnte aber keine klare Antwort formulieren. "
+        "Kannst du deine Frage noch einmal anders stellen?"
+    ),
+    "failed": (
+        "Bei der Bearbeitung ist leider ein Problem aufgetreten. "
+        "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
+    ),
+}
+
+
+def _sanitize_reply(reply: str, status: str | Any) -> str:
+    """Ensure the reply sent to users is a substantive answer, not a status string."""
+    if not reply or not reply.strip():
+        status_str = status.value if hasattr(status, "value") else str(status)
+        return _FALLBACK_MESSAGES.get(status_str, _FALLBACK_MESSAGES["failed"])
+
+    stripped = reply.strip()
+    for pattern in _STATUS_PATTERNS:
+        if pattern.match(stripped):
+            status_str = status.value if hasattr(status, "value") else str(status)
+            return _FALLBACK_MESSAGES.get(status_str, _FALLBACK_MESSAGES["failed"])
+
+    return reply
+
 
 class CommunicationGateway:
     """Unified gateway for all agent communication channels.
@@ -691,10 +727,11 @@ class CommunicationGateway:
         """Send outbound reply if a sender is configured for the channel."""
         sender = self._outbound_senders.get(channel)
         if sender:
+            sanitized = _sanitize_reply(reply, status)
             try:
                 await sender.send(
                     recipient_id=conversation_id,
-                    message=reply,
+                    message=sanitized,
                     metadata={"status": status},
                 )
             except Exception as exc:

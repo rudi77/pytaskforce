@@ -63,10 +63,26 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
     else:
         status = ExecutionStatus.COMPLETED
 
+    # Build a user-facing message: prefer final answer, then wrap error,
+    # then provide a generic fallback.  Never send raw error strings or
+    # empty messages to users.
+    if final_msg:
+        message = final_msg
+    elif error:
+        message = (
+            f"Ich konnte die Aufgabe leider nicht abschließen: {error}\n"
+            "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
+        )
+    else:
+        message = (
+            "Ich konnte leider keine Antwort generieren. "
+            "Bitte versuche es noch einmal."
+        )
+
     return ExecutionResult(
         session_id=session_id,
         status=status,
-        final_message=final_msg or error,
+        final_message=message,
         execution_history=history,
         pending_question=pending,
         token_usage=usage,
