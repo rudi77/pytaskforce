@@ -91,42 +91,55 @@ async def _stream_final_response(
         }
     )
 
+    # Try fast model first; fall back to main model if content-filtered.
     final = ""
-    if hasattr(agent.llm_provider, "complete_stream"):
-        async for chunk in agent.llm_provider.complete_stream(
-            messages=messages,
-            model="summarizing",
-            tools=None,
-            tool_choice="none",
-            temperature=0.2,
-            metadata={"step_number": None, "phase": "summarizing"},
-        ):
-            if chunk.get("type") == LLMStreamEventType.TOKEN.value and chunk.get("content"):
-                yield StreamEvent(
-                    event_type=EventType.LLM_TOKEN,
-                    data={"content": chunk["content"]},
+    for model_hint in ("summarizing", "reasoning"):
+        try:
+            if hasattr(agent.llm_provider, "complete_stream"):
+                async for chunk in agent.llm_provider.complete_stream(
+                    messages=messages,
+                    model=model_hint,
+                    tools=None,
+                    tool_choice="none",
+                    temperature=0.2,
+                    metadata={"step_number": None, "phase": "summarizing"},
+                ):
+                    if (
+                        chunk.get("type") == LLMStreamEventType.TOKEN.value
+                        and chunk.get("content")
+                    ):
+                        yield StreamEvent(
+                            event_type=EventType.LLM_TOKEN,
+                            data={"content": chunk["content"]},
+                        )
+                        final += chunk["content"]
+                    elif (
+                        chunk.get("type") == LLMStreamEventType.DONE.value
+                        and chunk.get("usage")
+                    ):
+                        yield StreamEvent(
+                            event_type=EventType.TOKEN_USAGE,
+                            data=chunk["usage"],
+                        )
+            else:
+                r = await agent.llm_provider.complete(
+                    messages=messages,
+                    model=model_hint,
+                    tools=None,
+                    tool_choice="none",
+                    temperature=0.2,
+                    metadata={"step_number": None, "phase": "summarizing"},
                 )
-                final += chunk["content"]
-            elif chunk.get("type") == LLMStreamEventType.DONE.value and chunk.get("usage"):
-                yield StreamEvent(
-                    event_type=EventType.TOKEN_USAGE,
-                    data=chunk["usage"],
-                )
-    else:
-        r = await agent.llm_provider.complete(
-            messages=messages,
-            model="summarizing",
-            tools=None,
-            tool_choice="none",
-            temperature=0.2,
-            metadata={"step_number": None, "phase": "summarizing"},
-        )
-        final = r.get("content", "") if r.get("success") else ""
-        if r.get("usage"):
-            yield StreamEvent(
-                event_type=EventType.TOKEN_USAGE,
-                data=r["usage"],
-            )
+                final = r.get("content", "") if r.get("success") else ""
+                if r.get("usage"):
+                    yield StreamEvent(
+                        event_type=EventType.TOKEN_USAGE,
+                        data=r["usage"],
+                    )
+            if final:
+                break  # Success — no need to try fallback model
+        except Exception:
+            final = ""  # Reset and try next model
 
     if final:
         yield StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": final})
@@ -151,31 +164,35 @@ async def _salvage_answer(
     Returns:
         The salvage answer text, or empty string if the LLM call fails.
     """
-    try:
-        salvage_messages = messages + [
-            {
-                "role": MessageRole.USER.value,
-                "content": (
-                    "[System: Execution is ending. You MUST provide your best answer NOW "
-                    "based on all information gathered so far. Do NOT call any tools. "
-                    "Respond with ONLY the answer, nothing else.]"
-                ),
-            }
-        ]
-        result = await agent.llm_provider.complete(
-            messages=salvage_messages,
-            model="summarizing",
-            tools=None,
-            tool_choice=None,
-            temperature=0.0,
-        )
-        answer = (result.get("content") or "").strip()
-        if answer:
-            logger.info("salvage_answer_generated", length=len(answer))
-        return answer
-    except Exception as e:
-        logger.warning("salvage_answer_failed", error=str(e))
-        return ""
+    salvage_messages = messages + [
+        {
+            "role": MessageRole.USER.value,
+            "content": (
+                "[System: Execution is ending. You MUST provide your best answer NOW "
+                "based on all information gathered so far. Do NOT call any tools. "
+                "Respond with ONLY the answer, nothing else.]"
+            ),
+        }
+    ]
+    # Try fast model first, fall back to main model if content-filtered.
+    for model_hint in ("summarizing", "reasoning"):
+        try:
+            result = await agent.llm_provider.complete(
+                messages=salvage_messages,
+                model=model_hint,
+                tools=None,
+                tool_choice=None,
+                temperature=0.0,
+            )
+            answer = (result.get("content") or "").strip()
+            if answer:
+                logger.info("salvage_answer_generated", length=len(answer), model=model_hint)
+                return answer
+        except Exception as e:
+            logger.warning(
+                "salvage_answer_attempt_failed", model=model_hint, error=str(e)
+            )
+    return ""
 
 
 def _rebuild_system_prompt(
