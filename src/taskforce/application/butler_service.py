@@ -222,13 +222,37 @@ class ButlerService:
         The event is still forwarded to the event router so that
         additional user-defined rules can fire as well.
         """
+        import asyncio
+
         from taskforce.core.domain.agent_event import AgentEventType
-        from taskforce.core.domain.schedule import ScheduleActionType
+
+        logger.info(
+            "butler_service.event_received",
+            event_type=event.event_type.value,
+            source=event.source,
+        )
 
         if event.event_type == AgentEventType.SCHEDULE_TRIGGERED:
-            await self._dispatch_schedule_action(event)
+            # Fire-and-forget with explicit error logging so failures
+            # are visible rather than silently swallowed.
+            asyncio.create_task(
+                self._safe_dispatch_schedule_action(event),
+                name=f"schedule-dispatch-{event.event_id}",
+            )
 
         await self._event_router.route(event)
+
+    async def _safe_dispatch_schedule_action(self, event: AgentEvent) -> None:
+        """Wrapper that catches and logs errors from schedule dispatch."""
+        try:
+            await self._dispatch_schedule_action(event)
+        except Exception as exc:
+            logger.error(
+                "butler_service.schedule_dispatch_failed",
+                event_id=event.event_id,
+                error=str(exc),
+                exc_info=True,
+            )
 
     async def _dispatch_schedule_action(self, event: AgentEvent) -> None:
         """Dispatch the action embedded in a scheduler event directly.
@@ -279,9 +303,19 @@ class ButlerService:
         elif action_type == ScheduleActionType.EXECUTE_MISSION:
             mission = params.get("mission", "")
             if not mission:
+                # Build an actionable mission from the job name so the agent
+                # knows *what* to do and *how* to deliver the result.
+                notify_hint = ""
+                if self._default_channel and self._default_recipient_id:
+                    notify_hint = (
+                        f" Send the results to the user as a notification "
+                        f"via the send_notification tool on "
+                        f"{self._default_channel} "
+                        f"(recipient_id: {self._default_recipient_id})."
+                    )
                 mission = (
                     f"Scheduled task '{job_name}' triggered. "
-                    f"Execute the task described by its name and report results."
+                    f"Execute the task described by its name.{notify_hint}"
                 )
             await self._execute_mission(mission, params)
 

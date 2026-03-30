@@ -1,5 +1,6 @@
 """Tests for ButlerService."""
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -140,6 +141,7 @@ class TestButlerService:
             },
         )
         await butler._on_event(event)
+        await asyncio.sleep(0)  # let fire-and-forget task run
 
         mock_gateway.send_notification.assert_called_once()
         call_args = mock_gateway.send_notification.call_args[0][0]
@@ -170,10 +172,12 @@ class TestButlerService:
             },
         )
         await butler._on_event(event)
+        await asyncio.sleep(0)  # let fire-and-forget task run
 
         mock_agent_service.submit.assert_called_once()
         submitted_request = mock_agent_service.submit.call_args[0][0]
         assert "E-Mail-Prüfung mit Benachrichtigung" in submitted_request.message
+        assert "send_notification" in submitted_request.message
         await butler.stop()
 
     async def test_schedule_event_with_explicit_mission(
@@ -200,9 +204,54 @@ class TestButlerService:
             },
         )
         await butler._on_event(event)
+        await asyncio.sleep(0)  # let fire-and-forget task run
 
         submitted_request = mock_agent_service.submit.call_args[0][0]
         assert submitted_request.message == "Check emails and notify me"
+        await butler.stop()
+
+    async def test_scheduler_fires_job_and_dispatches_mission(
+        self, butler: ButlerService
+    ) -> None:
+        """End-to-end: scheduler fires a job → _on_event → _dispatch → _execute_mission."""
+        from taskforce.core.domain.schedule import (
+            ScheduleAction,
+            ScheduleActionType,
+            ScheduleJob,
+            ScheduleType,
+        )
+
+        mock_agent_service = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.status = "completed"
+        mock_agent_service.submit = AsyncMock(return_value=mock_result)
+        butler.set_agent_service(mock_agent_service)
+
+        await butler.start()
+
+        # Add a short-interval job that fires almost immediately
+        job = ScheduleJob(
+            name="Integration email check",
+            schedule_type=ScheduleType.ONE_SHOT,
+            expression=(
+                asyncio.get_event_loop().time().__class__.__module__  # trick: use real datetime
+            ),
+            action=ScheduleAction(
+                action_type=ScheduleActionType.EXECUTE_MISSION,
+                params={},
+            ),
+        )
+        # Manually fire the job through the scheduler's internal method
+        await butler.scheduler._fire_job(job)
+
+        # Give the fire-and-forget task time to run
+        await asyncio.sleep(0.1)
+
+        mock_agent_service.submit.assert_called_once()
+        submitted = mock_agent_service.submit.call_args[0][0]
+        assert "Integration email check" in submitted.message
+        assert "send_notification" in submitted.message
+
         await butler.stop()
 
     async def test_add_event_source(self, butler: ButlerService) -> None:

@@ -119,32 +119,50 @@ class SimpleChatRunner:
             except Exception:
                 pass
 
+            default_channel = notif_defaults.get("default_channel", "telegram")
+            default_recipient_id = notif_defaults.get("default_recipient_id", "")
+
             async def _on_scheduler_event(event: Any) -> None:
-                """Handle scheduler events by sending notifications via gateway."""
+                """Handle scheduler events (notifications and missions)."""
                 payload = event.payload or {}
                 action = payload.get("action", {})
                 action_type = action.get("action_type", "")
-                if action_type != "send_notification":
-                    return
+                params = action.get("params", {})
+                job_name = payload.get("job_name", "")
+
+                logger.info(
+                    "scheduler.event_received",
+                    action_type=action_type,
+                    job_name=job_name,
+                )
+
+                if action_type == "send_notification":
+                    await _handle_send_notification(params, job_name)
+                elif action_type == "execute_mission":
+                    await _handle_execute_mission(params, job_name)
+                else:
+                    logger.debug(
+                        "scheduler.action_type_ignored",
+                        action_type=action_type,
+                    )
+
+            async def _handle_send_notification(
+                params: dict[str, Any], job_name: str
+            ) -> None:
+                """Send a notification via the gateway."""
                 if not self._gateway:
                     logger.warning("scheduler.notification_skipped", reason="no gateway")
                     return
 
                 from taskforce.core.domain.gateway import NotificationRequest
 
-                params = action.get("params", {})
-                channel = params.get("channel") or notif_defaults.get(
-                    "default_channel", "telegram"
-                )
-                recipient_id = params.get("recipient_id") or notif_defaults.get(
-                    "default_recipient_id", ""
-                )
-                message = params.get("message", "") or payload.get("job_name", "")
+                channel = params.get("channel") or default_channel
+                recipient_id = params.get("recipient_id") or default_recipient_id
+                message = params.get("message", "") or job_name
                 if not message:
                     logger.warning(
                         "scheduler.notification_skipped",
                         reason="empty message",
-                        job_id=payload.get("job_id"),
                     )
                     return
                 request = NotificationRequest(
@@ -160,6 +178,47 @@ class SimpleChatRunner:
                         channel=channel,
                         recipient_id=recipient_id,
                         error=result.error,
+                    )
+
+            async def _handle_execute_mission(
+                params: dict[str, Any], job_name: str
+            ) -> None:
+                """Execute an agent mission and send results as notification."""
+                mission = params.get("mission", "")
+                if not mission:
+                    notify_hint = ""
+                    if default_channel and default_recipient_id:
+                        notify_hint = (
+                            f" Send the results to the user as a notification "
+                            f"via the send_notification tool on "
+                            f"{default_channel} "
+                            f"(recipient_id: {default_recipient_id})."
+                        )
+                    mission = (
+                        f"Scheduled task '{job_name}' triggered. "
+                        f"Execute the task described by its name.{notify_hint}"
+                    )
+
+                logger.info(
+                    "scheduler.executing_mission",
+                    mission_preview=mission[:100],
+                )
+
+                try:
+                    result = await self.executor.execute_mission(
+                        mission=mission,
+                        profile=self.profile,
+                    )
+                    logger.info(
+                        "scheduler.mission_completed",
+                        status=result.status,
+                        mission_preview=mission[:100],
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "scheduler.mission_failed",
+                        mission_preview=mission[:100],
+                        error=str(exc),
                     )
 
             self._scheduler = SchedulerService(

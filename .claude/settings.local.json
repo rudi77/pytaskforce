@@ -222,7 +222,9 @@
       "Read(//c/Users/rudi/source/pytaskforce/**)",
       "Bash(done)",
       "Bash(PYTHONPATH=src pytest -q -c /dev/null tests/unit/application/test_butler_service.py -v)",
-      "Bash(PYTHONPATH=src pytest tests/unit/application/test_butler_service.py -v)"
+      "Bash(PYTHONPATH=src pytest tests/unit/application/test_butler_service.py -v)",
+      "Bash(PYTHONPATH=src pytest tests/unit/application/test_butler_service.py::TestButlerService::test_scheduler_fires_job_and_dispatches_mission -v)",
+      "Bash(PYTHONPATH=src pytest tests/unit/api/cli/test_simple_chat.py -v)"
     ],
     "deny": [
       ".env",
