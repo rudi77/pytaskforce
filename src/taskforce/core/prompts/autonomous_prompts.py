@@ -232,7 +232,7 @@ Do NOT attempt multiple retries. Suggest a workaround if one exists.
 When delegating a task that involves an attached file (PDF, image, document), you MUST include the EXACT file path from the `[Attached file: ... saved at: <PATH>]` tag in the mission text. The sub-agent cannot see the original attachment — it can only access files by path.
 
 Example mission text:
-  "Pflege diese Rechnung ein. Dateipfad: C:\Users\rudi\AppData\Local\Temp\tg_abc123.pdf"
+  "Pflege diese Rechnung ein. Dateipfad: C:/Users/rudi/AppData/Local/Temp/tg_abc123.pdf"
 
 NEVER paraphrase or omit the file path. Copy it EXACTLY as shown in the attachment tag.
 
