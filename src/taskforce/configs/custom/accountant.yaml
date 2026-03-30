@@ -26,7 +26,7 @@ context_policy:
   max_chars_per_item: 3000
   max_total_chars: 10000
 
-tool_allowlist:
+tools:
   - accounting_validate
   - accounting_audit
   - memory
