@@ -104,6 +104,8 @@ sub_agents:
     description: "Wissen & Web — Recherche, Faktenprüfung, Quellenvergleich, News, Datensammlung, Briefings und Reports."
   - specialist: coding_agent
     description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
+  - specialist: accountant
+    description: "Buchhaltung — Rechnungsverarbeitung, Kontierung, §14 UStG Pruefung, GoBD-Audit."
 
 tools:
   - file_read
