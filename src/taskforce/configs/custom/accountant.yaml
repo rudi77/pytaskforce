@@ -56,18 +56,25 @@ system_prompt: |
 
   ### 1. PDF/Beleg lesen
 
-  Verwende python mit pypdf. Die Datei kommt meist als Telegram-Download im Temp-Ordner:
+  ZUERST den pdf-processing Skill aktivieren — er stellt Extraktions-Snippets bereit:
+  ```
+  activate_skill(skill_name="pdf-processing")
+  ```
+  Dann den Text extrahieren. Die Datei kommt meist als Telegram-Download im Temp-Ordner.
+  Verwende IMMER den docling-Weg, da Rechnungen oft gescannt sind (kein Textlayer):
+  ```python
+  from docling.document_converter import DocumentConverter
+  path = r"<DATEIPFAD>"
+  result = DocumentConverter().convert(path)
+  text = result.document.export_to_markdown()
+  print(text)
+  ```
+  Nur wenn docling nicht verfuegbar ist, als Fallback pypdf:
   ```python
   from pypdf import PdfReader
   reader = PdfReader(r"<DATEIPFAD>")
   text = "\n".join(p.extract_text() or "" for p in reader.pages)
-  print(text)
-  ```
-  Falls leer (gescannt): docling als Fallback:
-  ```python
-  from docling.document_converter import DocumentConverter
-  result = DocumentConverter().convert(r"<DATEIPFAD>")
-  print(result.document.export_to_markdown())
+  print(text if text.strip() else "LEER - gescanntes PDF, braucht OCR")
   ```
 
   ### 2. Daten extrahieren
