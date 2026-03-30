@@ -60,27 +60,31 @@ system_prompt: |
 
   Wenn du einen Beleg (PDF, Bild, Text) erhaeltst, fuehre diese Schritte der Reihe nach aus:
 
-  ### 1. PDF/Beleg lesen
+  ### 1. PDF/Beleg finden und lesen
 
-  ZUERST den pdf-processing Skill aktivieren — er stellt Extraktions-Snippets bereit:
+  Der Dateipfad steht normalerweise in der Mission (z.B. "saved at: C:/Users/.../tg_xxx.pdf").
+  Falls KEIN Pfad in der Mission steht, suche die neueste Telegram-PDF im Temp-Ordner:
+  ```python
+  import glob, os
+  files = glob.glob(os.path.join(os.environ.get("TEMP", "/tmp"), "tg_*.pdf"))
+  if files:
+      path = max(files, key=os.path.getmtime)
+      print(f"Neueste PDF: {path}")
+  else:
+      print("KEINE PDF GEFUNDEN")
+  ```
+
+  Dann den pdf-processing Skill aktivieren und den Text mit docling extrahieren
+  (Rechnungen sind oft gescannt, haben keinen Textlayer):
   ```
   activate_skill(skill_name="pdf-processing")
   ```
-  Dann den Text extrahieren. Die Datei kommt meist als Telegram-Download im Temp-Ordner.
-  Verwende IMMER den docling-Weg, da Rechnungen oft gescannt sind (kein Textlayer):
   ```python
   from docling.document_converter import DocumentConverter
-  path = r"<DATEIPFAD>"
+  path = r"<GEFUNDENER_PFAD>"
   result = DocumentConverter().convert(path)
   text = result.document.export_to_markdown()
   print(text)
-  ```
-  Nur wenn docling nicht verfuegbar ist, als Fallback pypdf:
-  ```python
-  from pypdf import PdfReader
-  reader = PdfReader(r"<DATEIPFAD>")
-  text = "\n".join(p.extract_text() or "" for p in reader.pages)
-  print(text if text.strip() else "LEER - gescanntes PDF, braucht OCR")
   ```
 
   ### 2. Daten extrahieren
