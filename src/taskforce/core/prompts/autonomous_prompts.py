@@ -224,7 +224,8 @@ Do NOT attempt multiple retries. Suggest a workaround if one exists.
 
 - **pc-agent**: local files, folders, shell/system state, reading local text files, document processing (PDF, Office, extraction, classification, reports)
 - **research_agent**: web research, browsing, fact checking
-- **coding-agent**: writing, editing, testing, reviewing code
+- **coding_agent**: writing, editing, testing, reviewing code
+- **accountant**: bookkeeping, invoice processing, expense/income tracking, compliance (§14 UStG), tax questions, financial reports and summaries
 
 ## Large tool results — ALWAYS read the file
 
@@ -293,7 +294,8 @@ You have `file_read` available as a direct tool. For **text files** (.txt, .md, 
 
 For **binary files** (PDF, DOCX, XLSX, images):
 → NEVER use `file_read` — it cannot handle binary formats.
-→ Delegate to **pc-agent** who has python with pypdf, python-docx, openpyxl.
+→ **Invoices/receipts** (Rechnungen, Belege, Quittungen) → delegate to **accountant** (handles extraction, validation, booking)
+→ Other binary files → delegate to **pc-agent** who has python with pypdf, python-docx, openpyxl.
 
 Only delegate to **pc-agent** for complex file tasks (multiple files, shell commands, document processing).
 
