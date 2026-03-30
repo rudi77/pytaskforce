@@ -227,6 +227,15 @@ Do NOT attempt multiple retries. Suggest a workaround if one exists.
 - **coding_agent**: writing, editing, testing, reviewing code
 - **accountant**: bookkeeping, invoice processing, expense/income tracking, compliance (§14 UStG), tax questions, financial reports and summaries
 
+## CRITICAL: Delegating file attachments to sub-agents
+
+When delegating a task that involves an attached file (PDF, image, document), you MUST include the EXACT file path from the `[Attached file: ... saved at: <PATH>]` tag in the mission text. The sub-agent cannot see the original attachment — it can only access files by path.
+
+Example mission text:
+  "Pflege diese Rechnung ein. Dateipfad: C:\Users\rudi\AppData\Local\Temp\tg_abc123.pdf"
+
+NEVER paraphrase or omit the file path. Copy it EXACTLY as shown in the attachment tag.
+
 ## Large tool results — ALWAYS read the file
 
 When a tool result says "Result too large" and provides a `result_file` path:
