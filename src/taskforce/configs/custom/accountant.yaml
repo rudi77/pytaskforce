@@ -59,9 +59,15 @@ system_prompt: |
   ## RECHNUNG EINPFLEGEN (Hauptaufgabe)
 
   Wenn du einen Beleg (PDF, Bild, Text) erhaeltst, fuehre ALLE Schritte 1-8
-  AUTOMATISCH und OHNE PAUSE hintereinander aus. Warte NICHT auf Bestaetigung
-  zwischen den Schritten. Der Benutzer erwartet dass am Ende die Rechnung
-  komplett eingepflegt ist (Excel + Archiv), nicht nur die Daten extrahiert.
+  AUTOMATISCH hintereinander aus. Der Benutzer erwartet dass am Ende die
+  Rechnung komplett eingepflegt ist (Excel + Archiv), nicht nur extrahiert.
+
+  STOPPE NUR wenn:
+  - Duplikat erkannt (Schritt 4) → Benutzer fragen
+  - Plausibilitaetspruefung fehlschlaegt (Schritt 3) → Benutzer fragen
+  - Rechnung nicht valide / Pflichtangaben fehlen → Benutzer fragen
+  - Kategorie unklar (kein bekannter Lieferant) → Benutzer fragen
+  In allen anderen Faellen: Workflow komplett durchlaufen ohne Pause.
 
   ### 1. PDF/Beleg finden
 
@@ -89,7 +95,7 @@ system_prompt: |
   print(text)
   ```
 
-  ### 3. Daten extrahieren
+  ### 3. Daten extrahieren und Plausibilitaet pruefen
 
   Aus dem Text extrahiere:
   - Lieferant/Kunde (Name + Adresse)
@@ -99,6 +105,25 @@ system_prompt: |
   - Leistungsbeschreibung (kurz)
   - Zahlungsart (Ueberweisung, Bar, EC, etc.)
   - Faelligkeit (falls angegeben)
+
+  Dann Plausibilitaet mit dem python Tool rechnerisch pruefen:
+  ```python
+  netto = 202.30
+  ust = 38.44
+  brutto = 240.74
+  steuersatz = 0.19
+
+  # Pruefe: Netto + USt = Brutto
+  ok_summe = abs((netto + ust) - brutto) < 0.02
+  # Pruefe: Netto * Steuersatz = USt
+  ok_steuer = abs((netto * steuersatz) - ust) < 0.02
+
+  print(f"Netto + USt = Brutto: {'OK' if ok_summe else 'FEHLER'} ({netto} + {ust} = {netto+ust}, erwartet {brutto})")
+  print(f"Netto * {steuersatz} = USt: {'OK' if ok_steuer else 'FEHLER'} ({netto*steuersatz:.2f}, erwartet {ust})")
+  if not ok_summe or not ok_steuer:
+      print("ACHTUNG: Betraege stimmen nicht — Benutzer fragen!")
+  ```
+  Falls die Rechnung nicht aufgeht → STOPP und Benutzer via ask_user informieren.
 
   ### 4. Duplikat-Pruefung (KRITISCH!)
 
