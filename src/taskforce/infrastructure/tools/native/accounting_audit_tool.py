@@ -114,8 +114,12 @@ class AccountingAuditTool(BaseTool):
 
     async def _execute(self, **kwargs: Any) -> dict[str, Any]:
         """Create an immutable audit log entry."""
-        operation: str = kwargs["operation"]
-        details: dict[str, Any] = kwargs["details"]
+        operation: str | None = kwargs.get("operation")
+        details: dict[str, Any] | None = kwargs.get("details")
+        if not operation:
+            return {"success": False, "error": "Missing required parameter: operation"}
+        if not details or not isinstance(details, dict):
+            return {"success": False, "error": "Missing required parameter: details (must be a dict)"}
         document_id: str | None = kwargs.get("document_id")
         decision: str | None = kwargs.get("decision")
         legal_basis: str | None = kwargs.get("legal_basis")

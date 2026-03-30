@@ -264,7 +264,12 @@ class AccountingValidateTool(BaseTool):
 
     async def _execute(self, **kwargs: Any) -> dict[str, Any]:
         """Validate invoice data and return compliance result."""
-        invoice_data: dict[str, Any] = kwargs["invoice_data"]
+        invoice_data: dict[str, Any] | None = kwargs.get("invoice_data")
+        if not invoice_data or not isinstance(invoice_data, dict):
+            return {
+                "success": False,
+                "error": "Missing required parameter: invoice_data (must be a dict with invoice fields)",
+            }
         strict_mode: bool = kwargs.get("strict_mode", False)
 
         data = _map_invoice_fields(invoice_data)
