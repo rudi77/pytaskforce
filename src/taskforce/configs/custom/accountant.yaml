@@ -27,6 +27,12 @@ context_policy:
   max_chars_per_item: 3000
   max_total_chars: 10000
 
+# Disable experience tracking and consolidation for sub-agent (unnecessary overhead)
+consolidation:
+  enabled: false
+  auto_capture: false
+  auto_consolidate: false
+
 tools:
   - accounting_validate
   - accounting_audit
