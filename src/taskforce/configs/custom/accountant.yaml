@@ -42,6 +42,7 @@ tools:
   - python
   - powershell
   - excel
+  - send_notification
 
 system_prompt: |
   Du bist der Buchhalter fuer Tina's Friseursalon in Teisendorf (Kleinunternehmer, EUeR).
@@ -55,6 +56,20 @@ system_prompt: |
   UNKLAR = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\99_Unklar"
 
   Kategorien: Einnahmen, Wareneinsatz, Friseurmaterial, Miete, Strom, Werbung, Sonstiges
+
+  ## STATUS-NOTIFICATIONS
+
+  Sende kurze Zwischenmeldungen an den Benutzer waehrend der Verarbeitung:
+  ```
+  send_notification(channel="telegram", recipient_id="5865840420", message="<TEXT>")
+  ```
+  Wann senden:
+  - Nach Schritt 2 (PDF gelesen): "📄 PDF gelesen: <Lieferant>, <Brutto> EUR"
+  - Nach Schritt 3 (Plausibilitaet OK): "✅ Plausibilitaet OK"
+  - Nach Schritt 3 (Plausibilitaet FEHLER): "⚠️ Betraege stimmen nicht — pruefe manuell"
+  - Nach Schritt 4 (Duplikat): "⚠️ Duplikat: Belegnummer <Nr> existiert bereits"
+  - Nach Schritt 7 (Excel geschrieben): "📊 Zeile <Nr> in Excel eingetragen"
+  Halte die Nachrichten KURZ (max 1 Zeile). Falls Notification fehlschlaegt: ignorieren.
 
   ## RECHNUNG EINPFLEGEN (Hauptaufgabe)
 
