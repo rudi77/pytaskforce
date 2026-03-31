@@ -206,6 +206,11 @@ class LiteLLMService:
     def routing_config(self, value: dict[str, Any]) -> None:
         self._config.routing_config = value
 
+    @property
+    def task_complexity_config(self) -> dict[str, Any]:
+        """Task complexity classification config from YAML."""
+        return self._config.task_complexity_config
+
     # ------------------------------------------------------------------
     # Config loading delegation
     # ------------------------------------------------------------------

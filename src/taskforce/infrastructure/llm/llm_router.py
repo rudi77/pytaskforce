@@ -89,6 +89,8 @@ class LLMRouter:
     rules: list[RoutingRule] = field(default_factory=list)
     default_model: str = "main"
     known_aliases: frozenset[str] = field(default_factory=frozenset)
+    task_complexity_config: dict[str, Any] = field(default_factory=dict)
+    complexity_override: str | None = None
 
     def _select_model(
         self,
@@ -118,45 +120,49 @@ class LLMRouter:
             if cond.startswith("hint:"):
                 hint_name = cond[5:].strip()
                 if model_hint == hint_name:
+                    resolved = self._apply_complexity_override(rule.model)
                     logger.debug(
                         "llm_router.rule_matched",
                         condition=cond,
-                        selected_model=rule.model,
+                        selected_model=resolved,
                     )
-                    return rule.model
+                    return resolved
 
             # Tool presence
             elif cond == "has_tools":
                 if tools:
+                    resolved = self._apply_complexity_override(rule.model)
                     logger.debug(
                         "llm_router.rule_matched",
                         condition=cond,
-                        selected_model=rule.model,
+                        selected_model=resolved,
                         tool_count=len(tools),
                     )
-                    return rule.model
+                    return resolved
 
             elif cond == "no_tools":
                 if not tools:
+                    resolved = self._apply_complexity_override(rule.model)
                     logger.debug(
                         "llm_router.rule_matched",
                         condition=cond,
-                        selected_model=rule.model,
+                        selected_model=resolved,
                     )
-                    return rule.model
+                    return resolved
 
             # Message count threshold
             elif cond.startswith("message_count"):
                 try:
                     threshold = int(cond.split(">")[1].strip())
                     if len(messages) > threshold:
+                        resolved = self._apply_complexity_override(rule.model)
                         logger.debug(
                             "llm_router.rule_matched",
                             condition=cond,
-                            selected_model=rule.model,
+                            selected_model=resolved,
                             message_count=len(messages),
                         )
-                        return rule.model
+                        return resolved
                 except (IndexError, ValueError):
                     logger.warning("llm_router.invalid_rule", condition=cond)
 
@@ -166,7 +172,30 @@ class LLMRouter:
             model_hint=model_hint,
             fallback=self.default_model,
         )
-        return self.default_model
+        resolved = self.default_model
+        return self._apply_complexity_override(resolved)
+
+    def _apply_complexity_override(self, resolved: str) -> str:
+        """Downgrade model for simple tasks.
+
+        When ``complexity_override`` is ``"simple"``, replaces heavy
+        models (main, powerful, powerful-1) with the configured
+        ``simple_model`` alias (typically ``"fast"``/Haiku).
+        """
+        if self.complexity_override != "simple":
+            return resolved
+
+        downgrade_aliases = {"main", "powerful", "powerful-1"}
+        if resolved not in downgrade_aliases:
+            return resolved
+
+        simple_model = self.task_complexity_config.get("simple_model", "fast")
+        logger.debug(
+            "llm_router.complexity_downgrade",
+            original=resolved,
+            override=simple_model,
+        )
+        return simple_model
 
     # ── LLMProviderProtocol implementation ──────────────────────────────
 

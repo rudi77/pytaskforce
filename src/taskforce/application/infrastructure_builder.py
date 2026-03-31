@@ -258,7 +258,9 @@ class InfrastructureBuilder:
         # hints (e.g. "reasoning", "planning") back to the default model.
         routing_config = getattr(provider, "routing_config", {})
         default_model = llm_config.get("default_model", getattr(provider, "default_model", "main"))
-        return build_llm_router(provider, routing_config, default_model)
+        router = build_llm_router(provider, routing_config, default_model)
+        router.task_complexity_config = getattr(provider, "task_complexity_config", {})
+        return router
 
     # -------------------------------------------------------------------------
     # MCP Tools

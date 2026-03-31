@@ -198,9 +198,7 @@ class AgentExecutor:
 
             # Accumulate token usage from TOKEN_USAGE events
             evt = update.event_type
-            is_token_usage = (
-                evt == EventType.TOKEN_USAGE or evt == EventType.TOKEN_USAGE.value
-            )
+            is_token_usage = evt == EventType.TOKEN_USAGE or evt == EventType.TOKEN_USAGE.value
             if is_token_usage:
                 usage = update.details
                 accumulated_usage.prompt_tokens += usage.get("prompt_tokens", 0)
@@ -208,9 +206,7 @@ class AgentExecutor:
                 accumulated_usage.total_tokens += usage.get("total_tokens", 0)
 
             # Keep track of FINAL_ANSWER to avoid leaking generic COMPLETE text
-            is_final_answer = (
-                evt == EventType.FINAL_ANSWER or evt == EventType.FINAL_ANSWER.value
-            )
+            is_final_answer = evt == EventType.FINAL_ANSWER or evt == EventType.FINAL_ANSWER.value
             if is_final_answer:
                 answer = str(update.details.get("content") or update.message or "").strip()
                 if answer:
@@ -306,9 +302,7 @@ class AgentExecutor:
         # Start experience tracking (if enabled)
         self._consolidation.start_session(resolved_session_id, mission, profile)
 
-        yield build_started_update(
-            mission, resolved_session_id, profile, agent_id, plugin_path
-        )
+        yield build_started_update(mission, resolved_session_id, profile, agent_id, plugin_path)
 
         self.logger.info(
             "mission.streaming.started",
@@ -330,6 +324,9 @@ class AgentExecutor:
                 plugin_path=plugin_path,
             )
 
+        # Task complexity classification: decide model tier before execution.
+        await self._maybe_apply_complexity_routing(agent, mission)
+
         await self._maybe_store_conversation_history(
             agent=agent,
             session_id=resolved_session_id,
@@ -339,7 +336,10 @@ class AgentExecutor:
         execution_failed = False
         try:
             async for update in self._execute_streaming(
-                agent, mission, resolved_session_id, user_context=user_context,
+                agent,
+                mission,
+                resolved_session_id,
+                user_context=user_context,
             ):
                 yield update
 
@@ -446,14 +446,8 @@ class AgentExecutor:
                     self._consolidation.observe(event)
 
                     # Auto-promote plain ask_user to channel-targeted
-                    if (
-                        source_channel
-                        and ask_router
-                        and ChannelAskRouter.is_plain_ask_user(event)
-                    ):
-                        ask_router.auto_promote_ask(
-                            event, source_channel, source_conversation_id
-                        )
+                    if source_channel and ask_router and ChannelAskRouter.is_plain_ask_user(event):
+                        ask_router.auto_promote_ask(event, source_channel, source_conversation_id)
 
                     if ask_router and ChannelAskRouter.is_channel_targeted_ask(event):
                         channel_ask = event.data
@@ -511,6 +505,56 @@ class AgentExecutor:
     def _generate_session_id(self) -> str:
         """Generate unique session ID."""
         return str(uuid.uuid4())
+
+    async def _maybe_apply_complexity_routing(self, agent: Agent, mission: str) -> None:
+        """Classify task complexity and configure router for simple tasks.
+
+        When enabled in ``llm_config.yaml`` (``task_complexity.enabled``),
+        runs a fast classification call (Haiku) before execution. If the
+        task is ``simple``, the router downgrades ``main``/``powerful``
+        models to the configured ``simple_model`` (typically ``fast``).
+        """
+        from taskforce.infrastructure.llm.llm_router import LLMRouter
+
+        router = agent.llm_provider if isinstance(agent.llm_provider, LLMRouter) else None
+        if not router:
+            return
+
+        tc_config = router.task_complexity_config
+        if not tc_config.get("enabled", False):
+            return
+
+        from taskforce.application.task_complexity_classifier import (
+            TaskComplexityClassifier,
+        )
+
+        classifier = TaskComplexityClassifier(
+            agent.llm_provider,
+            classification_model=tc_config.get("classification_model", "fast"),
+            max_mission_chars=tc_config.get("max_mission_chars", 500),
+        )
+        result = await classifier.classify(mission)
+
+        if result.is_simple:
+            router.complexity_override = "simple"
+            # Propagate to sub-agent spawners in agent tools
+            self._propagate_complexity_to_spawners(agent, "simple")
+
+        self.logger.info(
+            "task_complexity.classified",
+            level=result.level,
+            confidence=result.confidence,
+            reason=result.reason,
+            model_override=router.complexity_override,
+        )
+
+    @staticmethod
+    def _propagate_complexity_to_spawners(agent: Agent, override: str) -> None:
+        """Set complexity override on all sub-agent spawners in agent tools."""
+        for tool in agent.tools.values():
+            spawner = getattr(tool, "_spawner", None)
+            if spawner and hasattr(spawner, "_complexity_override"):
+                spawner._complexity_override = override
 
     def _resolve_session_id(self, session_id: str | None) -> str:
         """Return an existing session ID or generate a new one."""
@@ -570,7 +614,9 @@ class AgentExecutor:
     ) -> Agent:
         """Create Agent using factory. Delegates to AgentCreationPipeline."""
         return await self._agent_pipeline.create_agent(
-            profile, user_context=user_context, agent_id=agent_id,
+            profile,
+            user_context=user_context,
+            agent_id=agent_id,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             plugin_path=plugin_path,
@@ -580,9 +626,7 @@ class AgentExecutor:
 
     def _handle_cancellation(self, error, session_id, agent_id, plugin_path):
         """Delegate to ExecutionErrorHandler."""
-        return self._error_handler.handle_cancellation(
-            error, session_id, agent_id, plugin_path
-        )
+        return self._error_handler.handle_cancellation(error, session_id, agent_id, plugin_path)
 
     def _handle_streaming_failure(self, error, session_id, agent_id, plugin_path):
         """Delegate to ExecutionErrorHandler."""
@@ -607,6 +651,7 @@ class AgentExecutor:
         from taskforce.application.execution_error_handler import (
             _extract_error_context,
         )
+
         return _extract_error_context(error, session_id, agent_id)
 
     # Progress update delegates (backward-compatible)
@@ -616,6 +661,7 @@ class AgentExecutor:
         from taskforce.application.progress_update_builder import (
             build_started_update,
         )
+
         return build_started_update(mission, session_id, profile, agent_id, plugin_path)
 
     def _stream_event_to_progress_update(self, event):
@@ -623,6 +669,7 @@ class AgentExecutor:
         from taskforce.application.progress_update_builder import (
             stream_event_to_progress_update,
         )
+
         return stream_event_to_progress_update(event)
 
     async def _yield_history_updates(self, result):
@@ -630,6 +677,7 @@ class AgentExecutor:
         from taskforce.application.progress_update_builder import (
             yield_history_updates,
         )
+
         async for update in yield_history_updates(result):
             yield update
 
@@ -638,6 +686,7 @@ class AgentExecutor:
         from taskforce.application.progress_update_builder import (
             build_completion_update,
         )
+
         return build_completion_update(result)
 
     # Channel ask delegates (backward-compatible)
@@ -646,17 +695,20 @@ class AgentExecutor:
     def _is_plain_ask_user(event):
         """Delegate to ChannelAskRouter."""
         from taskforce.application.channel_ask_router import ChannelAskRouter
+
         return ChannelAskRouter.is_plain_ask_user(event)
 
     @staticmethod
     def _is_channel_targeted_ask(event):
         """Delegate to ChannelAskRouter."""
         from taskforce.application.channel_ask_router import ChannelAskRouter
+
         return ChannelAskRouter.is_channel_targeted_ask(event)
 
     async def _route_channel_question(self, **kwargs):
         """Delegate to ChannelAskRouter."""
         from taskforce.application.channel_ask_router import ChannelAskRouter
+
         router = ChannelAskRouter(self._gateway)
         return await router.route_channel_question(**kwargs)
 
@@ -664,12 +716,14 @@ class AgentExecutor:
     def _build_channel_question_sent_update(event):
         """Delegate to ChannelAskRouter."""
         from taskforce.application.channel_ask_router import ChannelAskRouter
+
         return ChannelAskRouter.build_question_sent_update(event)
 
     @staticmethod
     def _build_channel_response_received_update(channel_ask, response):
         """Delegate to ChannelAskRouter."""
         from taskforce.application.channel_ask_router import ChannelAskRouter
+
         return ChannelAskRouter.build_response_received_update(channel_ask, response)
 
     # Agent creation delegates (backward-compatible, kept for tests)
@@ -704,6 +758,4 @@ class AgentExecutor:
         return self._consolidation._should_run_llm_consolidation()
 
     async def _run_lightweight_consolidation(self, agent, mission, **kwargs):
-        return await self._consolidation._run_lightweight_consolidation(
-            agent, mission, **kwargs
-        )
+        return await self._consolidation._run_lightweight_consolidation(agent, mission, **kwargs)
