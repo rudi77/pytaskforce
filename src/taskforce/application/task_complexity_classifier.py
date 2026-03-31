@@ -29,7 +29,8 @@ _CLASSIFICATION_SYSTEM_PROMPT = (
     "code generation, document processing (PDF, invoice, receipt, Rechnung, Beleg), "
     "planning, multi-tool workflows, tasks with attachments or files to process, "
     "delegation to specialist agents, bookkeeping (einpflegen, buchen, Buchung), "
-    "data extraction from documents, Excel data entry from prior context.\n"
+    "data extraction from documents, Excel data entry from prior context, "
+    "follow-up corrections or retries (nochmal, retry, probiers nochmal, anpassen).\n"
     'Reply ONLY with JSON: {"level": "simple" or "complex", '
     '"confidence": 0.0-1.0, "reason": "brief explanation"}'
 )
