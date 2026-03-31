@@ -183,7 +183,8 @@ class ConsolidationOrchestrator:
                     )
 
         # Lightweight (no-LLM) memory consolidation.
-        if agent and not execution_failed:
+        # Skip if consolidation is not enabled (auto_capture=false disables everything).
+        if agent and not execution_failed and self._experience_tracker is not None:
             self._requests_since_associations += 1
             run_associations = (
                 self._requests_since_associations
