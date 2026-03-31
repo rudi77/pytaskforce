@@ -34,12 +34,14 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         work_dir: str | None = None,
         max_steps: int | None = None,
         tool_overrides: list[ToolProtocol] | None = None,
+        propagate_complexity: bool = False,
     ) -> None:
         self._agent_factory = agent_factory
         self._profile = profile
         self._work_dir = work_dir
         self._max_steps = max_steps
         self._tool_overrides = tool_overrides
+        self._propagate_complexity = propagate_complexity
         self._complexity_override: str | None = None
         self._logger = structlog.get_logger().bind(component="SubAgentSpawner")
 
@@ -64,6 +66,9 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 agent.max_steps = self._max_steps
             # Inherit parent's complexity override to sub-agent router
             self._propagate_complexity_override(agent)
+            # Clear stale ask_user state so new missions are not
+            # misinterpreted as answers to a previous question.
+            await self._clear_stale_pause(agent, session_id, spec.mission)
             try:
                 result = await agent.execute(mission=spec.mission, session_id=session_id)
             finally:
@@ -98,8 +103,67 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             error=None if success else result.final_message,
         )
 
+    async def _clear_stale_pause(
+        self, agent: Agent, session_id: str, mission: str
+    ) -> None:
+        """Clear stale ``pending_question`` state so a new mission is not
+        misinterpreted as an answer to a previous ``ask_user`` question.
+
+        When the sub-agent session is deterministic (reused across parent
+        invocations), an old ``ask_user`` pause may still be persisted.
+        If we simply call ``agent.execute(mission=...)``, the resume logic
+        treats the new mission text as the user's answer — which corrupts
+        the conversation and often triggers content-policy violations from
+        the LLM provider.
+
+        This method detects and clears the stale state *before* execute().
+        """
+        try:
+            state = await agent.state_manager.load_state(session_id)
+        except Exception:
+            return  # No state yet — nothing to clear
+
+        if not state or state.get("pending_question") is None:
+            return
+
+        # State has a pending question from a previous run — clear it.
+        for key in [
+            "pending_question",
+            "paused_messages",
+            "paused_tool_call_id",
+            "paused_step",
+            "paused_plan",
+            "paused_plan_step_idx",
+            "paused_plan_iteration",
+            "paused_phase",
+        ]:
+            state.pop(key, None)
+
+        # Also clear conversation history so the new mission starts fresh
+        state.pop("conversation_history", None)
+
+        await agent.state_manager.save_state(session_id, state)
+        self._logger.info(
+            "stale_pause_cleared",
+            session_id=session_id,
+            mission_preview=mission[:80],
+        )
+
     def _propagate_complexity_override(self, agent: Agent) -> None:
-        """Copy parent's complexity classification to sub-agent's router."""
+        """Optionally copy parent's complexity classification to sub-agent's router.
+
+        Disabled by default (``propagate_complexity=False``).  Sub-agents are
+        specialized and need their configured model to work correctly — e.g.
+        the accountant does multi-step OCR + Excel + archival, which fails
+        badly when downgraded to a nano model.
+        """
+        if not self._propagate_complexity:
+            self._logger.debug(
+                "complexity_override_skipped",
+                reason="sub_agents_use_own_model",
+                parent_override=self._complexity_override,
+            )
+            return
         if not self._complexity_override:
             return
         from taskforce.infrastructure.llm.llm_router import LLMRouter

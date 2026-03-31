@@ -907,6 +907,14 @@ def _build_multimodal_content(
             parts.append(
                 {"type": "image_url", "image_url": {"url": att["data_url"]}}
             )
+            # If the image was also saved to disk, add a file reference so
+            # sub-agents (which cannot see inline images) can access the file.
+            if att.get("file_path"):
+                file_path = att["file_path"]
+                file_name = att.get("file_name", "photo.jpg")
+                doc_references.append(
+                    f"[Attached file: {file_name} (image) saved at: {file_path}]"
+                )
         elif att.get("type") == "document":
             file_path = att.get("file_path", "")
             file_name = att.get("file_name", "document")

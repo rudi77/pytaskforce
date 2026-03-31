@@ -107,6 +107,8 @@ sub_agents:
     description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
   - specialist: accountant
     description: "Buchhaltung — Rechnungsverarbeitung, Kontierung, §14 UStG Pruefung, GoBD-Audit."
+  - specialist: vision_ocr
+    description: "Bild-OCR — Liest Bilder (Fotos von Kassenzetteln, Quittungen, Belegen) per LLM-Vision und gibt strukturierte Daten als JSON zurueck."
 
 tools:
   - file_read

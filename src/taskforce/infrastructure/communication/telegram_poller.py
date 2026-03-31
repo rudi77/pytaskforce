@@ -256,6 +256,8 @@ class TelegramPoller:
         attachments: list[dict[str, Any]] = []
 
         # Photos: Telegram sends an array of sizes; take the largest.
+        # We download both as data_url (for multimodal LLM vision) AND
+        # as a temp file (so sub-agents can access via file path).
         photos = message_obj.get("photo")
         if photos:
             largest = photos[-1]
@@ -264,8 +266,15 @@ class TelegramPoller:
                 data_url = await self._file_downloader.download_as_data_url(
                     file_id, mime_type="image/jpeg"
                 )
+                tmp_path = await self._file_downloader.download_to_temp_file(
+                    file_id, file_name="photo.jpg"
+                )
                 if data_url:
-                    attachments.append({"type": "image", "data_url": data_url})
+                    att: dict[str, Any] = {"type": "image", "data_url": data_url}
+                    if tmp_path:
+                        att["file_path"] = tmp_path
+                        att["file_name"] = "photo.jpg"
+                    attachments.append(att)
 
         # Documents (PDF, images sent as file, etc.)
         document = message_obj.get("document")
@@ -278,8 +287,15 @@ class TelegramPoller:
                     data_url = await self._file_downloader.download_as_data_url(
                         file_id, mime_type=mime_type
                     )
+                    tmp_path = await self._file_downloader.download_to_temp_file(
+                        file_id, file_name=file_name
+                    )
                     if data_url:
-                        attachments.append({"type": "image", "data_url": data_url})
+                        att = {"type": "image", "data_url": data_url}
+                        if tmp_path:
+                            att["file_path"] = tmp_path
+                            att["file_name"] = file_name
+                        attachments.append(att)
                 else:
                     tmp_path = await self._file_downloader.download_to_temp_file(
                         file_id, file_name=file_name

@@ -26,7 +26,10 @@ _CLASSIFICATION_SYSTEM_PROMPT = (
     "Simple: single-step lookup, read email, read file, format text, "
     "translate, basic factual Q&A, calendar lookup, set reminder.\n"
     "Complex: multi-step reasoning, research and comparison, analysis, "
-    "code generation, document processing, planning, multi-tool workflows.\n"
+    "code generation, document processing (PDF, invoice, receipt, Rechnung, Beleg), "
+    "planning, multi-tool workflows, tasks with attachments or files to process, "
+    "delegation to specialist agents, bookkeeping (einpflegen, buchen, Buchung), "
+    "data extraction from documents, Excel data entry from prior context.\n"
     'Reply ONLY with JSON: {"level": "simple" or "complex", '
     '"confidence": 0.0-1.0, "reason": "brief explanation"}'
 )
