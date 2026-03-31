@@ -94,6 +94,9 @@ _NON_RETRYABLE_KEYWORDS = (
     "invalid request",
 )
 
+# Keywords that indicate content filter — recoverable by stripping history
+_CONTENT_FILTER_KEYWORDS = ("content_policy", "contentpolicy", "content filter", "content manage")
+
 
 class LiteLLMService:
     """
@@ -424,6 +427,14 @@ class LiteLLMService:
                 )
                 if not should_retry:
                     break
+
+        # Content-policy recovery: strip old messages and retry once
+        if last_error and self._is_content_filter_error(last_error):
+            recovery_result = await self._recover_from_content_filter(
+                messages, model, tools, tool_choice, resolved_model, **kwargs
+            )
+            if recovery_result is not None:
+                return recovery_result
 
         return {
             "success": False,
@@ -825,6 +836,83 @@ class LiteLLMService:
 
         # Check error message keywords
         return any(kw in error_msg for kw in _RETRYABLE_KEYWORDS)
+
+    @staticmethod
+    def _is_content_filter_error(error: Exception) -> bool:
+        """Check if an error is an Azure content-policy violation."""
+        error_msg = str(error).lower()
+        return any(kw in error_msg for kw in _CONTENT_FILTER_KEYWORDS)
+
+    @staticmethod
+    def _strip_messages_for_content_recovery(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Strip conversation history to recover from content-filter blocks.
+
+        Azure's content filter often triggers on accumulated tool results
+        or long conversation histories — not on the latest user message.
+        Keep only system prompt + last 2 user/assistant messages.
+        Drop all tool-role messages (these contain raw data that often
+        triggers the filter).
+        """
+        if not messages:
+            return messages
+
+        system = [m for m in messages if m.get("role") == "system"]
+        non_system = [
+            m for m in messages
+            if m.get("role") in ("user", "assistant") and not m.get("tool_calls")
+        ]
+        # Keep at most the last 2 non-system messages
+        recent = non_system[-2:] if len(non_system) > 2 else non_system
+        return system + recent
+
+    async def _recover_from_content_filter(
+        self,
+        messages: list[dict[str, Any]],
+        model: str | None,
+        tools: list[dict[str, Any]] | None,
+        tool_choice: str | dict[str, Any] | None,
+        resolved_model: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | None:
+        """Attempt recovery from Azure content-policy violation.
+
+        Strips the message history to just system + latest messages and
+        retries once.  Returns the LLM result on success, or None if
+        recovery also fails.
+        """
+        stripped = self._strip_messages_for_content_recovery(messages)
+        if len(stripped) >= len(messages):
+            return None  # Nothing to strip — can't recover
+
+        logger.warning(
+            "llm_content_filter_recovery",
+            original_messages=len(messages),
+            stripped_messages=len(stripped),
+            model=resolved_model,
+        )
+
+        _, _, litellm_kwargs = self._prepare_request(
+            stripped, model, tools, tool_choice, **kwargs
+        )
+
+        try:
+            result = await self._attempt_completion(
+                litellm_kwargs, resolved_model, stripped, tools, attempt=1
+            )
+            logger.info(
+                "llm_content_filter_recovery_success",
+                model=resolved_model,
+            )
+            return result
+        except Exception as recovery_error:
+            logger.error(
+                "llm_content_filter_recovery_failed",
+                model=resolved_model,
+                error=str(recovery_error)[:200],
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Tracing
