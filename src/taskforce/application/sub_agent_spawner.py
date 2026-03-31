@@ -40,6 +40,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         self._work_dir = work_dir
         self._max_steps = max_steps
         self._tool_overrides = tool_overrides
+        self._complexity_override: str | None = None
         self._logger = structlog.get_logger().bind(component="SubAgentSpawner")
 
     async def spawn(self, spec: SubAgentSpec) -> SubAgentResult:
@@ -61,6 +62,8 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 agent.max_steps = spec.max_steps
             elif self._max_steps:
                 agent.max_steps = self._max_steps
+            # Inherit parent's complexity override to sub-agent router
+            self._propagate_complexity_override(agent)
             try:
                 result = await agent.execute(mission=spec.mission, session_id=session_id)
             finally:
@@ -95,6 +98,19 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             error=None if success else result.final_message,
         )
 
+    def _propagate_complexity_override(self, agent: Agent) -> None:
+        """Copy parent's complexity classification to sub-agent's router."""
+        if not self._complexity_override:
+            return
+        from taskforce.infrastructure.llm.llm_router import LLMRouter
+
+        if isinstance(agent.llm_provider, LLMRouter):
+            agent.llm_provider.complexity_override = self._complexity_override
+            self._logger.debug(
+                "complexity_override_propagated",
+                override=self._complexity_override,
+            )
+
     def _apply_tool_overrides(self, agent: Agent) -> None:
         """Replace agent tools with override instances.
 
@@ -110,9 +126,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         agent._planner = None
         agent.tools = tools_dict
         agent._openai_tools = tools_to_openai_format(agent.tools)
-        agent.tool_executor = ToolExecutor(
-            tools=agent.tools, logger=agent.logger
-        )
+        agent.tool_executor = ToolExecutor(tools=agent.tools, logger=agent.logger)
         agent.message_history_manager._openai_tools = agent._openai_tools
         self._logger.debug(
             "tool_overrides_applied",

@@ -61,6 +61,7 @@ class LLMConfigLoader:
         self.logging_config: dict[str, Any] = {}
         self.tracing_config: dict[str, Any] = {}
         self.routing_config: dict[str, Any] = {}
+        self.task_complexity_config: dict[str, Any] = {}
 
         # Eagerly resolve and validate the config file path so that
         # FileNotFoundError is raised immediately (preserving existing behavior).
@@ -157,6 +158,7 @@ class LLMConfigLoader:
         self.logging_config = config.get("logging", {})
         self.tracing_config = config.get("tracing", {})
         self.routing_config = config.get("routing", {})
+        self.task_complexity_config = config.get("task_complexity", {})
         self._config_loaded = True
 
         self.logger.info(

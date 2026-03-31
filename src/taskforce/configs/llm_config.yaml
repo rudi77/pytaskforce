@@ -123,6 +123,17 @@ tracing:
     grpc_endpoint: "http://localhost:4317"
     project_name: "taskforce"
 
+# ── Task Complexity Classification ────────────────────────────────
+# Classifies incoming missions as simple/complex using a fast model.
+# Simple tasks use a cheaper model for the entire session.
+task_complexity:
+  enabled: true
+  classification_model: fast       # Model for the classification call itself
+  simple_model: fast               # Model alias for simple tasks
+  complex_model: main              # Model alias for complex tasks (default)
+  fallback_on_error: complex       # On classification failure: assume complex
+  max_mission_chars: 500           # Truncate mission text for classification
+
 # ── Dynamic LLM Routing (uncomment to enable) ──────────────────────
 # Routes different agent phases to different models automatically.
 # Planning strategies emit phase hints that the LLMRouter matches
