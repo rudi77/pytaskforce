@@ -35,9 +35,13 @@ def build_consolidation_components(
         be ``None`` if consolidation is not enabled.
     """
     consol_config = config.get("consolidation", {})
-    if not consol_config.get("enabled", False) and not consol_config.get(
-        "auto_capture", True
-    ):
+    enabled = consol_config.get("enabled", False) or consol_config.get(
+        "auto_consolidate", False
+    )
+    auto_capture = consol_config.get("auto_capture", True)
+    if not enabled and not auto_capture:
+        return None, None
+    if not auto_capture:
         return None, None
 
     from taskforce.application.tool_builder import ToolBuilder

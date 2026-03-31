@@ -15,10 +15,10 @@ default_model: "powerful-1"
 
 # Model alias mapping: short name → LiteLLM model string
 models:
-  main: "azure/gpt-5.4-mini"
-  fast: "azure/gpt-5.4-nano"
-  powerful: "azure/gpt-5.4-mini"
-  powerful-1: "azure/gpt-5.4-mini"
+  main: "anthropic/claude-sonnet-4-6"
+  fast: "anthropic/claude-haiku-4-5-20251001"
+  powerful: "anthropic/claude-sonnet-4-6"
+  powerful-1: "anthropic/claude-sonnet-4-6"
   legacy: "azure/gpt-4.1"
 
   # ── Anthropic Claude models ─────────────────────────────────────────
@@ -71,15 +71,15 @@ model_params:
   # ── Anthropic Claude models ────────────────────────────────────────
   anthropic/claude-opus-4-6:
     max_tokens: 16384
-    temperature: 0.7
+    temperature: 1.0
 
   anthropic/claude-sonnet-4-6:
-    max_tokens: 8192
-    temperature: 0.7
+    max_tokens: 16384
+    temperature: 1.0
 
   anthropic/claude-haiku-4-5-20251001:
-    max_tokens: 4096
-    temperature: 0.7
+    max_tokens: 8192
+    temperature: 1.0
 
   # ── Examples for other providers ────────────────────────────────────
   #
@@ -92,12 +92,12 @@ model_params:
   #   max_tokens: 4096
 
 # Fallback parameters when no model-specific config matches
+# NOTE: Do NOT set top_p here — Anthropic rejects temperature + top_p together.
+# LiteLLM's drop_params=True should strip unsupported params, but Anthropic
+# validates the combination before LiteLLM can filter.
 default_params:
   temperature: 0.7
   max_tokens: 8000
-  top_p: 1.0
-  frequency_penalty: 0.0
-  presence_penalty: 0.0
 
 # Retry policy for transient API errors
 retry:

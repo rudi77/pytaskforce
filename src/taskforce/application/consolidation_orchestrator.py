@@ -91,9 +91,15 @@ class ConsolidationOrchestrator:
                 return
 
             consol_config = config.get("consolidation", {})
-            if not consol_config.get("enabled", False) and not consol_config.get(
-                "auto_capture", True
-            ):
+            enabled = consol_config.get("enabled", False) or consol_config.get(
+                "auto_consolidate", False
+            )
+            auto_capture = consol_config.get("auto_capture", True)
+            if not enabled and not auto_capture:
+                return
+            # Skip experience tracking if explicitly disabled
+            if not auto_capture:
+                self._initialized = True
                 return
 
             # Apply throttle settings from config.
