@@ -15,10 +15,10 @@ default_model: "powerful-1"
 
 # Model alias mapping: short name → LiteLLM model string
 models:
-  main: "anthropic/claude-sonnet-4-6"
-  fast: "anthropic/claude-haiku-4-5-20251001"
-  powerful: "anthropic/claude-sonnet-4-6"
-  powerful-1: "anthropic/claude-sonnet-4-6"
+  main: "azure/gpt-5.4-mini"
+  fast: "azure/gpt-5.4-nano"
+  powerful: "azure/gpt-5.4-mini"
+  powerful-1: "azure/gpt-5.4-mini"
   legacy: "azure/gpt-4.1"
 
   # ── Anthropic Claude models ─────────────────────────────────────────

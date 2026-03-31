@@ -42,10 +42,10 @@ def setup_azure_env() -> None:
 # Model name mapping: Taskforce alias → Inspect AI model string
 # Inspect AI format: "openai/azure/<deployment-name>"
 AZURE_MODELS = {
-    "main": "openai/azure/gpt-5.2",
-    "fast": "openai/azure/gpt-5-mini",
-    "powerful": "openai/azure/gpt-4.1",
-    "powerful-1": "openai/azure/gpt-5-mini",
+    "main": "openai/azure/gpt-5.4-mini",
+    "fast": "openai/azure/gpt-5.4-nano",
+    "powerful": "openai/azure/gpt-5.4-mini",
+    "powerful-1": "openai/azure/gpt-5.4-mini",
     "legacy": "openai/azure/gpt-4.1",
 }
 
