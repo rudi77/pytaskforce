@@ -205,6 +205,17 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
         "params": {},
     },
+    # Accounting tools
+    "accounting_validate": {
+        "type": "AccountingValidateTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_validate_tool",
+        "params": {},
+    },
+    "accounting_audit": {
+        "type": "AccountingAuditTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_audit_tool",
+        "params": {},
+    },
     # Office document tools
     "docx": {
         "type": "DocxTool",

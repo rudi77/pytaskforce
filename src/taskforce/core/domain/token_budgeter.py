@@ -318,6 +318,13 @@ class TokenBudgeter:
         max_chars = max_chars or self.MAX_TOOL_OUTPUT_CHARS
         preview_parts = []
 
+        # Guard: tool_result might be a list (e.g. from ToolBridge batch calls)
+        if not isinstance(tool_result, dict):
+            preview = str(tool_result)
+            if len(preview) > max_chars:
+                preview = preview[:max_chars] + "..."
+            return f"Output: {preview}"
+
         # Success status
         success = tool_result.get("success", False)
         preview_parts.append(f"Success: {success}")

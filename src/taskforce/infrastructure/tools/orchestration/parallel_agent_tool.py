@@ -41,7 +41,10 @@ class ParallelAgentTool(BaseTool):
         "Use this when you have several independent tasks that can run concurrently. "
         "Each mission can target a different specialist (e.g., 'coding_worker'). "
         "Results are aggregated and returned as a batch. "
-        "Partial failures do not cancel other agents."
+        "Partial failures do not cancel other agents. "
+        "IMPORTANT: Sub-agents cannot see the current conversation. "
+        "Include ALL relevant context in the mission string: file paths, "
+        "user instructions, and any data the sub-agent needs to complete the task."
     )
     tool_parameters_schema = {
         "type": "object",
@@ -57,7 +60,12 @@ class ParallelAgentTool(BaseTool):
                     "properties": {
                         "mission": {
                             "type": "string",
-                            "description": "Clear, specific mission description.",
+                            "description": (
+                                "Clear, specific mission description. "
+                                "MUST include all context the sub-agent needs: "
+                                "file paths, URLs, data extracts, user preferences. "
+                                "The sub-agent cannot see the parent conversation."
+                            ),
                         },
                         "specialist": {
                             "type": "string",

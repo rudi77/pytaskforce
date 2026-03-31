@@ -47,6 +47,12 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             spec.parent_session_id,
             spec.specialist or "generic",
         )
+        self._logger.info(
+            "sub_agent_session",
+            session_id=session_id,
+            specialist=spec.specialist,
+            reusing_session=True,  # Deterministic IDs mean we always try to resume
+        )
         try:
             agent = await self._create_agent(spec)
             if self._tool_overrides:
