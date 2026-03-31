@@ -50,10 +50,16 @@ system_prompt: |
 
   ## FESTE PFADE (immer verwenden!)
 
+  BASIS = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung"
+  EINGANG_PDF = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\01_Eingaenge\Rechnungen_PDF"
+  EINGANG_BILDER = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\01_Eingaenge\Rechnungen_Bilder"
+  EINGANG_SCREENSHOTS = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\01_Eingaenge\Einnahmen_Screenshots"
+  EINGANG_TEXT = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\01_Eingaenge\Einnahmen_Text"
   EXCEL = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\03_Excel\Buchhaltung_Tina.xlsx"
   ARCHIV_AUSGABEN = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\02_Verarbeitet\Ausgaben"
   ARCHIV_EINNAHMEN = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\02_Verarbeitet\Einnahmen"
   UNKLAR = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\99_Unklar"
+  ARBEITSKONTEXT = r"C:\Users\rudi\Documents\Private\Tina\Buchhaltung\.accountant_context.json"
 
   Kategorien: Einnahmen, Wareneinsatz, Friseurmaterial, Miete, Strom, Werbung, Sonstiges
 
