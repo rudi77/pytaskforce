@@ -13,14 +13,11 @@ from typing import Any
 
 import structlog
 
-from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 from taskforce.core.domain.skill_workflow import (
     SkillWorkflow,
     SkillWorkflowExecutor,
     WorkflowContext,
 )
-from taskforce.core.domain.workflow_checkpoint import ResumeEvent
-from taskforce.infrastructure.runtime.workflow_checkpoint_store import FileWorkflowCheckpointStore
 from taskforce.infrastructure.tools.base_tool import BaseTool
 
 ExternalWorkflowCallable = Callable[..., Awaitable[dict[str, Any]]]
@@ -326,79 +323,12 @@ class ActivateSkillTool(BaseTool):
         skill_name: str,
         input_vars: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        """Resolve merged input for resumed workflow executions."""
-        resume_run_id = input_vars.get("resume_run_id")
-        if not isinstance(resume_run_id, str) or not resume_run_id:
-            return input_vars, None
+        """Resolve merged input for resumed workflow executions.
 
-        work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-        service = WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
-        checkpoint = service.get(resume_run_id)
-        if checkpoint is None:
-            raise ValueError(f"Workflow run not found: {resume_run_id}")
-        if checkpoint.workflow_name != skill_name:
-            raise ValueError(
-                f"Workflow run '{resume_run_id}' belongs to '{checkpoint.workflow_name}', not '{skill_name}'"
-            )
-
-        resume_payload = input_vars.get("resume_payload")
-        if not isinstance(resume_payload, dict):
-            raise ValueError("resume_payload must be provided as an object for resumed workflows")
-
-        resumed = service.resume(
-            ResumeEvent(
-                run_id=resume_run_id,
-                input_type=str(input_vars.get("resume_input_type", "human_reply")),
-                payload=resume_payload,
-                sender_metadata=input_vars.get("resume_sender_metadata", {}),
-            )
-        )
-
-        checkpoint_state = resumed.state if isinstance(resumed.state, dict) else {}
-        restored_input = checkpoint_state.get("input_vars", {})
-        if not isinstance(restored_input, dict):
-            restored_input = {}
-        restored_outputs = checkpoint_state.get("outputs", {})
-        if not isinstance(restored_outputs, dict):
-            restored_outputs = {}
-
-        merged_input = {
-            **restored_input,
-            **input_vars,
-            "resume_run_id": resume_run_id,
-            "resume_payload": resume_payload,
-            "checkpoint_outputs": restored_outputs,
-        }
-        return merged_input, resumed.to_dict()
-
-    def _create_wait_checkpoint(
-        self,
-        *,
-        skill_name: str,
-        input_vars: dict[str, Any],
-        waiting_for_input: dict[str, Any],
-        outputs: dict[str, Any],
-    ):
-        """Persist a waiting checkpoint for later resume."""
-        work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-        service = WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
-        return service.create_wait_checkpoint(
-            session_id=str(input_vars.get("session_id", "")),
-            workflow_name=skill_name,
-            node_id=str(waiting_for_input.get("node_id", "unknown_node")),
-            blocking_reason=str(waiting_for_input.get("blocking_reason", "unknown")),
-            required_inputs=dict(waiting_for_input.get("required_inputs", {})),
-            state={
-                "input_vars": input_vars,
-                "outputs": outputs,
-            },
-            question=waiting_for_input.get("question"),
-            run_id=(
-                waiting_for_input.get("run_id")
-                if isinstance(waiting_for_input.get("run_id"), str)
-                else None
-            ),
-        )
+        Workflow resume/checkpoint support has been removed from the core framework.
+        This method now simply returns the input variables unchanged.
+        """
+        return input_vars, None
 
     def _load_workflow_callable(
         self,

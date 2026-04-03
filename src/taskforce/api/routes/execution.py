@@ -24,7 +24,7 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_conversation_manager, get_executor
+from taskforce.api.dependencies import get_executor
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
@@ -512,14 +512,6 @@ async def execute_mission(
                 "conversation_id and conversation_history are mutually exclusive"
             )
 
-        # When conversation_id is provided, load history from ConversationManager.
-        if conv_id:
-            conv_mgr = get_conversation_manager()
-            await conv_mgr.append_message(
-                conv_id, {"role": "user", "content": request.mission}
-            )
-            conversation_history = await conv_mgr.get_messages(conv_id)
-
         result = await executor.execute_mission(
             mission=request.mission,
             profile=request.profile,
@@ -531,13 +523,6 @@ async def execute_mission(
             planning_strategy_params=request.planning_strategy_params,
             plugin_path=None,  # Plugin resolution handled in executor via agent_id
         )
-
-        # Persist assistant reply to conversation.
-        if conv_id:
-            conv_mgr = get_conversation_manager()
-            await conv_mgr.append_message(
-                conv_id, {"role": "assistant", "content": result.final_message}
-            )
 
         return ExecuteMissionResponse(
             session_id=result.session_id,

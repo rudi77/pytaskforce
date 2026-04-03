@@ -62,22 +62,6 @@ class TestToolProtocolCompliance:
 
         _assert_implements(ActivateSkillTool, ToolProtocol)
 
-    def test_reminder_tool_satisfies_tool_protocol(self) -> None:
-        from taskforce.core.interfaces.tools import ToolProtocol
-        from taskforce.infrastructure.tools.native.reminder_tool import (
-            ReminderTool,
-        )
-
-        _assert_implements(ReminderTool, ToolProtocol)
-
-    def test_rule_manager_tool_satisfies_tool_protocol(self) -> None:
-        from taskforce.core.interfaces.tools import ToolProtocol
-        from taskforce.infrastructure.tools.native.rule_manager_tool import (
-            RuleManagerTool,
-        )
-
-        _assert_implements(RuleManagerTool, ToolProtocol)
-
     def test_file_read_tool_satisfies_tool_protocol(self) -> None:
         from taskforce.core.interfaces.tools import ToolProtocol
         from taskforce.infrastructure.tools.native.file_tools import FileReadTool
