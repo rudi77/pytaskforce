@@ -18,10 +18,10 @@ class TestContextPolicy:
     def test_default_policy(self):
         """Test default policy creation."""
         policy = ContextPolicy()
-        assert policy.max_items == 10
-        assert policy.max_chars_per_item == 500
-        assert policy.max_total_chars == 3000
-        assert policy.include_latest_tool_previews_n == 5
+        assert policy.max_items == 6
+        assert policy.max_chars_per_item == 300
+        assert policy.max_total_chars == 1800
+        assert policy.include_latest_tool_previews_n == 3
 
     def test_conservative_default(self):
         """Test conservative default policy."""
