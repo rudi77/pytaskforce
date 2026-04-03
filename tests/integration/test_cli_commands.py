@@ -145,14 +145,6 @@ def test_config_list_command():
     assert result.exit_code in [0, 1]  # May fail if configs not found
 
 
-def test_missions_list_command():
-    """Test missions list command."""
-    result = runner.invoke(app, ["missions", "list"])
-
-    # Should succeed even if no missions directory exists
-    assert result.exit_code == 0
-
-
 def test_profile_flag_global():
     """Test global --profile flag."""
     result = runner.invoke(app, ["--profile", "prod", "version"])
@@ -168,7 +160,7 @@ def test_help_command():
     assert "Taskforce" in result.output
     assert "run" in result.output
     assert "tools" in result.output
-    assert "conversations" in result.output
+    assert "skills" in result.output
 
 
 def test_command_group_help():

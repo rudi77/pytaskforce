@@ -41,7 +41,6 @@ from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
-from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
@@ -90,9 +89,7 @@ class Agent:
         max_steps: int | None = None,
         max_parallel_tools: int | None = None,
         planning_strategy: PlanningStrategy | None = None,
-        runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
         skill_manager: Any | None = None,
-        intent_router: Any | None = None,
         summary_threshold: int | None = None,
         memory_store: MemoryStoreProtocol | None = None,
         memory_context_config: MemoryContextConfig | None = None,
@@ -118,11 +115,8 @@ class Agent:
             max_parallel_tools: Maximum number of tool calls to run concurrently
                       (default: 4)
             planning_strategy: Optional planning strategy override for Agent.
-            runtime_tracker: Optional runtime tracker for heartbeats/checkpoints.
             skill_manager: Optional SkillManager for plugin-based skill activation
                           and automatic skill switching based on tool outputs.
-            intent_router: Optional FastIntentRouter for pre-LLM intent classification.
-                          When provided, allows skipping planning for well-defined intents.
             summary_threshold: Message count threshold for triggering compression
                               (default: 20, lower values compress more aggressively).
             memory_store: Optional memory store for automatic memory injection.
@@ -137,9 +131,7 @@ class Agent:
         self.model_alias = model_alias
         self.tool_result_store = tool_result_store
         self.logger = logger
-        self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
-        self.intent_router = intent_router
 
         # Memory auto-injection
         self._memory_store = memory_store
@@ -219,7 +211,6 @@ class Agent:
         self.state_store = LeanAgentStateStore(
             state_manager=self.state_manager,
             logger=self.logger,
-            runtime_tracker=self.runtime_tracker,
         )
 
         # Resource cleanup helper
@@ -419,27 +410,6 @@ class Agent:
             {"mission_length": len(mission)},
         )
 
-        # Fast Intent Routing: classify intent and activate skill BEFORE planning
-        if self.intent_router and self.skill_manager:
-            match = self.intent_router.classify(mission)
-            if match:  # classify() already checks min_confidence threshold
-                # Activate skill directly, skip planning overhead
-                activated = self.skill_manager.activate_skill(match.skill_name)
-                if activated:
-                    self.logger.info(
-                        "fast_intent_routing",
-                        intent=match.intent,
-                        skill=match.skill_name,
-                        confidence=match.confidence,
-                    )
-                    yield StreamEvent(
-                        event_type=EventType.SKILL_AUTO_ACTIVATED,
-                        data={
-                            "intent": match.intent,
-                            "skill": match.skill_name,
-                            "confidence": match.confidence,
-                        },
-                    )
 
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
@@ -615,10 +585,7 @@ class Agent:
         status: str,
         details: dict[str, Any] | None = None,
     ) -> None:
-        """Record a runtime heartbeat when tracking is enabled."""
-        if not self.runtime_tracker:
-            return
-        await self.runtime_tracker.record_heartbeat(session_id, status, details)
+        """No-op heartbeat (runtime tracking removed from framework core)."""
 
     async def mark_finished(
         self,
@@ -626,10 +593,7 @@ class Agent:
         status: str,
         details: dict[str, Any] | None = None,
     ) -> None:
-        """Record final status for runtime tracking."""
-        if not self.runtime_tracker:
-            return
-        await self.runtime_tracker.mark_finished(session_id, status, details)
+        """No-op finish marker (runtime tracking removed from framework core)."""
 
     async def close(self) -> None:
         """

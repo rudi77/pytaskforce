@@ -521,144 +521,12 @@ class TestBuildMcpTools:
 
 
 # ---------------------------------------------------------------------------
-# Runtime Tracker
-# ---------------------------------------------------------------------------
-
-
-class TestBuildRuntimeTracker:
-    """Tests for build_runtime_tracker."""
-
-    def test_disabled_returns_none(self, builder: InfrastructureBuilder) -> None:
-        config: dict[str, Any] = {"runtime": {"enabled": False}}
-        assert builder.build_runtime_tracker(config) is None
-
-    def test_missing_runtime_config_returns_none(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        assert builder.build_runtime_tracker({}) is None
-
-    def test_memory_store(self, builder: InfrastructureBuilder) -> None:
-        config: dict[str, Any] = {"runtime": {"enabled": True, "store": "memory"}}
-        with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ) as mock_tracker,
-            patch(
-                "taskforce.infrastructure.runtime.InMemoryHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.InMemoryCheckpointStore"
-            ) as mock_cp,
-        ):
-            mock_tracker.return_value = MagicMock()
-            result = builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once()
-            mock_cp.assert_called_once()
-            mock_tracker.assert_called_once()
-            assert result is mock_tracker.return_value
-
-    def test_file_store(self, builder: InfrastructureBuilder) -> None:
-        config: dict[str, Any] = {
-            "runtime": {"enabled": True, "store": "file", "work_dir": "/tmp/rt"}
-        }
-        with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ) as mock_tracker,
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ) as mock_cp,
-        ):
-            mock_tracker.return_value = MagicMock()
-            result = builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with("/tmp/rt")
-            mock_cp.assert_called_once_with("/tmp/rt")
-            assert result is mock_tracker.return_value
-
-    def test_file_store_work_dir_fallback_chain(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        """Falls back to work_dir_override, then persistence.work_dir, then .taskforce."""
-        config: dict[str, Any] = {
-            "runtime": {"enabled": True, "store": "file"},
-            "persistence": {"work_dir": ".from_persistence"},
-        }
-        with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
-        ):
-            builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with(".from_persistence")
-
-    def test_file_store_work_dir_override(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
-        with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
-        ):
-            builder.build_runtime_tracker(config, work_dir_override="/override")
-            mock_hb.assert_called_once_with("/override")
-
-    def test_file_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        """When no work_dir is specified anywhere, defaults to .taskforce."""
-        config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
-        with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
-        ):
-            builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with(".taskforce")
-
-    def test_unknown_store_type_raises(self, builder: InfrastructureBuilder) -> None:
-        config: dict[str, Any] = {"runtime": {"enabled": True, "store": "redis"}}
-        with pytest.raises(ValueError, match="Unknown runtime store type: redis"):
-            builder.build_runtime_tracker(config)
-
-
-# ---------------------------------------------------------------------------
 # Simple Builder Methods (delegation tests)
 # ---------------------------------------------------------------------------
 
 
 class TestSimpleBuilders:
     """Tests for builder methods that delegate to infrastructure constructors."""
-
-    def test_build_message_bus(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.messaging.InMemoryMessageBus"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_message_bus()
-            mock_cls.assert_called_once()
-            assert result is mock_cls.return_value
 
     def test_build_memory_store(self, builder: InfrastructureBuilder) -> None:
         with patch(
@@ -679,44 +547,6 @@ class TestSimpleBuilders:
             builder.build_memory_store()
             mock_cls.assert_called_once_with(".taskforce")
 
-    def test_build_experience_store(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.memory.file_experience_store.FileExperienceStore"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_experience_store(work_dir="/exp")
-            mock_cls.assert_called_once_with("/exp")
-            assert result is mock_cls.return_value
-
-    def test_build_experience_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        with patch(
-            "taskforce.infrastructure.memory.file_experience_store.FileExperienceStore"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            builder.build_experience_store()
-            mock_cls.assert_called_once_with(".taskforce/experiences")
-
-    def test_build_job_store(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.scheduler.job_store.FileJobStore"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_job_store(work_dir="/jobs")
-            mock_cls.assert_called_once_with(work_dir="/jobs")
-            assert result is mock_cls.return_value
-
-    def test_build_job_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        with patch(
-            "taskforce.infrastructure.scheduler.job_store.FileJobStore"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            builder.build_job_store()
-            mock_cls.assert_called_once_with(work_dir=".taskforce")
-
     def test_build_agent_registry(self, builder: InfrastructureBuilder) -> None:
         with (
             patch(
@@ -736,68 +566,6 @@ class TestSimpleBuilders:
             mock_cls.assert_called_once_with(
                 tool_mapper=mock_get_tr.return_value, base_path=Path("/base")
             )
-            assert result is mock_cls.return_value
-
-    def test_build_gateway_components(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.communication.gateway_registry.build_gateway_components"
-        ) as mock_fn:
-            mock_fn.return_value = MagicMock()
-            result = builder.build_gateway_components(work_dir="/gw")
-            mock_fn.assert_called_once_with(work_dir="/gw")
-            assert result is mock_fn.return_value
-
-    def test_build_gateway_components_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        with patch(
-            "taskforce.infrastructure.communication.gateway_registry.build_gateway_components"
-        ) as mock_fn:
-            mock_fn.return_value = MagicMock()
-            builder.build_gateway_components()
-            mock_fn.assert_called_once_with(work_dir=".taskforce")
-
-    def test_build_calendar_event_source(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.event_sources.calendar_source.CalendarEventSource"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_calendar_event_source(
-                poll_interval_seconds=60,
-                lookahead_minutes=30,
-                calendar_id="test@cal",
-                credentials_file="/creds.json",
-            )
-            mock_cls.assert_called_once_with(
-                poll_interval_seconds=60,
-                lookahead_minutes=30,
-                calendar_id="test@cal",
-                credentials_file="/creds.json",
-            )
-            assert result is mock_cls.return_value
-
-    def test_build_calendar_event_source_defaults(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        with patch(
-            "taskforce.infrastructure.event_sources.calendar_source.CalendarEventSource"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            builder.build_calendar_event_source()
-            mock_cls.assert_called_once_with(
-                poll_interval_seconds=300,
-                lookahead_minutes=60,
-                calendar_id="primary",
-                credentials_file=None,
-            )
-
-    def test_build_webhook_event_source(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.event_sources.webhook_source.WebhookEventSource"
-        ) as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_webhook_event_source()
-            mock_cls.assert_called_once()
             assert result is mock_cls.return_value
 
 

@@ -65,14 +65,12 @@ class SimpleChatRunner:
         stream: bool,
         user_context: dict[str, Any] | None,
         telegram_polling: bool = False,
-        conversation_manager: Any | None = None,
     ):
         self.session_id = session_id
         self.profile = profile
         self.agent = agent
         self.stream = stream
         self.user_context = user_context
-        self.telegram_polling = telegram_polling
         self.console = Console(theme=TASKFORCE_THEME)
         self.executor = AgentExecutor()
         self.agent_registry = AgentRegistry()
@@ -82,220 +80,7 @@ class SimpleChatRunner:
         self._skill_service: SkillService | None = None
         self._context_service = ContextDisplayService()
         self._prompt_session: PromptSession[str] | None = None
-        self._telegram_poller: Any | None = None
-        self._gateway: Any | None = None
-        self._scheduler: Any | None = None
-        self._conversation_manager = conversation_manager
         self._conversation_id: str | None = None
-
-        # Wire up scheduler for ScheduleTool / ReminderTool
-        self._setup_scheduler()
-
-        # Wire up Communication Gateway for channel-targeted ask_user
-        self._setup_gateway()
-
-    def _setup_scheduler(self) -> None:
-        """Build a SchedulerService so ScheduleTool/ReminderTool can create jobs.
-
-        When a scheduled job fires, the notification callback sends the
-        message via the CommunicationGateway (wired later in _setup_gateway).
-        """
-        import os
-
-        try:
-            from taskforce.infrastructure.scheduler.scheduler_service import (
-                SchedulerService,
-            )
-
-            work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-
-            # Load notification defaults from butler profile for fallback.
-            notif_defaults: dict[str, str] = {}
-            try:
-                from taskforce.application.profile_loader import ProfileLoader
-
-                butler_cfg = ProfileLoader(self.executor.factory.config_dir).load("butler")
-                notif_defaults = butler_cfg.get("notifications", {})
-            except Exception:
-                pass
-
-            default_channel = notif_defaults.get("default_channel", "telegram")
-            default_recipient_id = notif_defaults.get("default_recipient_id", "")
-
-            async def _on_scheduler_event(event: Any) -> None:
-                """Handle scheduler events (notifications and missions)."""
-                payload = event.payload or {}
-                action = payload.get("action", {})
-                action_type = action.get("action_type", "")
-                params = action.get("params", {})
-                job_name = payload.get("job_name", "")
-
-                logger.info(
-                    "scheduler.event_received",
-                    action_type=action_type,
-                    job_name=job_name,
-                )
-
-                if action_type == "send_notification":
-                    await _handle_send_notification(params, job_name)
-                elif action_type == "execute_mission":
-                    await _handle_execute_mission(params, job_name)
-                else:
-                    logger.debug(
-                        "scheduler.action_type_ignored",
-                        action_type=action_type,
-                    )
-
-            async def _handle_send_notification(
-                params: dict[str, Any], job_name: str
-            ) -> None:
-                """Send a notification via the gateway."""
-                if not self._gateway:
-                    logger.warning("scheduler.notification_skipped", reason="no gateway")
-                    return
-
-                from taskforce.core.domain.gateway import NotificationRequest
-
-                channel = params.get("channel") or default_channel
-                recipient_id = params.get("recipient_id") or default_recipient_id
-                message = params.get("message", "") or job_name
-                if not message:
-                    logger.warning(
-                        "scheduler.notification_skipped",
-                        reason="empty message",
-                    )
-                    return
-                request = NotificationRequest(
-                    channel=channel,
-                    recipient_id=recipient_id,
-                    message=message,
-                    metadata={},
-                )
-                result = await self._gateway.send_notification(request)
-                if not result.success:
-                    logger.error(
-                        "scheduler.notification_failed",
-                        channel=channel,
-                        recipient_id=recipient_id,
-                        error=result.error,
-                    )
-
-            async def _handle_execute_mission(
-                params: dict[str, Any], job_name: str
-            ) -> None:
-                """Execute an agent mission and send results as notification."""
-                mission = params.get("mission", "")
-                if not mission:
-                    notify_hint = ""
-                    if default_channel and default_recipient_id:
-                        notify_hint = (
-                            f" Send the results to the user as a notification "
-                            f"via the send_notification tool on "
-                            f"{default_channel} "
-                            f"(recipient_id: {default_recipient_id})."
-                        )
-                    mission = (
-                        f"Scheduled task '{job_name}' triggered. "
-                        f"Execute the task described by its name.{notify_hint}"
-                    )
-
-                logger.info(
-                    "scheduler.executing_mission",
-                    mission_preview=mission[:100],
-                )
-
-                try:
-                    result = await self.executor.execute_mission(
-                        mission=mission,
-                        profile=self.profile,
-                    )
-                    logger.info(
-                        "scheduler.mission_completed",
-                        status=result.status,
-                        mission_preview=mission[:100],
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "scheduler.mission_failed",
-                        mission_preview=mission[:100],
-                        error=str(exc),
-                    )
-
-            self._scheduler = SchedulerService(
-                work_dir=work_dir,
-                event_callback=_on_scheduler_event,
-            )
-            self.executor.factory.set_scheduler(self._scheduler)
-        except Exception as exc:
-            logger.warning("simple_chat.scheduler_setup_failed", error=str(exc))
-
-    def _setup_gateway(self) -> None:
-        """Build Communication Gateway when channel credentials are available.
-
-        When ``TELEGRAM_BOT_TOKEN`` is set the CLI can send outbound
-        Telegram messages and receive replies via long-polling — no
-        webhook server required.
-        """
-        import os
-
-        if not self.telegram_polling:
-            return
-
-        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        if not telegram_token:
-            self.console.print(
-                "[warning]⚠️ --telegram-polling enabled, but TELEGRAM_BOT_TOKEN is not set[/warning]"
-            )
-            return
-
-        try:
-            from taskforce.application.gateway import CommunicationGateway
-            from taskforce.infrastructure.communication.gateway_registry import (
-                build_gateway_components,
-            )
-            from taskforce.infrastructure.communication.telegram_poller import (
-                TelegramPoller,
-            )
-            from taskforce.infrastructure.persistence.pending_channel_store import (
-                FilePendingChannelQuestionStore,
-            )
-
-            work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-            components = build_gateway_components(work_dir=work_dir)
-            pending_store = FilePendingChannelQuestionStore(work_dir=work_dir)
-
-            gateway = CommunicationGateway(
-                executor=self.executor,
-                conversation_store=components.conversation_store,
-                recipient_registry=components.recipient_registry,
-                outbound_senders=components.outbound_senders,
-                pending_channel_store=pending_store,
-                max_conversation_history=30,
-            )
-            self.executor._gateway = gateway
-            self.executor.factory.set_gateway(gateway)
-            self._gateway = gateway
-
-            # Patch gateway into already-instantiated agent tools.
-            # Agent.tools is a dict[str, ToolProtocol].
-            if self.agent and hasattr(self.agent, "tools"):
-                notif_tool = self.agent.tools.get("send_notification")
-                if notif_tool is not None:
-                    notif_tool._gateway = gateway
-
-            # Prepare Telegram poller (started in run())
-            sender = components.outbound_senders.get("telegram")
-            self._telegram_poller = TelegramPoller(
-                bot_token=telegram_token,
-                pending_store=pending_store,
-                outbound_sender=sender,
-                recipient_registry=components.recipient_registry,
-                inbound_message_handler=self._handle_telegram_inbound_message,
-            )
-
-            self.console.print("[info]📡 Telegram channel configured (long-polling mode)[/info]")
-        except Exception as exc:
-            self.console.print(f"[warning]⚠️ Telegram setup failed: {exc}[/warning]")
 
     @property
     def prompt_session(self) -> PromptSession[str]:
@@ -319,19 +104,6 @@ class SimpleChatRunner:
         self._print_banner()
         self._print_session_info()
 
-        # Start a fresh conversation on each CLI launch.
-        # The previous conversation is auto-archived by create_new().
-        if self._conversation_manager:
-            self._conversation_id = await self._conversation_manager.create_new("cli")
-
-        # Start scheduler for reminder/schedule tools
-        if self._scheduler:
-            await self._scheduler.start()
-
-        # Start Telegram long-polling if configured
-        if self._telegram_poller:
-            await self._telegram_poller.start()
-
         try:
             while True:
                 message = await self._read_input()
@@ -346,37 +118,7 @@ class SimpleChatRunner:
 
                 await self._handle_chat_message(message)
         finally:
-            if self._telegram_poller:
-                await self._telegram_poller.stop()
-            if self._scheduler:
-                await self._scheduler.stop()
-
-    async def _handle_telegram_inbound_message(
-        self,
-        conversation_id: str,
-        sender_id: str,
-        message: str,
-        attachments: list[dict] | None = None,
-    ) -> None:
-        """Route unsolicited Telegram messages through CommunicationGateway."""
-        if not self._gateway:
-            return
-
-        from taskforce.core.domain.gateway import GatewayOptions, InboundMessage
-
-        metadata: dict = {}
-        if attachments:
-            metadata["attachments"] = attachments
-
-        inbound = InboundMessage(
-            channel="telegram",
-            conversation_id=conversation_id,
-            message=message,
-            sender_id=sender_id,
-            metadata=metadata,
-        )
-        options = GatewayOptions(profile=self.profile, user_context=self.user_context)
-        await self._gateway.handle_message(inbound, options)
+            pass
 
     async def _read_input(self) -> str:
         """Read input from the user with multi-line paste support."""
@@ -583,30 +325,14 @@ class SimpleChatRunner:
         return True
 
     async def _handle_chat_message(self, content: str) -> None:
-        """Handle a regular chat message.
-
-        When a ``ConversationManager`` is wired (ADR-016 persistent mode),
-        it is the **primary** store for conversation history. The legacy
-        session-based state is still written for backward compatibility.
-        """
+        """Handle a regular chat message."""
         user_msg = {"role": MessageRole.USER.value, "content": content}
 
-        # Primary: persist to ConversationManager when available.
-        if self._conversation_manager and self._conversation_id:
-            await self._conversation_manager.append_message(
-                self._conversation_id, user_msg,
-            )
-            # Load history from conversation manager (source of truth).
-            history = await self._conversation_manager.get_messages(
-                self._conversation_id,
-            )
-        else:
-            # Fallback: legacy session-based history.
-            state = await self.agent.state_manager.load_state(self.session_id) or {}
-            history = state.get("conversation_history", [])
-            history.append(user_msg)
-            state["conversation_history"] = history
-            await self.agent.state_manager.save_state(self.session_id, state)
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        history = state.get("conversation_history", [])
+        history.append(user_msg)
+        state["conversation_history"] = history
+        await self.agent.state_manager.save_state(self.session_id, state)
 
         await self._stream_response(content, history)
 
@@ -763,9 +489,6 @@ class SimpleChatRunner:
         final_message = "".join(final_tokens) if final_tokens else "No response"
         await self._persist_assistant_message(final_message)
 
-        # Display detailed token analytics if available
-        self._print_token_analytics()
-
     def _handle_plan_update(self, update: ProgressUpdate) -> None:
         """Handle plan update events."""
         action = update.details.get("action", "updated")
@@ -812,72 +535,36 @@ class SimpleChatRunner:
                     self.console.print(f"  {line}")
 
     async def _start_new_conversation(self) -> None:
-        """Start a new conversation, archiving the current one.
-
-        If a ``ConversationManager`` is wired in, this creates a new
-        conversation and resets the local context. Otherwise falls back
-        to a simple context reset.
-        """
-        if self._conversation_manager:
-            self._conversation_id = await self._conversation_manager.create_new("cli")
-            self._print_system(
-                f"New conversation started: {self._conversation_id[:8]}",
-                style="info",
-            )
+        """Start a new conversation by resetting context."""
         await self._reset_context()
+        self._print_system("New conversation started.", style="info")
 
     async def _persist_assistant_message(self, content: str) -> None:
-        """Persist an assistant message using the primary store.
-
-        In persistent mode (ADR-016), the ConversationManager is the
-        primary store. Otherwise falls back to the legacy session state.
-        """
+        """Persist an assistant message to session state."""
         assistant_msg = {
             "role": MessageRole.ASSISTANT.value,
             "content": content,
             "verified": True,
         }
-        if self._conversation_manager and self._conversation_id:
-            await self._conversation_manager.append_message(
-                self._conversation_id, assistant_msg,
-            )
-        else:
-            state = await self.agent.state_manager.load_state(self.session_id) or {}
-            history = state.get("conversation_history", [])
-            history.append(assistant_msg)
-            state["conversation_history"] = history
-            await self.agent.state_manager.save_state(self.session_id, state)
-
-    async def _mirror_assistant_message(self, content: str) -> None:
-        """Mirror an assistant message to the conversation manager.
-
-        .. deprecated::
-            Kept for backward compatibility. New code should use
-            ``_persist_assistant_message`` instead.
-        """
-        if self._conversation_manager and self._conversation_id:
-            await self._conversation_manager.append_message(
-                self._conversation_id,
-                {"role": MessageRole.ASSISTANT.value, "content": content},
-            )
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        history = state.get("conversation_history", [])
+        history.append(assistant_msg)
+        state["conversation_history"] = history
+        await self.agent.state_manager.save_state(self.session_id, state)
 
     async def _reset_context(self) -> None:
         """Reset conversation context to default state.
 
         Clears conversation history and resets in-memory counters
-        (tokens, plan state, dedup signature). In persistent mode
-        the conversation is archived and a new one started; otherwise
-        the legacy session state is cleared.
+        (tokens, plan state, dedup signature).
         """
         self.total_tokens = 0
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature = None
 
-        if not (self._conversation_manager and self._conversation_id):
-            # Legacy fallback: clear session state.
-            state = await self.agent.state_manager.load_state(self.session_id) or {}
-            state["conversation_history"] = []
-            await self.agent.state_manager.save_state(self.session_id, state)
+        state = await self.agent.state_manager.load_state(self.session_id) or {}
+        state["conversation_history"] = []
+        await self.agent.state_manager.save_state(self.session_id, state)
 
     def _print_banner(self) -> None:
         self.console.print("[info]💬 Taskforce Chat (Simple)[/info]")
@@ -894,24 +581,12 @@ class SimpleChatRunner:
                 f"[info]Session:[/info] {self.session_id[:8]}  "
                 f"[info]Profile:[/info] {self.profile}"
             )
-        if self.telegram_polling:
-            self.console.print("[info]Telegram polling:[/info] enabled")
         if self.user_context:
             for key, value in self.user_context.items():
                 self.console.print(f"[info]{key}:[/info] {value}")
 
     def _print_system(self, message: str, style: str = "system") -> None:
         self.console.print(f"[{style}]ℹ️ {message}[/{style}]")
-
-    def _print_token_analytics(self) -> None:
-        """Show detailed token analytics after each agent response."""
-        from taskforce.application.token_analytics_facade import get_execution_token_summary
-        from taskforce.api.cli.output_formatter import TaskforceConsole
-
-        summary = get_execution_token_summary()
-        if summary is not None:
-            tf_console = TaskforceConsole()
-            tf_console.print_token_analytics(summary)
 
     async def _show_context(self, command_args: str) -> None:
         """Render a context snapshot showing what is sent to the LLM."""
@@ -962,7 +637,6 @@ async def run_simple_chat(
     stream: bool,
     user_context: dict[str, Any] | None,
     telegram_polling: bool = False,
-    conversation_manager: Any | None = None,
 ) -> None:
     """Entry point to run the simple chat loop."""
     runner = SimpleChatRunner(
@@ -972,6 +646,5 @@ async def run_simple_chat(
         stream=stream,
         user_context=user_context,
         telegram_polling=telegram_polling,
-        conversation_manager=conversation_manager,
     )
     await runner.run()

@@ -1,0 +1,48 @@
+# Default Agent Profile
+# A general-purpose agent with essential tools for common tasks.
+
+profile: default
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: false
+  max_steps: 30
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+memory:
+  store_dir: .taskforce/memory
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - edit
+  - python
+  - bash
+  - shell
+  - grep
+  - glob
+  - git
+  - ask_user
+  - memory
+  - llm
