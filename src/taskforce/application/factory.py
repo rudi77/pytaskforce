@@ -397,8 +397,6 @@ class AgentFactory:
         )
         self._tool_builder.set_resolver(tool_registry)
         native_tools = tool_registry.resolve(definition.tools)
-        self._add_orchestration_tool(native_tools, base_config)
-        self._add_sub_agent_tools(native_tools, definition.sub_agent_specs)
 
         plugin_tools: list[ToolProtocol] = []
         if definition.source == AgentSource.PLUGIN and definition.plugin_path:
@@ -407,30 +405,6 @@ class AgentFactory:
             )
 
         return plugin_tools + native_tools + mcp_tools
-
-    def _add_orchestration_tool(
-        self, tools: list[ToolProtocol], config: dict[str, Any]
-    ) -> None:
-        """Add orchestration tool to tool list if enabled and not duplicate."""
-        orchestration_tool = self._tool_builder.build_orchestration_tool(config)
-        if orchestration_tool and not any(
-            t.name == orchestration_tool.name for t in tools
-        ):
-            tools.append(orchestration_tool)
-
-    def _add_sub_agent_tools(
-        self,
-        tools: list[ToolProtocol],
-        sub_agent_specs: list[dict[str, Any]],
-    ) -> None:
-        """Instantiate and add sub-agent and parallel-agent tools from definition specs."""
-        for spec in sub_agent_specs:
-            if spec.get("type") == "parallel_agent":
-                tool = self._tool_builder.instantiate_parallel_agent_tool(spec)
-            else:
-                tool = self._tool_builder.instantiate_sub_agent_tool(spec)
-            if tool:
-                tools.append(tool)
 
     def _extract_agent_settings(
         self,
