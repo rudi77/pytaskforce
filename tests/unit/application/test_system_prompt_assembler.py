@@ -72,14 +72,12 @@ class TestSystemPromptAssembler:
         assert "Custom instructions" in prompt
         assert "Senior Software Engineer" not in prompt
 
-    def test_tools_not_duplicated_in_prompt_text(self) -> None:
-        """Tool descriptions are passed via API params, not injected into prompt text."""
+    def test_tools_included_in_prompt(self) -> None:
+        """Tool descriptions should appear in the assembled prompt."""
         assembler = SystemPromptAssembler()
         tool = _make_mock_tool("my_search", "Search for things")
         prompt = assembler.assemble(tools=[tool])
-        # Tools are provided via the tools API parameter on each LLM call,
-        # so they should NOT appear in the system prompt text.
-        assert "my_search" not in prompt
+        assert "my_search" in prompt
 
     def test_no_tools_no_crash(self) -> None:
         """Empty tools list should not cause an error."""

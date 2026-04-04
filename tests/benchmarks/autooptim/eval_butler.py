@@ -1,0 +1,1120 @@
+"""AutoOptim evaluator for Butler agent efficiency.
+
+Runs efficiency benchmark missions and outputs JSON scores to stdout.
+Also writes a detailed trace file for the proposer LLM.
+
+Eval modes:
+  - "regression": Core capability smoke test (~2 min). MUST pass before any merge.
+  - "quick"  : Baseline + Single Tool + Document Report (3 missions)
+  - "full"   : All 4 missions including Multi-Step Tool Chain
+  - "daily"  : Full + 5 daily assistant missions (parallelization, delegation, memory)
+  - "memory" : Multi-turn memory & learning sequences (preference recall, fact retention, etc.)
+  - "future" : Aspirational self-improvement missions (expected to fail today)
+  - "all"    : Full + daily + memory + future
+
+Output: JSON with aggregate scores + per-mission breakdowns + notification_spam count.
+Sidecar: .autooptim/last_eval_trace.md with tool traces per mission.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+import tempfile
+import time
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from taskforce.application.executor import AgentExecutor
+from taskforce.application.factory import AgentFactory
+from taskforce.application.token_analytics_facade import get_execution_token_summary
+from taskforce.core.domain.enums import EventType
+
+if TYPE_CHECKING:
+    from taskforce.core.domain.lean_agent import Agent
+
+# ---------------------------------------------------------------------------
+# Dateiverwaltung benchmark setup
+# ---------------------------------------------------------------------------
+
+_datei_work_dir: Path | None = None
+
+
+def _setup_datei_benchmark() -> Path:
+    """Set up the Dateiverwaltung benchmark with real test documents."""
+    global _datei_work_dir
+    from tests.benchmarks.autooptim.fixtures.setup_datei_benchmark import setup
+    _datei_work_dir = setup()
+    return _datei_work_dir
+
+
+def _cleanup_datei_benchmark() -> None:
+    """Clean up the Dateiverwaltung benchmark temp directory."""
+    global _datei_work_dir
+    if _datei_work_dir:
+        from tests.benchmarks.autooptim.fixtures.setup_datei_benchmark import cleanup
+        cleanup(_datei_work_dir)
+        _datei_work_dir = None
+
+
+def _build_datei_mission(work_dir: Path) -> tuple[str, str, str]:
+    """Build the Dateiverwaltung mission with the actual temp directory path."""
+    inbox = work_dir / "inbox"
+    sorted_dir = work_dir / "sorted"
+    return (
+        "Dateiverwaltung",
+        "datei",
+        f"Im Ordner {inbox} liegen 15 unsortierte Dokumente (PDFs und ein DOCX). "
+        f"Gehe wie folgt vor:\n"
+        f"1. Lies die erste Seite jedes Dokuments um den Inhalt zu verstehen.\n"
+        f"2. Kategorisiere jedes Dokument in eine passende Kategorie "
+        f"(z.B. Gesundheit, Finanzen, Vertraege, Behoerden, Ausweise, Formulare, Sonstiges).\n"
+        f"3. Erstelle fuer jede Kategorie einen Unterordner in {sorted_dir}.\n"
+        f"4. Kopiere (nicht verschieben!) jedes Dokument in den passenden Kategorie-Ordner.\n"
+        f"5. Gib mir am Ende eine Uebersicht welches Dokument in welche Kategorie einsortiert wurde.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mission definitions: (display_name, score_prefix, prompt)
+# ---------------------------------------------------------------------------
+
+# --- Tier 1: Efficiency Baseline (existing) ---
+QUICK_MISSIONS = [
+    (
+        "Minimal (Baseline)",
+        "baseline",
+        "Wie spaet ist es gerade? Antworte in einem Satz.",
+    ),
+    (
+        "Single Tool",
+        "singletool",
+        "Lies die Datei pyproject.toml mit PowerShell und nenne mir die "
+        "aktuelle Version von taskforce. Antworte in einem Satz.",
+    ),
+    (
+        "Document Report",
+        "docreport",
+        "Welche Dokumente gibt es in meinem privaten Documents Ordner. "
+        "Schau dir die Dokumente an, kategorisiere sie und liefere mir "
+        "einen kurzen Report dazu.",
+    ),
+]
+
+FULL_MISSIONS = QUICK_MISSIONS + [
+    (
+        "Multi-Step Tool Chain",
+        "multistep",
+        "Check meine letzten 3 E-Mails und fasse jede in einem Satz zusammen.",
+    ),
+]
+
+# --- Tier 2: Daily Assistant (testable today) ---
+DAILY_MISSIONS = [
+    (
+        "Tagesplanung",
+        "tagesplan",
+        "Was steht heute an? Schau in meinen Kalender und meine E-Mails "
+        "und erstelle mir eine priorisierte Tagesuebersicht.",
+    ),
+    # Dateiverwaltung is dynamically generated — see _build_datei_mission()
+    None,  # placeholder, replaced at runtime
+    (
+        "Recherche + Briefing",
+        "recherche",
+        "Was sind die wichtigsten Neuerungen bei Python 3.13? "
+        "Recherchiere und schreib mir ein kurzes Briefing mit den "
+        "Top-5 Features als Markdown-Liste.",
+    ),
+    (
+        "Erinnerung setzen",
+        "reminder",
+        "Erinnere mich morgen um 9 Uhr an das Meeting mit Peter. "
+        "Bestaetige mir danach, dass die Erinnerung gesetzt wurde.",
+    ),
+    (
+        "Praeferenz merken",
+        "praeferenz",
+        "Ich mag Reports immer als Markdown-Tabelle formatiert. "
+        "Merke dir das fuer die Zukunft.",
+    ),
+]
+
+# --- Tier 3: Memory & Learning (multi-turn sequences) ---
+# Each entry is a dict with a sequence of prompts. The final prompt is the "test"
+# that checks whether the butler retained/applied the information from earlier steps.
+MEMORY_MISSIONS: list[dict] = [
+    {
+        "name": "Preference Recall",
+        "prefix": "mem_pref",
+        "description": "Set a format preference, run filler missions, then test recall.",
+        "sequence": [
+            ("Setup", "Mein bevorzugtes Ausgabeformat ist immer CSV. Merke dir das."),
+            ("Filler 1", "Wie spaet ist es gerade?"),
+            ("Filler 2", "Wie heisst die aktuelle Python-Version?"),
+            (
+                "Test",
+                "Exportiere eine Liste meiner naechsten 3 Termine. "
+                "Nutze mein bevorzugtes Format.",
+            ),
+        ],
+        "check": "csv",
+    },
+    {
+        "name": "Fact Retention",
+        "prefix": "mem_fact",
+        "description": "Store a personal fact, then recall it later.",
+        "sequence": [
+            (
+                "Setup",
+                "Mein Steuerberater ist Herr Mueller, Tel 0664-1234567. "
+                "Merke dir das bitte.",
+            ),
+            ("Filler", "Was steht in der Datei pyproject.toml?"),
+            (
+                "Test",
+                "Wie heisst mein Steuerberater und was ist seine Telefonnummer?",
+            ),
+        ],
+        "check": "mueller",
+    },
+    {
+        "name": "Contradiction Handling",
+        "prefix": "mem_contra",
+        "description": "Set preference, update it, check if the update is used.",
+        "sequence": [
+            (
+                "Setup 1",
+                "Mein Lieblings-Reportformat ist CSV. Merke dir das.",
+            ),
+            (
+                "Update",
+                "Korrektur: Mein Lieblings-Reportformat ist eigentlich Excel, "
+                "nicht CSV. Bitte update das.",
+            ),
+            (
+                "Test",
+                "Erstelle mir einen Report ueber die Dateien in meinem Documents-Ordner. "
+                "Nutze mein Lieblingsformat.",
+            ),
+        ],
+        "check_type": "llm_judge",
+        "check_prompt": (
+            "The user initially set their preferred report format to CSV, then "
+            "corrected it to Excel. Does the assistant's final report use Excel "
+            "format (not CSV)? Answer YES or NO."
+        ),
+    },
+    {
+        "name": "Memory Search",
+        "prefix": "mem_search",
+        "description": "Store multiple facts, then recall a specific one.",
+        "sequence": [
+            ("Setup 1", "Merke dir: Mein Projektleiter heisst Anna Schmidt."),
+            ("Setup 2", "Merke dir: Unser Sprint endet jeden zweiten Freitag."),
+            ("Setup 3", "Merke dir: Das Daily Standup ist um 9:15 Uhr."),
+            ("Test", "Wann ist unser Daily Standup?"),
+        ],
+        "check": "9:15",
+    },
+    {
+        "name": "Proactive Suggestion",
+        "prefix": "mem_proactive",
+        "description": "Repeat the same request 3x — does butler suggest automation?",
+        "sequence": [
+            ("Req 1", "Fasse meine E-Mails zusammen."),
+            ("Req 2", "Fasse meine E-Mails zusammen."),
+            ("Req 3", "Fasse meine E-Mails zusammen."),
+        ],
+        "check_type": "llm_judge",
+        "check_prompt": (
+            "The user asked the assistant to summarize emails three times in a row. "
+            "Did the assistant at any point suggest automating, scheduling, or "
+            "creating a rule for this repeated task? Answer YES or NO."
+        ),
+    },
+]
+
+# --- Regression Tests: Core capabilities that MUST always work ---
+# Each test has a mission, a check function, and a description.
+# The check function receives the final_answer string and returns True if passed.
+# These are FAST (~2 min total) and gate every /evolve merge.
+REGRESSION_TESTS: list[dict] = [
+    {
+        "name": "Text File Read",
+        "prefix": "reg_textfile",
+        "mission": (
+            "Lies die Datei pyproject.toml und nenne mir die Version von taskforce. "
+            "Antworte nur mit der Versionsnummer."
+        ),
+        "check": lambda answer: "0.1.0" in answer,
+        "description": "Can read a text file and extract a value",
+    },
+    {
+        "name": "PDF Read (pypdf)",
+        "prefix": "reg_pdf",
+        "mission": (
+            "Lies die erste Seite der PDF-Datei "
+            "C:\\Users\\rudi\\Documents\\Private\\Rechnungen\\invoice0.pdf "
+            "und fasse den Inhalt in 2-3 Saetzen zusammen."
+        ),
+        "check": lambda answer: len(answer) > 50 and "nicht" not in answer.lower()[:100],
+        "description": "Can read a text-based PDF with pypdf",
+    },
+    {
+        "name": "Web Search",
+        "prefix": "reg_websearch",
+        "mission": "Wer ist der aktuelle deutsche Bundeskanzler? Antworte in einem Satz.",
+        "check": lambda answer: any(
+            name in answer.lower() for name in ["scholz", "merz"]
+        ),
+        "description": "Can search the web for current facts",
+    },
+    {
+        "name": "Email Access",
+        "prefix": "reg_email",
+        "mission": "Zeige mir die letzte E-Mail in meinem Postfach. Nur Betreff und Absender.",
+        "check": lambda answer: (
+            len(answer) > 20
+            and "error" not in answer.lower()[:50]
+            and "nicht" not in answer.lower()[:50]
+        ),
+        "description": "Can access Gmail and read emails",
+    },
+    {
+        "name": "Memory Save",
+        "prefix": "reg_memory",
+        "mission": "Merke dir: Mein Lieblingsessen ist Pizza.",
+        "check": lambda answer: any(
+            w in answer.lower()
+            for w in ["merke", "gespeichert", "notiert", "pizza"]
+        ),
+        "description": "Can save user preferences to memory",
+    },
+    {
+        "name": "Delegation",
+        "prefix": "reg_delegation",
+        "mission": (
+            "Welche .pdf Dateien gibt es in C:\\Users\\rudi\\Documents\\Private\\Rechnungen? "
+            "Liste nur die Dateinamen auf."
+        ),
+        "check": lambda answer: ".pdf" in answer.lower() or "invoice" in answer.lower(),
+        "description": "Can delegate file tasks to PC-Agent",
+    },
+]
+
+
+# --- Tier 4: Future / Aspirational (expected to score 0 today) ---
+# These missions test capabilities that Taskforce does not yet support.
+# They serve as specifications for future features. AutoOptim can target
+# them once the underlying features are implemented.
+FUTURE_MISSIONS = [
+    (
+        "Agent Creation",
+        "fut_agent",
+        "Erstelle mir einen Reise-Planungs-Agenten mit Zugriff auf "
+        "web_search, calendar und file_write. Er soll Reisen planen koennen. "
+        "Registriere ihn so dass ich ihn in Zukunft mit 'reise-agent' aufrufen kann.",
+    ),
+    (
+        "Tool Authoring",
+        "fut_tool",
+        "Bau mir ein Tool das CSV-Dateien lesen und als Markdown-Tabelle "
+        "formatieren kann. Registriere es als 'csv_to_markdown' Tool "
+        "so dass ich es in Zukunft nutzen kann.",
+    ),
+    (
+        "Meta-Optimization",
+        "fut_meta",
+        "Der PC-Agent braucht zu viele Steps fuer einfache Dateioperationen. "
+        "Analysiere seine letzten Ausfuehrungen und optimiere seinen System-Prompt "
+        "so dass er effizienter arbeitet.",
+    ),
+    (
+        "Pattern Learning",
+        "fut_learn",
+        "Analysiere meine letzten 10 Conversations und extrahiere Muster. "
+        "Erstelle daraus Skills oder Rules die mir in Zukunft helfen.",
+    ),
+    (
+        "Workflow Composition",
+        "fut_workflow",
+        "Wenn ich montags 'Wochenstart' sage, soll automatisch folgendes passieren: "
+        "(1) Kalender der Woche anzeigen, (2) E-Mails zusammenfassen, "
+        "(3) offene Tasks priorisieren. Erstelle dafuer eine Trigger-Rule.",
+    ),
+]
+
+PROFILE = "butler"
+TRACE_PATH = Path(".autooptim/last_eval_trace.md")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _summarize_args(args: dict) -> str:
+    """One-line summary of tool call arguments (max 120 chars)."""
+    if not args:
+        return ""
+    parts = []
+    for k, v in args.items():
+        if k.startswith("_"):
+            continue
+        s = str(v)
+        if len(s) > 60:
+            s = s[:57] + "..."
+        parts.append(f"{k}={s}")
+    result = ", ".join(parts)
+    return result[:120]
+
+
+def _count_tool_calls_before_delegation(tool_trace: list[dict]) -> int:
+    """Count tool calls before the first sub-agent delegation.
+
+    Returns the number of tool calls before the first ``call_agents_parallel``
+    (or ``parallel_agent``) invocation. Lower is better — the butler should
+    delegate quickly without unnecessary tool calls.
+    Returns -1 if no delegation occurred.
+    """
+    delegation_tools = {"call_agents_parallel", "parallel_agent"}
+    idx = 0
+    for t in tool_trace:
+        if t["type"] == "call":
+            if t["tool"] in delegation_tools:
+                return idx
+            idx += 1
+    return -1
+
+
+# ---------------------------------------------------------------------------
+# LLM-as-Judge for quality grading
+# ---------------------------------------------------------------------------
+
+
+async def _llm_judge(answer: str, question: str) -> bool:
+    """Use LLM to grade an answer with a yes/no question. Returns True if passes."""
+    try:
+        from taskforce.infrastructure.llm.litellm_service import LiteLLMService
+
+        llm = LiteLLMService()
+        result = await llm.complete_json(
+            prompt=(
+                f"## Answer to evaluate\n{answer[:500]}\n\n"
+                f"## Question\n{question}\n\n"
+                "Respond with a JSON object: {\"pass\": true} or {\"pass\": false}"
+            ),
+            system_prompt=(
+                "You are a strict evaluator. Only respond with valid JSON. "
+                "Evaluate objectively based on the content of the answer."
+            ),
+            model="fast",
+        )
+        data = result.get("data", result) if result.get("success") else {}
+        return bool(data.get("pass", False))
+    except Exception as e:
+        print(f"  [LLM judge error: {e}]", file=sys.stderr)
+        return False
+
+
+
+# NOTE: Answer quality grading removed — the /evolve Teacher (Claude) acts as
+# the Judge directly, reading traces and answers with full context.  This is
+# more accurate than an automated LLM judge which suffered from truncation,
+# wrong model choice, and language mismatch issues.
+
+
+# ---------------------------------------------------------------------------
+# Mission runners
+# ---------------------------------------------------------------------------
+
+
+async def run_mission(
+    name: str, prefix: str, mission: str, executor: AgentExecutor,
+    session_id: str | None = None,
+    agent: "Agent | None" = None,
+) -> dict:
+    """Run a single mission and return metrics + tool trace."""
+    # Drain leftover analytics
+    get_execution_token_summary()
+
+    wall_start = time.monotonic()
+    final_answer = ""
+    had_error = False
+    tool_trace: list[dict] = []
+    errors: list[str] = []
+    notification_count = 0
+
+    async for update in executor.execute_mission_streaming(
+        mission=mission,
+        profile=PROFILE,
+        session_id=session_id,
+        agent=agent,
+    ):
+        event = update.event_type
+        details = update.details or {}
+
+        if event == EventType.TOOL_CALL.value:
+            tool_name = details.get("tool", "")
+            tool_trace.append({
+                "type": "call",
+                "tool": tool_name,
+                "args": _summarize_args(details.get("args", {})),
+            })
+            if tool_name == "send_notification":
+                notification_count += 1
+
+        elif event == EventType.TOOL_RESULT.value:
+            tool_trace.append({
+                "type": "result",
+                "tool": details.get("tool", ""),
+                "success": details.get("success", False),
+                "preview": str(details.get("output", ""))[:100],
+            })
+
+        elif event == EventType.FINAL_ANSWER.value:
+            final_answer = details.get("content", "")
+
+        elif event == EventType.ERROR.value:
+            had_error = True
+            errors.append(str(details.get("message", details))[:200])
+
+    wall_seconds = time.monotonic() - wall_start
+    summary = get_execution_token_summary()
+
+    delegation_steps = _count_tool_calls_before_delegation(tool_trace)
+
+    result = {
+        "name": name,
+        "prefix": prefix,
+        "wall_seconds": wall_seconds,
+        "completed": bool(final_answer) and not had_error,
+        "final_answer": final_answer,
+        "tool_trace": tool_trace,
+        "errors": errors,
+        "notification_count": notification_count,
+        "delegation_steps": delegation_steps,
+    }
+
+    if summary:
+        result.update({
+            "steps": len(summary.step_breakdown),
+            "input_tokens": summary.total_prompt_tokens,
+            "output_tokens": summary.total_completion_tokens,
+            "tool_calls": sum(len(s.tool_call_names) for s in summary.step_breakdown),
+            "ratio": round(summary.prompt_to_completion_ratio, 1),
+            "latency_ms": summary.total_latency_ms,
+        })
+    else:
+        result.update({
+            "steps": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "tool_calls": 0,
+            "ratio": 0.0,
+            "latency_ms": 0,
+        })
+
+    return result
+
+
+async def run_memory_sequence(
+    seq: dict, executor: AgentExecutor
+) -> dict:
+    """Run a multi-turn memory sequence and check the final answer.
+
+    Each sequence runs in an isolated temporary work directory so that
+    memory from other sequences does not leak in. All steps within the
+    sequence share the same agent and session for memory continuity.
+    """
+    steps = seq["sequence"]
+    prefix = seq["prefix"]
+    all_results: list[dict] = []
+
+    shared_session_id = f"bench-mem-{prefix}-{uuid.uuid4().hex[:8]}"
+
+    # Isolated work_dir per sequence prevents memory leakage between sequences
+    with tempfile.TemporaryDirectory(prefix=f"bench_{prefix}_") as tmp_dir:
+        factory = AgentFactory()
+        agent = await factory.create_agent(profile=PROFILE, work_dir=tmp_dir)
+
+        for step_name, prompt in steps:
+            r = await run_mission(
+                f"{seq['name']}/{step_name}", prefix, prompt, executor,
+                session_id=shared_session_id,
+                agent=agent,
+            )
+            all_results.append(r)
+            print(
+                f"    [{seq['name']}/{step_name}] steps={r['steps']} "
+                f"ok={r['completed']}",
+                file=sys.stderr,
+            )
+
+    last = all_results[-1]
+
+    # Check memory recall
+    if seq.get("check_type") == "llm_judge":
+        # Concatenate all final answers for the judge to evaluate
+        all_answers = "\n---\n".join(
+            f"Turn {i + 1}: {r['final_answer']}"
+            for i, r in enumerate(all_results)
+            if r["final_answer"]
+        )
+        recall_ok = await _llm_judge(all_answers, seq["check_prompt"])
+    else:
+        check_str = seq["check"].lower()
+        recall_ok = check_str in last.get("final_answer", "").lower()
+
+    # Aggregate metrics across the sequence
+    total_steps = sum(r["steps"] for r in all_results)
+    total_tokens = sum(r["input_tokens"] for r in all_results)
+    total_tools = sum(r["tool_calls"] for r in all_results)
+    total_wall = sum(r["wall_seconds"] for r in all_results)
+    total_notif = sum(r["notification_count"] for r in all_results)
+    all_completed = all(r["completed"] for r in all_results)
+
+    # Merge tool traces from all steps
+    merged_trace: list[dict] = []
+    for i, r in enumerate(all_results):
+        step_name = steps[i][0]
+        merged_trace.append({"type": "step_marker", "tool": f"--- {step_name} ---", "args": ""})
+        merged_trace.extend(r.get("tool_trace", []))
+
+    return {
+        "name": seq["name"],
+        "prefix": prefix,
+        "wall_seconds": total_wall,
+        "completed": all_completed,
+        "final_answer": last.get("final_answer", ""),
+        "tool_trace": merged_trace,
+        "errors": [e for r in all_results for e in r["errors"]],
+        "notification_count": total_notif,
+        "delegation_steps": last.get("delegation_steps", -1),
+        "steps": total_steps,
+        "input_tokens": total_tokens,
+        "output_tokens": sum(r["output_tokens"] for r in all_results),
+        "tool_calls": total_tools,
+        "ratio": round(total_tokens / max(1, sum(r["output_tokens"] for r in all_results)), 1),
+        "latency_ms": sum(r.get("latency_ms", 0) for r in all_results),
+        # Memory-specific metrics
+        "memory_recall": 1.0 if recall_ok else 0.0,
+        "sequence_turns": len(all_results),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Trace writer
+# ---------------------------------------------------------------------------
+
+
+def write_trace(results: list[dict], mode: str) -> None:
+    """Write detailed trace file for the proposer LLM."""
+    TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"# Last Eval Trace (mode: {mode}, {len(results)} missions)\n"]
+
+    for r in results:
+        status = "OK" if r["completed"] else "FAILED"
+        lines.append(f"## {r['name']} [{status}]")
+        lines.append(
+            f"Steps: {r['steps']} | Tokens: {r['input_tokens']:,} | "
+            f"Wall: {r['wall_seconds']:.1f}s | Tools: {r['tool_calls']} | "
+            f"Notifications: {r['notification_count']}"
+        )
+
+        # Memory recall (if present)
+        if "memory_recall" in r:
+            recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
+            lines.append(
+                f"Memory Recall: {recall_tag} | Turns: {r.get('sequence_turns', '?')}"
+            )
+
+        # Delegation efficiency
+        ds = r.get("delegation_steps", -1)
+        if ds >= 0:
+            lines.append(f"Delegation after {ds} tool calls")
+
+        if r["errors"]:
+            lines.append(f"ERRORS: {'; '.join(r['errors'])}")
+
+        if r["notification_count"] > 2:
+            lines.append(
+                f"WARNING: Notification spam detected ({r['notification_count']} calls)"
+            )
+
+        # Tool trace
+        lines.append("\nTool trace:")
+        for t in r.get("tool_trace", []):
+            if t["type"] == "step_marker":
+                lines.append(f"\n  {t['tool']}")
+            elif t["type"] == "call":
+                lines.append(f"  -> {t['tool']}({t['args']})")
+            else:
+                tag = "OK" if t["success"] else "FAIL"
+                lines.append(f"  <- {tag} {t['tool']}: {t['preview']}")
+
+        # Final answer
+        answer = r.get("final_answer", "")
+        if answer:
+            lines.append(f"\nAnswer: {answer}")
+        else:
+            lines.append("\nAnswer: (none - mission did not produce a final answer)")
+
+        lines.append("")
+
+    TRACE_PATH.write_text("\n".join(lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+
+def compute_scores(results: list[dict], memory_results: list[dict]) -> dict[str, float]:
+    """Compute aggregate and per-mission scores from all results."""
+    all_results = results + memory_results
+    n = len(all_results)
+    if n == 0:
+        return {"task_completion": 0.0}
+
+    completed = sum(1 for r in all_results if r["completed"])
+    total_steps = sum(r["steps"] for r in all_results)
+    total_input = sum(r["input_tokens"] for r in all_results)
+    total_tools = sum(r["tool_calls"] for r in all_results)
+    total_wall = sum(r["wall_seconds"] for r in all_results)
+    avg_ratio = sum(r["ratio"] for r in all_results) / n
+    total_notifications = sum(r["notification_count"] for r in all_results)
+
+    scores: dict[str, float] = {
+        "task_completion": completed / n,
+        "avg_steps": total_steps / n,
+        "avg_input_tokens": total_input / n,
+        "avg_ratio": avg_ratio,
+        "avg_wall_seconds": total_wall / n,
+        "total_tool_calls": float(total_tools),
+        "efficiency_tokens": float(total_input),
+        "notification_spam": float(total_notifications),
+    }
+
+    # Delegation efficiency (avg steps to first delegation, excluding missions
+    # that don't delegate)
+    delegation_vals = [r["delegation_steps"] for r in all_results if r.get("delegation_steps", -1) >= 0]
+    if delegation_vals:
+        scores["delegation_efficiency"] = sum(delegation_vals) / len(delegation_vals)
+
+    # Memory recall (aggregate across memory sequences)
+    if memory_results:
+        recall_vals = [r["memory_recall"] for r in memory_results if "memory_recall" in r]
+        if recall_vals:
+            scores["memory_recall"] = sum(recall_vals) / len(recall_vals)
+
+    # Self-improvement score (future missions that actually completed)
+    future_results = [r for r in results if r["prefix"].startswith("fut_")]
+    if future_results:
+        scores["self_improvement_score"] = (
+            sum(1 for r in future_results if r["completed"]) / len(future_results)
+        )
+
+    # Per-mission scores
+    for r in results:
+        p = r["prefix"]
+        scores[f"{p}_steps"] = float(r["steps"])
+        scores[f"{p}_tokens"] = float(r["input_tokens"])
+        scores[f"{p}_wall"] = round(r["wall_seconds"], 1)
+        scores[f"{p}_tools"] = float(r["tool_calls"])
+        scores[f"{p}_completed"] = 1.0 if r["completed"] else 0.0
+
+    for r in memory_results:
+        p = r["prefix"]
+        scores[f"{p}_completed"] = 1.0 if r["completed"] else 0.0
+        scores[f"{p}_recall"] = r.get("memory_recall", 0.0)
+        scores[f"{p}_steps"] = float(r["steps"])
+        scores[f"{p}_tokens"] = float(r["input_tokens"])
+        scores[f"{p}_wall"] = round(r["wall_seconds"], 1)
+
+    return scores
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+async def main(task_name: str) -> None:
+    """Run benchmark missions and output JSON scores.
+
+    Supported modes:
+      quick   - 3 baseline efficiency missions
+      full    - 4 efficiency missions (quick + multi-step)
+      daily   - full + 5 daily assistant missions
+      memory  - 5 multi-turn memory & learning sequences
+      future  - 5 aspirational self-improvement missions
+      all     - full + daily + memory + future
+    """
+    # Build mission lists based on mode
+    standard_missions: list[tuple[str, str, str]] = []
+    run_memory = False
+
+    if task_name == "quick":
+        standard_missions = list(QUICK_MISSIONS)
+    elif task_name == "full":
+        standard_missions = list(FULL_MISSIONS)
+    elif task_name == "daily":
+        standard_missions = list(FULL_MISSIONS) + list(DAILY_MISSIONS)
+    elif task_name == "memory":
+        run_memory = True
+    elif task_name == "future":
+        standard_missions = list(FUTURE_MISSIONS)
+    elif task_name == "all":
+        standard_missions = (
+            list(FULL_MISSIONS) + list(DAILY_MISSIONS) + list(FUTURE_MISSIONS)
+        )
+        run_memory = True
+    else:
+        print(
+            f"Unknown mode: {task_name}. Use: quick|full|daily|memory|future|all",
+            file=sys.stderr,
+        )
+        standard_missions = list(QUICK_MISSIONS)
+
+    # Set up Dateiverwaltung benchmark if daily missions are included
+    datei_work_dir: Path | None = None
+    has_daily = any(m is None for m in standard_missions)  # None = datei placeholder
+    if has_daily:
+        try:
+            datei_work_dir = _setup_datei_benchmark()
+            datei_mission = _build_datei_mission(datei_work_dir)
+            # Replace None placeholder with actual mission
+            standard_missions = [
+                datei_mission if m is None else m for m in standard_missions
+            ]
+            print(f"  [Datei benchmark] setup: {datei_work_dir}", file=sys.stderr)
+        except Exception as e:
+            print(f"  [Datei benchmark] setup failed: {e}", file=sys.stderr)
+            # Remove placeholder so we don't crash
+            standard_missions = [m for m in standard_missions if m is not None]
+
+    executor = AgentExecutor()
+    results: list[dict] = []
+    memory_results: list[dict] = []
+
+    # Run standard (single-turn) missions
+    for name, prefix, mission_text in standard_missions:
+        try:
+            r = await asyncio.wait_for(
+                run_mission(name, prefix, mission_text, executor),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            r = {
+                "name": name, "prefix": prefix, "wall_seconds": 300.0,
+                "completed": False, "final_answer": "", "tool_trace": [],
+                "errors": ["Mission timed out after 300s"],
+                "notification_count": 0, "delegation_steps": -1,
+                "steps": 0, "input_tokens": 0, "output_tokens": 0,
+                "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+            }
+            print(f"  [{name}] TIMEOUT after 300s", file=sys.stderr)
+        except Exception as e:
+            r = {
+                "name": name, "prefix": prefix, "wall_seconds": 0.0,
+                "completed": False, "final_answer": "", "tool_trace": [],
+                "errors": [f"Mission error: {str(e)[:200]}"],
+                "notification_count": 0, "delegation_steps": -1,
+                "steps": 0, "input_tokens": 0, "output_tokens": 0,
+                "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+            }
+            print(f"  [{name}] ERROR: {e}", file=sys.stderr)
+        results.append(r)
+        print(
+            f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
+            f"tools={r['tool_calls']} notif={r['notification_count']} "
+            f"wall={r['wall_seconds']:.1f}s ok={r['completed']}",
+            file=sys.stderr,
+        )
+
+    # Run multi-turn memory sequences
+    if run_memory:
+        print("\n  --- Memory & Learning Sequences ---", file=sys.stderr)
+        for seq in MEMORY_MISSIONS:
+            seq_executor = AgentExecutor()  # Fresh executor per sequence for isolation
+            try:
+                r = await asyncio.wait_for(
+                    run_memory_sequence(seq, seq_executor),
+                    timeout=300,
+                )
+                recall_tag = "PASS" if r["memory_recall"] > 0 else "FAIL"
+                print(
+                    f"  [{r['name']}] recall={recall_tag} steps={r['steps']} "
+                    f"tokens={r['input_tokens']:,} turns={r['sequence_turns']} "
+                    f"wall={r['wall_seconds']:.1f}s ok={r['completed']}",
+                    file=sys.stderr,
+                )
+            except asyncio.TimeoutError:
+                r = {
+                    "name": seq["name"], "prefix": seq["prefix"],
+                    "wall_seconds": 300.0, "completed": False,
+                    "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
+                    "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
+                    "notification_count": 0, "delegation_steps": -1,
+                    "tool_trace": [], "latency_ms": 0,
+                    "sequence_turns": 0,
+                    "errors": ["Memory sequence timed out after 300s"],
+                }
+                print(f"  [{seq['name']}] TIMEOUT after 300s", file=sys.stderr)
+            except Exception as e:
+                r = {
+                    "name": seq["name"], "prefix": seq["prefix"],
+                    "wall_seconds": 0.0, "completed": False,
+                    "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
+                    "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
+                    "notification_count": 0, "delegation_steps": -1,
+                    "tool_trace": [], "latency_ms": 0,
+                    "sequence_turns": 0,
+                    "errors": [f"Sequence error: {str(e)[:200]}"],
+                }
+                print(f"  [{seq['name']}] ERROR: {e}", file=sys.stderr)
+            memory_results.append(r)
+
+    # Write trace file for proposer context
+    write_trace(results + memory_results, task_name)
+
+    # Compute and output scores
+    scores = compute_scores(results, memory_results)
+
+    # Clean up Dateiverwaltung benchmark temp directory
+    if datei_work_dir:
+        # Check how many files were sorted (for scoring)
+        sorted_dir = datei_work_dir / "sorted"
+        if sorted_dir.exists():
+            sorted_files = list(sorted_dir.rglob("*"))
+            sorted_docs = [f for f in sorted_files if f.is_file()]
+            categories_created = [d for d in sorted_dir.iterdir() if d.is_dir()]
+            scores["datei_files_sorted"] = float(len(sorted_docs))
+            scores["datei_categories"] = float(len(categories_created))
+            print(
+                f"  [Datei benchmark] {len(sorted_docs)} files sorted into "
+                f"{len(categories_created)} categories",
+                file=sys.stderr,
+            )
+        _cleanup_datei_benchmark()
+
+    print(json.dumps(scores), flush=True)
+    sys.stdout.flush()
+
+
+async def main_regression() -> None:
+    """Run regression smoke tests and output pass/fail JSON.
+
+    Each test runs a mission and checks the answer with a lambda.
+    Output: {"passed": N, "failed": N, "total": N, "all_passed": bool, "details": [...]}
+    Exit code: 0 if all passed, 1 if any failed.
+    """
+    executor = AgentExecutor()
+    details: list[dict] = []
+    passed = 0
+    failed = 0
+
+    for test in REGRESSION_TESTS:
+        name = test["name"]
+        prefix = test["prefix"]
+        mission = test["mission"]
+        check_fn = test["check"]
+
+        try:
+            r = await asyncio.wait_for(
+                run_mission(name, prefix, mission, executor),
+                timeout=120,
+            )
+            answer = r.get("final_answer", "")
+            check_ok = bool(check_fn(answer)) if answer else False
+        except asyncio.TimeoutError:
+            answer = ""
+            check_ok = False
+            print(f"  [{name}] TIMEOUT", file=sys.stderr)
+        except Exception as e:
+            answer = ""
+            check_ok = False
+            print(f"  [{name}] ERROR: {e}", file=sys.stderr)
+
+        status = "PASS" if check_ok else "FAIL"
+        if check_ok:
+            passed += 1
+        else:
+            failed += 1
+
+        print(
+            f"  [{name}] {status} — answer: {answer[:80]}",
+            file=sys.stderr,
+        )
+        details.append({
+            "name": name,
+            "prefix": prefix,
+            "passed": check_ok,
+            "answer_preview": answer[:200],
+            "description": test["description"],
+        })
+
+    result = {
+        "passed": passed,
+        "failed": failed,
+        "total": passed + failed,
+        "all_passed": failed == 0,
+        "details": details,
+    }
+    print(json.dumps(result), flush=True)
+    sys.stdout.flush()
+
+    if failed > 0:
+        print(
+            f"\n  REGRESSION FAILED: {failed}/{passed + failed} tests failed",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    else:
+        print(
+            f"\n  REGRESSION PASSED: {passed}/{passed} tests passed",
+            file=sys.stderr,
+        )
+
+
+async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None:
+    """Run a single dynamic mission and output detailed JSON results.
+
+    This mode is used by the Teacher-Student PoC to test arbitrary missions
+    against the current agent configuration.
+
+    Args:
+        mission_text: The mission prompt to execute.
+        mission_name: Display name for the mission (default: "dynamic").
+    """
+    executor = AgentExecutor()
+    prefix = "dyn"
+
+    try:
+        r = await asyncio.wait_for(
+            run_mission(mission_name, prefix, mission_text, executor),
+            timeout=300,
+        )
+    except asyncio.TimeoutError:
+        r = {
+            "name": mission_name, "prefix": prefix, "wall_seconds": 300.0,
+            "completed": False, "final_answer": "", "tool_trace": [],
+            "errors": ["Mission timed out after 300s"],
+            "notification_count": 0, "delegation_steps": -1,
+            "steps": 0, "input_tokens": 0, "output_tokens": 0,
+            "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+        }
+        print(f"  [{mission_name}] TIMEOUT after 300s", file=sys.stderr)
+    except Exception as e:
+        r = {
+            "name": mission_name, "prefix": prefix, "wall_seconds": 0.0,
+            "completed": False, "final_answer": "", "tool_trace": [],
+            "errors": [f"Mission error: {str(e)[:200]}"],
+            "notification_count": 0, "delegation_steps": -1,
+            "steps": 0, "input_tokens": 0, "output_tokens": 0,
+            "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+        }
+        print(f"  [{mission_name}] ERROR: {e}", file=sys.stderr)
+
+    print(
+        f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
+        f"tools={r['tool_calls']} wall={r['wall_seconds']:.1f}s "
+        f"ok={r['completed']}",
+        file=sys.stderr,
+    )
+
+    # Output full result as JSON (includes tool_trace for Teacher analysis)
+    print(json.dumps(r, default=str), flush=True)
+    sys.stdout.flush()
+
+
+def _parse_args() -> tuple[str, str | None, str | None]:
+    """Parse CLI arguments.
+
+    Returns:
+        Tuple of (mode, mission_text, mission_name).
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="AutoOptim Butler evaluator")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="quick",
+        help="Eval mode: quick|full|daily|memory|future|all|dynamic",
+    )
+    parser.add_argument(
+        "--mission",
+        type=str,
+        default=None,
+        help="Mission text for dynamic mode",
+    )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="Mission display name for dynamic mode (default: 'dynamic')",
+    )
+
+    args = parser.parse_args()
+    return args.mode, args.mission, args.name
+
+
+if __name__ == "__main__":
+    mode, mission_text, mission_name = _parse_args()
+
+    # Regression mode: fast smoke test for core capabilities
+    if mode == "regression":
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(main_regression())
+        except SystemExit as e:
+            sys.exit(e.code)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)
+
+    # Dynamic mode: run a single mission from --mission arg or EVAL_MISSION env var
+    if mode == "dynamic":
+        mission_text = mission_text or os.environ.get("EVAL_MISSION")
+        if not mission_text:
+            print(
+                "Error: dynamic mode requires --mission '...' or EVAL_MISSION env var",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        mission_name = mission_name or "dynamic"
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(main_dynamic(mission_text, mission_name))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)
+    else:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(main(mode))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            os._exit(0)

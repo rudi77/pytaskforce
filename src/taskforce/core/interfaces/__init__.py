@@ -23,7 +23,19 @@ Usage:
         pass
 """
 
+from taskforce.core.interfaces.gateway import (
+    ConversationStoreProtocol,
+    InboundAdapterProtocol,
+    OutboundSenderProtocol,
+    RecipientRegistryProtocol,
+)
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.messaging import MessageBusProtocol
+from taskforce.core.interfaces.runtime import (
+    AgentRuntimeTrackerProtocol,
+    CheckpointStoreProtocol,
+    HeartbeatStoreProtocol,
+)
 from taskforce.core.interfaces.skills import (
     SkillContextProtocol,
     SkillProtocol,
@@ -36,8 +48,16 @@ from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
 __all__ = [
     "StateManagerProtocol",
     "LLMProviderProtocol",
+    "MessageBusProtocol",
+    "OutboundSenderProtocol",
+    "InboundAdapterProtocol",
+    "ConversationStoreProtocol",
+    "RecipientRegistryProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
+    "HeartbeatStoreProtocol",
+    "CheckpointStoreProtocol",
+    "AgentRuntimeTrackerProtocol",
     "SubAgentSpawnerProtocol",
     "SkillProtocol",
     "SkillRegistryProtocol",

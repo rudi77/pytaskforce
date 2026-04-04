@@ -464,6 +464,185 @@ async def test_progress_update_structure():
     assert update.details["rationale"] == "Need to read file"
 
 
+# ---------------------------------------------------------------------------
+# Channel-targeted ASK_USER routing via gateway
+# ---------------------------------------------------------------------------
+
+
+def test_is_channel_targeted_ask_true():
+    """Detect a channel-targeted ASK_USER event."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={
+            "question": "Invoice date?",
+            "channel": "telegram",
+            "recipient_id": "user-42",
+        },
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is True
+
+
+def test_is_channel_targeted_ask_false_standard():
+    """Standard ASK_USER (no channel) is NOT channel-targeted."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={"question": "Which account?"},
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is False
+
+
+def test_is_channel_targeted_ask_false_other_event():
+    """Non-ASK_USER event is NOT channel-targeted."""
+    event = StreamEvent(
+        event_type=EventType.TOOL_CALL,
+        data={"tool": "file_read", "channel": "telegram", "recipient_id": "u1"},
+    )
+    assert AgentExecutor._is_channel_targeted_ask(event) is False
+
+
+def test_build_channel_question_sent_update():
+    """Build the 'sent' progress update with channel_routed flag."""
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={
+            "question": "Missing date?",
+            "channel": "telegram",
+            "recipient_id": "user-42",
+        },
+    )
+    update = AgentExecutor._build_channel_question_sent_update(event)
+
+    assert update.details["channel_routed"] is True
+    assert "telegram" in update.message
+    assert "user-42" in update.message
+    assert "Missing date?" in update.message
+
+
+def test_build_channel_response_received_update():
+    """Build the 'received' progress update."""
+    channel_ask = {
+        "channel": "telegram",
+        "recipient_id": "user-42",
+        "question": "Missing date?",
+    }
+    update = AgentExecutor._build_channel_response_received_update(
+        channel_ask, "2026-01-15"
+    )
+
+    assert update.details["channel_response_received"] is True
+    assert update.details["response"] == "2026-01-15"
+    assert "telegram" in update.message
+    assert "user-42" in update.message
+
+
+@pytest.mark.asyncio
+async def test_route_channel_question_success():
+    """Test that _route_channel_question sends and polls via gateway."""
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = True
+    mock_gateway.poll_channel_response.side_effect = [None, None, "2026-01-15"]
+    mock_gateway.clear_channel_question.return_value = None
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    response = await executor._route_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    assert response == "2026-01-15"
+    mock_gateway.send_channel_question.assert_called_once()
+    mock_gateway.clear_channel_question.assert_called_once_with(session_id="sess-1")
+
+
+@pytest.mark.asyncio
+async def test_route_channel_question_send_fails():
+    """When sending the question fails, return None."""
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = False
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    response = await executor._route_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    assert response is None
+    mock_gateway.poll_channel_response.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_streaming_intercepts_channel_ask():
+    """Executor handles channel-targeted ASK_USER and resumes agent."""
+    # Build a mock agent that streams: first run yields ASK_USER with channel,
+    # second run (resume) yields COMPLETE.
+    call_count = 0
+
+    async def fake_stream(mission, session_id):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(
+                event_type=EventType.ASK_USER,
+                data={
+                    "question": "Missing date?",
+                    "channel": "telegram",
+                    "recipient_id": "user-42",
+                },
+            )
+        else:
+            yield StreamEvent(
+                event_type=EventType.COMPLETE,
+                data={
+                    "status": "completed",
+                    "session_id": session_id,
+                    "final_message": f"Done with answer: {mission}",
+                },
+            )
+
+    mock_agent = MagicMock()
+    mock_agent.execute_stream = fake_stream
+
+    # Gateway that returns the response on first poll
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = True
+    mock_gateway.poll_channel_response.return_value = "2026-01-15"
+    mock_gateway.clear_channel_question.return_value = None
+
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    updates: list[ProgressUpdate] = []
+    async for update in executor._execute_streaming(mock_agent, "Process invoice", "s1"):
+        updates.append(update)
+
+    # Should have: channel_routed ASK_USER, channel_response_received, then COMPLETE
+    event_types = [
+        (u.event_type, u.details.get("channel_routed"), u.details.get("channel_response_received"))
+        for u in updates
+    ]
+
+    # First event: channel question sent (channel_routed=True)
+    assert updates[0].details.get("channel_routed") is True
+    assert "telegram" in updates[0].message
+
+    # Second event: response received
+    assert updates[1].details.get("channel_response_received") is True
+    assert updates[1].details["response"] == "2026-01-15"
+
+    # Third event: COMPLETE from resumed agent
+    complete_updates = [u for u in updates if u.event_type == EventType.COMPLETE
+                        or u.event_type == EventType.COMPLETE.value]
+    assert len(complete_updates) == 1
+
+    # Agent was called twice (original + resume)
+    assert call_count == 2
+
+
 @pytest.mark.asyncio
 async def test_execute_streaming_no_gateway_yields_raw_ask():
     """Without a gateway, channel-targeted ASK_USER is yielded as-is."""
@@ -491,3 +670,113 @@ async def test_execute_streaming_no_gateway_yields_raw_ask():
     assert len(updates) == 1
     assert updates[0].details.get("channel") == "telegram"
     assert updates[0].details.get("channel_routed") is None
+
+
+# ---------------------------------------------------------------------------
+# Consolidation component initialization tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureConsolidationComponents:
+    """Tests for _ensure_consolidation_components with config override."""
+
+    def _make_executor(self) -> AgentExecutor:
+        mock_factory = MagicMock(spec=AgentFactory)
+        mock_factory.profile_loader = MagicMock()
+        return AgentExecutor(factory=mock_factory)
+
+    def test_skips_when_already_initialized(self):
+        """Once initialized, subsequent calls are no-ops."""
+        executor = self._make_executor()
+        executor._consolidation_initialized = True
+        executor._ensure_consolidation_components("dev", config={"consolidation": {"enabled": True}})
+        # profile_loader should never be called
+        executor.factory.profile_loader.load.assert_not_called()
+
+    def test_config_param_skips_profile_loader(self):
+        """When config is provided, profile_loader.load is NOT called."""
+        executor = self._make_executor()
+
+        # Provide a config where consolidation is disabled
+        config = {"consolidation": {"enabled": False, "auto_capture": False}}
+        executor._ensure_consolidation_components("plugin:accounting_agent", config=config)
+
+        # profile_loader should NOT be called because config was provided
+        executor.factory.profile_loader.load.assert_not_called()
+        assert executor._consolidation_initialized is True
+
+    def test_falls_back_to_profile_loader_when_no_config(self):
+        """When no config is provided, falls back to profile_loader.load."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.return_value = {
+            "consolidation": {"enabled": False, "auto_capture": False}
+        }
+
+        executor._ensure_consolidation_components("dev")
+
+        executor.factory.profile_loader.load.assert_called_once_with("dev")
+
+    def test_profile_loader_failure_is_handled_gracefully(self):
+        """When profile loading fails (e.g. plugin: prefix), no crash."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.side_effect = FileNotFoundError("not found")
+
+        # Should not raise
+        executor._ensure_consolidation_components("plugin:accounting_agent")
+
+        assert executor._consolidation_initialized is True
+        assert executor._experience_tracker is None
+
+    @pytest.mark.asyncio
+    async def test_streaming_extracts_merged_config_from_agent(self):
+        """execute_mission_streaming reads _merged_config from pre-created agent."""
+        executor = self._make_executor()
+
+        # Create a mock agent with _merged_config set (simulates plugin agent)
+        mock_agent = MagicMock()
+        mock_agent._merged_config = {
+            "consolidation": {"enabled": False, "auto_capture": False},
+        }
+
+        async def fake_stream(mission, session_id):
+            yield StreamEvent(event_type=EventType.COMPLETE, data={"status": "completed"})
+
+        mock_agent.execute_stream = fake_stream
+        mock_agent.close = AsyncMock()
+
+        updates = []
+        async for update in executor.execute_mission_streaming(
+            mission="Test",
+            profile="plugin:accounting_agent",
+            agent=mock_agent,
+        ):
+            updates.append(update)
+
+        # Profile loader should NOT be called because _merged_config was used
+        executor.factory.profile_loader.load.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_streaming_without_merged_config_uses_profile(self):
+        """Without _merged_config, falls back to profile_loader."""
+        executor = self._make_executor()
+        executor.factory.profile_loader.load.return_value = {
+            "consolidation": {"enabled": False, "auto_capture": False},
+        }
+
+        mock_agent = MagicMock(spec=[])  # empty spec → no auto-created attributes
+
+        async def fake_stream(mission, session_id):
+            yield StreamEvent(event_type=EventType.COMPLETE, data={"status": "completed"})
+
+        mock_agent.execute_stream = fake_stream
+        mock_agent.close = AsyncMock()
+
+        updates = []
+        async for update in executor.execute_mission_streaming(
+            mission="Test",
+            profile="dev",
+            agent=mock_agent,
+        ):
+            updates.append(update)
+
+        executor.factory.profile_loader.load.assert_called_once_with("dev")

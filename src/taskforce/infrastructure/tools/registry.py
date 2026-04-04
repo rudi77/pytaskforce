@@ -16,14 +16,13 @@ from typing import Any
 ToolSpec = dict[str, Any]
 
 _TOOL_REGISTRY: dict[str, ToolSpec] = {
-    # --- Essential Framework Tools ---
-    # Skill activation
+    # Native tools - Skill activation
     "activate_skill": {
         "type": "ActivateSkillTool",
         "module": "taskforce.infrastructure.tools.native.activate_skill_tool",
         "params": {},
     },
-    # Web
+    # Native tools - Web
     "web_search": {
         "type": "WebSearchTool",
         "module": "taskforce.infrastructure.tools.native.web_tools",
@@ -34,13 +33,18 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.web_tools",
         "params": {},
     },
-    # Code execution
+    "browser": {
+        "type": "BrowserTool",
+        "module": "taskforce.infrastructure.tools.native.browser_tool",
+        "params": {},
+    },
+    # Native tools - Code execution
     "python": {
         "type": "PythonTool",
         "module": "taskforce.infrastructure.tools.native.python_tool",
         "params": {},
     },
-    # File operations
+    # Native tools - File operations
     "file_read": {
         "type": "FileReadTool",
         "module": "taskforce.infrastructure.tools.native.file_tools",
@@ -51,7 +55,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.file_tools",
         "params": {},
     },
-    # Git/GitHub
+    # Native tools - Git/GitHub
     "git": {
         "type": "GitTool",
         "module": "taskforce.infrastructure.tools.native.git_tools",
@@ -62,7 +66,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.git_tools",
         "params": {},
     },
-    # Shell
+    # Native tools - Shell (platform-agnostic, bash-explicit, and Windows-specific)
     "shell": {
         "type": "ShellTool",
         "module": "taskforce.infrastructure.tools.native.shell_tool",
@@ -78,13 +82,13 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.shell_tool",
         "params": {},
     },
-    # User interaction
+    # Native tools - User interaction
     "ask_user": {
         "type": "AskUserTool",
         "module": "taskforce.infrastructure.tools.native.ask_user_tool",
         "params": {},
     },
-    # LLM generation
+    # Native tools - LLM generation
     "llm": {
         "type": "LLMTool",
         "module": "taskforce.infrastructure.tools.native.llm_tool",
@@ -92,7 +96,28 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
             "model_alias": "main",
         },
     },
-    # Search operations
+    # RAG tools - Semantic search and document retrieval
+    "rag_semantic_search": {
+        "type": "SemanticSearchTool",
+        "module": "taskforce.infrastructure.tools.rag.semantic_search_tool",
+        "params": {},
+    },
+    "rag_list_documents": {
+        "type": "ListDocumentsTool",
+        "module": "taskforce.infrastructure.tools.rag.list_documents_tool",
+        "params": {},
+    },
+    "rag_get_document": {
+        "type": "GetDocumentTool",
+        "module": "taskforce.infrastructure.tools.rag.get_document_tool",
+        "params": {},
+    },
+    "global_document_analysis": {
+        "type": "GlobalDocumentAnalysisTool",
+        "module": "taskforce.infrastructure.tools.rag.global_document_analysis_tool",
+        "params": {},
+    },
+    # Native tools - Search operations (Claude Code style)
     "grep": {
         "type": "GrepTool",
         "module": "taskforce.infrastructure.tools.native.search_tools",
@@ -103,22 +128,108 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.search_tools",
         "params": {},
     },
-    # File editing
+    # Native tools - File editing (Claude Code style)
     "edit": {
         "type": "EditTool",
         "module": "taskforce.infrastructure.tools.native.edit_tool",
         "params": {},
     },
-    # Result Retrieval
+    # Native tools - Multimedia (Claude Code style)
+    "multimedia": {
+        "type": "MultimediaTool",
+        "module": "taskforce.infrastructure.tools.native.multimedia_tool",
+        "params": {},
+    },
+    # Native tools - Result Retrieval
     "fetch_result": {
         "type": "FetchResultTool",
         "module": "taskforce.infrastructure.tools.native.fetch_result_tool",
         "params": {},
     },
-    # Memory
+    # Native tools - Memory
     "memory": {
         "type": "MemoryTool",
         "module": "taskforce.infrastructure.tools.native.memory_tool",
+        "params": {},
+    },
+    # Native tools - Authentication
+    "authenticate": {
+        "type": "AuthTool",
+        "module": "taskforce.infrastructure.tools.native.auth_tool",
+        "params": {},
+    },
+    # Native tools - Communication
+    "send_notification": {
+        "type": "SendNotificationTool",
+        "module": "taskforce.infrastructure.tools.native.send_notification_tool",
+        "params": {},
+    },
+    # Butler tools - Gmail
+    "gmail": {
+        "type": "GmailTool",
+        "module": "taskforce.infrastructure.tools.native.email_tool",
+        "params": {},
+    },
+    # Butler tools - Google Drive
+    "google_drive": {
+        "type": "GoogleDriveTool",
+        "module": "taskforce.infrastructure.tools.native.google_drive_tool",
+        "params": {},
+    },
+    # Butler tools - Calendar
+    "calendar": {
+        "type": "CalendarTool",
+        "module": "taskforce.infrastructure.tools.native.calendar_tool",
+        "params": {},
+    },
+    # Butler tools - Scheduling
+    "schedule": {
+        "type": "ScheduleTool",
+        "module": "taskforce.infrastructure.tools.native.schedule_tool",
+        "params": {},
+    },
+    "reminder": {
+        "type": "ReminderTool",
+        "module": "taskforce.infrastructure.tools.native.reminder_tool",
+        "params": {},
+    },
+    # Orchestration tools - Parallel sub-agent execution
+    "call_agents_parallel": {
+        "type": "ParallelAgentTool",
+        "module": "taskforce.infrastructure.tools.orchestration.parallel_agent_tool",
+        "params": {},
+    },
+    # Butler tools - Rule management
+    "rule_manager": {
+        "type": "RuleManagerTool",
+        "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
+        "params": {},
+    },
+    # Accounting tools
+    "accounting_validate": {
+        "type": "AccountingValidateTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_validate_tool",
+        "params": {},
+    },
+    "accounting_audit": {
+        "type": "AccountingAuditTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_audit_tool",
+        "params": {},
+    },
+    # Office document tools
+    "docx": {
+        "type": "DocxTool",
+        "module": "taskforce.infrastructure.tools.native.docx_tool",
+        "params": {},
+    },
+    "pptx": {
+        "type": "PptxTool",
+        "module": "taskforce.infrastructure.tools.native.pptx_tool",
+        "params": {},
+    },
+    "excel": {
+        "type": "ExcelTool",
+        "module": "taskforce.infrastructure.tools.native.excel_tool",
         "params": {},
     },
 }

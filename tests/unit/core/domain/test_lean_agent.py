@@ -140,6 +140,17 @@ class TestAgentInitialization:
         agent = _make_agent(planning_strategy=custom_strategy)
         assert agent.planning_strategy is custom_strategy
 
+    def test_no_runtime_tracker_by_default(self) -> None:
+        """runtime_tracker is None by default."""
+        agent = _make_agent()
+        assert agent.runtime_tracker is None
+
+    def test_custom_runtime_tracker(self) -> None:
+        """runtime_tracker can be injected."""
+        tracker = AsyncMock()
+        agent = _make_agent(runtime_tracker=tracker)
+        assert agent.runtime_tracker is tracker
+
     def test_no_skill_manager_by_default(self) -> None:
         """skill_manager is None by default."""
         agent = _make_agent()
@@ -407,6 +418,39 @@ class TestTruncateOutput:
 # ---------------------------------------------------------------------------
 
 
+class TestRuntimeTracking:
+    """Tests for record_heartbeat and mark_finished."""
+
+    async def test_record_heartbeat_with_tracker(self) -> None:
+        """record_heartbeat delegates to runtime_tracker."""
+        tracker = AsyncMock()
+        agent = _make_agent(runtime_tracker=tracker)
+        await agent.record_heartbeat("session-1", "running", {"step": 3})
+        tracker.record_heartbeat.assert_awaited_once_with(
+            "session-1", "running", {"step": 3}
+        )
+
+    async def test_record_heartbeat_without_tracker(self) -> None:
+        """record_heartbeat is a no-op without runtime_tracker."""
+        agent = _make_agent()
+        # Should not raise
+        await agent.record_heartbeat("session-1", "running")
+
+    async def test_mark_finished_with_tracker(self) -> None:
+        """mark_finished delegates to runtime_tracker."""
+        tracker = AsyncMock()
+        agent = _make_agent(runtime_tracker=tracker)
+        await agent.mark_finished("session-1", "completed", {"msg_len": 100})
+        tracker.mark_finished.assert_awaited_once_with(
+            "session-1", "completed", {"msg_len": 100}
+        )
+
+    async def test_mark_finished_without_tracker(self) -> None:
+        """mark_finished is a no-op without runtime_tracker."""
+        agent = _make_agent()
+        await agent.mark_finished("session-1", "completed")
+
+
 # ---------------------------------------------------------------------------
 # Close Tests
 # ---------------------------------------------------------------------------
@@ -455,6 +499,25 @@ class TestExecute:
 
         assert result is expected_result
         strategy.execute.assert_awaited_once_with(agent, "Do something", "session-1")
+
+    async def test_execute_records_heartbeat_and_marks_finished(self) -> None:
+        """execute() records heartbeat at start and marks finished at end."""
+        from taskforce.core.domain.models import ExecutionResult
+
+        tracker = AsyncMock()
+        strategy = MagicMock()
+        strategy.execute = AsyncMock(
+            return_value=ExecutionResult(
+                session_id="session-1", status="completed", final_message="Done"
+            )
+        )
+
+        agent = _make_agent(runtime_tracker=tracker, planning_strategy=strategy)
+        await agent.execute("Mission", "session-1")
+
+        tracker.record_heartbeat.assert_awaited_once()
+        tracker.mark_finished.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # _execute_tool Tests

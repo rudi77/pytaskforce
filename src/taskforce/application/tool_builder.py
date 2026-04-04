@@ -3,7 +3,8 @@
 Handles all tool instantiation, resolution, and filtering logic:
 - Native tool creation from config specs
 - MCP tool creation via connection manager
-- Specialist tool sets (coding)
+- Specialist tool sets (coding, rag)
+- Sub-agent and orchestration tool instantiation
 - Memory tool hydration
 """
 
@@ -87,7 +88,7 @@ class ToolBuilder:
             tools = self.create_native_tools(
                 config, llm_provider, user_context=user_context
             )
-        elif use_specialist_defaults and specialist == "coding":
+        elif use_specialist_defaults and specialist in ("coding", "rag"):
             self._logger.debug(
                 "using_specialist_defaults", specialist=specialist
             )
@@ -177,7 +178,7 @@ class ToolBuilder:
         Args:
             config: Configuration dictionary.
             llm_provider: LLM provider for LLMTool.
-            user_context: Optional user context.
+            user_context: Optional user context for RAG tools.
 
         Returns:
             List of native tool instances.
@@ -192,6 +193,10 @@ class ToolBuilder:
             tools = self._resolver.resolve(tool_names)
         else:
             tools = self._instantiate_tools_legacy(tools_config, config, llm_provider, user_context)
+
+        orchestration_tool = self.build_orchestration_tool(config)
+        if orchestration_tool:
+            tools.append(orchestration_tool)
 
         include_llm_generate = config.get("agent", {}).get(
             "include_llm_generate", False
@@ -304,6 +309,12 @@ class ToolBuilder:
     # Specialist tool name mappings for resolver-based resolution.
     _SPECIALIST_TOOLS: dict[str, list[str]] = {
         "coding": ["file_read", "file_write", "powershell", "ask_user"],
+        "rag": [
+            "rag_semantic_search",
+            "rag_list_documents",
+            "rag_get_document",
+            "ask_user",
+        ],
     }
 
     def create_specialist_tools(
@@ -319,10 +330,10 @@ class ToolBuilder:
         Otherwise falls back to direct instantiation.
 
         Args:
-            specialist: Specialist profile (e.g. "coding").
-            config: Configuration dictionary.
+            specialist: Specialist profile ("coding" or "rag").
+            config: Configuration dictionary (for RAG tools).
             llm_provider: LLM provider.
-            user_context: Optional user context.
+            user_context: Optional user context for RAG tools.
 
         Returns:
             List of specialist tool instances.
@@ -373,13 +384,29 @@ class ToolBuilder:
             )
             return [FileReadTool(), FileWriteTool(), PowerShellTool(), AskUserTool()]
 
-        # Unknown specialist - should not reach here due to validation in
-        # create_specialist_tools, but return empty as a safeguard.
-        self._logger.warning(
-            "unknown_specialist_legacy",
-            specialist=specialist,
+        # specialist == "rag"
+        from taskforce.infrastructure.tools.rag.get_document_tool import (
+            GetDocumentTool,
         )
-        return []
+        from taskforce.infrastructure.tools.rag.list_documents_tool import (
+            ListDocumentsTool,
+        )
+        from taskforce.infrastructure.tools.rag.semantic_search_tool import (
+            SemanticSearchTool,
+        )
+
+        self._logger.debug(
+            "creating_specialist_tools",
+            specialist="rag",
+            tools=["SemanticSearchTool", "ListDocumentsTool", "GetDocumentTool", "AskUserTool"],
+            has_user_context=user_context is not None,
+        )
+        return [
+            SemanticSearchTool(user_context=user_context),
+            ListDocumentsTool(user_context=user_context),
+            GetDocumentTool(user_context=user_context),
+            AskUserTool(),
+        ]
 
     # -------------------------------------------------------------------------
     # Tool instantiation
@@ -402,7 +429,7 @@ class ToolBuilder:
         Args:
             tool_spec: Tool specification dict or short tool name.
             llm_provider: LLM provider for tools that need it.
-            user_context: Optional user context.
+            user_context: Optional user context for RAG tools.
             gateway: Optional communication gateway for SendNotificationTool.
 
         Returns:
@@ -416,18 +443,14 @@ class ToolBuilder:
         )
         from taskforce.infrastructure.tools.registry import resolve_tool_spec
 
-        # Orchestration tool types have been removed from the core framework.
         if isinstance(tool_spec, dict) and tool_spec.get("type") in {
             "sub_agent",
             "agent",
-            "parallel_agent",
         }:
-            self._logger.warning(
-                "orchestration_tool_unavailable",
-                tool_type=tool_spec.get("type"),
-                hint="Orchestration tools have been removed from the core framework",
-            )
-            return None
+            return self.instantiate_sub_agent_tool(tool_spec)
+
+        if isinstance(tool_spec, dict) and tool_spec.get("type") == "parallel_agent":
+            return self.instantiate_parallel_agent_tool(tool_spec)
 
         resolved_spec = resolve_tool_spec(tool_spec)
         if not resolved_spec:
@@ -448,6 +471,14 @@ class ToolBuilder:
 
             if tool_type == "LLMTool":
                 tool_params["llm_service"] = llm_provider
+
+            if tool_type in [
+                "SemanticSearchTool",
+                "ListDocumentsTool",
+                "GetDocumentTool",
+            ]:
+                if user_context:
+                    tool_params["user_context"] = user_context
 
             if tool_type == "SendNotificationTool" and gateway:
                 tool_params["gateway"] = gateway
@@ -472,9 +503,142 @@ class ToolBuilder:
             )
             return None
 
+    def instantiate_sub_agent_tool(
+        self,
+        tool_spec: dict[str, Any],
+    ) -> ToolProtocol | None:
+        """Instantiate a sub-agent tool from configuration."""
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration import AgentTool
+        from taskforce.infrastructure.tools.orchestration.sub_agent_tool import (
+            SubAgentTool,
+        )
+
+        tool_name = tool_spec.get("name")
+        specialist = tool_spec.get("specialist") or tool_name
+        if not tool_name:
+            self._logger.warning(
+                "invalid_sub_agent_tool_spec",
+                tool_spec=tool_spec,
+                hint="Sub-agent tool spec requires 'name'",
+            )
+            return None
+
+        profile = tool_spec.get("profile", "dev")
+        work_dir = tool_spec.get("work_dir")
+        max_steps = tool_spec.get("max_steps")
+        planning_strategy = tool_spec.get("planning_strategy")
+        summarize_results = bool(tool_spec.get("summarize_results", True))
+        summary_max_length = int(tool_spec.get("summary_max_length", 2000))
+        auto_approve = bool(tool_spec.get("auto_approve", False))
+
+        tool_overrides = tool_spec.get("tool_overrides")
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self._factory,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+            tool_overrides=tool_overrides,
+        )
+        agent_tool = AgentTool(
+            agent_factory=self._factory,
+            sub_agent_spawner=sub_agent_spawner,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+            summarize_results=summarize_results,
+            summary_max_length=summary_max_length,
+            auto_approve=auto_approve,
+        )
+
+        return SubAgentTool(
+            agent_tool=agent_tool,
+            specialist=specialist,
+            name=tool_name,
+            description=tool_spec.get("description"),
+            planning_strategy=planning_strategy,
+            auto_approve=auto_approve,
+        )
+
+    def instantiate_parallel_agent_tool(
+        self,
+        tool_spec: dict[str, Any],
+    ) -> ToolProtocol | None:
+        """Instantiate a parallel agent tool from configuration."""
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration.parallel_agent_tool import (
+            ParallelAgentTool,
+        )
+
+        profile = tool_spec.get("profile", "dev")
+        work_dir = tool_spec.get("work_dir")
+        max_steps = tool_spec.get("max_steps")
+        max_concurrency = int(tool_spec.get("max_concurrency", 3))
+
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self._factory,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+        )
+
+        return ParallelAgentTool(
+            sub_agent_spawner=sub_agent_spawner,
+            profile=profile,
+            work_dir=work_dir,
+            max_steps=max_steps,
+            default_max_concurrency=max_concurrency,
+        )
+
     # -------------------------------------------------------------------------
-    # MCP tools
+    # Orchestration & MCP
     # -------------------------------------------------------------------------
+
+    def build_orchestration_tool(
+        self, config: dict[str, Any]
+    ) -> ToolProtocol | None:
+        """Build AgentTool when orchestration is enabled."""
+        orchestration_config = config.get("orchestration", {})
+        if not orchestration_config.get("enabled", False):
+            return None
+
+        from taskforce.application.sub_agent_spawner import SubAgentSpawner
+        from taskforce.infrastructure.tools.orchestration import AgentTool
+
+        sub_agent_spawner = SubAgentSpawner(
+            agent_factory=self._factory,
+            profile=orchestration_config.get("sub_agent_profile", "dev"),
+            work_dir=orchestration_config.get("sub_agent_work_dir"),
+            max_steps=orchestration_config.get("sub_agent_max_steps"),
+        )
+        agent_tool = AgentTool(
+            agent_factory=self._factory,
+            sub_agent_spawner=sub_agent_spawner,
+            profile=orchestration_config.get("sub_agent_profile", "dev"),
+            work_dir=orchestration_config.get("sub_agent_work_dir"),
+            max_steps=orchestration_config.get("sub_agent_max_steps"),
+            summarize_results=orchestration_config.get(
+                "summarize_results", False
+            ),
+            summary_max_length=orchestration_config.get(
+                "summary_max_length", 2000
+            ),
+            auto_approve=bool(
+                orchestration_config.get("auto_approve", False)
+            ),
+        )
+
+        self._logger.info(
+            "orchestration_enabled",
+            agent_tool_added=True,
+            sub_agent_profile=orchestration_config.get(
+                "sub_agent_profile", "dev"
+            ),
+            sub_agent_max_steps=orchestration_config.get(
+                "sub_agent_max_steps"
+            ),
+        )
+        return agent_tool
 
     async def create_mcp_tools(
         self, config: dict[str, Any]

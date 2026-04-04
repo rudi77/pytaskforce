@@ -17,6 +17,9 @@ import aiofiles
 import structlog
 import yaml
 
+from taskforce.application.intent_router import (
+    create_intent_router_from_config,
+)
 from taskforce.application.planning_strategy_factory import select_planning_strategy
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.application.profile_loader import DEFAULT_TOOL_NAMES, ProfileLoader
@@ -30,6 +33,7 @@ from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.errors import ConfigError
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.utils.paths import get_base_path
@@ -56,8 +60,9 @@ def _set_plugin_manifest(agent: Agent, manifest: Any) -> None:
 def _set_merged_config(agent: Agent, config: dict[str, Any]) -> None:
     """Store the merged profile config on an agent.
 
-    This allows downstream consumers to access the fully resolved config
-    for plugin agents where the profile name alone is not loadable.
+    This allows downstream consumers (e.g. the executor's consolidation
+    initializer) to access the fully resolved config for plugin agents
+    where the profile name alone is not loadable.
     """
     agent._merged_config = config
 
@@ -105,8 +110,17 @@ class AgentFactory:
         self.prompt_assembler = SystemPromptAssembler()
         self._tool_builder = ToolBuilder(self)
         self._infra_builder: Any = None  # Lazy-initialised InfrastructureBuilder
+        self._gateway: Any = None  # Optional CommunicationGateway for SendNotificationTool
         self._scheduler: Any = None  # Optional scheduler for ScheduleTool/ReminderTool
         self._auth_manager: Any = None  # Optional AuthManager for AuthTool
+
+    def set_gateway(self, gateway: Any) -> None:
+        """Set the communication gateway for SendNotificationTool injection.
+
+        Args:
+            gateway: CommunicationGateway instance.
+        """
+        self._gateway = gateway
 
     def set_scheduler(self, scheduler: Any) -> None:
         """Set the scheduler for ScheduleTool and ReminderTool injection.
@@ -277,11 +291,11 @@ class AgentFactory:
         base_config: dict[str, Any],
         definition: AgentDefinition,
     ) -> dict[str, Any]:
-        """Build core infrastructure components (state manager, LLM, memory).
+        """Build core infrastructure components (state manager, LLM, runtime, memory).
 
         Returns:
             Dict with keys: state_manager, llm_provider, context_policy,
-            memory_store, memory_context_config,
+            runtime_tracker, memory_store, memory_context_config,
             mcp_contexts (populated later).
         """
         ib = self.infra_builder
@@ -297,6 +311,9 @@ class AgentFactory:
             ),
             "llm_provider": ib.build_llm_provider(base_config),
             "context_policy": ib.build_context_policy(base_config),
+            "runtime_tracker": self._create_runtime_tracker(
+                base_config, work_dir_override=definition.work_dir
+            ),
             "model_alias": base_config.get("llm", {}).get("default_model", "main"),
             "memory_store": memory_store,
             "memory_context_config": memory_context_config,
@@ -390,6 +407,7 @@ class AgentFactory:
             llm_provider=llm_provider,
             user_context=user_context,
             memory_store_dir=memory_store_dir,
+            gateway=self._gateway,
             notification_defaults=base_config.get("notifications"),
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,
@@ -397,6 +415,8 @@ class AgentFactory:
         )
         self._tool_builder.set_resolver(tool_registry)
         native_tools = tool_registry.resolve(definition.tools)
+        self._add_orchestration_tool(native_tools, base_config)
+        self._add_sub_agent_tools(native_tools, definition.sub_agent_specs)
 
         plugin_tools: list[ToolProtocol] = []
         if definition.source == AgentSource.PLUGIN and definition.plugin_path:
@@ -405,6 +425,30 @@ class AgentFactory:
             )
 
         return plugin_tools + native_tools + mcp_tools
+
+    def _add_orchestration_tool(
+        self, tools: list[ToolProtocol], config: dict[str, Any]
+    ) -> None:
+        """Add orchestration tool to tool list if enabled and not duplicate."""
+        orchestration_tool = self._tool_builder.build_orchestration_tool(config)
+        if orchestration_tool and not any(
+            t.name == orchestration_tool.name for t in tools
+        ):
+            tools.append(orchestration_tool)
+
+    def _add_sub_agent_tools(
+        self,
+        tools: list[ToolProtocol],
+        sub_agent_specs: list[dict[str, Any]],
+    ) -> None:
+        """Instantiate and add sub-agent and parallel-agent tools from definition specs."""
+        for spec in sub_agent_specs:
+            if spec.get("type") == "parallel_agent":
+                tool = self._tool_builder.instantiate_parallel_agent_tool(spec)
+            else:
+                tool = self._tool_builder.instantiate_sub_agent_tool(spec)
+            if tool:
+                tools.append(tool)
 
     def _extract_agent_settings(
         self,
@@ -436,6 +480,7 @@ class AgentFactory:
         system_prompt: str,
         settings: dict[str, Any],
         skill_manager: Any | None = None,
+        intent_router: Any | None = None,
         summary_threshold: int | None = None,
         compression_trigger: int | None = None,
         max_input_tokens: int | None = None,
@@ -457,7 +502,9 @@ class AgentFactory:
             max_steps=settings["max_steps"],
             max_parallel_tools=settings["max_parallel_tools"],
             planning_strategy=settings["planning_strategy"],
+            runtime_tracker=infra["runtime_tracker"],
             skill_manager=skill_manager,
+            intent_router=intent_router,
             summary_threshold=summary_threshold,
             compression_trigger=compression_trigger,
             max_input_tokens=max_input_tokens,
@@ -882,6 +929,9 @@ class AgentFactory:
             ),
             "llm_provider": ib.build_llm_provider(merged_config),
             "context_policy": self._create_context_policy(merged_config),
+            "runtime_tracker": self._create_runtime_tracker(
+                merged_config, work_dir_override=work_dir
+            ),
             "memory_store": mem_store,
             "memory_context_config": mem_cfg,
             "mcp_contexts": [],
@@ -1047,6 +1097,10 @@ class AgentFactory:
             "state_manager": state_manager,
             "llm_provider": llm_provider,
             "context_policy": self._create_context_policy(merged_config),
+            "runtime_tracker": self._create_runtime_tracker(
+                merged_config,
+                work_dir_override=plugin_work_dir,
+            ),
             "memory_store": plugin_mem_store,
             "memory_context_config": plugin_mem_cfg,
             "mcp_contexts": [],
@@ -1062,13 +1116,22 @@ class AgentFactory:
             planning_strategy=settings["planning_strategy"].name,
         )
 
-        # Build skill manager
+        # Build skill manager and intent router
         skill_manager = self._build_plugin_skill_manager(manifest, plugin_config)
+        intent_router = None
+        if skill_manager and skill_manager.has_skills:
+            intent_router = create_intent_router_from_config(plugin_config)
+            self.logger.info(
+                "intent_router_created",
+                plugin=manifest.name,
+                intents=intent_router.list_intents(),
+            )
 
         context_mgmt = merged_config.get("context_management", {})
         agent = self._instantiate_agent(
             infra=infra, all_tools=all_tools, system_prompt=system_prompt,
             settings=settings, skill_manager=skill_manager,
+            intent_router=intent_router,
             summary_threshold=context_mgmt.get("summary_threshold"),
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
@@ -1114,6 +1177,7 @@ class AgentFactory:
         registry = ToolRegistry(
             llm_provider=llm_provider,
             memory_store_dir=memory_store_dir,
+            gateway=self._gateway,
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,
         )
@@ -1247,6 +1311,14 @@ class AgentFactory:
     def _create_state_manager(self, config: dict[str, Any]) -> StateManagerProtocol:
         """Create state manager based on configuration."""
         return self.infra_builder.build_state_manager(config)
+
+    def _create_runtime_tracker(
+        self,
+        config: dict[str, Any],
+        work_dir_override: str | None = None,
+    ) -> AgentRuntimeTrackerProtocol | None:
+        """Create runtime tracker based on configuration."""
+        return self.infra_builder.build_runtime_tracker(config, work_dir_override)
 
     def _create_llm_provider(self, config: dict[str, Any]) -> LLMProviderProtocol:
         """Create LLM provider based on configuration."""
