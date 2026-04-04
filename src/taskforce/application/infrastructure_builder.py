@@ -345,77 +345,6 @@ class InfrastructureBuilder:
         return build_gateway_components(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
-    # Event Sources (Butler)
-    # -------------------------------------------------------------------------
-
-    def build_calendar_event_source(
-        self,
-        poll_interval_seconds: int = 300,
-        lookahead_minutes: int = 60,
-        calendar_id: str = "primary",
-        credentials_file: str | None = None,
-    ) -> Any:
-        """Build a CalendarEventSource instance.
-
-        Centralises the infrastructure import so that API-layer code
-        does not reference infrastructure directly.
-
-        Args:
-            poll_interval_seconds: Polling interval in seconds.
-            lookahead_minutes: How far ahead to look for events.
-            calendar_id: Google Calendar ID to poll.
-            credentials_file: Path to Google credentials file.
-
-        Returns:
-            CalendarEventSource instance implementing EventSourceProtocol.
-        """
-        from taskforce.infrastructure.event_sources.calendar_source import (
-            CalendarEventSource,
-        )
-
-        return CalendarEventSource(
-            poll_interval_seconds=poll_interval_seconds,
-            lookahead_minutes=lookahead_minutes,
-            calendar_id=calendar_id,
-            credentials_file=credentials_file,
-        )
-
-    def build_webhook_event_source(self) -> Any:
-        """Build a WebhookEventSource instance.
-
-        Centralises the infrastructure import so that API-layer code
-        does not reference infrastructure directly.
-
-        Returns:
-            WebhookEventSource instance implementing EventSourceProtocol.
-        """
-        from taskforce.infrastructure.event_sources.webhook_source import (
-            WebhookEventSource,
-        )
-
-        return WebhookEventSource()
-
-    # -------------------------------------------------------------------------
-    # Scheduler / Job Store (Butler)
-    # -------------------------------------------------------------------------
-
-    def build_job_store(self, work_dir: str = ".taskforce") -> Any:
-        """Build a FileJobStore instance.
-
-        Centralises the infrastructure import so that API-layer code
-        does not reference infrastructure directly.
-
-        Args:
-            work_dir: Working directory for job persistence.
-
-        Returns:
-            FileJobStore instance.
-        """
-        from taskforce.infrastructure.scheduler.job_store import FileJobStore
-
-        return FileJobStore(work_dir=work_dir)
-
-    # -------------------------------------------------------------------------
     # Runtime Tracker
     # -------------------------------------------------------------------------
 
@@ -494,24 +423,6 @@ class InfrastructureBuilder:
     # -------------------------------------------------------------------------
     # Memory Stores (Memory Consolidation)
     # -------------------------------------------------------------------------
-
-    def build_experience_store(self, work_dir: str = ".taskforce/experiences") -> Any:
-        """Build a FileExperienceStore instance.
-
-        Centralises the infrastructure import so that API-layer code
-        does not reference infrastructure directly.
-
-        Args:
-            work_dir: Working directory for experience persistence.
-
-        Returns:
-            FileExperienceStore instance implementing ExperienceStoreProtocol.
-        """
-        from taskforce.infrastructure.memory.file_experience_store import (
-            FileExperienceStore,
-        )
-
-        return FileExperienceStore(work_dir)
 
     def build_memory_store(self, work_dir: str = ".taskforce") -> Any:
         """Build a FileMemoryStore instance.

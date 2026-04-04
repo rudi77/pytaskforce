@@ -21,7 +21,6 @@ from taskforce.core.interfaces.conversation import (
 )
 
 if TYPE_CHECKING:
-    from taskforce.application.topic_detector import TopicDetector
     from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 
 logger = structlog.get_logger(__name__)
@@ -43,7 +42,7 @@ class ConversationManager:
         store: ConversationManagerProtocol,
         *,
         inactivity_threshold_hours: int = 24,
-        topic_detector: TopicDetector | None = None,
+        topic_detector: Any | None = None,
         memory_store: MemoryStoreProtocol | None = None,
     ) -> None:
         self._store = store
@@ -111,7 +110,7 @@ class ConversationManager:
     # Topic segmentation
     # ------------------------------------------------------------------
 
-    def set_topic_detector(self, detector: TopicDetector) -> None:
+    def set_topic_detector(self, detector: Any) -> None:
         """Inject a topic detector (e.g. after LLM provider is ready)."""
         self._topic_detector = detector
 

@@ -1,0 +1,365 @@
+"""Butler daemon that orchestrates the event-driven agent lifecycle.
+
+The daemon is the top-level process that:
+1. Loads butler profile configuration
+2. Builds all infrastructure components
+3. Starts the ButlerService with event sources, scheduler, and rules
+4. Optionally starts a PersistentAgentService for queue-based execution
+5. Writes periodic status files for the CLI to read
+6. Handles graceful shutdown
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+from typing import Any
+
+import structlog
+
+from taskforce.core.utils.time import utc_now
+from taskforce_butler.service import ButlerService
+
+logger = structlog.get_logger(__name__)
+
+
+class ButlerDaemon:
+    """Top-level butler daemon process.
+
+    Initializes and manages all butler components based on
+    the butler profile YAML configuration.
+
+    When ``persistent_agent=True`` (default), the daemon creates a
+    ``PersistentAgentService`` that processes all mission-execution
+    requests through a central ``RequestQueue``, ensuring sequential
+    agent execution and persistent conversation state (ADR-016).
+    """
+
+    def __init__(
+        self,
+        profile: str = "butler",
+        work_dir: str = ".taskforce",
+        persistent_agent: bool = True,
+        role: str | None = None,
+    ) -> None:
+        self._profile = profile
+        self._work_dir = work_dir
+        self._persistent_agent_enabled = persistent_agent
+        self._role_override = role
+        self._butler: ButlerService | None = None
+        self._agent_service: Any = None  # PersistentAgentService | None
+        self._running = False
+        self._status_task: asyncio.Task[None] | None = None
+        self._status_path = Path(work_dir) / "butler" / "status.json"
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the daemon is active."""
+        return self._running
+
+    @property
+    def agent_service(self) -> Any:
+        """The PersistentAgentService, if active."""
+        return self._agent_service
+
+    async def start(self) -> None:
+        """Start the butler daemon with full component initialization."""
+        logger.info("butler_daemon.starting", profile=self._profile)
+
+        config = self._load_config()
+
+        # Build butler service
+        self._butler = ButlerService(
+            work_dir=self._work_dir,
+            default_notification_channel=config.get("notifications", {}).get(
+                "default_channel", "telegram"
+            ),
+            default_recipient_id=config.get("notifications", {}).get("default_recipient_id", ""),
+            llm_fallback=config.get("agent", {}).get("llm_fallback", False),
+        )
+
+        # Try to wire up communication gateway
+        await self._setup_gateway(config)
+
+        # Try to wire up executor (and optionally PersistentAgentService)
+        await self._setup_executor(config)
+
+        # Set up event sources
+        await self._setup_event_sources(config)
+
+        # Load rules from config
+        await self._load_rules(config)
+
+        # Start the butler service
+        await self._butler.start()
+
+        # Start the persistent agent service if wired
+        if self._agent_service:
+            await self._agent_service.start()
+            logger.info("butler_daemon.persistent_agent_started")
+
+        self._running = True
+
+        # Start periodic status writer
+        self._status_task = asyncio.create_task(self._write_status_loop(), name="butler-status")
+
+        logger.info("butler_daemon.started", profile=self._profile)
+
+    async def stop(self) -> None:
+        """Gracefully stop the butler daemon."""
+        logger.info("butler_daemon.stopping")
+
+        if self._status_task:
+            self._status_task.cancel()
+            try:
+                await self._status_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop persistent agent service first (drains queue).
+        if self._agent_service:
+            await self._agent_service.stop()
+
+        if self._butler:
+            await self._butler.stop()
+
+        self._running = False
+
+        # Write final status
+        await self._write_status()
+
+        logger.info("butler_daemon.stopped")
+
+    def _load_config(self) -> dict[str, Any]:
+        """Load butler profile configuration and apply role overlay if set."""
+        from taskforce.application.factory import AgentFactory
+
+        factory = AgentFactory()
+        config_path = factory.config_dir / f"{self._profile}.yaml"
+
+        if config_path.exists():
+            import yaml  # type: ignore[import-untyped]
+
+            with open(config_path, encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        else:
+            logger.warning(
+                "butler_daemon.config_not_found",
+                profile=self._profile,
+                path=str(config_path),
+            )
+            config = {}
+
+        # Resolve and apply butler role overlay
+        role_name = self._role_override or config.get("role")
+        if role_name:
+            from taskforce_butler.role_loader import ButlerRoleLoader
+
+            role_loader = ButlerRoleLoader(
+                config_dir=factory.config_dir,
+                project_dir=Path(self._work_dir),
+            )
+            try:
+                role = role_loader.load(role_name)
+                config = role_loader.merge_into_config(config, role)
+                logger.info(
+                    "butler_daemon.role_applied",
+                    role=role_name,
+                )
+            except FileNotFoundError:
+                logger.error(
+                    "butler_daemon.role_not_found",
+                    role=role_name,
+                )
+
+        return config
+
+    async def _setup_gateway(self, config: dict[str, Any]) -> None:
+        """Set up the communication gateway if configured."""
+        if self._butler is None:
+            return
+
+        try:
+            from taskforce.application.executor import AgentExecutor
+            from taskforce.application.factory import AgentFactory
+            from taskforce.application.gateway import CommunicationGateway
+            from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+            components = InfrastructureBuilder().build_gateway_components(work_dir=self._work_dir)
+            if components.outbound_senders:
+                factory = AgentFactory()
+                factory.set_scheduler(self._butler.scheduler)
+                executor = AgentExecutor(factory=factory)
+                gateway = CommunicationGateway(
+                    executor=executor,
+                    conversation_store=components.conversation_store,
+                    recipient_registry=components.recipient_registry,
+                    outbound_senders=components.outbound_senders,
+                    max_conversation_history=30,
+                )
+                self._butler.set_gateway(gateway)
+                logger.info(
+                    "butler_daemon.gateway_configured",
+                    channels=list(components.outbound_senders.keys()),
+                )
+        except Exception as exc:
+            logger.warning("butler_daemon.gateway_setup_failed", error=str(exc))
+
+    async def _setup_executor(self, config: dict[str, Any]) -> None:
+        """Set up the agent executor and optionally the PersistentAgentService."""
+        if self._butler is None:
+            return
+
+        try:
+            from taskforce.application.executor import AgentExecutor
+            from taskforce.application.factory import AgentFactory
+
+            factory = AgentFactory()
+            factory.set_scheduler(self._butler.scheduler)
+            executor = AgentExecutor(factory=factory)
+            self._butler.set_executor(executor)
+            logger.info("butler_daemon.executor_configured")
+
+            # Wire PersistentAgentService when enabled.
+            if self._persistent_agent_enabled:
+                self._agent_service = self._build_persistent_agent_service(executor, config)
+                if self._agent_service:
+                    self._butler.set_agent_service(self._agent_service)
+                    logger.info("butler_daemon.persistent_agent_configured")
+        except Exception as exc:
+            logger.warning("butler_daemon.executor_setup_failed", error=str(exc))
+
+    def _build_persistent_agent_service(
+        self,
+        executor: Any,
+        config: dict[str, Any],
+    ) -> Any:
+        """Build PersistentAgentService with ConversationManager and AgentState."""
+        try:
+            from taskforce.application.conversation_manager import ConversationManager
+            from taskforce.application.persistent_agent_service import (
+                PersistentAgentService,
+            )
+            from taskforce.infrastructure.persistence.file_agent_state import (
+                FileAgentState,
+            )
+            from taskforce.infrastructure.persistence.file_conversation_store import (
+                FileConversationStore,
+            )
+
+            agent_state = FileAgentState(work_dir=self._work_dir)
+            conv_store = FileConversationStore(work_dir=self._work_dir)
+            conv_manager = ConversationManager(conv_store)
+
+            queue_cfg = config.get("request_queue", {})
+            return PersistentAgentService(
+                executor=executor,
+                agent_state=agent_state,
+                conversation_manager=conv_manager,
+                queue_max_size=queue_cfg.get("max_size", 100),
+                drain_timeout=queue_cfg.get("drain_timeout", 30.0),
+            )
+        except Exception as exc:
+            logger.warning("butler_daemon.persistent_agent_build_failed", error=str(exc))
+            return None
+
+    async def _setup_event_sources(self, config: dict[str, Any]) -> None:
+        """Set up event sources from configuration."""
+        if self._butler is None:
+            return
+
+        sources_config = config.get("event_sources", [])
+
+        for source_cfg in sources_config:
+            source_type = source_cfg.get("type", "")
+
+            if source_type == "calendar":
+                try:
+                    from taskforce_butler.infrastructure.event_sources.calendar_source import (
+                        CalendarEventSource,
+                    )
+
+                    cal_source = CalendarEventSource(
+                        poll_interval_seconds=source_cfg.get("poll_interval_minutes", 5) * 60,
+                        lookahead_minutes=source_cfg.get("lookahead_minutes", 60),
+                        calendar_id=source_cfg.get("calendar_id", "primary"),
+                        credentials_file=source_cfg.get("credentials_file"),
+                    )
+                    self._butler.add_event_source(cal_source)
+                    logger.info("butler_daemon.calendar_source_added")
+                except Exception as exc:
+                    logger.warning("butler_daemon.calendar_source_failed", error=str(exc))
+
+            elif source_type == "webhook":
+                try:
+                    from taskforce_butler.infrastructure.event_sources.webhook_source import (
+                        WebhookEventSource,
+                    )
+
+                    webhook_source = WebhookEventSource()
+                    self._butler.add_event_source(webhook_source)
+                    logger.info("butler_daemon.webhook_source_added")
+                except Exception as exc:
+                    logger.warning("butler_daemon.webhook_source_failed", error=str(exc))
+
+            else:
+                logger.warning("butler_daemon.unknown_source_type", source_type=source_type)
+
+    async def _load_rules(self, config: dict[str, Any]) -> None:
+        """Load trigger rules from configuration."""
+        if self._butler is None:
+            return
+
+        rules_config = config.get("rules", [])
+        for rule_cfg in rules_config:
+            try:
+                await self._butler.add_rule_from_config(rule_cfg)
+            except Exception as exc:
+                logger.warning(
+                    "butler_daemon.rule_load_failed",
+                    rule_name=rule_cfg.get("name", "?"),
+                    error=str(exc),
+                )
+
+    async def _write_status_loop(self) -> None:
+        """Periodically write butler status to disk."""
+        try:
+            while self._running:
+                await self._write_status()
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            pass
+
+    async def _write_status(self) -> None:
+        """Write current status to a JSON file."""
+        if not self._butler:
+            return
+
+        try:
+            status = await self._butler.get_status()
+            status["updated_at"] = utc_now().isoformat()
+            status["profile"] = self._profile
+            if self._role_override:
+                status["role"] = self._role_override
+
+            # Include persistent agent status when available.
+            if self._agent_service:
+                agent_status = await self._agent_service.status()
+                status["persistent_agent"] = {
+                    "running": agent_status.running,
+                    "queue_size": agent_status.queue_size,
+                    "active_conversations": agent_status.active_conversations,
+                    "last_activity": (
+                        agent_status.last_activity.isoformat()
+                        if agent_status.last_activity
+                        else None
+                    ),
+                }
+
+            self._status_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._status_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
+            tmp.rename(self._status_path)
+        except Exception as exc:
+            logger.warning("butler_daemon.status_write_failed", error=str(exc))
