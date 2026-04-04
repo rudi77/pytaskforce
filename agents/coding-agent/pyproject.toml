@@ -1,7 +1,7 @@
 [project]
 name = "taskforce-coding-agent"
 version = "0.1.0"
-description = "Coding agent for Taskforce - multi-agent orchestration with planner/worker/reviewer sub-agents"
+description = "Coding agent - multi-agent orchestration with planner/worker/reviewer sub-agents"
 requires-python = ">=3.11"
 dependencies = [
     "taskforce",

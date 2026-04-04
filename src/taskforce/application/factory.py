@@ -17,9 +17,6 @@ import aiofiles
 import structlog
 import yaml
 
-from taskforce.application.intent_router import (
-    create_intent_router_from_config,
-)
 from taskforce.application.planning_strategy_factory import select_planning_strategy
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.application.profile_loader import DEFAULT_TOOL_NAMES, ProfileLoader
@@ -1116,22 +1113,13 @@ class AgentFactory:
             planning_strategy=settings["planning_strategy"].name,
         )
 
-        # Build skill manager and intent router
+        # Build skill manager
         skill_manager = self._build_plugin_skill_manager(manifest, plugin_config)
-        intent_router = None
-        if skill_manager and skill_manager.has_skills:
-            intent_router = create_intent_router_from_config(plugin_config)
-            self.logger.info(
-                "intent_router_created",
-                plugin=manifest.name,
-                intents=intent_router.list_intents(),
-            )
 
         context_mgmt = merged_config.get("context_management", {})
         agent = self._instantiate_agent(
             infra=infra, all_tools=all_tools, system_prompt=system_prompt,
             settings=settings, skill_manager=skill_manager,
-            intent_router=intent_router,
             summary_threshold=context_mgmt.get("summary_threshold"),
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),

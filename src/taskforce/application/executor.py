@@ -74,8 +74,6 @@ class AgentExecutor:
         self,
         factory: AgentFactory | None = None,
         gateway: Any | None = None,
-        experience_tracker: Any | None = None,
-        consolidation_service: Any | None = None,
     ):
         """Initialize AgentExecutor with optional factory and gateway.
 
@@ -85,16 +83,9 @@ class AgentExecutor:
             gateway: Optional CommunicationGateway instance. When provided,
                     channel-targeted ``ask_user`` calls are automatically
                     routed via the gateway (send → poll → resume).
-            experience_tracker: Optional ExperienceTracker for capturing
-                    execution experiences into long-term memory.
-            consolidation_service: Optional ConsolidationService for
-                    auto-consolidation after execution.
         """
         from taskforce.application.agent_creation_pipeline import (
             AgentCreationPipeline,
-        )
-        from taskforce.application.consolidation_orchestrator import (
-            ConsolidationOrchestrator,
         )
         from taskforce.application.execution_error_handler import (
             ExecutionErrorHandler,
@@ -105,37 +96,9 @@ class AgentExecutor:
         self.logger = logger.bind(component="agent_executor")
 
         # Composed components (extracted concerns)
-        self._consolidation = ConsolidationOrchestrator(
-            experience_tracker=experience_tracker,
-            consolidation_service=consolidation_service,
-        )
         self._error_handler = ExecutionErrorHandler()
         self._agent_pipeline = AgentCreationPipeline(self.factory)
 
-    # Backward-compatible accessors for consolidation state
-    @property
-    def _experience_tracker(self) -> Any | None:
-        return self._consolidation.experience_tracker
-
-    @_experience_tracker.setter
-    def _experience_tracker(self, value: Any) -> None:
-        self._consolidation._experience_tracker = value
-
-    @property
-    def _consolidation_service(self) -> Any | None:
-        return self._consolidation.consolidation_service
-
-    @_consolidation_service.setter
-    def _consolidation_service(self, value: Any) -> None:
-        self._consolidation._consolidation_service = value
-
-    @property
-    def _consolidation_initialized(self) -> bool:
-        return self._consolidation._initialized
-
-    @_consolidation_initialized.setter
-    def _consolidation_initialized(self, value: bool) -> None:
-        self._consolidation._initialized = value
 
     async def execute_mission(
         self,
@@ -291,17 +254,6 @@ class AgentExecutor:
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
-        # Lazy-initialize consolidation components from profile config.
-        agent_config = getattr(agent, "_merged_config", None) if agent else None
-        self._consolidation.ensure_components(
-            profile,
-            config=agent_config,
-            profile_loader=getattr(self.factory, "profile_loader", None),
-        )
-
-        # Start experience tracking (if enabled)
-        self._consolidation.start_session(resolved_session_id, mission, profile)
-
         yield build_started_update(mission, resolved_session_id, profile, agent_id, plugin_path)
 
         self.logger.info(
@@ -323,9 +275,6 @@ class AgentExecutor:
                 planning_strategy_params=planning_strategy_params,
                 plugin_path=plugin_path,
             )
-
-        # Task complexity classification: decide model tier before execution.
-        await self._maybe_apply_complexity_routing(agent, mission)
 
         await self._maybe_store_conversation_history(
             agent=agent,
@@ -365,10 +314,6 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
-            await self._consolidation.post_execution(
-                resolved_session_id, agent, mission, execution_failed
-            )
-
             if agent and owns_agent:
                 asyncio.create_task(
                     self._deferred_close(agent, delay=2.0),
@@ -442,9 +387,6 @@ class AgentExecutor:
 
             if self._agent_supports_streaming(agent):
                 async for event in agent.execute_stream(current_mission, session_id):
-                    # Capture experience (non-invasive, sync)
-                    self._consolidation.observe(event)
-
                     # Auto-promote plain ask_user to channel-targeted
                     if source_channel and ask_router and ChannelAskRouter.is_plain_ask_user(event):
                         ask_router.auto_promote_ask(event, source_channel, source_conversation_id)
@@ -506,56 +448,6 @@ class AgentExecutor:
         """Generate unique session ID."""
         return str(uuid.uuid4())
 
-    async def _maybe_apply_complexity_routing(self, agent: Agent, mission: str) -> None:
-        """Classify task complexity and configure router for simple tasks.
-
-        When enabled in ``llm_config.yaml`` (``task_complexity.enabled``),
-        runs a fast classification call (Haiku) before execution. If the
-        task is ``simple``, the router downgrades ``main``/``powerful``
-        models to the configured ``simple_model`` (typically ``fast``).
-        """
-        from taskforce.infrastructure.llm.llm_router import LLMRouter
-
-        router = agent.llm_provider if isinstance(agent.llm_provider, LLMRouter) else None
-        if not router:
-            return
-
-        tc_config = router.task_complexity_config
-        if not tc_config.get("enabled", False):
-            return
-
-        from taskforce.application.task_complexity_classifier import (
-            TaskComplexityClassifier,
-        )
-
-        classifier = TaskComplexityClassifier(
-            agent.llm_provider,
-            classification_model=tc_config.get("classification_model", "fast"),
-            max_mission_chars=tc_config.get("max_mission_chars", 500),
-        )
-        result = await classifier.classify(mission)
-
-        if result.is_simple:
-            router.complexity_override = "simple"
-            # Propagate to sub-agent spawners in agent tools
-            self._propagate_complexity_to_spawners(agent, "simple")
-
-        self.logger.info(
-            "task_complexity.classified",
-            level=result.level,
-            confidence=result.confidence,
-            reason=result.reason,
-            model_override=router.complexity_override,
-        )
-
-    @staticmethod
-    def _propagate_complexity_to_spawners(agent: Agent, override: str) -> None:
-        """Set complexity override on all sub-agent spawners in agent tools."""
-        for tool in agent.tools.values():
-            spawner = getattr(tool, "_spawner", None)
-            if spawner and hasattr(spawner, "_complexity_override"):
-                spawner._complexity_override = override
-
     def _resolve_session_id(self, session_id: str | None) -> str:
         """Return an existing session ID or generate a new one."""
         if session_id is not None:
@@ -588,18 +480,6 @@ class AgentExecutor:
     # ------------------------------------------------------------------
     # Backward-compatible delegate methods
     # ------------------------------------------------------------------
-
-    def _ensure_consolidation_components(
-        self,
-        profile: str,
-        config: dict[str, Any] | None = None,
-    ) -> None:
-        """Backward-compatible wrapper for consolidation initialization."""
-        self._consolidation.ensure_components(
-            profile,
-            config=config,
-            profile_loader=getattr(self.factory, "profile_loader", None),
-        )
 
     # Agent creation delegates (backward-compatible)
 
@@ -752,10 +632,3 @@ class AgentExecutor:
     async def _create_plugin_agent_via_profile_name(self, *args, **kwargs):
         return await self._agent_pipeline._from_plugin_via_profile_name(*args, **kwargs)
 
-    # Consolidation delegates (backward-compatible)
-
-    def _should_run_llm_consolidation(self):
-        return self._consolidation._should_run_llm_consolidation()
-
-    async def _run_lightweight_consolidation(self, agent, mission, **kwargs):
-        return await self._consolidation._run_lightweight_consolidation(agent, mission, **kwargs)

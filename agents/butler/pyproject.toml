@@ -1,7 +1,7 @@
 [project]
 name = "taskforce-butler"
 version = "0.1.0"
-description = "Butler agent for Taskforce - event-driven personal assistant with scheduling, rules, and Google Workspace integration"
+description = "Butler agent - event-driven personal assistant with scheduling and Google Workspace"
 requires-python = ">=3.11"
 dependencies = [
     "taskforce",
@@ -10,6 +10,9 @@ dependencies = [
     "google-auth-httplib2>=0.2.0",
     "google-auth-oauthlib>=1.0.0",
 ]
+
+[project.scripts]
+taskforce-butler = "taskforce_butler.cli.commands:app"
 
 [build-system]
 requires = ["hatchling"]

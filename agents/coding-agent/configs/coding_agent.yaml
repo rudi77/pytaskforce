@@ -1,0 +1,138 @@
+# Coding Agent Development Configuration
+# Specialized agent for software development tasks
+
+profile: coding_agent
+specialist: coding  # Determines system prompt (Kernel + Coding Specialist)
+
+# Custom system prompt for multi-agent orchestration
+system_prompt: |
+  You are a coding orchestrator that delegates work to specialist sub-agents.
+
+  ## MODE SELECTION
+
+  - ANALYSIS (analyze, explain, investigate, review):
+    Explore the codebase yourself with shell. Do NOT call coding_worker.
+  - IMPLEMENTATION (implement, refactor, fix, build):
+    1. Quick codebase scan yourself (shell: Select-String / Get-ChildItem) to understand context.
+    2. For complex tasks: create a plan with the planner tool, then present it
+       to the user with ask_user BEFORE starting implementation.
+    3. For simple tasks (bug fix, small change): dispatch coding_worker directly.
+    4. Dispatch coding_worker to implement (parallelize independent tasks).
+    5. Dispatch coding_reviewer to review changes.
+    6. If review finds issues, send fixes back to coding_worker.
+
+  ## PLANNING (on-demand, not always)
+
+  Use the planner tool ONLY when the task requires multiple coordinated steps.
+  - Simple bug fix or small change? Just dispatch coding_worker directly.
+  - Multi-file refactor, new feature with tests, or architectural change?
+    1. Create a plan with the planner tool.
+    2. Present the plan to the user via ask_user: "Here is my plan: ... Shall I proceed?"
+    3. Only start implementation AFTER the user confirms.
+  - Adapt the plan during execution: mark steps done, add/remove steps as needed.
+
+  ## MEMORY
+
+  Use the memory tool to store and recall important information across sessions:
+  - Project conventions, architectural decisions, recurring patterns.
+  - User preferences and feedback.
+  - Do NOT store ephemeral task details — those belong in the scratchpad.
+
+  ## NOTIFICATIONS (best-effort)
+
+  Notify via send_notification (channel="telegram", recipient_id="5865840420")
+  when tasks complete. If notification fails, skip it — do NOT debug.
+
+  ## EFFICIENCY
+
+  - Use ask_user when stuck or requirements are unclear.
+  - NEVER use the llm tool — you ARE the LLM.
+  - Prefer shell over specialized tools when a single command suffices.
+  - Never spend more than 2 attempts on any single failing tool call.
+
+# Persistence configuration
+persistence:
+  type: file
+  work_dir: .taskforce_coding
+
+# Agent configuration
+agent:
+  enable_fast_path: true
+  planning_strategy: native_react  # Agent decides when to plan via planner tool
+  max_steps: 150
+  max_parallel_tools: 3
+  router:
+    use_llm_classification: true
+    max_follow_up_length: 100
+
+
+# LLM configuration
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+# Logging configuration
+logging:
+  level: DEBUG
+  format: console
+
+# Context Management - compression thresholds
+# Prevents the infinite re-read loop where compression wipes file contents
+# and the agent reads the same files again (default summary_threshold=20 is too low)
+context_management:
+  summary_threshold: 60          # Message count before triggering compression (default: 20)
+  compression_trigger: 80000     # Token count before triggering compression (default: 40000)
+  max_input_tokens: 120000       # Max input tokens allowed (default: 100000)
+
+# Context Policy configuration (Story 9.2)
+# Controls budgeting for context pack injection before LLM calls
+context_policy:
+  max_items: 15                      # Higher for orchestrator - needs broad context for delegation
+  max_chars_per_item: 3500           # Generous - orchestrator makes delegation decisions
+  max_total_chars: 8000              # More budget for orchestration context
+  include_latest_tool_previews_n: 5  # Number of latest tool previews to include
+  allow_tools: null                  # null = all tools allowed, or list of tool names
+  allow_selectors:                   # Selector types to use (MVP: first_chars)
+    - first_chars
+
+consolidation:
+  enabled: true
+  auto_capture: true        # Experience-Tracking bei jeder Ausführung
+  auto_consolidate: false   # true = nach jeder Session konsolidieren
+  strategy: batch            # "batch" oder "immediate"
+  max_sessions: 50
+  model_alias: main
+  work_dir: .taskforce/experiences
+
+
+# Tool configuration for coding agent
+# Minimal: shell + edit + memory + notifications + sub-agents
+# Shell handles: cat, grep, find, git, python, pytest, file I/O
+tools:
+  - shell
+  - edit
+  - memory
+  - send_notification
+
+  # Sub-agent tools
+  - type: sub_agent
+    name: coding_worker
+    auto_approve: true
+    summarize_results: true
+    summary_max_length: 3200
+  - type: sub_agent
+    name: coding_reviewer
+    summarize_results: true
+    summary_max_length: 2600
+  - type: parallel_agent
+    max_concurrency: 3
+
+# Notification defaults
+notifications:
+  default_channel: telegram
+  default_recipient_id: "5865840420"
+
+# Unified Memory Configuration
+memory:
+  type: file
+  store_dir: ".taskforce_coding/memory"

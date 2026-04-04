@@ -904,14 +904,12 @@ class SimpleChatRunner:
         self.console.print(f"[{style}]ℹ️ {message}[/{style}]")
 
     def _print_token_analytics(self) -> None:
-        """Show detailed token analytics after each agent response."""
-        from taskforce.application.token_analytics_facade import get_execution_token_summary
-        from taskforce.api.cli.output_formatter import TaskforceConsole
+        """Show detailed token analytics after each agent response.
 
-        summary = get_execution_token_summary()
-        if summary is not None:
-            tf_console = TaskforceConsole()
-            tf_console.print_token_analytics(summary)
+        Token analytics callback has been moved to agent packages.
+        This is now a no-op.
+        """
+        pass
 
     async def _show_context(self, command_args: str) -> None:
         """Render a context snapshot showing what is sent to the LLM."""

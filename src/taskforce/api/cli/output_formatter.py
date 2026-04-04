@@ -6,10 +6,7 @@ between agent and user messages.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from taskforce.core.domain.token_analytics import ExecutionTokenSummary
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -286,7 +283,7 @@ class TaskforceConsole:
         )
         self.console.print(token_panel)
 
-    def print_token_analytics(self, summary: ExecutionTokenSummary) -> None:
+    def print_token_analytics(self, summary: Any) -> None:
         """Print detailed token analytics from LiteLLM callback.
 
         Args:
