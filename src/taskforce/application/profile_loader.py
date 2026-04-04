@@ -28,6 +28,48 @@ from taskforce.application.config_schema import (
 
 logger = structlog.get_logger(__name__)
 
+# ------------------------------------------------------------------
+# Module-level extra config directory registry
+# ------------------------------------------------------------------
+
+_extra_config_dirs: list[Path] = []
+
+
+def register_config_dir(path: Path | str) -> None:
+    """Register an additional directory to search for profile YAML files.
+
+    Agent packages (e.g. ``taskforce_butler``, ``taskforce_coding_agent``)
+    call this at CLI startup so their shipped configs are discoverable by
+    :class:`ProfileLoader`.
+
+    Duplicate paths are silently ignored.
+
+    Args:
+        path: Absolute or relative path to a directory containing
+            ``*.yaml`` profile files.
+    """
+    resolved = Path(path).resolve()
+    if resolved not in _extra_config_dirs:
+        _extra_config_dirs.append(resolved)
+        logger.debug("config_dir_registered", path=str(resolved))
+
+
+def get_extra_config_dirs() -> list[Path]:
+    """Return the list of registered extra config directories.
+
+    Returns:
+        Snapshot of currently registered directories (defensive copy).
+    """
+    return list(_extra_config_dirs)
+
+
+def clear_extra_config_dirs() -> None:
+    """Remove all registered extra config directories.
+
+    Primarily useful in tests to reset global state.
+    """
+    _extra_config_dirs.clear()
+
 
 # Default tool names used when no profile or inline tools are specified.
 DEFAULT_TOOL_NAMES: list[str] = [
@@ -85,6 +127,56 @@ class ProfileLoader:
         return new_config_dir
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _probe_dir(config_dir: Path, profile: str) -> Path | None:
+        """Check a config directory for a profile YAML file.
+
+        Looks for ``{config_dir}/{profile}.yaml`` first, then
+        ``{config_dir}/custom/{profile}.yaml``.
+
+        Returns:
+            The resolved path if found, otherwise ``None``.
+        """
+        candidate = config_dir / f"{profile}.yaml"
+        if candidate.exists():
+            return candidate
+        custom_candidate = config_dir / "custom" / f"{profile}.yaml"
+        if custom_candidate.exists():
+            return custom_candidate
+        return None
+
+    def _find_profile_path(self, profile: str) -> Path | None:
+        """Search all config directories for a profile YAML file.
+
+        Order:
+        1. Primary config directory (``self._config_dir``)
+        2. Each registered extra config directory (in registration order)
+
+        Returns:
+            The first matching path, or ``None`` if not found.
+        """
+        # Primary directory first
+        result = self._probe_dir(self._config_dir, profile)
+        if result is not None:
+            return result
+
+        # Extra directories registered by agent packages
+        for extra_dir in _extra_config_dirs:
+            result = self._probe_dir(extra_dir, profile)
+            if result is not None:
+                self._logger.debug(
+                    "profile_found_in_extra_dir",
+                    profile=profile,
+                    config_dir=str(extra_dir),
+                )
+                return result
+
+        return None
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -94,6 +186,9 @@ class ProfileLoader:
         Search order:
         1. ``{config_dir}/{profile}.yaml``
         2. ``{config_dir}/custom/{profile}.yaml``
+        3. Each registered extra config directory (see :func:`register_config_dir`):
+           a. ``{extra_dir}/{profile}.yaml``
+           b. ``{extra_dir}/custom/{profile}.yaml``
 
         Args:
             profile: Profile name (e.g. ``"butler"``, ``"coding_agent"``).
@@ -104,21 +199,13 @@ class ProfileLoader:
         Raises:
             FileNotFoundError: If no matching YAML file is found.
         """
-        profile_path = self._config_dir / f"{profile}.yaml"
-
-        if not profile_path.exists():
-            custom_path = self._config_dir / "custom" / f"{profile}.yaml"
-            if custom_path.exists():
-                self._logger.debug(
-                    "profile_using_custom_agent",
-                    profile=profile,
-                    custom_path=str(custom_path),
-                )
-                profile_path = custom_path
-            else:
-                raise FileNotFoundError(
-                    f"Profile not found: {profile_path} or {custom_path}"
-                )
+        profile_path = self._find_profile_path(profile)
+        if profile_path is None:
+            searched = [str(self._config_dir)]
+            searched.extend(str(d) for d in _extra_config_dirs)
+            raise FileNotFoundError(
+                f"Profile '{profile}' not found. Searched: {', '.join(searched)}"
+            )
 
         with open(profile_path, encoding="utf-8") as f:
             config: dict[str, Any] = yaml.safe_load(f)
