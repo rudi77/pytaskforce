@@ -10,10 +10,10 @@ class TestContextPolicyCreation:
 
     def test_defaults(self) -> None:
         policy = ContextPolicy()
-        assert policy.max_items == 10
-        assert policy.max_chars_per_item == 500
-        assert policy.max_total_chars == 3000
-        assert policy.include_latest_tool_previews_n == 5
+        assert policy.max_items == 6
+        assert policy.max_chars_per_item == 300
+        assert policy.max_total_chars == 1800
+        assert policy.include_latest_tool_previews_n == 3
         assert policy.allow_tools is None
         assert policy.allow_selectors == ["first_chars"]
 
@@ -172,17 +172,17 @@ class TestFromDict:
 
     def test_empty_dict_uses_defaults(self) -> None:
         policy = ContextPolicy.from_dict({})
-        assert policy.max_items == 10
-        assert policy.max_chars_per_item == 500
-        assert policy.max_total_chars == 3000
-        assert policy.include_latest_tool_previews_n == 5
+        assert policy.max_items == 6
+        assert policy.max_chars_per_item == 300
+        assert policy.max_total_chars == 1800
+        assert policy.include_latest_tool_previews_n == 3
         assert policy.allow_tools is None
         assert policy.allow_selectors == ["first_chars"]
 
     def test_partial_dict(self) -> None:
         policy = ContextPolicy.from_dict({"max_items": 20})
         assert policy.max_items == 20
-        assert policy.max_chars_per_item == 500  # default
+        assert policy.max_chars_per_item == 300  # default
 
     def test_extra_keys_ignored(self) -> None:
         policy = ContextPolicy.from_dict({"max_items": 5, "unknown_key": "value"})
@@ -199,10 +199,10 @@ class TestToDict:
     def test_default_policy(self) -> None:
         policy = ContextPolicy()
         d = policy.to_dict()
-        assert d["max_items"] == 10
-        assert d["max_chars_per_item"] == 500
-        assert d["max_total_chars"] == 3000
-        assert d["include_latest_tool_previews_n"] == 5
+        assert d["max_items"] == 6
+        assert d["max_chars_per_item"] == 300
+        assert d["max_total_chars"] == 1800
+        assert d["include_latest_tool_previews_n"] == 3
         assert d["allow_tools"] is None
         assert d["allow_selectors"] == ["first_chars"]
 

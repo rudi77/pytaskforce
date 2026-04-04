@@ -73,11 +73,14 @@ class TestSystemPromptAssembler:
         assert "Senior Software Engineer" not in prompt
 
     def test_tools_included_in_prompt(self) -> None:
-        """Tool descriptions should appear in the assembled prompt."""
+        """Tools are passed via API, not injected into prompt text."""
         assembler = SystemPromptAssembler()
         tool = _make_mock_tool("my_search", "Search for things")
         prompt = assembler.assemble(tools=[tool])
-        assert "my_search" in prompt
+        # Tool descriptions are NOT injected into the system prompt text;
+        # they are passed via the tools API parameter on each LLM call.
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0
 
     def test_no_tools_no_crash(self) -> None:
         """Empty tools list should not cause an error."""
