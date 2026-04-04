@@ -264,10 +264,15 @@ class TestToolResultMessageFactoryBuildMessage:
         assert result["content"].startswith("x" * 100)
 
     async def test_handle_based_message_for_large_result(self) -> None:
-        """Large results use the tool result store and produce handle+preview."""
-        handle = _make_handle("handle-large-1", "file_read")
+        """Large results use the tool result store and produce file reference.
+
+        Note: file_read results are never stored (to avoid infinite loops),
+        so we use a different tool name here.
+        """
+        handle = _make_handle("handle-large-1", "shell")
         store = AsyncMock()
         store.put = AsyncMock(return_value=handle)
+        store._result_path = MagicMock(return_value="/tmp/results/handle-large-1.json")
 
         factory = ToolResultMessageFactory(
             tool_result_store=store,
@@ -278,7 +283,7 @@ class TestToolResultMessageFactoryBuildMessage:
         large_result = {"success": True, "output": "x" * 5000}
         result = await factory.build_message(
             tool_call_id="call_789",
-            tool_name="file_read",
+            tool_name="shell",
             tool_result=large_result,
             session_id="session-1",
             step=3,
@@ -286,18 +291,17 @@ class TestToolResultMessageFactoryBuildMessage:
 
         assert result["role"] == "tool"
         assert result["tool_call_id"] == "call_789"
-        assert result["name"] == "file_read"
+        assert result["name"] == "shell"
 
         # Store should have been called
         store.put.assert_awaited_once()
         put_kwargs = store.put.call_args
-        assert put_kwargs.kwargs["tool_name"] == "file_read"
+        assert put_kwargs.kwargs["tool_name"] == "shell"
 
-        # Content should contain handle and preview
+        # Content should contain file reference
         content = json.loads(result["content"])
-        assert "handle" in content
-        assert "preview_text" in content
-        assert content["handle"]["id"] == "handle-large-1"
+        assert "result_file" in content
+        assert "size_chars" in content
 
     async def test_store_not_used_for_small_result(self) -> None:
         """Store is not called when result is below threshold."""
@@ -344,6 +348,7 @@ class TestToolResultMessageFactoryBuildMessage:
         handle = _make_handle()
         store = AsyncMock()
         store.put = AsyncMock(return_value=handle)
+        store._result_path = MagicMock(return_value="/tmp/results/test.json")
 
         factory = ToolResultMessageFactory(
             tool_result_store=store,
@@ -365,11 +370,12 @@ class TestToolResultMessageFactoryBuildMessage:
         assert put_call.kwargs["metadata"]["success"] is True
 
     async def test_logs_handle_storage(self) -> None:
-        """Factory logs when storing result with handle."""
+        """Factory logs when storing result to file."""
         logger = _StubLogger()
         handle = _make_handle("logged-handle", "test_tool")
         store = AsyncMock()
         store.put = AsyncMock(return_value=handle)
+        store._result_path = MagicMock(return_value="/tmp/results/logged-handle.json")
 
         factory = ToolResultMessageFactory(
             tool_result_store=store,
@@ -385,8 +391,8 @@ class TestToolResultMessageFactoryBuildMessage:
             step=1,
         )
 
-        handle_logs = [
-            log for log in logger.logs if log[1].get("event") == "tool_result_stored_with_handle"
+        file_logs = [
+            log for log in logger.logs if log[1].get("event") == "tool_result_stored_to_file"
         ]
-        assert len(handle_logs) == 1
-        assert handle_logs[0][1]["handle_id"] == "logged-handle"
+        assert len(file_logs) == 1
+        assert file_logs[0][1]["file"] == "/tmp/results/logged-handle.json"
