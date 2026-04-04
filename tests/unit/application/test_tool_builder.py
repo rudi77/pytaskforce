@@ -107,6 +107,42 @@ class TestResolveMemoryStoreDir:
         assert result == "/explicit"
 
 
+class TestBuildOrchestrationTool:
+    """Tests for build_orchestration_tool."""
+
+    def test_no_orchestration_config_returns_none(
+        self, builder: ToolBuilder
+    ) -> None:
+        result = builder.build_orchestration_tool({})
+        assert result is None
+
+    def test_orchestration_disabled_returns_none(
+        self, builder: ToolBuilder
+    ) -> None:
+        result = builder.build_orchestration_tool(
+            {"orchestration": {"enabled": False}}
+        )
+        assert result is None
+
+    def test_orchestration_enabled_creates_tool(
+        self, builder: ToolBuilder
+    ) -> None:
+        with (
+            patch(
+                "taskforce.application.sub_agent_spawner.SubAgentSpawner"
+            ),
+            patch(
+                "taskforce.infrastructure.tools.orchestration.AgentTool"
+            ) as mock_agent_tool_cls,
+        ):
+            mock_agent_tool_cls.return_value = MagicMock()
+            result = builder.build_orchestration_tool(
+                {"orchestration": {"enabled": True}}
+            )
+            assert result is not None
+            mock_agent_tool_cls.assert_called_once()
+
+
 class TestCreateDefaultTools:
     """Tests for create_default_tools."""
 
@@ -179,6 +215,54 @@ class TestBuildTools:
         assert len(tools) == 9  # defaults
 
 
+class TestInstantiateSubAgentTool:
+    """Tests for instantiate_sub_agent_tool."""
+
+    def test_sub_agent_tool_enables_result_summarization_by_default(
+        self, builder: ToolBuilder
+    ) -> None:
+        with (
+            patch("taskforce.application.sub_agent_spawner.SubAgentSpawner"),
+            patch("taskforce.infrastructure.tools.orchestration.AgentTool") as mock_agent_tool_cls,
+            patch("taskforce.infrastructure.tools.orchestration.sub_agent_tool.SubAgentTool") as mock_sub_tool_cls,
+        ):
+            mock_agent_tool_cls.return_value = MagicMock()
+            mock_sub_tool_cls.return_value = MagicMock()
+
+            spec = {"type": "sub_agent", "name": "coding_worker"}
+            result = builder.instantiate_sub_agent_tool(spec)
+
+            assert result is not None
+            mock_agent_tool_cls.assert_called_once()
+            kwargs = mock_agent_tool_cls.call_args.kwargs
+            assert kwargs["summarize_results"] is True
+            assert kwargs["summary_max_length"] == 2000
+
+    def test_sub_agent_tool_accepts_custom_summary_limits(
+        self, builder: ToolBuilder
+    ) -> None:
+        with (
+            patch("taskforce.application.sub_agent_spawner.SubAgentSpawner"),
+            patch("taskforce.infrastructure.tools.orchestration.AgentTool") as mock_agent_tool_cls,
+            patch("taskforce.infrastructure.tools.orchestration.sub_agent_tool.SubAgentTool") as mock_sub_tool_cls,
+        ):
+            mock_agent_tool_cls.return_value = MagicMock()
+            mock_sub_tool_cls.return_value = MagicMock()
+
+            spec = {
+                "type": "sub_agent",
+                "name": "coding_reviewer",
+                "summarize_results": False,
+                "summary_max_length": 1500,
+            }
+            result = builder.instantiate_sub_agent_tool(spec)
+
+            assert result is not None
+            kwargs = mock_agent_tool_cls.call_args.kwargs
+            assert kwargs["summarize_results"] is False
+            assert kwargs["summary_max_length"] == 1500
+
+
 class TestResolverDelegation:
     """Tests verifying ToolBuilder delegates to resolver when available."""
 
@@ -223,6 +307,18 @@ class TestResolverDelegation:
         )
         mock_resolver.resolve.assert_called_once_with(
             ["file_read", "file_write", "powershell", "ask_user"]
+        )
+        assert len(tools) == 1
+
+    def test_create_specialist_tools_rag_delegates_to_resolver(
+        self, builder_with_resolver: ToolBuilder, mock_resolver: MagicMock
+    ) -> None:
+        llm_provider = AsyncMock()
+        tools = builder_with_resolver.create_specialist_tools(
+            "rag", {}, llm_provider, user_context={"user_id": "u1"}
+        )
+        mock_resolver.resolve.assert_called_once_with(
+            ["rag_semantic_search", "rag_list_documents", "rag_get_document", "ask_user"]
         )
         assert len(tools) == 1
 
