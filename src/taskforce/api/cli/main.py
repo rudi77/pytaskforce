@@ -1,61 +1,63 @@
-"""Taskforce CLI entry point."""
+"""Taskforce CLI entry point.
 
-import typer
-from rich.console import Console
+Delegates to the unified CLI in taskforce_cli if available,
+otherwise provides framework-only commands.
+"""
 
-from taskforce.api.cli.commands import (
-    chat,
-    config,
-    memory,
-    run,
-    skills,
-    tools,
-)
+try:
+    # Use the unified CLI that integrates framework + agent packages
+    from taskforce_cli.main import app  # noqa: F401
+except ImportError:
+    # Fallback: framework-only CLI (no agent commands)
+    import typer
+    from rich.console import Console
 
-app = typer.Typer(
-    name="taskforce",
-    help="Taskforce - Multi-Agent Orchestration Framework",
-    add_completion=True,
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
+    from taskforce.api.cli.commands import (
+        chat,
+        config,
+        memory,
+        run,
+        skills,
+        tools,
+    )
 
-console = Console()
+    app = typer.Typer(
+        name="taskforce",
+        help="Taskforce - AI Agent Framework",
+        add_completion=True,
+        no_args_is_help=True,
+        rich_markup_mode="rich",
+    )
 
-# Register command groups
-app.add_typer(run.app, name="run", help="Execute missions")
-app.add_typer(chat.app, name="chat", help="Interactive chat mode")
-app.add_typer(tools.app, name="tools", help="Tool management")
-app.add_typer(skills.app, name="skills", help="Skill management")
-app.add_typer(config.app, name="config", help="Configuration management")
-app.add_typer(memory.app, name="memory", help="Memory management")
+    console = Console()
 
+    # Register framework commands
+    app.add_typer(run.app, name="run", help="Execute missions")
+    app.add_typer(chat.app, name="chat", help="Interactive chat mode")
+    app.add_typer(tools.app, name="tools", help="Tool management")
+    app.add_typer(skills.app, name="skills", help="Skill management")
+    app.add_typer(config.app, name="config", help="Configuration management")
+    app.add_typer(memory.app, name="memory", help="Memory management")
 
-@app.callback()
-def main(
-    ctx: typer.Context,
-    profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
-    debug: bool = typer.Option(
-        False,
-        "--debug",
-        "-d",
-        help="Enable debug output (shows agent thoughts, actions, observations)",
-    ),
-):
-    """Taskforce Agent CLI."""
-    # Store global options in context for subcommands
-    ctx.obj = {"profile": profile, "debug": debug}
+    @app.callback()
+    def main(
+        ctx: typer.Context,
+        profile: str = typer.Option(
+            "dev", "--profile", "-p", help="Configuration profile"
+        ),
+        debug: bool = typer.Option(
+            False, "--debug", "-d", help="Enable debug output"
+        ),
+    ):
+        """Taskforce Agent CLI."""
+        ctx.obj = {"profile": profile, "debug": debug}
 
+    @app.command()
+    def version():
+        """Show Taskforce version."""
+        from taskforce import __version__
 
-@app.command()
-def version():
-    """Show Taskforce version."""
-    from taskforce import __version__
-    from taskforce.api.cli.output_formatter import TaskforceConsole
-
-    tf_console = TaskforceConsole()
-    tf_console.print_banner()
-    console.print(f"[bold blue]Version:[/bold blue] [cyan]{__version__}[/cyan]")
+        console.print(f"Taskforce v{__version__}")
 
 
 if __name__ == "__main__":
