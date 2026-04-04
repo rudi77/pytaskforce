@@ -92,7 +92,6 @@ class Agent:
         planning_strategy: PlanningStrategy | None = None,
         runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
         skill_manager: Any | None = None,
-        intent_router: Any | None = None,
         summary_threshold: int | None = None,
         memory_store: MemoryStoreProtocol | None = None,
         memory_context_config: MemoryContextConfig | None = None,
@@ -121,8 +120,6 @@ class Agent:
             runtime_tracker: Optional runtime tracker for heartbeats/checkpoints.
             skill_manager: Optional SkillManager for plugin-based skill activation
                           and automatic skill switching based on tool outputs.
-            intent_router: Optional FastIntentRouter for pre-LLM intent classification.
-                          When provided, allows skipping planning for well-defined intents.
             summary_threshold: Message count threshold for triggering compression
                               (default: 20, lower values compress more aggressively).
             memory_store: Optional memory store for automatic memory injection.
@@ -139,7 +136,6 @@ class Agent:
         self.logger = logger
         self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
-        self.intent_router = intent_router
 
         # Memory auto-injection
         self._memory_store = memory_store
