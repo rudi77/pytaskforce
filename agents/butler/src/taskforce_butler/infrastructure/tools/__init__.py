@@ -1,1 +1,1 @@
-"""Butler-specific tools."""
+"""Butler agent tools."""
