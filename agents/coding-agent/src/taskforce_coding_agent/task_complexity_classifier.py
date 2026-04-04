@@ -41,7 +41,7 @@ class ComplexityClassification:
     """Result of a task complexity classification."""
 
     level: str  # "simple" | "complex"
-    confidence: float  # 0.0–1.0
+    confidence: float  # 0.0-1.0
     reason: str  # Brief explanation
 
     @property
