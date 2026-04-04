@@ -56,13 +56,6 @@ dependencies = [
     # MCP integration
     "mcp>=1.0.0",
     "ddgs>=9.11.4",
-    # Google Workspace (Gmail, Calendar, Drive) — required by butler default profile
-    "google-api-python-client>=2.0.0",
-    "google-auth>=2.0.0",
-    "google-auth-httplib2>=0.2.0",
-    "google-auth-oauthlib>=1.0.0",
-    # Document processing (OCR, layout analysis, text extraction)
-    "docling>=2.0.0",
 ]
 
 [project.urls]
@@ -143,15 +136,6 @@ dev = [
     "types-PyYAML>=6.0",
     "pyinstaller>=6.0.0",
 ]
-
-[[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu121" }
-torchvision = { index = "pytorch-cu121" }
-torchaudio = { index = "pytorch-cu121" }
 
 [build-system]
 requires = ["hatchling"]
