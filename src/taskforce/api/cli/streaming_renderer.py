@@ -259,18 +259,7 @@ class StreamingMissionRenderer:
             )
         )
 
-        from taskforce.api.cli.output_formatter import TaskforceConsole
-
-        tf_console = TaskforceConsole(self._console)
-
-        from taskforce.application.token_analytics_facade import (
-            get_execution_token_summary,
-        )
-
-        analytics_summary = get_execution_token_summary()
-        if analytics_summary is not None:
-            tf_console.print_token_analytics(analytics_summary)
-        elif self.total_token_usage["total_tokens"] > 0:
+        if self.total_token_usage["total_tokens"] > 0:
             token_info = (
                 f"Prompt Tokens: {self.total_token_usage['prompt_tokens']:,}"
                 f"  |  Completion Tokens: "

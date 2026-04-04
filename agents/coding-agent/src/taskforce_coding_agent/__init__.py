@@ -1,1 +1,1 @@
-"""Taskforce Coding Agent - Multi-agent orchestration with specialist sub-agents."""
+"""Taskforce Coding Agent - multi-agent orchestration with planner/worker/reviewer sub-agents."""

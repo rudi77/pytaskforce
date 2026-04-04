@@ -201,25 +201,14 @@ def _execute_standard_mission(
         tf_console.print_debug(f"Session ID: {result.session_id}")
         tf_console.print_agent_message(result.final_message)
 
-    # Display token analytics (prefer detailed callback data, fall back to basic usage)
-    analytics_summary = _get_callback_summary()
-    if analytics_summary is not None:
-        tf_console.print_token_analytics(analytics_summary)
-    else:
-        token_usage = (
-            result.token_usage.to_dict()
-            if hasattr(result.token_usage, "to_dict")
-            else result.token_usage
-        )
-        if token_usage and token_usage.get("total_tokens", 0) > 0:
-            tf_console.print_token_usage(token_usage)
-
-
-def _get_callback_summary():
-    """Retrieve and reset the callback token summary, or return None."""
-    from taskforce.application.token_analytics_facade import get_execution_token_summary
-
-    return get_execution_token_summary()
+    # Display basic token usage
+    token_usage = (
+        result.token_usage.to_dict()
+        if hasattr(result.token_usage, "to_dict")
+        else result.token_usage
+    )
+    if token_usage and token_usage.get("total_tokens", 0) > 0:
+        tf_console.print_token_usage(token_usage)
 
 
 async def _execute_streaming_mission(

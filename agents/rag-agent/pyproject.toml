@@ -1,7 +1,7 @@
 [project]
 name = "taskforce-rag-agent"
 version = "0.1.0"
-description = "RAG agent for Taskforce - Azure AI Search integration for document retrieval"
+description = "RAG agent - Azure AI Search integration for semantic search and document retrieval"
 requires-python = ">=3.11"
 dependencies = [
     "taskforce",

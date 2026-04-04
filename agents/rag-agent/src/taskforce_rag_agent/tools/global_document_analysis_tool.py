@@ -1,0 +1,251 @@
+from typing import Any
+
+import structlog
+
+from taskforce.core.domain.errors import ToolError, tool_error_payload
+from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce_rag_agent.tools.azure_search_base import AzureSearchBase, Document
+from taskforce_rag_agent.tools.get_document_tool import GetDocumentTool
+
+
+class GlobalDocumentAnalysisTool(ToolProtocol):
+    """
+    This tool is used to handle global questions about an certain document,
+    e.g. it is able to summarize the document, answer questions about the document,
+    and provide a detailed analysis of the document.
+    """
+    def __init__(
+            self,
+            llm_provider: LLMProviderProtocol | None = None,
+            get_document_tool: GetDocumentTool | None = None,
+            user_context: dict[str, Any] | None = None):
+        self._llm_provider = llm_provider
+        self._get_document_tool = get_document_tool
+        self.azure_base = AzureSearchBase()
+        self.logger = structlog.get_logger().bind(tool="global_document_analysis")
+
+    @property
+    def llm_provider(self) -> LLMProviderProtocol:
+        """Lazy-load LLM provider if not provided."""
+        if self._llm_provider is None:
+            from taskforce.infrastructure.llm.litellm_service import LiteLLMService
+            self._llm_provider = LiteLLMService(config_path="src/taskforce/configs/llm_config.yaml")
+        return self._llm_provider
+
+    @property
+    def get_document_tool(self) -> GetDocumentTool:
+        """Lazy-load GetDocumentTool if not provided."""
+        if self._get_document_tool is None:
+            self._get_document_tool = GetDocumentTool()
+        return self._get_document_tool
+
+    @classmethod
+    def create_default(cls, user_context: dict[str, Any] | None = None) -> "GlobalDocumentAnalysisTool":
+        """Factory method to create tool with default dependencies."""
+        return cls(user_context=user_context)
+
+    @property
+    def name(self) -> str:
+        return "global_document_analysis"
+
+    @property
+    def description(self) -> str:
+        return "This tool is used to handle global questions about an certain document, \
+            e.g. it is able to summarize the document, answer questions about the document, \
+            and provide a detailed analysis of the document."
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        """
+        JSON schema for tool parameters.
+
+        Used by the agent to understand what parameters this tool accepts.
+        """
+        return {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string",
+                    "description": (
+                        "The unique document UUID (preferred) or document title/filename. "
+                        "Example: '30603b8a-9f41-47f4-9fe0-f329104faed5'"
+                    )
+                },
+                "question": {
+                    "type": "string",
+                    "description": "The question to answer"
+                },
+                "user_context": {
+                    "type": "object",
+                    "description": (
+                        "User context for security filtering "
+                        "(org_id, user_id, scope)"
+                    ),
+                    "default": {}
+                }
+            },
+            "required": ["document_id", "question"]
+        }
+
+    @property
+    def requires_approval(self) -> bool:
+        """Global document analysis is read-only, no approval needed."""
+        return False
+
+    @property
+    def approval_risk_level(self) -> ApprovalRiskLevel:
+        """Low risk - read-only operation."""
+        return ApprovalRiskLevel.LOW
+
+    @property
+    def supports_parallelism(self) -> bool:
+        return True
+
+    def get_approval_preview(self, **kwargs: Any) -> str:
+        """Generate approval preview (not used for read-only tool)."""
+        document_id = kwargs.get("document_id", "")
+        question = kwargs.get("question", "")
+        return f"Tool: {self.name}\nOperation: Global document analysis\nDocument: {document_id}\nQuestion: {question}"
+
+    async def execute(
+        self,
+        document_id: str,
+        question: str,
+        user_context: dict[str, Any] | None = None,
+        **kwargs: Any
+    ) -> dict[str, Any]:
+        """
+        Execute global document analysis.
+
+        Args:
+            document_id: The unique document UUID
+            question: The question to answer
+            user_context: Optional user context for security filtering
+            **kwargs: Additional arguments (ignored)
+
+        Returns:
+            Dict with structure:
+            {
+                "success": True,
+                "result": "The analysis result",
+                "document_id": "document_id",
+                "total_chunks_processed": 25,
+                "analysis_method": "map_reduce" | "direct"
+            }
+        """
+        if user_context is None:
+            user_context = {}
+
+        try:
+            result = await self.get_document_tool.execute(document_id, user_context=user_context, include_chunk_content=True)
+
+            if not result["success"]:
+                return {"success": False, "error": result["error"]}
+
+            # Get the document data from the result
+            document_data = result["document"]
+
+            # Handle the case where document might already be a Document object or a dict
+            if hasattr(document_data, 'chunks'):
+                # Already a Document object
+                document = document_data
+            else:
+                # Convert dict to Document object with better error handling
+                try:
+                    document = Document.from_dict(document_data)
+                except Exception as e:
+                    self.logger.error(
+                        "Failed to convert document data",
+                        error=str(e),
+                        document_data=document_data,
+                    )
+                    tool_error = ToolError(
+                        f"{self.name} failed: Failed to process document data: {e}",
+                        tool_name=self.name,
+                        details={"document_id": document_id, "stage": "parse_document"},
+                    )
+                    return tool_error_payload(tool_error)
+
+            # 1. Get the total length of the chunks in the document
+            total_chunks = len(document.chunks) if document.chunks else 0
+
+            if total_chunks == 0:
+                return {"success": False, "error": "Document has no content chunks available for analysis"}
+
+            # 2. If total chunks greater than 20 then use map reduce
+            if total_chunks > 20:
+                # split chunks into groups of 5
+                chunk_groups = [
+                    document.chunks[i:i + 5]
+                    for i in range(0, total_chunks, 5)
+                ]
+
+                summaries = []
+
+                for group in chunk_groups:
+                    chunk_texts = "\n\n".join([chunk.content_text for chunk in group])
+                    prompt = (
+                        f"Given the following document chunks:\n{chunk_texts}\n\n"
+                        f"Answer the following question:\n{question}\n\n"
+                        "Provide a concise answer based on the provided chunks."
+                    )
+                    response = await self.llm_provider.generate(prompt)
+                    summaries.append(response['generated_text'])
+
+                # combine intermediate answers
+                combined_prompt = (
+                    f"Given the following intermediate answers from document chunks:\n"
+                    f"{chr(10).join(summaries)}\n\n"
+                    f"Answer the following question:\n{question}\n\n"
+                    "Provide a comprehensive final answer based on the intermediate answers."
+                )
+                analysis_method = "map_reduce"
+
+            # 3. If total chunks less than 20 then process directly
+            else:
+                chunk_texts = "\n\n".join([chunk.content_text for chunk in document.chunks])
+                combined_prompt = (
+                    f"Given the following document chunks:\n{chunk_texts}\n\n"
+                    f"Answer the following question:\n{question}\n\n"
+                    "Provide a comprehensive answer based on the provided chunks."
+                )
+                analysis_method = "direct"
+
+            final_answer = await self.llm_provider.generate(combined_prompt)
+
+            # 4. Return the actual result to the user
+            return {
+                "success": True,
+                "result": final_answer,
+                "document_id": document_id,
+                "total_chunks_processed": total_chunks,
+                "analysis_method": analysis_method
+            }
+
+        except Exception as e:
+            self.logger.error(
+                "Global document analysis failed", error=str(e), document_id=document_id
+            )
+            tool_error = ToolError(
+                f"{self.name} failed: Global document analysis failed: {e}",
+                tool_name=self.name,
+                details={"document_id": document_id},
+            )
+            return tool_error_payload(tool_error)
+
+    def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
+        """Validate parameters before execution."""
+        if "document_id" not in kwargs:
+            return False, "Missing required parameter: document_id"
+
+        if not isinstance(kwargs["document_id"], str):
+            return False, "Parameter 'document_id' must be a string"
+
+        if "question" not in kwargs:
+            return False, "Missing required parameter: question"
+
+        if not isinstance(kwargs["question"], str):
+            return False, "Parameter 'question' must be a string"
+
+        return True, None
