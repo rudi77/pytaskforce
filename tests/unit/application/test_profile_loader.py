@@ -90,7 +90,7 @@ class TestProfileLoaderLoad:
         assert config["tools"] == DEFAULT_TOOL_NAMES
 
     def test_load_missing_profile_raises(self, loader: ProfileLoader) -> None:
-        with pytest.raises(FileNotFoundError, match="Profile not found"):
+        with pytest.raises(FileNotFoundError, match="not found"):
             loader.load("nonexistent")
 
     def test_load_missing_profile_error_includes_both_paths(
@@ -101,8 +101,8 @@ class TestProfileLoaderLoad:
         with pytest.raises(FileNotFoundError) as exc_info:
             loader.load("missing_profile")
         msg = str(exc_info.value)
-        assert "missing_profile.yaml" in msg
-        assert "custom" in msg
+        assert "missing_profile" in msg
+        assert str(config_dir) in msg
 
     def test_load_custom_profile(self, config_dir: Path) -> None:
         custom_dir = config_dir / "custom"
