@@ -415,28 +415,6 @@ class Agent:
             {"mission_length": len(mission)},
         )
 
-        # Fast Intent Routing: classify intent and activate skill BEFORE planning
-        if self.intent_router and self.skill_manager:
-            match = self.intent_router.classify(mission)
-            if match:  # classify() already checks min_confidence threshold
-                # Activate skill directly, skip planning overhead
-                activated = self.skill_manager.activate_skill(match.skill_name)
-                if activated:
-                    self.logger.info(
-                        "fast_intent_routing",
-                        intent=match.intent,
-                        skill=match.skill_name,
-                        confidence=match.confidence,
-                    )
-                    yield StreamEvent(
-                        event_type=EventType.SKILL_AUTO_ACTIVATED,
-                        data={
-                            "intent": match.intent,
-                            "skill": match.skill_name,
-                            "confidence": match.confidence,
-                        },
-                    )
-
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
         stream = self.planning_strategy.execute_stream(self, mission, session_id)
