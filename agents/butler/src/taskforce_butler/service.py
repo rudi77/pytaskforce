@@ -20,7 +20,7 @@ from taskforce_butler.domain.trigger_rule import (
 )
 from taskforce_butler.event_router import EventRouter
 from taskforce_butler.rule_engine import RuleEngine
-from taskforce.infrastructure.scheduler.scheduler_service import SchedulerService
+from taskforce_butler.infrastructure.scheduler.scheduler_service import SchedulerService
 
 logger = structlog.get_logger(__name__)
 

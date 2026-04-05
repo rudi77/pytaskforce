@@ -818,11 +818,20 @@ class AgentFactory:
         """Resolve a config path to an absolute file path."""
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
-            for candidate in [
+            candidates = [
                 self.config_dir / config_path,
                 self.config_dir / f"{config_path}.yaml",
                 Path(f"{config_path}.yaml"),
-            ]:
+            ]
+            # Also search agent package config directories (agents/*/configs/)
+            agents_dir = get_base_path() / "agents"
+            if agents_dir.is_dir():
+                for agent_dir in agents_dir.iterdir():
+                    agent_configs = agent_dir / "configs"
+                    if agent_configs.is_dir():
+                        candidates.append(agent_configs / config_path)
+                        candidates.append(agent_configs / f"{config_path}.yaml")
+            for candidate in candidates:
                 if candidate.exists():
                     config_path_obj = candidate
                     break
