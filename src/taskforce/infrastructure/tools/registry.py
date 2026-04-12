@@ -120,6 +120,72 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.memory_tool",
         "params": {},
     },
+    # Native tools - Browser automation
+    "browser": {
+        "type": "BrowserTool",
+        "module": "taskforce.infrastructure.tools.native.browser_tool",
+        "params": {},
+    },
+    # Native tools - Multimedia
+    "multimedia": {
+        "type": "MultimediaTool",
+        "module": "taskforce.infrastructure.tools.native.multimedia_tool",
+        "params": {},
+    },
+    # Native tools - Office documents
+    "docx": {
+        "type": "DocxTool",
+        "module": "taskforce.infrastructure.tools.native.docx_tool",
+        "params": {},
+    },
+    "pptx": {
+        "type": "PptxTool",
+        "module": "taskforce.infrastructure.tools.native.pptx_tool",
+        "params": {},
+    },
+    "excel": {
+        "type": "ExcelTool",
+        "module": "taskforce.infrastructure.tools.native.excel_tool",
+        "params": {},
+    },
+    # Native tools - Accounting
+    "accounting_validate": {
+        "type": "AccountingValidateTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_validate_tool",
+        "params": {},
+    },
+    "accounting_audit": {
+        "type": "AccountingAuditTool",
+        "module": "taskforce.infrastructure.tools.native.accounting_audit_tool",
+        "params": {},
+    },
+    # Orchestration tools - Sub-agent execution
+    "call_agents_parallel": {
+        "type": "ParallelAgentTool",
+        "module": "taskforce.infrastructure.tools.orchestration.parallel_agent_tool",
+        "params": {},
+    },
+    # RAG tools - Semantic search and document retrieval
+    "rag_semantic_search": {
+        "type": "SemanticSearchTool",
+        "module": "taskforce_rag_agent.tools.semantic_search_tool",
+        "params": {},
+    },
+    "rag_list_documents": {
+        "type": "ListDocumentsTool",
+        "module": "taskforce_rag_agent.tools.list_documents_tool",
+        "params": {},
+    },
+    "rag_get_document": {
+        "type": "GetDocumentTool",
+        "module": "taskforce_rag_agent.tools.get_document_tool",
+        "params": {},
+    },
+    "global_document_analysis": {
+        "type": "GlobalDocumentAnalysisTool",
+        "module": "taskforce_rag_agent.tools.global_document_analysis_tool",
+        "params": {},
+    },
     # Butler agent tools
     "send_notification": {
         "type": "SendNotificationTool",

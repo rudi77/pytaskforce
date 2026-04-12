@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from taskforce.core.domain.agent_event import AgentEvent
     from taskforce.core.domain.memory import MemoryRecord, MemoryScope
-    from taskforce_butler.domain.schedule import ScheduleJob
+    from taskforce.core.domain.schedule import ScheduleJob
     from taskforce_butler.domain.trigger_rule import RuleAction, TriggerRule
 
 

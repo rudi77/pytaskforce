@@ -1,0 +1,273 @@
+"""Application service for memory consolidation orchestration.
+
+Coordinates the experience store, consolidation engine, and memory store
+to manage the full consolidation lifecycle.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import structlog
+
+from taskforce.core.domain.enums import ConsolidationStrategy
+from taskforce.core.domain.experience import ConsolidationResult, SessionExperience
+from taskforce.core.domain.memory import MemoryKind, MemoryScope
+from taskforce.core.interfaces.consolidation import ConsolidationEngineProtocol
+from taskforce.core.interfaces.experience import ExperienceStoreProtocol
+from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
+
+logger = structlog.get_logger(__name__)
+
+
+def build_consolidation_components(
+    config: dict[str, Any],
+    llm_provider: Any = None,
+) -> tuple[Any, ConsolidationService | None]:
+    """Build experience tracker and consolidation service from profile config.
+
+    Args:
+        config: Profile configuration dict (may contain ``consolidation`` section).
+        llm_provider: LLM provider for the consolidation engine.
+
+    Returns:
+        Tuple of ``(experience_tracker, consolidation_service)`` — both may
+        be ``None`` if consolidation is not enabled.
+    """
+    consol_config = config.get("consolidation", {})
+    enabled = consol_config.get("enabled", False) or consol_config.get(
+        "auto_consolidate", False
+    )
+    auto_capture = consol_config.get("auto_capture", True)
+    if not enabled and not auto_capture:
+        return None, None
+    if not auto_capture:
+        return None, None
+
+    from taskforce.application.tool_builder import ToolBuilder
+    from taskforce.infrastructure.memory.consolidation_engine import ConsolidationEngine
+    from taskforce.infrastructure.memory.experience_tracker import ExperienceTracker
+    from taskforce.infrastructure.memory.file_experience_store import FileExperienceStore
+    from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+
+    work_dir = consol_config.get("work_dir", ".taskforce/experiences")
+    memory_dir = ToolBuilder.resolve_memory_store_dir(config)
+
+    experience_store = FileExperienceStore(work_dir)
+    memory_store = FileMemoryStore(memory_dir)
+    tracker = ExperienceTracker(experience_store)
+
+    engine: Any = None
+    service: ConsolidationService | None = None
+
+    if llm_provider is not None:
+        engine = ConsolidationEngine(
+            llm_provider=llm_provider,
+            memory_store=memory_store,
+            model_alias=consol_config.get("model_alias", "fast"),
+        )
+        service = ConsolidationService(
+            experience_store=experience_store,
+            consolidation_engine=engine,
+            memory_store=memory_store,
+            auto_consolidate=consol_config.get("auto_consolidate", False),
+            strategy=consol_config.get("strategy", "immediate"),
+            max_sessions=consol_config.get("max_sessions", 20),
+        )
+
+    return tracker, service
+
+
+class ConsolidationService:
+    """Orchestrates the memory consolidation lifecycle.
+
+    Args:
+        experience_store: Persistence for raw session experiences.
+        consolidation_engine: LLM-powered consolidation pipeline.
+        memory_store: Target store for consolidated memories.
+        auto_consolidate: Trigger consolidation after each session.
+        strategy: Default consolidation strategy.
+        max_sessions: Maximum sessions per batch consolidation.
+    """
+
+    def __init__(
+        self,
+        experience_store: ExperienceStoreProtocol,
+        consolidation_engine: ConsolidationEngineProtocol,
+        memory_store: MemoryStoreProtocol,
+        auto_consolidate: bool = False,
+        strategy: str = "immediate",
+        max_sessions: int = 20,
+    ) -> None:
+        self._experience_store = experience_store
+        self._engine = consolidation_engine
+        self._memory_store = memory_store
+        self._auto_consolidate = auto_consolidate
+        self._default_strategy = strategy
+        self._max_sessions = max_sessions
+        self._dream_service: Any = None
+        # Track accumulated sessions for batch strategy.
+        self._pending_session_count: int = 0
+
+    def set_dream_service(self, dream_service: Any) -> None:
+        """Inject a dream service for post-consolidation dreaming."""
+        self._dream_service = dream_service
+
+    async def trigger_consolidation(
+        self,
+        session_ids: list[str] | None = None,
+        strategy: str | None = None,
+        max_sessions: int = 20,
+    ) -> ConsolidationResult:
+        """Run a consolidation pass over session experiences.
+
+        Args:
+            session_ids: Specific sessions to consolidate. If ``None``,
+                uses unprocessed experiences.
+            strategy: Override the default strategy.
+            max_sessions: Maximum number of sessions to process.
+
+        Returns:
+            Result with consolidation metrics.
+        """
+        effective_strategy = strategy or self._default_strategy
+
+        # Gather experiences
+        if session_ids:
+            experiences: list[SessionExperience] = []
+            for sid in session_ids[:max_sessions]:
+                exp = await self._experience_store.load_experience(sid)
+                if exp:
+                    experiences.append(exp)
+        else:
+            experiences = await self._experience_store.list_experiences(
+                limit=max_sessions, unprocessed_only=True
+            )
+
+        if not experiences:
+            logger.info("consolidation.no_experiences")
+            return ConsolidationResult(strategy=effective_strategy)
+
+        # Fetch existing consolidated memories for dedup/contradiction check
+        existing = await self._memory_store.list(
+            scope=MemoryScope.USER, kind=MemoryKind.CONSOLIDATED
+        )
+
+        logger.info(
+            "consolidation.starting",
+            strategy=effective_strategy,
+            sessions=len(experiences),
+            existing_memories=len(existing),
+        )
+
+        result = await self._engine.consolidate(
+            experiences=experiences,
+            existing_memories=existing,
+            strategy=effective_strategy,
+        )
+
+        # Mark processed
+        processed_ids = [e.session_id for e in experiences]
+        await self._experience_store.mark_processed(processed_ids, result.consolidation_id)
+
+        # Persist consolidation result if store supports it
+        store = self._experience_store
+        if hasattr(store, "save_consolidation"):
+            await store.save_consolidation(result)
+
+        # Trigger dreaming after consolidation if configured
+        await self._maybe_dream_after_consolidation()
+
+        return result
+
+    async def post_execution_hook(
+        self,
+        session_id: str,
+        experience: SessionExperience,
+    ) -> None:
+        """Called after each agent execution when auto_consolidate is enabled.
+
+        For ``immediate`` strategy: triggers a single-session consolidation
+        right away.
+
+        For ``batch`` strategy: accumulates sessions and only triggers
+        consolidation when ``max_sessions`` threshold is reached.  This
+        avoids expensive LLM consolidation after every single request.
+
+        Args:
+            session_id: The completed session ID.
+            experience: The session experience to consolidate.
+        """
+        if not self._auto_consolidate:
+            return
+
+        # Batch strategy: accumulate and only consolidate when threshold reached.
+        if self._default_strategy == ConsolidationStrategy.BATCH.value:
+            self._pending_session_count += 1
+            if self._pending_session_count < self._max_sessions:
+                logger.debug(
+                    "consolidation.batch_accumulating",
+                    session_id=session_id,
+                    pending=self._pending_session_count,
+                    threshold=self._max_sessions,
+                )
+                return
+
+            # Threshold reached — consolidate all unprocessed sessions.
+            self._pending_session_count = 0
+            try:
+                await self.trigger_consolidation(
+                    strategy=ConsolidationStrategy.BATCH.value,
+                    max_sessions=self._max_sessions,
+                )
+            except Exception:
+                logger.exception(
+                    "consolidation.batch_post_execution_failed",
+                    session_id=session_id,
+                )
+            return
+
+        # Immediate strategy: consolidate this session now.
+        try:
+            await self.trigger_consolidation(
+                session_ids=[session_id],
+                strategy=ConsolidationStrategy.IMMEDIATE.value,
+                max_sessions=1,
+            )
+        except Exception:
+            logger.exception(
+                "consolidation.post_execution_failed",
+                session_id=session_id,
+            )
+
+    async def _maybe_dream_after_consolidation(self) -> None:
+        """Trigger a dream cycle if a dream service is configured."""
+        if not self._dream_service:
+            return
+
+        try:
+            from taskforce.core.domain.dream import DreamTrigger
+
+            config = getattr(self._dream_service, "_config", None)
+            if config and not getattr(config, "trigger_after_consolidation", True):
+                return
+
+            await self._dream_service.trigger_dream(
+                trigger=DreamTrigger.POST_CONSOLIDATION
+            )
+        except Exception:
+            logger.exception("consolidation.dream_after_consolidation_failed")
+
+    async def get_consolidation_history(self, limit: int = 10) -> list[ConsolidationResult]:
+        """Retrieve past consolidation run results.
+
+        Args:
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of consolidation results, most recent first.
+        """
+        store = self._experience_store
+        if hasattr(store, "list_consolidations"):
+            return await store.list_consolidations(limit)
+        return []

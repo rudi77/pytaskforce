@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
-from taskforce_butler.domain.schedule import (
+from taskforce.core.domain.schedule import (
     ScheduleAction,
     ScheduleActionType,
     ScheduleJob,
