@@ -120,6 +120,47 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.memory_tool",
         "params": {},
     },
+    # Butler agent tools
+    "send_notification": {
+        "type": "SendNotificationTool",
+        "module": "taskforce_butler.infrastructure.tools.send_notification_tool",
+        "params": {},
+    },
+    "gmail": {
+        "type": "GmailTool",
+        "module": "taskforce_butler.infrastructure.tools.email_tool",
+        "params": {},
+    },
+    "google_drive": {
+        "type": "GoogleDriveTool",
+        "module": "taskforce_butler.infrastructure.tools.google_drive_tool",
+        "params": {},
+    },
+    "calendar": {
+        "type": "CalendarTool",
+        "module": "taskforce_butler.infrastructure.tools.calendar_tool",
+        "params": {},
+    },
+    "schedule": {
+        "type": "ScheduleTool",
+        "module": "taskforce_butler.infrastructure.tools.schedule_tool",
+        "params": {},
+    },
+    "reminder": {
+        "type": "ReminderTool",
+        "module": "taskforce_butler.infrastructure.tools.reminder_tool",
+        "params": {},
+    },
+    "rule_manager": {
+        "type": "RuleManagerTool",
+        "module": "taskforce_butler.infrastructure.tools.rule_manager_tool",
+        "params": {},
+    },
+    "authenticate": {
+        "type": "AuthTool",
+        "module": "taskforce_butler.infrastructure.tools.auth_tool",
+        "params": {},
+    },
 }
 
 # Pre-built reverse index: tool class name → short name (O(1) lookups).
