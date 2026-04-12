@@ -149,3 +149,20 @@ def get_request_queue():
     return RequestQueue()
 
 
+# ---------------------------------------------------------------------------
+# Workflow Runtime Service
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_workflow_runtime_service():
+    """Provide a shared WorkflowRuntimeService instance."""
+    from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
+    from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
+        FileWorkflowCheckpointStore,
+    )
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
+
+

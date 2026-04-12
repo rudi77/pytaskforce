@@ -262,7 +262,7 @@ class ButlerService:
         and delegates to the appropriate handler so that jobs work even
         when no trigger rules are configured.
         """
-        from taskforce_butler.domain.schedule import ScheduleActionType
+        from taskforce.core.domain.schedule import ScheduleActionType
 
         action_data = event.payload.get("action")
         if not action_data:
