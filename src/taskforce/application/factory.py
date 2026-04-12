@@ -831,6 +831,9 @@ class AgentFactory:
                     if agent_configs.is_dir():
                         candidates.append(agent_configs / config_path)
                         candidates.append(agent_configs / f"{config_path}.yaml")
+                        # Also search custom/ subdirectory
+                        candidates.append(agent_configs / "custom" / config_path)
+                        candidates.append(agent_configs / "custom" / f"{config_path}.yaml")
             for candidate in candidates:
                 if candidate.exists():
                     config_path_obj = candidate

@@ -255,6 +255,18 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             config_dir / "custom" / f"{specialist}.yaml",
             config_dir / "custom" / specialist / f"{specialist}.yaml",
         ]
+        # Search agent package config directories (agents/*/configs/custom/)
+        from taskforce.core.utils.paths import get_base_path
+
+        agents_dir = get_base_path() / "agents"
+        if agents_dir.is_dir():
+            for agent_dir in agents_dir.iterdir():
+                agent_custom = agent_dir / "configs" / "custom"
+                if agent_custom.is_dir():
+                    candidates.append(agent_custom / f"{specialist}.yaml")
+                    candidates.append(
+                        agent_custom / specialist / f"{specialist}.yaml"
+                    )
         candidates.extend(self._plugin_candidates(config_dir, specialist))
         return candidates
 
