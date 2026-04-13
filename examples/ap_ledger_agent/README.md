@@ -9,7 +9,7 @@ Telegram / CLI
       ↓
 Taskforce Agent (ap_ledger_agent Profile)
       ↓
-Plugin Tools (8 spezialisierte SQLite-Tools)
+Plugin Tools (9 spezialisierte Tools)
       ↓
 SQLite DB (Belege, Buchungen, Audit)
       ↓

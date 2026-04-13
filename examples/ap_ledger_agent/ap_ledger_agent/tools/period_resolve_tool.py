@@ -53,6 +53,11 @@ class PeriodResolveTool:
         date = kwargs.get("date", "")
         if not date or len(date) < 10:
             return False, "date is required (YYYY-MM-DD)"
+        try:
+            int(date[:4])
+            int(date[5:7])
+        except (ValueError, IndexError):
+            return False, f"Invalid date format: '{date}'. Expected YYYY-MM-DD"
         return True, None
 
     async def execute(self, **kwargs: Any) -> dict[str, Any]:

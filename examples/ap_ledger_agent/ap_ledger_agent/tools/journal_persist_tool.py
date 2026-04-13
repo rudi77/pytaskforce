@@ -88,13 +88,28 @@ class JournalPersistTool:
         try:
             lines = []
             for i, line_data in enumerate(kwargs["lines"], start=1):
+                debit = Decimal(str(line_data.get("debit_amount", 0)))
+                credit = Decimal(str(line_data.get("credit_amount", 0)))
+
+                # Each line must have exactly one of debit or credit > 0
+                if debit <= 0 and credit <= 0:
+                    return {
+                        "success": False,
+                        "error": f"Line {i}: debit_amount oder credit_amount muss > 0 sein.",
+                    }
+                if debit > 0 and credit > 0:
+                    return {
+                        "success": False,
+                        "error": f"Line {i}: Nur debit_amount ODER credit_amount, nicht beide.",
+                    }
+
                 lines.append(
                     JournalLine(
                         line_number=line_data.get("line_number", i),
                         account_code=line_data["account_code"],
                         account_name=line_data["account_name"],
-                        debit_amount=Decimal(str(line_data.get("debit_amount", 0))),
-                        credit_amount=Decimal(str(line_data.get("credit_amount", 0))),
+                        debit_amount=debit,
+                        credit_amount=credit,
                         tax_code=line_data.get("tax_code"),
                         description=line_data.get("description"),
                     )

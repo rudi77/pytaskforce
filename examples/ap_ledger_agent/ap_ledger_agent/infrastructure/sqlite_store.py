@@ -6,7 +6,8 @@ typed query helpers used by the Taskforce tools.
 
 from __future__ import annotations
 
-import json
+import csv
+import io
 import logging
 import sqlite3
 from decimal import Decimal
@@ -197,6 +198,22 @@ class SQLiteStore:
             conn.close()
 
     # ------------------------------------------------------------------
+    # Tax code list
+    # ------------------------------------------------------------------
+
+    def list_tax_codes(self) -> list[dict[str, Any]]:
+        """Return all currently valid tax codes."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT code, rate, label, description FROM tax_codes "
+                "WHERE valid_to IS NULL OR valid_to >= date('now')"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
     # Category operations
     # ------------------------------------------------------------------
 
@@ -292,12 +309,13 @@ class SQLiteStore:
         """Check for possible duplicate invoices."""
         conn = self._connect()
         try:
+            escaped = self._escape_like(vendor_name)
             rows = conn.execute(
                 "SELECT id, vendor_name_raw, invoice_date, total_gross "
                 "FROM invoices "
-                "WHERE vendor_name_raw LIKE ? AND invoice_date = ? "
+                "WHERE vendor_name_raw LIKE ? ESCAPE '\\' AND invoice_date = ? "
                 "AND ABS(total_gross - ?) < 0.01",
-                (f"%{vendor_name}%", date, str(amount)),
+                (f"%{escaped}%", date, float(amount)),
             ).fetchall()
             return [dict(r) for r in rows]
         finally:
@@ -374,11 +392,14 @@ class SQLiteStore:
                 "FROM journal_lines WHERE journal_entry_id = ?",
                 (journal_id,),
             ).fetchone()
-            if abs((bal["d"] or 0) - (bal["c"] or 0)) > 0.01:
+            total_debit = Decimal(str(bal["d"] or 0))
+            total_credit = Decimal(str(bal["c"] or 0))
+            if abs(total_debit - total_credit) > Decimal("0.01"):
                 raise ValueError(
-                    f"Unbalanced: Soll={bal['d']}, Haben={bal['c']}"
+                    f"Unbalanced: Soll={total_debit}, Haben={total_credit}"
                 )
 
+            conn.execute("BEGIN TRANSACTION")
             conn.execute(
                 "UPDATE journal_entries SET status = 'posted', "
                 "posted_at = datetime('now'), posted_by = 'agent' "
@@ -402,6 +423,9 @@ class SQLiteStore:
                 (journal_id,),
             ).fetchone()
             return dict(posted)
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -474,7 +498,7 @@ class SQLiteStore:
                 "LEFT JOIN vendors v ON v.id = i.vendor_id "
                 "LEFT JOIN categories c ON c.code = il.category_code "
                 "LEFT JOIN tax_codes tc ON tc.code = il.tax_code "
-                "WHERE i.status = 'posted' AND CAST(strftime('%%Y', i.invoice_date) AS INTEGER) = ? "
+                "WHERE i.status = 'posted' AND CAST(strftime('%Y', i.invoice_date) AS INTEGER) = ? "
                 "ORDER BY i.invoice_date",
                 (year,),
             ).fetchall()
@@ -482,23 +506,20 @@ class SQLiteStore:
             if not rows:
                 return ""
 
-            headers = "datum,lieferant,kategorie,netto,ust,brutto,steuersatz"
-            lines = [headers]
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["datum", "lieferant", "kategorie", "netto", "ust", "brutto", "steuersatz"])
             for r in rows:
-                line = ",".join(
-                    f'"{v}"' if isinstance(v, str) and "," in v else str(v or "")
-                    for v in [
-                        r["invoice_date"],
-                        r["lieferant"],
-                        r["kategorie"],
-                        r["netto"],
-                        r["ust"],
-                        r["brutto"],
-                        r["steuersatz"],
-                    ]
-                )
-                lines.append(line)
-            return "\n".join(lines)
+                writer.writerow([
+                    r["invoice_date"] or "",
+                    r["lieferant"] or "",
+                    r["kategorie"] or "",
+                    r["netto"] or "",
+                    r["ust"] or "",
+                    r["brutto"] or "",
+                    r["steuersatz"] or "",
+                ])
+            return output.getvalue().rstrip("\r\n")
         finally:
             conn.close()
 
@@ -550,6 +571,11 @@ class SQLiteStore:
             end_date=row["end_date"],
             is_closed=bool(row["is_closed"]),
         )
+
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        """Escape special LIKE characters (%, _) in a search value."""
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @staticmethod
     def _month_name(month: int) -> str:

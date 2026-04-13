@@ -68,15 +68,15 @@ INSERT OR IGNORE INTO fiscal_periods (year, month, label, start_date, end_date) 
 -- Typische Lieferanten
 INSERT OR IGNORE INTO vendors (name, name_normalized, default_category_code, default_tax_code, match_keywords) VALUES
     ('Wella Austria',           'wella austria',           'waren_farbe',    'AT_20', 'wella,wella austria'),
-    ('L''Oréal Professionnel',  'loreal professionnel',    'waren_farbe',    'AT_20', 'loreal,l''oreal,professionnel'),
+    ('L''Oréal Professionnel',  'l''oréal professionnel',  'waren_farbe',    'AT_20', 'loreal,l''oreal,professionnel,l''oréal'),
     ('Schwarzkopf Professional','schwarzkopf professional','waren_farbe',    'AT_20', 'schwarzkopf,henkel'),
     ('Goldwell',                'goldwell',                'waren_farbe',    'AT_20', 'goldwell,kao'),
     ('Redken',                  'redken',                  'waren_pflege',   'AT_20', 'redken'),
-    ('Friseur-Großhandel',      'friseur-grosshandel',     'waren_verbrauch','AT_20', 'friseur-grosshandel,friseurgroßhandel,coiffeur'),
+    ('Friseur-Großhandel',      'friseur-großhandel',      'waren_verbrauch','AT_20', 'friseur-grosshandel,friseurgroßhandel,coiffeur'),
     ('METRO',                   'metro',                   'waren_verbrauch','AT_20', 'metro,metro cash'),
     ('Amazon',                  'amazon',                  'buero',          'AT_20', 'amazon,amzn'),
     ('A1 Telekom',              'a1 telekom',              'telefon_internet','AT_20','a1,a1 telekom,telekom austria'),
-    ('Wiener Städtische',       'wiener staedtische',      'versicherung',  'AT_0',  'wiener städtische,wiener staedtische'),
+    ('Wiener Städtische',       'wiener städtische',       'versicherung',  'AT_0',  'wiener städtische,wiener staedtische'),
     ('Uniqa',                   'uniqa',                   'versicherung',  'AT_0',  'uniqa'),
     ('Wien Energie',            'wien energie',            'betriebskosten','AT_20',  'wien energie,wienstrom'),
     ('EVN',                     'evn',                     'betriebskosten','AT_20',  'evn,nö energie'),
