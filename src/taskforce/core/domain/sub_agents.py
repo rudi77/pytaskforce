@@ -58,3 +58,4 @@ class SubAgentResult:
     success: bool
     final_message: str
     error: str | None = None
+    context_snapshot: Any | None = None

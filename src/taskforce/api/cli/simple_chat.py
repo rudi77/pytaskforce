@@ -284,9 +284,9 @@ class SimpleChatRunner:
         elif cmd_name == "context":
             await self._show_context(command_args)
         elif cmd_name == "tree":
-            await self._show_tree()
+            await self._show_tree(command_args)
         elif cmd_name == "write-tree":
-            await self._write_tree()
+            await self._write_tree(command_args)
         elif cmd_name == "plugins":
             self._list_plugins()
         elif cmd_name == "skills":
@@ -322,8 +322,8 @@ class SimpleChatRunner:
             "- /export or /e\n"
             "- /tokens\n"
             "- /context [full]\n"
-            "- /tree — show full LLM context as formatted tree\n"
-            "- /write-tree — dump full LLM context to tree.md\n"
+            "- /tree [--sub-agents] — show LLM context as tree\n"
+            "- /write-tree [--sub-agents] — dump full LLM context to tree.md\n"
             "- /plugins\n"
             "- /skills\n"
             "- /debug\n"
@@ -830,7 +830,7 @@ class SimpleChatRunner:
         self.console.print(table)
 
 
-    async def _show_tree(self) -> None:
+    async def _show_tree(self, command_args: str = "") -> None:
         """Render the full LLM context mirroring the actual API call structure.
 
         The tree reflects what the LLM actually receives:
@@ -901,11 +901,29 @@ class SimpleChatRunner:
                     f"[yellow]{item.title}[/yellow]  [dim]~{item.tokens:,} tok[/dim]"
                 )
 
+        # --- sub-agent contexts (opt-in via --sub-agents) ---
+        show_sub = "--sub-agents" in command_args
+        if snapshot.sub_agents:
+            if show_sub:
+                for sa in snapshot.sub_agents:
+                    sa_node = tree.add(
+                        f"[bold bright_blue]sub-agent: {sa.specialist}"
+                        f"[/bold bright_blue]  "
+                        f"[dim]{sa.session_id[-12:]}  "
+                        f"~{sa.snapshot.total_tokens:,} tok[/dim]"
+                    )
+                    self._render_sub_agent_tree(sa_node, sa.snapshot)
+            else:
+                tree.add(
+                    f"[dim]{len(snapshot.sub_agents)} sub-agent(s) hidden "
+                    f"— use /tree --sub-agents to show[/dim]"
+                )
+
         self.console.print()
         self.console.print(tree)
         self.console.print()
 
-    async def _write_tree(self) -> None:
+    async def _write_tree(self, command_args: str = "") -> None:
         """Dump the full LLM context (all content) to tree.md."""
         snapshot = self.agent.context.snapshot(
             include_content=True,
@@ -931,6 +949,28 @@ class SimpleChatRunner:
             lines.append(f"### {item.title} (~{item.tokens:,} tok)\n")
             if item.content:
                 lines.append(f"```json\n{item.content}\n```\n")
+
+        # sub-agent contexts (opt-in via --sub-agents)
+        show_sub = "--sub-agents" in command_args
+        if snapshot.sub_agents and show_sub:
+            lines.append("---\n\n## Sub-Agent Contexts\n")
+            for sa in snapshot.sub_agents:
+                lines.append(
+                    f"### sub-agent: {sa.specialist} "
+                    f"(~{sa.snapshot.total_tokens:,} tok)\n"
+                )
+                lines.append(f"Session: `{sa.session_id}`\n")
+                self._write_system_prompt_section(lines, sa.snapshot)
+                self._write_messages_section(lines, sa.snapshot)
+                lines.append(
+                    f"**Tools:** "
+                    f"{', '.join(t.title for t in sa.snapshot.tools)}\n"
+                )
+        elif snapshot.sub_agents:
+            lines.append(
+                f"\n---\n\n*{len(snapshot.sub_agents)} sub-agent(s) hidden "
+                f"— use `/write-tree --sub-agents` to include.*\n"
+            )
 
         from pathlib import Path
 
@@ -966,6 +1006,29 @@ class SimpleChatRunner:
             lines.append(f"### {item.title} (~{item.tokens:,} tok)\n")
             if item.content:
                 lines.append(f"{item.content}\n")
+
+    def _render_sub_agent_tree(self, parent_node: Any, snap: Any) -> None:
+        """Render a sub-agent's context snapshot as child nodes."""
+        # System prompt
+        if snap.system_prompt:
+            sp = snap.system_prompt[0]
+            sp_node = parent_node.add(
+                f"[cyan]system[/cyan]  [dim]~{sp.tokens:,} tok[/dim]"
+            )
+            if sp.content:
+                sp_node.add(f"[dim]{self._truncate_content(sp.content, 150)}[/dim]")
+        # Messages
+        for item in snap.messages:
+            style = self._role_style(item.title)
+            node = parent_node.add(
+                f"[{style}]{item.title}[/{style}]  [dim]~{item.tokens:,} tok[/dim]"
+            )
+            if item.content:
+                node.add(f"[dim]{self._truncate_content(item.content, 150)}[/dim]")
+        # Tools
+        if snap.tools:
+            tool_names = ", ".join(t.title for t in snap.tools)
+            parent_node.add(f"[dim]tools: {tool_names}[/dim]")
 
     @staticmethod
     def _role_style(title: str) -> str:

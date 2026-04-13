@@ -262,7 +262,7 @@ class ParallelAgentTool(BaseTool):
 
             result = await self._spawner.spawn(spec)
 
-            return {
+            entry: dict[str, Any] = {
                 "mission": mission,
                 "specialist": specialist,
                 "success": result.success,
@@ -271,3 +271,7 @@ class ParallelAgentTool(BaseTool):
                 "result": result.final_message,
                 "error": result.error,
             }
+            # Attach context snapshot for parent /tree inspection
+            if result.context_snapshot is not None:
+                entry["_context_snapshot"] = result.context_snapshot
+            return entry

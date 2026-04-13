@@ -17,6 +17,15 @@ class ContextItem:
 
 
 @dataclass(frozen=True)
+class SubAgentContextEntry:
+    """Captured context snapshot from a sub-agent execution."""
+
+    specialist: str
+    session_id: str
+    snapshot: ContextSnapshot
+
+
+@dataclass(frozen=True)
 class ContextSnapshot:
     """Structured snapshot of everything sent to the LLM."""
 
@@ -28,6 +37,7 @@ class ContextSnapshot:
     memory: list[ContextItem] = field(default_factory=list)
     skills: list[ContextItem] = field(default_factory=list)
     tools: list[ContextItem] = field(default_factory=list)
+    sub_agents: list[SubAgentContextEntry] = field(default_factory=list)
 
 
 class ContextManagerProtocol(Protocol):

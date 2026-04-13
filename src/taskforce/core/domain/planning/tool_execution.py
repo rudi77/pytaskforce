@@ -21,6 +21,28 @@ if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
 
 
+def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> None:
+    """Extract and register sub-agent context snapshots from tool results.
+
+    Orchestration tools (call_agents_parallel) attach ``_context_snapshot``
+    to each sub-agent result entry.  This function collects them and
+    registers them on the parent agent's ContextManager before the result
+    is serialized (which would lose the snapshot objects).
+    """
+    results = tool_result.get("results")
+    if not isinstance(results, list):
+        return
+    for entry in results:
+        snapshot = entry.pop("_context_snapshot", None)
+        if snapshot is None:
+            continue
+        agent.context.register_sub_agent_context(
+            specialist=entry.get("specialist") or "unknown",
+            session_id=entry.get("session_id") or "unknown",
+            snapshot=snapshot,
+        )
+
+
 async def _execute_tool_calls(
     agent: Agent,
     requests: list[ToolCallRequest],
@@ -213,6 +235,8 @@ async def _process_tool_calls(
     for req, res in await _execute_tool_calls(agent, requests, session_id):
         async for e in _emit_tool_result(agent, req, res):
             yield e
+        # Capture sub-agent context snapshots before they're lost to serialization
+        _collect_sub_agent_snapshots(agent, res)
         agent.context.append_message(
             await agent.tool_result_message_factory.build_message(
                 tool_call_id=req.tool_call_id,

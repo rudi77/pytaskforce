@@ -14,7 +14,11 @@ from taskforce.core.domain.lean_agent_components.message_history_manager import 
     MessageHistoryManager,
 )
 from taskforce.core.domain.token_budgeter import TokenBudgeter
-from taskforce.core.interfaces.context_manager import ContextItem, ContextSnapshot
+from taskforce.core.interfaces.context_manager import (
+    ContextItem,
+    ContextSnapshot,
+    SubAgentContextEntry,
+)
 from taskforce.core.interfaces.logging import LoggerProtocol
 
 
@@ -42,6 +46,7 @@ class ContextManager:
         self._messages: list[dict[str, Any]] = []
         self._last_system_prompt: str = ""
         self._initialized = False
+        self._sub_agent_entries: list[SubAgentContextEntry] = []
 
     # ------------------------------------------------------------------
     # Properties
@@ -80,6 +85,7 @@ class ContextManager:
         """Build the initial messages list from mission and state.
 
         Delegates to MessageHistoryManager.build_initial_messages().
+        Clears sub-agent snapshots from the previous execution turn.
 
         Args:
             mission: The user mission text.
@@ -94,6 +100,7 @@ class ContextManager:
         self._messages.clear()
         self._messages.extend(new_messages)
         self._last_system_prompt = base_system_prompt
+        self._sub_agent_entries.clear()
         self._initialized = True
         self._logger.debug("context_initialized", message_count=len(self._messages))
 
@@ -133,6 +140,42 @@ class ContextManager:
             message: A message dict (user, assistant, tool, etc.).
         """
         self._messages.append(message)
+
+    # Maximum sub-agent snapshots kept per execution turn to bound memory.
+    MAX_SUB_AGENT_SNAPSHOTS = 10
+
+    def register_sub_agent_context(
+        self,
+        specialist: str,
+        session_id: str,
+        snapshot: ContextSnapshot,
+    ) -> None:
+        """Register a sub-agent's context snapshot for /tree inspection.
+
+        Called by orchestration tools after sub-agent execution completes
+        (before the sub-agent is closed and discarded).  Entries are
+        cleared on each ``initialize()`` call and capped at
+        ``MAX_SUB_AGENT_SNAPSHOTS`` to prevent unbounded memory growth.
+
+        Args:
+            specialist: Sub-agent specialist name.
+            session_id: Sub-agent session ID.
+            snapshot: The sub-agent's full context snapshot.
+        """
+        if len(self._sub_agent_entries) >= self.MAX_SUB_AGENT_SNAPSHOTS:
+            self._logger.debug(
+                "sub_agent_snapshot_dropped",
+                reason="max_snapshots_reached",
+                specialist=specialist,
+            )
+            return
+        self._sub_agent_entries.append(
+            SubAgentContextEntry(
+                specialist=specialist,
+                session_id=session_id,
+                snapshot=snapshot,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Budget management
@@ -203,6 +246,7 @@ class ContextManager:
             memory=memory_items,
             skills=skill_items,
             tools=tool_items,
+            sub_agents=list(self._sub_agent_entries),
         )
 
     # ------------------------------------------------------------------

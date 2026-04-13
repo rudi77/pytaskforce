@@ -254,7 +254,9 @@
       "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/test_simple_chat.py::test_context_command_renders_snapshot -v --no-header --tb=short)",
       "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/test_simple_chat.py::test_context_command_renders_snapshot tests/unit/api/cli/test_simple_chat.py::test_context_full_renders_content_column -v --no-header --tb=short)",
       "Bash(.venv/Scripts/python -m pytest tests/integration/ -q --no-header --tb=short)",
-      "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/ tests/unit/core/domain/lean_agent_components/test_context_manager.py -q --no-header --tb=short)"
+      "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/ tests/unit/core/domain/lean_agent_components/test_context_manager.py -q --no-header --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/ tests/unit/core/ -q --no-header --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/core/domain/lean_agent_components/test_context_manager.py -q --no-header --tb=short)"
     ],
     "deny": [
       ".env",
