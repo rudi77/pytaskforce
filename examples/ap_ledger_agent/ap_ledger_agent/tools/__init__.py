@@ -8,6 +8,7 @@ from ap_ledger_agent.tools.journal_persist_tool import JournalPersistTool
 from ap_ledger_agent.tools.journal_post_tool import JournalPostTool
 from ap_ledger_agent.tools.audit_log_tool import AuditLogTool
 from ap_ledger_agent.tools.euer_report_tool import EuerReportTool
+from ap_ledger_agent.tools.docling_extract_tool import DoclingExtractTool
 
 __all__ = [
     "VendorResolveTool",
@@ -18,4 +19,5 @@ __all__ = [
     "JournalPostTool",
     "AuditLogTool",
     "EuerReportTool",
+    "DoclingExtractTool",
 ]
