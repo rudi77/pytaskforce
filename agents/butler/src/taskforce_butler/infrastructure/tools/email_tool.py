@@ -187,7 +187,15 @@ async def _build_service_async(build: Any, credentials_cls: Any, auth_manager: A
                 }
             )
             return build("gmail", "v1", credentials=creds)
-    return _build_service(build, credentials_cls)
+    # 2. Fall back to legacy token file (~/.taskforce/google_token.json).
+    try:
+        return _build_service(build, credentials_cls)
+    except Exception as legacy_exc:
+        raise ValueError(
+            "Google authentication expired or revoked. "
+            "The user needs to re-run 'python scripts/google_auth.py' to refresh the token. "
+            "Tell the user about this and do NOT retry — manual action is required."
+        ) from legacy_exc
 
 
 def _build_service(build: Any, credentials_cls: Any) -> Any:

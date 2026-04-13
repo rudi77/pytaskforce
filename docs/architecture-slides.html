@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taskforce Architecture Overview</title>
+<style>
+  :root {
+    --bg-dark: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card-hover: #334155;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --accent3: #34d399;
+    --accent4: #f472b6;
+    --accent5: #fb923c;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --border: #334155;
+    --shadow: rgba(0,0,0,0.3);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .slide-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .slide {
+    display: none;
+    width: 100%;
+    height: 100%;
+    padding: 40px 60px;
+    flex-direction: column;
+    animation: fadeIn 0.4s ease;
+  }
+
+  .slide.active { display: flex; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Navigation */
+  .nav {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    z-index: 100;
+    background: var(--bg-card);
+    padding: 10px 24px;
+    border-radius: 40px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 20px var(--shadow);
+  }
+
+  .nav button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .nav button:hover { background: var(--accent); color: var(--bg-dark); border-color: var(--accent); }
+
+  .nav .counter {
+    color: var(--text-muted);
+    font-size: 14px;
+    min-width: 60px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Slide Styles */
+  .slide-title {
+    font-size: 18px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  h1 {
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  h2 {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text);
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--accent);
+  }
+
+  .subtitle {
+    font-size: 22px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+    line-height: 1.4;
+  }
+
+  /* Grid Layouts */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; flex: 1; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; flex: 1; }
+  .grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 20px; flex: 1; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: all 0.2s;
+  }
+
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 24px var(--shadow); }
+
+  .card.accent-blue { border-left: 4px solid var(--accent); }
+  .card.accent-purple { border-left: 4px solid var(--accent2); }
+  .card.accent-green { border-left: 4px solid var(--accent3); }
+  .card.accent-pink { border-left: 4px solid var(--accent4); }
+  .card.accent-orange { border-left: 4px solid var(--accent5); }
+
+  .card .card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .card p, .card li {
+    color: var(--text-muted);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .card ul { list-style: none; padding: 0; }
+  .card ul li::before { content: "->"; color: var(--accent); margin-right: 8px; font-family: monospace; }
+
+  /* Stats */
+  .stat-number {
+    font-size: 48px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-label {
+    font-size: 14px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Architecture Diagram */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .arch-layer {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+    cursor: default;
+  }
+
+  .arch-layer:hover { transform: scale(1.01); }
+  .arch-layer.l-api { background: linear-gradient(135deg, rgba(244,114,182,0.15), rgba(244,114,182,0.05)); border-color: var(--accent4); }
+  .arch-layer.l-app { background: linear-gradient(135deg, rgba(251,146,60,0.15), rgba(251,146,60,0.05)); border-color: var(--accent5); }
+  .arch-layer.l-infra { background: linear-gradient(135deg, rgba(129,140,248,0.15), rgba(129,140,248,0.05)); border-color: var(--accent2); }
+  .arch-layer.l-core { background: linear-gradient(135deg, rgba(52,211,153,0.15), rgba(52,211,153,0.05)); border-color: var(--accent3); }
+
+  .arch-layer .layer-name {
+    font-size: 18px;
+    font-weight: 700;
+    min-width: 160px;
+  }
+
+  .arch-layer .layer-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  .arch-layer .layer-count {
+    font-size: 13px;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.05);
+    padding: 4px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  .arrow-down {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* Code block */
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow: auto;
+  }
+
+  .code-block .kw { color: #ff7b72; }
+  .code-block .fn { color: #d2a8ff; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .cmt { color: #8b949e; }
+  .code-block .type { color: #79c0ff; }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+
+  .flow-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    text-align: center;
+    min-width: 120px;
+  }
+
+  .flow-step.highlight { border-color: var(--accent); background: rgba(56,189,248,0.1); }
+
+  .flow-arrow { color: var(--text-dim); font-size: 20px; }
+
+  /* Tag */
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 2px;
+  }
+
+  .tag-blue { background: rgba(56,189,248,0.2); color: var(--accent); }
+  .tag-purple { background: rgba(129,140,248,0.2); color: var(--accent2); }
+  .tag-green { background: rgba(52,211,153,0.2); color: var(--accent3); }
+  .tag-pink { background: rgba(244,114,182,0.2); color: var(--accent4); }
+  .tag-orange { background: rgba(251,146,60,0.2); color: var(--accent5); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 14px; color: var(--accent); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text-muted); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .flex-col { display: flex; flex-direction: column; }
+  .flex-1 { flex: 1; }
+  .gap-16 { gap: 16px; }
+  .gap-24 { gap: 24px; }
+  .mt-auto { margin-top: auto; }
+  .mb-24 { margin-bottom: 24px; }
+  .overflow-auto { overflow: auto; }
+
+  /* Title slide special */
+  .title-slide {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  .title-slide h1 { font-size: 64px; margin-bottom: 16px; }
+  .title-slide .subtitle { font-size: 24px; max-width: 700px; }
+
+  .logo-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    margin-bottom: 24px;
+  }
+
+  .version-badge {
+    margin-top: 24px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    background: rgba(56,189,248,0.1);
+    border: 1px solid rgba(56,189,248,0.3);
+    font-size: 14px;
+    color: var(--accent);
+  }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .slide { padding: 24px 32px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="slide-container">
+
+<!-- SLIDE 1: Title -->
+<div class="slide title-slide active" data-slide="1">
+  <div class="logo-icon">TF</div>
+  <h1>Taskforce Architecture</h1>
+  <p class="subtitle">Multi-Agent Orchestration Framework<br>Clean Architecture &middot; Python 3.11+ &middot; Production-Ready</p>
+  <div class="version-badge">April 2026 &middot; 260+ Source Files &middot; 2300+ Tests</div>
+</div>
+
+<!-- SLIDE 2: At a Glance -->
+<div class="slide" data-slide="2">
+  <div class="slide-title">Overview</div>
+  <h2>At a Glance</h2>
+  <div class="grid-4" style="margin-bottom: 32px;">
+    <div class="card accent-blue" style="text-align:center;">
+      <div class="stat-number">4</div>
+      <div class="stat-label">Architecture Layers</div>
+    </div>
+    <div class="card accent-purple" style="text-align:center;">
+      <div class="stat-number">260</div>
+      <div class="stat-label">Source Files</div>
+    </div>
+    <div class="card accent-green" style="text-align:center;">
+      <div class="stat-number">40+</div>
+      <div class="stat-label">Protocol Interfaces</div>
+    </div>
+    <div class="card accent-pink" style="text-align:center;">
+      <div class="stat-number">30+</div>
+      <div class="stat-label">Built-in Tools</div>
+    </div>
+  </div>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">Deployment</div>
+      <p>CLI (Typer + Rich + Textual)<br>REST API (FastAPI)<br>Butler Daemon (24/7)</p>
+    </div>
+    <div class="card">
+      <div class="card-title">LLM Integration</div>
+      <p>Multi-Provider via LiteLLM<br>Dynamic Model Routing<br>Token Budget Management</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Persistence</div>
+      <p>File-based (dev)<br>PostgreSQL (prod)<br>Swappable via Protocols</p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 3: Clean Architecture -->
+<div class="slide" data-slide="3">
+  <div class="slide-title">Architecture</div>
+  <h2>Four-Layer Clean Architecture</h2>
+  <p class="subtitle" style="margin-bottom: 16px;">Strict inward-only dependency flow &middot; Protocol-based boundaries</p>
+  <div class="arch-diagram">
+    <div class="arch-layer l-api">
+      <span class="layer-name" style="color: var(--accent4);">API Layer</span>
+      <span class="layer-desc">CLI commands, FastAPI routes, request/response schemas, Butler daemon</span>
+      <span class="layer-count">31 files</span>
+    </div>
+    <div class="arrow-down">&#9660; depends on</div>
+    <div class="arch-layer l-app">
+      <span class="layer-name" style="color: var(--accent5);">Application</span>
+      <span class="layer-desc">Factory, Executor, Gateway, Skill Manager, Tool Registry, Epic Orchestrator</span>
+      <span class="layer-count">33 files</span>
+    </div>
+    <div class="arrow-down">&#9660; depends on</div>
+    <div class="arch-layer l-infra">
+      <span class="layer-name" style="color: var(--accent2);">Infrastructure</span>
+      <span class="layer-desc">LiteLLM, File/DB persistence, MCP, 30+ native tools, communication adapters</span>
+      <span class="layer-count">91 files</span>
+    </div>
+    <div class="arrow-down">&#9660; implements</div>
+    <div class="arch-layer l-core">
+      <span class="layer-name" style="color: var(--accent3);">Core / Domain</span>
+      <span class="layer-desc">Agent, Planning Strategies, Domain Models, Enums, 22 Protocol files (~40 definitions)</span>
+      <span class="layer-count">83 files</span>
+    </div>
+  </div>
+  <div style="text-align:center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
+    Core hat <strong>zero</strong> externe Dependencies &mdash; reine Business-Logik, 100% testbar
+  </div>
+</div>
+
+<!-- SLIDE 4: Import Rules -->
+<div class="slide" data-slide="4">
+  <div class="slide-title">Architecture</div>
+  <h2>Dependency Rules &amp; Import Matrix</h2>
+  <div class="grid-2">
+    <div>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Kann importieren von</th><th style="color:var(--accent4);">Verboten</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="tag tag-green">Core/Domain</span></td><td>core/interfaces only</td><td>Infrastructure, Application, API</td></tr>
+          <tr><td><span class="tag tag-green">Core/Interfaces</span></td><td>Nichts (Protokoll-Definitionen)</td><td>Jeder andere Layer</td></tr>
+          <tr><td><span class="tag tag-purple">Infrastructure</span></td><td>core/interfaces, core/domain</td><td>Application, API</td></tr>
+          <tr><td><span class="tag tag-orange">Application</span></td><td>Alle darunter</td><td>API</td></tr>
+          <tr><td><span class="tag tag-pink">API</span></td><td>Application, core/interfaces</td><td>Infrastructure direkt</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top: 24px;">
+        <h3>Design Prinzipien</h3>
+        <ul style="list-style:none; padding:0; color: var(--text-muted); font-size: 15px; line-height: 2;">
+          <li><span class="tag tag-blue">PEP 544</span> Protocols statt ABCs</li>
+          <li><span class="tag tag-blue">Duck Typing</span> Strukturelles Subtyping</li>
+          <li><span class="tag tag-blue">DI</span> Factory-basierte Dependency Injection</li>
+          <li><span class="tag tag-blue">Async</span> Alles I/O ist async/await</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="code-block" style="font-size: 13px;">
+<span class="cmt"># core/interfaces/state.py</span>
+<span class="kw">from</span> typing <span class="kw">import</span> <span class="type">Protocol</span>
+
+<span class="kw">class</span> <span class="fn">StateManagerProtocol</span>(<span class="type">Protocol</span>):
+    <span class="kw">async def</span> <span class="fn">save_state</span>(self, session_id: <span class="type">str</span>,
+        state_data: <span class="type">Dict</span>) -> <span class="type">None</span>: ...
+    <span class="kw">async def</span> <span class="fn">load_state</span>(self,
+        session_id: <span class="type">str</span>) -> <span class="type">Optional[Dict]</span>: ...
+
+<span class="cmt"># infrastructure/ implementiert es:</span>
+<span class="kw">class</span> <span class="fn">FileStateManager</span>:
+    <span class="cmt"># Erfuellt Protocol via Duck Typing</span>
+    <span class="kw">async def</span> <span class="fn">save_state</span>(...): ...
+    <span class="kw">async def</span> <span class="fn">load_state</span>(...): ...
+
+<span class="cmt"># application/ verdrahtet beides:</span>
+<span class="kw">class</span> <span class="fn">AgentFactory</span>:
+    <span class="kw">def</span> <span class="fn">_build_state_manager</span>(self)
+        -> <span class="type">StateManagerProtocol</span>:
+        <span class="kw">if</span> config.type == <span class="str">"file"</span>:
+            <span class="kw">return</span> FileStateManager(...)
+        <span class="kw">return</span> PostgresStateManager(...)
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 5: Core Domain -->
+<div class="slide" data-slide="5">
+  <div class="slide-title">Core Layer</div>
+  <h2>Domain Models &amp; Business Logic</h2>
+  <div class="grid-3" style="flex: 1;">
+    <div class="card accent-green">
+      <div class="card-title">Agent &amp; Execution</div>
+      <ul>
+        <li>LeanAgent (ReAct Loop)</li>
+        <li>ExecutionResult, StreamEvent</li>
+        <li>AgentDefinition</li>
+        <li>Domain Enums (keine Magic Strings)</li>
+        <li>Error Types (TaskforceError, LLMError, ToolError)</li>
+      </ul>
+    </div>
+    <div class="card accent-green">
+      <div class="card-title">Planning Strategies</div>
+      <ul>
+        <li>NativeReAct (Default)</li>
+        <li>PlanAndExecute</li>
+        <li>PlanAndReact (Hybrid)</li>
+        <li>SPAR (Sense-Plan-Act-Reflect)</li>
+      </ul>
+      <div style="margin-top: 12px;">
+        <h3 style="font-size: 14px;">Agent Components</h3>
+        <ul>
+          <li>MessageHistoryManager</li>
+          <li>ToolExecutor</li>
+          <li>PromptBuilder</li>
+          <li>StateStore</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card accent-green">
+      <div class="card-title">Memory &amp; Skills</div>
+      <ul>
+        <li>Memory Models (Preference, Learned Fact)</li>
+        <li>Experience Tracking (Emotional Valence)</li>
+        <li>Dream Engine (kognitive Verarbeitung)</li>
+        <li>Token Budgeter</li>
+        <li>Skill &amp; Skill Workflow</li>
+        <li>Schedule, TriggerRule</li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top: 16px;">
+    <h3>22 Protocol-Dateien mit ~40 Definitionen</h3>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+      <span class="tag tag-green">StateManager</span>
+      <span class="tag tag-green">LLMProvider</span>
+      <span class="tag tag-green">Tool</span>
+      <span class="tag tag-green">MemoryStore</span>
+      <span class="tag tag-green">Skill</span>
+      <span class="tag tag-green">Gateway</span>
+      <span class="tag tag-green">MessageBus</span>
+      <span class="tag tag-green">Runtime</span>
+      <span class="tag tag-green">Auth</span>
+      <span class="tag tag-green">Scheduler</span>
+      <span class="tag tag-green">RuleEngine</span>
+      <span class="tag tag-green">Consolidation</span>
+      <span class="tag tag-green">Dreaming</span>
+      <span class="tag tag-green">Experience</span>
+      <span class="tag tag-green">TokenEstimator</span>
+      <span class="tag tag-green">Conversation</span>
+      <span class="tag tag-green">Embeddings</span>
+      <span class="tag tag-green">Butler</span>
+      <span class="tag tag-green">SubAgent</span>
+      <span class="tag tag-green">ChannelAsk</span>
+      <span class="tag tag-green">Learning</span>
+      <span class="tag tag-green">EventSource</span>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 6: ReAct Loop -->
+<div class="slide" data-slide="6">
+  <div class="slide-title">Core</div>
+  <h2>ReAct Loop &amp; Planning Strategies</h2>
+  <div class="grid-2">
+    <div>
+      <h3>ReAct: Reason + Act</h3>
+      <div class="flow" style="flex-direction: column; align-items: stretch;">
+        <div class="flow-step highlight" style="text-align: left;">
+          <strong style="color: var(--accent);">1. THOUGHT</strong><br>
+          <span style="color: var(--text-muted); font-size: 14px;">LLM analysiert Aufgabe und plant naechsten Schritt</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660;</div>
+        <div class="flow-step" style="text-align: left;">
+          <strong style="color: var(--accent2);">2. ACTION</strong><br>
+          <span style="color: var(--text-muted); font-size: 14px;">Tool-Auswahl und Ausfuehrung (native tool calling)</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660;</div>
+        <div class="flow-step" style="text-align: left;">
+          <strong style="color: var(--accent3);">3. OBSERVATION</strong><br>
+          <span style="color: var(--text-muted); font-size: 14px;">Tool-Ergebnis wird analysiert</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660; repeat bis Mission erledigt</div>
+      </div>
+    </div>
+    <div class="flex-col gap-16">
+      <h3>4 Planning Strategies</h3>
+      <div class="card accent-blue" style="padding: 14px 18px;">
+        <div class="card-title" style="font-size: 15px;">NativeReAct <span class="tag tag-blue">Default</span></div>
+        <p style="font-size: 13px;">Purer ReAct-Loop: Thought -> Action -> Observation</p>
+      </div>
+      <div class="card accent-purple" style="padding: 14px 18px;">
+        <div class="card-title" style="font-size: 15px;">PlanAndExecute</div>
+        <p style="font-size: 13px;">Plan erstellen, dann Schritte sequentiell ausfuehren</p>
+      </div>
+      <div class="card accent-green" style="padding: 14px 18px;">
+        <div class="card-title" style="font-size: 15px;">PlanAndReact <span class="tag tag-green">Hybrid</span></div>
+        <p style="font-size: 13px;">Plan erstellen, ReAct innerhalb jedes Schritts</p>
+      </div>
+      <div class="card accent-orange" style="padding: 14px 18px;">
+        <div class="card-title" style="font-size: 15px;">SPAR</div>
+        <p style="font-size: 13px;">Sense -> Plan -> Act -> Reflect (iterative Verfeinerung)</p>
+      </div>
+      <div style="margin-top: 8px;">
+        <h3>Dynamic LLM Routing</h3>
+        <p style="color: var(--text-muted); font-size: 14px;">
+          Jede Phase nutzt optimales Modell:<br>
+          <span class="tag tag-blue">planning</span> <span class="tag tag-purple">reasoning</span> Strong Model &middot;
+          <span class="tag tag-orange">acting</span> Standard &middot;
+          <span class="tag tag-green">summarizing</span> Fast/Cheap
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 7: Infrastructure -->
+<div class="slide" data-slide="7">
+  <div class="slide-title">Infrastructure Layer</div>
+  <h2>Adapter &amp; Integrations (91 Files)</h2>
+  <div class="grid-3" style="flex: 1; overflow: auto;">
+    <div class="card accent-purple">
+      <div class="card-title">LLM Integration</div>
+      <ul>
+        <li>LiteLLM Service (Multi-Provider)</li>
+        <li>LLM Router (Decorator Pattern)</li>
+        <li>Config Loader (YAML)</li>
+        <li>Response Parser (Streaming)</li>
+        <li>Embedding Service</li>
+        <li>Tiktoken Estimator</li>
+        <li>Token Analytics Callback</li>
+      </ul>
+      <div style="margin-top: 8px;">
+        <span class="tag tag-blue">OpenAI</span>
+        <span class="tag tag-purple">Anthropic</span>
+        <span class="tag tag-green">Google</span>
+        <span class="tag tag-orange">Azure</span>
+        <span class="tag tag-pink">Ollama</span>
+      </div>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">Persistence</div>
+      <ul>
+        <li>FileStateManager (JSON)</li>
+        <li>FileAgentRegistry</li>
+        <li>FileConversationStore</li>
+        <li>FileAgentState (Singleton)</li>
+        <li>YAML I/O</li>
+        <li>Plugin Scanner</li>
+      </ul>
+      <p style="margin-top:8px; font-size:13px;">Swappable: File <-> PostgreSQL via Protocol</p>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">Memory &amp; Cognition</div>
+      <ul>
+        <li>FileMemoryStore (Markdown)</li>
+        <li>ConsolidationEngine (LLM)</li>
+        <li>DreamEngine (Generativ)</li>
+        <li>ExperienceTracker</li>
+        <li>LightweightConsolidation</li>
+      </ul>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">30+ Native Tools</div>
+      <ul>
+        <li>File R/W, Edit, Shell, Python</li>
+        <li>Git, GitHub</li>
+        <li>Web Search/Fetch, Browser</li>
+        <li>Gmail, Calendar, Google Drive</li>
+        <li>Memory, LLM, Ask User</li>
+        <li>Schedule, Reminder, Rules</li>
+        <li>Office (docx, xlsx, pptx)</li>
+      </ul>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">Communication</div>
+      <ul>
+        <li>Gateway Registry</li>
+        <li>Inbound Adapters</li>
+        <li>Outbound Senders</li>
+        <li>Conversation Store</li>
+        <li>Telegram Poller</li>
+        <li>Recipient Registry</li>
+      </ul>
+      <div style="margin-top: 8px;">
+        <span class="tag tag-blue">Telegram</span>
+        <span class="tag tag-purple">Slack</span>
+        <span class="tag tag-green">Teams</span>
+        <span class="tag tag-orange">REST</span>
+      </div>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">Weitere</div>
+      <ul>
+        <li>MCP Client &amp; Connection Mgr</li>
+        <li>Orchestration Tools (Agent, Parallel, SubAgent)</li>
+        <li>RAG (Azure AI Search)</li>
+        <li>Skills (Loader, Parser, Registry)</li>
+        <li>Scheduler &amp; Job Store</li>
+        <li>Auth (OAuth2)</li>
+        <li>Tracing (Phoenix)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 8: Application Layer -->
+<div class="slide" data-slide="8">
+  <div class="slide-title">Application Layer</div>
+  <h2>Orchestration &amp; Services (33 Files)</h2>
+  <div class="grid-2x2" style="flex: 1;">
+    <div class="card accent-orange">
+      <div class="card-title">Core Services</div>
+      <ul>
+        <li><strong>AgentFactory</strong> - Dependency Injection, Wiring</li>
+        <li><strong>AgentExecutor</strong> - Mission Execution (Streaming-first)</li>
+        <li><strong>ToolBuilder</strong> - Tool Instantiierung &amp; Config</li>
+        <li><strong>ToolRegistry</strong> - Tool Discovery &amp; Resolution</li>
+        <li><strong>ProfileLoader</strong> - YAML Profile Loading</li>
+        <li><strong>SystemPromptAssembler</strong> - Prompt Composition</li>
+      </ul>
+    </div>
+    <div class="card accent-orange">
+      <div class="card-title">Agent Management</div>
+      <ul>
+        <li><strong>AgentRegistry</strong> - Agent Lifecycle</li>
+        <li><strong>PersistentAgentService</strong> - Singleton Agent</li>
+        <li><strong>SubAgentSpawner</strong> - Sub-Agent Sessions</li>
+        <li><strong>AgentCreationPipeline</strong> - Instantiation Flow</li>
+        <li><strong>RequestQueue</strong> - Event-driven Processing</li>
+        <li><strong>ConversationManager</strong> - Hybrid Segmentation</li>
+      </ul>
+    </div>
+    <div class="card accent-orange">
+      <div class="card-title">Gateway &amp; Communication</div>
+      <ul>
+        <li><strong>CommunicationGateway</strong> - Multi-Channel Hub</li>
+        <li><strong>IntentRouter</strong> - Request Routing</li>
+        <li><strong>TopicDetector</strong> - Themen-Erkennung</li>
+        <li><strong>ChannelAskRouter</strong> - User-Interaktion</li>
+        <li><strong>ProgressUpdateBuilder</strong> - Status Updates</li>
+      </ul>
+    </div>
+    <div class="card accent-orange">
+      <div class="card-title">Memory, Skills &amp; Epic</div>
+      <ul>
+        <li><strong>SkillManager</strong> - Skill Lifecycle</li>
+        <li><strong>SkillService</strong> - Discovery &amp; Slash-Commands</li>
+        <li><strong>ConsolidationService</strong> - Memory Consolidation</li>
+        <li><strong>DreamService</strong> - Kognitive Verarbeitung</li>
+        <li><strong>EpicOrchestrator</strong> - Multi-Agent Pipelines</li>
+        <li><strong>ButlerService</strong> - Butler Lifecycle</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 9: API Layer -->
+<div class="slide" data-slide="9">
+  <div class="slide-title">API Layer</div>
+  <h2>Entrypoints: CLI, REST &amp; Daemon</h2>
+  <div class="grid-3">
+    <div class="card accent-pink">
+      <div class="card-title">CLI (Typer + Rich)</div>
+      <ul>
+        <li><code>taskforce run mission</code></li>
+        <li><code>taskforce chat</code> (Interactive)</li>
+        <li><code>taskforce epic</code> (Multi-Agent)</li>
+        <li><code>taskforce tools list</code></li>
+        <li><code>taskforce skills list</code></li>
+        <li><code>taskforce butler start/status</code></li>
+        <li><code>taskforce config</code></li>
+      </ul>
+      <p style="margin-top: 8px; font-size: 13px;">Rich Terminal UI mit Textual Widgets</p>
+    </div>
+    <div class="card accent-pink">
+      <div class="card-title">REST API (FastAPI)</div>
+      <table style="font-size: 13px;">
+        <tr><td><span class="tag tag-blue">POST</span></td><td>/api/v1/execute</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td>/api/v1/agents</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td>/api/v1/conversations</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td>/api/v1/gateway/{channel}/messages</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td>/api/v1/gateway/{channel}/webhook</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td>/api/v1/gateway/notify</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td>/api/v1/tools</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td>/api/v1/health</td></tr>
+      </table>
+    </div>
+    <div class="card accent-pink">
+      <div class="card-title">Butler Daemon</div>
+      <ul>
+        <li>24/7 Event-Driven Agent</li>
+        <li>Telegram Polling</li>
+        <li>Google Calendar Events</li>
+        <li>Webhook Receiver</li>
+        <li>Cron/Interval Scheduler</li>
+        <li>Trigger Rules Engine</li>
+        <li>Proaktive Notifications</li>
+      </ul>
+      <p style="margin-top: 8px; font-size: 13px;">Persistent Singleton Agent Architektur</p>
+    </div>
+  </div>
+  <div style="margin-top: 20px;">
+    <div class="flow">
+      <div class="flow-step"><strong>User</strong><br><span style="font-size:12px; color:var(--text-muted);">CLI / Telegram / API</span></div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-step"><strong>API Layer</strong><br><span style="font-size:12px; color:var(--text-muted);">Route / Command</span></div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-step highlight"><strong>Executor</strong><br><span style="font-size:12px; color:var(--text-muted);">Streaming</span></div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-step"><strong>Agent</strong><br><span style="font-size:12px; color:var(--text-muted);">ReAct Loop</span></div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-step"><strong>Tools</strong><br><span style="font-size:12px; color:var(--text-muted);">Execute</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 10: Tool System -->
+<div class="slide" data-slide="10">
+  <div class="slide-title">Tools</div>
+  <h2>Extensible Tool System</h2>
+  <div class="grid-2">
+    <div>
+      <h3>30+ Native Tools</h3>
+      <table style="font-size: 13px;">
+        <thead><tr><th>Kategorie</th><th>Tools</th></tr></thead>
+        <tbody>
+          <tr><td>File &amp; Code</td><td>file_read, file_write, edit, python, shell, bash, powershell</td></tr>
+          <tr><td>Search</td><td>grep, glob, web_search, web_fetch</td></tr>
+          <tr><td>DevOps</td><td>git, github, browser</td></tr>
+          <tr><td>Google</td><td>gmail, calendar, google_drive, authenticate</td></tr>
+          <tr><td>Agent</td><td>llm, ask_user, activate_skill, memory</td></tr>
+          <tr><td>Butler</td><td>schedule, reminder, rule_manager, send_notification</td></tr>
+          <tr><td>Office</td><td>docx, xlsx, pptx (optional deps)</td></tr>
+          <tr><td>Orchestration</td><td>agent_tool, parallel_agent, sub_agent</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top: 16px;">
+        <h3>Erweiterung</h3>
+        <ul style="list-style:none; padding:0; color: var(--text-muted); font-size: 14px; line-height: 1.8;">
+          <li><span class="tag tag-blue">MCP</span> Model Context Protocol Server</li>
+          <li><span class="tag tag-purple">RAG</span> Azure AI Search Tools</li>
+          <li><span class="tag tag-green">Plugin</span> Custom Tools via Entry Points</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <h3>Tool Architektur</h3>
+      <div class="code-block" style="font-size: 12px; margin-bottom: 16px;">
+<span class="cmt"># Neues Tool in < 20 Zeilen:</span>
+<span class="kw">from</span> taskforce.infrastructure.tools.base_tool \
+    <span class="kw">import</span> <span class="type">BaseTool</span>
+
+<span class="kw">class</span> <span class="fn">MyTool</span>(<span class="type">BaseTool</span>):
+    tool_name = <span class="str">"my_tool"</span>
+    tool_description = <span class="str">"Does X with Y"</span>
+    tool_parameters_schema = {
+        <span class="str">"type"</span>: <span class="str">"object"</span>,
+        <span class="str">"properties"</span>: {
+            <span class="str">"input"</span>: {<span class="str">"type"</span>: <span class="str">"string"</span>}
+        },
+        <span class="str">"required"</span>: [<span class="str">"input"</span>]
+    }
+
+    <span class="kw">async def</span> <span class="fn">_execute</span>(self, **params):
+        <span class="kw">return</span> {<span class="str">"result"</span>: <span class="str">"..."</span>}
+      </div>
+      <div class="card accent-blue" style="padding: 14px;">
+        <div class="card-title" style="font-size: 14px;">Features</div>
+        <ul style="font-size: 13px;">
+          <li>Parallele Ausfuehrung (max 4, konfigurierbar)</li>
+          <li>Result Caching (>10KB)</li>
+          <li>Approval Levels (low/medium/high risk)</li>
+          <li>BaseTool reduziert Boilerplate</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 11: Communication Gateway -->
+<div class="slide" data-slide="11">
+  <div class="slide-title">Communication</div>
+  <h2>Unified Communication Gateway</h2>
+  <div class="grid-2">
+    <div>
+      <h3>Multi-Channel Architektur</h3>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div class="flow-step" style="min-width: 100px;"><strong>Telegram</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 140px; flex:1;"><strong>Inbound Adapter</strong></div>
+          <div class="flow-arrow" rowspan="4">&#8594;</div>
+          <div class="flow-step highlight" style="min-width: 100px;" rowspan="4"><strong>Gateway</strong></div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div class="flow-step" style="min-width: 100px;"><strong>Slack</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 140px; flex:1;"><strong>Inbound Adapter</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step highlight" style="min-width: 100px;"><strong>Agent</strong></div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div class="flow-step" style="min-width: 100px;"><strong>Teams</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 140px; flex:1;"><strong>Inbound Adapter</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 100px;"><strong>Outbound</strong></div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div class="flow-step" style="min-width: 100px;"><strong>Webhook</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 140px; flex:1;"><strong>Inbound Adapter</strong></div>
+          <div class="flow-arrow">&#8594;</div>
+          <div class="flow-step" style="min-width: 100px;"><strong>Reply</strong></div>
+        </div>
+      </div>
+      <div style="margin-top: 24px;">
+        <h3>4 Gateway Protocols</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+          <span class="tag tag-blue">OutboundSender</span>
+          <span class="tag tag-purple">InboundAdapter</span>
+          <span class="tag tag-green">ConversationStore</span>
+          <span class="tag tag-orange">RecipientRegistry</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3>Butler Integration</h3>
+      <div class="card accent-pink" style="margin-bottom: 12px;">
+        <div class="card-title">Event-Driven Architecture</div>
+        <ul>
+          <li>Google Calendar Polling</li>
+          <li>Webhook Receiver</li>
+          <li>Cron/Interval/One-Shot Scheduler</li>
+          <li>Trigger Rules Engine</li>
+          <li>Proaktive Push Notifications</li>
+        </ul>
+      </div>
+      <div class="card accent-blue">
+        <div class="card-title">Persistent Agent Model</div>
+        <ul>
+          <li>Singleton Agent (kein Session-basiert)</li>
+          <li>Conversation Manager (Hybrid Segmentation)</li>
+          <li>Request Queue (async)</li>
+          <li>Shared Memory across Channels</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 12: Memory & Cognition -->
+<div class="slide" data-slide="12">
+  <div class="slide-title">Cognition</div>
+  <h2>Memory, Learning &amp; Dreaming</h2>
+  <div class="grid-2">
+    <div>
+      <h3>Memory Pipeline</h3>
+      <div class="flow" style="flex-direction: column; align-items: stretch; gap: 10px; margin-top: 12px;">
+        <div class="flow-step">
+          <strong style="color: var(--accent);">Experience Tracking</strong><br>
+          <span style="font-size:13px; color: var(--text-muted);">Emotional Valence (positiv/negativ/neutral), Task Metadata</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660;</div>
+        <div class="flow-step">
+          <strong style="color: var(--accent2);">Memory Store</strong><br>
+          <span style="font-size:13px; color: var(--text-muted);">File-based Markdown, Preference &amp; Learned Fact Typen</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660;</div>
+        <div class="flow-step">
+          <strong style="color: var(--accent3);">Consolidation Engine</strong><br>
+          <span style="font-size:13px; color: var(--text-muted);">LLM-driven: Merge, Deduplicate, Extract Patterns</span>
+        </div>
+        <div class="flow-arrow" style="text-align: center;">&#9660;</div>
+        <div class="flow-step highlight">
+          <strong style="color: var(--accent5);">Dream Engine</strong><br>
+          <span style="font-size:13px; color: var(--text-muted);">Generative kognitive Verarbeitung (REM-aehnlich)</span>
+        </div>
+      </div>
+    </div>
+    <div class="flex-col gap-16">
+      <div class="card accent-orange">
+        <div class="card-title">Dream Phasen</div>
+        <ul>
+          <li><strong>Replay with Variations</strong> - Erlebnisse neu durchspielen</li>
+          <li><strong>Creative Recombination</strong> - Neue Verbindungen herstellen</li>
+          <li><strong>Emotional Processing</strong> - Emotionale Regulation</li>
+          <li><strong>Predictive Simulation</strong> - Zukunft antizipieren</li>
+        </ul>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title">Token Management</div>
+        <ul>
+          <li>Token Budgeter (Default: 100k input)</li>
+          <li>Compression Trigger (40% threshold)</li>
+          <li>Message History Summarization</li>
+          <li>Token Analytics (per-request tracking)</li>
+          <li>Tiktoken + Heuristic Estimators</li>
+        </ul>
+      </div>
+      <div class="card accent-blue">
+        <div class="card-title">Context Injection</div>
+        <ul>
+          <li>MemoryContextLoader (relevante Memories)</li>
+          <li>ContextBuilder (System Prompt)</li>
+          <li>ContextPolicy (Filterregeln)</li>
+          <li>Dynamisch pro ReAct-Iteration</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 13: Epic Orchestration -->
+<div class="slide" data-slide="13">
+  <div class="slide-title">Multi-Agent</div>
+  <h2>Epic Orchestration &amp; Sub-Agents</h2>
+  <div class="grid-2">
+    <div>
+      <h3>Planner -> Workers -> Judge</h3>
+      <div style="margin-top: 16px;">
+        <div class="flow" style="flex-direction: column; align-items: stretch; gap: 8px;">
+          <div class="flow-step" style="border-color: var(--accent); background: rgba(56,189,248,0.1);">
+            <strong style="color: var(--accent);">Planner Agent</strong><br>
+            <span style="font-size: 13px; color: var(--text-muted);">Zerlegt komplexe Mission in Teilaufgaben (MISSION.md)</span>
+          </div>
+          <div class="flow-arrow" style="text-align: center;">&#9660; verteilt Aufgaben</div>
+          <div style="display: flex; gap: 8px;">
+            <div class="flow-step" style="flex:1; border-color: var(--accent2); background: rgba(129,140,248,0.1);">
+              <strong style="color: var(--accent2);">Worker 1</strong><br>
+              <span style="font-size:12px; color: var(--text-muted);">Coding</span>
+            </div>
+            <div class="flow-step" style="flex:1; border-color: var(--accent2); background: rgba(129,140,248,0.1);">
+              <strong style="color: var(--accent2);">Worker 2</strong><br>
+              <span style="font-size:12px; color: var(--text-muted);">Research</span>
+            </div>
+            <div class="flow-step" style="flex:1; border-color: var(--accent2); background: rgba(129,140,248,0.1);">
+              <strong style="color: var(--accent2);">Worker 3</strong><br>
+              <span style="font-size:12px; color: var(--text-muted);">Testing</span>
+            </div>
+          </div>
+          <div class="flow-arrow" style="text-align: center;">&#9660; evaluiert Ergebnisse</div>
+          <div class="flow-step" style="border-color: var(--accent3); background: rgba(52,211,153,0.1);">
+            <strong style="color: var(--accent3);">Judge Agent</strong><br>
+            <span style="font-size: 13px; color: var(--text-muted);">Bewertet Qualitaet, entscheidet ueber weitere Runden</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex-col gap-16">
+      <div class="card accent-blue">
+        <div class="card-title">Auto-Epic Detection</div>
+        <p>TaskComplexityClassifier analysiert Mission-Komplexitaet automatisch und eskaliert zu Epic Orchestration wenn noetig.</p>
+      </div>
+      <div class="card accent-purple">
+        <div class="card-title">Sub-Agent Spawning</div>
+        <ul>
+          <li>Isolierte Sessions pro Worker</li>
+          <li>Eigene Tool-Sets und Profile</li>
+          <li>Custom Configs in configs/custom/</li>
+          <li>Parallele Ausfuehrung</li>
+        </ul>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title">Skills System</div>
+        <table style="font-size: 13px;">
+          <tr><td><span class="tag tag-blue">Context</span></td><td>Injiziert Instruktionen in System Prompt</td></tr>
+          <tr><td><span class="tag tag-purple">Prompt</span></td><td>One-shot Template mit $ARGUMENTS</td></tr>
+          <tr><td><span class="tag tag-green">Agent</span></td><td>Override Agent Config temporaer</td></tr>
+        </table>
+        <p style="margin-top: 8px; font-size: 13px;">Invocation: <code>/skill-name [args]</code> in Chat</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 14: Recent Changes -->
+<div class="slide" data-slide="14">
+  <div class="slide-title">Evolution</div>
+  <h2>Architektur-Entwicklung (Q1-Q2 2026)</h2>
+  <div class="grid-2">
+    <div class="flex-col gap-16">
+      <div class="card accent-blue">
+        <div class="card-title">Persistent Agent (ADR-016)</div>
+        <ul>
+          <li>Session-basiert -> Singleton Agent</li>
+          <li>Conversation Manager (Hybrid Segmentation)</li>
+          <li>Request Queue (event-driven)</li>
+          <li>Multi-Channel ohne Session-Mapping</li>
+        </ul>
+      </div>
+      <div class="card accent-purple">
+        <div class="card-title">Agent Packages Restructuring</div>
+        <ul>
+          <li>Framework-Code getrennt von Agent-Code</li>
+          <li>Butler, Security, SWE-Bench als eigene Packages</li>
+          <li>Jeweils eigenes pyproject.toml</li>
+          <li>CLI Entry Points pro Agent</li>
+        </ul>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title">Feature Restoration</div>
+        <ul>
+          <li>Memory Consolidation + Dream Engine</li>
+          <li>Token Analytics + Tracking</li>
+          <li>Workflow Runtime + Checkpoints</li>
+          <li>Intent Router + Topic Detector</li>
+          <li>2315 Tests passing</li>
+        </ul>
+      </div>
+    </div>
+    <div class="flex-col gap-16">
+      <div class="card accent-orange">
+        <div class="card-title">Butler Event Architecture</div>
+        <ul>
+          <li>Event Sources (Calendar, Webhook)</li>
+          <li>Scheduler (Cron, Interval, One-Shot)</li>
+          <li>Trigger Rules Engine</li>
+          <li>Dream Service (kognitive Verarbeitung)</li>
+          <li>Learning Service (Auto-Extraktion)</li>
+        </ul>
+      </div>
+      <div class="card accent-pink">
+        <div class="card-title">Dynamic LLM Routing (ADR-012)</div>
+        <ul>
+          <li>Phase Hints: planning, reasoning, acting, summarizing</li>
+          <li>Pro-Call Model Selection</li>
+          <li>LLM Router (Decorator Pattern)</li>
+          <li>Backward-kompatibel (disabled = transparent)</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color: var(--accent); text-align: center; padding: 20px;">
+        <div style="display: flex; justify-content: space-around;">
+          <div>
+            <div class="stat-number" style="font-size: 36px;">260</div>
+            <div class="stat-label">Source Files</div>
+          </div>
+          <div>
+            <div class="stat-number" style="font-size: 36px;">2315</div>
+            <div class="stat-label">Tests</div>
+          </div>
+          <div>
+            <div class="stat-number" style="font-size: 36px;">12</div>
+            <div class="stat-label">ADRs</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 15: Tech Stack -->
+<div class="slide" data-slide="15">
+  <div class="slide-title">Stack</div>
+  <h2>Technology Stack &amp; Tooling</h2>
+  <div class="grid-3" style="flex: 1;">
+    <div class="card accent-blue">
+      <div class="card-title">Runtime &amp; Build</div>
+      <ul>
+        <li><strong>Python</strong> 3.11+ / 3.12</li>
+        <li><strong>uv</strong> Package Manager</li>
+        <li><strong>Hatchling</strong> Build Backend</li>
+        <li><strong>asyncio</strong> Async Runtime</li>
+        <li><strong>structlog</strong> Logging</li>
+        <li><strong>Pydantic</strong> Data Validation</li>
+      </ul>
+    </div>
+    <div class="card accent-purple">
+      <div class="card-title">Frameworks</div>
+      <ul>
+        <li><strong>FastAPI</strong> REST API</li>
+        <li><strong>Typer</strong> CLI Framework</li>
+        <li><strong>Rich</strong> Terminal Formatting</li>
+        <li><strong>Textual</strong> TUI Widgets</li>
+        <li><strong>LiteLLM</strong> Multi-LLM Provider</li>
+        <li><strong>Playwright</strong> Browser Automation</li>
+      </ul>
+    </div>
+    <div class="card accent-green">
+      <div class="card-title">Quality &amp; CI</div>
+      <ul>
+        <li><strong>pytest</strong> + asyncio_mode=auto</li>
+        <li><strong>Black</strong> Code Formatter</li>
+        <li><strong>Ruff</strong> Linter</li>
+        <li><strong>mypy</strong> Type Checking</li>
+        <li><strong>GitHub Actions</strong> CI Pipeline</li>
+        <li>Line Length: 100</li>
+      </ul>
+    </div>
+    <div class="card accent-pink">
+      <div class="card-title">Optional Dependencies</div>
+      <table style="font-size: 12px;">
+        <tr><td><span class="tag tag-blue">browser</span></td><td>Playwright</td></tr>
+        <tr><td><span class="tag tag-purple">rag</span></td><td>Azure AI Search</td></tr>
+        <tr><td><span class="tag tag-green">pdf</span></td><td>pypdf, pdfplumber</td></tr>
+        <tr><td><span class="tag tag-orange">personal-assistant</span></td><td>Google APIs</td></tr>
+        <tr><td><span class="tag tag-pink">postgres</span></td><td>SQLAlchemy, AsyncPG</td></tr>
+        <tr><td><span class="tag tag-blue">auth</span></td><td>Cryptography</td></tr>
+        <tr><td><span class="tag tag-purple">tracing</span></td><td>Phoenix OTEL</td></tr>
+        <tr><td><span class="tag tag-green">evals</span></td><td>Inspect AI + SWE-Bench</td></tr>
+      </table>
+    </div>
+    <div class="card accent-orange">
+      <div class="card-title">Integrations</div>
+      <ul>
+        <li><strong>LLM:</strong> OpenAI, Anthropic, Google, Azure, Ollama</li>
+        <li><strong>Channels:</strong> Telegram, Slack, Teams</li>
+        <li><strong>Google:</strong> Calendar, Gmail, Drive</li>
+        <li><strong>MCP:</strong> Model Context Protocol</li>
+        <li><strong>RAG:</strong> Azure AI Search</li>
+        <li><strong>Tracing:</strong> Arize Phoenix</li>
+      </ul>
+    </div>
+    <div class="card accent-blue">
+      <div class="card-title">Design Patterns</div>
+      <ul>
+        <li>Clean Architecture (Hexagonal)</li>
+        <li>Protocol-Based Design (PEP 544)</li>
+        <li>Strategy Pattern (Planning)</li>
+        <li>Adapter Pattern (Infrastructure)</li>
+        <li>Factory Pattern (DI)</li>
+        <li>Decorator Pattern (LLM Router)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 16: Summary -->
+<div class="slide title-slide" data-slide="16">
+  <div class="logo-icon">TF</div>
+  <h1 style="font-size: 48px;">Zusammenfassung</h1>
+  <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap; justify-content: center; max-width: 900px;">
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent);">Clean Architecture</div>
+      <p>4 Schichten, 40+ Protocols, strikte Dependency Rules</p>
+    </div>
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent2);">Autonomous Agents</div>
+      <p>ReAct Loop, 4 Planning Strategies, Dynamic LLM Routing</p>
+    </div>
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent3);">Extensible</div>
+      <p>30+ Tools, Skills, Plugins, MCP, Multi-Provider</p>
+    </div>
+  </div>
+  <div style="display: flex; gap: 24px; margin-top: 12px; flex-wrap: wrap; justify-content: center; max-width: 900px;">
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent4);">Multi-Channel</div>
+      <p>Telegram, Slack, Teams, REST, CLI, Webhooks</p>
+    </div>
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent5);">Cognitive Memory</div>
+      <p>Consolidation, Dreaming, Experience Tracking</p>
+    </div>
+    <div class="card" style="flex: 1; min-width: 200px; text-align: left;">
+      <div class="card-title" style="color: var(--accent);">Production-Ready</div>
+      <p>2300+ Tests, CI/CD, Docker, Kubernetes</p>
+    </div>
+  </div>
+  <div class="version-badge" style="margin-top: 32px;">Taskforce Framework &middot; April 2026</div>
+</div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button onclick="prevSlide()" title="Previous (Left Arrow)">&#9664;</button>
+  <span class="counter"><span id="current">1</span> / <span id="total">16</span></span>
+  <button onclick="nextSlide()" title="Next (Right Arrow)">&#9654;</button>
+</div>
+
+<script>
+  let currentSlide = 1;
+  const totalSlides = document.querySelectorAll('.slide').length;
+  document.getElementById('total').textContent = totalSlides;
+
+  function showSlide(n) {
+    if (n < 1 || n > totalSlides) return;
+    document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+    document.querySelector(`[data-slide="${n}"]`).classList.add('active');
+    currentSlide = n;
+    document.getElementById('current').textContent = n;
+  }
+
+  function nextSlide() { showSlide(currentSlide + 1); }
+  function prevSlide() { showSlide(currentSlide - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+    if (e.key === 'Home') { e.preventDefault(); showSlide(1); }
+    if (e.key === 'End') { e.preventDefault(); showSlide(totalSlides); }
+  });
+
+  // Touch support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', e => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+  });
+</script>
+
+</body>
+</html>

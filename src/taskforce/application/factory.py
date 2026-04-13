@@ -135,6 +135,81 @@ class AgentFactory:
         """
         self._auth_manager = auth_manager
 
+    def _ensure_auth_manager(self) -> Any:
+        """Lazily create an AuthManager if none was explicitly set.
+
+        Returns the existing or newly created AuthManager, or None if
+        the required packages (cryptography) are not installed.
+        """
+        if self._auth_manager is not None:
+            return self._auth_manager
+
+        try:
+            from taskforce.application.auth_manager import AuthManager
+            from taskforce.infrastructure.auth.encrypted_token_store import (
+                EncryptedTokenStore,
+            )
+            from taskforce.infrastructure.auth.oauth2_device_flow import (
+                OAuth2DeviceFlow,
+            )
+
+            auth_flows: dict[str, Any] = {"oauth2_device": OAuth2DeviceFlow()}
+            try:
+                from taskforce.infrastructure.auth.oauth2_auth_code_flow import (
+                    OAuth2AuthCodeFlow,
+                )
+                auth_flows["oauth2_auth_code"] = OAuth2AuthCodeFlow()
+            except ImportError:
+                pass
+
+            # Try to extract Google client credentials from legacy token file
+            # so the authenticate tool can run device flows.
+            provider_configs = self._load_google_provider_config()
+
+            self._auth_manager = AuthManager(
+                token_store=EncryptedTokenStore(),
+                auth_flows=auth_flows,
+                gateway=self._gateway,
+                provider_configs=provider_configs,
+            )
+            self.logger.info("auth_manager.auto_created")
+        except ImportError:
+            self.logger.debug("auth_manager.auto_create_skipped", reason="missing_deps")
+        return self._auth_manager
+
+    def _load_google_provider_config(self) -> dict[str, Any]:
+        """Extract Google OAuth client credentials from legacy token file.
+
+        Reads ``client_id`` and ``client_secret`` from the existing
+        ``~/.taskforce/google_token.json`` so the ``authenticate`` tool
+        can run device/auth-code flows without separate configuration.
+        """
+        import json
+        from pathlib import Path
+
+        provider_configs: dict[str, Any] = {}
+        token_path = Path.home() / ".taskforce" / "google_token.json"
+        if token_path.exists():
+            try:
+                data = json.loads(token_path.read_text(encoding="utf-8"))
+                client_id = data.get("client_id", "")
+                client_secret = data.get("client_secret", "")
+                if client_id and client_secret:
+                    provider_configs["google"] = {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "default_flow": "oauth2_auth_code",
+                        "default_scopes": [
+                            "https://www.googleapis.com/auth/gmail.modify",
+                            "https://www.googleapis.com/auth/calendar",
+                            "https://www.googleapis.com/auth/drive.readonly",
+                        ],
+                    }
+                    self.logger.info("auth_manager.google_config_loaded")
+            except Exception:
+                pass
+        return provider_configs
+
     @property
     def infra_builder(self) -> Any:
         """Cached ``InfrastructureBuilder`` instance.
@@ -400,6 +475,16 @@ class AgentFactory:
         memory_store_dir = ToolBuilder.resolve_memory_store_dir(
             base_config, work_dir_override=definition.work_dir
         )
+
+        # Auto-create AuthManager when auth-aware tools are requested.
+        _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive"}
+        requested_names = {
+            t if isinstance(t, str) else t.get("type", "")
+            for t in definition.tools
+        }
+        if requested_names & _AUTH_TOOLS:
+            self._ensure_auth_manager()
+
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,

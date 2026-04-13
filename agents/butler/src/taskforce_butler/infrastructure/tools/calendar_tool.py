@@ -174,7 +174,15 @@ class CalendarTool:
                     }
                 )
                 return build("calendar", "v3", credentials=creds)
-        return self._build_service(build, credentials_cls)
+        # 2. Fall back to legacy token file.
+        try:
+            return self._build_service(build, credentials_cls)
+        except Exception as legacy_exc:
+            raise ValueError(
+                "Google authentication expired or revoked. "
+                "The user needs to re-run 'python scripts/google_auth.py' to refresh the token. "
+                "Tell the user about this and do NOT retry — manual action is required."
+            ) from legacy_exc
 
     def _build_service(self, build: Any, credentials_cls: Any) -> Any:
         """Build the Google Calendar API service (legacy file-based).

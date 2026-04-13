@@ -226,7 +226,13 @@
       "Bash(PYTHONPATH=src pytest tests/unit/application/test_butler_service.py::TestButlerService::test_scheduler_fires_job_and_dispatches_mission -v)",
       "Bash(PYTHONPATH=src pytest tests/unit/api/cli/test_simple_chat.py -v)",
       "Bash(tasklist)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(PYTHONPATH=src pytest -q -c /dev/null tests/unit/application/test_auth_manager.py -v)",
+      "Bash(PYTHONPATH=src pytest tests/unit/application/test_auth_manager.py -v)",
+      "Bash(PYTHONPATH=src pytest tests/unit/application/test_auth_manager.py -v -q)",
+      "Bash(PYTHONPATH=src pytest tests/unit/ -q --tb=no)",
+      "Bash(PYTHONPATH=src pytest tests/unit/application/test_auth_manager.py tests/unit/application/test_factory.py -q --tb=short)",
+      "Bash(PYTHONPATH=src pytest tests/unit/application/ -q --tb=short)"
     ],
     "deny": [
       ".env",

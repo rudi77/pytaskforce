@@ -181,6 +181,50 @@ class TestAuthManager:
         assert result is True
         mock_token_store.delete_token.assert_called_once_with("google")
 
+    async def test_refresh_failure_marks_token_as_failed(
+        self, auth_manager: AuthManager, mock_token_store: AsyncMock
+    ):
+        """When token refresh fails, persist FAILED status."""
+        expired_token = TokenData(
+            provider=AuthProviderType.GOOGLE,
+            access_token="expired_access",
+            refresh_token="refresh_123",
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="cid",
+            client_secret="cs",
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        mock_token_store.load_token.return_value = expired_token.to_dict()
+
+        # Mock HTTP call to fail (simulates revoked/invalid refresh token).
+        import aiohttp
+        from unittest.mock import patch
+
+        mock_resp = AsyncMock()
+        mock_resp.raise_for_status = MagicMock(
+            side_effect=aiohttp.ClientResponseError(
+                request_info=MagicMock(), history=(), status=400, message="invalid_grant"
+            )
+        )
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.post = MagicMock(return_value=mock_resp)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await auth_manager.get_token("google")
+
+        assert result is None
+        # Token should be saved with FAILED status.
+        save_calls = mock_token_store.save_token.call_args_list
+        assert len(save_calls) == 1
+        saved_data = save_calls[0][0]  # positional args
+        assert saved_data[0] == "google"
+        assert saved_data[1]["status"] == "failed"
+
     async def test_authenticate_uses_provider_default_scopes(
         self,
         auth_manager: AuthManager,

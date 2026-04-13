@@ -79,11 +79,14 @@ class ButlerDaemon:
             llm_fallback=config.get("agent", {}).get("llm_fallback", False),
         )
 
+        # Build shared AuthManager for Google/Microsoft tools
+        auth_manager = self._build_auth_manager(config)
+
         # Try to wire up communication gateway
-        await self._setup_gateway(config)
+        await self._setup_gateway(config, auth_manager=auth_manager)
 
         # Try to wire up executor (and optionally PersistentAgentService)
-        await self._setup_executor(config)
+        await self._setup_executor(config, auth_manager=auth_manager)
 
         # Set up event sources
         await self._setup_event_sources(config)
@@ -175,7 +178,54 @@ class ButlerDaemon:
 
         return config
 
-    async def _setup_gateway(self, config: dict[str, Any]) -> None:
+    def _build_auth_manager(self, config: dict[str, Any]) -> Any:
+        """Build the centralized AuthManager for OAuth2 token lifecycle.
+
+        Returns the AuthManager instance, or None if the auth extra is
+        not installed (cryptography package missing).
+        """
+        try:
+            from taskforce.application.auth_manager import AuthManager
+            from taskforce.infrastructure.auth.encrypted_token_store import EncryptedTokenStore
+            from taskforce.infrastructure.auth.oauth2_device_flow import OAuth2DeviceFlow
+
+            token_store = EncryptedTokenStore()
+
+            # Provider configs from butler profile or sensible defaults.
+            auth_cfg = config.get("auth", {})
+            provider_configs = auth_cfg.get("providers", {})
+
+            auth_flows: dict[str, Any] = {"oauth2_device": OAuth2DeviceFlow()}
+
+            # Optionally include auth code flow.
+            try:
+                from taskforce.infrastructure.auth.oauth2_auth_code_flow import (
+                    OAuth2AuthCodeFlow,
+                )
+
+                auth_flows["oauth2_auth_code"] = OAuth2AuthCodeFlow()
+            except ImportError:
+                pass
+
+            manager = AuthManager(
+                token_store=token_store,
+                auth_flows=auth_flows,
+                provider_configs=provider_configs,
+            )
+            logger.info("butler_daemon.auth_manager_configured")
+            return manager
+
+        except ImportError as exc:
+            logger.warning(
+                "butler_daemon.auth_manager_unavailable",
+                error=str(exc),
+                hint="Install 'auth' extra: uv sync --extra auth",
+            )
+            return None
+
+    async def _setup_gateway(
+        self, config: dict[str, Any], *, auth_manager: Any = None
+    ) -> None:
         """Set up the communication gateway if configured."""
         if self._butler is None:
             return
@@ -190,6 +240,8 @@ class ButlerDaemon:
             if components.outbound_senders:
                 factory = AgentFactory()
                 factory.set_scheduler(self._butler.scheduler)
+                if auth_manager:
+                    factory.set_auth_manager(auth_manager)
                 executor = AgentExecutor(factory=factory)
                 gateway = CommunicationGateway(
                     executor=executor,
@@ -199,6 +251,12 @@ class ButlerDaemon:
                     max_conversation_history=30,
                 )
                 self._butler.set_gateway(gateway)
+
+                # Give auth_manager access to gateway for sending
+                # verification links via Telegram/Teams during re-auth.
+                if auth_manager:
+                    auth_manager._gateway = gateway
+
                 logger.info(
                     "butler_daemon.gateway_configured",
                     channels=list(components.outbound_senders.keys()),
@@ -206,7 +264,9 @@ class ButlerDaemon:
         except Exception as exc:
             logger.warning("butler_daemon.gateway_setup_failed", error=str(exc))
 
-    async def _setup_executor(self, config: dict[str, Any]) -> None:
+    async def _setup_executor(
+        self, config: dict[str, Any], *, auth_manager: Any = None
+    ) -> None:
         """Set up the agent executor and optionally the PersistentAgentService."""
         if self._butler is None:
             return
@@ -217,6 +277,8 @@ class ButlerDaemon:
 
             factory = AgentFactory()
             factory.set_scheduler(self._butler.scheduler)
+            if auth_manager:
+                factory.set_auth_manager(auth_manager)
             executor = AgentExecutor(factory=factory)
             self._butler.set_executor(executor)
             logger.info("butler_daemon.executor_configured")

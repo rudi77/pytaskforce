@@ -435,7 +435,7 @@ class ToolRegistry:
                         self._notification_defaults.get("default_recipient_id"),
                     )
 
-            # Special handling for AuthTool, CalendarTool, GmailTool - inject auth_manager
+            # Special handling for auth-aware tools - inject auth_manager
             if tool_type in ("AuthTool", "CalendarTool", "GmailTool") and self._auth_manager:
                 tool_params["auth_manager"] = self._auth_manager
 

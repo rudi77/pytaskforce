@@ -147,6 +147,21 @@ class AuthManager:
             return new_data
         except Exception as exc:
             logger.warning("auth.refresh_failed", provider=provider, error=str(exc))
+            # Persist failed status so callers can distinguish
+            # "never authenticated" from "token revoked/expired".
+            token = TokenData(
+                provider=token.provider,
+                access_token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_uri=token.token_uri,
+                client_id=token.client_id,
+                client_secret=token.client_secret,
+                scopes=token.scopes,
+                expires_at=token.expires_at,
+                created_at=token.created_at,
+                status=AuthStatus.FAILED,
+            )
+            await self._token_store.save_token(provider, token.to_dict())
             return None
 
     async def revoke(self, provider: str) -> bool:
