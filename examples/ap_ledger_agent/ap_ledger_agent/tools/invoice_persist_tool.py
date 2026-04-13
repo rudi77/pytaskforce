@@ -86,7 +86,7 @@ class InvoicePersistTool:
             return False, "vendor_name_raw is required"
         if not kwargs.get("invoice_date"):
             return False, "invoice_date is required"
-        if not kwargs.get("total_gross"):
+        if kwargs.get("total_gross") is None:
             return False, "total_gross is required"
         return True, None
 

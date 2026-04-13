@@ -68,20 +68,11 @@ class TaxResolveTool:
 
         try:
             if action == "list":
-                # List all tax codes
-                categories = store.list_categories()
-                conn = store._connect()
-                try:
-                    rows = conn.execute("SELECT * FROM tax_codes").fetchall()
-                    return {
-                        "success": True,
-                        "tax_codes": [
-                            {"code": r["code"], "rate": r["rate"], "label": r["label"]}
-                            for r in rows
-                        ],
-                    }
-                finally:
-                    conn.close()
+                tax_codes = store.list_tax_codes()
+                return {
+                    "success": True,
+                    "tax_codes": tax_codes,
+                }
 
             tc = store.resolve_tax(kwargs["tax_code"])
             if not tc:

@@ -3,6 +3,7 @@
 from ap_ledger_agent.domain.models import (
     AuditEntry,
     Category,
+    CategoryType,
     FiscalPeriod,
     Invoice,
     InvoiceLine,
@@ -26,6 +27,7 @@ from ap_ledger_agent.domain.errors import (
 __all__ = [
     "AuditEntry",
     "Category",
+    "CategoryType",
     "FiscalPeriod",
     "Invoice",
     "InvoiceLine",

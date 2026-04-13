@@ -51,7 +51,7 @@ class JournalPostTool:
         return False
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
-        if not kwargs.get("journal_id"):
+        if kwargs.get("journal_id") is None:
             return False, "journal_id is required"
         return True, None
 

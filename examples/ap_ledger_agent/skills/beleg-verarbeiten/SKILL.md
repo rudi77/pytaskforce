@@ -19,4 +19,5 @@ Du verarbeitest jetzt einen Beleg. Arbeite den kompletten Workflow ab:
 8. **Buchen**: `ap_journal_persist(...)` dann `ap_journal_post(...)`
 9. **Audit**: `ap_audit_log(...)`
 
-Überspringe KEINEN Schritt. Der User MUSS vor dem Buchen bestätigen.
+Überspringe KEINEN Schritt. Bei Confidence < 95% oder Hard Gates MUSS der User bestätigen.
+Bei Confidence >= 95% mit bekanntem Vendor und Betrag < 1000€ wird automatisch gebucht.

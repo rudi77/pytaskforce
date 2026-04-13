@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"}
+_SUPPORTED_EXTENSIONS = {".pdf"}
 
 
 class DoclingExtractTool:
@@ -30,9 +30,9 @@ class DoclingExtractTool:
     def description(self) -> str:
         return (
             "Extract text from a PDF document and convert it to Markdown. "
-            "Use this for PDF invoices/receipts. For photos (JPG/PNG), "
+            "Use this ONLY for PDF files. For photos (JPG/PNG), "
             "use your vision capability directly instead. "
-            "Requires the docling CLI to be installed."
+            "Requires the docling CLI to be installed (pip install docling)."
         )
 
     @property
