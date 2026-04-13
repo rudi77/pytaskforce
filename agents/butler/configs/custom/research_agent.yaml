@@ -12,7 +12,12 @@ specialist: null
 
 agent:
   planning_strategy: native_react
-  max_steps: 30
+  planning_strategy_params:
+    max_step_iterations: 2  # AutoOptim: reduced from 3 to discourage extra turns after delegation
+    max_plan_steps: 12
+    reflect_every_step: false  # AutoOptim: disabled reflection overhead
+  max_steps: 60
+  llm_fallback: false
 
 persistence:
   type: file
@@ -27,13 +32,13 @@ logging:
   format: console
 
 context_policy:
-  max_items: 10
+  max_items: 30
   max_chars_per_item: 3000
-  max_total_chars: 15000
+  max_total_chars: 150000
 
 context_management:
-  summary_threshold: 30
-  compression_trigger: 40000
+  summary_threshold: 80
+  compression_trigger: 80000
 
 tools:
   - web_search

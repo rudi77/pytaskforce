@@ -97,7 +97,7 @@ async def _handle_ask_user(
         pending["recipient_id"] = recipient_id
 
     state["pending_question"] = pending
-    state["paused_messages"] = messages
+    state["paused_messages"] = list(agent.context.messages)
     state["paused_tool_call_id"] = tool_call_id
     state["paused_step"] = step
     if plan is not None:
@@ -174,7 +174,7 @@ async def _process_tool_calls(
     paused_phase: str | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Process tool calls, yield events, update messages."""
-    messages.append(assistant_tool_calls_to_message(tool_calls))
+    agent.context.append_message(assistant_tool_calls_to_message(tool_calls))
     requests = []
 
     for tc in tool_calls:
@@ -213,7 +213,7 @@ async def _process_tool_calls(
     for req, res in await _execute_tool_calls(agent, requests, session_id):
         async for e in _emit_tool_result(agent, req, res):
             yield e
-        messages.append(
+        agent.context.append_message(
             await agent.tool_result_message_factory.build_message(
                 tool_call_id=req.tool_call_id,
                 tool_name=req.tool_name,

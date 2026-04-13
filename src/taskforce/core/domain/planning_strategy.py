@@ -31,7 +31,6 @@ from taskforce.core.domain.planning_helpers import (
     _llm_call_and_process,
     _load_and_resume_state,
     _react_loop,
-    _rebuild_system_prompt,
     _save_and_emit_max_steps,
     _stream_final_response,
 )
@@ -83,7 +82,7 @@ class NativeReActStrategy:
         state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
-            messages = resume.messages
+            agent.context.restore(resume.messages)
             step = resume.step
         else:
             if self.generate_plan_first:
@@ -98,14 +97,14 @@ class NativeReActStrategy:
                     if isinstance(item, StreamEvent):
                         yield item
 
-            messages = agent._build_initial_messages(mission, state)
+            agent.context.initialize(mission, state, agent._base_system_prompt)
             step = 0
 
         async for e in _react_loop(
             agent,
             mission,
             session_id,
-            messages,
+            agent.context.messages,
             state,
             start_step=step,
             logger=logger,
@@ -145,13 +144,15 @@ class PlanAndExecuteStrategy:
         state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
-            messages = resume.messages
+            agent.context.restore(resume.messages)
+            messages = agent.context.messages
             progress = resume.step
             plan = resume.plan
             start_idx = resume.plan_step_idx
             start_it = resume.plan_iteration
         else:
-            messages = agent._build_initial_messages(mission, state)
+            agent.context.initialize(mission, state, agent._base_system_prompt)
+            messages = agent.context.messages
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
                 agent,
@@ -187,8 +188,11 @@ class PlanAndExecuteStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                _rebuild_system_prompt(agent, messages, mission, state)
-                messages.append(
+                prompt = agent._build_system_prompt(
+                    mission=mission, state=state, messages=messages,
+                )
+                agent.context.set_system_prompt(prompt)
+                agent.context.append_message(
                     {
                         "role": MessageRole.USER.value,
                         "content": (
@@ -308,14 +312,16 @@ class SparStrategy:
         state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
 
         if resume is not None:
-            messages = resume.messages
+            agent.context.restore(resume.messages)
+            messages = agent.context.messages
             progress = resume.step
             plan = resume.plan
             start_idx = resume.plan_step_idx
             start_it = resume.plan_iteration
             start_phase = resume.phase
         else:
-            messages = agent._build_initial_messages(mission, state)
+            agent.context.initialize(mission, state, agent._base_system_prompt)
+            messages = agent.context.messages
             plan = DEFAULT_PLAN
             async for item in _generate_and_register_plan(
                 agent,
@@ -352,7 +358,10 @@ class SparStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                _rebuild_system_prompt(agent, messages, mission, state)
+                prompt = agent._build_system_prompt(
+                    mission=mission, state=state, messages=messages,
+                )
+                agent.context.set_system_prompt(prompt)
 
                 reflect_only = idx == start_idx and it == start_it and start_phase == "reflect"
                 if not reflect_only:

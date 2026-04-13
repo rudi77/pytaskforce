@@ -55,6 +55,26 @@ def _make_agent(
     )
     agent._execute_tool = AsyncMock()
     agent.load_memory_context = AsyncMock()
+
+    # Mock ContextManager that delegates to a real list passed as `messages`
+    # to _react_loop. The context.messages property and append_message/compress
+    # methods operate on the same list object the test inspects.
+    _ctx_messages: list[dict[str, Any]] = []
+    context = MagicMock()
+    context.messages = _ctx_messages
+    context.set_system_prompt = MagicMock(
+        side_effect=lambda p: (
+            _ctx_messages.__setitem__(0, {"role": "system", "content": p})
+            if _ctx_messages
+            else _ctx_messages.append({"role": "system", "content": p})
+        )
+    )
+    context.append_message = MagicMock(side_effect=lambda m: _ctx_messages.append(m))
+    context.compress = AsyncMock()
+    context.preflight_check = MagicMock()
+    agent.context = context
+    agent._ctx_messages = _ctx_messages  # exposed for test setup
+
     return agent
 
 
@@ -151,10 +171,11 @@ class TestReactLoopResilience:
             return_value={"success": False, "error": "UTF-8 decode error"}
         )
 
-        messages: list[dict[str, Any]] = [
+        messages = agent.context.messages
+        messages.extend([
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "Read test.pdf"},
-        ]
+        ])
         state: dict[str, Any] = {}
 
         events: list[StreamEvent] = []
@@ -216,10 +237,11 @@ class TestReactLoopResilience:
             return_value={"success": True, "output": "hello world"}
         )
 
-        messages: list[dict[str, Any]] = [
+        messages = agent.context.messages
+        messages.extend([
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "Read test.txt"},
-        ]
+        ])
         state: dict[str, Any] = {}
 
         events: list[StreamEvent] = []
@@ -269,10 +291,11 @@ class TestReactLoopResilience:
             return_value={"success": True, "output": "0 matches in 5 files"}
         )
 
-        messages: list[dict[str, Any]] = [
+        messages = agent.context.messages
+        messages.extend([
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "Find something"},
-        ]
+        ])
         state: dict[str, Any] = {}
 
         events: list[StreamEvent] = []

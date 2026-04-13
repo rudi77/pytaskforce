@@ -22,6 +22,9 @@ from taskforce.core.domain.lean_agent_components.memory_context_loader import (
     MemoryContextConfig,
     MemoryContextLoader,
 )
+from taskforce.core.domain.lean_agent_components.context_manager import (
+    ContextManager,
+)
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
 )
@@ -197,6 +200,14 @@ class Agent:
             llm_provider=self.llm_provider,
             model_alias=self.model_alias,
             summary_threshold=self.summary_threshold,
+            logger=self.logger,
+        )
+
+        # Context manager — single source of truth for the LLM context
+        self.context = ContextManager(
+            message_history_manager=self.message_history_manager,
+            openai_tools=self._openai_tools,
+            token_budgeter=self.token_budgeter,
             logger=self.logger,
         )
 

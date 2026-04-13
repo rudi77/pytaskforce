@@ -12,6 +12,7 @@ from taskforce.application.executor import ProgressUpdate
 from taskforce.core.domain.agent_definition import AgentDefinition, AgentSource
 from taskforce.core.domain.enums import EventType, SkillType
 from taskforce.core.domain.skill import SkillMetadataModel
+from taskforce.core.interfaces.context_manager import ContextItem, ContextSnapshot
 
 
 class DummyStateManager:
@@ -35,12 +36,53 @@ class DummySkillManager:
         return "Focus on concise diagnostics."
 
 
+class DummyContext:
+    """Minimal context mock for CLI tests."""
+
+    def snapshot(
+        self, *, include_content: bool = False, skill_manager=None,
+        memory_context: str | None = None,
+    ) -> ContextSnapshot:
+        sys_items = [
+            ContextItem(
+                title="System prompt",
+                tokens=100,
+                content="Base system prompt" if include_content else None,
+            ),
+        ]
+        msg_items = [
+            ContextItem(
+                title="1. user",
+                tokens=5,
+                content="Hello" if include_content else None,
+            ),
+        ]
+        skill_items = []
+        if skill_manager and getattr(skill_manager, "active_skill_name", None):
+            skill_items.append(
+                ContextItem(title=f"Active skill: {skill_manager.active_skill_name}", tokens=20)
+            )
+        tool_items = [ContextItem(title="file_read", tokens=50)]
+        total = sum(i.tokens for i in (*sys_items, *msg_items, *skill_items, *tool_items))
+        return ContextSnapshot(
+            total_tokens=total,
+            max_tokens=1000,
+            utilization_percent=total / 1000 * 100,
+            system_prompt=sys_items,
+            messages=msg_items,
+            skills=skill_items,
+            tools=tool_items,
+        )
+
+
 class DummyAgent:
     def __init__(self) -> None:
         self.closed = False
         self.state_manager = DummyStateManager()
         self.system_prompt = "Base system prompt"
         self.skill_manager = DummySkillManager()
+        self.context = DummyContext()
+        self._memory_context = None
         self._openai_tools = [
             {
                 "type": "function",
