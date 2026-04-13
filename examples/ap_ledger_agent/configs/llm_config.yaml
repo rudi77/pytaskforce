@@ -1,0 +1,72 @@
+# =============================================================================
+# LLM Configuration for AP Ledger Agent
+# =============================================================================
+# Vision-capable models for direct photo/receipt extraction.
+# Uses LiteLLM model string prefixes — provider-agnostic.
+
+# Default model for all requests
+default_model: main
+
+# Model aliases
+models:
+  # Main model — must support Vision (image input) for receipt photos
+  main:
+    model: "azure/gpt-4.1"
+    temperature: 0.2
+    max_tokens: 4096
+    drop_params: true
+
+  # Fast model for simple tasks (summaries, short answers)
+  fast:
+    model: "azure/gpt-4.1-nano"
+    temperature: 0.3
+    max_tokens: 2048
+    drop_params: true
+
+  # Powerful model for complex reasoning (planning, validation)
+  powerful:
+    model: "azure/gpt-4.1"
+    temperature: 0.1
+    max_tokens: 4096
+    drop_params: true
+
+  # -----------------------------------------------------------------------
+  # Alternative providers (uncomment as needed)
+  # -----------------------------------------------------------------------
+
+  # OpenAI direct (Vision-capable)
+  # main:
+  #   model: "gpt-4o"
+  #   temperature: 0.2
+  #   max_tokens: 4096
+
+  # Anthropic Claude (Vision-capable)
+  # main:
+  #   model: "claude-sonnet-4-20250514"
+  #   temperature: 0.2
+  #   max_tokens: 4096
+
+  # Google Gemini (Vision-capable)
+  # main:
+  #   model: "gemini/gemini-2.0-flash"
+  #   temperature: 0.2
+  #   max_tokens: 4096
+
+  # Local Ollama (Vision-capable, e.g. LLaVA, Moondream)
+  # main:
+  #   model: "ollama/llava:13b"
+  #   api_base: "http://localhost:11434"
+  #   temperature: 0.2
+
+# Dynamic routing rules
+# Phase hints emitted by planning strategies auto-route to different models
+routing:
+  enabled: false
+  default_model: main
+  rules:
+    - condition: "hint:planning"
+      model: powerful
+    - condition: "hint:summarizing"
+      model: fast
+    - condition: has_tools
+      model: main
