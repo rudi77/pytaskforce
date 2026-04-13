@@ -226,7 +226,14 @@
       "Bash(PYTHONPATH=src pytest tests/unit/application/test_butler_service.py::TestButlerService::test_scheduler_fires_job_and_dispatches_mission -v)",
       "Bash(PYTHONPATH=src pytest tests/unit/api/cli/test_simple_chat.py -v)",
       "Bash(tasklist)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(mv src/taskforce/configs/custom/accountant.yaml agents/butler/configs/custom/)",
+      "Bash(mv src/taskforce/configs/custom/pc-agent.yaml agents/butler/configs/custom/)",
+      "Bash(mv src/taskforce/configs/custom/research_agent.yaml agents/butler/configs/custom/)",
+      "Bash(mv src/taskforce/configs/custom/vision_ocr.yaml agents/butler/configs/custom/)",
+      "Bash(mv src/taskforce/configs/security.yaml agents/security-agent/configs/)",
+      "Bash(mv src/taskforce/configs/swe_bench.yaml agents/swe-bench-agent/configs/)",
+      "Bash(rm:*)"
     ],
     "deny": [
       ".env",
