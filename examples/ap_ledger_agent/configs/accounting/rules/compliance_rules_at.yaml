@@ -1,0 +1,114 @@
+# Austrian Invoice Compliance Rules
+# Based on § 11 UStG 1994 (Österreich)
+# and Kleinbetragsrechnung § 11 Abs. 6 UStG
+
+version: "1.0"
+jurisdiction: "AT"  # Austria
+legal_basis: "§ 11 UStG 1994"
+
+# Standard invoice (> 400 EUR)
+mandatory_fields:
+  supplier_name:
+    legal_ref: "§ 11 Abs. 1 Z 1 UStG"
+    severity: "error"
+    required: true
+    description: "Name und Anschrift des liefernden/leistenden Unternehmers"
+
+  supplier_address:
+    legal_ref: "§ 11 Abs. 1 Z 1 UStG"
+    severity: "error"
+    required: true
+    description: "Anschrift des Lieferanten"
+
+  uid_number:
+    legal_ref: "§ 11 Abs. 1 Z 1 UStG"
+    severity: "error"
+    required: true
+    description: "UID-Nummer des Lieferanten"
+    validation:
+      pattern_uid_at: "^ATU\\d{8}$"
+      pattern_uid_eu: "^[A-Z]{2}[0-9A-Za-z+*.]{2,12}$"
+
+  recipient_name:
+    legal_ref: "§ 11 Abs. 1 Z 2 UStG"
+    severity: "error"
+    required: true
+    description: "Name des Leistungsempfängers"
+
+  invoice_number:
+    legal_ref: "§ 11 Abs. 1 Z 3 UStG"
+    severity: "error"
+    required: true
+    description: "Fortlaufende Rechnungsnummer"
+
+  invoice_date:
+    legal_ref: "§ 11 Abs. 1 Z 4 UStG"
+    severity: "error"
+    required: true
+    description: "Ausstellungsdatum der Rechnung"
+
+  delivery_date:
+    legal_ref: "§ 11 Abs. 1 Z 5 UStG"
+    severity: "warning"
+    required: false
+    description: "Zeitpunkt der Lieferung/Leistung (wenn abweichend)"
+
+  service_description:
+    legal_ref: "§ 11 Abs. 1 Z 5 UStG"
+    severity: "error"
+    required: true
+    description: "Art und Umfang der Lieferung/Leistung"
+
+  net_amount:
+    legal_ref: "§ 11 Abs. 1 Z 6 UStG"
+    severity: "error"
+    required: true
+    description: "Entgelt (Nettobetrag)"
+
+  vat_rate:
+    legal_ref: "§ 11 Abs. 1 Z 6 UStG"
+    severity: "error"
+    required: true
+    description: "Anzuwendender Steuersatz"
+    valid_rates:
+      - 0.20   # Normalsteuersatz
+      - 0.10   # Ermäßigt (Lebensmittel, Bücher, Miete Wohnung)
+      - 0.13   # Ermäßigt (Blumen, Kunst)
+      - 0.00   # Steuerbefreit (Versicherung, Ärzte)
+
+  vat_amount:
+    legal_ref: "§ 11 Abs. 1 Z 6 UStG"
+    severity: "error"
+    required: true
+    description: "Auf das Entgelt entfallender Steuerbetrag"
+
+# Kleinbetragsrechnung (≤ 400 EUR)
+small_invoice:
+  threshold: 400.00  # EUR
+  legal_ref: "§ 11 Abs. 6 UStG"
+  reduced_requirements:
+    - supplier_name       # Name des Lieferanten (Pflicht)
+    - invoice_date        # Ausstellungsdatum (Pflicht)
+    - service_description # Art der Lieferung (Pflicht)
+    - gross_amount        # Bruttobetrag (Pflicht)
+    - vat_rate            # Steuersatz (Pflicht)
+  not_required:
+    - recipient_name      # Kein Empfänger nötig
+    - recipient_address
+    - uid_number          # Keine UID nötig
+    - invoice_number      # Keine fortlaufende Nummer nötig
+    - net_amount          # Netto nicht separat erforderlich
+    - vat_amount          # USt-Betrag nicht separat erforderlich
+
+# Reverse Charge (innergemeinschaftlich)
+reverse_charge:
+  legal_ref: "§ 19 Abs. 1 UStG"
+  trigger: "EU supplier without Austrian USt"
+  note: "USt-Schuld geht auf den Leistungsempfänger über"
+  required_fields:
+    - supplier_name
+    - supplier_uid_number
+    - invoice_number
+    - invoice_date
+    - net_amount
+  hint_text: "Reverse Charge — Steuerschuldnerschaft des Leistungsempfängers"

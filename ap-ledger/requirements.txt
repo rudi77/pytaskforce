@@ -1,6 +1,0 @@
-# AP-Ledger Dependencies
-# Telegram Bot
-python-telegram-bot>=21.0
-
-# Nur für den Bot benötigt — Claude CLI wird separat installiert
-# https://docs.anthropic.com/en/docs/claude-code
