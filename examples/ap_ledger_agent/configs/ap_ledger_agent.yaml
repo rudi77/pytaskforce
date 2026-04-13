@@ -246,6 +246,13 @@ skills:
     mode: intent_based
     auto_switch: true
 
+# Notifications — Telegram als Default-Kanal für HITL und Benachrichtigungen
+# recipient_id hier eintragen (= deine Telegram User-ID),
+# oder weglassen → wird beim ersten Telegram-Kontakt automatisch registriert
+notifications:
+  default_channel: telegram
+  # default_recipient_id: "DEINE_TELEGRAM_USER_ID"
+
 # Context management
 context_policy:
   max_items: 10
