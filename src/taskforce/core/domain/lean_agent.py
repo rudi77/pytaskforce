@@ -209,6 +209,7 @@ class Agent:
             openai_tools=self._openai_tools,
             token_budgeter=self.token_budgeter,
             logger=self.logger,
+            build_system_prompt_fn=self._build_system_prompt,
         )
 
         # Tool execution helpers

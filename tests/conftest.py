@@ -296,6 +296,7 @@ def mock_agent(mock_logger: MockLogger) -> MagicMock:
     def _initialize(mission, state, base_system_prompt):
         _messages.clear()
         _messages.append({"role": "system", "content": "System prompt"})
+        context.system_prompt = "System prompt"
         context.is_initialized = True
 
     def _restore(messages):
@@ -305,6 +306,7 @@ def mock_agent(mock_logger: MockLogger) -> MagicMock:
 
     context.initialize = MagicMock(side_effect=_initialize)
     context.restore = MagicMock(side_effect=_restore)
+    context.prepare_for_llm = AsyncMock()
     agent.context = context
 
     return agent

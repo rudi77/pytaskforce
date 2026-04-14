@@ -105,6 +105,21 @@ class ContextManagerProtocol(Protocol):
         """Run emergency budget check and truncation in-place."""
         ...
 
+    async def prepare_for_llm(
+        self,
+        *,
+        rebuild_system_prompt: bool = True,
+        apply_compression: bool = True,
+        mission: str | None = None,
+        state: dict[str, Any] | None = None,
+    ) -> None:
+        """Prepare the context for the next LLM call.
+
+        Orchestrates system prompt rebuild, compression, and preflight
+        check in the correct order.
+        """
+        ...
+
     def snapshot(
         self,
         *,

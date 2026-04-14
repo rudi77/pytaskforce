@@ -327,3 +327,170 @@ def test_tools_returns_openai_tools(
     ctx: ContextManager, openai_tools: list[dict[str, Any]],
 ) -> None:
     assert ctx.tools is openai_tools
+
+
+# ---------------------------------------------------------------------------
+# prepare_for_llm tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ctx_with_callback(
+    mock_history_manager: Mock,
+    openai_tools: list[dict[str, Any]],
+    mock_token_budgeter: TokenBudgeter,
+    mock_logger: Mock,
+) -> ContextManager:
+    """ContextManager with a build_system_prompt_fn callback."""
+    return ContextManager(
+        message_history_manager=mock_history_manager,
+        openai_tools=openai_tools,
+        token_budgeter=mock_token_budgeter,
+        logger=mock_logger,
+        build_system_prompt_fn=lambda **kwargs: "Dynamic system prompt",
+    )
+
+
+async def test_prepare_for_llm_rebuilds_system_prompt(
+    ctx_with_callback: ContextManager,
+) -> None:
+    ctx_with_callback.initialize(
+        mission="test", state={}, base_system_prompt="old",
+    )
+
+    await ctx_with_callback.prepare_for_llm(mission="test", state={})
+
+    assert ctx_with_callback.system_prompt == "Dynamic system prompt"
+    assert ctx_with_callback.messages[0]["content"] == "Dynamic system prompt"
+
+
+async def test_prepare_for_llm_skips_rebuild_when_disabled(
+    ctx_with_callback: ContextManager,
+) -> None:
+    ctx_with_callback.initialize(
+        mission="test", state={}, base_system_prompt="original",
+    )
+
+    await ctx_with_callback.prepare_for_llm(
+        rebuild_system_prompt=False, mission="test", state={},
+    )
+
+    assert ctx_with_callback.system_prompt == "original"
+
+
+async def test_prepare_for_llm_runs_compression(
+    ctx_with_callback: ContextManager,
+    mock_history_manager: Mock,
+) -> None:
+    ctx_with_callback.initialize(
+        mission="test", state={}, base_system_prompt="sys",
+    )
+
+    await ctx_with_callback.prepare_for_llm(mission="test", state={})
+
+    mock_history_manager.compress_messages.assert_called_once()
+    mock_history_manager.preflight_budget_check.assert_called_once()
+
+
+async def test_prepare_for_llm_skips_compression_when_disabled(
+    ctx_with_callback: ContextManager,
+    mock_history_manager: Mock,
+) -> None:
+    ctx_with_callback.initialize(
+        mission="test", state={}, base_system_prompt="sys",
+    )
+
+    await ctx_with_callback.prepare_for_llm(
+        apply_compression=False, mission="test", state={},
+    )
+
+    mock_history_manager.compress_messages.assert_not_called()
+    mock_history_manager.preflight_budget_check.assert_not_called()
+
+
+async def test_prepare_for_llm_without_callback(ctx: ContextManager) -> None:
+    """prepare_for_llm works even without a callback (no-op for prompt rebuild)."""
+    ctx.initialize(mission="test", state={}, base_system_prompt="original")
+
+    await ctx.prepare_for_llm(mission="test", state={})
+
+    # System prompt unchanged (no callback)
+    assert ctx.system_prompt == "original"
+
+
+async def test_prepare_for_llm_preserves_message_identity(
+    ctx_with_callback: ContextManager,
+) -> None:
+    """Messages list identity must be preserved through prepare_for_llm."""
+    ctx_with_callback.initialize(
+        mission="test", state={}, base_system_prompt="sys",
+    )
+    ref = ctx_with_callback.messages
+
+    await ctx_with_callback.prepare_for_llm(mission="test", state={})
+
+    assert ref is ctx_with_callback.messages
+
+
+async def test_prepare_for_llm_on_uninitialized_context(
+    ctx: ContextManager, mock_logger: Mock,
+) -> None:
+    """prepare_for_llm on uninitialized context should no-op with warning."""
+    await ctx.prepare_for_llm(mission="test", state={})
+
+    mock_logger.warning.assert_called_once_with(
+        "prepare_for_llm_called_before_initialize",
+    )
+    assert ctx.messages == []
+
+
+# ---------------------------------------------------------------------------
+# Sub-agent snapshot registration
+# ---------------------------------------------------------------------------
+
+
+def _make_dummy_snapshot() -> ContextSnapshot:
+    return ContextSnapshot(
+        total_tokens=100,
+        max_tokens=1000,
+        utilization_percent=10.0,
+        system_prompt=[ContextItem(title="sys", tokens=50)],
+        messages=[ContextItem(title="1. user", tokens=50)],
+    )
+
+
+def test_register_sub_agent_context_stores_entry(ctx: ContextManager) -> None:
+    snap = _make_dummy_snapshot()
+
+    ctx.register_sub_agent_context(
+        specialist="research", session_id="sess-1", snapshot=snap,
+    )
+
+    result = ctx.snapshot()
+    assert len(result.sub_agents) == 1
+    assert result.sub_agents[0].specialist == "research"
+    assert result.sub_agents[0].snapshot is snap
+
+
+def test_register_sub_agent_context_respects_max(ctx: ContextManager) -> None:
+    snap = _make_dummy_snapshot()
+
+    for i in range(ctx.MAX_SUB_AGENT_SNAPSHOTS + 5):
+        ctx.register_sub_agent_context(
+            specialist=f"agent-{i}", session_id=f"sess-{i}", snapshot=snap,
+        )
+
+    result = ctx.snapshot()
+    assert len(result.sub_agents) == ctx.MAX_SUB_AGENT_SNAPSHOTS
+
+
+def test_initialize_clears_sub_agent_entries(ctx: ContextManager) -> None:
+    snap = _make_dummy_snapshot()
+    ctx.register_sub_agent_context(
+        specialist="old", session_id="sess-old", snapshot=snap,
+    )
+
+    ctx.initialize(mission="new", state={}, base_system_prompt="sys")
+
+    result = ctx.snapshot()
+    assert len(result.sub_agents) == 0

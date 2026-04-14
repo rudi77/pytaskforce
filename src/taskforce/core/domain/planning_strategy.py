@@ -188,10 +188,9 @@ class PlanAndExecuteStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                prompt = agent._build_system_prompt(
-                    mission=mission, state=state, messages=messages,
+                await agent.context.prepare_for_llm(
+                    mission=mission, state=state, apply_compression=False,
                 )
-                agent.context.set_system_prompt(prompt)
                 agent.context.append_message(
                     {
                         "role": MessageRole.USER.value,
@@ -358,10 +357,9 @@ class SparStrategy:
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
-                prompt = agent._build_system_prompt(
-                    mission=mission, state=state, messages=messages,
+                await agent.context.prepare_for_llm(
+                    mission=mission, state=state, apply_compression=False,
                 )
-                agent.context.set_system_prompt(prompt)
 
                 reflect_only = idx == start_idx and it == start_it and start_phase == "reflect"
                 if not reflect_only:

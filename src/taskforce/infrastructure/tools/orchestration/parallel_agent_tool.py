@@ -273,5 +273,5 @@ class ParallelAgentTool(BaseTool):
             }
             # Attach context snapshot for parent /tree inspection
             if result.context_snapshot is not None:
-                entry["_context_snapshot"] = result.context_snapshot
+                entry["context_snapshot"] = result.context_snapshot
             return entry

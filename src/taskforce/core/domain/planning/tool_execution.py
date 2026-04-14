@@ -33,7 +33,7 @@ def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> N
     if not isinstance(results, list):
         return
     for entry in results:
-        snapshot = entry.pop("_context_snapshot", None)
+        snapshot = entry.pop("context_snapshot", None)
         if snapshot is None:
             continue
         agent.context.register_sub_agent_context(

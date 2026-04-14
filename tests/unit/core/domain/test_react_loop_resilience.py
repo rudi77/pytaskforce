@@ -72,6 +72,7 @@ def _make_agent(
     context.append_message = MagicMock(side_effect=lambda m: _ctx_messages.append(m))
     context.compress = AsyncMock()
     context.preflight_check = MagicMock()
+    context.prepare_for_llm = AsyncMock()
     agent.context = context
     agent._ctx_messages = _ctx_messages  # exposed for test setup
 

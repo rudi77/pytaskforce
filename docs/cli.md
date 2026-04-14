@@ -120,6 +120,10 @@ Use `Enter` to send messages (simple REPL-style input). Streaming output is enab
 | `/<skill_name> [args]` | Invoke a prompt/agent skill |
 | `/context` | Inspect LLM context with token estimates |
 | `/context full` | Full context with content |
+| `/tree` | Show LLM context as tree (mirrors actual API call structure) |
+| `/tree --sub-agents` | Include sub-agent contexts in the tree |
+| `/write-tree` | Dump full LLM context to `tree.md` |
+| `/write-tree --sub-agents` | Include sub-agent contexts in the dump |
 
 ### Loading Plugins
 

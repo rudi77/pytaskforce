@@ -8,6 +8,7 @@ messages list and exposes snapshot generation for CLI commands.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
@@ -36,12 +37,14 @@ class ContextManager:
         openai_tools: list[dict[str, Any]],
         token_budgeter: TokenBudgeter,
         logger: LoggerProtocol,
+        build_system_prompt_fn: Callable[..., str] | None = None,
         chars_per_token: int = TokenBudgeter.CHARS_PER_TOKEN,
     ) -> None:
         self._history_manager = message_history_manager
         self._openai_tools = openai_tools
         self._token_budgeter = token_budgeter
         self._logger = logger
+        self._build_system_prompt_fn = build_system_prompt_fn
         self._chars_per_token = max(1, chars_per_token)
         self._messages: list[dict[str, Any]] = []
         self._last_system_prompt: str = ""
@@ -198,6 +201,53 @@ class ContextManager:
         if new_messages is not self._messages:
             self._messages.clear()
             self._messages.extend(new_messages)
+
+    # ------------------------------------------------------------------
+    # LLM request building
+    # ------------------------------------------------------------------
+
+    async def prepare_for_llm(
+        self,
+        *,
+        rebuild_system_prompt: bool = True,
+        apply_compression: bool = True,
+        mission: str | None = None,
+        state: dict[str, Any] | None = None,
+    ) -> None:
+        """Prepare the full context for the next LLM call.
+
+        Orchestrates system prompt rebuild, compression, and preflight
+        check in the correct order.
+
+        Args:
+            rebuild_system_prompt: Whether to rebuild messages[0] via
+                the registered ``build_system_prompt_fn`` callback.
+            apply_compression: Whether to run compression and preflight.
+            mission: Current mission text (for system prompt rebuild).
+            state: Current session state (for system prompt rebuild).
+        """
+        if not self._initialized:
+            self._logger.warning("prepare_for_llm_called_before_initialize")
+            return
+
+        if rebuild_system_prompt and self._build_system_prompt_fn:
+            prompt = self._build_system_prompt_fn(
+                mission=mission,
+                state=state,
+                messages=self._messages,
+            )
+            self.set_system_prompt(prompt)
+
+        if apply_compression:
+            await self.compress()
+            self.preflight_check()
+
+        self._logger.debug(
+            "context_prepared_for_llm",
+            message_count=len(self._messages),
+            rebuilt_prompt=rebuild_system_prompt,
+            compressed=apply_compression,
+        )
 
     # ------------------------------------------------------------------
     # Snapshot

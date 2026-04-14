@@ -216,6 +216,43 @@ class TestBuildInitialMessages:
         assert len(messages) == 2
 
 
+    def test_skips_duplicate_user_message_from_history(self) -> None:
+        """When conversation_history ends with the same user message as mission, skip duplication."""
+        mgr = _make_manager()
+        state = {
+            "conversation_history": [
+                {"role": "user", "content": "What is minimax 2.7"},
+            ]
+        }
+        messages = mgr.build_initial_messages(
+            mission="What is minimax 2.7",
+            state=state,
+            base_system_prompt="Sys",
+        )
+        # system + user (from history, NOT duplicated)
+        assert len(messages) == 2
+        user_msgs = [m for m in messages if m.get("role") == "user"]
+        assert len(user_msgs) == 1
+
+    def test_appends_mission_when_different_from_history(self) -> None:
+        """When history ends with a different user message, mission is appended."""
+        mgr = _make_manager()
+        state = {
+            "conversation_history": [
+                {"role": "user", "content": "Previous question"},
+                {"role": "assistant", "content": "Previous answer"},
+            ]
+        }
+        messages = mgr.build_initial_messages(
+            mission="New question",
+            state=state,
+            base_system_prompt="Sys",
+        )
+        # system + 2 history + user (new mission)
+        assert len(messages) == 4
+        assert messages[-1]["content"] == "New question"
+
+
 # ---------------------------------------------------------------------------
 # preflight_budget_check Tests
 # ---------------------------------------------------------------------------

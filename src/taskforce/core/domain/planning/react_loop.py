@@ -125,8 +125,6 @@ async def _react_loop(
 
     while step < agent.max_steps:
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
-        prompt = agent._build_system_prompt(mission=mission, state=state, messages=messages)
-        agent.context.set_system_prompt(prompt)
 
         # Inject circuit breaker info for tools that have failed too many times
         broken_tools = [name for name, count in tool_failure_counts.items() if count >= 3]
@@ -143,9 +141,7 @@ async def _react_loop(
                 }
             )
 
-        if use_stream:
-            await agent.context.compress()
-            agent.context.preflight_check()
+        await agent.context.prepare_for_llm(mission=mission, state=state)
 
         tool_calls: list[dict[str, Any]] = []
         content = ""
@@ -220,9 +216,6 @@ async def _react_loop(
             else:
                 content = content_acc
         else:
-            # Apply compression + budget check for non-streaming path too
-            await agent.context.compress()
-            agent.context.preflight_check()
             result = await agent.llm_provider.complete(
                 messages=messages,
                 model=model_hint,

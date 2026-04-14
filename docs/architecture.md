@@ -112,6 +112,32 @@ onboarding, compliance, support) while minimizing token replay. Taskforce
 provides workflow checkpoint APIs under `/api/v1/workflows/*` for wait/resume
 operations, including resume-and-continue execution for engine-backed skills.
 
+## 🔍 Context Management (2026-04)
+
+The **ContextManager** (`core/domain/lean_agent_components/context_manager.py`) is the single source of truth for the full LLM context — the `messages` list and `tools` parameter that are sent to the LLM on each API call.
+
+**What it coordinates:**
+- **MessageHistoryManager** — initial message construction, compression, budget enforcement
+- **TokenBudgeter** — token estimation for snapshots
+- **System prompt rebuilds** — via `build_system_prompt_fn` callback (avoids circular imports)
+- **Sub-agent context capture** — snapshots from sub-agent executions are registered before the sub-agent is closed (max 10, cleared per turn)
+
+**Key method — `prepare_for_llm()`:**
+
+Before each LLM call, planning strategies call `await agent.context.prepare_for_llm(mission=..., state=...)` which orchestrates:
+1. System prompt rebuild (base + plan + context pack + memory + skills)
+2. Message compression (LLM-based summarization if budget exceeded)
+3. Preflight budget check (emergency truncation)
+
+The caller then passes `agent.context.messages` and `agent.context.tools` to the LLM provider.
+
+**CLI inspection commands:**
+- `/tree` — shows the LLM context as a tree mirroring the actual API call structure (`messages=` and `tools=` parameters)
+- `/tree --sub-agents` — includes sub-agent contexts in the tree
+- `/write-tree` — dumps the full context (all content) to `tree.md`
+
+**Protocol:** `ContextManagerProtocol` in `core/interfaces/context_manager.py`, with value objects `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry`.
+
 ## 📊 Architecture Diagrams
 
 For visual representations of the architecture, see **[Architecture Diagrams](architecture/architecture-diagrams.md)** which includes:
