@@ -33,7 +33,14 @@ logger = logging.getLogger(__name__)
 
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent.parent
 _SCHEMA_PATH = _PLUGIN_DIR / "db" / "schema.sql"
-_SEED_PATH = _PLUGIN_DIR / "db" / "seed-data.sql"
+
+# Country-specific seed data files
+_SEED_PATHS: dict[str, Path] = {
+    "AT": _PLUGIN_DIR / "db" / "seed-data-at.sql",
+    "DE": _PLUGIN_DIR / "db" / "seed-data-de.sql",
+}
+# Fallback for backwards compatibility
+_SEED_PATH_LEGACY = _PLUGIN_DIR / "db" / "seed-data.sql"
 
 
 class SQLiteStore:
@@ -43,9 +50,10 @@ class SQLiteStore:
     async tool invocations.
     """
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, country: str = "AT") -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.country = country.upper()
 
     # ------------------------------------------------------------------
     # Initialization
@@ -55,11 +63,20 @@ class SQLiteStore:
         """Create schema and seed data if the DB does not exist."""
         if self.db_path.exists():
             return
-        logger.info("Initializing AP Ledger database at %s", self.db_path)
+
+        seed_path = _SEED_PATHS.get(self.country, _SEED_PATH_LEGACY)
+        if not seed_path.exists():
+            seed_path = _SEED_PATH_LEGACY
+
+        logger.info(
+            "Initializing AP Ledger database at %s (country=%s)",
+            self.db_path,
+            self.country,
+        )
         conn = self._connect()
         try:
             conn.executescript(_SCHEMA_PATH.read_text(encoding="utf-8"))
-            conn.executescript(_SEED_PATH.read_text(encoding="utf-8"))
+            conn.executescript(seed_path.read_text(encoding="utf-8"))
             logger.info("Database initialized successfully.")
         finally:
             conn.close()
@@ -423,6 +440,163 @@ class SQLiteStore:
                 (journal_id,),
             ).fetchone()
             return dict(posted)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Invoice correction
+    # ------------------------------------------------------------------
+
+    def get_invoice(self, invoice_id: int) -> dict[str, Any] | None:
+        """Return a single invoice with its lines."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM invoices WHERE id = ?", (invoice_id,)
+            ).fetchone()
+            if not row:
+                return None
+            invoice = dict(row)
+            lines = conn.execute(
+                "SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY position",
+                (invoice_id,),
+            ).fetchall()
+            invoice["lines"] = [dict(l) for l in lines]
+            return invoice
+        finally:
+            conn.close()
+
+    def correct_invoice(
+        self,
+        invoice_id: int,
+        total_gross: float | None = None,
+        total_net: float | None = None,
+        total_tax: float | None = None,
+        lines: list[dict[str, Any]] | None = None,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Correct an invoice's amounts and its associated journal entries.
+
+        For non-posted invoices: direct UPDATE.
+        For posted invoices: reverse old journal, update invoice, create new
+        journal with corrected amounts.
+
+        Returns a summary dict with the correction result.
+        """
+        conn = self._connect()
+        try:
+            inv = conn.execute(
+                "SELECT * FROM invoices WHERE id = ?", (invoice_id,)
+            ).fetchone()
+            if not inv:
+                raise ValueError(f"Invoice {invoice_id} not found")
+
+            status = inv["status"]
+
+            # ---- Build SET clause for invoice header ----
+            updates: list[str] = ["updated_at = datetime('now')"]
+            params: list[Any] = []
+            if total_gross is not None:
+                updates.append("total_gross = ?")
+                params.append(total_gross)
+            if total_net is not None:
+                updates.append("total_net = ?")
+                params.append(total_net)
+            if total_tax is not None:
+                updates.append("total_tax = ?")
+                params.append(total_tax)
+
+            conn.execute("BEGIN TRANSACTION")
+
+            # Update invoice header
+            if len(params) > 0:
+                conn.execute(
+                    f"UPDATE invoices SET {', '.join(updates)} WHERE id = ?",
+                    (*params, invoice_id),
+                )
+
+            # Update invoice lines if provided
+            if lines:
+                conn.execute(
+                    "DELETE FROM invoice_lines WHERE invoice_id = ?",
+                    (invoice_id,),
+                )
+                for i, line in enumerate(lines, start=1):
+                    conn.execute(
+                        "INSERT INTO invoice_lines ("
+                        "  invoice_id, position, description, quantity, unit_price,"
+                        "  net_amount, tax_code, tax_amount, gross_amount, category_code"
+                        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            invoice_id,
+                            line.get("position", i),
+                            line.get("description", ""),
+                            line.get("quantity", 1),
+                            line.get("unit_price"),
+                            line.get("net_amount", 0),
+                            line.get("tax_code"),
+                            line.get("tax_amount"),
+                            line.get("gross_amount", 0),
+                            line.get("category_code"),
+                        ),
+                    )
+
+            result: dict[str, Any] = {
+                "invoice_id": invoice_id,
+                "previous_status": status,
+                "reason": reason,
+            }
+
+            if status == "posted":
+                # Reverse existing posted journals for this invoice
+                journals = conn.execute(
+                    "SELECT id FROM journal_entries "
+                    "WHERE invoice_id = ? AND status = 'posted'",
+                    (invoice_id,),
+                ).fetchall()
+                reversed_ids = []
+                for j in journals:
+                    conn.execute(
+                        "UPDATE journal_entries SET status = 'reversed', "
+                        "posted_at = datetime('now'), posted_by = 'correction' "
+                        "WHERE id = ?",
+                        (j["id"],),
+                    )
+                    reversed_ids.append(j["id"])
+
+                # Set invoice back to validated for re-booking
+                conn.execute(
+                    "UPDATE invoices SET status = 'validated', "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (invoice_id,),
+                )
+                result["reversed_journal_ids"] = reversed_ids
+                result["new_status"] = "validated"
+                result["action"] = "reversed_and_updated"
+                result["hint"] = (
+                    "Invoice updated and old journals reversed. "
+                    "Use ap_journal_persist + ap_journal_post to create "
+                    "a new correct booking."
+                )
+            else:
+                result["new_status"] = status
+                result["action"] = "updated"
+
+            conn.commit()
+
+            # Audit
+            self.write_audit(
+                event_type="invoice_corrected",
+                entity_type="invoice",
+                entity_id=invoice_id,
+                actor="agent",
+                details=f'{{"reason": "{reason}", "action": "{result["action"]}"}}',
+            )
+
+            return result
         except Exception:
             conn.rollback()
             raise

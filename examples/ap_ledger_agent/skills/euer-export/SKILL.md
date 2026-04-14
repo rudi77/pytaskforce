@@ -9,10 +9,10 @@ trigger: REPORT_REQUEST
 
 Erstelle einen Report basierend auf der Anfrage: $ARGUMENTS
 
-Verfügbare Reports:
-- **Monatsübersicht**: `ap_euer_report(action="monthly")`
-- **EÜR-Aufschlüsselung**: `ap_euer_report(action="euer", year=<jahr>)`
-- **CSV-Export**: `ap_euer_report(action="csv", year=<jahr>)`
-- **Offene Belege**: `ap_euer_report(action="open")`
+Verfügbare Reports (via powershell-Tool):
+- **Monatsübersicht**: `python examples/ap_ledger_agent/scripts/euer_report.py --action monthly`
+- **EÜR-Aufschlüsselung**: `python examples/ap_ledger_agent/scripts/euer_report.py --action euer --year <jahr>`
+- **CSV-Export**: `python examples/ap_ledger_agent/scripts/euer_report.py --action csv --year <jahr>`
+- **Offene Belege**: `python examples/ap_ledger_agent/scripts/euer_report.py --action open`
 
 Formatiere das Ergebnis übersichtlich als Tabelle.

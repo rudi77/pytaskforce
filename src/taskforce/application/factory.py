@@ -816,8 +816,20 @@ class AgentFactory:
         work_dir: str | None,
         planning_strategy: str | None,
         planning_strategy_params: dict[str, Any] | None,
+        config_dir: Path | None = None,
     ) -> AgentDefinition:
-        """Build AgentDefinition from a loaded profile config."""
+        """Build AgentDefinition from a loaded profile config.
+
+        Args:
+            profile_name: Name of the profile.
+            config: Parsed YAML configuration.
+            work_dir: Override working directory.
+            planning_strategy: Override planning strategy.
+            planning_strategy_params: Override planning strategy parameters.
+            config_dir: Directory containing the config file, used to resolve
+                relative ``plugin_path`` values. If None, relative paths are
+                resolved against the current working directory.
+        """
         from taskforce.core.domain.agent_definition import (
             AgentDefinition,
             AgentSource,
@@ -828,10 +840,25 @@ class AgentFactory:
         mcp_servers_config = config.get("mcp_servers", [])
         agent_config = config.get("agent", {})
 
+        # Determine source and plugin_path: if the config declares a
+        # plugin_path, treat this as a plugin agent so the PluginLoader
+        # discovers and instantiates the plugin's tools.
+        raw_plugin_path = config.get("plugin_path")
+        if raw_plugin_path:
+            source = AgentSource.PLUGIN
+            plugin_path_obj = Path(raw_plugin_path)
+            if not plugin_path_obj.is_absolute():
+                base = config_dir or Path.cwd()
+                plugin_path_obj = (base / plugin_path_obj).resolve()
+            plugin_path: str | None = str(plugin_path_obj)
+        else:
+            source = AgentSource.PROFILE
+            plugin_path = None
+
         return AgentDefinition(
             agent_id=f"config-{profile_name}",
             name=f"Config Agent ({profile_name})",
-            source=AgentSource.PROFILE,
+            source=source,
             specialist=config.get("specialist"),
             base_profile=profile_name,
             work_dir=work_dir,
@@ -846,6 +873,7 @@ class AgentFactory:
             ),
             max_steps=agent_config.get("max_steps"),
             system_prompt=config.get("system_prompt"),
+            plugin_path=plugin_path,
         )
 
     async def _create_agent_from_profile_config(
@@ -896,6 +924,7 @@ class AgentFactory:
             work_dir=work_dir,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
+            config_dir=config_path_obj.parent,
         )
         return await self.create(definition, user_context=user_context)
 

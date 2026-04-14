@@ -1,0 +1,114 @@
+# German Invoice Compliance Rules
+# Based on § 14 UStG (Deutschland)
+# and Kleinbetragsrechnung § 33 UStDV
+
+version: "1.0"
+jurisdiction: "DE"  # Germany
+legal_basis: "§ 14 UStG"
+
+# Standard invoice (> 250 EUR)
+mandatory_fields:
+  supplier_name:
+    legal_ref: "§ 14 Abs. 4 Nr. 1 UStG"
+    severity: "error"
+    required: true
+    description: "Vollständiger Name und Anschrift des leistenden Unternehmers"
+
+  supplier_address:
+    legal_ref: "§ 14 Abs. 4 Nr. 1 UStG"
+    severity: "error"
+    required: true
+    description: "Anschrift des Lieferanten"
+
+  uid_number:
+    legal_ref: "§ 14 Abs. 4 Nr. 2 UStG"
+    severity: "error"
+    required: true
+    description: "Steuernummer oder USt-IdNr. des Lieferanten"
+    validation:
+      pattern_uid_de: "^DE\\d{9}$"
+      pattern_uid_eu: "^[A-Z]{2}[0-9A-Za-z+*.]{2,12}$"
+      pattern_stnr: "^\\d{2,3}/\\d{3}/\\d{5}$"
+
+  recipient_name:
+    legal_ref: "§ 14 Abs. 4 Nr. 1 UStG"
+    severity: "error"
+    required: true
+    description: "Vollständiger Name und Anschrift des Leistungsempfängers"
+
+  invoice_number:
+    legal_ref: "§ 14 Abs. 4 Nr. 4 UStG"
+    severity: "error"
+    required: true
+    description: "Fortlaufende Rechnungsnummer"
+
+  invoice_date:
+    legal_ref: "§ 14 Abs. 4 Nr. 3 UStG"
+    severity: "error"
+    required: true
+    description: "Ausstellungsdatum der Rechnung"
+
+  delivery_date:
+    legal_ref: "§ 14 Abs. 4 Nr. 6 UStG"
+    severity: "warning"
+    required: false
+    description: "Zeitpunkt der Lieferung/Leistung oder Vereinnahmung des Entgelts"
+
+  service_description:
+    legal_ref: "§ 14 Abs. 4 Nr. 5 UStG"
+    severity: "error"
+    required: true
+    description: "Menge und Art der gelieferten Gegenstände / Umfang der Leistung"
+
+  net_amount:
+    legal_ref: "§ 14 Abs. 4 Nr. 7 UStG"
+    severity: "error"
+    required: true
+    description: "Entgelt (Nettobetrag), aufgeschlüsselt nach Steuersätzen"
+
+  vat_rate:
+    legal_ref: "§ 14 Abs. 4 Nr. 8 UStG"
+    severity: "error"
+    required: true
+    description: "Anzuwendender Steuersatz"
+    valid_rates:
+      - 0.19   # Regelsteuersatz
+      - 0.07   # Ermäßigt (Lebensmittel, Bücher, ÖPNV)
+      - 0.00   # Steuerbefreit (Versicherung, Ärzte, Miete Wohnung)
+
+  vat_amount:
+    legal_ref: "§ 14 Abs. 4 Nr. 8 UStG"
+    severity: "error"
+    required: true
+    description: "Auf das Entgelt entfallender Steuerbetrag"
+
+# Kleinbetragsrechnung (≤ 250 EUR)
+small_invoice:
+  threshold: 250.00  # EUR (§ 33 UStDV)
+  legal_ref: "§ 33 UStDV"
+  reduced_requirements:
+    - supplier_name       # Name und Anschrift des Lieferanten (Pflicht)
+    - invoice_date        # Ausstellungsdatum (Pflicht)
+    - service_description # Menge und Art der Lieferung (Pflicht)
+    - gross_amount        # Bruttobetrag (Pflicht)
+    - vat_rate            # Steuersatz (Pflicht)
+  not_required:
+    - recipient_name      # Kein Empfänger nötig
+    - recipient_address
+    - uid_number          # Keine USt-IdNr. nötig
+    - invoice_number      # Keine fortlaufende Nummer nötig
+    - net_amount          # Netto nicht separat erforderlich
+    - vat_amount          # USt-Betrag nicht separat erforderlich
+
+# Reverse Charge (innergemeinschaftlich)
+reverse_charge:
+  legal_ref: "§ 13b UStG"
+  trigger: "EU supplier without German USt"
+  note: "USt-Schuld geht auf den Leistungsempfänger über (Steuerschuldnerschaft)"
+  required_fields:
+    - supplier_name
+    - supplier_uid_number
+    - invoice_number
+    - invoice_date
+    - net_amount
+  hint_text: "Steuerschuldnerschaft des Leistungsempfängers (§ 13b UStG)"

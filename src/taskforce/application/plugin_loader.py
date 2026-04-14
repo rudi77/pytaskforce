@@ -384,25 +384,33 @@ class PluginLoader:
             if tool_class is None:
                 continue
 
-            # Try to get the tool name from the class
-            # First check if it's a property or attribute
+            # Try to get the tool name from the class.
+            # Look up 'name' in the class's own MRO (not the metaclass)
+            # to correctly detect @property descriptors.
             try:
-                # Try instantiating to get the name property
-                # This is safe since we're just reading the name
-                if hasattr(tool_class, "name"):
-                    # Check if name is a property (descriptor)
-                    name_attr = getattr(type(tool_class), "name", None)
-                    if isinstance(name_attr, property):
-                        # Need to instantiate to get property value
-                        try:
-                            temp_tool = tool_class()
-                            mapping[temp_tool.name] = class_name
-                        except TypeError:
-                            # Can't instantiate without args, skip mapping
-                            pass
-                    else:
-                        # It's a class attribute
-                        mapping[tool_class.name] = class_name
+                if not hasattr(tool_class, "name"):
+                    continue
+
+                # Walk the MRO to find where 'name' is defined
+                name_descriptor = None
+                for klass in tool_class.__mro__:
+                    if "name" in klass.__dict__:
+                        name_descriptor = klass.__dict__["name"]
+                        break
+
+                if isinstance(name_descriptor, property):
+                    # Need to instantiate to get property value
+                    try:
+                        temp_tool = tool_class()
+                        mapping[temp_tool.name] = class_name
+                    except TypeError:
+                        # Can't instantiate without args, skip mapping
+                        pass
+                else:
+                    # It's a class attribute (e.g. BaseTool.tool_name)
+                    name_value = tool_class.name
+                    if isinstance(name_value, str):
+                        mapping[name_value] = class_name
             except (AttributeError, TypeError, RuntimeError):
                 # Skip if we can't determine the name
                 pass
