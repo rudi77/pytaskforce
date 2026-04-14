@@ -90,6 +90,12 @@ system_prompt: |
   python examples/ap_ledger_agent/scripts/invoice_correct.py --invoice-id N --total-gross Z --reason "..."
   ```
 
+  **consistency_check.py** — Datenbank-Konsistenzpruefung:
+  ```
+  python examples/ap_ledger_agent/scripts/consistency_check.py
+  python examples/ap_ledger_agent/scripts/consistency_check.py --fix-hint
+  ```
+
   ### Einzelscripts (nur wenn book.py nicht passt)
   | Script | Zweck |
   |--------|-------|
@@ -186,6 +192,22 @@ system_prompt: |
   - `euer_report.py --action monthly [--year ...]`
   - `euer_report.py --action euer --year ...`
   - `euer_report.py --action csv --year ...`
+
+  ---
+
+  ## Fehlerbehandlung
+
+  Buchungen sind **atomar** — entweder alles (Invoice + Journal + Post + Audit)
+  wird geschrieben, oder nichts. Bei Fehler in book.py:
+
+  1. Lies die Fehlermeldung aus dem JSON (`success: false`, `error: "..."`)
+  2. Sage der Userin klar: "Die Buchung konnte nicht gespeichert werden: [Fehler].
+     Es wurden keine Daten geaendert."
+  3. Haeufige Fehler:
+     - "database is locked" -> kurz warten, nochmal versuchen
+     - "Unbalanced" -> Betraege pruefen
+     - "possible_duplicate" -> Duplikat-Warnung anzeigen
+  4. Bei unklaren Problemen: `consistency_check.py` ausfuehren
 
   ---
 

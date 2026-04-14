@@ -10,9 +10,10 @@ import csv
 import io
 import logging
 import sqlite3
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 from ap_ledger_agent.domain.models import (
     Category,
@@ -80,6 +81,62 @@ class SQLiteStore:
             logger.info("Database initialized successfully.")
         finally:
             conn.close()
+
+    # ------------------------------------------------------------------
+    # Transaction support
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def transaction(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield a shared connection wrapped in a single transaction.
+
+        Usage::
+
+            with store.transaction() as conn:
+                inv_id = store.persist_invoice(invoice, conn=conn)
+                jnl_id = store.persist_journal(entry, conn=conn)
+                store.post_journal(jnl_id, conn=conn)
+                store.write_audit(..., conn=conn)
+            # COMMIT on success, ROLLBACK on exception
+
+        When ``conn`` is passed to the individual methods they skip their
+        own connection management and transaction handling, letting this
+        context manager own the commit/rollback lifecycle.
+        """
+        conn = self._connect()
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _use_conn(
+        self, conn: sqlite3.Connection | None
+    ) -> Generator[sqlite3.Connection, None, None]:
+        """Yield an existing or new connection with proper lifecycle.
+
+        When *conn* is ``None`` a fresh connection with its own transaction
+        is created and committed/rolled-back automatically.  When *conn*
+        is provided (from ``transaction()``) the caller owns the lifecycle.
+        """
+        if conn is not None:
+            yield conn
+            return
+        own = self._connect()
+        own.execute("BEGIN TRANSACTION")
+        try:
+            yield own
+            own.commit()
+        except Exception:
+            own.rollback()
+            raise
+        finally:
+            own.close()
 
     # ------------------------------------------------------------------
     # Vendor operations
@@ -260,12 +317,17 @@ class SQLiteStore:
     # Invoice operations
     # ------------------------------------------------------------------
 
-    def persist_invoice(self, invoice: Invoice) -> int:
-        """Save an invoice with its lines. Returns the invoice ID."""
-        conn = self._connect()
-        try:
-            conn.execute("BEGIN TRANSACTION")
-            conn.execute(
+    def persist_invoice(
+        self, invoice: Invoice, conn: sqlite3.Connection | None = None
+    ) -> int:
+        """Save an invoice with its lines. Returns the invoice ID.
+
+        Args:
+            invoice: Invoice to persist.
+            conn: Optional shared connection from ``transaction()``.
+        """
+        with self._use_conn(conn) as c:
+            c.execute(
                 "INSERT INTO invoices ("
                 "  external_ref, vendor_id, vendor_name_raw, invoice_date, due_date,"
                 "  total_gross, total_net, total_tax, type, status,"
@@ -290,10 +352,10 @@ class SQLiteStore:
                     invoice.notes,
                 ),
             )
-            invoice_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            invoice_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
 
             for line in invoice.lines:
-                conn.execute(
+                c.execute(
                     "INSERT INTO invoice_lines ("
                     "  invoice_id, position, description, quantity, unit_price,"
                     "  net_amount, tax_code, tax_amount, gross_amount, category_code"
@@ -312,13 +374,7 @@ class SQLiteStore:
                     ),
                 )
 
-            conn.commit()
             return invoice_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     def find_duplicate(
         self, vendor_name: str, date: str, amount: Decimal
@@ -342,12 +398,17 @@ class SQLiteStore:
     # Journal operations
     # ------------------------------------------------------------------
 
-    def persist_journal(self, entry: JournalEntry) -> int:
-        """Save a journal entry with its lines. Returns the journal ID."""
-        conn = self._connect()
-        try:
-            conn.execute("BEGIN TRANSACTION")
-            conn.execute(
+    def persist_journal(
+        self, entry: JournalEntry, conn: sqlite3.Connection | None = None
+    ) -> int:
+        """Save a journal entry with its lines. Returns the journal ID.
+
+        Args:
+            entry: Journal entry to persist.
+            conn: Optional shared connection from ``transaction()``.
+        """
+        with self._use_conn(conn) as c:
+            c.execute(
                 "INSERT INTO journal_entries ("
                 "  invoice_id, entry_date, description, status, fiscal_period_id"
                 ") VALUES (?, ?, ?, ?, ?)",
@@ -359,10 +420,10 @@ class SQLiteStore:
                     entry.fiscal_period_id,
                 ),
             )
-            journal_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            journal_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
 
             for line in entry.lines:
-                conn.execute(
+                c.execute(
                     "INSERT INTO journal_lines ("
                     "  journal_entry_id, line_number, account_code, account_name,"
                     "  debit_amount, credit_amount, tax_code, description"
@@ -379,19 +440,19 @@ class SQLiteStore:
                     ),
                 )
 
-            conn.commit()
             return journal_id
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
-    def post_journal(self, journal_id: int) -> dict[str, Any]:
-        """Transition journal entry from draft to posted."""
-        conn = self._connect()
-        try:
-            row = conn.execute(
+    def post_journal(
+        self, journal_id: int, conn: sqlite3.Connection | None = None
+    ) -> dict[str, Any]:
+        """Transition journal entry from draft to posted.
+
+        Args:
+            journal_id: ID of the journal entry to post.
+            conn: Optional shared connection from ``transaction()``.
+        """
+        with self._use_conn(conn) as c:
+            row = c.execute(
                 "SELECT status, invoice_id FROM journal_entries WHERE id = ?",
                 (journal_id,),
             ).fetchone()
@@ -403,7 +464,7 @@ class SQLiteStore:
                 )
 
             # Balance check
-            bal = conn.execute(
+            bal = c.execute(
                 "SELECT ROUND(SUM(debit_amount), 2) as d, "
                 "ROUND(SUM(credit_amount), 2) as c "
                 "FROM journal_lines WHERE journal_entry_id = ?",
@@ -416,22 +477,20 @@ class SQLiteStore:
                     f"Unbalanced: Soll={total_debit}, Haben={total_credit}"
                 )
 
-            conn.execute("BEGIN TRANSACTION")
-            conn.execute(
+            c.execute(
                 "UPDATE journal_entries SET status = 'posted', "
                 "posted_at = datetime('now'), posted_by = 'agent' "
                 "WHERE id = ?",
                 (journal_id,),
             )
             if row["invoice_id"]:
-                conn.execute(
+                c.execute(
                     "UPDATE invoices SET status = 'posted', "
                     "updated_at = datetime('now') WHERE id = ?",
                     (row["invoice_id"],),
                 )
-            conn.commit()
 
-            posted = conn.execute(
+            posted = c.execute(
                 "SELECT je.id, je.entry_date, je.description, je.status, "
                 "je.posted_at, i.vendor_name_raw, i.total_gross "
                 "FROM journal_entries je "
@@ -440,11 +499,6 @@ class SQLiteStore:
                 (journal_id,),
             ).fetchone()
             return dict(posted)
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     # ------------------------------------------------------------------
     # Invoice correction
@@ -614,19 +668,20 @@ class SQLiteStore:
         entity_id: int,
         actor: str = "system",
         details: str = "{}",
+        conn: sqlite3.Connection | None = None,
     ) -> int:
-        """Write an immutable audit log entry. Returns the audit ID."""
-        conn = self._connect()
-        try:
-            conn.execute(
+        """Write an immutable audit log entry. Returns the audit ID.
+
+        Args:
+            conn: Optional shared connection from ``transaction()``.
+        """
+        with self._use_conn(conn) as c:
+            c.execute(
                 "INSERT INTO audit_log (event_type, entity_type, entity_id, actor, details) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (event_type, entity_type, entity_id, actor, details),
             )
-            conn.commit()
-            return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        finally:
-            conn.close()
+            return c.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     # ------------------------------------------------------------------
     # Reporting

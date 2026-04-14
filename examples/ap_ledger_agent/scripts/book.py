@@ -63,6 +63,17 @@ VORSTEUER_ACCOUNTS = {
 }
 
 
+def _log_failure(store, booking_type: str, err: str, date: str = "") -> None:
+    """Best-effort audit log for failed bookings (separate connection)."""
+    try:
+        store.write_audit(
+            "booking_failed", "invoice", 0, "agent",
+            json.dumps({"type": booking_type, "error": err, "date": date}),
+        )
+    except Exception:
+        pass  # must not mask the original error
+
+
 def _round2(val: Decimal) -> Decimal:
     return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -72,6 +83,29 @@ def _get_tax_rate(store, tax_code: str) -> Decimal:
     if not tc:
         error(f"Unknown tax code: {tax_code}")
     return tc.rate
+
+
+def _split_tax(gross: Decimal, tax_rate: Decimal) -> tuple[Decimal, Decimal]:
+    """Split a gross amount into (net, tax). Single source of truth for rounding."""
+    net = _round2(gross / (1 + tax_rate))
+    return net, _round2(gross - net)
+
+
+def _revenue_journal_lines(
+    gross: Decimal, net: Decimal, tax: Decimal,
+    debit_account: str, debit_name: str,
+    credit_account: str, credit_name: str,
+    start_ln: int,
+) -> list[JournalLine]:
+    """Build the 3 journal lines for a single revenue stream (bar or karte)."""
+    return [
+        JournalLine(line_number=start_ln, account_code=debit_account, account_name=debit_name,
+                     debit_amount=gross, credit_amount=Decimal("0")),
+        JournalLine(line_number=start_ln + 1, account_code=credit_account, account_name=credit_name,
+                     debit_amount=Decimal("0"), credit_amount=net),
+        JournalLine(line_number=start_ln + 2, account_code="3500", account_name="Umsatzsteuer",
+                     debit_amount=Decimal("0"), credit_amount=tax),
+    ]
 
 
 def book_revenue(args) -> None:
@@ -84,85 +118,67 @@ def book_revenue(args) -> None:
 
     tax_rate = _get_tax_rate(store, args.tax_code)
     total_gross = bar + karte
-
-    # Resolve period
     period = store.resolve_period(args.date)
 
-    # Build invoice lines
-    lines = []
+    # Build invoice lines + journal lines from the same net/tax values
+    invoice_lines: list[InvoiceLine] = []
+    journal_lines: list[JournalLine] = []
+    ln = 1
+
     if bar > 0:
-        net = _round2(bar / (1 + tax_rate))
-        tax = _round2(bar - net)
-        lines.append(InvoiceLine(
-            position=1, description="Bareinnahmen", quantity=Decimal("1"),
+        net, tax = _split_tax(bar, tax_rate)
+        invoice_lines.append(InvoiceLine(
+            position=len(invoice_lines) + 1, description="Bareinnahmen", quantity=Decimal("1"),
             net_amount=net, tax_code=args.tax_code, tax_amount=tax,
             gross_amount=bar, category_code="einnahmen_bar",
         ))
+        journal_lines.extend(_revenue_journal_lines(
+            bar, net, tax, "2700", "Kassa", "4000", "Erloese Bar", ln))
+        ln += 3
+
     if karte > 0:
-        net = _round2(karte / (1 + tax_rate))
-        tax = _round2(karte - net)
-        lines.append(InvoiceLine(
-            position=len(lines) + 1, description="Karteneinnahmen", quantity=Decimal("1"),
+        net, tax = _split_tax(karte, tax_rate)
+        invoice_lines.append(InvoiceLine(
+            position=len(invoice_lines) + 1, description="Karteneinnahmen", quantity=Decimal("1"),
             net_amount=net, tax_code=args.tax_code, tax_amount=tax,
             gross_amount=karte, category_code="einnahmen_karte",
         ))
+        journal_lines.extend(_revenue_journal_lines(
+            karte, net, tax, "2800", "Bank", "4010", "Erloese Karte", ln))
+        ln += 3
 
-    total_net = sum(l.net_amount for l in lines)
-    total_tax = sum(l.tax_amount for l in lines)
+    total_net = sum(l.net_amount for l in invoice_lines)
+    total_tax = sum(l.tax_amount for l in invoice_lines)
 
-    # Persist invoice
     invoice = Invoice(
-        vendor_name_raw="Tageslosung",
-        invoice_date=args.date,
+        vendor_name_raw="Tageslosung", invoice_date=args.date,
         total_gross=total_gross, total_net=total_net, total_tax=total_tax,
         type=InvoiceType.RECEIPT, status=InvoiceStatus.VALIDATED,
         source_file=getattr(args, "source_file", None),
         source_type="photo" if getattr(args, "source_file", None) else "manual",
-        fiscal_period_id=period.id, lines=lines,
+        fiscal_period_id=period.id, lines=invoice_lines,
     )
-    invoice_id = store.persist_invoice(invoice)
-
-    # Build journal lines
-    journal_lines = []
-    ln = 1
-    if bar > 0:
-        net = _round2(bar / (1 + tax_rate))
-        tax = _round2(bar - net)
-        journal_lines.append(JournalLine(line_number=ln, account_code="2700", account_name="Kassa",
-                                         debit_amount=bar, credit_amount=Decimal("0")))
-        ln += 1
-        journal_lines.append(JournalLine(line_number=ln, account_code="4000", account_name="Erlöse Bar",
-                                         debit_amount=Decimal("0"), credit_amount=net))
-        ln += 1
-        journal_lines.append(JournalLine(line_number=ln, account_code="3500", account_name="Umsatzsteuer",
-                                         debit_amount=Decimal("0"), credit_amount=tax))
-        ln += 1
-
-    if karte > 0:
-        net = _round2(karte / (1 + tax_rate))
-        tax = _round2(karte - net)
-        journal_lines.append(JournalLine(line_number=ln, account_code="2800", account_name="Bank",
-                                         debit_amount=karte, credit_amount=Decimal("0")))
-        ln += 1
-        journal_lines.append(JournalLine(line_number=ln, account_code="4010", account_name="Erlöse Karte",
-                                         debit_amount=Decimal("0"), credit_amount=net))
-        ln += 1
-        journal_lines.append(JournalLine(line_number=ln, account_code="3500", account_name="Umsatzsteuer",
-                                         debit_amount=Decimal("0"), credit_amount=tax))
-        ln += 1
-
     entry = JournalEntry(
-        invoice_id=invoice_id, entry_date=args.date,
+        invoice_id=0, entry_date=args.date,
         description=f"Tageslosung {args.date}",
         status=JournalStatus.DRAFT, fiscal_period_id=period.id,
         lines=journal_lines,
     )
-    journal_id = store.persist_journal(entry)
-    post_result = store.post_journal(journal_id)
 
-    # Audit
-    store.write_audit("invoice_posted", "invoice", invoice_id, "agent",
-                      json.dumps({"type": "revenue", "gross": float(total_gross)}))
+    # Atomic: invoice + journal + post + audit in one transaction
+    invoice_id = journal_id = 0
+    try:
+        with store.transaction() as conn:
+            invoice_id = store.persist_invoice(invoice, conn=conn)
+            entry.invoice_id = invoice_id
+            journal_id = store.persist_journal(entry, conn=conn)
+            store.post_journal(journal_id, conn=conn)
+            store.write_audit("invoice_posted", "invoice", invoice_id, "agent",
+                              json.dumps({"type": "revenue", "gross": float(total_gross)}),
+                              conn=conn)
+    except Exception as e:
+        _log_failure(store, "revenue", str(e), args.date)
+        error(f"Buchung fehlgeschlagen: {e}")
 
     parts = []
     if bar > 0:
@@ -219,8 +235,6 @@ def book_expense(args) -> None:
             tax_amount=tax, gross_amount=gross, category_code=category,
         )],
     )
-    invoice_id = store.persist_invoice(invoice)
-
     # Journal
     payment_account = "2700" if args.payment == "bar" else "2800"
     payment_name = "Kassa" if args.payment == "bar" else "Bank"
@@ -243,15 +257,26 @@ def book_expense(args) -> None:
     ))
 
     entry = JournalEntry(
-        invoice_id=invoice_id, entry_date=args.date,
+        invoice_id=0, entry_date=args.date,
         description=f"{args.vendor} {args.date}",
         status=JournalStatus.DRAFT, fiscal_period_id=period.id,
         lines=journal_lines,
     )
-    journal_id = store.persist_journal(entry)
-    store.post_journal(journal_id)
-    store.write_audit("invoice_posted", "invoice", invoice_id, "agent",
-                      json.dumps({"vendor": args.vendor, "gross": float(gross)}))
+
+    # Atomic: invoice + journal + post + audit in one transaction
+    invoice_id = journal_id = 0
+    try:
+        with store.transaction() as conn:
+            invoice_id = store.persist_invoice(invoice, conn=conn)
+            entry.invoice_id = invoice_id
+            journal_id = store.persist_journal(entry, conn=conn)
+            store.post_journal(journal_id, conn=conn)
+            store.write_audit("invoice_posted", "invoice", invoice_id, "agent",
+                              json.dumps({"vendor": args.vendor, "gross": float(gross)}),
+                              conn=conn)
+    except Exception as e:
+        _log_failure(store, "expense", str(e), args.date)
+        error(f"Buchung fehlgeschlagen: {e}")
 
     output({
         "success": True,
@@ -297,21 +322,26 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Auto-detect default tax code from DB if not specified
-    if not args.tax_code:
-        store = get_store(args.db_path)
-        codes = store.list_tax_codes()
-        # Find the standard rate (highest non-zero rate)
-        standard = max((c for c in codes if c["rate"] > 0), key=lambda c: c["rate"], default=None)
-        if standard:
-            args.tax_code = standard["code"]
-        else:
-            error("No tax codes found in DB. Initialize the database first.")
+    try:
+        # Auto-detect default tax code from DB if not specified
+        if not args.tax_code:
+            store = get_store(args.db_path)
+            codes = store.list_tax_codes()
+            # Find the standard rate (highest non-zero rate)
+            standard = max((c for c in codes if c["rate"] > 0), key=lambda c: c["rate"], default=None)
+            if standard:
+                args.tax_code = standard["code"]
+            else:
+                error("No tax codes found in DB. Initialize the database first.")
 
-    if args.action == "revenue":
-        book_revenue(args)
-    elif args.action == "expense":
-        book_expense(args)
+        if args.action == "revenue":
+            book_revenue(args)
+        elif args.action == "expense":
+            book_expense(args)
+    except SystemExit:
+        raise  # let error() exit normally
+    except Exception as e:
+        error(f"Unerwarteter Fehler: {e}")
 
 
 if __name__ == "__main__":
