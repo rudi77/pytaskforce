@@ -387,9 +387,10 @@ class AgentExecutor:
 
             if self._agent_supports_streaming(agent):
                 async for event in agent.execute_stream(current_mission, session_id):
-                    # Auto-promote plain ask_user to channel-targeted
-                    if source_channel and ask_router and ChannelAskRouter.is_plain_ask_user(event):
-                        ask_router.auto_promote_ask(event, source_channel, source_conversation_id)
+                    # Ensure ask_user events have channel + recipient_id
+                    # (fills in missing fields from source conversation context).
+                    if source_channel and ask_router:
+                        ask_router.ensure_channel_complete(event, source_channel, source_conversation_id)
 
                     if ask_router and ChannelAskRouter.is_channel_targeted_ask(event):
                         channel_ask = event.data

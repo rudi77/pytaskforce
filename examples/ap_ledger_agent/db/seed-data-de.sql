@@ -65,24 +65,7 @@ INSERT OR IGNORE INTO fiscal_periods (year, month, label, start_date, end_date) 
     (2026, 11, 'November 2026',  '2026-11-01', '2026-11-30'),
     (2026, 12, 'Dezember 2026',  '2026-12-01', '2026-12-31');
 
--- Typische Lieferanten (Deutschland)
-INSERT OR IGNORE INTO vendors (name, name_normalized, default_category_code, default_tax_code, match_keywords) VALUES
-    ('Wella Deutschland',       'wella deutschland',       'waren_farbe',    'DE_19', 'wella,wella deutschland,wella germany'),
-    ('L''Oréal Professionnel',  'l''oréal professionnel',  'waren_farbe',    'DE_19', 'loreal,l''oreal,professionnel,l''oréal'),
-    ('Schwarzkopf Professional','schwarzkopf professional','waren_farbe',    'DE_19', 'schwarzkopf,henkel'),
-    ('Goldwell',                'goldwell',                'waren_farbe',    'DE_19', 'goldwell,kao'),
-    ('Redken',                  'redken',                  'waren_pflege',   'DE_19', 'redken'),
-    ('Friseur-Großhandel',      'friseur-großhandel',      'waren_verbrauch','DE_19', 'friseur-grosshandel,friseurgroßhandel,coiffeur'),
-    ('METRO',                   'metro',                   'waren_verbrauch','DE_19', 'metro,metro cash'),
-    ('Amazon',                  'amazon',                  'buero',          'DE_19', 'amazon,amzn'),
-    ('Deutsche Telekom',        'deutsche telekom',        'telefon_internet','DE_19','telekom,deutsche telekom,t-mobile,magenta'),
-    ('Allianz Versicherung',    'allianz versicherung',    'versicherung',  'DE_0',  'allianz'),
-    ('AXA Versicherung',        'axa versicherung',        'versicherung',  'DE_0',  'axa'),
-    ('Stadtwerke',              'stadtwerke',              'betriebskosten','DE_19',  'stadtwerke,swm,swb'),
-    ('E.ON',                    'e.on',                    'betriebskosten','DE_19',  'e.on,eon,innogy'),
-    ('Lidl',                    'lidl',                    'reinigung',     'DE_19',  'lidl'),
-    ('DM Drogeriemarkt',        'dm drogeriemarkt',        'reinigung',     'DE_19',  'dm,dm drogeriemarkt,drogerie markt'),
-    ('Deutsche Post DHL',       'deutsche post dhl',       'buero',         'DE_19',  'post,deutsche post,dhl');
+-- Vendors: leer — werden beim Onboarding oder automatisch beim ersten Beleg angelegt.
 
 -- Initial audit event
 INSERT INTO audit_log (event_type, entity_type, entity_id, actor, details)

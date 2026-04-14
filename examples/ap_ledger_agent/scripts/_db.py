@@ -48,6 +48,7 @@ def get_store(db_path: str | None = None, country: str | None = None) -> SQLiteS
 
 def output(data: dict) -> None:
     """Print JSON result to stdout."""
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(json.dumps(data, ensure_ascii=False, default=str))
 
 

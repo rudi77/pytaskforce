@@ -1,8 +1,8 @@
 """Channel Ask Router - Extracted from AgentExecutor.
 
 Handles channel-targeted ask_user routing via the Communication Gateway.
-Detects plain vs channel-targeted asks, auto-promotes when source channel
-is present, sends questions, and polls for responses.
+Ensures ask_user events have complete channel + recipient_id from the source
+conversation context, sends questions, and polls for responses.
 """
 
 from __future__ import annotations
@@ -31,42 +31,66 @@ class ChannelAskRouter:
         self._logger = logger.bind(component="channel_ask_router")
 
     @staticmethod
+    def is_ask_user(event: StreamEvent) -> bool:
+        """Check whether a StreamEvent is any ASK_USER event."""
+        evt = event.event_type
+        return evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
+
+    @staticmethod
     def is_plain_ask_user(event: StreamEvent) -> bool:
         """Check whether a StreamEvent is a plain (non-channel) ASK_USER."""
-        evt = event.event_type
-        is_ask = evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
-        if not is_ask:
+        if not ChannelAskRouter.is_ask_user(event):
             return False
         data = event.data or {}
         return not data.get("channel")
 
     @staticmethod
     def is_channel_targeted_ask(event: StreamEvent) -> bool:
-        """Check whether a StreamEvent is a channel-targeted ASK_USER."""
-        evt = event.event_type
-        is_ask = evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
-        if not is_ask:
+        """Check whether a StreamEvent is a fully resolved channel-targeted ASK_USER."""
+        if not ChannelAskRouter.is_ask_user(event):
             return False
         data = event.data or {}
         return bool(data.get("channel") and data.get("recipient_id"))
 
-    def auto_promote_ask(
+    def ensure_channel_complete(
         self,
         event: StreamEvent,
         source_channel: str,
         source_conversation_id: str | None,
-    ) -> None:
-        """Promote a plain ask_user to channel-targeted in place."""
+    ) -> bool:
+        """Ensure an ask_user event has both channel and recipient_id.
+
+        Fills in any missing fields from the source conversation context.
+        Handles all cases:
+        - Plain ask (no channel, no recipient) → both filled from source
+        - Partial ask (channel set, no recipient) → recipient filled from source
+        - Complete ask (both set) → no-op
+
+        Returns True if the event was modified, False if already complete.
+        """
+        if not self.is_ask_user(event):
+            return False
+
         if event.data is None:
             event.data = {}
-        event.data["channel"] = source_channel
-        event.data["recipient_id"] = source_conversation_id or ""
-        self._logger.info(
-            "ask_user.auto_promoted_to_channel",
-            channel=source_channel,
-            recipient_id=source_conversation_id,
-            question=event.data.get("question", "")[:100],
-        )
+
+        modified = False
+        if not event.data.get("channel"):
+            event.data["channel"] = source_channel
+            modified = True
+        if not event.data.get("recipient_id"):
+            event.data["recipient_id"] = source_conversation_id or ""
+            modified = True
+
+        if modified:
+            self._logger.info(
+                "ask_user.channel_completed",
+                channel=event.data["channel"],
+                recipient_id=event.data["recipient_id"],
+                question=event.data.get("question", "")[:100],
+            )
+
+        return modified
 
     async def route_channel_question(
         self,

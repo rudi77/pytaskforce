@@ -56,6 +56,13 @@ dependencies = [
     # MCP integration
     "mcp>=1.0.0",
     "ddgs>=9.11.4",
+    # PDF processing (always included)
+    "pypdf>=4.0.0",
+    "pdfplumber>=0.10.0",
+    "pdf2image>=1.16.0",
+    "reportlab>=4.0.0",
+    "pillow>=10.0.0",
+    "docling>=2.0.0",
 ]
 
 [project.urls]
@@ -89,11 +96,7 @@ browser = [
     "playwright>=1.40.0",
 ]
 pdf = [
-    "pypdf>=4.0.0",
-    "pdfplumber>=0.10.0",
-    "pdf2image>=1.16.0",
-    "reportlab>=4.0.0",
-    "pillow>=10.0.0",
+    # Kept for backwards compatibility — these are now in core dependencies
 ]
 postgres = [
     "sqlalchemy>=2.0",

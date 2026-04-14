@@ -65,24 +65,7 @@ INSERT OR IGNORE INTO fiscal_periods (year, month, label, start_date, end_date) 
     (2026, 11, 'November 2026',  '2026-11-01', '2026-11-30'),
     (2026, 12, 'Dezember 2026',  '2026-12-01', '2026-12-31');
 
--- Typische Lieferanten
-INSERT OR IGNORE INTO vendors (name, name_normalized, default_category_code, default_tax_code, match_keywords) VALUES
-    ('Wella Austria',           'wella austria',           'waren_farbe',    'AT_20', 'wella,wella austria'),
-    ('L''Oréal Professionnel',  'l''oréal professionnel',  'waren_farbe',    'AT_20', 'loreal,l''oreal,professionnel,l''oréal'),
-    ('Schwarzkopf Professional','schwarzkopf professional','waren_farbe',    'AT_20', 'schwarzkopf,henkel'),
-    ('Goldwell',                'goldwell',                'waren_farbe',    'AT_20', 'goldwell,kao'),
-    ('Redken',                  'redken',                  'waren_pflege',   'AT_20', 'redken'),
-    ('Friseur-Großhandel',      'friseur-großhandel',      'waren_verbrauch','AT_20', 'friseur-grosshandel,friseurgroßhandel,coiffeur'),
-    ('METRO',                   'metro',                   'waren_verbrauch','AT_20', 'metro,metro cash'),
-    ('Amazon',                  'amazon',                  'buero',          'AT_20', 'amazon,amzn'),
-    ('A1 Telekom',              'a1 telekom',              'telefon_internet','AT_20','a1,a1 telekom,telekom austria'),
-    ('Wiener Städtische',       'wiener städtische',       'versicherung',  'AT_0',  'wiener städtische,wiener staedtische'),
-    ('Uniqa',                   'uniqa',                   'versicherung',  'AT_0',  'uniqa'),
-    ('Wien Energie',            'wien energie',            'betriebskosten','AT_20',  'wien energie,wienstrom'),
-    ('EVN',                     'evn',                     'betriebskosten','AT_20',  'evn,nö energie'),
-    ('Lidl',                    'lidl',                    'reinigung',     'AT_20',  'lidl'),
-    ('DM Drogeriemarkt',        'dm drogeriemarkt',        'reinigung',     'AT_20',  'dm,dm drogeriemarkt,drogerie markt'),
-    ('Post AG',                 'post ag',                 'buero',         'AT_20',  'post,österreichische post');
+-- Vendors: leer — werden beim Onboarding oder automatisch beim ersten Beleg angelegt.
 
 -- Initial audit event
 INSERT INTO audit_log (event_type, entity_type, entity_id, actor, details)
