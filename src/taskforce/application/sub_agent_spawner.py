@@ -56,6 +56,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             specialist=spec.specialist,
             reusing_session=True,  # Deterministic IDs mean we always try to resume
         )
+        context_snapshot = None
         try:
             agent = await self._create_agent(spec)
             if self._tool_overrides:
@@ -71,6 +72,13 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             await self._clear_stale_pause(agent, session_id, spec.mission)
             try:
                 result = await agent.execute(mission=spec.mission, session_id=session_id)
+                # Capture context snapshot before closing the agent
+                if hasattr(agent, "context") and agent.context.is_initialized:
+                    context_snapshot = agent.context.snapshot(
+                        include_content=True,
+                        skill_manager=agent.skill_manager,
+                        memory_context=getattr(agent, "_memory_context", None),
+                    )
             finally:
                 await agent.close()
         except Exception as exc:
@@ -101,6 +109,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             success=success,
             final_message=result.final_message or "",
             error=None if success else result.final_message,
+            context_snapshot=context_snapshot,
         )
 
     async def _clear_stale_pause(

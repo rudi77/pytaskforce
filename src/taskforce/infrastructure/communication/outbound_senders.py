@@ -7,10 +7,79 @@ Senders are stateless callables that manage their own HTTP sessions.
 from __future__ import annotations
 
 import asyncio
+import html
+import re
 from typing import Any
 
 import aiohttp
 import structlog
+
+
+def _markdown_to_telegram_html(text: str) -> str:
+    """Convert common Markdown patterns to Telegram-compatible HTML.
+
+    Telegram's HTML mode supports a limited tag set: <b>, <i>, <u>, <s>,
+    <code>, <pre>, <a href="...">, <blockquote>.  This function converts
+    the most common LLM-generated Markdown to that subset and HTML-escapes
+    everything else so Telegram doesn't reject the message.
+
+    The conversion is best-effort — if the input is plain text it will
+    simply be HTML-escaped and displayed correctly.
+    """
+    # Step 1: Extract code blocks and inline code to protect them from
+    # further processing.  We replace them with placeholders.
+    code_blocks: list[str] = []
+    inline_codes: list[str] = []
+
+    def _replace_code_block(m: re.Match) -> str:
+        lang = m.group(1) or ""
+        code = html.escape(m.group(2).strip("\n"))
+        code_blocks.append(f"<pre><code>{code}</code></pre>" if not lang
+                           else f'<pre><code class="language-{html.escape(lang)}">'
+                                f"{code}</code></pre>")
+        return f"\x00CODEBLOCK{len(code_blocks) - 1}\x00"
+
+    def _replace_inline_code(m: re.Match) -> str:
+        inline_codes.append(f"<code>{html.escape(m.group(1))}</code>")
+        return f"\x00INLINE{len(inline_codes) - 1}\x00"
+
+    # Fenced code blocks (```lang\n...\n```)
+    text = re.sub(r"```(\w*)\n(.*?)```", _replace_code_block, text, flags=re.DOTALL)
+    # Inline code (`...`)
+    text = re.sub(r"`([^`\n]+)`", _replace_inline_code, text)
+
+    # Step 2: HTML-escape the remaining text so special chars are safe.
+    text = html.escape(text)
+
+    # Step 3: Convert Markdown patterns to HTML tags.
+    # Bold: **text** or __text__
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
+    # Italic: *text* or _text_ (but not inside words with underscores)
+    text = re.sub(r"(?<!\w)\*([^*\n]+?)\*(?!\w)", r"<i>\1</i>", text)
+    text = re.sub(r"(?<!\w)_([^_\n]+?)_(?!\w)", r"<i>\1</i>", text)
+    # Strikethrough: ~~text~~
+    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
+    # Links: [text](url)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    # Blockquotes: > text (at line start)
+    text = re.sub(
+        r"(?m)^&gt;\s?(.+)$", r"<blockquote>\1</blockquote>", text
+    )
+    # Merge adjacent blockquotes
+    text = text.replace("</blockquote>\n<blockquote>", "\n")
+    # Headers: ## text → bold (Telegram has no header tags)
+    text = re.sub(r"(?m)^#{1,6}\s+(.+)$", r"<b>\1</b>", text)
+    # Unordered list markers: - item or * item → • item
+    text = re.sub(r"(?m)^[\-\*]\s+", "• ", text)
+
+    # Step 4: Restore code blocks and inline code.
+    for i, block in enumerate(code_blocks):
+        text = text.replace(f"\x00CODEBLOCK{i}\x00", block)
+    for i, code in enumerate(inline_codes):
+        text = text.replace(f"\x00INLINE{i}\x00", code)
+
+    return text
 
 
 class _TelegramClientError(Exception):
@@ -79,9 +148,26 @@ class TelegramOutboundSender:
                 )
             return
 
-        payload: dict[str, Any] = {"chat_id": recipient_id, "text": message}
+        # Determine parse mode: default to HTML for rich formatting.
+        # Callers can override via metadata["parse_mode"] or disable
+        # formatting entirely with metadata["parse_mode"] = "".
+        parse_mode = "HTML"
         if metadata and "parse_mode" in metadata:
-            payload["parse_mode"] = metadata["parse_mode"]
+            parse_mode = metadata["parse_mode"]
+
+        # Convert Markdown → Telegram HTML unless caller opted out or
+        # chose a different parse mode.
+        if parse_mode == "HTML":
+            try:
+                message = _markdown_to_telegram_html(message)
+            except Exception:
+                # Fallback: send as plain text rather than failing.
+                self._logger.warning("telegram.html_conversion_failed")
+                parse_mode = ""
+
+        payload: dict[str, Any] = {"chat_id": recipient_id, "text": message}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
 
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
@@ -99,6 +185,23 @@ class TelegramOutboundSender:
                             response=body,
                             recipient_id=recipient_id,
                         )
+                        # If a 400 came back while using parse_mode,
+                        # Telegram likely rejected malformed markup.
+                        # Retry once as plain text.
+                        if (
+                            response.status == 400
+                            and "parse_mode" in payload
+                            and not getattr(self, "_plain_text_retry", False)
+                        ):
+                            self._logger.warning(
+                                "telegram.html_rejected_fallback_plain",
+                                recipient_id=recipient_id,
+                            )
+                            payload.pop("parse_mode")
+                            # Strip HTML tags for the plain-text retry.
+                            payload["text"] = re.sub(r"<[^>]+>", "", payload["text"])
+                            continue  # retry immediately without parse_mode
+
                         # 4xx errors (except 429) are not retryable — raise
                         # a non-OSError to escape the retry loop immediately.
                         if response.status != 429 and response.status < 500:

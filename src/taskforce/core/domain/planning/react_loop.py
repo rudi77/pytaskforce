@@ -12,7 +12,7 @@ from taskforce.core.domain.enums import (
     MessageRole,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
-from taskforce.core.domain.planning.llm_interactions import _rebuild_system_prompt, _salvage_answer
+from taskforce.core.domain.planning.llm_interactions import _salvage_answer
 from taskforce.core.domain.planning.tool_execution import _process_tool_calls
 from taskforce.core.domain.planning.utils import (
     _build_retry_nudge,
@@ -125,12 +125,11 @@ async def _react_loop(
 
     while step < agent.max_steps:
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
-        _rebuild_system_prompt(agent, messages, mission, state)
 
         # Inject circuit breaker info for tools that have failed too many times
         broken_tools = [name for name, count in tool_failure_counts.items() if count >= 3]
         if broken_tools:
-            messages.append(
+            agent.context.append_message(
                 {
                     "role": MessageRole.USER.value,
                     "content": (
@@ -142,9 +141,7 @@ async def _react_loop(
                 }
             )
 
-        if use_stream:
-            messages = await agent.message_history_manager.compress_messages(messages)
-            messages = agent.message_history_manager.preflight_budget_check(messages)
+        await agent.context.prepare_for_llm(mission=mission, state=state)
 
         tool_calls: list[dict[str, Any]] = []
         content = ""
@@ -219,9 +216,6 @@ async def _react_loop(
             else:
                 content = content_acc
         else:
-            # Apply compression + budget check for non-streaming path too
-            messages = await agent.message_history_manager.compress_messages(messages)
-            messages = agent.message_history_manager.preflight_budget_check(messages)
             result = await agent.llm_provider.complete(
                 messages=messages,
                 model=model_hint,
@@ -236,7 +230,7 @@ async def _react_loop(
                     data=result["usage"],
                 )
             if not result.get("success"):
-                messages.append(
+                agent.context.append_message(
                     {
                         "role": MessageRole.USER.value,
                         "content": (f"[System Error: {result.get('error')}. " "Try again.]"),
@@ -304,6 +298,9 @@ async def _react_loop(
                 # Salvage: force a final answer from the LLM with available context
                 salvage = await _salvage_answer(agent, messages, logger)
                 if salvage:
+                    agent.context.append_message(
+                        {"role": MessageRole.ASSISTANT.value, "content": salvage},
+                    )
                     yield StreamEvent(
                         event_type=EventType.FINAL_ANSWER,
                         data={"content": salvage},
@@ -322,7 +319,7 @@ async def _react_loop(
 
             # Nudge the LLM to retry with alternative tools after failures
             if failed_tool_names:
-                messages.append(
+                agent.context.append_message(
                     _build_retry_nudge(
                         failed_tool_names,
                         attempt=consecutive_no_progress_steps,
@@ -333,13 +330,16 @@ async def _react_loop(
         elif content:
             step += 1
             final = content
+            agent.context.append_message(
+                {"role": MessageRole.ASSISTANT.value, "content": content},
+            )
             yield StreamEvent(
                 event_type=EventType.FINAL_ANSWER,
                 data={"content": content},
             )
             break
         else:
-            messages.append(
+            agent.context.append_message(
                 {
                     "role": MessageRole.USER.value,
                     "content": ("[System: Empty response. " "Provide answer or use tool.]"),
@@ -350,6 +350,9 @@ async def _react_loop(
         # Salvage: force a final answer before giving up
         salvage = await _salvage_answer(agent, messages, logger)
         if salvage:
+            agent.context.append_message(
+                {"role": MessageRole.ASSISTANT.value, "content": salvage},
+            )
             yield StreamEvent(
                 event_type=EventType.FINAL_ANSWER,
                 data={"content": salvage},
@@ -395,7 +398,7 @@ async def _llm_call_and_process(
     # Inject circuit breaker info for tools that have failed too many times
     broken_tools = [name for name, count in tool_failure_counts.items() if count >= 3]
     if broken_tools:
-        messages.append(
+        agent.context.append_message(
             {
                 "role": MessageRole.USER.value,
                 "content": (
@@ -420,7 +423,7 @@ async def _llm_call_and_process(
         events.append(StreamEvent(event_type=EventType.TOKEN_USAGE, data=result["usage"]))
 
     if not result.get("success"):
-        messages.append(
+        agent.context.append_message(
             {
                 "role": MessageRole.USER.value,
                 "content": f"[Error: {result.get('error')}. Try again.]",
@@ -457,16 +460,18 @@ async def _llm_call_and_process(
                     tool_failure_counts[tool_name] = 0  # reset on success
             events.append(e)
         if not paused and failed_tool_names:
-            messages.append(_build_retry_nudge(failed_tool_names))
+            agent.context.append_message(_build_retry_nudge(failed_tool_names))
         yield ("paused" if paused else "tool_calls", events)
         return
 
     if result.get("content"):
-        messages.append({"role": MessageRole.ASSISTANT.value, "content": result["content"]})
+        agent.context.append_message(
+            {"role": MessageRole.ASSISTANT.value, "content": result["content"]},
+        )
         yield ("content", events)
         return
 
-    messages.append(
+    agent.context.append_message(
         {
             "role": MessageRole.USER.value,
             "content": "[Empty response. Provide answer or use tool.]",

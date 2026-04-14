@@ -89,6 +89,24 @@ class CalendarEventSource(PollingEventSource):
             creds_data = json.load(f)
 
         creds = credentials_cls.from_authorized_user_info(creds_data)
+        if creds.expired and creds.refresh_token:
+            from google.auth.transport.requests import Request
+
+            try:
+                creds.refresh(Request())
+                # Persist refreshed token back to file.
+                creds_path.write_text(
+                    json.dumps(json.loads(creds.to_json())), encoding="utf-8"
+                )
+                logger.info("calendar_source.token_refreshed")
+            except Exception as refresh_exc:
+                logger.warning(
+                    "calendar_source.token_refresh_failed", error=str(refresh_exc)
+                )
+                raise ValueError(
+                    "Google Calendar authentication expired and refresh failed. "
+                    "Re-authenticate via the 'authenticate' tool."
+                ) from refresh_exc
         return build("calendar", "v3", credentials=creds)
 
     async def _fetch_upcoming_events(self, service: Any) -> list[AgentEvent]:

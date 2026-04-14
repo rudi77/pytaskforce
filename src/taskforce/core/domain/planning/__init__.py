@@ -3,7 +3,6 @@
 from taskforce.core.domain.planning.llm_interactions import (
     _generate_and_register_plan,
     _generate_plan,
-    _rebuild_system_prompt,
     _salvage_answer,
     _stream_final_response,
 )
@@ -60,7 +59,6 @@ __all__ = [
     # llm_interactions
     "_generate_and_register_plan",
     "_generate_plan",
-    "_rebuild_system_prompt",
     "_salvage_answer",
     "_stream_final_response",
     # tool_execution

@@ -269,6 +269,7 @@ def mock_agent(mock_logger: MockLogger) -> MagicMock:
     agent.max_parallel_tools = 4
     agent.model_alias = "gpt-4"
     agent.system_prompt = "You are a helpful assistant."
+    agent._base_system_prompt = "You are a helpful assistant."
     agent._openai_tools = []
     agent._build_system_prompt = MagicMock(return_value="System prompt")
     agent._build_initial_messages = MagicMock(
@@ -285,4 +286,27 @@ def mock_agent(mock_logger: MockLogger) -> MagicMock:
     agent.state_store = AsyncMock()
     agent.record_heartbeat = AsyncMock()
     agent.load_memory_context = AsyncMock()
+
+    # Mock ContextManager: stores messages in a real list
+    _messages: list = []
+    context = MagicMock()
+    context.messages = _messages
+    context.is_initialized = False
+
+    def _initialize(mission, state, base_system_prompt):
+        _messages.clear()
+        _messages.append({"role": "system", "content": "System prompt"})
+        context.system_prompt = "System prompt"
+        context.is_initialized = True
+
+    def _restore(messages):
+        _messages.clear()
+        _messages.extend(messages)
+        context.is_initialized = True
+
+    context.initialize = MagicMock(side_effect=_initialize)
+    context.restore = MagicMock(side_effect=_restore)
+    context.prepare_for_llm = AsyncMock()
+    agent.context = context
+
     return agent

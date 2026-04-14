@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
+from rich.tree import Tree
 
 from taskforce.api.cli.output_formatter import TASKFORCE_THEME
 from taskforce.api.cli.tool_display_formatter import (
@@ -22,7 +23,6 @@ from taskforce.api.cli.tool_display_formatter import (
 import structlog
 
 from taskforce.application.agent_registry import AgentRegistry
-from taskforce.application.context_display_service import ContextDisplayService
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
@@ -80,7 +80,6 @@ class SimpleChatRunner:
         self.plan_state = PlanState(steps=[], text=None)
         self._last_event_signature: tuple[str, str] | None = None
         self._skill_service: SkillService | None = None
-        self._context_service = ContextDisplayService()
         self._prompt_session: PromptSession[str] | None = None
         self._telegram_poller: Any | None = None
         self._gateway: Any | None = None
@@ -284,6 +283,10 @@ class SimpleChatRunner:
             self._print_system(f"Total tokens used: {self.total_tokens:,}", style="info")
         elif cmd_name == "context":
             await self._show_context(command_args)
+        elif cmd_name == "tree":
+            await self._show_tree(command_args)
+        elif cmd_name == "write-tree":
+            await self._write_tree(command_args)
         elif cmd_name == "plugins":
             self._list_plugins()
         elif cmd_name == "skills":
@@ -319,6 +322,8 @@ class SimpleChatRunner:
             "- /export or /e\n"
             "- /tokens\n"
             "- /context [full]\n"
+            "- /tree [--sub-agents] — show LLM context as tree\n"
+            "- /write-tree [--sub-agents] — dump full LLM context to tree.md\n"
             "- /plugins\n"
             "- /skills\n"
             "- /debug\n"
@@ -787,11 +792,10 @@ class SimpleChatRunner:
     async def _show_context(self, command_args: str) -> None:
         """Render a context snapshot showing what is sent to the LLM."""
         include_content = command_args.strip().lower() == "full"
-        state = await self.agent.state_manager.load_state(self.session_id) or {}
-        snapshot = self._context_service.build_snapshot(
-            agent=self.agent,
-            state=state,
+        snapshot = self.agent.context.snapshot(
             include_content=include_content,
+            skill_manager=self.agent.skill_manager,
+            memory_context=getattr(self.agent, "_memory_context", None),
         )
 
         summary = (
@@ -824,6 +828,229 @@ class SimpleChatRunner:
             table.add_row(*row)
 
         self.console.print(table)
+
+
+    async def _show_tree(self, command_args: str = "") -> None:
+        """Render the full LLM context mirroring the actual API call structure.
+
+        The tree reflects what the LLM actually receives:
+        - ``messages`` parameter: system prompt (messages[0]) + conversation
+        - ``tools`` parameter: tool definitions (separate API parameter)
+        Skills are injected into the system prompt, shown as sub-nodes there.
+        """
+        snapshot = self.agent.context.snapshot(
+            include_content=True,
+            skill_manager=self.agent.skill_manager,
+        )
+
+        header = (
+            f"[bold cyan]Tokens:[/bold cyan] {snapshot.total_tokens:,} / "
+            f"{snapshot.max_tokens:,} ({snapshot.utilization_percent:.1f}%)"
+        )
+        tree = Tree(f"[bold]LLM API Call[/bold]  {header}")
+
+        # --- messages parameter ---
+        all_msg_tokens = (
+            sum(i.tokens for i in snapshot.system_prompt)
+            + sum(i.tokens for i in snapshot.messages)
+        )
+        msg_param = tree.add(
+            f"[bold]messages=[/bold]  "
+            f"[dim]{1 + len(snapshot.messages)} msgs, ~{all_msg_tokens:,} tokens[/dim]"
+        )
+
+        # messages[0]: system prompt (includes injected skills)
+        if snapshot.system_prompt:
+            sp = snapshot.system_prompt[0]
+            sp_node = msg_param.add(
+                f"[cyan]messages[0] system[/cyan]  [dim]~{sp.tokens:,} tok[/dim]"
+            )
+            if sp.content:
+                preview = self._truncate_content(sp.content, 300)
+                sp_node.add(f"[dim]{preview}[/dim]")
+            # Show memory as sub-info (injected into this prompt)
+            for mem in snapshot.memory:
+                sp_node.add(
+                    f"[green]+ {mem.title}[/green]  [dim]~{mem.tokens:,} tok[/dim]"
+                )
+            # Show skills as sub-info (injected into this prompt)
+            for skill in snapshot.skills:
+                marker = "[magenta]*[/magenta] " if skill.tokens > 0 else "[dim]-[/dim] "
+                sp_node.add(f"{marker}[magenta]{skill.title}[/magenta]")
+
+        # messages[1..N]: conversation history
+        for item in snapshot.messages:
+            role_style = self._role_style(item.title)
+            node = msg_param.add(
+                f"[{role_style}]{item.title}[/{role_style}]  "
+                f"[dim]~{item.tokens:,} tok[/dim]"
+            )
+            if item.content:
+                preview = self._truncate_content(item.content, 200)
+                node.add(f"[dim]{preview}[/dim]")
+
+        # --- tools parameter ---
+        if snapshot.tools:
+            tool_tokens = sum(i.tokens for i in snapshot.tools)
+            tool_param = tree.add(
+                f"[bold]tools=[/bold]  "
+                f"[dim]{len(snapshot.tools)} tools, ~{tool_tokens:,} tokens[/dim]"
+            )
+            for item in snapshot.tools:
+                tool_param.add(
+                    f"[yellow]{item.title}[/yellow]  [dim]~{item.tokens:,} tok[/dim]"
+                )
+
+        # --- sub-agent contexts (opt-in via --sub-agents) ---
+        show_sub = "--sub-agents" in command_args
+        if snapshot.sub_agents:
+            if show_sub:
+                for sa in snapshot.sub_agents:
+                    sa_node = tree.add(
+                        f"[bold bright_blue]sub-agent: {sa.specialist}"
+                        f"[/bold bright_blue]  "
+                        f"[dim]{sa.session_id[-12:]}  "
+                        f"~{sa.snapshot.total_tokens:,} tok[/dim]"
+                    )
+                    self._render_sub_agent_tree(sa_node, sa.snapshot)
+            else:
+                tree.add(
+                    f"[dim]{len(snapshot.sub_agents)} sub-agent(s) hidden "
+                    f"— use /tree --sub-agents to show[/dim]"
+                )
+
+        self.console.print()
+        self.console.print(tree)
+        self.console.print()
+
+    async def _write_tree(self, command_args: str = "") -> None:
+        """Dump the full LLM context (all content) to tree.md."""
+        snapshot = self.agent.context.snapshot(
+            include_content=True,
+            skill_manager=self.agent.skill_manager,
+            memory_context=getattr(self.agent, "_memory_context", None),
+        )
+
+        lines: list[str] = []
+        lines.append(
+            f"# LLM Context Dump\n\n"
+            f"Tokens: ~{snapshot.total_tokens:,} / {snapshot.max_tokens:,} "
+            f"({snapshot.utilization_percent:.1f}%)\n"
+        )
+
+        # messages parameter
+        lines.append("---\n\n## messages=\n")
+        self._write_system_prompt_section(lines, snapshot)
+        self._write_messages_section(lines, snapshot)
+
+        # tools parameter
+        lines.append("---\n\n## tools=\n")
+        for item in snapshot.tools:
+            lines.append(f"### {item.title} (~{item.tokens:,} tok)\n")
+            if item.content:
+                lines.append(f"```json\n{item.content}\n```\n")
+
+        # sub-agent contexts (opt-in via --sub-agents)
+        show_sub = "--sub-agents" in command_args
+        if snapshot.sub_agents and show_sub:
+            lines.append("---\n\n## Sub-Agent Contexts\n")
+            for sa in snapshot.sub_agents:
+                lines.append(
+                    f"### sub-agent: {sa.specialist} "
+                    f"(~{sa.snapshot.total_tokens:,} tok)\n"
+                )
+                lines.append(f"Session: `{sa.session_id}`\n")
+                self._write_system_prompt_section(lines, sa.snapshot)
+                self._write_messages_section(lines, sa.snapshot)
+                lines.append(
+                    f"**Tools:** "
+                    f"{', '.join(t.title for t in sa.snapshot.tools)}\n"
+                )
+        elif snapshot.sub_agents:
+            lines.append(
+                f"\n---\n\n*{len(snapshot.sub_agents)} sub-agent(s) hidden "
+                f"— use `/write-tree --sub-agents` to include.*\n"
+            )
+
+        from pathlib import Path
+
+        path = Path("tree.md")
+        path.write_text("\n".join(lines), encoding="utf-8")
+        self._print_system(f"Context written to {path.resolve()}", style="info")
+
+    def _write_system_prompt_section(
+        self, lines: list[str], snapshot: Any,
+    ) -> None:
+        """Write system prompt section including memory and skills."""
+        if not snapshot.system_prompt:
+            return
+        sp = snapshot.system_prompt[0]
+        lines.append(f"### messages[0] — system (~{sp.tokens:,} tok)\n")
+        lines.append(f"{sp.content or '(empty)'}\n")
+
+        for mem in snapshot.memory:
+            lines.append(f"\n#### Injected: {mem.title} (~{mem.tokens:,} tok)\n")
+            lines.append(f"{mem.content or '(empty)'}\n")
+
+        for skill in snapshot.skills:
+            status = "ACTIVE" if skill.tokens > 0 else "loaded"
+            lines.append(f"\n#### Skill ({status}): {skill.title}\n")
+            if skill.content:
+                lines.append(f"{skill.content}\n")
+
+    def _write_messages_section(
+        self, lines: list[str], snapshot: Any,
+    ) -> None:
+        """Write conversation messages section."""
+        for item in snapshot.messages:
+            lines.append(f"### {item.title} (~{item.tokens:,} tok)\n")
+            if item.content:
+                lines.append(f"{item.content}\n")
+
+    def _render_sub_agent_tree(self, parent_node: Any, snap: Any) -> None:
+        """Render a sub-agent's context snapshot as child nodes."""
+        # System prompt
+        if snap.system_prompt:
+            sp = snap.system_prompt[0]
+            sp_node = parent_node.add(
+                f"[cyan]system[/cyan]  [dim]~{sp.tokens:,} tok[/dim]"
+            )
+            if sp.content:
+                sp_node.add(f"[dim]{self._truncate_content(sp.content, 150)}[/dim]")
+        # Messages
+        for item in snap.messages:
+            style = self._role_style(item.title)
+            node = parent_node.add(
+                f"[{style}]{item.title}[/{style}]  [dim]~{item.tokens:,} tok[/dim]"
+            )
+            if item.content:
+                node.add(f"[dim]{self._truncate_content(item.content, 150)}[/dim]")
+        # Tools
+        if snap.tools:
+            tool_names = ", ".join(t.title for t in snap.tools)
+            parent_node.add(f"[dim]tools: {tool_names}[/dim]")
+
+    @staticmethod
+    def _role_style(title: str) -> str:
+        """Return Rich style string based on message role."""
+        t = title.lower()
+        if "tool_call" in t:
+            return "red"
+        if "tool" in t:
+            return "magenta"
+        if "user" in t:
+            return "blue"
+        if "assistant" in t:
+            return "yellow"
+        return "white"
+
+    @staticmethod
+    def _truncate_content(text: str, max_chars: int) -> str:
+        """Truncate text for tree preview, collapsing whitespace."""
+        collapsed = " ".join(text.split())
+        if len(collapsed) <= max_chars:
+            return collapsed
+        return collapsed[:max_chars] + "..."
 
 
 async def run_simple_chat(

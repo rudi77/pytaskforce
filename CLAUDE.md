@@ -70,7 +70,7 @@ src/taskforce/
 ├── core/                      # LAYER 1: Pure Domain Logic
 │   ├── domain/                # Agent, LeanAgent, Planning, Events, Models
 │   │   └── lean_agent_components/  # Modular agent components
-│   ├── interfaces/            # Protocols (22 interface files, ~40 protocol definitions)
+│   ├── interfaces/            # Protocols (23 interface files, ~42 protocol definitions)
 │   ├── prompts/               # System prompts and templates
 │   ├── tools/                 # Core tool abstractions (converter, planner)
 │   └── utils/                 # Path and time utilities
@@ -216,6 +216,7 @@ All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base
 | `ConversationProtocol` | `conversation.py` | Conversation management |
 | `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
 | `ButlerProtocol` | `butler.py` | Butler agent lifecycle |
+| `ContextManagerProtocol` | `context_manager.py` | Single source of truth for LLM context (messages, tools, snapshots) |
 
 ```python
 # core/interfaces/state.py
@@ -313,7 +314,23 @@ The core agent execution pattern:
                ▼ (repeat until mission complete)
 ```
 
-### 5. Domain Enums
+### 5. Context Management
+
+The `ContextManager` (`core/domain/lean_agent_components/context_manager.py`) is the single source of truth for the full LLM context. It owns the mutable `messages` list and coordinates context preparation before each LLM call.
+
+**Key methods:**
+- `initialize(mission, state, base_system_prompt)` — builds initial messages from conversation history
+- `restore(messages)` — restores from a paused execution (ask_user resume)
+- `prepare_for_llm(mission, state)` — orchestrates system prompt rebuild + compression + preflight check
+- `append_message(msg)` — appends tool results, nudges, circuit breakers
+- `snapshot(include_content, skill_manager, memory_context)` — builds `ContextSnapshot` for `/tree` and `/write-tree`
+- `register_sub_agent_context(specialist, session_id, snapshot)` — captures sub-agent context before close
+
+**Protocol:** `ContextManagerProtocol` in `core/interfaces/context_manager.py`
+
+**Value objects:** `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` (frozen dataclasses)
+
+### 6. Domain Enums
 
 All status values, event types, and action constants are defined in `core/domain/enums.py` to eliminate magic strings:
 
@@ -325,13 +342,13 @@ All status values, event types, and action constants are defined in `core/domain
 - `LLMAction` - tool_call, respond, ask_user
 - `MessageRole` - user, assistant, system, tool
 
-### 6. Error Handling
+### 7. Error Handling
 
 Execution API errors use a standardized payload (`code`, `message`, `details`, optional `detail`) via `ErrorResponse`, with responses emitted from `HTTPException` objects tagged by the `X-Taskforce-Error: 1` header.
 
 Exception types live in `src/taskforce/core/domain/errors.py` (`TaskforceError`, `LLMError`, `ToolError`, etc.). Infrastructure tools should convert unexpected failures into `ToolError` payloads via `tool_error_payload`.
 
-### 7. Dynamic LLM Routing
+### 8. Dynamic LLM Routing
 
 The **LLM Router** (`infrastructure/llm/llm_router.py`) wraps `LLMProviderProtocol` and routes each LLM call to a different model based on configurable rules. Planning strategies emit **phase hints** as the `model` parameter:
 
@@ -1098,21 +1115,39 @@ resolved = registry.resolve(["python", "file_read"])
 # from taskforce.application.tool_mapper import ToolMapper
 ```
 
+**ContextManager — Context Preparation:**
+
+```python
+# ✅ CORRECT - Use ContextManager for LLM context preparation
+await agent.context.prepare_for_llm(mission=mission, state=state)
+# Then pass context to LLM provider
+await agent.llm_provider.complete_stream(
+    messages=agent.context.messages,
+    tools=agent.context.tools,
+    ...
+)
+
+# ❌ AVOID - Manual 4-step context preparation
+# prompt = agent._build_system_prompt(mission, state, messages)
+# agent.context.set_system_prompt(prompt)
+# await agent.context.compress()
+# agent.context.preflight_check()
+```
+
 **Agent Components - Call Directly:**
 
 ```python
 # ✅ CORRECT - Call component methods directly
-messages = await agent.message_history_manager.compress_messages(messages)
-messages = agent.message_history_manager.preflight_budget_check(messages)
 tool_msg = await agent.tool_result_message_factory.build_message(...)
+agent.context.append_message(tool_msg)
 
-# ❌ AVOID - Wrapper methods have been removed
-# messages = await agent._compress_messages(messages)
+# ❌ AVOID - Direct message list manipulation
+# messages.append(tool_msg)
 ```
 
 ### 4. Sub-Agent Spawning
 
-Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce/configs/custom/`.
+Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce/configs/custom/`. Sub-agent context snapshots are captured before `agent.close()` and registered on the parent agent's ContextManager for `/tree --sub-agents` inspection.
 
 ---
 
@@ -1176,6 +1211,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/core/domain/agent.py` - ReAct loop implementation
 - `src/taskforce/core/domain/lean_agent.py` - LeanAgent (simplified) implementation
 - `src/taskforce/core/domain/lean_agent_components/` - Agent components (call directly, not via wrappers):
+  - `context_manager.py` - ContextManager: single source of truth for LLM context (messages, tools, snapshots)
   - `message_history_manager.py` - Message compression and budget management
   - `message_sanitizer.py` - Message sanitization
   - `tool_executor.py` - Tool execution and result message factory
@@ -1237,6 +1273,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `conversation.py` - `ConversationProtocol` - conversation management
 - `embeddings.py` - `EmbeddingsProtocol` - text embeddings
 - `butler.py` - `ButlerProtocol` - butler agent lifecycle
+- `context_manager.py` - `ContextManagerProtocol`, `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` - unified LLM context management
 
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state

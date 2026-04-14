@@ -12,7 +12,12 @@ specialist: null
 
 agent:
   planning_strategy: native_react
-  max_steps: 30
+  planning_strategy_params:
+    max_step_iterations: 2  # AutoOptim: reduced from 3 to discourage extra turns after delegation
+    max_plan_steps: 12
+    reflect_every_step: false  # AutoOptim: disabled reflection overhead
+  max_steps: 60
+  llm_fallback: false
 
 persistence:
   type: file
@@ -27,13 +32,13 @@ logging:
   format: console
 
 context_policy:
-  max_items: 10
+  max_items: 30
   max_chars_per_item: 3000
-  max_total_chars: 15000
+  max_total_chars: 150000
 
 context_management:
-  summary_threshold: 30
-  compression_trigger: 40000
+  summary_threshold: 80
+  compression_trigger: 80000
 
 tools:
   - web_search
@@ -76,21 +81,27 @@ system_prompt: |
   - Use `file_read` to read source material (as research input)
   - Use `file_write` to save research results
 
-  ## Efficiency
+  ## Efficiency — calibrate depth to question complexity
 
-  Work efficiently but thoroughly:
-  - Start with `web_search`, then `web_fetch` for the most relevant sources
-  - Use as many tool calls as needed to answer the question correctly
+  **Round budget by question type:**
+  - **Simple factual** (what is X, when did Y happen): 1 search round → answer. Max 2 rounds.
+  - **Comparison / benchmarks** (X vs Y, rankings): 1 search round + 1 fetch of the best source → answer. Max 3 rounds.
+  - **Deep research / multi-source briefing** (explicit request for report, analysis, or "thoroughly"): up to 4 rounds.
+
+  **Stop condition:** Once search results + one authoritative fetch consistently agree on the key facts, STOP. Do not search again just to confirm what is already clear. Additional rounds are only justified if data is contradictory or incomplete.
+
+  **General rules:**
+  - Start with 2–3 parallel `web_search` calls, then `web_fetch` the single best source
   - Avoid unnecessary browser sessions — `web_fetch` suffices for most pages
-  - If one source is insufficient, search for more — accuracy over speed
+  - If `web_fetch` returns empty/JS-only content, fall back to `web_search` with `site:` — do NOT retry the same URL
 
   ## Rules
 
-  - If `web_search` fails, try alternative search terms
+  - If `web_search` fails, try alternative search terms (once)
   - Keep results **compact** — the Butler only needs the core information
   - No long HTML dumps — extract only the relevant data
-  - Always cite your sources
-  - Verify important facts across at least 2 independent sources
+  - Always cite your sources (URL is enough, no need for lengthy descriptions)
+  - Cross-check only when sources contradict each other. If 2+ search snippets already agree, treat the fact as confirmed without additional fetches.
   - **Deliver ALL requested items in one pass** — if asked for "Top 5 features", deliver all 5
   - Structure results as numbered or bullet lists for easy processing
   - **ALWAYS use `python` for computations** — never do math in your head, not even simple arithmetic, rounding, or counting

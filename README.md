@@ -49,6 +49,8 @@ taskforce chat --plugin examples/accounting_agent
 # /accounting_agent — switch to plugin agent
 # /skills       — list available skills
 # /context      — inspect LLM context and token estimates
+# /tree         — show LLM context as tree (mirrors API call structure)
+# /write-tree   — dump full LLM context to tree.md
 
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins

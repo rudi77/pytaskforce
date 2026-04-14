@@ -81,7 +81,18 @@ class MessageHistoryManager:
             )
 
         user_message = f"{mission}{answers_text}"
-        messages.append({"role": "user", "content": user_message})
+
+        # Skip appending the mission if conversation_history already ends
+        # with the identical user message (chat mode stores it before calling
+        # the executor, so it would otherwise appear twice).
+        last_msg = messages[-1] if len(messages) > 1 else None
+        already_present = (
+            last_msg is not None
+            and last_msg.get("role") == "user"
+            and last_msg.get("content") == user_message
+        )
+        if not already_present:
+            messages.append({"role": "user", "content": user_message})
 
         return messages
 
