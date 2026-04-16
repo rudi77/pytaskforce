@@ -1,8 +1,8 @@
 profile: ap_ledger_agent
-plugin_path: ..
 
 # Country configuration: "AT" (Austria) or "DE" (Germany)
 # Controls: tax codes, chart of accounts, compliance rules, seed data
+# Set via AP_LEDGER_COUNTRY environment variable or here:
 country: DE
 
 system_prompt: |
@@ -44,7 +44,7 @@ system_prompt: |
   ### Schritt 3: Beleg archivieren (wenn Datei vorhanden)
   Wenn ein Foto/PDF hochgeladen wurde, ZUERST archivieren:
   ```powershell
-  python examples/ap_ledger_agent/scripts/archive_file.py --source "<temp_pfad>" --date YYYY-MM-DD --vendor "<name>" --amount <brutto>
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/archive_file.py --source "<temp_pfad>" --date YYYY-MM-DD --vendor "<name>" --amount <brutto>
   ```
   Das gibt `archived_path` zurueck — diesen Pfad an book.py als `--source-file` uebergeben.
 
@@ -62,38 +62,38 @@ system_prompt: |
   ## Script-Aufrufe
 
   Alle DB-Operationen via **powershell**-Tool im Verzeichnis
-  `examples/ap_ledger_agent/scripts/`.
+  `examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/`.
 
   ### WICHTIGSTE Scripts — verwende diese zuerst!
 
   **archive_file.py** — Beleg dauerhaft archivieren (VOR dem Buchen!):
   ```
-  python examples/ap_ledger_agent/scripts/archive_file.py --source "<temp_pfad>" --date 2026-01-24 --vendor "Wella" --amount 119.00
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/archive_file.py --source "<temp_pfad>" --date 2026-01-24 --vendor "Wella" --amount 119.00
   ```
   → Gibt `archived_path` zurück. Diesen Pfad als `--source-file` an book.py übergeben.
 
   **book.py** — Komplettbuchung in EINEM Aufruf (Invoice + Journal + Post + Audit):
   ```
-  python examples/ap_ledger_agent/scripts/book.py revenue --date 2026-01-24 --bar 186.00 --source-file "belege/2026/01/..."
-  python examples/ap_ledger_agent/scripts/book.py expense --vendor "Wella" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank --source-file "belege/2026/04/..."
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/book.py revenue --date 2026-01-24 --bar 186.00 --source-file "belege/2026/01/..."
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/book.py expense --vendor "Wella" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank --source-file "belege/2026/04/..."
   ```
   → Gibt JSON zurück mit invoice_id, journal_id, summary. FERTIG. Kein weiterer Aufruf nötig.
 
   **euer_report.py** — Reports:
   ```
-  python examples/ap_ledger_agent/scripts/euer_report.py --action monthly --year 2026
-  python examples/ap_ledger_agent/scripts/euer_report.py --action open
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/euer_report.py --action monthly --year 2026
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/euer_report.py --action open
   ```
 
   **invoice_correct.py** — Korrekturen:
   ```
-  python examples/ap_ledger_agent/scripts/invoice_correct.py --invoice-id N --total-gross Z --reason "..."
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/invoice_correct.py --invoice-id N --total-gross Z --reason "..."
   ```
 
   **consistency_check.py** — Datenbank-Konsistenzpruefung:
   ```
-  python examples/ap_ledger_agent/scripts/consistency_check.py
-  python examples/ap_ledger_agent/scripts/consistency_check.py --fix-hint
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/consistency_check.py
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/consistency_check.py --fix-hint
   ```
 
   ### Einzelscripts (nur wenn book.py nicht passt)
@@ -114,11 +114,11 @@ system_prompt: |
   1. Erkenne: Datum (oder heute), Beträge, Bar/Karte (Default: Bar)
   2. **EIN Aufruf:**
      ```powershell
-     python examples/ap_ledger_agent/scripts/book.py revenue --date YYYY-MM-DD --bar 186.00
+     python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/book.py revenue --date YYYY-MM-DD --bar 186.00
      ```
      oder mit Karte:
      ```powershell
-     python examples/ap_ledger_agent/scripts/book.py revenue --date YYYY-MM-DD --bar 300 --karte 150
+     python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/book.py revenue --date YYYY-MM-DD --bar 300 --karte 150
      ```
   3. Bestätigung aus dem `summary` Feld der Antwort senden. FERTIG.
 
@@ -130,7 +130,7 @@ system_prompt: |
   1. Extrahiere: Lieferant, Datum, Brutto, Kategorie
   2. **EIN Aufruf:**
      ```powershell
-     python examples/ap_ledger_agent/scripts/book.py expense --vendor "Wella" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank
+     python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/book.py expense --vendor "Wella" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank
      ```
   3. Bestätigung senden. FERTIG.
 

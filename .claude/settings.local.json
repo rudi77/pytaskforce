@@ -258,7 +258,11 @@
       "Bash(.venv/Scripts/python -m pytest tests/unit/api/cli/ tests/unit/core/ -q --no-header --tb=short)",
       "Bash(.venv/Scripts/python -m pytest tests/unit/core/domain/lean_agent_components/test_context_manager.py -q --no-header --tb=short)",
       "Bash(.venv/Scripts/python -c \"from taskforce.core.domain.lean_agent_components.context_manager import ContextManager; print\\('OK'\\)\")",
-      "Bash(nvidia-smi)"
+      "Bash(nvidia-smi)",
+      "Bash(AP_LEDGER_COUNTRY=DE AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python book.py revenue --date 2026-04-14 --bar 186.00)",
+      "Bash(AP_LEDGER_COUNTRY=DE AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python book.py expense --vendor \"Wella\" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank)",
+      "Bash(AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python euer_report.py --action monthly)",
+      "Bash(AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python consistency_check.py)"
     ],
     "deny": [
       ".env",

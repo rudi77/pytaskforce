@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AP-Ledger Agent - Analyse &amp; Report</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+
+  .slide {
+    min-height: 100vh; padding: 60px 80px; display: flex; flex-direction: column;
+    justify-content: center; border-bottom: 2px solid #1e293b;
+    page-break-after: always;
+  }
+
+  h1 { font-size: 2.8em; color: #38bdf8; margin-bottom: 10px; }
+  h2 { font-size: 2em; color: #38bdf8; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 10px; }
+  h3 { font-size: 1.3em; color: #94a3b8; margin: 15px 0 8px; }
+  p, li { font-size: 1.1em; line-height: 1.6; color: #cbd5e1; }
+
+  .subtitle { font-size: 1.4em; color: #94a3b8; margin-bottom: 40px; }
+  .tag { display: inline-block; background: #1e3a5f; color: #7dd3fc; padding: 4px 12px; border-radius: 12px; font-size: 0.85em; margin: 2px; }
+  .tag-green { background: #14532d; color: #86efac; }
+  .tag-red { background: #450a0a; color: #fca5a5; }
+  .tag-yellow { background: #422006; color: #fde68a; }
+
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.95em; }
+  th { background: #1e293b; color: #38bdf8; padding: 12px 15px; text-align: left; }
+  td { padding: 10px 15px; border-bottom: 1px solid #1e293b; }
+  tr:hover td { background: #1e293b; }
+
+  .grid { display: grid; gap: 20px; margin: 20px 0; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: #1e293b; border-radius: 12px; padding: 25px;
+    border: 1px solid #334155;
+  }
+  .card h3 { color: #38bdf8; margin-top: 0; }
+
+  .diagram {
+    background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+    padding: 30px; margin: 20px 0; font-family: 'Courier New', monospace;
+    font-size: 0.95em; line-height: 1.8; color: #94a3b8; overflow-x: auto;
+  }
+  .diagram .highlight { color: #38bdf8; font-weight: bold; }
+  .diagram .success { color: #86efac; }
+  .diagram .error { color: #fca5a5; }
+  .diagram .arrow { color: #fbbf24; }
+
+  .meter { height: 8px; background: #1e293b; border-radius: 4px; margin: 5px 0 15px; }
+  .meter-fill { height: 100%; border-radius: 4px; }
+  .meter-green { background: linear-gradient(90deg, #22c55e, #86efac); }
+  .meter-yellow { background: linear-gradient(90deg, #eab308, #fde68a); }
+  .meter-red { background: linear-gradient(90deg, #ef4444, #fca5a5); }
+
+  .status-icon { font-size: 1.2em; margin-right: 8px; }
+  .flex-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+
+  ul { margin: 10px 0 10px 25px; }
+  li { margin: 4px 0; }
+
+  code { background: #1e293b; padding: 2px 8px; border-radius: 4px; font-size: 0.9em; color: #7dd3fc; }
+
+  .footer { margin-top: 40px; font-size: 0.8em; color: #475569; text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1: Title -->
+<div class="slide" style="justify-content: center; align-items: center; text-align: center;">
+  <h1>AP-Ledger Agent</h1>
+  <p class="subtitle">AI-gestuetzte Finanzbuchhaltung fuer Kleinunternehmer</p>
+  <div style="margin: 30px 0;">
+    <span class="tag">Taskforce Framework</span>
+    <span class="tag">Telegram Bot</span>
+    <span class="tag">SQLite</span>
+    <span class="tag">EUeR</span>
+    <span class="tag">AT / DE</span>
+  </div>
+  <p style="color: #64748b; margin-top: 40px;">Analyse-Report &bull; April 2026</p>
+</div>
+
+<!-- SLIDE 2: Architecture Overview -->
+<div class="slide">
+  <h2>Architektur-Uebersicht</h2>
+
+  <div class="diagram">
+<pre>
+  <span class="highlight">Telegram</span>                    <span class="highlight">Taskforce Agent</span>                  <span class="highlight">SQLite DB</span>
+  +---------+                +--------------------+            +------------+
+  | Userin  | <span class="arrow">---Foto/Text--></span> | LLM (GPT-5.4)     |            | invoices   |
+  | sendet  |                | Vision-Extraktion  |            | journals   |
+  | Beleg   | <span class="arrow"><--Bestaetigung-</span> | ask_user()         |            | vendors    |
+  |         |                |                    |            | audit_log  |
+  | "ja"    | <span class="arrow">---Antwort----></span> | powershell:        |            | categories |
+  |         |                |   book.py          | <span class="arrow">--SQL--></span>  | tax_codes  |
+  |         | <span class="arrow"><--Gebucht!-----</span> |   archive_file.py  |            | periods    |
+  +---------+                +--------------------+            +------------+
+                                      |
+                             +--------+--------+
+                             |                 |
+                        <span class="success">belege/</span>          <span class="success">scripts/</span>
+                        YYYY/MM/         10 CLI-Tools
+                        Archiv           Python + argparse
+</pre>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3>Frontend</h3>
+      <p>Telegram Bot (Long-Polling). Userin schickt Fotos, PDFs, Text. Agent antwortet mit Bestaetigungen.</p>
+    </div>
+    <div class="card">
+      <h3>Agent</h3>
+      <p>Taskforce ReAct-Loop mit GPT-5.4-mini. Vision fuer Belegextraktion. 3 Tools: powershell, file_read, ask_user.</p>
+    </div>
+    <div class="card">
+      <h3>Persistenz</h3>
+      <p>SQLite mit WAL-Mode. Atomare Transaktionen. Beleg-Archiv unter <code>belege/</code>. Audit-Trail.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 3: Booking Flow -->
+<div class="slide">
+  <h2>Buchungs-Workflow</h2>
+
+  <div class="diagram">
+<pre>
+  <span class="highlight">Einnahme (Tageslosung)</span>                    <span class="highlight">Ausgabe (Rechnung)</span>
+
+  Userin: [Foto] "186 EUR"                  Userin: [Foto Rechnung]
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                                          <span class="arrow">v</span>
+  <span class="success">1. Vision-Extraktion</span>                      <span class="success">1. Vision-Extraktion</span>
+     Datum, Betrag, Bar/Karte                  Vendor, Datum, Brutto, Positionen
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                                          <span class="arrow">v</span>
+  <span class="success">2. ask_user (Bestaetigung)</span>                <span class="success">2. ask_user (Bestaetigung)</span>
+     "Erkannt: 186 EUR bar. OK?"               "Wella 119 EUR. OK?"
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                                          <span class="arrow">v</span>
+  <span class="success">3. archive_file.py</span>                        <span class="success">3. archive_file.py</span>
+     Foto -> belege/2026/01/...                 PDF -> belege/2026/04/...
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                                          <span class="arrow">v</span>
+  <span class="success">4. book.py revenue</span>                        <span class="success">4. book.py expense</span>
+     --bar 186 --date ...                       --vendor Wella --gross 119
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                    <span class="highlight">ATOMAR</span>                <span class="arrow">v</span>
+  +----------------------------------------------+
+  | <span class="success">persist_invoice</span>  (Beleg + Zeilen)           |
+  | <span class="success">persist_journal</span>  (Soll/Haben)              |
+  | <span class="success">post_journal</span>    (Balance-Check, Posting)   |
+  | <span class="success">write_audit</span>     (Audit-Log)                |
+  +----------------------------------------------+
+       <span class="arrow">|</span>                                          <span class="arrow">|</span>
+       <span class="arrow">v</span>                                          <span class="arrow">v</span>
+  "Gebucht: 186 EUR bar"                   "Gebucht: Wella 119 EUR"
+</pre>
+  </div>
+</div>
+
+<!-- SLIDE 4: Database Schema -->
+<div class="slide">
+  <h2>Datenbank-Schema</h2>
+
+  <div class="diagram">
+<pre>
+  +------------------+     +-------------------+     +------------------+
+  | <span class="highlight">vendors</span>          |     | <span class="highlight">invoices</span>          |     | <span class="highlight">invoice_lines</span>    |
+  |------------------|     |-------------------|     |------------------|
+  | id (PK)          |<span class="arrow">-+--</span>| vendor_id (FK)    |<span class="arrow">--+--</span>| invoice_id (FK)  |
+  | name             |  |  | vendor_name_raw   |  |  | position         |
+  | name_normalized  |  |  | invoice_date      |  |  | description      |
+  | default_category |  |  | total_gross/net   |  |  | net_amount       |
+  | default_tax_code |  |  | status            |  |  | tax_code (FK)    |
+  | match_keywords   |  |  | source_file       |  |  | gross_amount     |
+  +------------------+  |  | fiscal_period_id  |  |  | category_code    |
+                        |  +-------------------+  |  +------------------+
+  +------------------+  |          <span class="arrow">|</span>              |
+  | <span class="highlight">fiscal_periods</span>   |  |          <span class="arrow">|</span>              |  +------------------+
+  |------------------|  |          <span class="arrow">v</span>              |  | <span class="highlight">categories</span>       |
+  | id (PK)          |<span class="arrow">-+</span> +-------------------+  |  | code (PK)        |
+  | year, month      |    | <span class="highlight">journal_entries</span>   |  <span class="arrow">+-</span>| name, type       |
+  | label            |    |-------------------|     | tax_deductible   |
+  | is_closed        |    | invoice_id (FK)   |     +------------------+
+  +------------------+    | entry_date        |
+                          | status            |     +------------------+
+  +------------------+    | posted_at         |     | <span class="highlight">journal_lines</span>    |
+  | <span class="highlight">tax_codes</span>        |    +-------------------+     |------------------|
+  |------------------|           <span class="arrow">|</span>               <span class="arrow">+---</span>| journal_entry_id |
+  | code (PK)        |           <span class="arrow">+---------------+</span>   | account_code     |
+  | rate             |                               | debit_amount     |
+  | label            |    +-------------------+      | credit_amount    |
+  | valid_from/to    |    | <span class="highlight">audit_log</span>         |      +------------------+
+  +------------------+    | (IMMUTABLE)       |
+                          | event_type        |      <span class="highlight">Views:</span>
+                          | entity_type/id    |      v_euer_summary
+                          | actor, details    |      v_monthly_totals
+                          +-------------------+
+</pre>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>8 Tabellen + 2 Views</h3>
+      <ul>
+        <li>WAL-Mode fuer Concurrency</li>
+        <li>Foreign Keys ON</li>
+        <li>CASCADE DELETE fuer Lines</li>
+        <li>CHECK Constraint: Soll XOR Haben</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Status-Lifecycle</h3>
+      <ul>
+        <li>Invoice: draft -> validated -> posted | rejected</li>
+        <li>Journal: draft -> posted | reversed</li>
+        <li>Kein DELETE — nur Status-Transitions</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 5: Components -->
+<div class="slide">
+  <h2>Komponenten</h2>
+
+  <div class="grid grid-2">
+    <div>
+      <h3>Scripts (10 CLI-Tools)</h3>
+      <table>
+        <tr><th>Script</th><th>Funktion</th></tr>
+        <tr><td><code>book.py</code></td><td>Komplettbuchung (atomar)</td></tr>
+        <tr><td><code>archive_file.py</code></td><td>Beleg-Archivierung</td></tr>
+        <tr><td><code>consistency_check.py</code></td><td>DB-Konsistenzpruefung</td></tr>
+        <tr><td><code>euer_report.py</code></td><td>Reports &amp; CSV-Export</td></tr>
+        <tr><td><code>invoice_correct.py</code></td><td>Beleg-Korrektur</td></tr>
+        <tr><td><code>invoice_persist.py</code></td><td>Einzelbeleg speichern</td></tr>
+        <tr><td><code>journal_persist.py</code></td><td>Buchungssatz anlegen</td></tr>
+        <tr><td><code>journal_post.py</code></td><td>Buchung finalisieren</td></tr>
+        <tr><td><code>vendor_resolve.py</code></td><td>Lieferant suchen/anlegen</td></tr>
+        <tr><td><code>period_resolve.py</code></td><td>Fiskalperiode ermitteln</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Skills (3 Workflow-Definitionen)</h3>
+      <table>
+        <tr><th>Skill</th><th>Typ</th><th>Trigger</th></tr>
+        <tr><td>beleg-verarbeiten</td><td>context</td><td>Beleg/Rechnung</td></tr>
+        <tr><td>euer-export</td><td>prompt</td><td>Report-Anfrage</td></tr>
+        <tr><td>onboarding</td><td>prompt</td><td>Ersteinrichtung</td></tr>
+      </table>
+
+      <h3 style="margin-top: 30px;">Domain Models</h3>
+      <table>
+        <tr><th>Model</th><th>Felder</th></tr>
+        <tr><td>Invoice</td><td>15 Felder + Lines</td></tr>
+        <tr><td>JournalEntry</td><td>7 Felder + Lines + is_balanced()</td></tr>
+        <tr><td>Vendor</td><td>8 Felder + Fuzzy-Match</td></tr>
+        <tr><td>4 Enums</td><td>Status, Type, Category</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 6: Error Handling -->
+<div class="slide">
+  <h2>Fehlerbehandlung &amp; Transaktionssicherheit</h2>
+
+  <div class="diagram">
+<pre>
+  <span class="highlight">Atomare Transaktion (book.py)</span>
+
+  with store.transaction() as conn:        <span class="success">Erfolg</span>         <span class="error">Fehler</span>
+      <span class="arrow">|</span>                                      <span class="arrow">|</span>               <span class="arrow">|</span>
+      <span class="arrow">+--> </span>persist_invoice(conn)               <span class="arrow">|</span>               <span class="arrow">|</span>
+      <span class="arrow">+--> </span>persist_journal(conn)               <span class="arrow">|</span>               <span class="arrow">|</span>
+      <span class="arrow">+--> </span>post_journal(conn)                  <span class="arrow">|</span>               <span class="arrow">|</span>
+      <span class="arrow">+--> </span>write_audit(conn)                   <span class="arrow">|</span>               <span class="arrow">|</span>
+      <span class="arrow">|</span>                                      <span class="arrow">v</span>               <span class="arrow">v</span>
+      <span class="arrow">+-----------------------------------></span> <span class="success">COMMIT</span>          <span class="error">ROLLBACK</span>
+                                           Alles da        Nichts geschrieben
+                                                            <span class="arrow">|</span>
+                                                            <span class="arrow">v</span>
+                                                       <span class="error">_log_failure()</span>
+                                                       Best-effort Audit
+                                                            <span class="arrow">|</span>
+                                                            <span class="arrow">v</span>
+                                                       <span class="error">JSON: success=false</span>
+</pre>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3>Transaktion</h3>
+      <ul>
+        <li>_use_conn() Context Manager</li>
+        <li>Shared Connection fuer alle Ops</li>
+        <li>BEGIN / COMMIT / ROLLBACK</li>
+        <li>Backward-compatible (conn=None)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Fehler-Output</h3>
+      <ul>
+        <li>Immer JSON (nie Traceback)</li>
+        <li>Top-Level try/except in main()</li>
+        <li>Audit-Log bei Fehlschlag</li>
+        <li>Konsistenzcheck on-demand</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Validierung</h3>
+      <ul>
+        <li>Soll = Haben (Balance-Check)</li>
+        <li>Duplikat-Erkennung</li>
+        <li>Decimal-Arithmetik (kein Float)</li>
+        <li>Steuercode-Validierung</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 7: Country Configuration -->
+<div class="slide">
+  <h2>Laenderkonfiguration (AT / DE)</h2>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Oesterreich (AT)</h3>
+      <table>
+        <tr><td>Normalsteuersatz</td><td><code>AT_20</code> (20%)</td></tr>
+        <tr><td>Ermaessigt</td><td><code>AT_10</code> (10%), <code>AT_13</code> (13%)</td></tr>
+        <tr><td>Befreit</td><td><code>AT_0</code> (0%)</td></tr>
+        <tr><td>Kleinbetragsrechnung</td><td>&le; 400 EUR</td></tr>
+        <tr><td>Rechtsgrundlage</td><td>&sect; 11 UStG 1994</td></tr>
+        <tr><td>UID-Format</td><td>ATU + 8 Ziffern</td></tr>
+        <tr><td>Monatsbezeichnung</td><td>Jaenner, Februar...</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Deutschland (DE)</h3>
+      <table>
+        <tr><td>Regelsteuersatz</td><td><code>DE_19</code> (19%)</td></tr>
+        <tr><td>Ermaessigt</td><td><code>DE_7</code> (7%)</td></tr>
+        <tr><td>Befreit</td><td><code>DE_0</code> (0%)</td></tr>
+        <tr><td>Kleinbetragsrechnung</td><td>&le; 250 EUR</td></tr>
+        <tr><td>Rechtsgrundlage</td><td>&sect; 14 UStG</td></tr>
+        <tr><td>UID-Format</td><td>DE + 9 Ziffern</td></tr>
+        <tr><td>Monatsbezeichnung</td><td>Januar, Februar...</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 20px;">
+    <h3>Konfiguration</h3>
+    <p>Eine Zeile in <code>ap_ledger_agent.yaml</code>: <code>country: DE</code> (oder <code>AT</code>).
+    Steuert: Seed-Daten, Tax Codes, Compliance-Regeln, Monatsbezeichnungen.
+    DB wird beim ersten Start automatisch mit den richtigen Daten initialisiert.</p>
+  </div>
+</div>
+
+<!-- SLIDE 8: Compliance Status -->
+<div class="slide">
+  <h2>Compliance-Status</h2>
+
+  <h3>Implementiert</h3>
+  <div style="margin: 15px 0;">
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Atomare Buchungen (doppelte Buchfuehrung)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Immutables Audit-Log (keine Loeschung)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Beleg-Archivierung mit strukturierten Dateinamen</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Source-File Referenz in DB (invoices.source_file)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Steuersatz-Versionierung (valid_from / valid_to)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Decimal-Arithmetik (keine Rundungsfehler)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Storno/Korrektur ueber Reversal (kein Delete)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Duplikat-Erkennung</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>Konsistenz-Check Script</span></div>
+    <div class="flex-row"><span class="status-icon">&#x2705;</span> <span>CSV-Export fuer Steuerberater</span></div>
+  </div>
+
+  <h3>Fehlend fuer volle GoBD/BAO-Konformitaet</h3>
+  <div style="margin: 15px 0;">
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>DATEV-Export</strong> — Standardformat fuer Steuerberater (Pflichtfelder, Encoding, Buchungsschluessel)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Kryptographischer Audit-Trail</strong> — Hash-Chain oder digitale Signaturen auf Audit-Eintraegen</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Zertifizierte Zeitstempel</strong> — TSA-Integration statt SQLite datetime('now')</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Backup-Strategie</strong> — Taegliches verschluesseltes Backup auf externem Speicher</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Aenderungs-Tracking</strong> — Before/After-Werte im Audit-Log (nicht nur Event-Type)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Aufbewahrungsfrist</strong> — Auto-Archivierung nach 7 Jahren (AT) / 10 Jahren (DE)</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Verschluesselung</strong> — DB und Belege at rest unverschluesselt</span></div>
+    <div class="flex-row"><span class="status-icon">&#x274C;</span> <span><strong>Zugriffskontrolle</strong> — Kein RBAC, alle Tools oeffentlich</span></div>
+  </div>
+</div>
+
+<!-- SLIDE 9: DATEV Export Gap -->
+<div class="slide">
+  <h2>DATEV-Export (Groesste Luecke)</h2>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Aktueller CSV-Export</h3>
+      <p style="font-family: monospace; font-size: 0.85em; margin-top: 10px; color: #94a3b8;">
+        datum,lieferant,kategorie,netto,ust,brutto,steuersatz<br>
+        2026-01-24,Tageslosung,Bareinnahmen,130.00,26.00,156.00,20% USt
+      </p>
+      <p style="margin-top: 15px;">Einfache CSV-Datei. Kein standardisiertes Format. Steuerberater muss manuell importieren.</p>
+    </div>
+    <div class="card">
+      <h3>Benoetigter DATEV-Export</h3>
+      <ul>
+        <li><strong>Format:</strong> DATEV ASCII (CSV mit Header-Record)</li>
+        <li><strong>Encoding:</strong> Windows-1252</li>
+        <li><strong>Felder:</strong> Umsatz, Soll/Haben-Kz, BU-Schluessel, Gegenkonto, Belegdatum, Belegfeld1/2, Buchungstext, USt-ID</li>
+        <li><strong>Konten:</strong> SKR03 oder SKR04 Mapping</li>
+        <li><strong>Tax-Mapping:</strong> DATEV-Steuerschluessel (z.B. 9 = 19% VorSt)</li>
+        <li><strong>Header:</strong> Berater-Nr, Mandanten-Nr, WJ-Beginn, Sachkontenlnge</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 20px;">
+    <h3>Implementierungs-Aufwand</h3>
+    <p>Neues Script <code>export_datev.py</code> das die DATEV-Buchungsstapel-Spezifikation implementiert.
+    Benoetigt: Konten-Mapping-Tabelle (internes Konto -> SKR03/04), DATEV-Steuerschluessel-Mapping,
+    Header-Konfiguration (Berater-Nr, Mandant). Geschaetzter Aufwand: 1-2 Tage.</p>
+  </div>
+</div>
+
+<!-- SLIDE 10: Roadmap -->
+<div class="slide">
+  <h2>Roadmap: Was braucht es noch?</h2>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Phase 1: Produktionsreif (Prio hoch)</h3>
+      <table>
+        <tr><th>Feature</th><th>Aufwand</th></tr>
+        <tr><td>DATEV-Export Script</td><td>1-2 Tage</td></tr>
+        <tr><td>Before/After Audit-Tracking</td><td>0.5 Tage</td></tr>
+        <tr><td>Automatische Backups (SQLite .backup)</td><td>0.5 Tage</td></tr>
+        <tr><td>Validierung Rechnungspflichtfelder</td><td>1 Tag</td></tr>
+        <tr><td>USt-Voranmeldung Report</td><td>1 Tag</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Phase 2: Compliance (Prio mittel)</h3>
+      <table>
+        <tr><th>Feature</th><th>Aufwand</th></tr>
+        <tr><td>Kryptographische Audit-Chain (SHA-256)</td><td>1 Tag</td></tr>
+        <tr><td>DB-Verschluesselung (SQLCipher)</td><td>0.5 Tage</td></tr>
+        <tr><td>Aufbewahrungsfrist-Management</td><td>0.5 Tage</td></tr>
+        <tr><td>Multi-User Zugriffskontrolle</td><td>2 Tage</td></tr>
+        <tr><td>Zertifizierte Zeitstempel (TSA)</td><td>1 Tag</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 20px;">
+    <h3>Phase 3: Enterprise (Prio niedrig)</h3>
+    <div class="grid grid-3" style="margin-top: 10px;">
+      <div>
+        <p><strong>Observability</strong></p>
+        <ul>
+          <li>OpenTelemetry Tracing</li>
+          <li>Booking-Duration Metriken</li>
+          <li>Error-Rate Dashboard</li>
+        </ul>
+      </div>
+      <div>
+        <p><strong>Integration</strong></p>
+        <ul>
+          <li>Bank-Import (MT940/CAMT)</li>
+          <li>Automatischer Zahlungsabgleich</li>
+          <li>Multi-Waehrung</li>
+        </ul>
+      </div>
+      <div>
+        <p><strong>Skalierung</strong></p>
+        <ul>
+          <li>PostgreSQL statt SQLite</li>
+          <li>Multi-Mandant</li>
+          <li>API-Zugang fuer Dritte</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 11: Summary -->
+<div class="slide">
+  <h2>Zusammenfassung</h2>
+
+  <div class="grid grid-2">
+    <div class="card" style="border-color: #22c55e;">
+      <h3 style="color: #86efac;">Staerken</h3>
+      <ul>
+        <li>Einfach: 1 Foto -> 1 Buchung (unter 10 Sekunden)</li>
+        <li>Atomar: Alles oder nichts, keine Inkonsistenzen</li>
+        <li>Praezise: Decimal-Arithmetik, keine Rundungsfehler</li>
+        <li>Nachvollziehbar: Audit-Log, Beleg-Archiv, Storno statt Delete</li>
+        <li>Flexibel: AT/DE-Konfiguration, erweiterbare Kategorien</li>
+        <li>Leichtgewichtig: SQLite, Python-Scripts, keine externen Services</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: #ef4444;">
+      <h3 style="color: #fca5a5;">Offene Punkte</h3>
+      <ul>
+        <li>DATEV-Export fehlt (wichtigste Luecke)</li>
+        <li>Kein kryptographischer Audit-Trail</li>
+        <li>Keine Verschluesselung at rest</li>
+        <li>Keine automatischen Backups</li>
+        <li>USt-VA Report fehlt</li>
+        <li>Keine Mehrbenutzerfaehigkeit</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 30px; text-align: center;">
+    <h3>Fazit</h3>
+    <p style="font-size: 1.2em; margin-top: 10px;">
+      Fuer eine <strong>Kleinunternehmerin mit EUeR</strong> ist der AP-Ledger Agent
+      <strong>funktional vollstaendig</strong>. Die groessten Luecken (DATEV, Audit-Chain)
+      betreffen die <strong>Schnittstelle zum Steuerberater</strong> und die
+      <strong>Prueffestigkeit bei einer Betriebspruefung</strong> — beides mit
+      ueberschaubarem Aufwand nachruestbar.
+    </p>
+  </div>
+
+  <div class="footer">AP-Ledger Agent Analysis &bull; Taskforce Framework &bull; April 2026</div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,69 @@
+# =============================================================================
+# LLM Configuration for AP-Ledger Agent
+# =============================================================================
+# Vision-capable models recommended for direct receipt photo extraction.
+# Uses LiteLLM model string prefixes — provider-agnostic.
+#
+# Provider is determined by model string prefix:
+#   - No prefix       -> OpenAI          (needs OPENAI_API_KEY)
+#   - "anthropic/"    -> Anthropic        (needs ANTHROPIC_API_KEY)
+#   - "gemini/"       -> Google Gemini    (needs GEMINI_API_KEY)
+#   - "azure/"        -> Azure OpenAI     (needs AZURE_API_KEY, AZURE_API_BASE)
+#   - "ollama/"       -> Ollama (local)   (no key needed)
+
+default_model: main
+
+# Model aliases — change these to match your provider
+models:
+  main: "azure/gpt-4.1"
+  fast: "azure/gpt-4.1-nano"
+  powerful: "azure/gpt-4.1"
+
+  # ── Alternative providers (uncomment one set) ──────────────────────────
+  # OpenAI direct (Vision-capable):
+  # main: "gpt-4o"
+  # fast: "gpt-4o-mini"
+  # powerful: "gpt-4o"
+
+  # Anthropic Claude (Vision-capable):
+  # main: "anthropic/claude-sonnet-4-20250514"
+  # fast: "anthropic/claude-haiku-4-5-20251001"
+  # powerful: "anthropic/claude-sonnet-4-20250514"
+
+  # Google Gemini (Vision-capable):
+  # main: "gemini/gemini-2.0-flash"
+  # fast: "gemini/gemini-2.0-flash"
+  # powerful: "gemini/gemini-2.5-pro"
+
+  # Local Ollama (Vision-capable, e.g. LLaVA):
+  # main: "ollama/llava:13b"
+  # fast: "ollama/llava:7b"
+  # powerful: "ollama/llava:13b"
+
+# Per-model parameters
+model_params:
+  gpt-4.1:
+    temperature: 0.2
+    max_tokens: 4096
+    drop_params: true
+
+  gpt-4.1-nano:
+    temperature: 0.3
+    max_tokens: 2048
+    drop_params: true
+
+# Fallback parameters
+default_params:
+  temperature: 0.2
+  max_tokens: 4096
+
+# Retry policy
+retry:
+  max_attempts: 3
+  backoff_multiplier: 2
+  timeout: 60
+
+# Routing (disabled by default for simplicity)
+routing:
+  enabled: false
+  default_model: main
