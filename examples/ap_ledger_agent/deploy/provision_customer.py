@@ -84,6 +84,11 @@ def _prompt(label: str, default: str | None = None) -> str:
     Refuses to prompt when stdin is not a TTY (e.g. piped or running in a
     restricted PowerShell context) — in that case the caller must supply
     the value via the corresponding CLI flag.
+
+    Uses ``sys.stdout.write`` + explicit ``flush`` for the prompt and
+    reads via ``sys.stdin.readline`` instead of ``input()``. Some Windows
+    Terminal / PowerShell combinations buffer ``input()`` output in a way
+    that makes the prompt look unresponsive — this formulation avoids that.
     """
     if not sys.stdin.isatty():
         raise SystemExit(
@@ -94,13 +99,18 @@ def _prompt(label: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
     try:
         while True:
-            value = input(f"{label}{suffix}: ").strip()
+            sys.stdout.write(f"{label}{suffix}: ")
+            sys.stdout.flush()
+            line = sys.stdin.readline()
+            if not line:  # EOF (Ctrl+Z on Windows, Ctrl+D on POSIX)
+                raise SystemExit("\n[provision] EOF on stdin — aborted.")
+            value = line.strip()
             if value:
                 return value
             if default is not None:
                 return default
             print("  -> required, please enter a value.")
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt:
         raise SystemExit("\n[provision] Aborted by user.")
 
 
