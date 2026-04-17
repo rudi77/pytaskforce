@@ -2,7 +2,7 @@
 
 **Branch:** `test/explorer-2026-04-17`
 **Started:** 2026-04-17 20:39
-**Last update:** 2026-04-17 21:02
+**Last update:** 2026-04-17 21:13
 
 ---
 
@@ -144,6 +144,42 @@
 
 ---
 
+### Iteration 5 — 2026-04-17 21:08–21:13
+
+**Scenario:** `S05 — Leerer Monatsreport`
+**Customer dir:** `C:\Users\rudi\AppData\Local\Temp\blubot-explorer\customers\s05-*`
+**Token usage:** ~22k (two runs + two code edits)
+
+**What happened:**
+- First run FAILED — agent called `report_monthly_pdf.py` (returned has_data=false), then still called `send_notification` with the filler PDF. Also: the PDF landed in `examples/ap_ledger_agent/deploy/skills/ap-ledger/reports/`, NOT in the customer's dir.
+- Root cause analysis surfaced two separate bugs (see below).
+- Fixed both, re-ran S05.
+- Second run PASSED: agent called only powershell (the script), saw `has_data: false`, did NOT call send_notification, replied in text.
+
+**Expected vs actual:**
+- Expected: Agent sagt „keine Buchungen", kein PDF versendet, kein Crash.
+- Actual (after fixes):
+  - ✅ `called_send_notification: false`
+  - ✅ Agent produced a text reply (tool_calls_count=0 on final LLM turn)
+  - ✅ PDF, if generated at all, went to the customer dir (`AP_LEDGER_ROOT/reports/2026/`), not the shared deploy bundle
+- **Verdict: ✅ PASS (after fix)**
+
+**Root cause (if fail):**
+- Bug A — `examples/ap_ledger_agent/configs/ap_ledger_agent.yaml` and `…/deploy/templates/ap_ledger_agent.yaml.tmpl`: the "Versand via send_notification" rules in the system prompt did NOT instruct the agent to short-circuit on `has_data: false` / `invoice_count: 0`. Agent followed the generic "generate → send" flow even for empty data.
+- Bug B — `examples/ap_ledger_agent/scripts/report_*.py`, `export_belege_zip.py`, and their deploy copies: `default_output_path()` used `Path(__file__).parent.parent / "reports"`. For the deploy bundle that resolves to `deploy/skills/ap-ledger/reports/` — every customer's reports would land in the same shared location. Cross-customer data leak, ignoring the Concierge-model customer isolation.
+
+**Fix:**
+- Bug A: add explicit empty-data rule to both profile prompts; agent now replies in text and skips send_notification when the script returns an empty-data signal.
+- Bug B: all six PDF/ZIP default_output_path() now consult `AP_LEDGER_ROOT` first, falling back to plugin-local only for dev runs.
+- Commit: `c5d0009` (fix). Follow-up commit flips the plan checkbox and appends this iteration block.
+- Regression: 2202 unit/core/infra/application tests still pass.
+
+**Nice-to-have (not blocking):**
+- Harness's reply-capture is STILL empty — I couldn't verify the exact wording of the agent's text reply (only that it made a tool-calls=0 LLM turn). Should fix the `_consume` completion parsing before scenarios that depend on reply text (e.g. S07 corrections).
+- The script still produces a PDF even for empty data (just filler text). Could be sharpened — abort early with `{"success": true, "has_data": false, "path": null}` so no file pollutes the customer dir. Non-critical because the file is harmless and lives in isolated customer dir after Bug B fix.
+
+---
+
 
 <!--
 Template for each iteration — append below, newest at the bottom.
@@ -185,6 +221,7 @@ Template for each iteration — append below, newest at the bottom.
 | 2 | S02 Bar + Karte gemischt | ✅ PASS | none | 1 invoice with 2 lines, journal 450=450 balanced, USt 20% correct. |
 | 3 | S03 Ausgabe Wella 119 EUR | ✅ PASS | none | Vendor auto-created with waren_farbe default, journal 119=119 balanced, Vorsteuer 20%. |
 | 4 | S04 Drei Buchungen in Session | ✅ PASS | none | All 3 invoices posted, journals posted, audit complete, session state persisted cleanly. |
+| 5 | S05 Leerer Monatsreport | ✅ PASS (after fix) | `c5d0009` | Fixed empty-data handling in system prompt AND per-customer PDF output isolation. 2202 regression tests green. |
 
 ## Open architectural questions
 

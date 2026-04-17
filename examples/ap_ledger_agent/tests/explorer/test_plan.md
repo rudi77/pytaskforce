@@ -24,7 +24,7 @@ Status-Legende: `[ ]` offen · `[x]` durchlaufen (Ergebnis im Report) · `[!]` B
 
 ## 2 Reports
 
-- [ ] **S05 — Leerer Monatsreport.** Ohne eine einzige Buchung: „Schick mir Monatsreport April 2026".
+- [x] **S05 — Leerer Monatsreport.** Ohne eine einzige Buchung: „Schick mir Monatsreport April 2026".
   **Expected:** Agent antwortet klar „keine Buchungen" und sendet **kein** PDF. Kein Crash, kein leeres PDF mit Null-Zeilen-Garnitur.
 
 - [ ] **S06 — Jahresreport nach 3 Buchungen.** S01 + S01 (ein anderer Tag) + S03, dann „Jahresreport 2026".
