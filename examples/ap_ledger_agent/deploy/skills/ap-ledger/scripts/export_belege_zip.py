@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -107,7 +108,11 @@ def main() -> None:
     parser.add_argument("--month", type=int, choices=range(1, 13),
                         help="If omitted, exports the full year")
     parser.add_argument("--out", help="Output ZIP path (default: exports/belege_<period>.zip)")
-    parser.add_argument("--customer", help="Mandant name (shown in README)")
+    parser.add_argument(
+        "--customer",
+        default=os.environ.get("AP_LEDGER_CUSTOMER_NAME"),
+        help="Mandant name in README (default: $AP_LEDGER_CUSTOMER_NAME)",
+    )
     parser.add_argument("--db-path", help="Override database path")
     args = parser.parse_args()
 

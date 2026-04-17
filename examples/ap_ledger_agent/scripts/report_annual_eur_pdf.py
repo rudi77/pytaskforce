@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -318,7 +319,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate annual EÜR PDF report")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--out", help="Output path (default: reports/<year>/<year>_euer_jahresreport.pdf)")
-    parser.add_argument("--customer", help="Customer/mandant name shown on title page")
+    parser.add_argument(
+        "--customer",
+        default=os.environ.get("AP_LEDGER_CUSTOMER_NAME"),
+        help="Customer/mandant name on title page (default: $AP_LEDGER_CUSTOMER_NAME)",
+    )
     parser.add_argument("--db-path", help="Override database path")
     args = parser.parse_args()
 

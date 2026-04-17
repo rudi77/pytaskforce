@@ -1,0 +1,25 @@
+# =============================================================================
+# LLM Configuration (per-customer copy)
+# =============================================================================
+# Model aliases must be **strings** (not dicts). Per-model parameters go in
+# model_params. Reasoning models (gpt-5.x) ignore temperature.
+
+default_model: main
+
+models:
+  main: "azure/gpt-5.4-mini"
+  fast: "azure/gpt-5.4-nano"
+  powerful: "azure/gpt-5.4-mini"
+
+model_params: {}
+
+routing:
+  enabled: false
+  default_model: main
+  rules:
+    - condition: "hint:planning"
+      model: powerful
+    - condition: "hint:summarizing"
+      model: fast
+    - condition: has_tools
+      model: main
