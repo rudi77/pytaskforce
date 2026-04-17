@@ -19,7 +19,7 @@ Status-Legende: `[ ]` offen · `[x]` durchlaufen (Ergebnis im Report) · `[!]` B
 - [x] **S03 — Ausgabe buchen (Text).** „Wella Haarfarbe 119 EUR, Datum 14.04.2026".
   **Expected:** 1 `invoices`-Row, `type=invoice`, `status=posted`, Vendor `Wella` angelegt oder gematcht, `category_code=waren_farbe` (oder vergleichbare Plausibilität), `total_gross=119.00`, USt gemäß Land.
 
-- [ ] **S04 — Drei Buchungen nacheinander (Streaming-Regression).** S01 → S01 (mit anderem Betrag) → S03 hintereinander in derselben Session.
+- [x] **S04 — Drei Buchungen nacheinander (Streaming-Regression).** S01 → S01 (mit anderem Betrag) → S03 hintereinander in derselben Session.
   **Expected:** Alle 3 Buchungen landen, keine verschluckten, kein Duplikat-Fehler, Audit-Log lückenlos.
 
 ## 2 Reports

@@ -2,7 +2,7 @@
 
 **Branch:** `test/explorer-2026-04-17`
 **Started:** 2026-04-17 20:39
-**Last update:** 2026-04-17 20:55
+**Last update:** 2026-04-17 21:02
 
 ---
 
@@ -112,6 +112,38 @@
 
 ---
 
+### Iteration 4 — 2026-04-17 20:59–21:02
+
+**Scenario:** `S04 — Drei Buchungen nacheinander (Streaming-Regression)`
+**Customer dir:** `C:\Users\rudi\AppData\Local\Temp\blubot-explorer\customers\s04-f9f666`
+**Token usage:** ~14k
+
+**What happened:**
+- Fresh customer + 3 sequential messages on the SAME session_id ("s04-shared-session"):
+  1. "186 EUR Tageslosung heute"
+  2. "240 EUR Tageslosung heute"
+  3. "Wella Haarfarbe 119 EUR, Datum 14.04.2026"
+- Each call: ask_user (auto-yes) + 1-2 powershell invocations. State was persisted and reloaded cleanly between calls.
+
+**Expected vs actual:**
+- Expected: 3 Buchungen landen, keine verschluckten, kein Duplikat-Fehler, Audit-Log lückenlos.
+- Actual:
+  - ✅ 3 invoices, all status=posted: #1 receipt 186/155/31, #2 receipt 240/200/40, #3 invoice 119/99.17/19.83
+  - ✅ 3 journal_entries, all status=posted, linked 1:1 to the invoices
+  - ✅ Audit log has 3 `invoice_posted` events (+ system_init) — one per invoice, no duplicates
+  - ✅ Session state saved/loaded across calls without error (state_saved / state_loaded in the log)
+  - ✅ Invoice dates correct: #1 and #2 = 2026-04-17 (today), #3 = 2026-04-14 (from text)
+- **Verdict: ✅ PASS**
+
+**Root cause (if fail):** n/a
+
+**Fix:** n/a
+
+**Nice-to-have (not blocking):**
+- No duplicate-detection warning even though #1 and #2 are both 186/240 EUR Tageslosung with the same date. The "possible_duplicate" rule probably requires identical amount+vendor+date. Should be OK for real use but worth probing in round 2 (send the exact same message twice on purpose).
+
+---
+
 
 <!--
 Template for each iteration — append below, newest at the bottom.
@@ -152,6 +184,7 @@ Template for each iteration — append below, newest at the bottom.
 | 1 | S01 Tageslosung bar | ⚠ PASS-WITH-NOTES | harness fixes only | Data correct; audit-log only logs `invoice_posted`, not a separate `journal_posted`. |
 | 2 | S02 Bar + Karte gemischt | ✅ PASS | none | 1 invoice with 2 lines, journal 450=450 balanced, USt 20% correct. |
 | 3 | S03 Ausgabe Wella 119 EUR | ✅ PASS | none | Vendor auto-created with waren_farbe default, journal 119=119 balanced, Vorsteuer 20%. |
+| 4 | S04 Drei Buchungen in Session | ✅ PASS | none | All 3 invoices posted, journals posted, audit complete, session state persisted cleanly. |
 
 ## Open architectural questions
 
