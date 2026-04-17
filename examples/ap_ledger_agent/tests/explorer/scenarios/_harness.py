@@ -17,6 +17,7 @@ polling drift) aren't surfaced by this suite.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import sqlite3
@@ -27,6 +28,16 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+# Force UTF-8 stdio before anything structlog-aware imports; otherwise
+# cp1252 on Windows crashes the harness at the first non-ASCII log line
+# and swallows the real error underneath.
+if sys.platform == "win32" and isinstance(sys.stdout, io.TextIOWrapper):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Resolve the repo root so we can import taskforce regardless of the
 # test-script's CWD.
@@ -128,27 +139,81 @@ def make_fresh_customer(
 # Auto-yes ask_user replacement
 # ---------------------------------------------------------------------- #
 
-def _make_auto_yes_ask_user_class():
-    """Build and return a BaseTool subclass that always answers 'ja'."""
-    from taskforce.infrastructure.tools.base_tool import BaseTool
+def _install_auto_yes_ask_user() -> None:
+    """Monkey-patch the ``_handle_ask_user`` helper so ask_user never pauses.
 
-    class AutoYesAskUserTool(BaseTool):
-        tool_name = "ask_user"
-        tool_description = "Ask the user (test mode — always answers 'ja')"
-        tool_parameters_schema: dict[str, Any] = {
-            "type": "object",
-            "properties": {
-                "question": {"type": "string", "description": "The question to ask."},
-            },
-            "required": ["question"],
+    The framework special-cases ``ask_user`` in
+    ``core/domain/planning/tool_execution.py``: when the agent calls it,
+    the framework saves state, emits an ``ASK_USER`` StreamEvent and
+    waits for the frontend (CLI, Telegram gateway) to feed an answer on
+    the next turn. In tests there is no frontend to answer — the agent
+    would sit paused forever.
+
+    This patch replaces the helper with one that instead emits a normal
+    ``TOOL_RESULT`` event carrying the string ``"ja"`` and appends a
+    matching tool-result message to the agent's context. The ReAct loop
+    then proceeds as if the user confirmed.
+
+    Idempotent — safe to call multiple times.
+    """
+    import taskforce.core.domain.planning.tool_execution as _mod
+
+    if getattr(_mod, "_explorer_auto_yes_installed", False):
+        return
+
+    from taskforce.core.domain.enums import EventType
+    from taskforce.core.domain.models import StreamEvent
+
+    async def _auto_yes_handle_ask_user(
+        agent: Any,
+        args: dict[str, Any],
+        session_id: str,
+        state: dict[str, Any],
+        logger: Any,
+        messages: list[dict[str, Any]],
+        tool_call_id: str,
+        step: int,
+        plan: list[str] | None = None,
+        plan_step_idx: int | None = None,
+        plan_iteration: int | None = None,
+        paused_phase: str | None = None,
+    ):
+        answer = "ja"
+        question = str(args.get("question", ""))
+        tool_result = {
+            "success": True,
+            "answer": answer,
+            "question": question,
         }
-        tool_requires_approval = False
-        tool_supports_parallelism = False
 
-        async def _execute(self, question: str = "", **kwargs: Any) -> dict[str, Any]:
-            return {"success": True, "answer": "ja", "question": question}
+        yield StreamEvent(
+            event_type=EventType.TOOL_RESULT,
+            data={
+                "tool": "ask_user",
+                "id": tool_call_id,
+                "success": True,
+                "output": answer,
+                "args": args,
+            },
+        )
 
-    return AutoYesAskUserTool
+        agent.context.append_message(
+            await agent.tool_result_message_factory.build_message(
+                tool_call_id=tool_call_id,
+                tool_name="ask_user",
+                tool_result=tool_result,
+                session_id=session_id,
+                step=step,
+            )
+        )
+        logger.info(
+            "auto_yes_ask_user",
+            session_id=session_id,
+            question=question[:80],
+        )
+
+    _mod._handle_ask_user = _auto_yes_handle_ask_user  # type: ignore[assignment]
+    _mod._explorer_auto_yes_installed = True  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------- #
@@ -182,48 +247,53 @@ async def send_message(
     for key, value in main_env.items():
         os.environ.setdefault(key, value)
 
+    # Install the auto-yes monkey-patch BEFORE the agent runs. Idempotent.
+    _install_auto_yes_ask_user()
+
     from taskforce.application.factory import AgentFactory
     from taskforce.application.executor import AgentExecutor
 
     factory = AgentFactory()
     agent = await factory.create_agent(config=str(customer.profile_path))
 
-    # Swap ask_user with auto-yes BEFORE the agent runs.
-    auto_yes_cls = _make_auto_yes_ask_user_class()
-    if hasattr(agent, "tools") and isinstance(agent.tools, dict):
-        agent.tools["ask_user"] = auto_yes_cls()
-    # Rebuild the LLM-facing tool-schema list if the agent caches one.
-    if hasattr(agent, "_openai_tools"):
-        try:
-            from taskforce.core.tools.tool_converter import tools_to_openai_schema
-            agent._openai_tools = tools_to_openai_schema(list(agent.tools.values()))
-        except Exception:
-            pass  # If conversion isn't available, the live agent will re-derive.
-
     executor = AgentExecutor()
     sid = session_id or f"explorer-{uuid.uuid4().hex[:8]}"
 
-    try:
-        result = await asyncio.wait_for(
-            executor.execute_mission(
-                mission=text,
-                agent=agent,
-                session_id=sid,
-            ),
-            timeout=timeout_s,
-        )
-    except asyncio.TimeoutError:
-        return {
-            "success": False,
-            "reply": None,
-            "error": f"agent timed out after {timeout_s}s",
-            "customer_dir": str(customer.customer_dir),
-        }
+    events: list[dict[str, Any]] = []
+    final_message = ""
+    status: str = "unknown"
+    error: str | None = None
 
-    reply = getattr(result, "reply", None) or getattr(result, "final", None) or str(result)
-    success = bool(getattr(result, "success", False))
-    error = getattr(result, "error", None)
-    history = getattr(result, "history", []) or []
+    async def _consume() -> None:
+        nonlocal final_message, status, error
+        async for update in executor.execute_mission_streaming(
+            mission=text,
+            agent=agent,
+            session_id=sid,
+        ):
+            event = {
+                "event_type": getattr(update, "event_type", None),
+                "message": getattr(update, "message", None),
+                "details_keys": list((getattr(update, "details", None) or {}).keys()),
+            }
+            events.append(event)
+
+            details = getattr(update, "details", None) or {}
+            is_complete = bool(details.get("complete"))
+            if is_complete:
+                final_message = str(details.get("final_message") or update.message or "")
+                status = str(details.get("status", "completed"))
+            if event["event_type"] == "error":
+                err = details.get("error") or update.message
+                if err:
+                    error = str(err)
+
+    try:
+        await asyncio.wait_for(_consume(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        error = f"agent timed out after {timeout_s}s"
+
+    success = status == "completed" and not error
 
     # Best-effort cleanup of the agent's resources.
     try:
@@ -235,9 +305,13 @@ async def send_message(
 
     return {
         "success": success,
-        "reply": reply,
+        "status": status,
+        "reply": final_message,
         "error": error,
-        "history_length": len(history),
+        "event_count": len(events),
+        "tool_calls": [
+            e["message"] for e in events if e["event_type"] == "tool_call"
+        ],
         "customer_dir": str(customer.customer_dir),
     }
 
