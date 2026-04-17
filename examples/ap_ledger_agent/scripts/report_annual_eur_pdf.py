@@ -308,9 +308,10 @@ def generate_pdf(
 
 
 def default_output_path(year: int) -> Path:
-    script_dir = Path(__file__).resolve().parent
-    plugin_dir = script_dir.parent
-    reports_dir = plugin_dir / "reports" / str(year)
+    # Respect AP_LEDGER_ROOT for per-customer isolation (see report_monthly_pdf).
+    root_env = os.environ.get("AP_LEDGER_ROOT")
+    base = Path(root_env) if root_env else Path(__file__).resolve().parent.parent
+    reports_dir = base / "reports" / str(year)
     reports_dir.mkdir(parents=True, exist_ok=True)
     return reports_dir / f"{year}_euer_jahresreport.pdf"
 

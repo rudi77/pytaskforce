@@ -94,9 +94,10 @@ def build_readme(year: int, month: int | None, customer: str | None, stats: dict
 
 
 def default_output_path(year: int, month: int | None) -> Path:
-    script_dir = Path(__file__).resolve().parent
-    plugin_dir = script_dir.parent
-    exports_dir = plugin_dir / "exports"
+    # Respect AP_LEDGER_ROOT for per-customer isolation (see report_monthly_pdf).
+    root_env = os.environ.get("AP_LEDGER_ROOT")
+    base = Path(root_env) if root_env else Path(__file__).resolve().parent.parent
+    exports_dir = base / "exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{year}" if month is None else f"{year}-{month:02d}"
     return exports_dir / f"belege_{stem}.zip"
