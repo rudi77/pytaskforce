@@ -199,9 +199,23 @@ class LLMConfigLoader:
 
         Returns:
             LiteLLM model string (e.g., "gpt-4.1", "anthropic/claude-sonnet-4-20250514").
+
+        Raises:
+            ValueError: If the alias resolves to a non-string (e.g. a dict
+                from an older ``main: {model: ..., temperature: ...}``
+                config). The loader only supports flat ``alias: model-str``
+                entries; put per-model params in ``model_params:``.
         """
         alias = model_alias or self.default_model
         resolved = self.models.get(alias, alias)
+        if not isinstance(resolved, str):
+            raise ValueError(
+                f"Model alias '{alias}' resolves to "
+                f"{type(resolved).__name__} ({resolved!r}), but a string "
+                f"is required. Use the flat 'alias: \"model-string\"' "
+                f"format in llm_config.yaml and put per-model parameters "
+                f"in the separate 'model_params:' section."
+            )
         self.logger.debug("model_resolved", alias=alias, resolved=resolved)
         return resolved
 

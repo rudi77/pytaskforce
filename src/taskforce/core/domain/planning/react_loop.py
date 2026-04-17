@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -122,8 +123,14 @@ async def _react_loop(
     last_tool_signature: str | None = None
     repeated_signature_count = 0
     tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
+    consecutive_llm_errors = 0  # abort after N hard LLM failures in a row
+    _MAX_CONSECUTIVE_LLM_ERRORS = 3
 
     while step < agent.max_steps:
+        # Yield to the event loop once per iteration so that signal handlers
+        # (SIGINT/SIGBREAK) and other async tasks always get a chance to run,
+        # even if every branch below errors out synchronously before any await.
+        await asyncio.sleep(0)
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
 
         # Inject circuit breaker info for tools that have failed too many times
@@ -195,11 +202,35 @@ async def _react_loop(
                             data={"message": chunk.get("message", "Error")},
                         )
             except Exception as e:
+                consecutive_llm_errors += 1
+                logger.error(
+                    "react_loop.llm_stream_failed",
+                    error=str(e),
+                    consecutive_errors=consecutive_llm_errors,
+                    step=step,
+                    session_id=session_id,
+                )
                 yield StreamEvent(
                     event_type=EventType.ERROR,
                     data={"message": str(e)},
                 )
+                step += 1
+                if consecutive_llm_errors >= _MAX_CONSECUTIVE_LLM_ERRORS:
+                    yield StreamEvent(
+                        event_type=EventType.ERROR,
+                        data={
+                            "message": (
+                                f"LLM call failed {consecutive_llm_errors} times "
+                                f"in a row (last error: {e}). Aborting to avoid "
+                                "an infinite retry loop."
+                            )
+                        },
+                    )
+                    return
                 continue
+
+            # Reset the counter only after a fully successful stream consumption.
+            consecutive_llm_errors = 0
 
             if tc_acc:
                 tool_calls = [
@@ -230,13 +261,36 @@ async def _react_loop(
                     data=result["usage"],
                 )
             if not result.get("success"):
+                consecutive_llm_errors += 1
+                err = result.get("error")
+                logger.error(
+                    "react_loop.llm_complete_failed",
+                    error=err,
+                    consecutive_errors=consecutive_llm_errors,
+                    step=step,
+                    session_id=session_id,
+                )
                 agent.context.append_message(
                     {
                         "role": MessageRole.USER.value,
-                        "content": (f"[System Error: {result.get('error')}. " "Try again.]"),
+                        "content": (f"[System Error: {err}. " "Try again.]"),
                     }
                 )
+                step += 1
+                if consecutive_llm_errors >= _MAX_CONSECUTIVE_LLM_ERRORS:
+                    yield StreamEvent(
+                        event_type=EventType.ERROR,
+                        data={
+                            "message": (
+                                f"LLM call failed {consecutive_llm_errors} times "
+                                f"in a row (last error: {err}). Aborting to avoid "
+                                "an infinite retry loop."
+                            )
+                        },
+                    )
+                    return
                 continue
+            consecutive_llm_errors = 0
             tool_calls = result.get("tool_calls") or []
             content = result.get("content", "")
 
@@ -339,12 +393,15 @@ async def _react_loop(
             )
             break
         else:
+            # Empty response: LLM succeeded but produced neither tool calls
+            # nor text. Nudge it and count the attempt so max_steps applies.
             agent.context.append_message(
                 {
                     "role": MessageRole.USER.value,
                     "content": ("[System: Empty response. " "Provide answer or use tool.]"),
                 }
             )
+            step += 1
 
     if step >= agent.max_steps and not final:
         # Salvage: force a final answer before giving up

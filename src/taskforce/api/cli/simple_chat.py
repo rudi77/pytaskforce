@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+import signal
+import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +51,133 @@ def _build_key_bindings() -> KeyBindings:
         event.current_buffer.insert_text("\n")
 
     return kb
+
+
+def _install_force_exit_watchdog() -> None:
+    """Install a C-level escape hatch that always force-exits the process.
+
+    Python's SIGINT delivery depends on the interpreter reaching a signal
+    check point between bytecodes. A tight synchronous retry loop inside
+    a C extension — or a buggy Python loop that never yields — can starve
+    the signal-check thread and make Ctrl+C appear to do nothing.
+
+    On Windows we register a ``SetConsoleCtrlHandler`` callback that the
+    kernel invokes on a Windows-managed thread, outside Python's GIL and
+    signal machinery. When the user presses ``Ctrl+Break`` the callback
+    calls ``os._exit`` directly, which is a thin wrapper over
+    ``ExitProcess`` and safe to invoke from any thread.
+
+    On POSIX we install a SIGQUIT handler that does the same — users can
+    escape via ``Ctrl+\\`` or ``kill -QUIT``.
+
+    This is deliberately a last resort; :class:`_CtrlCGuard` handles the
+    normal ``Ctrl+C`` path.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            _HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+
+            @_HandlerRoutine
+            def _windows_handler(ctrl_type: int) -> bool:  # type: ignore[misc]
+                # CTRL_BREAK_EVENT == 1
+                if ctrl_type == 1:
+                    # Runs on a Windows-managed thread; bypass Python.
+                    os._exit(130)
+                return False
+
+            # Keep a reference so the ctypes callback is not GC'd.
+            _install_force_exit_watchdog._handler = _windows_handler  # type: ignore[attr-defined]
+
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleCtrlHandler.argtypes = (_HandlerRoutine, wintypes.BOOL)
+            kernel32.SetConsoleCtrlHandler.restype = wintypes.BOOL
+            kernel32.SetConsoleCtrlHandler(_windows_handler, True)
+        except Exception:
+            # Best-effort — the _CtrlCGuard double-press fallback still works.
+            pass
+        return
+
+    # POSIX: SIGQUIT is a separate signal that bypasses prompt_toolkit's
+    # Ctrl+C handling. Users hit Ctrl+\ to fire it.
+    try:
+        def _posix_handler(_sig: int, _frame: Any) -> None:
+            os._exit(130)
+
+        signal.signal(signal.SIGQUIT, _posix_handler)
+    except (AttributeError, ValueError, OSError):
+        # Platform doesn't support SIGQUIT or we're not on the main thread.
+        pass
+
+
+class _CtrlCGuard:
+    """Double-Ctrl+C escape hatch.
+
+    First press behaves like the default SIGINT handler (raises
+    KeyboardInterrupt so prompt_toolkit / asyncio can unwind cleanly).
+    A second press within ``force_exit_window_s`` triggers ``os._exit``
+    so the user is never stuck with a hung event loop or a teardown
+    coroutine that won't complete.
+
+    On platforms where ``signal.signal`` raises (e.g. non-main threads),
+    install() degrades to a no-op — the user still has the default
+    handler.
+    """
+
+    def __init__(self, *, force_exit_window_s: float = 5.0) -> None:
+        self._last_press = 0.0
+        self._press_count = 0
+        self._window_s = force_exit_window_s
+        self._previous: Any = None
+        self._installed = False
+
+    def install(self) -> None:
+        # Idempotent — a second install() must not overwrite _previous with
+        # our own handler, otherwise restore() would re-install _handle as
+        # "previous" and leak.
+        if self._installed:
+            return
+        try:
+            self._previous = signal.signal(signal.SIGINT, self._handle)
+            self._installed = True
+        except (ValueError, OSError):
+            # Not on the main thread, or platform refuses to install.
+            self._installed = False
+
+    def restore(self) -> None:
+        if not self._installed:
+            return
+        try:
+            signal.signal(
+                signal.SIGINT, self._previous or signal.default_int_handler
+            )
+        except (ValueError, OSError):
+            pass
+        self._installed = False
+        self._previous = None
+
+    def _handle(self, sig: int, frame: Any) -> None:
+        now = time.monotonic()
+        if now - self._last_press <= self._window_s:
+            self._press_count += 1
+        else:
+            self._press_count = 1
+        self._last_press = now
+
+        if self._press_count >= 2:
+            print("\n[!] Force exit (Ctrl+C twice).", flush=True)
+            os._exit(130)
+
+        print(
+            "\n[!] Shutdown requested. Press Ctrl+C again within "
+            f"{self._window_s:.0f}s to force exit.",
+            flush=True,
+        )
+        # Mimic the default handler — propagate KeyboardInterrupt so
+        # prompt_toolkit / asyncio unwind in the normal way.
+        raise KeyboardInterrupt()
 
 
 @dataclass
@@ -191,6 +323,25 @@ class SimpleChatRunner:
         self._print_banner()
         self._print_session_info()
 
+        # Install double-Ctrl+C escape hatch so the user can always
+        # force-exit, even if a teardown coroutine or LLM stream hangs.
+        ctrl_c_guard = _CtrlCGuard()
+        ctrl_c_guard.install()
+
+        # Install a C-level watchdog for Ctrl+Break (Windows) / SIGQUIT (POSIX)
+        # that bypasses Python's signal machinery. This is the last line of
+        # defence against tight sync loops that starve SIGINT delivery.
+        _install_force_exit_watchdog()
+
+        if sys.platform == "win32":
+            self.console.print(
+                "[info]💡 Tip: press Ctrl+Break for a guaranteed force exit.[/info]"
+            )
+        else:
+            self.console.print(
+                "[info]💡 Tip: press Ctrl+\\ for a guaranteed force exit.[/info]"
+            )
+
         # Start a fresh conversation on each CLI launch.
         # The previous conversation is auto-archived by create_new().
         if self._conversation_manager:
@@ -218,10 +369,34 @@ class SimpleChatRunner:
 
                 await self._handle_chat_message(message)
         finally:
-            if self._telegram_poller:
-                await self._telegram_poller.stop()
-            if self._scheduler:
-                await self._scheduler.stop()
+            await self._shutdown()
+            ctrl_c_guard.restore()
+
+    async def _shutdown(self) -> None:
+        """Stop background services with hard timeouts.
+
+        Each subsystem (Telegram poller, scheduler, agent) gets a bounded
+        window to clean up. If anything hangs (in-flight HTTP call,
+        unresponsive subprocess, deadlocked LLM stream), we log it and
+        move on rather than blocking the user from exiting.
+        """
+        async def _safe_stop(label: str, coro: Any, timeout: float = 3.0) -> None:
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                self.console.print(
+                    f"[warning]⚠️  {label} did not stop within "
+                    f"{timeout:.0f}s — abandoning.[/warning]"
+                )
+            except Exception as exc:
+                self.console.print(
+                    f"[warning]⚠️  {label} stop failed: {exc}[/warning]"
+                )
+
+        if self._telegram_poller:
+            await _safe_stop("Telegram poller", self._telegram_poller.stop())
+        if self._scheduler:
+            await _safe_stop("Scheduler", self._scheduler.stop())
 
     async def _handle_telegram_inbound_message(
         self,
