@@ -243,9 +243,15 @@ def generate_pdf(
 
 
 def default_output_path(year: int, month: int) -> Path:
-    script_dir = Path(__file__).resolve().parent
-    plugin_dir = script_dir.parent
-    reports_dir = plugin_dir / "reports" / str(year)
+    # Respect AP_LEDGER_ROOT so per-customer deployments keep their PDFs
+    # isolated (Concierge model writes one customer dir per bot). Falls
+    # back to plugin-local reports/ only when no customer root is set.
+    root_env = os.environ.get("AP_LEDGER_ROOT")
+    if root_env:
+        base = Path(root_env)
+    else:
+        base = Path(__file__).resolve().parent.parent
+    reports_dir = base / "reports" / str(year)
     reports_dir.mkdir(parents=True, exist_ok=True)
     return reports_dir / f"{year}-{month:02d}_monatsreport.pdf"
 
