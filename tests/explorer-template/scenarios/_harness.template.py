@@ -216,18 +216,22 @@ async def send_message(
             agent=agent,
             session_id=sid,
         ):
+            # event_type can be an enum OR a string upstream — normalise.
+            raw_type = getattr(update, "event_type", None)
+            event_type_str = getattr(raw_type, "value", raw_type)
+            event_type_str = str(event_type_str) if event_type_str is not None else ""
+
             event = {
-                "event_type": getattr(update, "event_type", None),
+                "event_type": event_type_str,
                 "message": getattr(update, "message", None),
             }
             events.append(event)
 
             details = getattr(update, "details", None) or {}
-            is_complete = bool(details.get("complete"))
-            if is_complete:
+            if event_type_str == "complete":
                 final_message = str(details.get("final_message") or update.message or "")
                 status = str(details.get("status", "completed"))
-            if event["event_type"] == "error":
+            elif event_type_str == "error":
                 err = details.get("error") or update.message
                 if err:
                     error = str(err)
