@@ -13,7 +13,7 @@ Status-Legende: `[ ]` offen · `[x]` durchlaufen (Ergebnis im Report) · `[!]` B
 - [x] **S01 — Tageslosung bar buchen (Text).** Neue Kundin schickt „186 EUR Tageslosung heute". Ausgewählt ist AT (20% USt).
   **Expected:** Genau 1 `invoices`-Row, `type=receipt`, `status=posted`, `total_gross=186.00`, `total_net=155.00`, `total_tax=31.00`. Genau 1 `journal_entries`-Row, `status=posted`. Audit-Log enthält Einträge vom Typ `invoice.posted` und `journal.posted`.
 
-- [ ] **S02 — Barumsatz + Karteneinnahme gemischt.** „Heute 300 bar, 150 Karte, Tageslosung".
+- [x] **S02 — Barumsatz + Karteneinnahme gemischt.** „Heute 300 bar, 150 Karte, Tageslosung".
   **Expected:** 2 `invoices`-Rows (oder 1 mit 2 Lines — beide Varianten zulässig, Dokumentation im Report). `total_gross` summiert 450.00. Journal-Entries balanciert (Soll = Haben).
 
 - [ ] **S03 — Ausgabe buchen (Text).** „Wella Haarfarbe 119 EUR, Datum 14.04.2026".

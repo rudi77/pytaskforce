@@ -2,7 +2,7 @@
 
 **Branch:** `test/explorer-2026-04-17`
 **Started:** 2026-04-17 20:39
-**Last update:** 2026-04-17 20:43
+**Last update:** 2026-04-17 20:51
 
 ---
 
@@ -46,6 +46,41 @@
 
 ---
 
+### Iteration 2 — 2026-04-17 20:48–20:51
+
+**Scenario:** `S02 — Barumsatz + Karteneinnahme gemischt`
+**Customer dir:** `C:\Users\rudi\AppData\Local\Temp\blubot-explorer\customers\s02-9bd04b`
+**Token usage:** ~10k (smooth, no harness issues)
+
+**What happened:**
+- Agent received "Heute 300 bar, 150 Karte, Tageslosung"
+- auto_yes_ask_user fired once (as expected), then agent called `book.py revenue --bar 300 --karte 150`
+- book.py created a single invoice with two lines (one per payment type).
+
+**Expected vs actual:**
+- Expected: 2 invoices OR 1 invoice with 2 lines, sum of gross = 450, journal balanced.
+- Actual (chose the "1 invoice with 2 lines" variant — scenario allowed either):
+  - ✅ 1 invoice, `type=receipt`, `status=posted`, `total_gross=450.00`, `total_net=375.00`, `total_tax=75.00` (20% AT USt → 375+75=450 ✓)
+  - ✅ invoice_lines: line 1 Bareinnahmen 300/250/50, line 2 Karteneinnahmen 150/125/25
+  - ✅ 1 journal_entry with 6 lines:
+    - L1: Kassa 2700 Soll 300
+    - L2: Erlöse Bar 4000 Haben 250
+    - L3: Umsatzsteuer 3500 Haben 50
+    - L4: Bank 2800 Soll 150
+    - L5: Erlöse Karte 4010 Haben 125
+    - L6: Umsatzsteuer 3500 Haben 25
+  - ✅ Balance: Soll 450 = Haben 450
+- **Verdict: ✅ PASS**
+
+**Root cause (if fail):** n/a
+
+**Fix:** n/a — no code changes.
+
+**Nice-to-have (not blocking):**
+- Konto-Struktur mischt Soll/Haben sauber über beide Zahlungsarten; für eine Freelancerin nicht sichtbar, aber Steuerberater-freundlich.
+
+---
+
 
 <!--
 Template for each iteration — append below, newest at the bottom.
@@ -84,6 +119,7 @@ Template for each iteration — append below, newest at the bottom.
 | # | Scenario | Verdict | Fix commit | Notes |
 |---|---|---|---|---|
 | 1 | S01 Tageslosung bar | ⚠ PASS-WITH-NOTES | harness fixes only | Data correct; audit-log only logs `invoice_posted`, not a separate `journal_posted`. |
+| 2 | S02 Bar + Karte gemischt | ✅ PASS | none | 1 invoice with 2 lines, journal 450=450 balanced, USt 20% correct. |
 
 ## Open architectural questions
 
