@@ -765,6 +765,128 @@ class SQLiteStore:
         finally:
             conn.close()
 
+    def monthly_summary(self, year: int, month: int) -> dict[str, Any] | None:
+        """Return the revenue/expense/USt totals for a single month."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM v_monthly_totals WHERE year = ? AND month = ?",
+                (year, month),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def monthly_category_breakdown(
+        self, year: int, month: int, category_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return categories with net/gross/tax for a single month.
+
+        Sorted by net amount descending. If ``category_type`` is given
+        ('revenue' or 'expense'), only those categories are returned.
+        """
+        conn = self._connect()
+        try:
+            query = (
+                "SELECT * FROM v_euer_summary "
+                "WHERE year = ? AND month = ? "
+            )
+            params: tuple = (year, month)
+            if category_type:
+                query += "AND category_type = ? "
+                params = (year, month, category_type)
+            query += "ORDER BY category_type DESC, total_net DESC"
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
+        finally:
+            conn.close()
+
+    def annual_summary(self, year: int) -> dict[str, Any]:
+        """Return aggregated yearly totals (revenue/expenses/profit/USt)."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT "
+                "  COALESCE(SUM(total_revenue), 0) AS total_revenue, "
+                "  COALESCE(SUM(total_expenses), 0) AS total_expenses, "
+                "  COALESCE(SUM(profit), 0) AS profit, "
+                "  COALESCE(SUM(tax_collected), 0) AS tax_collected, "
+                "  COALESCE(SUM(tax_paid), 0) AS tax_paid, "
+                "  COALESCE(SUM(tax_liability), 0) AS tax_liability "
+                "FROM v_monthly_totals WHERE year = ?",
+                (year,),
+            ).fetchone()
+            return dict(row) if row else {
+                "total_revenue": 0, "total_expenses": 0, "profit": 0,
+                "tax_collected": 0, "tax_paid": 0, "tax_liability": 0,
+            }
+        finally:
+            conn.close()
+
+    def annual_category_breakdown(self, year: int) -> list[dict[str, Any]]:
+        """Return categories with yearly totals, sorted by net descending."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT category_type, category_code, category_name, "
+                "  SUM(total_gross) AS total_gross, "
+                "  SUM(total_net)   AS total_net, "
+                "  SUM(total_tax)   AS total_tax, "
+                "  SUM(invoice_count) AS invoice_count "
+                "FROM v_euer_summary "
+                "WHERE year = ? "
+                "GROUP BY category_type, category_code, category_name "
+                "ORDER BY category_type DESC, total_net DESC",
+                (year,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def annual_invoices(self, year: int) -> list[dict[str, Any]]:
+        """Return all posted invoices for a year (for detail listings)."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT i.id, i.invoice_date, i.vendor_name_raw, "
+                "  i.total_net, i.total_tax, i.total_gross, i.type, i.source_file, "
+                "  v.name AS vendor_name, "
+                "  c.name AS category_name, c.type AS category_type "
+                "FROM invoices i "
+                "LEFT JOIN vendors v ON v.id = i.vendor_id "
+                "LEFT JOIN invoice_lines il ON il.invoice_id = i.id AND il.position = 1 "
+                "LEFT JOIN categories c ON c.code = il.category_code "
+                "WHERE i.status = 'posted' "
+                "  AND CAST(strftime('%Y', i.invoice_date) AS INTEGER) = ? "
+                "ORDER BY i.invoice_date, i.id",
+                (year,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def monthly_invoices(self, year: int, month: int) -> list[dict[str, Any]]:
+        """Return posted invoices for a single month (for detail listings)."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT i.id, i.invoice_date, i.vendor_name_raw, "
+                "  i.total_net, i.total_tax, i.total_gross, i.type, i.source_file, "
+                "  v.name AS vendor_name, "
+                "  c.name AS category_name, c.type AS category_type "
+                "FROM invoices i "
+                "LEFT JOIN vendors v ON v.id = i.vendor_id "
+                "LEFT JOIN invoice_lines il ON il.invoice_id = i.id AND il.position = 1 "
+                "LEFT JOIN categories c ON c.code = il.category_code "
+                "WHERE i.status = 'posted' "
+                "  AND CAST(strftime('%Y', i.invoice_date) AS INTEGER) = ? "
+                "  AND CAST(strftime('%m', i.invoice_date) AS INTEGER) = ? "
+                "ORDER BY i.invoice_date, i.id",
+                (year, month),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

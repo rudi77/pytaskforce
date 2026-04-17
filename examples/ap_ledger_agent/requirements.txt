@@ -1,4 +1,6 @@
 # AP Ledger Agent — Dependencies
-# Runs as a Taskforce plugin, no additional dependencies needed.
-# SQLite is included in Python stdlib.
+# Runs as a Taskforce plugin. SQLite is included in Python stdlib.
 # Telegram integration uses the Taskforce Communication Gateway.
+
+# PDF report generation (Monats-/Jahresreport)
+reportlab>=4.0.0
