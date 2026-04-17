@@ -2,7 +2,7 @@
 
 **Branch:** `test/explorer-2026-04-17`
 **Started:** 2026-04-17 20:39
-**Last update:** 2026-04-17 20:51
+**Last update:** 2026-04-17 20:55
 
 ---
 
@@ -81,6 +81,37 @@
 
 ---
 
+### Iteration 3 — 2026-04-17 20:54–20:55
+
+**Scenario:** `S03 — Ausgabe buchen (Text)`
+**Customer dir:** `C:\Users\rudi\AppData\Local\Temp\blubot-explorer\customers\s03-e0c3dd`
+**Token usage:** ~9k
+
+**What happened:**
+- Agent received "Wella Haarfarbe 119 EUR, Datum 14.04.2026"
+- Tool calls: `ask_user` (auto-yes), `powershell` (vendor_resolve — Wella neu), `powershell` (book.py expense)
+- book.py wrote 1 invoice (type=invoice) + journal entry + created Vendor "Wella" with default category "waren_farbe" and tax "AT_20".
+
+**Expected vs actual:**
+- Expected: 1 invoice (type=invoice, posted), Vendor Wella angelegt, category plausibel (waren_farbe), gross=119, USt per AT.
+- Actual:
+  - ✅ 1 invoice: type=invoice, status=posted, total_gross=119.00, total_net=99.17, total_tax=19.83 (AT 20%: 119/1.20=99.17, delta 19.83)
+  - ✅ invoice_date=2026-04-14 (parsed from "Datum 14.04.2026")
+  - ✅ vendor_name_raw=Wella, vendor_id=1 → Vendor wurde erzeugt mit default_category_code=waren_farbe, default_tax_code=AT_20
+  - ✅ invoice_line: category_code=waren_farbe, tax_code=AT_20
+  - ✅ Journal (3 lines): Wareneinsatz Haarfarben 5100 Soll 99.17, Vorsteuer 20% 2500 Soll 19.83, Kassa 2700 Haben 119
+  - ✅ Balance: Soll 119 = Haben 119
+- **Verdict: ✅ PASS**
+
+**Root cause (if fail):** n/a
+
+**Fix:** n/a
+
+**Nice-to-have (not blocking):**
+- Gegenbuchung geht auf Kassa (2700). Wenn die Friseurin per Karte/Überweisung bezahlt, wäre Bank (2800) richtiger. Default-Gegenkonto hängt vom Buchungskommando ab — book.py nimmt aktuell Kassa wenn nicht anders angegeben. Passt für Bar-Verkauf, aber für Wareneingang per Überweisung wäre Bank korrekter. Nicht kritisch für MVP-A (alle Käufe sind klein/cash-ähnlich) — aber im Hinterkopf behalten für Runde 2 („Ausgabe per Überweisung").
+
+---
+
 
 <!--
 Template for each iteration — append below, newest at the bottom.
@@ -120,6 +151,7 @@ Template for each iteration — append below, newest at the bottom.
 |---|---|---|---|---|
 | 1 | S01 Tageslosung bar | ⚠ PASS-WITH-NOTES | harness fixes only | Data correct; audit-log only logs `invoice_posted`, not a separate `journal_posted`. |
 | 2 | S02 Bar + Karte gemischt | ✅ PASS | none | 1 invoice with 2 lines, journal 450=450 balanced, USt 20% correct. |
+| 3 | S03 Ausgabe Wella 119 EUR | ✅ PASS | none | Vendor auto-created with waren_farbe default, journal 119=119 balanced, Vorsteuer 20%. |
 
 ## Open architectural questions
 

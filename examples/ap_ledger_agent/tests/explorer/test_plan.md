@@ -16,7 +16,7 @@ Status-Legende: `[ ]` offen · `[x]` durchlaufen (Ergebnis im Report) · `[!]` B
 - [x] **S02 — Barumsatz + Karteneinnahme gemischt.** „Heute 300 bar, 150 Karte, Tageslosung".
   **Expected:** 2 `invoices`-Rows (oder 1 mit 2 Lines — beide Varianten zulässig, Dokumentation im Report). `total_gross` summiert 450.00. Journal-Entries balanciert (Soll = Haben).
 
-- [ ] **S03 — Ausgabe buchen (Text).** „Wella Haarfarbe 119 EUR, Datum 14.04.2026".
+- [x] **S03 — Ausgabe buchen (Text).** „Wella Haarfarbe 119 EUR, Datum 14.04.2026".
   **Expected:** 1 `invoices`-Row, `type=invoice`, `status=posted`, Vendor `Wella` angelegt oder gematcht, `category_code=waren_farbe` (oder vergleichbare Plausibilität), `total_gross=119.00`, USt gemäß Land.
 
 - [ ] **S04 — Drei Buchungen nacheinander (Streaming-Regression).** S01 → S01 (mit anderem Betrag) → S03 hintereinander in derselben Session.
