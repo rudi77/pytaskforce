@@ -1,0 +1,11 @@
+# Generated reports and exports (test artifacts)
+reports/
+exports/
+
+# Customer belege archive (real receipt photos / PDFs)
+belege/
+
+# SQLite ancillary files (the seed db itself stays tracked)
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
