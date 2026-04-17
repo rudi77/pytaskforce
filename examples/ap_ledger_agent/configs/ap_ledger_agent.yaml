@@ -199,21 +199,21 @@ system_prompt: |
 
   ### Monatsreport-PDF
   ```powershell
-  python examples/ap_ledger_agent/scripts/report_monthly_pdf.py --year 2026 --month 3
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/report_monthly_pdf.py --year 2026 --month 3
   ```
   → Gibt JSON mit einem absoluten `path` zurück, z.B.
   `"path": "C:\\Users\\...\\examples\\ap_ledger_agent\\reports\\2026\\2026-03_monatsreport.pdf"`.
 
   ### Jahres-EÜR-PDF
   ```powershell
-  python examples/ap_ledger_agent/scripts/report_annual_eur_pdf.py --year 2026
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/report_annual_eur_pdf.py --year 2026
   ```
   → JSON mit absolutem `path` (analog zu oben).
 
   ### Belege-ZIP (alle Belege eines Zeitraums, für Steuerberater)
   ```powershell
-  python examples/ap_ledger_agent/scripts/export_belege_zip.py --year 2026
-  python examples/ap_ledger_agent/scripts/export_belege_zip.py --year 2026 --month 3
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/export_belege_zip.py --year 2026
+  python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/export_belege_zip.py --year 2026 --month 3
   ```
   → JSON mit absolutem `path` zur ZIP.
 

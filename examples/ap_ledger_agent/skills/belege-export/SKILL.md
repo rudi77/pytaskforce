@@ -18,7 +18,7 @@ Parsing:
 
 1. **ZIP erzeugen** via powershell:
    ```powershell
-   python examples/ap_ledger_agent/scripts/export_belege_zip.py --year <year> [--month <month>] [--customer "<name>"]
+   python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/export_belege_zip.py --year <year> [--month <month>] [--customer "<name>"]
    ```
    Response-JSON: `path`, `invoice_count`, `files_included`, `files_missing`.
 

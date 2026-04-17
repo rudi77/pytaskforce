@@ -17,7 +17,7 @@ Parsing:
 
 1. **PDF erzeugen** via powershell:
    ```powershell
-   python examples/ap_ledger_agent/scripts/report_annual_eur_pdf.py --year <year> [--customer "<name>"]
+   python examples/ap_ledger_agent/deploy/skills/ap-ledger/scripts/report_annual_eur_pdf.py --year <year> [--customer "<name>"]
    ```
    Response-JSON enthält `path`, `invoice_count`, `profit`, `tax_liability`.
 
