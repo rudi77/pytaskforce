@@ -4,6 +4,12 @@ This is **not** a pytest suite. It's a living test plan that Claude works
 through autonomously in a `/loop`: execute a scenario → record result →
 fix bugs found → commit + push → next scenario.
 
+> **Note:** this directory is a concrete instance of the reusable
+> template under `tests/explorer-template/`. If you want to run the
+> same pattern against a different agent, copy that template to the
+> agent's tree and implement the single agent-specific function
+> (`make_fresh_env`). The AP-Ledger harness here is a worked example.
+
 ## Layout
 
 | File | Purpose |
