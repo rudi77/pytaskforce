@@ -8,11 +8,37 @@ from __future__ import annotations
 
 import asyncio
 import html
+import mimetypes
 import re
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 import structlog
+
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".flac", ".wav"}
+_VOICE_EXTS = {".ogg", ".oga"}
+
+
+def _detect_attachment_type(file_path: str) -> str:
+    """Return 'photo', 'audio', 'voice', or 'document' based on extension."""
+    ext = Path(file_path).suffix.lower()
+    if ext in _PHOTO_EXTS:
+        return "photo"
+    if ext in _AUDIO_EXTS:
+        return "audio"
+    if ext in _VOICE_EXTS:
+        return "voice"
+    return "document"
+
+
+_TELEGRAM_ENDPOINT_BY_TYPE = {
+    "document": ("sendDocument", "document"),
+    "photo": ("sendPhoto", "photo"),
+    "audio": ("sendAudio", "audio"),
+    "voice": ("sendVoice", "voice"),
+}
 
 
 def _markdown_to_telegram_html(text: str) -> str:
@@ -103,7 +129,8 @@ class TelegramOutboundSender:
         max_retries: int = 3,
         base_backoff: float = 1.0,
     ) -> None:
-        self._base_url = f"https://api.telegram.org/bot{token}/sendMessage"
+        self._api_base = f"https://api.telegram.org/bot{token}"
+        self._base_url = f"{self._api_base}/sendMessage"
         self._session: aiohttp.ClientSession | None = None
         self._max_retries = max_retries
         self._base_backoff = base_backoff
@@ -245,6 +272,167 @@ class TelegramOutboundSender:
             f"Telegram API request failed after {self._max_retries + 1} attempts: {last_error}"
         ) from last_error
 
+    async def send_file(
+        self,
+        *,
+        recipient_id: str,
+        file_path: str,
+        caption: str | None = None,
+        attachment_type: str = "auto",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Upload a file via Telegram Bot API (sendDocument/Photo/Audio/Voice).
+
+        Picks the endpoint from ``attachment_type`` or auto-detects by
+        file extension. Uses multipart/form-data. Shares retry logic with
+        ``send()``.
+
+        Args:
+            recipient_id: Telegram chat_id.
+            file_path: Absolute local path to the file.
+            caption: Optional caption text (Markdown is converted to HTML).
+            attachment_type: 'auto' | 'document' | 'photo' | 'audio' | 'voice'.
+            metadata: Optional keys: parse_mode ('HTML'|'Markdown'|'').
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            ValueError: If attachment_type is unknown.
+            ConnectionError: If the Telegram API is unreachable after retries.
+        """
+        path = Path(file_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Attachment not found: {file_path}")
+
+        resolved_type = attachment_type
+        if resolved_type == "auto":
+            resolved_type = _detect_attachment_type(file_path)
+
+        if resolved_type not in _TELEGRAM_ENDPOINT_BY_TYPE:
+            raise ValueError(
+                f"Unknown attachment_type '{attachment_type}'. "
+                f"Expected one of: auto, document, photo, audio, voice."
+            )
+
+        endpoint, field_name = _TELEGRAM_ENDPOINT_BY_TYPE[resolved_type]
+        url = f"{self._api_base}/{endpoint}"
+
+        # Resolve caption formatting: HTML by default, caller can override.
+        parse_mode: str | None = "HTML"
+        if metadata and "parse_mode" in metadata:
+            parse_mode = metadata["parse_mode"] or None
+
+        formatted_caption = caption or ""
+        if formatted_caption and parse_mode == "HTML":
+            try:
+                formatted_caption = _markdown_to_telegram_html(formatted_caption)
+            except Exception:
+                self._logger.warning("telegram.html_conversion_failed")
+                parse_mode = None
+
+        # Telegram caption limit is 1024 chars. Truncate with ellipsis if over.
+        if len(formatted_caption) > 1024:
+            formatted_caption = formatted_caption[:1021] + "..."
+
+        mime_type, _ = mimetypes.guess_type(str(path))
+        mime_type = mime_type or "application/octet-stream"
+
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                if attempt > 0:
+                    await self._close_session()
+                session = await self._get_session()
+
+                form = aiohttp.FormData()
+                form.add_field("chat_id", str(recipient_id))
+                if formatted_caption:
+                    form.add_field("caption", formatted_caption)
+                    if parse_mode:
+                        form.add_field("parse_mode", parse_mode)
+
+                with path.open("rb") as file_obj:
+                    form.add_field(
+                        field_name,
+                        file_obj,
+                        filename=path.name,
+                        content_type=mime_type,
+                    )
+                    # File uploads can be larger — use a longer timeout.
+                    upload_timeout = aiohttp.ClientTimeout(total=60)
+                    async with session.post(
+                        url, data=form, timeout=upload_timeout
+                    ) as response:
+                        if response.status >= 400:
+                            body = await response.text()
+                            self._logger.error(
+                                "telegram.send_file_failed",
+                                endpoint=endpoint,
+                                status=response.status,
+                                response=body,
+                                recipient_id=recipient_id,
+                                file=path.name,
+                            )
+                            if response.status != 429 and response.status < 500:
+                                raise _TelegramClientError(
+                                    f"Telegram {endpoint} returned HTTP "
+                                    f"{response.status}: {body}"
+                                )
+                            last_error = ConnectionError(
+                                f"Telegram {endpoint} returned HTTP "
+                                f"{response.status}: {body}"
+                            )
+                            # Retryable server-side error: back off before the
+                            # next attempt so we don't hammer Telegram.
+                            if attempt < self._max_retries:
+                                backoff = self._base_backoff * (2 ** attempt)
+                                self._logger.warning(
+                                    "telegram.send_file_retry",
+                                    attempt=attempt + 1,
+                                    max_retries=self._max_retries,
+                                    backoff_s=backoff,
+                                    status=response.status,
+                                    recipient_id=recipient_id,
+                                    file=path.name,
+                                )
+                                await asyncio.sleep(backoff)
+                        else:
+                            if attempt > 0:
+                                self._logger.info(
+                                    "telegram.send_file_retry_success",
+                                    attempt=attempt + 1,
+                                    recipient_id=recipient_id,
+                                    file=path.name,
+                                )
+                            return
+            except _TelegramClientError:
+                raise
+            except (TimeoutError, aiohttp.ClientError, OSError) as exc:
+                last_error = exc
+                if attempt < self._max_retries:
+                    backoff = self._base_backoff * (2 ** attempt)
+                    self._logger.warning(
+                        "telegram.send_file_retry",
+                        attempt=attempt + 1,
+                        max_retries=self._max_retries,
+                        backoff_s=backoff,
+                        error=str(exc),
+                        recipient_id=recipient_id,
+                        file=path.name,
+                    )
+                    await asyncio.sleep(backoff)
+
+        self._logger.error(
+            "telegram.send_file_error",
+            error=str(last_error),
+            recipient_id=recipient_id,
+            file=path.name,
+            attempts=self._max_retries + 1,
+        )
+        raise ConnectionError(
+            f"Telegram {endpoint} upload failed after "
+            f"{self._max_retries + 1} attempts: {last_error}"
+        ) from last_error
+
     async def close(self) -> None:
         """Close the underlying HTTP session."""
         await self._close_session()
@@ -311,4 +499,24 @@ class TeamsOutboundSender:
             "teams.send_not_implemented",
             recipient_id=recipient_id,
             message_preview=message[:80],
+        )
+
+    async def send_file(
+        self,
+        *,
+        recipient_id: str,
+        file_path: str,
+        caption: str | None = None,
+        attachment_type: str = "auto",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Placeholder — file upload for Teams is not yet implemented."""
+        self._logger.warning(
+            "teams.send_file_not_implemented",
+            recipient_id=recipient_id,
+            file=file_path,
+        )
+        raise NotImplementedError(
+            "File upload for Teams is not implemented. "
+            "Use a document link in the message text instead."
         )

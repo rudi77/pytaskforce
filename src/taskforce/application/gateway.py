@@ -426,16 +426,34 @@ class CommunicationGateway:
         # Use conversation_id from the stored reference as the send target
         target_id = reference.get("conversation_id", request.recipient_id)
 
+        # Attachment_type override for the whole request (applies to every
+        # attachment). Individual per-file overrides would require a richer
+        # request model; keep it simple for now.
+        attachment_type = (request.metadata or {}).get("attachment_type", "auto")
+
         try:
-            await sender.send(
-                recipient_id=target_id,
-                message=request.message,
-                metadata=request.metadata,
-            )
+            if request.attachments:
+                # First file carries the message as caption; subsequent
+                # files go without caption to avoid duplication.
+                for idx, file_path in enumerate(request.attachments):
+                    await sender.send_file(
+                        recipient_id=target_id,
+                        file_path=file_path,
+                        caption=request.message if idx == 0 else None,
+                        attachment_type=attachment_type,
+                        metadata=request.metadata,
+                    )
+            else:
+                await sender.send(
+                    recipient_id=target_id,
+                    message=request.message,
+                    metadata=request.metadata,
+                )
             self._logger.info(
                 "gateway.notification.sent",
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                attachments=len(request.attachments),
             )
             return NotificationResult(
                 success=True,

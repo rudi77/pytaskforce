@@ -83,14 +83,21 @@ class NotificationRequest:
     Attributes:
         channel: Target channel (e.g. 'telegram', 'teams').
         recipient_id: Application-level user ID (resolved via RecipientRegistry).
-        message: Notification message text.
+        message: Notification message text. When attachments are present,
+            this is used as the caption of the first file.
         metadata: Channel-specific formatting options.
+        attachments: Optional list of local file paths to upload alongside
+            the message. The sender auto-detects the media type from the
+            file extension (images → sendPhoto, audio → sendAudio,
+            everything else → sendDocument). Callers can force a specific
+            type via metadata['attachment_type'].
     """
 
     channel: str
     recipient_id: str
     message: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    attachments: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

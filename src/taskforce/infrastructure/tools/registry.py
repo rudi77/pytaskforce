@@ -186,12 +186,15 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce_rag_agent.tools.global_document_analysis_tool",
         "params": {},
     },
-    # Butler agent tools
+    # Proactive push notifications (available to any agent; gateway is
+    # injected at build time — see AgentFactory.set_gateway)
     "send_notification": {
         "type": "SendNotificationTool",
-        "module": "taskforce_butler.infrastructure.tools.send_notification_tool",
+        "module": "taskforce.infrastructure.tools.native.send_notification_tool",
         "params": {},
     },
+    # Butler agent tools
+
     "gmail": {
         "type": "GmailTool",
         "module": "taskforce_butler.infrastructure.tools.email_tool",

@@ -926,7 +926,16 @@ class AgentFactory:
             planning_strategy_params=planning_strategy_params,
             config_dir=config_path_obj.parent,
         )
-        return await self.create(definition, user_context=user_context)
+        # Pass the loaded YAML as base_config_override so sections the
+        # AgentDefinition doesn't model (notifications, memory, context_policy,
+        # logging, …) still reach downstream builders. Without this,
+        # _resolve_base_config falls back to load_profile_safe(profile_name)
+        # which returns defaults and silently drops these settings.
+        return await self.create(
+            definition,
+            user_context=user_context,
+            base_config_override=config,
+        )
 
     def _resolve_config_path(self, config_path: str) -> Path:
         """Resolve a config path to an absolute file path."""

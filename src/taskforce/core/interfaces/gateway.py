@@ -43,6 +43,32 @@ class OutboundSenderProtocol(Protocol):
         """
         ...
 
+    async def send_file(
+        self,
+        *,
+        recipient_id: str,
+        file_path: str,
+        caption: str | None = None,
+        attachment_type: str = "auto",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Deliver a file attachment to a recipient on this channel.
+
+        Args:
+            recipient_id: Channel-specific recipient (chat_id, conversation ref, etc.).
+            file_path: Absolute local path to the file to upload.
+            caption: Optional text shown alongside the file (channel-dependent).
+            attachment_type: One of 'auto', 'document', 'photo', 'audio', 'voice'.
+                'auto' selects a type based on the file extension.
+            metadata: Optional channel-specific extras (parse_mode for caption, etc.).
+
+        Raises:
+            FileNotFoundError: If ``file_path`` does not exist.
+            ConnectionError: If the upstream channel API is unreachable.
+            NotImplementedError: If this channel does not support file uploads.
+        """
+        ...
+
 
 class InboundAdapterProtocol(Protocol):
     """Normalize raw webhook payloads from an external channel.

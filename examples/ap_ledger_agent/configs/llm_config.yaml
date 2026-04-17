@@ -1,65 +1,38 @@
 # =============================================================================
 # LLM Configuration for AP Ledger Agent
 # =============================================================================
-# Vision-capable models for direct photo/receipt extraction.
 # Uses LiteLLM model string prefixes — provider-agnostic.
+#
+# IMPORTANT: The framework's llm_config_loader expects model aliases to be
+# **strings**, not dicts. Per-model parameters go into `model_params` below.
+# Do NOT use the `main: {model: ..., temperature: ...}` form — that is
+# returned raw to LiteLLM which then fails with
+#   "unhashable type: 'dict'"
+# when the value is used as a cache key.
 
-# Default model for all requests
 default_model: main
 
-# Model aliases
+# Model aliases (short name → LiteLLM model string)
+# Must match deployments available in AZURE_API_BASE / AZURE_API_VERSION.
 models:
-  # Main model — must support Vision (image input) for receipt photos
-  main:
-    model: "azure/gpt-4.1"
-    temperature: 0.2
-    max_tokens: 4096
-    drop_params: true
+  main: "azure/gpt-5.4-mini"       # Vision-capable — used for receipt photos
+  fast: "azure/gpt-5.4-nano"        # Fast model for simple summaries
+  powerful: "azure/gpt-5.4-mini"    # Complex reasoning (planning, validation)
 
-  # Fast model for simple tasks (summaries, short answers)
-  fast:
-    model: "azure/gpt-4.1-nano"
-    temperature: 0.3
-    max_tokens: 2048
-    drop_params: true
+  # ── Alternative providers (swap `main` as needed) ──────────────────
+  # main: "gpt-4o"                         # OpenAI direct (vision)
+  # main: "anthropic/claude-sonnet-4-6"    # Anthropic Claude (vision)
+  # main: "gemini/gemini-2.5-pro"          # Google Gemini (vision)
+  # main: "ollama/llava:13b"               # Local Ollama (vision)
 
-  # Powerful model for complex reasoning (planning, validation)
-  powerful:
-    model: "azure/gpt-4.1"
-    temperature: 0.1
-    max_tokens: 4096
-    drop_params: true
-
-  # -----------------------------------------------------------------------
-  # Alternative providers (uncomment as needed)
-  # -----------------------------------------------------------------------
-
-  # OpenAI direct (Vision-capable)
-  # main:
-  #   model: "gpt-4o"
-  #   temperature: 0.2
-  #   max_tokens: 4096
-
-  # Anthropic Claude (Vision-capable)
-  # main:
-  #   model: "claude-sonnet-4-20250514"
-  #   temperature: 0.2
-  #   max_tokens: 4096
-
-  # Google Gemini (Vision-capable)
-  # main:
-  #   model: "gemini/gemini-2.0-flash"
-  #   temperature: 0.2
-  #   max_tokens: 4096
-
-  # Local Ollama (Vision-capable, e.g. LLaVA, Moondream)
-  # main:
-  #   model: "ollama/llava:13b"
-  #   api_base: "http://localhost:11434"
-  #   temperature: 0.2
+# Per-model default parameters (applied via LiteLLM)
+# NOTE: gpt-5.x reasoning models ignore `temperature` — leave it unset.
+# `drop_params: true` lets LiteLLM silently strip any unsupported param.
+model_params: {}
 
 # Dynamic routing rules
-# Phase hints emitted by planning strategies auto-route to different models
+# Phase hints emitted by planning strategies auto-route to different models.
+# Disabled by default — all calls go to `default_model`.
 routing:
   enabled: false
   default_model: main

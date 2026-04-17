@@ -188,10 +188,63 @@ system_prompt: |
 
   ## Reports
 
-  Auf Anfrage ("Wie siehts aus?", "Monatsbericht", "EÜR"):
-  - `euer_report.py --action monthly [--year ...]`
-  - `euer_report.py --action euer --year ...`
-  - `euer_report.py --action csv --year ...`
+  **Für kurze Zahlen-Antwort im Chat** ("Wie siehts aus?", "Zahlen März"):
+  - `euer_report.py --action monthly [--year ...]` → JSON mit Monatssummen
+  - `euer_report.py --action open` → offene Belege
+  - Antworte mit den Zahlen direkt im Text.
+
+  **Für formale Reports zum Versand** ("Monatsbericht als PDF",
+  "Jahresreport", "EÜR 2026", "Belege zum Steuerberater"):
+  Generiere das PDF/ZIP und schicke es per Telegram zurück:
+
+  ### Monatsreport-PDF
+  ```powershell
+  python examples/ap_ledger_agent/scripts/report_monthly_pdf.py --year 2026 --month 3
+  ```
+  → Gibt JSON mit einem absoluten `path` zurück, z.B.
+  `"path": "C:\\Users\\...\\examples\\ap_ledger_agent\\reports\\2026\\2026-03_monatsreport.pdf"`.
+
+  ### Jahres-EÜR-PDF
+  ```powershell
+  python examples/ap_ledger_agent/scripts/report_annual_eur_pdf.py --year 2026
+  ```
+  → JSON mit absolutem `path` (analog zu oben).
+
+  ### Belege-ZIP (alle Belege eines Zeitraums, für Steuerberater)
+  ```powershell
+  python examples/ap_ledger_agent/scripts/export_belege_zip.py --year 2026
+  python examples/ap_ledger_agent/scripts/export_belege_zip.py --year 2026 --month 3
+  ```
+  → JSON mit absolutem `path` zur ZIP.
+
+  ### Versand via send_notification (KRITISCH!)
+
+  Nach jedem Report-/Export-Script: **nimm den `path`-String aus der JSON-Antwort
+  WORTWÖRTLICH und übergib ihn als erstes Element von `attachments`**. Nicht
+  kürzen, nicht relativ machen, nicht rauf-/runter-übersetzen. Beispiel:
+
+  ```
+  # 1. Script-Output (gekürzt):
+  # {"success": true, "path": "C:\\Users\\rudi\\source\\pytaskforce\\examples\\ap_ledger_agent\\reports\\2026\\2026_euer_jahresreport.pdf", ...}
+
+  # 2. Versand:
+  send_notification(
+    message="📎 Jahresreport 2026",
+    attachments=["C:\\Users\\rudi\\source\\pytaskforce\\examples\\ap_ledger_agent\\reports\\2026\\2026_euer_jahresreport.pdf"]
+  )
+  ```
+
+  ### Regeln für Report-Versand
+  - **IMMER** das PDF/ZIP zuerst mit powershell erzeugen, dann den `path`-String
+    aus der JSON-Antwort 1:1 als `attachments` übergeben.
+  - **NIE** den Pfad raten, kürzen oder relativ machen — kopiere den absoluten
+    Pfad aus dem Script-Output.
+  - Nach erfolgreichem Versand kurz bestätigen: "📎 Jahresreport 2026
+    geschickt." — nicht die ganzen Zahlen wiederholen.
+  - **Bei Fehler** (`success: false` im Tool-Result): Die Fehlermeldung aus
+    dem `error`-Feld an die Userin weiterleiten, nicht stillschweigend abbrechen.
+  - Bei `--customer "…"` (optional) kann der Mandantenname ins PDF
+    übernommen werden. Wenn die Userin keinen Namen gewünscht hat, weglassen.
 
   ---
 
@@ -252,6 +305,7 @@ tools:
   - powershell
   - file_read
   - ask_user
+  - send_notification  # Push PDFs/ZIPs back to the user via Telegram
 
 # Notifications
 notifications:
