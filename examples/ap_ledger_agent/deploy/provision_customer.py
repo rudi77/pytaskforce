@@ -79,15 +79,29 @@ def _render(template_path: Path, substitutions: dict[str, str]) -> str:
 
 
 def _prompt(label: str, default: str | None = None) -> str:
-    """Prompt for a value, defaulting to the given value if the user hits Enter."""
+    """Prompt for a value, defaulting to the given value if the user hits Enter.
+
+    Refuses to prompt when stdin is not a TTY (e.g. piped or running in a
+    restricted PowerShell context) — in that case the caller must supply
+    the value via the corresponding CLI flag.
+    """
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            f"[provision] Cannot prompt for '{label}': stdin is not a TTY.\n"
+            f"  Pass the value via the matching CLI flag instead "
+            f"(--bot-token / --chat-id)."
+        )
     suffix = f" [{default}]" if default else ""
-    while True:
-        value = input(f"{label}{suffix}: ").strip()
-        if value:
-            return value
-        if default is not None:
-            return default
-        print("  → required, please enter a value.")
+    try:
+        while True:
+            value = input(f"{label}{suffix}: ").strip()
+            if value:
+                return value
+            if default is not None:
+                return default
+            print("  -> required, please enter a value.")
+    except (KeyboardInterrupt, EOFError):
+        raise SystemExit("\n[provision] Aborted by user.")
 
 
 def main() -> int:
