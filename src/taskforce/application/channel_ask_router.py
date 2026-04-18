@@ -157,6 +157,19 @@ class ChannelAskRouter:
             recipient_id=recipient_id,
             max_wait=max_wait,
         )
+        # IMPORTANT: clean up the pending entry on timeout. Otherwise the
+        # next inbound message from this recipient — even if it's a
+        # completely new intent (e.g. a fresh photo) — gets matched as
+        # the answer to this stale question, the photo's attachments are
+        # silently lost, and the agent resumes from a bogus context.
+        try:
+            await self._gateway.clear_channel_question(session_id=session_id)
+        except Exception as exc:
+            self._logger.warning(
+                "channel_question.timeout_cleanup_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
         return None
 
     @staticmethod

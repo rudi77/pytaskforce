@@ -229,12 +229,19 @@ class TelegramPoller:
                 reference={"conversation_id": chat_id},
             )
 
-        # Try to resolve a pending channel question
-        resolved_session = await self._pending_store.resolve(
-            channel="telegram",
-            sender_id=sender_id,
-            response=text,
-        )
+        # Try to resolve a pending channel question — but ONLY if the
+        # incoming message is a real text answer. If the user sent media
+        # (photo / document), they're starting a new intent (a new
+        # booking, most likely) — don't capture the photo's default
+        # caption as the answer to whatever question was open. The old
+        # question will time out on its own and get cleaned up.
+        resolved_session: str | None = None
+        if not attachments:
+            resolved_session = await self._pending_store.resolve(
+                channel="telegram",
+                sender_id=sender_id,
+                response=text,
+            )
 
         if resolved_session:
             logger.info(
