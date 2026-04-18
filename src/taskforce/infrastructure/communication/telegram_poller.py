@@ -171,7 +171,40 @@ class TelegramPoller:
         text = (message_obj.get("text") or message_obj.get("caption") or "").strip()
         attachments = await self._extract_attachments(message_obj)
 
+        # Detect "the raw message had media but extraction failed"
+        # (e.g. Telegram getFile network error, file too large, etc.).
+        # Without this check the message would be silently dropped and
+        # the user sees the bot do nothing — looks broken.
+        had_media = bool(message_obj.get("photo")) or bool(message_obj.get("document"))
+        media_dropped = had_media and not attachments
+
         if not text and not attachments:
+            if media_dropped:
+                logger.warning(
+                    "telegram_poller.media_dropped",
+                    sender_id=str(message_obj.get("from", {}).get("id", "")),
+                    chat_id=str(message_obj.get("chat", {}).get("id", "")),
+                    has_photo=bool(message_obj.get("photo")),
+                    has_document=bool(message_obj.get("document")),
+                )
+                # Notify the user — don't let them sit in front of a silent bot.
+                chat_id = str(message_obj.get("chat", {}).get("id", ""))
+                if self._outbound_sender and chat_id:
+                    try:
+                        await self._outbound_sender.send(
+                            recipient_id=chat_id,
+                            message=(
+                                "⚠️ Ich konnte die Datei gerade nicht von "
+                                "Telegram laden (vermutlich ein kurzer "
+                                "Netzwerk-Aussetzer). Bitte schick sie mir "
+                                "nochmal."
+                            ),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "telegram_poller.media_dropped_notify_failed",
+                            error=str(exc),
+                        )
             return
 
         # Default prompt when media is sent without text/caption.
