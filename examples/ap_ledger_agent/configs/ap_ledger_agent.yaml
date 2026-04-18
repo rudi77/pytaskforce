@@ -310,6 +310,8 @@ tools:
   - file_read
   - ask_user
   - send_notification  # Push PDFs/ZIPs back to the user via Telegram
+  - schedule           # Cron/interval/one-shot jobs (requires butler package + chat/daemon entrypoint)
+  - reminder           # Convenience wrapper for one-shot reminders
 
 # Notifications
 notifications:

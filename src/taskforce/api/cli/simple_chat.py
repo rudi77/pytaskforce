@@ -226,12 +226,131 @@ class SimpleChatRunner:
         self._setup_gateway()
 
     def _setup_scheduler(self) -> None:
-        """Scheduler setup placeholder.
+        """Build a SchedulerService so ScheduleTool/ReminderTool can create jobs.
 
-        Scheduler functionality has been moved to agent packages.
-        This method is kept as a no-op for backward compatibility.
+        Imports SchedulerService from the installed `taskforce_butler` package
+        (only available when the butler agent is installed). When a scheduled
+        job fires, the callback dispatches either a notification via the
+        CommunicationGateway (wired later in ``_setup_gateway``) or a follow-up
+        agent mission.
         """
-        pass
+        try:
+            from taskforce_butler.infrastructure.scheduler.scheduler_service import (
+                SchedulerService,
+            )
+        except ImportError as exc:
+            logger.debug("simple_chat.scheduler_skipped", reason=str(exc))
+            return
+
+        work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+
+        notif_defaults: dict[str, str] = {}
+        try:
+            butler_cfg = self.executor.factory.profile_loader.load("butler")
+            notif_defaults = butler_cfg.get("notifications", {}) or {}
+        except Exception:
+            pass
+
+        default_channel = notif_defaults.get("default_channel", "telegram")
+        default_recipient_id = notif_defaults.get("default_recipient_id", "")
+
+        async def _on_scheduler_event(event: Any) -> None:
+            payload = event.payload or {}
+            action = payload.get("action", {}) or {}
+            action_type = action.get("action_type", "")
+            params = action.get("params", {}) or {}
+            job_name = payload.get("job_name", "")
+
+            logger.info(
+                "scheduler.event_received",
+                action_type=action_type,
+                job_name=job_name,
+            )
+
+            if action_type == "send_notification":
+                if not self._gateway:
+                    logger.warning("scheduler.notification_skipped", reason="no gateway")
+                    return
+
+                from taskforce.core.domain.gateway import NotificationRequest
+
+                channel = params.get("channel") or default_channel
+                recipient_id = params.get("recipient_id") or default_recipient_id
+                message = params.get("message", "") or job_name
+                if not message:
+                    logger.warning("scheduler.notification_skipped", reason="empty message")
+                    return
+
+                result = await self._gateway.send_notification(
+                    NotificationRequest(
+                        channel=channel,
+                        recipient_id=recipient_id,
+                        message=message,
+                        metadata={},
+                    )
+                )
+                if not result.success:
+                    logger.error(
+                        "scheduler.notification_failed",
+                        channel=channel,
+                        recipient_id=recipient_id,
+                        error=result.error,
+                    )
+                return
+
+            if action_type == "execute_mission":
+                mission = params.get("mission", "")
+                if not mission:
+                    notify_hint = ""
+                    if default_channel and default_recipient_id:
+                        notify_hint = (
+                            f" Send the results to the user as a notification "
+                            f"via the send_notification tool on {default_channel} "
+                            f"(recipient_id: {default_recipient_id})."
+                        )
+                    mission = (
+                        f"Scheduled task '{job_name}' triggered. "
+                        f"Execute the task described by its name.{notify_hint}"
+                    )
+
+                try:
+                    result = await self.executor.execute_mission(
+                        mission=mission,
+                        profile=self.profile,
+                    )
+                    logger.info(
+                        "scheduler.mission_completed",
+                        status=result.status,
+                        mission_preview=mission[:100],
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "scheduler.mission_failed",
+                        mission_preview=mission[:100],
+                        error=str(exc),
+                    )
+                return
+
+            logger.debug("scheduler.action_type_ignored", action_type=action_type)
+
+        try:
+            self._scheduler = SchedulerService(
+                work_dir=work_dir,
+                event_callback=_on_scheduler_event,
+            )
+            self.executor.factory.set_scheduler(self._scheduler)
+
+            # The agent (and its tools) was constructed before _setup_scheduler()
+            # ran, so ScheduleTool / ReminderTool were instantiated with
+            # scheduler=None. Patch the live instances now.
+            if self.agent and hasattr(self.agent, "tools"):
+                for tool_name in ("schedule", "reminder"):
+                    tool = self.agent.tools.get(tool_name)
+                    if tool is not None:
+                        tool._scheduler = self._scheduler
+        except Exception as exc:
+            logger.warning("simple_chat.scheduler_setup_failed", error=str(exc))
+            self._scheduler = None
 
     def _setup_gateway(self) -> None:
         """Build Communication Gateway when channel credentials are available.
