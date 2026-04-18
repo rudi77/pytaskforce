@@ -10,6 +10,7 @@ Extracted from AgentFactory to enforce single-responsibility.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import structlog
@@ -22,7 +23,6 @@ from taskforce.core.prompts.autonomous_prompts import (
     RAG_SPECIALIST_PROMPT,
     WIKI_SYSTEM_PROMPT,
 )
-from taskforce.core.utils.time import local_now
 
 if TYPE_CHECKING:
     from taskforce.core.interfaces.tools import ToolProtocol
@@ -103,7 +103,7 @@ class SystemPromptAssembler:
 
         # Inject current local time so the agent can handle relative time
         # references (e.g. "in one hour") without asking the user.
-        now = local_now()
+        now = datetime.now().astimezone()
         time_section = (
             f"\n\n## Current Time\n\n"
             f"Current local time: {now.strftime('%Y-%m-%dT%H:%M:%S%z')} "

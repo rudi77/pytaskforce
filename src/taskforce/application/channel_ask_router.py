@@ -33,8 +33,7 @@ class ChannelAskRouter:
     @staticmethod
     def is_ask_user(event: StreamEvent) -> bool:
         """Check whether a StreamEvent is any ASK_USER event."""
-        evt = event.event_type
-        return evt == EventType.ASK_USER or evt == EventType.ASK_USER.value
+        return event.event_type == EventType.ASK_USER
 
     @staticmethod
     def is_plain_ask_user(event: StreamEvent) -> bool:
