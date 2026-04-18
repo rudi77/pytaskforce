@@ -156,6 +156,7 @@ async def _react_loop(
         if use_stream:
             tc_acc: dict[int, dict[str, str]] = {}
             content_acc = ""
+            stream_error_msg: str | None = None
             try:
                 async for chunk in agent.llm_provider.complete_stream(
                     messages=messages,
@@ -197,9 +198,16 @@ async def _react_loop(
                             data=chunk["usage"],
                         )
                     elif t == "error":
+                        # The LLM provider yields errors as chunks (not
+                        # raises) — capture so the consecutive-error
+                        # counter below sees them, otherwise a
+                        # deterministic API rejection (e.g. malformed
+                        # tool-call history) loops to max_steps wasting
+                        # tokens and time.
+                        stream_error_msg = str(chunk.get("message", "Error"))
                         yield StreamEvent(
                             event_type=EventType.ERROR,
-                            data={"message": chunk.get("message", "Error")},
+                            data={"message": stream_error_msg},
                         )
             except Exception as e:
                 consecutive_llm_errors += 1
@@ -222,6 +230,34 @@ async def _react_loop(
                             "message": (
                                 f"LLM call failed {consecutive_llm_errors} times "
                                 f"in a row (last error: {e}). Aborting to avoid "
+                                "an infinite retry loop."
+                            )
+                        },
+                    )
+                    return
+                continue
+
+            # If the stream yielded an in-band error chunk (no exception
+            # raised but the LLM call effectively failed), treat it as a
+            # consecutive failure too.
+            if stream_error_msg is not None and not tc_acc and not content_acc:
+                consecutive_llm_errors += 1
+                logger.error(
+                    "react_loop.llm_stream_error_chunk",
+                    error=stream_error_msg,
+                    consecutive_errors=consecutive_llm_errors,
+                    step=step,
+                    session_id=session_id,
+                )
+                step += 1
+                if consecutive_llm_errors >= _MAX_CONSECUTIVE_LLM_ERRORS:
+                    yield StreamEvent(
+                        event_type=EventType.ERROR,
+                        data={
+                            "message": (
+                                f"LLM call failed {consecutive_llm_errors} "
+                                f"times in a row (last error: "
+                                f"{stream_error_msg}). Aborting to avoid "
                                 "an infinite retry loop."
                             )
                         },

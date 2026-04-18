@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from taskforce.core.domain.enums import EventType
+from taskforce.core.domain.enums import EventType, MessageRole
 from taskforce.core.domain.models import StreamEvent
 from taskforce.core.domain.planning.types import ToolCallRequest, ToolCallStatus
 from taskforce.core.domain.planning.utils import (
@@ -199,7 +200,7 @@ async def _process_tool_calls(
     agent.context.append_message(assistant_tool_calls_to_message(tool_calls))
     requests = []
 
-    for tc in tool_calls:
+    for idx, tc in enumerate(tool_calls):
         name, tc_id = tc["function"]["name"], tc["id"]
         args = _parse_tool_args(tc, logger)
         yield StreamEvent(
@@ -213,6 +214,43 @@ async def _process_tool_calls(
         )
 
         if name == "ask_user":
+            # The OpenAI / Azure tool-call protocol requires every
+            # ``assistant.tool_calls`` entry to be answered by a matching
+            # ``tool`` message. We're about to pause for user input and
+            # return early — any other tool_calls in this same batch
+            # (already-queued in ``requests`` AND not-yet-seen at
+            # ``tool_calls[idx+1:]``) would otherwise leave dangling
+            # tool_call_ids in the conversation history. The next LLM
+            # call would then crash with
+            #   "An assistant message with 'tool_calls' must be followed
+            #    by tool messages responding"
+            # and retry forever (real Tina-pilot bug).
+            #
+            # Append a synthetic "skipped" tool result for each so the
+            # contract is satisfied. The LLM can decide on resume
+            # whether to re-issue them.
+            skipped_ids: list[str] = [r.tool_call_id for r in requests] + [
+                t["id"] for t in tool_calls[idx + 1:]
+            ]
+            for sid in skipped_ids:
+                agent.context.append_message({
+                    "role": MessageRole.TOOL.value,
+                    "tool_call_id": sid,
+                    "content": json.dumps({
+                        "skipped": True,
+                        "reason": (
+                            "Skipped because ask_user paused execution; "
+                            "re-issue if still needed after the user replies."
+                        ),
+                    }),
+                })
+            if skipped_ids:
+                logger.info(
+                    "tool_calls.skipped_for_ask_user",
+                    skipped_count=len(skipped_ids),
+                    ask_user_id=tc_id,
+                )
+
             async for e in _handle_ask_user(
                 agent,
                 args,
