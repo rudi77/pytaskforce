@@ -165,6 +165,11 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.orchestration.parallel_agent_tool",
         "params": {},
     },
+    "call_acp_agent": {
+        "type": "AcpAgentTool",
+        "module": "taskforce.infrastructure.tools.orchestration.acp_agent_tool",
+        "params": {},
+    },
     # RAG tools - Semantic search and document retrieval
     "rag_semantic_search": {
         "type": "SemanticSearchTool",

@@ -3,6 +3,11 @@
 This guide explains how to connect Taskforce to external chat providers such as
 **Telegram**, **Microsoft Teams**, and other channels via the **Communication Gateway**.
 
+> For **agent-to-agent** interoperability over the Agent Communication
+> Protocol (ACP) — another Taskforce deployment, BeeAI, or any ACP-compliant
+> framework — see the dedicated guide: [ACP integration](features/acp.md)
+> ([ADR-018](adr/adr-018-acp-protocol-support.md)).
+
 The gateway provides a unified interface for:
 - **Inbound messages** from any channel
 - **Outbound replies** sent back through the originating channel
