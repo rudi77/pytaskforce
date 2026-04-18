@@ -19,8 +19,10 @@ AgentHandler = Callable[[list[Any], Any], Awaitable[Any]]
 class AcpServer:
     """Thin wrapper around ``acp_sdk.server.Server``.
 
-    Handlers are registered *before* ``start()`` via :meth:`register_agent`.
-    The server runs inside an asyncio task so it does not block the caller.
+    Handlers are registered via :meth:`register_agent` before ``start()``.
+    The server runs inside an ``asyncio.Task`` so ``start()`` is
+    non-blocking; ``stop()`` flips ``should_exit`` on the underlying
+    uvicorn server and awaits the task.
     """
 
     def __init__(self, *, host: str = "0.0.0.0", port: int = 8800) -> None:
@@ -59,21 +61,17 @@ class AcpServer:
         server_cls = load_server()
         server = server_cls()
 
-        # acp-sdk uses ``@server.agent()`` decorator to register agents.
+        # acp-sdk registers agents via the ``@server.agent()`` decorator.
         for name, (manifest, handler) in self._registered.items():
             server.agent(name=name, description=manifest.description)(handler)
 
         self._server = server
-        # ``Server.run_async`` is provided by acp-sdk; fall back to a thread
-        # pool executor wrapping the sync ``run()`` if unavailable.
-        run_async = getattr(server, "run_async", None)
-        if run_async is None:
-            loop = asyncio.get_running_loop()
-            self._task = loop.create_task(
-                loop.run_in_executor(None, lambda: server.run(host=self._host, port=self._port))
-            )
-        else:
-            self._task = asyncio.create_task(run_async(host=self._host, port=self._port))
+        # ``Server.serve`` is the async entry point (uvicorn-based); it runs
+        # until ``server.should_exit`` becomes ``True``.
+        serve = server.serve
+        self._task = asyncio.create_task(
+            serve(host=self._host, port=self._port, log_level="warning")
+        )
         self._running = True
         self._started.set()
         logger.info("acp.server.started", host=self._host, port=self._port)
@@ -84,15 +82,19 @@ class AcpServer:
         self._running = False
         server = self._server
         if server is not None:
-            shutdown = getattr(server, "shutdown", None)
-            if shutdown is not None:
-                result = shutdown()
-                if asyncio.iscoroutine(result):
-                    await result
-        if self._task is not None:
-            self._task.cancel()
             try:
-                await self._task
+                server.should_exit = True
+            except Exception:  # pragma: no cover - defensive
+                pass
+        if self._task is not None:
+            try:
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except TimeoutError:
+                self._task.cancel()
+                try:
+                    await self._task
+                except (asyncio.CancelledError, Exception):
+                    pass
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None

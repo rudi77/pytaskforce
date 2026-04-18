@@ -1,0 +1,48 @@
+# Showcase Agent — Coder
+#
+# Part of examples/acp_showcase/. Writes and runs Python code to solve a
+# concrete engineering task handed in as an ACP mission. Exposed as ACP
+# agent `coder` on port 8802.
+
+profile: showcase_coder
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_coder
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 10
+    reflect_every_step: false
+  max_steps: 15
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - file_read
+  - file_write
+  - edit
+  - python
+  - grep
+  - glob
+
+acp:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 8802
+    agent_name: coder
+    expose_profile: true

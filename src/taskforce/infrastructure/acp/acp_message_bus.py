@@ -172,6 +172,6 @@ def _ok_message() -> Any:
     message_cls = models.Message
     part_cls = models.MessagePart
     return message_cls(
-        role="assistant",
+        role="agent",
         parts=[part_cls(content="ack", content_type="text/plain")],
     )

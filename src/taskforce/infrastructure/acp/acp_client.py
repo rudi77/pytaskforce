@@ -14,10 +14,21 @@ logger = structlog.get_logger(__name__)
 
 
 class AcpClient:
-    """ACP client built on ``acp_sdk.client.Client`` with a per-peer pool."""
+    """ACP client built on ``acp_sdk.client.Client`` with a per-peer pool.
+
+    ``acp-sdk`` sessions are managed via the ``client.session(session)``
+    context manager; callers provide an opaque ``session_id`` which we map
+    to a cached session-scoped sub-client. When no ``session_id`` is
+    provided, the base (stateless) client is used.
+    """
 
     def __init__(self) -> None:
+        # base client per peer (stateless)
         self._pool: dict[str, Any] = {}
+        # session-scoped clients per (peer_name, session_id)
+        self._session_pool: dict[tuple[str, str], Any] = {}
+        # keeps the async ctx managers alive
+        self._session_ctx: dict[tuple[str, str], Any] = {}
 
     async def run_sync(
         self,
@@ -27,14 +38,9 @@ class AcpClient:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        client = await self._client_for(peer)
-        input_messages = _build_input(mission)
+        client = await self._session_client(peer, session_id)
         logger.debug("acp.client.run_sync", peer=peer.name, agent=peer.agent, session=session_id)
-        run = await client.run_sync(
-            agent=peer.agent,
-            input=input_messages,
-            session_id=session_id,
-        )
+        run = await client.run_sync(mission, agent=peer.agent)
         return _run_to_dict(run, peer)
 
     async def run_stream(
@@ -45,30 +51,15 @@ class AcpClient:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        client = await self._client_for(peer)
-        input_messages = _build_input(mission)
+        client = await self._session_client(peer, session_id)
         logger.debug("acp.client.run_stream", peer=peer.name, agent=peer.agent)
-        stream_method = getattr(client, "run_stream", None)
-        if stream_method is None:
-            # Fall back to sync call emitted as a single event.
-            run = await client.run_sync(
-                agent=peer.agent, input=input_messages, session_id=session_id
-            )
-            yield _run_to_dict(run, peer)
-            return
-        async for event in stream_method(
-            agent=peer.agent, input=input_messages, session_id=session_id
-        ):
+        async for event in client.run_stream(mission, agent=peer.agent):
             yield _event_to_dict(event, peer)
 
     async def list_agents(self, peer: AcpPeer) -> list[AcpAgentManifest]:
         client = await self._client_for(peer)
-        agents_method = getattr(client, "agents", None)
-        if agents_method is None:
-            return []
-        result = await agents_method()
         manifests: list[AcpAgentManifest] = []
-        for agent in result:
+        async for agent in client.agents():
             manifests.append(
                 AcpAgentManifest(
                     name=getattr(agent, "name", ""),
@@ -79,23 +70,26 @@ class AcpClient:
         return manifests
 
     async def close(self) -> None:
-        for client in list(self._pool.values()):
-            close = getattr(client, "close", None)
-            if close is None:
-                aexit = getattr(client, "__aexit__", None)
-                if aexit is not None:
-                    try:
-                        await aexit(None, None, None)
-                    except Exception:  # pragma: no cover - best-effort cleanup
-                        pass
-                continue
-            result = close()
-            if hasattr(result, "__await__"):
+        # Close session-scoped contexts first.
+        for key, ctx in list(self._session_ctx.items()):
+            aexit = getattr(ctx, "__aexit__", None)
+            if aexit is not None:
                 try:
-                    await result
+                    await aexit(None, None, None)
+                except Exception:  # pragma: no cover - best-effort cleanup
+                    pass
+            self._session_ctx.pop(key, None)
+            self._session_pool.pop(key, None)
+        for client in list(self._pool.values()):
+            aexit = getattr(client, "__aexit__", None)
+            if aexit is not None:
+                try:
+                    await aexit(None, None, None)
                 except Exception:  # pragma: no cover
                     pass
         self._pool.clear()
+
+    # -- internal -----------------------------------------------------------
 
     async def _client_for(self, peer: AcpPeer) -> Any:
         if peer.name in self._pool:
@@ -105,24 +99,28 @@ class AcpClient:
         if peer.auth.type == AcpAuthType.BEARER and peer.auth.token:
             kwargs["headers"] = {"Authorization": f"Bearer {peer.auth.token}"}
         client = client_cls(**kwargs)
-        # acp-sdk ``Client`` is an async context manager.
         aenter = getattr(client, "__aenter__", None)
         if aenter is not None:
             client = await aenter()
         self._pool[peer.name] = client
         return client
 
-
-def _build_input(mission: str) -> list[Any]:
-    models = load_models()
-    message_cls = models.Message
-    part_cls = models.MessagePart
-    return [
-        message_cls(
-            role="user",
-            parts=[part_cls(content=mission, content_type="text/plain")],
-        )
-    ]
+    async def _session_client(self, peer: AcpPeer, session_id: str | None) -> Any:
+        base = await self._client_for(peer)
+        if not session_id:
+            return base
+        key = (peer.name, session_id)
+        cached = self._session_pool.get(key)
+        if cached is not None:
+            return cached
+        models = load_models()
+        session_cls = getattr(models, "Session", None)
+        session_obj = session_cls(id=session_id) if session_cls is not None else None
+        ctx = base.session(session_obj)
+        scoped = await ctx.__aenter__()
+        self._session_ctx[key] = ctx
+        self._session_pool[key] = scoped
+        return scoped
 
 
 def _run_to_dict(run: Any, peer: AcpPeer) -> dict[str, Any]:
@@ -162,7 +160,10 @@ def _safe_dump(obj: Any) -> Any:
     dump = getattr(obj, "model_dump", None)
     if callable(dump):
         try:
-            return dump()
+            return dump(mode="json")
         except Exception:  # pragma: no cover
-            return repr(obj)
+            try:
+                return dump()
+            except Exception:
+                return repr(obj)
     return repr(obj)

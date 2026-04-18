@@ -127,7 +127,11 @@ office = [
     "openpyxl>=3.1.0",
 ]
 acp = [
-    "acp-sdk>=0.3.0",
+    "acp-sdk>=1.0.0,<2.0.0",
+    # acp-sdk 1.0.x still references ``uvicorn.config.LoopSetupType``,
+    # which was renamed to ``LoopFactoryType`` around uvicorn 0.36. Pin to
+    # the last compatible release until acp-sdk catches up.
+    "uvicorn>=0.30,<0.36",
 ]
 
 [dependency-groups]

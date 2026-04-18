@@ -182,3 +182,26 @@ def build_acp_service(
 def acp_server_schema_from_dict(data: dict[str, Any]) -> AcpServerSchema:
     """Utility for CLI code paths that only have raw config dicts."""
     return AcpServerSchema(**data)
+
+
+def build_acp_runtime_for_tools(
+    base_config: dict[str, Any] | None,
+    *,
+    work_dir: str = ".taskforce",
+) -> AcpRuntime | None:
+    """Build a client-only ``AcpRuntime`` from a profile config.
+
+    Used by the agent factory to make ``call_acp_agent`` available to
+    agents whose profile lists peers under ``acp.peers`` — **without**
+    starting a local ACP server. Returns ``None`` when the profile has
+    no ``acp`` section or no peers configured.
+    """
+    if not base_config:
+        return None
+    raw = base_config.get("acp")
+    if not raw:
+        return None
+    service = build_acp_service(raw, work_dir=work_dir)
+    if service is None or not service.list_peers():
+        return None
+    return service.runtime
