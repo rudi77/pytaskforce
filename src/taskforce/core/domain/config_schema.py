@@ -9,6 +9,11 @@
 """
 
 from taskforce.application.config_schema import (  # noqa: F401
+    AcpAuthSchema,
+    AcpConfigSchema,
+    AcpMessageBusSchema,
+    AcpPeerSchema,
+    AcpServerSchema,
     AgentConfigSchema,
     AgentSourceType,
     ConfigValidationError,
@@ -21,6 +26,11 @@ from taskforce.application.config_schema import (  # noqa: F401
 )
 
 __all__ = [
+    "AcpAuthSchema",
+    "AcpConfigSchema",
+    "AcpMessageBusSchema",
+    "AcpPeerSchema",
+    "AcpServerSchema",
     "AgentConfigSchema",
     "AgentSourceType",
     "ConfigValidationError",

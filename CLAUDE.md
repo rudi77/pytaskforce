@@ -217,6 +217,7 @@ All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base
 | `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
 | `ButlerProtocol` | `butler.py` | Butler agent lifecycle |
 | `ContextManagerProtocol` | `context_manager.py` | Single source of truth for LLM context (messages, tools, snapshots) |
+| `AcpServerProtocol`, `AcpClientProtocol`, `AcpPeerRegistryProtocol`, `AcpRuntimeProtocol` | `acp.py` | Agent Communication Protocol — server, client, peer registry, runtime facade |
 
 ```python
 # core/interfaces/state.py
@@ -416,11 +417,13 @@ When routing is disabled (default), the router transparently maps all hints back
 | `schedule` | ScheduleTool | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
 | `reminder` | ReminderTool | `reminder_tool.py` | One-shot reminder creation (butler) |
 | `rule_manager` | RuleManagerTool | `rule_manager_tool.py` | Event-to-action trigger rule management (butler) |
+| `call_acp_agent` | AcpAgentTool | `orchestration/acp_agent_tool.py` | Invoke a remote agent over the Agent Communication Protocol (ACP) |
 
 Additional tool categories:
 - **RAG Tools** (`infrastructure/tools/rag/`): Azure AI Search integration (semantic search, document retrieval, global analysis)
 - **MCP Tools** (`infrastructure/tools/mcp/`): Model Context Protocol server connections
-- **Orchestration Tools** (`infrastructure/tools/orchestration/`): Agent invocation, sub-agent spawning
+- **Orchestration Tools** (`infrastructure/tools/orchestration/`): Agent invocation, sub-agent spawning, remote ACP delegation (`call_acp_agent`)
+- **ACP Integration** (`infrastructure/acp/`): Runtime, client, server, message bus and gateway adapters for the Agent Communication Protocol — see [docs/features/acp.md](docs/features/acp.md) and [ADR-018](docs/adr/adr-018-acp-protocol-support.md). Optional dependency group: `uv sync --extra acp`.
 
 Profile YAML tool lists use **short tool names** (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs. The tool registry in `infrastructure/tools/registry.py` maps short names to implementations.
 
@@ -920,6 +923,7 @@ Defined in `pyproject.toml` under `[project.optional-dependencies]`:
 | `auth` | Cryptography for authentication/security | `uv sync --extra auth` |
 | `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
+| `acp` | Agent Communication Protocol (IBM/Linux Foundation) SDK | `uv sync --extra acp` |
 
 Dev dependencies are managed separately via `[dependency-groups]`:
 

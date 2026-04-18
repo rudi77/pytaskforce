@@ -13,6 +13,7 @@ except ImportError:
     from rich.console import Console
 
     from taskforce.api.cli.commands import (
+        acp,
         chat,
         config,
         memory,
@@ -38,6 +39,7 @@ except ImportError:
     app.add_typer(skills.app, name="skills", help="Skill management")
     app.add_typer(config.app, name="config", help="Configuration management")
     app.add_typer(memory.app, name="memory", help="Memory management")
+    app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
 
     @app.callback()
     def main(

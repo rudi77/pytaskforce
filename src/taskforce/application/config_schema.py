@@ -210,6 +210,92 @@ class AgentConfigSchema(BaseModel):
         return validated
 
 
+class AcpAuthSchema(BaseModel):
+    """ACP peer authentication block."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = Field(
+        "none",
+        pattern="^(none|bearer|mtls)$",
+        description="Auth scheme: none, bearer or mtls",
+    )
+    token_env: str | None = Field(
+        None,
+        description="Environment variable holding the bearer token",
+    )
+    token: str | None = Field(
+        None,
+        description="Literal bearer token (prefer token_env)",
+    )
+    cert_path: str | None = Field(None, description="mTLS client certificate path")
+    key_path: str | None = Field(None, description="mTLS client key path")
+
+
+class AcpPeerSchema(BaseModel):
+    """Remote ACP peer descriptor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, pattern="^[a-zA-Z0-9_:-]+$")
+    base_url: str = Field(..., min_length=1)
+    agent: str = Field(..., min_length=1)
+    description: str = Field("", max_length=1024)
+    auth: AcpAuthSchema = Field(default_factory=AcpAuthSchema)
+
+
+class AcpServerSchema(BaseModel):
+    """Local ACP server settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = Field(8800, gt=0, lt=65536)
+    agent_name: str | None = Field(
+        None,
+        description="Name under which the profile agent is exposed (defaults to profile name)",
+    )
+    expose_profile: bool = Field(
+        True,
+        description="Expose the configured profile agent as an ACP agent",
+    )
+    expose_bus_topics: list[str] = Field(
+        default_factory=list,
+        description="Message bus topics to expose as ACP agents (bus_<topic>)",
+    )
+
+
+class AcpMessageBusSchema(BaseModel):
+    """Message bus transport selector."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transport: str = Field(
+        "in_memory",
+        pattern="^(in_memory|acp)$",
+        description="Bus transport: in_memory (default) or acp",
+    )
+    publish_peers: list[str] = Field(
+        default_factory=list,
+        description="Peer names that receive published messages",
+    )
+    subscribe_topics: list[str] = Field(
+        default_factory=list,
+        description="Topics this instance subscribes to",
+    )
+
+
+class AcpConfigSchema(BaseModel):
+    """Top-level ACP configuration block for a profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    server: AcpServerSchema = Field(default_factory=AcpServerSchema)
+    peers: list[AcpPeerSchema] = Field(default_factory=list)
+    message_bus: AcpMessageBusSchema = Field(default_factory=AcpMessageBusSchema)
+
+
 class ProfileConfigSchema(BaseModel):
     """
     Schema for profile configuration files (configs/*.yaml).
@@ -261,6 +347,10 @@ class ProfileConfigSchema(BaseModel):
     orchestration: dict[str, Any] | None = Field(
         None,
         description="Orchestration configuration",
+    )
+    acp: AcpConfigSchema | None = Field(
+        None,
+        description="ACP (Agent Communication Protocol) configuration",
     )
 
 

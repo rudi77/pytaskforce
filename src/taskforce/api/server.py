@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from taskforce.api.routes import (
+    acp,
     agents,
     conversations,
     execution,
@@ -143,6 +144,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
     app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])
     app.include_router(workflows.router, prefix="/api/v1", tags=["workflows"])
+    app.include_router(acp.router, tags=["acp"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation
