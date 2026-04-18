@@ -421,14 +421,31 @@ class AgentExecutor:
                 current_mission = response
                 # Loop continues: agent resumes with the response
             else:
+                timeout_msg = (
+                    f"Timeout waiting for response from "
+                    f"{channel_ask['channel']}:{channel_ask['recipient_id']}"
+                )
                 yield ProgressUpdate(
                     timestamp=datetime.now(),
                     event_type=EventType.ERROR,
-                    message=(
-                        f"Timeout waiting for response from "
-                        f"{channel_ask['channel']}:{channel_ask['recipient_id']}"
-                    ),
+                    message=timeout_msg,
                     details=channel_ask,
+                )
+                # Also emit a COMPLETE event so execute_mission can build a
+                # ExecutionResult and not raise "No completion event received".
+                # Without this the unhandled AgentExecutionError bubbles up
+                # through gateway.handle_message and crashes the CLI loop.
+                yield ProgressUpdate(
+                    timestamp=datetime.now(),
+                    event_type=EventType.COMPLETE,
+                    message=timeout_msg,
+                    details={
+                        "complete": True,
+                        "status": ExecutionStatus.FAILED.value,
+                        "final_message": timeout_msg,
+                        "session_id": session_id,
+                        "channel_question": channel_ask,
+                    },
                 )
                 break
 
