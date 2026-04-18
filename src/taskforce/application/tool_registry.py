@@ -65,6 +65,7 @@ class ToolRegistry:
         scheduler: Any | None = None,
         auth_manager: Any | None = None,
         tool_result_store: Any | None = None,
+        acp_runtime: Any | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -79,6 +80,7 @@ class ToolRegistry:
             scheduler: Scheduler service for ScheduleTool and ReminderTool.
             auth_manager: Authentication manager for AuthTool.
             tool_result_store: Store for retrieving full tool results by handle.
+            acp_runtime: ACP runtime providing peers/client for AcpAgentTool.
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
@@ -88,6 +90,7 @@ class ToolRegistry:
         self._scheduler = scheduler
         self._auth_manager = auth_manager
         self._tool_result_store = tool_result_store
+        self._acp_runtime = acp_runtime
         self._logger = logger.bind(component="ToolRegistry")
         # Caches: avoid re-instantiating the same tool and re-listing all tools.
         self._tool_cache: dict[str, ToolProtocol] = {}
@@ -439,6 +442,17 @@ class ToolRegistry:
             if tool_type in ("AuthTool", "CalendarTool", "GmailTool") and self._auth_manager:
                 tool_params["auth_manager"] = self._auth_manager
 
+            # Special handling for AcpAgentTool - inject shared runtime
+            if tool_type == "AcpAgentTool":
+                if self._acp_runtime is None:
+                    self._logger.debug(
+                        "tool_instantiation_skipped_no_runtime",
+                        tool_name=tool_name,
+                        hint="Pass acp_runtime to ToolRegistry to enable call_acp_agent",
+                    )
+                    return None
+                tool_params["runtime"] = self._acp_runtime
+
             # Special handling for ScheduleTool / ReminderTool
             if tool_type in ("ScheduleTool", "ReminderTool") and self._scheduler:
                 tool_params["scheduler"] = self._scheduler
@@ -488,6 +502,7 @@ def get_tool_registry(
     gateway: Any | None = None,
     scheduler: Any | None = None,
     auth_manager: Any | None = None,
+    acp_runtime: Any | None = None,
 ) -> ToolRegistry:
     """Get a tool registry instance.
 
@@ -516,6 +531,7 @@ def get_tool_registry(
         or gateway is not None
         or scheduler is not None
         or auth_manager is not None
+        or acp_runtime is not None
     )
     if has_params:
         # Always return a fresh, request-scoped instance when DI params given.
@@ -526,6 +542,7 @@ def get_tool_registry(
             gateway=gateway,
             scheduler=scheduler,
             auth_manager=auth_manager,
+            acp_runtime=acp_runtime,
         )
 
     # Catalog-only path: reuse a shared lightweight instance.

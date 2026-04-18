@@ -158,6 +158,7 @@ class AgentFactory:
                 from taskforce.infrastructure.auth.oauth2_auth_code_flow import (
                     OAuth2AuthCodeFlow,
                 )
+
                 auth_flows["oauth2_auth_code"] = OAuth2AuthCodeFlow()
             except ImportError:
                 pass
@@ -302,7 +303,10 @@ class AgentFactory:
             sub_agents=sub_agents,
         )
         agent_settings = self._extract_agent_settings(
-            base_config, definition, definition.planning_strategy, definition.planning_strategy_params
+            base_config,
+            definition,
+            definition.planning_strategy,
+            definition.planning_strategy_params,
         )
 
         self.logger.debug(
@@ -315,9 +319,7 @@ class AgentFactory:
         )
 
         skill_manager = self._build_default_skill_manager()
-        activate_skill_tool = self._maybe_add_skill_tool_for_profile(
-            skill_manager, all_tools
-        )
+        activate_skill_tool = self._maybe_add_skill_tool_for_profile(skill_manager, all_tools)
         if activate_skill_tool is not None:
             # Re-assemble system prompt to include new tool description
             system_prompt = self.prompt_assembler.assemble(
@@ -409,8 +411,7 @@ class AgentFactory:
 
         # Only inject if the memory tool is listed in tools
         tool_names = [
-            (t if isinstance(t, str) else t.get("name", ""))
-            for t in config.get("tools", [])
+            (t if isinstance(t, str) else t.get("name", "")) for t in config.get("tools", [])
         ]
         if "memory" not in tool_names:
             return None, None
@@ -439,9 +440,7 @@ class AgentFactory:
 
         injection_cfg = config.get("memory", {}).get("context_injection")
         memory_context_config = (
-            MemoryContextConfig.from_dict(injection_cfg)
-            if injection_cfg
-            else MemoryContextConfig()
+            MemoryContextConfig.from_dict(injection_cfg) if injection_cfg else MemoryContextConfig()
         )
         return memory_store, memory_context_config
 
@@ -478,13 +477,13 @@ class AgentFactory:
 
         # Auto-create AuthManager when auth-aware tools are requested.
         _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive"}
-        requested_names = {
-            t if isinstance(t, str) else t.get("type", "")
-            for t in definition.tools
-        }
+        requested_names = {t if isinstance(t, str) else t.get("type", "") for t in definition.tools}
         if requested_names & _AUTH_TOOLS:
             self._ensure_auth_manager()
 
+        from taskforce.application.acp_service import build_acp_runtime_for_tools
+
+        acp_runtime = build_acp_runtime_for_tools(base_config)
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
@@ -494,6 +493,7 @@ class AgentFactory:
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,
             tool_result_store=infra.get("tool_result_store"),
+            acp_runtime=acp_runtime,
         )
         self._tool_builder.set_resolver(tool_registry)
         native_tools = tool_registry.resolve(definition.tools)
@@ -508,14 +508,10 @@ class AgentFactory:
 
         return plugin_tools + native_tools + mcp_tools
 
-    def _add_orchestration_tool(
-        self, tools: list[ToolProtocol], config: dict[str, Any]
-    ) -> None:
+    def _add_orchestration_tool(self, tools: list[ToolProtocol], config: dict[str, Any]) -> None:
         """Add orchestration tool to tool list if enabled and not duplicate."""
         orchestration_tool = self._tool_builder.build_orchestration_tool(config)
-        if orchestration_tool and not any(
-            t.name == orchestration_tool.name for t in tools
-        ):
+        if orchestration_tool and not any(t.name == orchestration_tool.name for t in tools):
             tools.append(orchestration_tool)
 
     def _add_sub_agent_tools(
@@ -544,9 +540,7 @@ class AgentFactory:
         def_max_steps = definition.max_steps if definition else None
         max_steps = def_max_steps or agent_config.get("max_steps")
         strategy_name = planning_strategy or agent_config.get("planning_strategy")
-        strategy_params = planning_strategy_params or agent_config.get(
-            "planning_strategy_params"
-        )
+        strategy_params = planning_strategy_params or agent_config.get("planning_strategy_params")
         return {
             "max_steps": max_steps,
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
@@ -682,17 +676,32 @@ class AgentFactory:
             ValueError: If both config and inline parameters are provided.
             FileNotFoundError: If config file not found.
         """
-        self._validate_create_agent_params(profile, config, system_prompt, tools,
-                                           llm, persistence, mcp_servers, max_steps,
-                                           context_policy)
+        self._validate_create_agent_params(
+            profile,
+            config,
+            system_prompt,
+            tools,
+            llm,
+            persistence,
+            mcp_servers,
+            max_steps,
+            context_policy,
+        )
         return await self._dispatch_create_agent(
-            profile=profile, config=config, system_prompt=system_prompt,
-            tools=tools, llm=llm, persistence=persistence,
-            mcp_servers=mcp_servers, max_steps=max_steps,
+            profile=profile,
+            config=config,
+            system_prompt=system_prompt,
+            tools=tools,
+            llm=llm,
+            persistence=persistence,
+            mcp_servers=mcp_servers,
+            max_steps=max_steps,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
-            context_policy=context_policy, work_dir=work_dir,
-            user_context=user_context, specialist=specialist,
+            context_policy=context_policy,
+            work_dir=work_dir,
+            user_context=user_context,
+            specialist=specialist,
         )
 
     @staticmethod
@@ -708,15 +717,17 @@ class AgentFactory:
         context_policy: dict[str, Any] | None,
     ) -> None:
         """Validate mutually exclusive parameter groups for create_agent."""
-        has_inline_params = any([
-            system_prompt is not None,
-            tools is not None,
-            llm is not None,
-            persistence is not None,
-            mcp_servers is not None,
-            max_steps is not None,
-            context_policy is not None,
-        ])
+        has_inline_params = any(
+            [
+                system_prompt is not None,
+                tools is not None,
+                llm is not None,
+                persistence is not None,
+                mcp_servers is not None,
+                max_steps is not None,
+                context_policy is not None,
+            ]
+        )
 
         if profile and config:
             raise ValueError(
@@ -756,25 +767,36 @@ class AgentFactory:
         if profile:
             profile_config = self._load_profile(profile)
             return await self._create_agent_from_profile_config(
-                profile=profile, config=profile_config, work_dir=work_dir,
-                user_context=user_context, planning_strategy=planning_strategy,
+                profile=profile,
+                config=profile_config,
+                work_dir=work_dir,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
             )
 
         if config:
             return await self._create_agent_from_config_file(
-                config_path=config, work_dir=work_dir, user_context=user_context,
+                config_path=config,
+                work_dir=work_dir,
+                user_context=user_context,
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
             )
 
         return await self._create_agent_from_inline_params(
-            system_prompt=system_prompt, tools=tools, llm=llm,
-            persistence=persistence, mcp_servers=mcp_servers,
-            max_steps=max_steps, planning_strategy=planning_strategy,
+            system_prompt=system_prompt,
+            tools=tools,
+            llm=llm,
+            persistence=persistence,
+            mcp_servers=mcp_servers,
+            max_steps=max_steps,
+            planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
-            context_policy=context_policy, work_dir=work_dir,
-            user_context=user_context, specialist=specialist,
+            context_policy=context_policy,
+            work_dir=work_dir,
+            user_context=user_context,
+            specialist=specialist,
         )
 
     def _extract_tool_names(self, tools_config: list[Any]) -> list[str]:
@@ -788,9 +810,11 @@ class AgentFactory:
             elif isinstance(tool_entry, dict):
                 name = self._resolve_dict_tool_name(tool_entry)
                 if name:
-                    tool_names.append(_class_name_to_tool_name(name)
-                                      if (name.endswith("Tool") or any(c.isupper() for c in name))
-                                      else name.lower())
+                    tool_names.append(
+                        _class_name_to_tool_name(name)
+                        if (name.endswith("Tool") or any(c.isupper() for c in name))
+                        else name.lower()
+                    )
         return tool_names
 
     @staticmethod
@@ -804,7 +828,8 @@ class AgentFactory:
     def _extract_sub_agent_specs(self, tools_config: list[Any]) -> list[dict[str, Any]]:
         """Extract sub-agent and parallel-agent tool specs from mixed config entries."""
         return [
-            entry for entry in tools_config
+            entry
+            for entry in tools_config
             if isinstance(entry, dict)
             and entry.get("type") in {"sub_agent", "agent", "parallel_agent"}
         ]
@@ -864,9 +889,11 @@ class AgentFactory:
             work_dir=work_dir,
             tools=self._extract_tool_names(tools_config),
             sub_agent_specs=self._extract_sub_agent_specs(tools_config),
-            mcp_servers=[
-                MCPServerConfig.from_dict(server) for server in mcp_servers_config
-            ] if mcp_servers_config else [],
+            mcp_servers=(
+                [MCPServerConfig.from_dict(server) for server in mcp_servers_config]
+                if mcp_servers_config
+                else []
+            ),
             planning_strategy=planning_strategy or agent_config.get("planning_strategy"),
             planning_strategy_params=(
                 planning_strategy_params or agent_config.get("planning_strategy_params")
@@ -1035,10 +1062,13 @@ class AgentFactory:
         if work_dir:
             effective_persistence = {**effective_persistence, "work_dir": work_dir}
 
-        effective_llm = llm or default_config.get("llm", {
-            "config_path": "src/taskforce/configs/llm_config.yaml",
-            "default_model": "main",
-        })
+        effective_llm = llm or default_config.get(
+            "llm",
+            {
+                "config_path": "src/taskforce/configs/llm_config.yaml",
+                "default_model": "main",
+            },
+        )
 
         merged_config: dict[str, Any] = {
             "persistence": effective_persistence,
@@ -1050,13 +1080,9 @@ class AgentFactory:
 
         # Build infrastructure
         ib = self.infra_builder
-        mem_store, mem_cfg = self._build_memory_injection(
-            merged_config, work_dir_override=work_dir
-        )
+        mem_store, mem_cfg = self._build_memory_injection(merged_config, work_dir_override=work_dir)
         infra: dict[str, Any] = {
-            "state_manager": ib.build_state_manager(
-                merged_config, work_dir_override=work_dir
-            ),
+            "state_manager": ib.build_state_manager(merged_config, work_dir_override=work_dir),
             "llm_provider": ib.build_llm_provider(merged_config),
             "context_policy": self._create_context_policy(merged_config),
             "runtime_tracker": self._create_runtime_tracker(
@@ -1075,18 +1101,24 @@ class AgentFactory:
         )
         infra["mcp_contexts"] = mcp_contexts
 
+        from taskforce.application.acp_service import build_acp_runtime_for_tools
+
+        acp_runtime = build_acp_runtime_for_tools(default_config)
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
             scheduler=self._scheduler,
             tool_result_store=infra.get("tool_result_store"),
+            acp_runtime=acp_runtime,
         )
         self._tool_builder.set_resolver(tool_registry)
         effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
         all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
 
         final_system_prompt = self.prompt_assembler.assemble(
-            all_tools, specialist=specialist, custom_prompt=system_prompt,
+            all_tools,
+            specialist=specialist,
+            custom_prompt=system_prompt,
         )
 
         # Build agent settings
@@ -1109,17 +1141,19 @@ class AgentFactory:
         )
 
         skill_manager = self._build_default_skill_manager()
-        activate_skill_tool = self._maybe_add_skill_tool_for_profile(
-            skill_manager, all_tools
-        )
+        activate_skill_tool = self._maybe_add_skill_tool_for_profile(skill_manager, all_tools)
         if activate_skill_tool is not None:
             final_system_prompt = self.prompt_assembler.assemble(
-                all_tools, specialist=specialist, custom_prompt=system_prompt,
+                all_tools,
+                specialist=specialist,
+                custom_prompt=system_prompt,
             )
 
         agent = self._instantiate_agent(
-            infra=infra, all_tools=all_tools,
-            system_prompt=final_system_prompt, settings=settings,
+            infra=infra,
+            all_tools=all_tools,
+            system_prompt=final_system_prompt,
+            settings=settings,
             skill_manager=skill_manager,
             agent_id=specialist,
         )
@@ -1192,9 +1226,7 @@ class AgentFactory:
             llm_provider=llm_provider,
             embedding_service=embedding_service,
         )
-        native_tools = self._resolve_plugin_native_tools(
-            tool_configs, llm_provider, merged_config
-        )
+        native_tools = self._resolve_plugin_native_tools(tool_configs, llm_provider, merged_config)
         all_tools = plugin_tools + native_tools
 
         mcp_tools, mcp_contexts = await self._tool_builder.create_mcp_tools(merged_config)
@@ -1210,9 +1242,7 @@ class AgentFactory:
         )
         agent_config = merged_config.get("agent", {})
         strategy_name = planning_strategy or agent_config.get("planning_strategy")
-        strategy_params = planning_strategy_params or agent_config.get(
-            "planning_strategy_params"
-        )
+        strategy_params = planning_strategy_params or agent_config.get("planning_strategy_params")
         settings = {
             "max_steps": agent_config.get("max_steps"),
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
@@ -1251,8 +1281,11 @@ class AgentFactory:
 
         context_mgmt = merged_config.get("context_management", {})
         agent = self._instantiate_agent(
-            infra=infra, all_tools=all_tools, system_prompt=system_prompt,
-            settings=settings, skill_manager=skill_manager,
+            infra=infra,
+            all_tools=all_tools,
+            system_prompt=system_prompt,
+            settings=settings,
+            skill_manager=skill_manager,
             summary_threshold=context_mgmt.get("summary_threshold"),
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
@@ -1311,9 +1344,7 @@ class AgentFactory:
             return []
         return registry.resolve(names_to_resolve)
 
-    def _maybe_add_skill_tool(
-        self, manifest: Any, all_tools: list[ToolProtocol]
-    ) -> Any:
+    def _maybe_add_skill_tool(self, manifest: Any, all_tools: list[ToolProtocol]) -> Any:
         """Add ActivateSkillTool if plugin has skills. Returns the tool or None."""
         if not manifest.skills_path:
             return None
@@ -1359,9 +1390,7 @@ class AgentFactory:
             return None
 
         skill_configs = plugin_config.get("skills", {}).get("available", [])
-        skill_manager = create_skill_manager_from_manifest(
-            manifest, skill_configs=skill_configs
-        )
+        skill_manager = create_skill_manager_from_manifest(manifest, skill_configs=skill_configs)
         if not (skill_manager and skill_manager.has_skills):
             return None
 
@@ -1372,9 +1401,7 @@ class AgentFactory:
         )
         skills_config = plugin_config.get("skills", {})
         if skills_config.get("activation", {}).get("auto_switch", True):
-            self._configure_skill_switch_conditions(
-                skill_manager, manifest.skill_names
-            )
+            self._configure_skill_switch_conditions(skill_manager, manifest.skill_names)
         return skill_manager
 
     def _build_default_skill_manager(self) -> SkillManager | None:
@@ -1448,7 +1475,7 @@ class AgentFactory:
     def _create_embedding_service(
         self,
         embeddings_config: dict[str, Any] | None,
-        manifest: "PluginManifest | None" = None,
+        manifest: PluginManifest | None = None,
     ) -> Any | None:
         """Create embedding service from config using dynamic plugin imports.
 
@@ -1496,6 +1523,7 @@ class AgentFactory:
 
         # Temporarily add plugin path to sys.path for import
         import importlib
+
         plugin_path_str = str(manifest.path)
         added_to_path = False
         if plugin_path_str not in sys.path:

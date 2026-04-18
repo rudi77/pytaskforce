@@ -32,6 +32,37 @@ def _load_acp_config(profile_name: str) -> AcpConfigSchema | None:
     return AcpConfigSchema(**raw)
 
 
+def _build_profile_handler(profile_name: str) -> Any:
+    """Build an ACP agent handler that runs a Taskforce mission per ACP run.
+
+    Each run is executed via ``AgentExecutor.execute_mission`` using the
+    given profile. The final assistant message is returned as a single
+    ACP ``Message``.
+    """
+    from acp_sdk.models import Message, MessagePart
+
+    from taskforce.application.executor import AgentExecutor
+
+    executor = AgentExecutor()
+
+    async def _handler(input_messages: list[Any]) -> Message:
+        mission_parts: list[str] = []
+        for msg in input_messages:
+            for part in getattr(msg, "parts", []) or []:
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    mission_parts.append(content)
+        mission = "\n".join(mission_parts).strip() or "(empty mission)"
+        result = await executor.execute_mission(mission=mission, profile=profile_name)
+        text = getattr(result, "final_message", None) or str(result)
+        return Message(
+            role="agent",
+            parts=[MessagePart(content=text, content_type="text/plain")],
+        )
+
+    return _handler
+
+
 @app.command("start")
 def start(
     ctx: typer.Context,
@@ -45,7 +76,7 @@ def start(
     config = _load_acp_config(profile)
     if config is None:
         console.print(
-            f"[yellow]Profile {profile!r} has no 'acp' section; " "add one to enable ACP.[/yellow]"
+            f"[yellow]Profile {profile!r} has no 'acp' section; add one to enable ACP.[/yellow]"
         )
         raise typer.Exit(code=1)
     if host:
@@ -58,11 +89,22 @@ def start(
     if service is None:
         raise typer.Exit(code=1)
 
+    if config.server.expose_profile:
+        handler = _build_profile_handler(profile)
+        service.register_profile_agent(
+            handler,
+            profile_name=profile,
+            description=f"Taskforce profile {profile!r} exposed via ACP",
+        )
+
     async def _run() -> None:
         await service.start()
+        agent_name = config.server.agent_name or profile
         console.print(
-            f"[green]ACP server listening on " f"{config.server.host}:{config.server.port}[/green]"
+            f"[green]ACP server listening on "
+            f"{config.server.host}:{config.server.port} (agent: {agent_name!r})[/green]"
         )
+        console.print("[dim]Press Ctrl+C to stop.[/dim]")
         try:
             while True:
                 await asyncio.sleep(3600)

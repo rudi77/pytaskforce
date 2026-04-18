@@ -1,0 +1,57 @@
+# Showcase Agent — Orchestrator
+#
+# Part of examples/acp_showcase/. Plans a two-stage workflow (research
+# then build) and delegates the stages to the `researcher` and `coder`
+# peers over ACP using the `call_acp_agent` tool.
+#
+# Runs its own ACP server on port 8800 so it can also be called from
+# another Taskforce instance (CEO → department head pattern).
+
+profile: showcase_orchestrator
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_orchestrator
+
+agent:
+  planning_strategy: plan_and_execute
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 6
+    reflect_every_step: false
+  max_steps: 20
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 18000
+
+tools:
+  - file_read
+  - file_write
+  - call_acp_agent
+
+acp:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 8800
+    agent_name: orchestrator
+    expose_profile: true
+  peers:
+    - name: researcher
+      base_url: http://localhost:8801
+      agent: researcher
+      description: Gathers information from the web and summarises it.
+    - name: coder
+      base_url: http://localhost:8802
+      agent: coder
+      description: Writes and runs Python code to solve an engineering task.

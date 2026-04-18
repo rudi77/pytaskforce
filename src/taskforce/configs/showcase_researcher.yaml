@@ -1,0 +1,45 @@
+# Showcase Agent — Researcher
+#
+# Part of examples/acp_showcase/. Gathers information from the web and
+# condenses it into a short briefing. Exposed as ACP agent `researcher`
+# on port 8801.
+
+profile: showcase_researcher
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_researcher
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 8
+    reflect_every_step: false
+  max_steps: 12
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - web_search
+  - web_fetch
+  - file_write
+
+acp:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 8801
+    agent_name: researcher
+    expose_profile: true
