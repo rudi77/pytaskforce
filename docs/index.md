@@ -25,6 +25,8 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Agent Skills](features/skills.md)**: Modular domain-specific capabilities for agents (code review, data analysis, PDF processing).
 - **[Long-Term Memory](features/longterm-memory.md)**: Persistent Markdown-based memory for agents.
 - **[Memory Consolidation](features/memory-consolidation.md)**: LLM-powered experience consolidation into long-term memory.
+- **[Generative Dreaming](features/generative-dreaming.md)**: Offline generative consolidation loop (ADR-014).
+- **[Agent Communication Protocol (ACP)](features/acp.md)**: Invoke remote agents over the IBM/Linux Foundation ACP (ADR-018).
 
 ### 🏢 Enterprise Features (Optional)
 > Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
@@ -32,8 +34,14 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 
 - **[Enterprise Features](features/enterprise.md)**: Multi-tenant identity, RBAC, compliance, and governance.
 
-### Butler Agent
-- **[Butler Roles](features/butler-roles.md)**: Butler agent role specialization (accountant, personal assistant).
+### Optional Agent Packages
+Agent-specific capabilities live in separate packages under `agents/` and are
+wired into the unified CLI when installed. See [Profiles & Config](profiles.md)
+for the full profile list.
+
+- **[Butler Roles](features/butler-roles.md)**: `taskforce-butler` role specialization (accountant, personal assistant).
+- **Coding Agent** (`taskforce-coding-agent`): Epic orchestration and coding sub-agents — see [Epic Orchestration](architecture/epic-orchestration.md).
+- **RAG Agent** (`taskforce-rag-agent`): Azure AI Search tools and the `rag_agent` profile.
 
 ### Development & Community
 - **[Testing Guide](testing.md)**: How to run and write tests for Taskforce.

@@ -1,7 +1,7 @@
 # CLAUDE.md - Taskforce Development Guide
 
-**Version:** 1.6
-**Date:** 2026-03-22
+**Version:** 1.7
+**Date:** 2026-04-19
 **Purpose:** Guide for AI-assisted development with Claude Code
 
 ---
@@ -22,6 +22,33 @@
 - **Persistence:** File-based (dev) or PostgreSQL (prod) via swappable adapters
 - **LLM Integration:** Multi-provider (OpenAI, Anthropic, Google, Azure, Ollama, etc.) via LiteLLM
 - **Extensibility:** Plugin system, skills (context/prompt/agent types), MCP tool servers
+- **Packaging:** Multi-package monorepo — lean core framework plus optional agent packages
+  (`taskforce-butler`, `taskforce-coding-agent`, `taskforce-rag-agent`) and a unified CLI
+  (`taskforce-cli`) that wires them together.
+
+### Repository Layout
+
+```
+pytaskforce/
+├── src/taskforce/          # Core framework package (LLM-agnostic, no agent-specific code)
+├── cli/src/taskforce_cli/  # Unified CLI entry point (discovers installed agent packages)
+├── agents/                 # Optional agent packages (each with its own pyproject.toml)
+│   ├── butler/             # taskforce_butler — event-driven daemon, scheduler, rules
+│   ├── coding-agent/       # taskforce_coding_agent — epic orchestration, sub-agents
+│   ├── rag-agent/          # taskforce_rag_agent — Azure AI Search tools
+│   ├── security-agent/     # taskforce security profile
+│   └── swe-bench-agent/    # SWE-Bench evaluation profile
+├── packages/               # Internal auxiliary packages (autooptim, etc.)
+├── cli/                    # Unified CLI package source
+├── servers/                # Standalone MCP servers (document-extraction-mcp, ...)
+├── examples/               # Example agents (accounting, customer support)
+├── docs/                   # Markdown documentation
+└── tests/                  # Framework tests (agent packages have their own tests/)
+```
+
+The `taskforce` distribution remains installable on its own and only depends on the
+framework code in `src/taskforce/`. Agent packages opt in additional capabilities and
+are discovered by the unified CLI via Python imports at startup.
 
 ---
 
@@ -68,77 +95,131 @@ Taskforce enforces strict architectural boundaries through four distinct layers:
 ```
 src/taskforce/
 ├── core/                      # LAYER 1: Pure Domain Logic
-│   ├── domain/                # Agent, LeanAgent, Planning, Events, Models
-│   │   └── lean_agent_components/  # Modular agent components
-│   ├── interfaces/            # Protocols (23 interface files, ~42 protocol definitions)
-│   ├── prompts/               # System prompts and templates
-│   ├── tools/                 # Core tool abstractions (converter, planner)
-│   └── utils/                 # Path and time utilities
+│   ├── domain/                # Agent, LeanAgent, Planning, Events, Models, Dream, Workflow
+│   │   ├── lean_agent_components/  # Modular agent components (context_manager, prompt_builder, …)
+│   │   └── planning/          # Planning primitives (react_loop, interrupt, state, types)
+│   └── interfaces/            # Protocols (25 interface files — see table below)
 │
 ├── infrastructure/            # LAYER 2: External Integrations
-│   ├── llm/                   # LiteLLM service + LLM Router (multi-provider, dynamic model routing)
-│   ├── persistence/           # File state manager, agent registry
-│   ├── memory/                # File-based memory store
+│   ├── acp/                   # Agent Communication Protocol runtime/client/server/message-bus
+│   ├── auth/                  # OAuth2 / token store implementations
 │   ├── cache/                 # Tool result caching
-│   ├── tools/
-│   │   ├── native/            # 27 built-in tools
-│   │   ├── mcp/               # MCP server connections
-│   │   ├── rag/               # Azure AI Search tools
-│   │   └── orchestration/     # Agent/sub-agent tools
+│   ├── communication/         # Communication Gateway components (adapters, senders, registry)
+│   ├── event_sources/         # Event-source base (used by taskforce_butler)
+│   ├── llm/                   # LiteLLM service + LLM Router (multi-provider, dynamic routing)
+│   ├── memory/                # File-based memory store
+│   ├── messaging/             # In-memory message bus
+│   ├── persistence/           # File state manager, agent/conversation registries
+│   ├── runtime/               # Runtime tracking (heartbeats, checkpoints)
+│   ├── scheduler/             # Scheduler base (used by taskforce_butler)
 │   ├── skills/                # Skill loading, parsing, registry (context/prompt/agent types)
+│   ├── tools/
+│   │   ├── native/            # Native tools (see "Native Tools" section)
+│   │   ├── mcp/               # MCP server connections (client, connection_manager, wrapper)
+│   │   ├── orchestration/     # Sub-agent, parallel-agent, ACP-agent tools
+│   │   ├── base_tool.py       # BaseTool convenience class
+│   │   ├── filters.py         # Tool filtering helpers
+│   │   ├── registry.py        # Short-name → tool spec registry
+│   │   └── wrappers.py        # Tool wrappers (approval, caching)
 │   └── tracing/               # Phoenix tracing integration
 │
 ├── application/               # LAYER 3: Use Cases & Orchestration
 │   ├── factory.py             # Dependency injection (central wiring)
 │   ├── executor.py            # Execution orchestration (streaming-first)
 │   ├── tool_registry.py       # Tool catalog, mapping, resolution
+│   ├── tool_builder.py        # Tool instantiation from definitions
 │   ├── agent_registry.py      # Custom agent registration API
+│   ├── agent_creation_pipeline.py  # Agent build pipeline (definition → agent)
+│   ├── config_schema.py       # Pydantic schema helpers for configs
 │   ├── gateway.py             # Unified Communication Gateway service
 │   ├── profile_loader.py      # Profile YAML loading and resolution
 │   ├── system_prompt_assembler.py # System prompt composition
 │   ├── intent_router.py       # Intent routing for chat
 │   ├── skill_manager.py       # Skill lifecycle management
 │   ├── skill_service.py       # Skill service (discovery, slash-command resolution)
-│   ├── plugin_loader.py       # Plugin loading and discovery (consolidated)
-│   ├── plugin_discovery.py    # Backward-compatible shim (re-exports from plugin_loader)
+│   ├── plugin_loader.py       # Plugin loading and discovery
 │   ├── infrastructure_builder.py  # Infrastructure setup
-│   ├── epic_orchestrator.py   # Multi-agent epic execution
-│   ├── epic_state_store.py    # Epic run state persistence
-│   ├── task_complexity_classifier.py  # Auto-epic complexity classification
 │   ├── sub_agent_spawner.py   # Sub-agent session spawning
-│   └── tracing_facade.py      # Tracing facade
+│   ├── conversation_manager.py # Persistent conversation lifecycle (ADR-016)
+│   ├── persistent_agent_service.py # Persistent orchestrator runtime (ADR-016)
+│   ├── channel_ask_router.py  # Channel-based user question routing
+│   ├── consolidation_service.py / consolidation_orchestrator.py  # Memory consolidation (ADR-013)
+│   ├── dream_service.py       # Generative dreaming (ADR-014)
+│   ├── workflow_runtime_service.py # Resumable HITL workflow runtime (ADR-014-hitl)
+│   ├── auth_manager.py        # OAuth2 manager
+│   ├── planning_strategy_factory.py # Planning strategy wiring
+│   ├── request_queue.py       # Request buffering for sessionless orchestrator
+│   ├── topic_detector.py      # Conversation topic detection
+│   ├── token_analytics_facade.py / tracing_facade.py  # Facade helpers
+│   ├── progress_update_builder.py / execution_error_handler.py  # Streaming helpers
+│   └── acp_service.py         # ACP application service (ADR-018)
 │
-└── api/                       # LAYER 4: Entrypoints
-    ├── server.py              # FastAPI application
-    ├── cli/
-    │   ├── main.py            # CLI entry point (Typer)
-    │   ├── simple_chat.py     # Interactive chat interface
-    │   ├── output_formatter.py # Rich output formatting
-    │   └── commands/          # CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config, butler)
-    ├── routes/                # FastAPI route modules (execution, agents, sessions, tools, health, gateway)
-    └── schemas/               # Pydantic request/response schemas
+├── api/                       # LAYER 4: Entrypoints
+│   ├── server.py              # FastAPI application
+│   ├── cli/
+│   │   ├── main.py            # Framework-only CLI (falls back when taskforce_cli is missing)
+│   │   ├── simple_chat.py     # Interactive chat interface
+│   │   ├── output_formatter.py # Rich output formatting
+│   │   └── commands/          # Framework CLI subcommands (run, chat, tools, skills,
+│   │                          # missions, conversations, config, memory, acp)
+│   ├── routes/                # FastAPI route modules (execution, agents, sessions,
+│   │                          # tools, health, gateway, workflows, conversations, …)
+│   └── schemas/               # Pydantic request/response schemas
+│
+├── configs/                   # Framework-shipped YAML profiles
+│   │                          # (default.yaml, acp_peer.yaml, llm_config.yaml,
+│   │                          #  showcase_coder.yaml, showcase_orchestrator.yaml,
+│   │                          #  showcase_researcher.yaml)
+├── plugins/                   # Bundled plugin agents (ap_poc_agent, document_extraction_agent)
+└── skills/                    # Bundled skill scripts (pdf-processing, code-review, …)
 ```
 
-### Integrated Extensions (formerly `taskforce_extensions`)
+### Agent-Package Layout
 
-The following directories are part of the main `taskforce` package:
+Agent-specific code (daemons, role configs, domain-specific tools) lives under `agents/`:
 
 ```
-src/taskforce/
-├── configs/                   # Profile YAML configs (dev, coding_agent, rag_agent, security, etc.)
-│   └── custom/                # Custom sub-agent configs
-├── infrastructure/
-│   ├── communication/         # Communication Gateway components
-│   │   ├── gateway_registry.py      # Gateway component wiring
-│   │   ├── gateway_conversation_store.py  # Conversation persistence
-│   │   ├── inbound_adapters.py      # Channel-specific inbound adapters
-│   │   ├── outbound_senders.py      # Channel-specific outbound senders
-│   │   └── recipient_registry.py    # Push notification recipient store
-│   ├── messaging/             # In-memory message bus
-│   └── runtime/               # Runtime tracking (heartbeats, checkpoints)
-├── plugins/                   # Plugin agents (ap_poc_agent, document_extraction_agent)
-└── skills/                    # Skill scripts (PDF processing, etc.)
+agents/
+├── butler/
+│   ├── src/taskforce_butler/  # daemon.py, service.py, event_router.py, rule_engine.py,
+│   │                          # learning_service.py, role_loader.py, cli/, domain/,
+│   │                          # interfaces/ (butler protocols), infrastructure/
+│   │                          #   (event_sources/, scheduler/, tools/)
+│   └── configs/               # butler.yaml + custom/ (accountant, pc-agent, …)
+│                              # + roles/ (accountant.yaml, personal_assistant.yaml)
+├── coding-agent/
+│   ├── src/taskforce_coding_agent/  # task_complexity_classifier.py, cli/, orchestration
+│   └── configs/               # coding_agent.yaml, coding_analysis.yaml
+│                              # + custom/ (coding_planner, coding_worker, coding_reviewer,
+│                              #   test_engineer, doc_writer, swe_analyzer, swe_coder, …)
+├── rag-agent/
+│   ├── src/taskforce_rag_agent/     # RAG tools + CLI
+│   └── configs/               # rag_agent.yaml
+├── security-agent/            # security profile
+└── swe-bench-agent/           # SWE-Bench profile
 ```
+
+Each agent package ships its own `pyproject.toml`, optional CLI (`taskforce_<name>.cli`)
+and, where applicable, tool implementations that the core tool registry references via
+their fully-qualified module paths (e.g. `taskforce_butler.infrastructure.tools.calendar_tool`).
+Without the package installed the corresponding registry entry simply fails to resolve at
+tool-build time, keeping the framework usable standalone.
+
+### Unified CLI (`cli/src/taskforce_cli/`)
+
+`cli/src/taskforce_cli/main.py` is the top-level CLI:
+
+- Registers framework commands (`run`, `chat`, `tools`, `skills`, `config`, `memory`, `acp`).
+- Dynamically adds `taskforce butler`, `taskforce epic`, and `taskforce rag` when the
+  corresponding agent packages are importable.
+- `_detect_default_profile()` returns `"butler"` if `taskforce_butler` is installed,
+  otherwise `"dev"`. This is why "default profile" depends on what is installed.
+- `agent_discovery.register_agent_config_dirs()` adds the agent packages' `configs/`
+  directories to the profile loader's search path, so `--profile butler`,
+  `--profile coding_agent`, `--profile rag_agent`, etc. resolve across packages.
+
+The fallback framework-only CLI in `src/taskforce/api/cli/main.py` is used when
+`taskforce_cli` is not installed. It defaults to `--profile dev`.
 
 ### Import Rules (CRITICAL)
 
@@ -186,7 +267,11 @@ from taskforce.api.routes.execution import execute_mission       # VIOLATION!
 
 All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base classes.
 
-**22 interface files** in `core/interfaces/` with **~40 protocol definitions**:
+**25 interface files** in `src/taskforce/core/interfaces/` define the framework's
+protocols. Butler-specific protocols (`EventSourceProtocol`, `SchedulerProtocol`,
+`RuleEngineProtocol`, `LearningStrategyProtocol`, `ButlerProtocol`) live in the
+`taskforce_butler` agent package under
+`agents/butler/src/taskforce_butler/interfaces/butler.py` — not in the framework core.
 
 | Protocol(s) | File | Purpose |
 |-------------|------|---------|
@@ -199,25 +284,22 @@ All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base
 | `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` | `runtime.py` | Runtime tracking |
 | `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` | `skills.py` | Skill interface and lifecycle (context/prompt/agent types) |
 | `ToolMapperProtocol` | `tool_mapping.py` | Tool name resolution |
+| `ToolResolverProtocol` | `tool_resolver.py` | Tool name → instance resolution with DI |
 | `ToolResultStoreProtocol` | `tool_result_store.py` | Tool result caching |
 | `SubAgentSpawnerProtocol` | `sub_agents.py` | Sub-agent spawning |
 | `TenantContextProtocol`, `UserContextProtocol`, `IdentityProviderProtocol`, `PolicyEngineProtocol` | `identity_stubs.py` | Identity and tenancy management |
 | `LoggerProtocol` | `logging.py` | Structured logging |
-| `EventSourceProtocol` | `event_source.py` | External event source (butler) |
-| `SchedulerProtocol` | `scheduler.py` | Job scheduling (butler) |
-| `RuleEngineProtocol` | `rule_engine.py` | Rule evaluation (butler) |
-| `LearningStrategyProtocol` | `learning.py` | Automatic learning (butler) |
 | `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` | `auth.py` | OAuth2 authentication |
-| `ConsolidationProtocol` | `consolidation.py` | Memory consolidation |
-| `AgentStateProtocol` | `agent_state.py` | Agent state persistence |
+| `ConsolidationProtocol` | `consolidation.py` | Memory consolidation (ADR-013) |
+| `DreamEngineProtocol` | `dreaming.py` | Generative dreaming engine (ADR-014) |
+| `AgentStateProtocol` | `agent_state.py` | Singleton agent state persistence (ADR-016) |
 | `ChannelAskProtocol` | `channel_ask.py` | Channel-based user interaction |
 | `ExperienceProtocol` | `experience.py` | Session experience tracking |
 | `TokenEstimatorProtocol` | `token_estimator.py` | Token counting |
-| `ConversationProtocol` | `conversation.py` | Conversation management |
+| `ConversationProtocol`, `ConversationManagerProtocol` | `conversation.py` | Conversation lifecycle (ADR-016) |
 | `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
-| `ButlerProtocol` | `butler.py` | Butler agent lifecycle |
-| `ContextManagerProtocol` | `context_manager.py` | Single source of truth for LLM context (messages, tools, snapshots) |
-| `AcpServerProtocol`, `AcpClientProtocol`, `AcpPeerRegistryProtocol`, `AcpRuntimeProtocol` | `acp.py` | Agent Communication Protocol — server, client, peer registry, runtime facade |
+| `ContextManagerProtocol`, `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` | `context_manager.py` | Unified LLM context (messages, tools, snapshots) |
+| `AcpServerProtocol`, `AcpClientProtocol`, `AcpPeerRegistryProtocol`, `AcpRuntimeProtocol` | `acp.py` | Agent Communication Protocol (ADR-018) |
 
 ```python
 # core/interfaces/state.py
@@ -384,50 +466,89 @@ When routing is disabled (default), the router transparently maps all hints back
 
 ---
 
-## Native Tools
+## Tools
 
-27 built-in tools in `infrastructure/tools/native/`:
+The tool registry (`src/taskforce/infrastructure/tools/registry.py`) maps short
+names to tool classes. Some entries resolve to classes in agent packages
+(`taskforce_butler`, `taskforce_rag_agent`) — those are only available when the
+corresponding package is installed.
 
-| Short Name | Tool | File | Description |
-|------------|------|------|-------------|
-| `file_read` | FileReadTool | `file_tools.py` | Read file contents |
-| `file_write` | FileWriteTool | `file_tools.py` | Write file contents |
-| `edit` | EditTool | `edit_tool.py` | Targeted file editing (search/replace) |
-| `shell` | ShellTool | `shell_tool.py` | Platform-agnostic shell execution |
-| `bash` | BashTool | `shell_tool.py` | Bash-specific shell execution (Linux/macOS) |
-| `powershell` | PowerShellTool | `shell_tool.py` | Windows PowerShell execution |
-| `python` | PythonTool | `python_tool.py` | Python code execution (isolated namespace) |
-| `git` | GitTool | `git_tools.py` | Git CLI operations |
-| `github` | GitHubTool | `git_tools.py` | GitHub API operations (issues, PRs, etc.) |
-| `web_search` | WebSearchTool | `web_tools.py` | Web search via DuckDuckGo |
-| `web_fetch` | WebFetchTool | `web_tools.py` | HTTP requests, web crawling |
-| `browser` | BrowserTool | `browser_tool.py` | Headless browser automation via Playwright (requires `uv sync --extra browser && playwright install chromium`) |
-| `grep` | GrepTool | `search_tools.py` | Content search (grep-style) |
-| `glob` | GlobTool | `search_tools.py` | File pattern search (glob-style) |
-| `llm` | LLMTool | `llm_tool.py` | Delegated LLM calls |
-| `memory` | MemoryTool | `memory_tool.py` | Long-term memory CRUD |
-| `multimedia` | MultimediaTool | `multimedia_tool.py` | Image/media handling |
-| `ask_user` | AskUserTool | `ask_user_tool.py` | Interactive user prompts |
-| `activate_skill` | ActivateSkillTool | `activate_skill_tool.py` | Runtime skill activation |
-| `authenticate` | AuthTool | `auth_tool.py` | OAuth2 authentication for external services (Google, Microsoft, GitHub) |
-| `send_notification` | SendNotificationTool | `send_notification_tool.py` | Proactive push notifications via Communication Gateway |
-| `google_drive` | GoogleDriveTool | `google_drive_tool.py` | Google Drive file operations (list, download, upload, search) |
-| `gmail` | GmailTool | `email_tool.py` | Gmail message reading and search (butler) |
-| `calendar` | CalendarTool | `calendar_tool.py` | Google Calendar list/create (butler) |
-| `schedule` | ScheduleTool | `schedule_tool.py` | Cron/interval/one-shot job management (butler) |
-| `reminder` | ReminderTool | `reminder_tool.py` | One-shot reminder creation (butler) |
-| `rule_manager` | RuleManagerTool | `rule_manager_tool.py` | Event-to-action trigger rule management (butler) |
-| `call_acp_agent` | AcpAgentTool | `orchestration/acp_agent_tool.py` | Invoke a remote agent over the Agent Communication Protocol (ACP) |
+### Framework-native tools (ship with core `taskforce`)
 
-Additional tool categories:
-- **RAG Tools** (`infrastructure/tools/rag/`): Azure AI Search integration (semantic search, document retrieval, global analysis)
+| Short Name | Class | Module (under `taskforce.infrastructure.tools.native.`) | Description |
+|------------|-------|----------------------------------------------------------|-------------|
+| `activate_skill` | ActivateSkillTool | `activate_skill_tool` | Runtime skill activation |
+| `web_search` | WebSearchTool | `web_tools` | DuckDuckGo web search |
+| `web_fetch` | WebFetchTool | `web_tools` | HTTP requests, web crawling |
+| `python` | PythonTool | `python_tool` | Python code execution (isolated namespace) |
+| `file_read` | FileReadTool | `file_tools` | Read file contents |
+| `file_write` | FileWriteTool | `file_tools` | Write file contents |
+| `git` | GitTool | `git_tools` | Git CLI operations |
+| `github` | GitHubTool | `git_tools` | GitHub API operations |
+| `shell` | ShellTool | `shell_tool` | Platform-agnostic shell execution |
+| `bash` | BashTool | `shell_tool` | Bash-specific shell execution |
+| `powershell` | PowerShellTool | `shell_tool` | Windows PowerShell execution |
+| `ask_user` | AskUserTool | `ask_user_tool` | Interactive user prompts |
+| `llm` | LLMTool | `llm_tool` | Delegated LLM calls (default alias `main`) |
+| `grep` | GrepTool | `search_tools` | Content search (grep-style) |
+| `glob` | GlobTool | `search_tools` | File pattern search (glob-style) |
+| `edit` | EditTool | `edit_tool` | Targeted file editing (search/replace) |
+| `fetch_result` | FetchResultTool | `fetch_result_tool` | Retrieve previously stored tool results |
+| `memory` | MemoryTool | `memory_tool` | Long-term memory CRUD |
+| `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (`uv sync --extra browser && playwright install chromium`) |
+| `multimedia` | MultimediaTool | `multimedia_tool` | Image/media handling |
+| `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (`uv sync --extra office`) |
+| `pptx` | PptxTool | `pptx_tool` | Microsoft PowerPoint handling (`uv sync --extra office`) |
+| `excel` | ExcelTool | `excel_tool` | Microsoft Excel handling (`uv sync --extra office`) |
+| `accounting_validate` | AccountingValidateTool | `accounting_validate_tool` | Invoice/compliance validation helper |
+| `accounting_audit` | AccountingAuditTool | `accounting_audit_tool` | Accounting audit checks |
+| `send_notification` | SendNotificationTool | `send_notification_tool` | Proactive push notifications via the Communication Gateway |
+
+### Orchestration tools (under `taskforce.infrastructure.tools.orchestration.`)
+
+| Short Name | Class | Module | Description |
+|------------|-------|--------|-------------|
+| `call_agents_parallel` | ParallelAgentTool | `parallel_agent_tool` | Run multiple sub-agents in parallel (ADR-015) |
+| `call_acp_agent` | AcpAgentTool | `acp_agent_tool` | Invoke a remote agent over ACP (ADR-018) |
+
+> The legacy `call_agent` / `agent_tool` primitive still exists in
+> `orchestration/agent_tool.py` and `sub_agent_tool.py` but is not registered by
+> short name — sub-agent invocation is typically configured via YAML or wired by
+> `sub_agent_spawner`.
+
+### Agent-package tools (registered by short name, resolved from optional packages)
+
+| Short Name | Class | Fully-qualified module | Required package |
+|------------|-------|------------------------|------------------|
+| `rag_semantic_search` | SemanticSearchTool | `taskforce_rag_agent.tools.semantic_search_tool` | `taskforce-rag-agent` (+ `uv sync --extra rag`) |
+| `rag_list_documents` | ListDocumentsTool | `taskforce_rag_agent.tools.list_documents_tool` | `taskforce-rag-agent` |
+| `rag_get_document` | GetDocumentTool | `taskforce_rag_agent.tools.get_document_tool` | `taskforce-rag-agent` |
+| `global_document_analysis` | GlobalDocumentAnalysisTool | `taskforce_rag_agent.tools.global_document_analysis_tool` | `taskforce-rag-agent` |
+| `gmail` | GmailTool | `taskforce_butler.infrastructure.tools.email_tool` | `taskforce-butler` |
+| `google_drive` | GoogleDriveTool | `taskforce_butler.infrastructure.tools.google_drive_tool` | `taskforce-butler` |
+| `calendar` | CalendarTool | `taskforce_butler.infrastructure.tools.calendar_tool` | `taskforce-butler` |
+| `schedule` | ScheduleTool | `taskforce_butler.infrastructure.tools.schedule_tool` | `taskforce-butler` |
+| `reminder` | ReminderTool | `taskforce_butler.infrastructure.tools.reminder_tool` | `taskforce-butler` |
+| `rule_manager` | RuleManagerTool | `taskforce_butler.infrastructure.tools.rule_manager_tool` | `taskforce-butler` |
+| `authenticate` | AuthTool | `taskforce_butler.infrastructure.tools.auth_tool` | `taskforce-butler` |
+
+### Tool categories reference
+
 - **MCP Tools** (`infrastructure/tools/mcp/`): Model Context Protocol server connections
-- **Orchestration Tools** (`infrastructure/tools/orchestration/`): Agent invocation, sub-agent spawning, remote ACP delegation (`call_acp_agent`)
-- **ACP Integration** (`infrastructure/acp/`): Runtime, client, server, message bus and gateway adapters for the Agent Communication Protocol — see [docs/features/acp.md](docs/features/acp.md) and [ADR-018](docs/adr/adr-018-acp-protocol-support.md). Optional dependency group: `uv sync --extra acp`.
+  (client, connection_manager, wrapper). MCP servers are configured per profile via the
+  `mcp_servers:` block and their tools are resolved dynamically at build time.
+- **ACP Integration** (`infrastructure/acp/`): Runtime, client, server, message bus and
+  gateway adapters for the Agent Communication Protocol — see
+  [docs/features/acp.md](docs/features/acp.md) and
+  [ADR-018](docs/adr/adr-018-acp-protocol-support.md). Optional dependency group:
+  `uv sync --extra acp`.
 
-Profile YAML tool lists use **short tool names** (e.g., `file_read`, `rag_semantic_search`) instead of full type/module specs. The tool registry in `infrastructure/tools/registry.py` maps short names to implementations.
+Profile YAML tool lists use **short tool names** (e.g., `file_read`,
+`rag_semantic_search`). The registry is the source of truth — to see every
+registered name at runtime use `taskforce tools list`.
 
-Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by `agent.max_parallel_tools` (default 4) in profile YAML.
+Tool parallelism is opt-in per tool via `supports_parallelism` and controlled by
+`agent.max_parallel_tools` (default 4) in profile YAML.
 
 ---
 
@@ -505,39 +626,61 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
 
 ---
 
-## Butler Agent (Event-Driven Architecture)
+## Butler Agent (Optional Package)
 
-The Butler is a proactive, event-driven agent daemon that runs 24/7 and acts as a personal assistant. See **[ADR-010](docs/adr/adr-010-event-driven-butler-agent.md)** for the full architecture.
+The Butler is a proactive, event-driven agent daemon. It is shipped as a separate
+package (`taskforce-butler`) under `agents/butler/` and becomes available once
+installed. When installed, the unified CLI auto-registers `taskforce butler ...`
+and switches the default profile from `dev` to `butler`.
 
-### Key Components
+See **[ADR-010](docs/adr/adr-010-event-driven-butler-agent.md)** and
+**[ADR-017](docs/adr/adr-017-butler-role-specialization.md)** for design details.
 
-| Component | Layer | File(s) | Purpose |
-|-----------|-------|---------|---------|
-| `AgentEvent` | Core/Domain | `core/domain/agent_event.py` | Event model from external sources |
-| `ScheduleJob` | Core/Domain | `core/domain/schedule.py` | Scheduled job model (cron/interval/one-shot) |
-| `TriggerRule` | Core/Domain | `core/domain/trigger_rule.py` | Event-to-action rule model |
-| `EventSourceProtocol` | Core/Interfaces | `core/interfaces/event_source.py` | External event source contract |
-| `SchedulerProtocol` | Core/Interfaces | `core/interfaces/scheduler.py` | Job scheduling contract |
-| `RuleEngineProtocol` | Core/Interfaces | `core/interfaces/rule_engine.py` | Rule evaluation contract |
-| `LearningStrategyProtocol` | Core/Interfaces | `core/interfaces/learning.py` | Automatic learning contract |
-| `SchedulerService` | Infrastructure | `infrastructure/scheduler/scheduler_service.py` | Asyncio-based scheduler |
-| `FileJobStore` | Infrastructure | `infrastructure/scheduler/job_store.py` | Job persistence |
-| `CalendarEventSource` | Infrastructure | `infrastructure/event_sources/calendar_source.py` | Google Calendar polling |
-| `WebhookEventSource` | Infrastructure | `infrastructure/event_sources/webhook_source.py` | HTTP webhook receiver |
-| `RuleEngine` | Application | `application/rule_engine.py` | Rule evaluation and persistence |
-| `EventRouter` | Application | `application/event_router.py` | Event-to-action dispatch |
-| `ButlerService` | Application | `application/butler_service.py` | Butler lifecycle orchestration |
-| `LearningService` | Application | `application/learning_service.py` | Auto-extraction from conversations |
-| `ButlerDaemon` | API | `api/butler_daemon.py` | Top-level daemon process |
-| Butler CLI | API | `api/cli/commands/butler.py` | `taskforce butler` commands |
+### Package Layout
+
+```
+agents/butler/
+├── src/taskforce_butler/
+│   ├── __init__.py
+│   ├── daemon.py             # ButlerDaemon — top-level daemon process
+│   ├── service.py            # ButlerService — lifecycle orchestration
+│   ├── event_router.py       # Event-to-action dispatch
+│   ├── rule_engine.py        # Trigger rule evaluation and persistence
+│   ├── learning_service.py   # Auto-extraction from conversations
+│   ├── role_loader.py        # Butler role specialization loader
+│   ├── cli/commands.py       # Typer app registered as `taskforce butler`
+│   ├── interfaces/butler.py  # EventSourceProtocol, SchedulerProtocol,
+│   │                         # RuleEngineProtocol, LearningStrategyProtocol,
+│   │                         # ButlerProtocol
+│   ├── domain/               # butler_role.py, trigger_rule.py
+│   └── infrastructure/
+│       ├── scheduler/        # SchedulerService + FileJobStore
+│       ├── event_sources/    # CalendarEventSource, WebhookEventSource
+│       └── tools/            # gmail, google_drive, calendar, schedule,
+│                             # reminder, rule_manager, auth tools
+└── configs/
+    ├── butler.yaml           # Main butler profile
+    ├── custom/               # Custom role configs (accountant, pc-agent, …)
+    └── roles/                # accountant.yaml, personal_assistant.yaml
+```
+
+Framework-side helpers that Butler consumes:
+- `core/domain/agent_event.py` — `AgentEvent` model
+- `core/domain/schedule.py` — `ScheduleJob` model
+- `infrastructure/event_sources/` and `infrastructure/scheduler/` — thin base
+  packages that the Butler package extends.
 
 ### Running the Butler
 
 ```bash
+# Install the package
+uv pip install taskforce-butler          # or via workspace install
+
 # Start the butler daemon
 taskforce butler start --profile butler
+taskforce start                          # shortcut: equivalent to 'butler start'
 
-# Check butler status
+# Check status
 taskforce butler status
 
 # Manage trigger rules
@@ -546,11 +689,18 @@ taskforce butler rules add --name "calendar_reminder" --source calendar --type c
 
 # View scheduled jobs
 taskforce butler schedules list
+
+# Butler roles
+taskforce butler roles list
+taskforce butler roles show accountant
 ```
 
 ### Butler Profile
 
-The butler profile (`src/taskforce/configs/butler.yaml`) configures event sources, trigger rules, scheduler, and notification defaults.
+The butler profile (`agents/butler/configs/butler.yaml`) configures event sources,
+trigger rules, scheduler, and notification defaults. The unified CLI adds the
+package's `configs/` directory to the profile loader so `--profile butler` resolves
+transparently.
 
 ---
 
@@ -568,11 +718,17 @@ uv sync
 # Install optional dependency groups as needed
 uv sync --extra browser       # Playwright browser automation
 uv sync --extra rag            # Azure AI Search
-uv sync --extra pdf            # PDF processing
-uv sync --extra personal-assistant  # Google Calendar/API
+uv sync --extra office         # docx/pptx/excel tools
+uv sync --extra acp            # Agent Communication Protocol SDK
 
 # For browser tool: also install Playwright browsers
 playwright install chromium
+
+# To use butler / coding-agent / rag-agent features, install the matching
+# agent package(s) — they live under agents/ in this repo:
+uv pip install -e agents/butler
+uv pip install -e agents/coding-agent
+uv pip install -e agents/rag-agent
 
 # Activate virtual environment
 source .venv/bin/activate  # Linux/Mac
@@ -853,43 +1009,62 @@ async def test_file_state_manager_saves_and_loads(tmp_path: Path):
 
 ### Profiles
 
-Taskforce uses YAML configuration profiles. Built-in profiles are in `src/taskforce/configs/`:
+Profiles are YAML files discovered via a search path that spans the framework and
+any installed agent packages. The unified CLI registers the package `configs/`
+directories at startup (see `taskforce_cli.agent_discovery.register_agent_config_dirs`).
 
-- `butler.yaml` - **Default profile.** Event-driven personal assistant daemon (scheduling, rules, Google Workspace)
-- `dev` - Development profile (resolved from built-in defaults, no physical YAML file)
-- `coding_agent.yaml` - Multi-agent coding orchestrator with sub-agents
-- `coding_analysis.yaml` - Code analysis specialist
-- `rag_agent.yaml` - RAG-enabled agent (Azure AI Search)
-- `security.yaml` - Security-hardened profile
-- `swe_bench.yaml` - SWE-Bench evaluation profile
-- `butler_roles/accountant.yaml` - Butler role: financial document processing
-- `butler_roles/personal_assistant.yaml` - Butler role: general personal assistant
-- `custom/` - Custom sub-agent configs (coding_planner, coding_worker, coding_reviewer, test_engineer, doc_writer, research_agent, etc.)
+**Framework-shipped profiles** (`src/taskforce/configs/`):
+
+- `default.yaml` — general-purpose profile with essential tools (file, shell, python,
+  web, git, memory, ask_user, llm). Profile id: `default`.
+- `llm_config.yaml` — model aliases and dynamic-routing rules (not a profile itself,
+  referenced via `llm.config_path`).
+- `acp_peer.yaml` — profile for agents exposed over the ACP protocol.
+- `showcase_coder.yaml`, `showcase_orchestrator.yaml`, `showcase_researcher.yaml` —
+  demo profiles used by examples and docs.
+- `dev` — not a physical file; resolved by the framework from built-in defaults.
+
+**Agent-package profiles** (available when the package is installed):
+
+| Profile | Package | Location |
+|---------|---------|----------|
+| `butler` | taskforce-butler | `agents/butler/configs/butler.yaml` |
+| `butler_roles/accountant`, `butler_roles/personal_assistant` | taskforce-butler | `agents/butler/configs/roles/` |
+| Butler custom roles (`accountant`, `pc-agent`, `research_agent`, `vision_ocr`) | taskforce-butler | `agents/butler/configs/custom/` |
+| `coding_agent`, `coding_analysis` | taskforce-coding-agent | `agents/coding-agent/configs/` |
+| Coding sub-agents (`coding_planner`, `coding_worker`, `coding_reviewer`, `code_reviewer`, `test_engineer`, `doc_writer`, `swe_analyzer`, `swe_coder`) | taskforce-coding-agent | `agents/coding-agent/configs/custom/` |
+| `rag_agent` | taskforce-rag-agent | `agents/rag-agent/configs/rag_agent.yaml` |
+
+**Default profile resolution:** The unified CLI picks `butler` when `taskforce_butler`
+is importable, otherwise falls back to `dev`. The framework-only fallback CLI
+(`src/taskforce/api/cli/main.py`) always defaults to `dev`. Override with
+`--profile <name>` or `TASKFORCE_PROFILE`.
 
 ```yaml
-# Example: src/taskforce/configs/butler.yaml (default profile)
-profile: butler
-specialist: butler
+# Example: src/taskforce/configs/default.yaml
+profile: default
 
 persistence:
   type: file
   work_dir: .taskforce
 
-runtime:
-  enabled: true
-  store: file
-  work_dir: .taskforce
-
 agent:
   planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: false
   max_steps: 30
 
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
+memory:
+  store_dir: .taskforce/memory
+
 logging:
-  level: DEBUG
+  level: INFO
   format: console
 
 context_policy:
@@ -902,9 +1077,16 @@ tools:
   - web_fetch
   - file_read
   - file_write
+  - edit
   - python
-  - powershell
+  - bash
+  - shell
+  - grep
+  - glob
+  - git
   - ask_user
+  - memory
+  - llm
 ```
 
 ### Optional Dependency Groups
@@ -915,15 +1097,19 @@ Defined in `pyproject.toml` under `[project.optional-dependencies]`:
 |-------|---------|-----------------|
 | `browser` | Playwright headless browser automation | `uv sync --extra browser` |
 | `rag` | Azure AI Search integration | `uv sync --extra rag` |
-| `pdf` | PDF processing (pypdf, pdfplumber, reportlab) | `uv sync --extra pdf` |
-| `personal-assistant` | Google Calendar/API integration | `uv sync --extra personal-assistant` |
+| `pdf` | Kept for backwards compatibility — core already includes `pypdf`, `pdfplumber`, `docling` | `uv sync --extra pdf` |
+| `office` | python-docx, python-pptx, openpyxl (for the `docx`/`pptx`/`excel` tools) | `uv sync --extra office` |
 | `postgres` | PostgreSQL persistence (SQLAlchemy, Alembic, AsyncPG) | `uv sync --extra postgres` |
 | `tokenizer` | Tiktoken token counting | `uv sync --extra tokenizer` |
 | `tracing` | Arize Phoenix OTEL + LiteLLM instrumentation | `uv sync --extra tracing` |
-| `auth` | Cryptography for authentication/security | `uv sync --extra auth` |
+| `auth` | Cryptography for authentication / OAuth2 | `uv sync --extra auth` |
 | `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
 | `acp` | Agent Communication Protocol (IBM/Linux Foundation) SDK | `uv sync --extra acp` |
+
+> The `personal-assistant` group has been removed — Google Workspace integration
+> now ships with the `taskforce-butler` agent package instead of as an extra on
+> the framework distribution.
 
 Dev dependencies are managed separately via `[dependency-groups]`:
 
@@ -1151,7 +1337,13 @@ agent.context.append_message(tool_msg)
 
 ### 4. Sub-Agent Spawning
 
-Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to standardize isolated session creation. The `coding_agent` profile delegates to custom sub-agents defined in `src/taskforce/configs/custom/`. Sub-agent context snapshots are captured before `agent.close()` and registered on the parent agent's ContextManager for `/tree --sub-agents` inspection.
+Sub-agent spawning is centralized in `application/sub_agent_spawner.py` to
+standardize isolated session creation. The `coding_agent` profile (shipped with
+`taskforce_coding_agent`) delegates to custom sub-agents defined in
+`agents/coding-agent/configs/custom/`. Sub-agent context snapshots are captured
+before `agent.close()` and registered on the parent agent's ContextManager for
+`/tree --sub-agents` inspection. Parallel execution is handled by the
+`call_agents_parallel` tool (ADR-015).
 
 ---
 
@@ -1250,7 +1442,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/core/tools/planner_tool.py` - Planning tool for agents
 - `src/taskforce/core/utils/time.py` - UTC time utilities
 
-### Protocols (core/interfaces/)
+### Protocols (`src/taskforce/core/interfaces/`)
 - `state.py` - `StateManagerProtocol` - session state persistence
 - `llm.py` - `LLMProviderProtocol` - LLM provider abstraction
 - `tools.py` - `ToolProtocol`, `ApprovalRiskLevel` - tool execution interface
@@ -1258,91 +1450,109 @@ See `docs/architecture/section-10-deployment.md` for:
 - `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` - Communication Gateway
 - `messaging.py` - `MessageBusProtocol` - inter-agent messaging
 - `runtime.py` - `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` - runtime tracking
-- `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle (context/prompt/agent types)
+- `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle
 - `tool_mapping.py` - `ToolMapperProtocol` - tool name resolution
+- `tool_resolver.py` - `ToolResolverProtocol` - tool name → instance resolution with DI
 - `tool_result_store.py` - `ToolResultStoreProtocol` - tool result caching
 - `sub_agents.py` - `SubAgentSpawnerProtocol` - sub-agent spawning
 - `identity_stubs.py` - `TenantContextProtocol`, `UserContextProtocol`, `IdentityProviderProtocol`, `PolicyEngineProtocol` - identity/tenancy
 - `logging.py` - `LoggerProtocol` - structured logging
-- `event_source.py` - `EventSourceProtocol` - external event sources (butler)
-- `scheduler.py` - `SchedulerProtocol` - job scheduling (butler)
-- `rule_engine.py` - `RuleEngineProtocol` - rule evaluation (butler)
-- `learning.py` - `LearningStrategyProtocol` - automatic learning (butler)
 - `auth.py` - `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` - OAuth2 authentication
-- `consolidation.py` - `ConsolidationProtocol` - memory consolidation
-- `agent_state.py` - `AgentStateProtocol` - agent state persistence
+- `consolidation.py` - `ConsolidationProtocol` - memory consolidation (ADR-013)
+- `dreaming.py` - `DreamEngineProtocol` - generative dreaming (ADR-014)
+- `agent_state.py` - `AgentStateProtocol` - singleton agent state (ADR-016)
 - `channel_ask.py` - `ChannelAskProtocol` - channel-based user interaction
 - `experience.py` - `ExperienceProtocol` - session experience tracking
 - `token_estimator.py` - `TokenEstimatorProtocol` - token counting
-- `conversation.py` - `ConversationProtocol` - conversation management
+- `conversation.py` - `ConversationProtocol`, `ConversationManagerProtocol` - persistent conversations (ADR-016)
 - `embeddings.py` - `EmbeddingsProtocol` - text embeddings
-- `butler.py` - `ButlerProtocol` - butler agent lifecycle
-- `context_manager.py` - `ContextManagerProtocol`, `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` - unified LLM context management
+- `context_manager.py` - `ContextManagerProtocol` + value objects - unified LLM context
+- `acp.py` - ACP protocols (ADR-018)
+
+> Butler-specific protocols (`EventSourceProtocol`, `SchedulerProtocol`,
+> `RuleEngineProtocol`, `LearningStrategyProtocol`, `ButlerProtocol`) are consolidated in
+> `agents/butler/src/taskforce_butler/interfaces/butler.py`.
 
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
 - `src/taskforce/infrastructure/persistence/file_agent_registry.py` - File-based agent registry
 - `src/taskforce/infrastructure/llm/litellm_service.py` - Unified LLM service (multi-provider via LiteLLM)
 - `src/taskforce/infrastructure/llm/llm_router.py` - LLM Router for dynamic per-call model selection (Decorator pattern)
-- `src/taskforce/infrastructure/llm/llm_config_loader.py` - LLM configuration loading and model alias resolution (extracted from litellm_service)
-- `src/taskforce/infrastructure/llm/llm_response_parser.py` - LLM streaming response parsing (extracted from litellm_service)
+- `src/taskforce/infrastructure/llm/llm_config_loader.py` - LLM configuration loading and model alias resolution
+- `src/taskforce/infrastructure/llm/llm_response_parser.py` - LLM streaming response parsing
 - `src/taskforce/infrastructure/memory/file_memory_store.py` - File-based memory
 - `src/taskforce/infrastructure/cache/tool_result_store.py` - Tool result caching
-- `src/taskforce/infrastructure/tools/base_tool.py` - `BaseTool` convenience base class (reduces boilerplate for new tools)
-- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry (20 native + RAG tools)
-- `src/taskforce/infrastructure/tools/native/*.py` - 20 native tools (incl. browser, send_notification, butler tools)
+- `src/taskforce/infrastructure/tools/base_tool.py` - `BaseTool` convenience base class
+- `src/taskforce/infrastructure/tools/registry.py` - Tool short-name registry
+- `src/taskforce/infrastructure/tools/native/*.py` - Native tools (see "Tools" section)
+- `src/taskforce/infrastructure/tools/orchestration/*.py` - `agent_tool`, `sub_agent_tool`, `parallel_agent_tool`, `acp_agent_tool`
 - `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
-- `src/taskforce/infrastructure/scheduler/scheduler_service.py` - Asyncio-based job scheduler (butler)
-- `src/taskforce/infrastructure/scheduler/job_store.py` - File-based job persistence (butler)
-- `src/taskforce/infrastructure/event_sources/base.py` - Polling event source base class (butler)
-- `src/taskforce/infrastructure/event_sources/calendar_source.py` - Google Calendar polling (butler)
-- `src/taskforce/infrastructure/event_sources/webhook_source.py` - HTTP webhook receiver (butler)
-- `src/taskforce/infrastructure/tools/rag/*.py` - RAG tools (Azure AI Search)
-- `src/taskforce/infrastructure/tools/orchestration/*.py` - Agent/sub-agent tools
-- `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry (supports context/prompt/agent types)
+- `src/taskforce/infrastructure/event_sources/` - Base package used by `taskforce_butler` event sources
+- `src/taskforce/infrastructure/scheduler/` - Base package used by `taskforce_butler` scheduler
+- `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry
 - `src/taskforce/infrastructure/tracing/phoenix_tracer.py` - Phoenix tracing
+- `src/taskforce/infrastructure/acp/` - ACP runtime, client, server, message bus, gateway adapters (ADR-018)
+- `src/taskforce/infrastructure/communication/` - Gateway adapters, senders, stores, registry
+- `src/taskforce/infrastructure/messaging/` - Message bus adapters
+- `src/taskforce/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
+- `src/taskforce/infrastructure/auth/` - Token store / OAuth flow implementations
 
 ### Application
 - `src/taskforce/application/factory.py` - Dependency injection (central wiring)
 - `src/taskforce/application/executor.py` - Execution orchestration (streaming-first)
 - `src/taskforce/application/tool_registry.py` - Tool catalog, mapping, and resolution
+- `src/taskforce/application/tool_builder.py` - Tool instantiation from definitions
 - `src/taskforce/application/agent_registry.py` - Custom agent registration API
+- `src/taskforce/application/agent_creation_pipeline.py` - Agent build pipeline
+- `src/taskforce/application/config_schema.py` - Pydantic schema helpers
 - `src/taskforce/application/gateway.py` - Unified Communication Gateway service
-- `src/taskforce/application/profile_loader.py` - Profile YAML loading/resolution (extracted from factory)
-- `src/taskforce/application/system_prompt_assembler.py` - System prompt composition (extracted from factory)
+- `src/taskforce/application/profile_loader.py` - Profile YAML loading/resolution
+- `src/taskforce/application/system_prompt_assembler.py` - System prompt composition
 - `src/taskforce/application/intent_router.py` - Intent routing for chat
 - `src/taskforce/application/skill_manager.py` - Skill lifecycle management
-- `src/taskforce/application/skill_service.py` - Skill service (discovery, slash-command resolution, prompt/agent execution)
-- `src/taskforce/application/plugin_loader.py` - Plugin loading and discovery (consolidated)
-- `src/taskforce/application/plugin_discovery.py` - Backward-compatible shim (re-exports from plugin_loader)
+- `src/taskforce/application/skill_service.py` - Skill discovery, slash-command resolution
+- `src/taskforce/application/plugin_loader.py` - Plugin loading and discovery
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
-- `src/taskforce/application/rule_engine.py` - Trigger rule evaluation and persistence (butler)
-- `src/taskforce/application/event_router.py` - Event-to-action dispatch (butler)
-- `src/taskforce/application/butler_service.py` - Butler lifecycle orchestration (butler)
-- `src/taskforce/application/learning_service.py` - Auto-extraction from conversations (butler)
-- `src/taskforce/application/epic_orchestrator.py` - Epic orchestration
-- `src/taskforce/application/task_complexity_classifier.py` - Auto-epic complexity classification
-- `src/taskforce/application/epic_state_store.py` - Epic state persistence
 - `src/taskforce/application/sub_agent_spawner.py` - Sub-agent session spawning
-- `src/taskforce/application/tracing_facade.py` - Tracing facade
+- `src/taskforce/application/conversation_manager.py` - Persistent conversation lifecycle (ADR-016)
+- `src/taskforce/application/persistent_agent_service.py` - Persistent orchestrator runtime (ADR-016)
+- `src/taskforce/application/channel_ask_router.py` - Channel-based user question routing
+- `src/taskforce/application/consolidation_service.py` / `consolidation_orchestrator.py` - Memory consolidation (ADR-013)
+- `src/taskforce/application/dream_service.py` - Generative dreaming (ADR-014)
+- `src/taskforce/application/workflow_runtime_service.py` - Resumable HITL workflow runtime
+- `src/taskforce/application/auth_manager.py` - OAuth2 manager
+- `src/taskforce/application/planning_strategy_factory.py` - Planning strategy wiring
+- `src/taskforce/application/request_queue.py` - Request buffering
+- `src/taskforce/application/topic_detector.py` - Conversation topic detection
+- `src/taskforce/application/token_analytics_facade.py` / `tracing_facade.py` - Facades
+- `src/taskforce/application/progress_update_builder.py` / `execution_error_handler.py` - Streaming helpers
+- `src/taskforce/application/acp_service.py` - ACP application service (ADR-018)
+
+> Epic orchestration (`epic_orchestrator`, `task_complexity_classifier`,
+> `epic_state_store`) and butler lifecycle services (`butler_service`, `rule_engine`,
+> `event_router`, `learning_service`) have moved to the `taskforce_coding_agent` and
+> `taskforce_butler` packages under `agents/`.
 
 ### API
 - `src/taskforce/api/server.py` - FastAPI application
-- `src/taskforce/api/cli/main.py` - CLI entry point
+- `src/taskforce/api/cli/main.py` - Framework-only CLI entry (falls back when `taskforce_cli` is missing)
 - `src/taskforce/api/cli/simple_chat.py` - Interactive chat interface
-- `src/taskforce/api/cli/commands/` - CLI subcommands (run, chat, epic, tools, skills, sessions, missions, config, butler)
-- `src/taskforce/api/cli/commands/butler.py` - Butler daemon CLI commands (butler)
-- `src/taskforce/api/butler_daemon.py` - Butler daemon process (butler)
-- `src/taskforce/api/routes/` - REST endpoints (execution, agents, sessions, tools, health, gateway)
-- `src/taskforce/api/routes/gateway.py` - Unified Communication Gateway routes
+- `src/taskforce/api/cli/commands/` - Framework subcommands (`run`, `chat`, `tools`, `skills`, `missions`, `conversations`, `config`, `memory`, `acp`)
+- `src/taskforce/api/routes/` - REST endpoints (execution, agents, sessions, tools, health, gateway, workflows, conversations, …)
 - `src/taskforce/api/schemas/` - Request/response schemas
+- `cli/src/taskforce_cli/main.py` - Unified CLI that dynamically adds `butler`, `epic`, `rag` commands when the matching package is installed
 
-### Extensions
-- `src/taskforce/configs/` - Profile YAML configs (dev, coding_agent, rag_agent, security, butler, orchestration roles)
-- `src/taskforce/infrastructure/communication/` - Communication Gateway components (adapters, senders, stores, registry)
-- `src/taskforce/infrastructure/messaging/` - Message bus adapters
-- `src/taskforce/infrastructure/runtime/` - Runtime tracking (heartbeats, checkpoints)
-- `src/taskforce/plugins/` - Plugin agents
+### Agent Packages
+- `agents/butler/` - `taskforce_butler` (daemon, scheduler, event sources, rules, learning, butler roles, tools)
+- `agents/coding-agent/` - `taskforce_coding_agent` (epic orchestration, complexity classifier, sub-agent configs)
+- `agents/rag-agent/` - `taskforce_rag_agent` (RAG tools, rag_agent profile)
+- `agents/security-agent/`, `agents/swe-bench-agent/` - additional agent profiles
+
+### Framework-shipped configs and assets
+- `src/taskforce/configs/` - Framework profiles (default, acp_peer, showcase_*)
+- `src/taskforce/configs/llm_config.yaml` - Model aliases and LLM routing rules
+- `src/taskforce/plugins/` - Bundled plugin agents (ap_poc_agent, document_extraction_agent)
+- `src/taskforce/skills/` - Bundled skills (pdf-processing, code-review, data-analysis, documentation, …)
 
 ### Examples
 - `examples/accounting_agent/` - Full accounting agent with custom tools, skills, rules
@@ -1366,7 +1576,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - **Plugin System:** `docs/plugins.md`
 - **Skills (unified):** `docs/features/skills.md` (context/prompt/agent types, slash-name invocation)
 - **C4 Diagrams:** `docs/architecture/c4/` (PlantUML: system context, container, component-level diagrams per layer)
-- **ADRs:** `docs/adr/index.md` (12 ADRs: uv, clean architecture, enterprise, multi-agent, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler, unified skills system, dynamic LLM selection)
+- **ADRs:** `docs/adr/index.md` (19 ADRs: uv, clean architecture, enterprise, multi-agent runtime, epic orchestration, communication providers, unified memory, auto-epic, communication gateway, event-driven butler, unified skills, dynamic LLM selection, memory consolidation, resumable HITL workflows / generative dreaming, parallel sub-agent execution, persistent agent architecture, butler role specialization, ACP protocol support, cooperative agent interruption)
 - **Epics:** `docs/epics/index.md` (20+ epic planning documents)
 - **PRD:** `docs/prd/index.md`
 - **Stories:** `docs/stories/`

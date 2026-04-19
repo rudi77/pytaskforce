@@ -1,13 +1,24 @@
 # CLI Guide
 
-The `taskforce` CLI is the primary way to interact with the agent framework during development.
+The `taskforce` CLI is the primary way to interact with the agent framework
+during development.
 
-> **Note:** The default profile is `butler`. Override with `--profile <name>` or `TASKFORCE_PROFILE` env var.
+There are two entry points:
+
+1. **Unified CLI** (`taskforce-cli`, preferred) — discovers installed agent
+   packages and automatically adds their subcommands (`butler`, `epic`, `rag`).
+2. **Framework-only fallback** (`src/taskforce/api/cli/main.py`) — used when
+   `taskforce-cli` is not installed. Only ships the framework commands
+   (`run`, `chat`, `tools`, `skills`, `config`, `memory`, `acp`).
+
+> **Default profile:** The unified CLI picks `butler` if `taskforce-butler`
+> is installed, otherwise `dev`. The fallback CLI always defaults to `dev`.
+> Override with `--profile <name>` or the `TASKFORCE_PROFILE` env var.
 
 ## Global Options
 
 ```bash
-taskforce --profile <name>   # Configuration profile (default: butler)
+taskforce --profile <name>   # Configuration profile
 taskforce --debug            # Enable debug output (agent thoughts, actions, observations)
 ```
 
@@ -15,10 +26,10 @@ taskforce --debug            # Enable debug output (agent thoughts, actions, obs
 
 ### Version
 ```bash
-taskforce version            # Show Taskforce version and banner
+taskforce version            # Show Taskforce version, banner, and installed agent packages
 ```
 
-### Butler Shortcuts
+### Butler Shortcuts (require `taskforce-butler`)
 Convenience commands that delegate to `taskforce butler`:
 
 ```bash
@@ -154,27 +165,30 @@ See **[Plugin Development Guide](plugins.md)** for creating your own plugins.
 
 ## Multi-Agent Orchestration
 
-Use the `coding_agent` profile to enable multi-agent coordination:
+Install `taskforce-coding-agent` to enable the `coding_agent` profile, which
+delegates to specialist sub-agents:
 
 ```bash
+uv pip install -e agents/coding-agent
+
 taskforce run mission "Research Python FastAPI and React, create comparison" \
   --profile coding_agent
 ```
 
-The coding agent orchestrator delegates to specialist sub-agents:
+The orchestrator delegates to specialist sub-agents shipped in
+`agents/coding-agent/configs/custom/`:
+
 - **coding_planner**: Task decomposition and planning
 - **coding_worker**: Implementation with tooling access
 - **coding_reviewer**: Code review and quality checks
-
-Additional sub-agents available in `src/taskforce/configs/custom/`:
-- `test_engineer`, `doc_writer`, `research_agent`, `doc-agent`, `pc-agent`
+- Also available: `test_engineer`, `doc_writer`, `code_reviewer`, `swe_analyzer`, `swe_coder`
 
 ```bash
-# Use specialist directly (without orchestrator)
+# Use a specialist directly (without the orchestrator)
 taskforce run mission "Review code quality in src/" --profile code_reviewer
 ```
 
-See [Multi-Agent Orchestration Plan](architecture/multi-agent-orchestration-plan.md) for details.
+See [Sub-Agent Orchestration](features/sub-agent-orchestration.md) for patterns.
 
 ---
 
@@ -278,8 +292,10 @@ taskforce memory experiences --unprocessed             # only unconsolidated
 taskforce memory stats
 ```
 
-### Butler
-Manage the butler daemon, trigger rules, schedules, and roles:
+### Butler (requires `taskforce-butler`)
+Manage the butler daemon, trigger rules, schedules, and roles. These commands
+are registered by the unified CLI only when `taskforce-butler` is installed
+(`uv pip install -e agents/butler`).
 
 ```bash
 # Daemon management
@@ -300,6 +316,16 @@ taskforce butler roles show accountant
 taskforce butler roles show personal_assistant
 ```
 
+### Epic orchestration (requires `taskforce-coding-agent`)
+When installed, the unified CLI exposes `taskforce epic` for iterative
+planner/worker/judge pipelines. See
+[ADR-005](adr/adr-005-epic-orchestration-pipeline.md) and the package's own
+README for details.
+
+### RAG operations (requires `taskforce-rag-agent`)
+When installed, `taskforce rag` provides RAG-specific operations backed by
+Azure AI Search.
+
 ---
 
 ## Profile Selection
@@ -309,17 +335,19 @@ taskforce butler roles show personal_assistant
 
 ### Available Profiles
 
-| Profile | Description |
-|---------|-------------|
-| `butler` (default) | Event-driven personal assistant daemon |
-| `dev` | Development profile with file-based persistence |
-| `coding_agent` | Multi-agent coding orchestrator |
-| `coding_analysis` | Code analysis specialist |
-| `rag_agent` | RAG-enabled agent (Azure AI Search) |
-| `security` | Security-hardened profile |
-| `swe_bench` | SWE-Bench evaluation profile |
+Framework-shipped (always available): `default`, `dev`, `acp_peer`, `showcase_*`.
 
-See **[Profiles & Config](profiles.md)** for full configuration details.
+Agent-package profiles (require the matching package):
+
+| Profile | Package | Description |
+|---------|---------|-------------|
+| `butler` | `taskforce-butler` | Event-driven personal assistant daemon |
+| `coding_agent` | `taskforce-coding-agent` | Multi-agent coding orchestrator |
+| `coding_analysis` | `taskforce-coding-agent` | Code analysis specialist |
+| `rag_agent` | `taskforce-rag-agent` | RAG-enabled agent (Azure AI Search) |
+
+See **[Profiles & Config](profiles.md)** for the full list (incl. butler roles
+and coding sub-agent profiles) and configuration details.
 
 ---
 *For full command details, run `taskforce --help`.*

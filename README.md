@@ -28,7 +28,8 @@ cp .env.example .env
 
 ### 3. Run Your First Mission
 ```bash
-# CLI Mode (default profile: butler)
+# CLI Mode — default profile is 'butler' if taskforce-butler is installed,
+# otherwise 'dev'. Override any time with --profile <name>.
 taskforce run mission "Describe the current weather in Vienna"
 
 # Interactive Chat
@@ -37,6 +38,18 @@ taskforce chat
 # API Mode
 uvicorn taskforce.api.server:app --reload
 # Documentation: http://localhost:8000/docs
+```
+
+### 3a. Install Optional Agent Packages
+```bash
+# Enable butler (daemon + Google Workspace tools + scheduler)
+uv pip install -e agents/butler
+
+# Enable coding orchestration (epic pipeline, coding_agent profile)
+uv pip install -e agents/coding-agent
+
+# Enable RAG tools (rag_agent profile)
+uv pip install -e agents/rag-agent
 ```
 
 ### 4. Load a Plugin (Optional)
@@ -62,18 +75,27 @@ taskforce chat --plugin examples/accounting_agent
 ## Features
 
 - **Clean Architecture**: Strict layer separation (Core → Infrastructure → Application → API).
-- **Multi-Agent Orchestration**: Delegate complex tasks to specialist sub-agents working in parallel.
+- **Multi-Package Design**: Lean core framework (`taskforce`) plus optional agent packages
+  (`taskforce-butler`, `taskforce-coding-agent`, `taskforce-rag-agent`) wired together by a
+  unified CLI (`taskforce-cli`).
+- **Multi-Agent Orchestration**: Delegate complex tasks to specialist sub-agents, in parallel
+  (`call_agents_parallel`) or across the network via ACP (`call_acp_agent`).
 - **Dual Interfaces**: Full-featured CLI (Typer) and REST API (FastAPI).
-- **27 Native Tools**: File, shell, Git, web, browser, search, edit, LLM, memory, authentication, notifications, and more.
+- **Rich Tool Registry**: 20+ framework-native tools (file, shell, Git, web, browser, search,
+  edit, LLM, memory, notifications, Office, accounting, …) plus tools contributed by agent
+  packages (Gmail, Google Drive, Calendar, scheduler, RAG).
 - **Swappable Persistence**: File-based for dev, PostgreSQL for production.
 - **LLM Agnostic**: Multi-provider support (OpenAI, Anthropic, Google, Azure, Ollama) via LiteLLM.
 - **Dynamic LLM Routing**: Use different models for planning, reasoning, acting, and summarizing phases.
 - **Plugin System**: Load custom agent plugins with specialized tools.
 - **Skills System**: Context, prompt, and agent-type skills for domain-specific capabilities.
 - **Communication Gateway**: Unified inbound/outbound messaging for Telegram, MS Teams, Slack ([docs/integrations.md](docs/integrations.md)).
-- **Butler Agent**: Event-driven personal assistant daemon with scheduling, rules, and Google Workspace integration.
+- **Butler Agent** (optional): Event-driven personal assistant daemon with scheduling, rules,
+  and Google Workspace integration — shipped in the `taskforce-butler` package.
+- **Persistent Agents**: Sessionless orchestrator architecture with durable conversations (ADR-016).
 - **Resumable HITL Workflows**: Durable wait/resume checkpoints with workflow APIs (`/api/v1/workflows/*`).
-- **Long-Term Memory**: Session-persistent memory with human-like consolidation (forgetting curves, spaced repetition).
+- **Long-Term Memory**: Session-persistent memory with human-like consolidation (forgetting curves, spaced repetition) and a generative dreaming engine (ADR-014).
+- **ACP Support**: Remote-agent invocation over the Agent Communication Protocol (ADR-018).
 - **Enterprise Ready**: Optional `taskforce-enterprise` add-on for RBAC, multi-tenancy, and compliance.
 
 ## Enterprise Features (Optional)
@@ -100,24 +122,33 @@ See [docs/features/enterprise.md](docs/features/enterprise.md) for details.
 
 ## Architecture Overview
 
-Taskforce follows a strict Hexagonal/Clean Architecture pattern:
+Taskforce is organized as a multi-package monorepo. The framework is the lean
+core; agent-specific capabilities are shipped as optional packages that are
+discovered at runtime.
 
 ```
-src/taskforce/
-├── core/              # LAYER 1: Pure Domain Logic (Protocols, Agent, Plans)
-├── infrastructure/    # LAYER 2: Adapters (DB, LLM, Tools, Memory)
-├── application/       # LAYER 3: Use Cases (Factory, Executor, Profiles)
-└── api/               # LAYER 4: Entrypoints (CLI, REST Routes)
+pytaskforce/
+├── src/taskforce/          # Core framework (Core → Infrastructure → Application → API)
+├── cli/src/taskforce_cli/  # Unified CLI (discovers installed agent packages)
+├── agents/
+│   ├── butler/             # taskforce_butler — daemon, scheduler, rules, GSuite tools
+│   ├── coding-agent/       # taskforce_coding_agent — epic orchestration, sub-agents
+│   └── rag-agent/          # taskforce_rag_agent — Azure AI Search tools
+├── examples/               # Example plugin agents
+└── docs/                   # Markdown documentation
 ```
 
 ## Multi-Agent Orchestration
 
-Taskforce supports **multi-agent orchestration** via the `coding_agent` profile, which delegates complex missions to specialist sub-agents. Each sub-agent runs in isolation with its own tools and context.
+Taskforce supports **multi-agent orchestration** via the `coding_agent` profile
+(shipped in `taskforce-coding-agent`), which delegates complex missions to
+specialist sub-agents. Each sub-agent runs in isolation with its own tools and
+context.
 
 ### Quick Example
 
 ```bash
-# Run with coding_agent profile (multi-agent orchestration)
+# Requires `uv pip install -e agents/coding-agent`
 taskforce run mission "Research Python FastAPI and React, create comparison docs" \
   --profile coding_agent
 ```
@@ -132,7 +163,7 @@ The coding agent orchestrator will:
 
 ### Available Sub-Agent Profiles
 
-Built-in sub-agent profiles in `src/taskforce/configs/custom/`:
+Sub-agent profiles ship in `agents/coding-agent/configs/custom/`:
 
 | Profile | Description |
 |---------|-------------|
@@ -142,15 +173,17 @@ Built-in sub-agent profiles in `src/taskforce/configs/custom/`:
 | `code_reviewer` | Alternative code review agent |
 | `test_engineer` | Test writing and validation |
 | `doc_writer` | Documentation creation |
-| `research_agent` | Web research and fact-checking |
-| `doc-agent` | Document extraction/transformation |
-| `pc-agent` | Windows system automation |
 | `swe_analyzer` | SWE-Bench analysis |
 | `swe_coder` | SWE-Bench solving |
 
+Butler custom roles live in `agents/butler/configs/custom/` (`accountant`,
+`pc-agent`, `research_agent`, `vision_ocr`). Butler *top-level* role specializations
+are under `agents/butler/configs/roles/` (`accountant`, `personal_assistant`).
+
 ### Custom Agent Example
 
-Create `src/taskforce/configs/custom/security_auditor.yaml`:
+Create `agents/coding-agent/configs/custom/security_auditor.yaml` (or any
+directory the profile loader is configured to search):
 
 ```yaml
 system_prompt: |
@@ -201,9 +234,12 @@ See [Epic Orchestration docs](docs/architecture/epic-orchestration.md) for full 
 
 ---
 
-## Butler Agent (Event-Driven)
+## Butler Agent (Event-Driven, Optional Package)
 
-The Butler is a proactive, event-driven agent daemon that runs 24/7 as a personal assistant. It is the **default profile** for Taskforce.
+The Butler is a proactive, event-driven agent daemon that runs 24/7 as a personal
+assistant. It ships as the `taskforce-butler` package under `agents/butler/`.
+When installed, the unified CLI promotes `butler` to the default profile;
+without it, the default is `dev`.
 
 ```bash
 # Start the butler daemon
@@ -222,10 +258,12 @@ The Butler integrates with Google Calendar, Gmail, Google Drive, and supports sc
 
 ### Butler Roles
 
-Specialized butler personas are available:
+Specialized butler personas live in `agents/butler/configs/roles/`:
 
-- `butler_roles/accountant` — Financial document processing
-- `butler_roles/personal_assistant` — General personal assistant
+- `accountant` — Financial document processing
+- `personal_assistant` — General personal assistant
+
+See [ADR-017](docs/adr/adr-017-butler-role-specialization.md) for the role model.
 
 ---
 
@@ -268,13 +306,14 @@ uv run mypy src/taskforce
 
 ### Optional Dependency Groups
 ```bash
-uv sync --extra browser           # Playwright browser automation
-uv sync --extra rag               # Azure AI Search
-uv sync --extra pdf               # PDF processing
+uv sync --extra browser            # Playwright browser automation
+uv sync --extra rag                # Azure AI Search
+uv sync --extra office             # docx/pptx/excel tools
 uv sync --extra postgres           # PostgreSQL persistence
 uv sync --extra tokenizer          # Tiktoken token counting
 uv sync --extra tracing            # Arize Phoenix OTEL tracing
-uv sync --extra auth               # Cryptography for authentication
+uv sync --extra auth               # Cryptography / OAuth2
+uv sync --extra acp                # Agent Communication Protocol SDK
 uv sync --extra evals              # Inspect AI + SWE-Bench evaluation
 ```
 
