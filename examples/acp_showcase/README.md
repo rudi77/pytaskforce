@@ -130,6 +130,11 @@ taskforce acp call researcher "Who are you?" --profile showcase_orchestrator
   list is missing or the peer name doesn't match.
 - `401 Unauthorized` from the LLM → your `.env` keys are missing or the
   wrong provider; double-check `src/taskforce/configs/llm_config.yaml`.
+- `AttributeError: module 'uvicorn.config' has no attribute 'LoopSetupType'`
+  → you have uvicorn ≥ 0.36 installed. The `acp` extra pins `uvicorn<0.36`
+  because `acp-sdk` 1.0.x still references the pre-rename type. Re-run
+  `uv sync --extra acp` to restore the pinned version and do not upgrade
+  uvicorn manually until `acp-sdk` ships a fix.
 - The agent loops on `web_fetch` errors → some search results may be
   unreachable; that's expected noise, the research step should still
   produce a briefing from the reachable sources.

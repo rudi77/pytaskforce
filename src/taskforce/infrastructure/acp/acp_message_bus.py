@@ -112,7 +112,7 @@ class AcpMessageBus(MessageBusProtocol):
 
     def _ensure_registered(self, topic: str, queue: asyncio.Queue[MessageEnvelope]) -> None:
         agent_name = _topic_to_agent(topic)
-        existing = {m.name for m in self._runtime.server.registered_manifests()}  # type: ignore[attr-defined]
+        existing = {m.name for m in self._runtime.server.registered_manifests()}
         if agent_name in existing:
             return
 

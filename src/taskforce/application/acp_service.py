@@ -45,7 +45,6 @@ class AcpService:
         config: AcpConfigSchema,
         *,
         work_dir: str = ".taskforce",
-        bus_factory: Any | None = None,
     ) -> None:
         self._config = config
         self._work_dir = work_dir
@@ -57,7 +56,6 @@ class AcpService:
             peers=self._peers,
         )
         self._bus: MessageBusProtocol | None = None
-        self._bus_factory = bus_factory
 
         self._load_peers_from_config(config.peers)
 
@@ -182,6 +180,15 @@ def build_acp_service(
 def acp_server_schema_from_dict(data: dict[str, Any]) -> AcpServerSchema:
     """Utility for CLI code paths that only have raw config dicts."""
     return AcpServerSchema(**data)
+
+
+def list_persisted_peers(work_dir: str = ".taskforce") -> list[AcpPeer]:
+    """Return all peers persisted under ``<work_dir>/acp_peers.json``.
+
+    Application-layer entry point used by the API so route handlers do
+    not need to import infrastructure adapters directly.
+    """
+    return FilePeerRegistry(work_dir=work_dir).list()
 
 
 def build_acp_runtime_for_tools(

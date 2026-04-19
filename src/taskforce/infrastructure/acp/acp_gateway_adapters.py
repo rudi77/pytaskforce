@@ -7,6 +7,7 @@ logic is shared with Telegram, Teams and REST.
 
 from __future__ import annotations
 
+import hmac
 from typing import Any
 
 import structlog
@@ -50,8 +51,8 @@ class AcpInboundAdapter:
     def verify_signature(self, *, raw_body: bytes, headers: dict[str, str]) -> bool:
         if self._shared_secret is None:
             return True
-        provided = headers.get("x-acp-secret") or headers.get("X-ACP-Secret")
-        return provided == self._shared_secret
+        provided = headers.get("x-acp-secret") or headers.get("X-ACP-Secret") or ""
+        return hmac.compare_digest(provided, self._shared_secret)
 
     @staticmethod
     def _collect_text(messages: list[Any]) -> str:
@@ -91,7 +92,9 @@ class AcpOutboundSender:
     ) -> None:
         peer = self._resolve(recipient_id)
         session_id = (metadata or {}).get("session_id")
-        await self._runtime.client.run_sync(peer, message, session_id=session_id, metadata=metadata)
+        # ``metadata`` is kept for gateway-side routing (session_id above) but is
+        # not forwarded to the ACP SDK, which does not accept a metadata arg.
+        await self._runtime.client.run_sync(peer, message, session_id=session_id)
 
     async def send_file(
         self,

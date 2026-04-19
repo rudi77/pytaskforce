@@ -12,8 +12,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from taskforce.application.acp_service import list_persisted_peers
 from taskforce.core.domain.acp import AcpPeer
-from taskforce.infrastructure.acp.peer_registry import FilePeerRegistry
 
 router = APIRouter(prefix="/api/v1/acp", tags=["acp"])
 
@@ -44,15 +44,13 @@ def _peer_to_response(peer: AcpPeer) -> AcpPeerResponse:
 @router.get("/peers", response_model=list[AcpPeerResponse])
 async def list_peers() -> list[AcpPeerResponse]:
     """List all peers registered in ``.taskforce/acp_peers.json``."""
-    registry = FilePeerRegistry()
-    return [_peer_to_response(p) for p in registry.list()]
+    return [_peer_to_response(p) for p in list_persisted_peers()]
 
 
 @router.get("/status", response_model=AcpStatusResponse)
 async def status() -> AcpStatusResponse:
     """Return a snapshot of the on-disk ACP registry."""
-    registry = FilePeerRegistry()
-    peers = registry.list()
+    peers = list_persisted_peers()
     return AcpStatusResponse(
         configured_peers=len(peers),
         peers=[_peer_to_response(p) for p in peers],
