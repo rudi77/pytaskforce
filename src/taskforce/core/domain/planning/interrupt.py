@@ -10,6 +10,7 @@ boundary.  The handler persists the full execution state using the same
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,18 @@ from taskforce.core.interfaces.logging import LoggerProtocol
 
 if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
+
+
+def is_interrupt_requested(agent: Any) -> bool:
+    """Return True iff the agent's interrupt flag is a set ``asyncio.Event``.
+
+    Single source of truth for interrupt detection used by every planning
+    strategy.  Guards against test doubles whose ``is_interrupt_requested``
+    would otherwise return a truthy ``MagicMock`` by inspecting the raw
+    ``_interrupt_event`` attribute directly.
+    """
+    flag = getattr(agent, "_interrupt_event", None)
+    return isinstance(flag, asyncio.Event) and flag.is_set()
 
 
 async def _handle_interrupt(

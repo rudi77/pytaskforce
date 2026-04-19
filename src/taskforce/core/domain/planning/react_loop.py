@@ -13,7 +13,7 @@ from taskforce.core.domain.enums import (
     MessageRole,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
-from taskforce.core.domain.planning.interrupt import _handle_interrupt
+from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_interrupt_requested
 from taskforce.core.domain.planning.llm_interactions import _salvage_answer
 from taskforce.core.domain.planning.tool_execution import _process_tool_calls
 from taskforce.core.domain.planning.utils import (
@@ -138,11 +138,7 @@ async def _react_loop(
         # Cooperative interrupt: if a Ctrl+C (CLI) or POST /cancel (API)
         # has requested a pause, persist state and return.  The existing
         # _resume_from_pause path picks execution back up on the next turn.
-        # The ``isinstance`` check on the raw ``asyncio.Event`` guards
-        # against test doubles whose ``is_interrupt_requested`` returns a
-        # truthy MagicMock by default.
-        _flag = getattr(agent, "_interrupt_event", None)
-        if isinstance(_flag, asyncio.Event) and _flag.is_set():
+        if is_interrupt_requested(agent):
             async for evt in _handle_interrupt(
                 agent,
                 session_id,

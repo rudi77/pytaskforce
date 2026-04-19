@@ -53,21 +53,20 @@ def stream_event_to_progress_update(event: StreamEvent) -> ProgressUpdate:
         EventType.ASK_USER.value: lambda d: (
             f"Question: {d.get('question', 'User input required')}"
         ),
-        EventType.PLAN_UPDATED.value: lambda d: (
-            f"Plan updated ({d.get('action', 'unknown')})"
-        ),
+        EventType.PLAN_UPDATED.value: lambda d: (f"Plan updated ({d.get('action', 'unknown')})"),
         EventType.TOKEN_USAGE.value: lambda d: f"Tokens: {d.get('total_tokens', 0)}",
         EventType.FINAL_ANSWER.value: lambda d: d.get("content", ""),
         EventType.COMPLETE.value: lambda d: (
             f"Execution completed. Status: {d.get('status', 'unknown')}"
         ),
         EventType.ERROR.value: lambda d: f"Error: {d.get('message', 'unknown')}",
+        EventType.INTERRUPTED.value: lambda d: (
+            f"Execution paused ({d.get('reason', 'user_requested')})."
+        ),
     }
 
     event_type_value = (
-        event.event_type.value
-        if isinstance(event.event_type, EventType)
-        else event.event_type
+        event.event_type.value if isinstance(event.event_type, EventType) else event.event_type
     )
     message_fn = message_map.get(event_type_value, lambda d: str(d))
 
@@ -81,9 +80,7 @@ def stream_event_to_progress_update(event: StreamEvent) -> ProgressUpdate:
 
 def build_completion_update(result: ExecutionResult) -> ProgressUpdate:
     """Build the final COMPLETE progress update from an execution result."""
-    status_value = (
-        result.status_value if hasattr(result, "status_value") else result.status
-    )
+    status_value = result.status_value if hasattr(result, "status_value") else result.status
     return ProgressUpdate(
         timestamp=datetime.now(),
         event_type=EventType.COMPLETE,
@@ -155,14 +152,10 @@ def _parse_history_event(event: Any) -> tuple[str, str | int, dict[str, Any]]:
     return event_type_str, step, data
 
 
-def _build_observation_update(
-    step: str | int, data: dict[str, Any]
-) -> ProgressUpdate:
+def _build_observation_update(step: str | int, data: dict[str, Any]) -> ProgressUpdate:
     """Build a ProgressUpdate for an observation event."""
     success = data.get("success", False) if isinstance(data, dict) else False
-    obs_status = (
-        ExecutionStatus.COMPLETED.value if success else ExecutionStatus.FAILED.value
-    )
+    obs_status = ExecutionStatus.COMPLETED.value if success else ExecutionStatus.FAILED.value
     return ProgressUpdate(
         timestamp=datetime.now(),
         event_type="observation",
