@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from taskforce.core.domain.planning_helpers import _is_no_progress_tool_output
+from taskforce.core.domain.planning import _is_no_progress_tool_output
 
 
 def test_detects_no_progress_markers() -> None:

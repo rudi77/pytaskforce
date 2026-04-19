@@ -58,7 +58,7 @@ def _install_structlog_stub() -> None:
 
 _install_structlog_stub()
 
-from taskforce.core.domain.planning_helpers import (  # noqa: E402
+from taskforce.core.domain.planning import (  # noqa: E402
     ToolCallRequest,
     _execute_tool_calls,
 )
