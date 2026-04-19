@@ -26,11 +26,10 @@ from taskforce.core.domain.enums import (
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_interrupt_requested
 from taskforce.core.domain.planning_helpers import (
-    DEFAULT_PLAN,
+    ExecutionInit,
     _collect_result,
-    _generate_and_register_plan,
+    _initialize_execution_context,
     _llm_call_and_process,
-    _load_and_resume_state,
     _react_loop,
     _save_and_emit_max_steps,
     _stream_final_response,
@@ -80,39 +79,34 @@ class NativeReActStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self._logger or agent.logger
-        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
+        init: ExecutionInit | None = None
+        async for item in _initialize_execution_context(
+            agent,
+            mission,
+            session_id,
+            logger,
+            generate_plan=self.generate_plan_first,
+            max_plan_steps=self.max_plan_steps,
+        ):
+            if isinstance(item, ExecutionInit):
+                init = item
+            else:
+                yield item
+        assert init is not None
 
-        if resume is not None:
-            agent.context.restore(resume.messages)
-            step = resume.step
-        else:
-            if self.generate_plan_first:
-                async for item in _generate_and_register_plan(
-                    agent,
-                    mission,
-                    logger,
-                    self.max_plan_steps,
-                    session_id=session_id,
-                    state=state,
-                ):
-                    if isinstance(item, StreamEvent):
-                        yield item
-
-            agent.context.initialize(mission, state, agent._base_system_prompt)
-            step = 0
-
+        step = init.resume.step if init.resume else 0
         async for e in _react_loop(
             agent,
             mission,
             session_id,
             agent.context.messages,
-            state,
+            init.state,
             start_step=step,
             logger=logger,
         ):
             yield e
 
-        await agent.state_store.save(session_id=session_id, state=state, planner=agent.planner)
+        await agent.state_store.save(session_id=session_id, state=init.state, planner=agent.planner)
 
 
 # ---------------------------------------------------------------------------
@@ -142,33 +136,30 @@ class PlanAndExecuteStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
+        init: ExecutionInit | None = None
+        async for item in _initialize_execution_context(
+            agent,
+            mission,
+            session_id,
+            logger,
+            generate_plan=True,
+            max_plan_steps=self.max_plan_steps,
+        ):
+            if isinstance(item, ExecutionInit):
+                init = item
+            else:
+                yield item
+        assert init is not None
 
-        if resume is not None:
-            agent.context.restore(resume.messages)
-            messages = agent.context.messages
-            progress = resume.step
-            plan = resume.plan
-            start_idx = resume.plan_step_idx
-            start_it = resume.plan_iteration
+        state = init.state
+        messages = agent.context.messages
+        plan = init.plan
+        if init.resume:
+            progress = init.resume.step
+            start_idx = init.resume.plan_step_idx
+            start_it = init.resume.plan_iteration
         else:
-            agent.context.initialize(mission, state, agent._base_system_prompt)
-            messages = agent.context.messages
-            plan = DEFAULT_PLAN
-            async for item in _generate_and_register_plan(
-                agent,
-                mission,
-                logger,
-                self.max_plan_steps,
-                state=state,
-            ):
-                if isinstance(item, list):
-                    plan = item
-                elif isinstance(item, StreamEvent):
-                    yield item
-            progress = 0
-            start_idx = 1
-            start_it = 1
+            progress, start_idx, start_it = 0, 1, 1
 
         tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
 
@@ -326,34 +317,31 @@ class SparStrategy:
         self, agent: Agent, mission: str, session_id: str
     ) -> AsyncIterator[StreamEvent]:
         logger = self.logger or agent.logger
-        state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
+        init: ExecutionInit | None = None
+        async for item in _initialize_execution_context(
+            agent,
+            mission,
+            session_id,
+            logger,
+            generate_plan=True,
+            max_plan_steps=self.max_plan_steps,
+        ):
+            if isinstance(item, ExecutionInit):
+                init = item
+            else:
+                yield item
+        assert init is not None
 
-        if resume is not None:
-            agent.context.restore(resume.messages)
-            messages = agent.context.messages
-            progress = resume.step
-            plan = resume.plan
-            start_idx = resume.plan_step_idx
-            start_it = resume.plan_iteration
-            start_phase = resume.phase
+        state = init.state
+        messages = agent.context.messages
+        plan = init.plan
+        if init.resume:
+            progress = init.resume.step
+            start_idx = init.resume.plan_step_idx
+            start_it = init.resume.plan_iteration
+            start_phase = init.resume.phase
         else:
-            agent.context.initialize(mission, state, agent._base_system_prompt)
-            messages = agent.context.messages
-            plan = DEFAULT_PLAN
-            async for item in _generate_and_register_plan(
-                agent,
-                mission,
-                logger,
-                self.max_plan_steps,
-                state=state,
-            ):
-                if isinstance(item, list):
-                    plan = item
-                elif isinstance(item, StreamEvent):
-                    yield item
-            progress = 0
-            start_idx = 1
-            start_it = 1
+            progress, start_idx, start_it = 0, 1, 1
             start_phase = "act"
 
         tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker

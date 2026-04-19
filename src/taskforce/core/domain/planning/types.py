@@ -27,6 +27,21 @@ class ResumeContext:
     phase: str
 
 
+@dataclass
+class ExecutionInit:
+    """Result of the shared initialize-or-resume phase of a planning strategy.
+
+    ``resume`` is ``None`` for a fresh execution; otherwise it carries the
+    step/plan/iteration/phase values restored from a paused session. ``plan``
+    holds the plan to execute (``DEFAULT_PLAN`` when no plan was generated,
+    the resumed plan when resuming, or the freshly generated plan).
+    """
+
+    state: dict[str, Any]
+    resume: ResumeContext | None
+    plan: list[str]
+
+
 class ToolCallStatus:
     """Status constants for tool call events."""
 

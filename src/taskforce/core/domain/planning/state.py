@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.models import StreamEvent
-from taskforce.core.domain.planning.types import DEFAULT_PLAN, ResumeContext
+from taskforce.core.domain.planning.llm_interactions import _generate_and_register_plan
+from taskforce.core.domain.planning.types import (
+    DEFAULT_PLAN,
+    ExecutionInit,
+    ResumeContext,
+)
 from taskforce.core.domain.planning.utils import _persist_active_skill
 from taskforce.core.interfaces.logging import LoggerProtocol
 
@@ -140,6 +145,58 @@ async def _load_and_resume_state(
     await agent.load_memory_context(mission=mission)
     resume = _resume_from_pause(state, mission, logger, session_id)
     return state, resume
+
+
+async def _initialize_execution_context(
+    agent: Agent,
+    mission: str,
+    session_id: str,
+    logger: LoggerProtocol,
+    *,
+    generate_plan: bool = False,
+    max_plan_steps: int = 12,
+) -> AsyncIterator[StreamEvent | ExecutionInit]:
+    """Shared initialize-or-resume phase for all planning strategies.
+
+    Loads persisted state, either restores the paused context or initializes
+    a fresh one, and optionally generates an upfront plan. Yields any
+    plan-generation :class:`StreamEvent` s live and finishes by yielding a
+    single :class:`ExecutionInit` sentinel that the caller picks up.
+
+    Usage::
+
+        init: ExecutionInit | None = None
+        async for item in _initialize_execution_context(...):
+            if isinstance(item, ExecutionInit):
+                init = item
+            else:
+                yield item
+        assert init is not None
+    """
+    state, resume = await _load_and_resume_state(agent, mission, session_id, logger)
+
+    if resume is not None:
+        agent.context.restore(resume.messages)
+        yield ExecutionInit(state=state, resume=resume, plan=resume.plan)
+        return
+
+    plan: list[str] = DEFAULT_PLAN
+    if generate_plan:
+        async for item in _generate_and_register_plan(
+            agent,
+            mission,
+            logger,
+            max_plan_steps,
+            session_id=session_id,
+            state=state,
+        ):
+            if isinstance(item, list):
+                plan = item
+            else:
+                yield item
+
+    agent.context.initialize(mission, state, agent._base_system_prompt)
+    yield ExecutionInit(state=state, resume=None, plan=plan)
 
 
 async def _save_and_emit_max_steps(
