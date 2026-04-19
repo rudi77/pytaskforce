@@ -262,7 +262,16 @@
       "Bash(AP_LEDGER_COUNTRY=DE AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python book.py revenue --date 2026-04-14 --bar 186.00)",
       "Bash(AP_LEDGER_COUNTRY=DE AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python book.py expense --vendor \"Wella\" --date 2026-04-14 --gross 119.00 --category waren_farbe --payment bank)",
       "Bash(AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python euer_report.py --action monthly)",
-      "Bash(AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python consistency_check.py)"
+      "Bash(AP_LEDGER_DB_PATH=\"C:/Users/rudi/source/pytaskforce/examples/ap_ledger_agent/deploy/test_db.db\" python consistency_check.py)",
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/core/ tests/unit/infrastructure/ tests/unit/application/ -q --no-cov)",
+      "Bash(cp \"/c/Users/rudi/Downloads/client_secret_108721975439-3k52v71p7pvp78rl07k2lratldf2tpg1.apps.googleusercontent.com.json\" \"/c/Users/rudi/.taskforce/google_credentials.json\")",
+      "Bash(rm -f \"/c/Users/rudi/.taskforce/google_token.json\")",
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/infrastructure/ -q --no-cov)",
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/application/ -q --no-cov)",
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/application/ tests/unit/infrastructure/ -q --no-cov)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Process git -ErrorAction SilentlyContinue | Select-Object Id, StartTime | Format-Table -AutoSize\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Process git -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/core/ tests/unit/application/ tests/unit/infrastructure/ -q --no-cov)"
     ],
     "deny": [
       ".env",
