@@ -8,8 +8,8 @@ implementations:
 * :class:`PlanAndReactStrategy` — alias for NativeReAct with plan
 * :class:`SparStrategy` — Sense → Plan → Act → Reflect cycle
 
-Shared helpers live in :mod:`planning_helpers` to keep this module
-focused on strategy orchestration.
+Shared helpers live in :mod:`taskforce.core.domain.planning` to keep
+this module focused on strategy orchestration.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from taskforce.core.domain.enums import (
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_interrupt_requested
-from taskforce.core.domain.planning_helpers import (
+from taskforce.core.domain.planning import (
     ExecutionInit,
     _collect_result,
     _initialize_execution_context,

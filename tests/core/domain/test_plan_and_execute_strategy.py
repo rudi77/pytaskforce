@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taskforce.core.domain.planning_helpers import _parse_plan_steps
+from taskforce.core.domain.planning import _parse_plan_steps
 from taskforce.core.domain.planning_strategy import PlanAndExecuteStrategy
 
 # mock_logger, mock_agent fixtures are provided by tests/conftest.py
@@ -86,7 +86,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test successful final response generation via shared helper."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_helpers import _stream_final_response
+        from taskforce.core.domain.planning import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": "Final summary"}
@@ -111,7 +111,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test final response generation when LLM fails."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_helpers import _stream_final_response
+        from taskforce.core.domain.planning import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": False, "error": "LLM error"}
@@ -134,7 +134,7 @@ class TestStreamFinalResponse:
     ) -> None:
         """Test final response generation with empty content."""
         from taskforce.core.domain.enums import EventType
-        from taskforce.core.domain.planning_helpers import _stream_final_response
+        from taskforce.core.domain.planning import _stream_final_response
 
         mock_agent.llm_provider.complete = AsyncMock(
             return_value={"success": True, "content": ""}

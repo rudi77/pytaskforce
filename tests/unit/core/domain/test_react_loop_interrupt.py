@@ -20,7 +20,7 @@ from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.models import StreamEvent
 from taskforce.core.domain.planning.interrupt import _handle_interrupt
 from taskforce.core.domain.planning.state import _resume_from_pause
-from taskforce.core.domain.planning_helpers import _react_loop
+from taskforce.core.domain.planning import _react_loop
 
 
 def _make_logger() -> MagicMock:

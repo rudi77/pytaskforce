@@ -17,7 +17,7 @@ import pytest
 
 from taskforce.core.domain.enums import EventType, MessageRole
 from taskforce.core.domain.models import StreamEvent
-from taskforce.core.domain.planning_helpers import (
+from taskforce.core.domain.planning import (
     _build_retry_nudge,
     _react_loop,
 )
