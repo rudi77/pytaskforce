@@ -1,62 +1,74 @@
 # Configuration Profiles
 
-Taskforce uses YAML-based configuration profiles to manage settings across different environments. Profiles are located in `src/taskforce/configs/`.
+Taskforce uses YAML-based configuration profiles. The unified CLI resolves
+profiles across the framework and any installed agent packages, so a profile
+shipped by `taskforce-butler` or `taskforce-coding-agent` is found
+transparently once the package is installed.
 
-## Profile Location
+## Profile Locations
 
-```
-src/taskforce/configs/{profile_name}.yaml
-src/taskforce/configs/custom/{sub_agent_name}.yaml
-src/taskforce/configs/butler_roles/{role_name}.yaml
-```
+Profiles are discovered from multiple roots:
+
+| Root | Source | Used for |
+|------|--------|----------|
+| `src/taskforce/configs/` | Framework (always present) | Framework profiles & `llm_config.yaml` |
+| `agents/butler/configs/` | `taskforce-butler` package | `butler`, butler roles & custom roles |
+| `agents/coding-agent/configs/` | `taskforce-coding-agent` package | `coding_agent`, sub-agent profiles |
+| `agents/rag-agent/configs/` | `taskforce-rag-agent` package | `rag_agent` |
+| `./.taskforce/configs/` (if configured) | Project overrides | Project-specific profiles |
+
+`taskforce_cli.agent_discovery.register_agent_config_dirs()` adds the
+installed agent packages' `configs/` directories to the profile loader. If you
+run the framework-only fallback CLI (`src/taskforce/api/cli/main.py`), only
+the framework root is searched and `--profile butler` will fail unless you
+explicitly extend the search path.
 
 ## Available Profiles
 
-### Main Profiles
+### Framework Profiles (always available)
 
 | Profile | Description |
 |---------|-------------|
-| `butler` | **Default.** Event-driven personal assistant daemon with scheduling, rules, Google Workspace integration |
-| `dev` | Development profile with file-based persistence, basic toolset |
-| `coding_agent` | Multi-agent coding orchestrator with planner/worker/reviewer sub-agents |
-| `coding_analysis` | Code analysis specialist |
-| `rag_agent` | RAG-enabled agent (Azure AI Search integration) |
-| `security` | Security-hardened profile with restricted tools |
-| `swe_bench` | SWE-Bench evaluation profile |
+| `default` | General-purpose profile with essential tools (file, shell, python, web, git, memory, ask_user, llm) |
+| `dev` | Resolved from built-in defaults — no YAML file, useful when running without any agent package |
+| `acp_peer` | Profile for agents exposed over the ACP protocol |
+| `showcase_coder`, `showcase_orchestrator`, `showcase_researcher` | Demo profiles used by examples |
 
-### Butler Roles
+### Agent-Package Profiles (optional)
 
-Butler role specializations in `src/taskforce/configs/butler_roles/`:
+Install the matching package to unlock these profiles.
 
-| Role | Description |
-|------|-------------|
-| `accountant` | Financial document processing and bookkeeping |
-| `personal_assistant` | General personal assistant tasks |
+**`taskforce-butler`** — profiles in `agents/butler/configs/`:
 
-### Custom Sub-Agent Profiles
+| Profile | File | Description |
+|---------|------|-------------|
+| `butler` | `butler.yaml` | Event-driven personal assistant daemon |
+| `butler_roles/accountant` | `roles/accountant.yaml` | Financial document processing |
+| `butler_roles/personal_assistant` | `roles/personal_assistant.yaml` | General personal assistant tasks |
+| `accountant`, `pc-agent`, `research_agent`, `vision_ocr` | `custom/*.yaml` | Butler custom-role profiles |
 
-Sub-agent profiles in `src/taskforce/configs/custom/`:
+**`taskforce-coding-agent`** — profiles in `agents/coding-agent/configs/`:
 
-| Profile | Description |
-|---------|-------------|
-| `coding_planner` | Task decomposition and planning |
-| `coding_worker` | Implementation with full tooling access |
-| `coding_reviewer` | Code review specialist |
-| `code_reviewer` | Alternative code review agent |
-| `test_engineer` | Test writing and validation |
-| `doc_writer` | Documentation creation |
-| `doc-agent` | Document extraction/transformation |
-| `pc-agent` | Windows system automation |
-| `research_agent` | Web research and fact-checking |
-| `swe_analyzer` | SWE-Bench analysis |
-| `swe_coder` | SWE-Bench solving |
+| Profile | File | Description |
+|---------|------|-------------|
+| `coding_agent` | `coding_agent.yaml` | Multi-agent coding orchestrator (planner/worker/reviewer) |
+| `coding_analysis` | `coding_analysis.yaml` | Code analysis specialist |
+| `coding_planner`, `coding_worker`, `coding_reviewer`, `code_reviewer`, `test_engineer`, `doc_writer`, `swe_analyzer`, `swe_coder` | `custom/*.yaml` | Sub-agent profiles used by the orchestrator |
+
+**`taskforce-rag-agent`** — profiles in `agents/rag-agent/configs/`:
+
+| Profile | File | Description |
+|---------|------|-------------|
+| `rag_agent` | `rag_agent.yaml` | RAG-enabled agent (Azure AI Search integration) |
 
 ## Selecting a Profile
 
-1. **Environment Variable**: `export TASKFORCE_PROFILE=dev`
-2. **CLI Flag**: `taskforce run mission "..." --profile dev`
+1. **Environment Variable**: `export TASKFORCE_PROFILE=<name>`
+2. **CLI Flag**: `taskforce run mission "..." --profile <name>`
 
-> **Note:** The default profile is `butler`, not `dev`. To use the simpler development profile, specify `--profile dev` explicitly.
+**Default profile:** The unified CLI picks `butler` when `taskforce_butler`
+is importable, otherwise falls back to `dev`. The framework-only fallback CLI
+always defaults to `dev`. Override any time with `--profile`.
 
 ## Planning Strategies
 

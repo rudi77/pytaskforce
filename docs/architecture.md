@@ -1,10 +1,28 @@
 # Architecture Overview
 
-Taskforce is designed using **Clean Architecture** (also known as Hexagonal or Onion Architecture). This ensures that the core business logic is isolated from external dependencies like databases, LLM providers, and APIs.
+Taskforce is designed using **Clean Architecture** (also known as Hexagonal or
+Onion Architecture). This ensures that the core business logic is isolated
+from external dependencies like databases, LLM providers, and APIs.
+
+## 📦 Package Layout
+
+Taskforce is split into a lean core framework plus optional agent packages.
+All packages live in a single monorepo and share the Clean Architecture layering:
+
+| Package | Path | Purpose |
+|---------|------|---------|
+| `taskforce` | `src/taskforce/` | Core framework — protocols, domain logic, infrastructure adapters, generic CLI + REST API |
+| `taskforce-cli` | `cli/src/taskforce_cli/` | Unified CLI that discovers installed agent packages at startup |
+| `taskforce-butler` | `agents/butler/` | Event-driven daemon, scheduler, trigger rules, Google Workspace tools |
+| `taskforce-coding-agent` | `agents/coding-agent/` | Epic orchestration, complexity classifier, coding sub-agent profiles |
+| `taskforce-rag-agent` | `agents/rag-agent/` | Azure AI Search tools and `rag_agent` profile |
+
+The core framework is usable on its own. Agent packages opt in additional
+protocols/tools/profiles and register themselves with the unified CLI.
 
 ## 📐 Layer Structure
 
-The system is organized into four distinct layers:
+The framework (and each agent package) is organized into four distinct layers:
 
 1.  **[Core Layer](architecture/section-5-components.md)**: Pure business logic (Agent ReAct loop, TodoList logic). Zero dependencies on external libraries.
 2.  **[Infrastructure Layer](architecture/section-5-components.md)**: External integrations (PostgreSQL, LiteLLM, Tool implementations).
@@ -21,7 +39,8 @@ The agent definition system has been unified to provide a single, consistent mod
 |-----------|----------|---------|
 | **AgentDefinition** | `core/domain/agent_definition.py` | Unified model for all agent types (custom, profile, plugin, command) |
 | **AgentRegistry** | `application/agent_registry.py` | Aggregates agents from all sources with unified CRUD API |
-| **ToolResolver** | `application/tool_resolver.py` | Resolves tool names to instances with dependency injection |
+| **ToolResolverProtocol** | `core/interfaces/tool_resolver.py` | Contract for resolving tool names to instances (implemented by `ToolBuilder`) |
+| **ToolBuilder** | `application/tool_builder.py` | Builds tool instances from short-name definitions |
 | **InfrastructureBuilder** | `application/infrastructure_builder.py` | Builds state managers, LLM providers, and MCP tools |
 | **ConfigSchema** | `core/domain/config_schema.py` | Pydantic validation for agent and profile configs |
 
