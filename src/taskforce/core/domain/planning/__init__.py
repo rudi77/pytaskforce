@@ -12,6 +12,7 @@ from taskforce.core.domain.planning.react_loop import (
     _react_loop,
 )
 from taskforce.core.domain.planning.state import (
+    _initialize_execution_context,
     _load_and_resume_state,
     _resume_from_pause,
     _save_and_emit_max_steps,
@@ -24,6 +25,7 @@ from taskforce.core.domain.planning.tool_execution import (
 )
 from taskforce.core.domain.planning.types import (
     DEFAULT_PLAN,
+    ExecutionInit,
     ResumeContext,
     ToolCallRequest,
     ToolCallStatus,
@@ -41,6 +43,7 @@ from taskforce.core.domain.planning.utils import (
 __all__ = [
     # types
     "DEFAULT_PLAN",
+    "ExecutionInit",
     "ResumeContext",
     "ToolCallRequest",
     "ToolCallStatus",
@@ -53,6 +56,7 @@ __all__ = [
     "_parse_tool_args",
     "_persist_active_skill",
     # state
+    "_initialize_execution_context",
     "_load_and_resume_state",
     "_resume_from_pause",
     "_save_and_emit_max_steps",
