@@ -38,6 +38,8 @@ class EventType(str, Enum):
     FINAL_ANSWER = "final_answer"
     COMPLETE = "complete"
     ERROR = "error"
+    # Emitted when execution pauses cooperatively in response to a user interrupt.
+    INTERRUPTED = "interrupted"
     # Skill-related events
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Communication gateway events

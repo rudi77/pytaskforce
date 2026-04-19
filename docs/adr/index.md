@@ -22,6 +22,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 016: Persistent Agent Architecture (Sessionless Orchestrator)](adr-016-persistent-agent-architecture.md)**
 - **[ADR 017: Butler Role Specialization](adr-017-butler-role-specialization.md)**
 - **[ADR 018: Agent Communication Protocol (ACP) Support](adr-018-acp-protocol-support.md)**
+- **[ADR 019: Cooperative Agent Interruption](adr-019-agent-interruption.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*

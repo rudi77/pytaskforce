@@ -13,6 +13,7 @@ from taskforce.core.domain.enums import (
     MessageRole,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
+from taskforce.core.domain.planning.interrupt import _handle_interrupt
 from taskforce.core.domain.planning.llm_interactions import _salvage_answer
 from taskforce.core.domain.planning.tool_execution import _process_tool_calls
 from taskforce.core.domain.planning.utils import (
@@ -31,6 +32,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
     history: list[dict[str, Any]] = []
     final_msg, error = "", ""
     pending: dict[str, Any] | None = None
+    interrupted = False
     usage = TokenUsage()
     track = {
         EventType.TOOL_CALL,
@@ -39,6 +41,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
         EventType.PLAN_UPDATED,
         EventType.FINAL_ANSWER,
         EventType.ERROR,
+        EventType.INTERRUPTED,
     }
 
     async for e in events:
@@ -50,6 +53,9 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
         elif event_type == EventType.ASK_USER:
             pending = dict(e.data)
             final_msg = final_msg or e.data.get("question", "Waiting for input")
+        elif event_type == EventType.INTERRUPTED:
+            interrupted = True
+            final_msg = final_msg or "Execution paused by user."
         elif event_type == EventType.ERROR:
             error = e.data.get("message", "")
         elif event_type == EventType.TOKEN_USAGE:
@@ -57,7 +63,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
             usage.completion_tokens += e.data.get("completion_tokens", 0)
             usage.total_tokens += e.data.get("total_tokens", 0)
 
-    if pending:
+    if pending or interrupted:
         status = ExecutionStatus.PAUSED
     elif error or not final_msg:
         status = ExecutionStatus.FAILED
@@ -75,10 +81,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
             "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
         )
     else:
-        message = (
-            "Ich konnte leider keine Antwort generieren. "
-            "Bitte versuche es noch einmal."
-        )
+        message = "Ich konnte leider keine Antwort generieren. " "Bitte versuche es noch einmal."
 
     return ExecutionResult(
         session_id=session_id,
@@ -131,6 +134,26 @@ async def _react_loop(
         # (SIGINT/SIGBREAK) and other async tasks always get a chance to run,
         # even if every branch below errors out synchronously before any await.
         await asyncio.sleep(0)
+
+        # Cooperative interrupt: if a Ctrl+C (CLI) or POST /cancel (API)
+        # has requested a pause, persist state and return.  The existing
+        # _resume_from_pause path picks execution back up on the next turn.
+        # The ``isinstance`` check on the raw ``asyncio.Event`` guards
+        # against test doubles whose ``is_interrupt_requested`` returns a
+        # truthy MagicMock by default.
+        _flag = getattr(agent, "_interrupt_event", None)
+        if isinstance(_flag, asyncio.Event) and _flag.is_set():
+            async for evt in _handle_interrupt(
+                agent,
+                session_id,
+                state,
+                logger,
+                step=step,
+                paused_phase="react",
+            ):
+                yield evt
+            return
+
         await agent.record_heartbeat(session_id, ExecutionStatus.PENDING.value, {"step": step})
 
         # Inject circuit breaker info for tools that have failed too many times

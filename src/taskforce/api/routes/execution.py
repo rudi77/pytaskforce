@@ -154,27 +154,27 @@ STREAM_RESPONSE_EXAMPLES = {
     "started": {
         "summary": "Started event",
         "value": (
-            "data: {\"timestamp\":\"2025-01-02T12:00:00.123456\","
-            "\"event_type\":\"started\",\"message\":\"Starting\","
-            "\"details\":{\"session_id\":\"550e8400-...\","
-            "\"profile\":\"coding_agent\"}}\n\n"
+            'data: {"timestamp":"2025-01-02T12:00:00.123456",'
+            '"event_type":"started","message":"Starting",'
+            '"details":{"session_id":"550e8400-...",'
+            '"profile":"coding_agent"}}\n\n'
         ),
     },
     "final_answer": {
         "summary": "Final answer event",
         "value": (
-            "data: {\"timestamp\":\"2025-01-02T12:00:08.123456\","
-            "\"event_type\":\"final_answer\",\"message\":\"Summary ready.\","
-            "\"details\":{\"content\":\"Here are the key points...\"}}\n\n"
+            'data: {"timestamp":"2025-01-02T12:00:08.123456",'
+            '"event_type":"final_answer","message":"Summary ready.",'
+            '"details":{"content":"Here are the key points..."}}\n\n'
         ),
     },
     "error": {
         "summary": "Error event",
         "value": (
-            "data: {\"timestamp\":\"2025-01-02T12:00:05.123456\","
-            "\"event_type\":\"error\",\"message\":\"Failed\","
-            "\"details\":{\"error\":\"Rate limit\","
-            "\"status_code\":502}}\n\n"
+            'data: {"timestamp":"2025-01-02T12:00:05.123456",'
+            '"event_type":"error","message":"Failed",'
+            '"details":{"error":"Rate limit",'
+            '"status_code":502}}\n\n'
         ),
     },
 }
@@ -237,12 +237,14 @@ def _make_sse_error(error: Exception) -> str:
             "error_type": type(error).__name__,
             "status_code": 500,
         }
-    return json.dumps({
-        "timestamp": datetime.now(UTC).isoformat(),
-        "event_type": EventType.ERROR.value,
-        "message": f"Execution failed: {error}",
-        "details": details,
-    })
+    return json.dumps(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "event_type": EventType.ERROR.value,
+            "message": f"Execution failed: {error}",
+            "details": details,
+        }
+    )
 
 
 class ExecuteMissionRequest(BaseModel):
@@ -277,7 +279,7 @@ class ExecuteMissionRequest(BaseModel):
     mission: str = Field(
         ...,
         description="The task description for the agent to execute.",
-        examples=["Search for recent news about AI and summarize findings"]
+        examples=["Search for recent news about AI and summarize findings"],
     )
     session_id: str | None = Field(
         default=None,
@@ -301,23 +303,18 @@ class ExecuteMissionRequest(BaseModel):
     conversation_history: list[dict[str, Any]] | None = Field(
         default=None,
         description="Optional conversation history for chat context.",
-        examples=[[
-            {"role": "user", "content": "Previous user message"},
-            {"role": "assistant", "content": "Previous assistant response"}
-        ]]
+        examples=[
+            [
+                {"role": "user", "content": "Previous user message"},
+                {"role": "assistant", "content": "Previous assistant response"},
+            ]
+        ],
     )
-    user_id: str | None = Field(
-        default=None,
-        description="User ID for RAG security filtering."
-    )
+    user_id: str | None = Field(default=None, description="User ID for RAG security filtering.")
     org_id: str | None = Field(
-        default=None,
-        description="Organization ID for RAG security filtering."
+        default=None, description="Organization ID for RAG security filtering."
     )
-    scope: str | None = Field(
-        default=None,
-        description="Access scope for RAG security filtering."
-    )
+    scope: str | None = Field(default=None, description="Access scope for RAG security filtering.")
     profile: str = Field(
         default="butler",
         description="Agent profile to use (e.g., butler, coding_agent, rag_agent).",
@@ -360,22 +357,13 @@ class ExecuteMissionResponse(BaseModel):
         message: Human-readable summary of the execution result.
     """
 
-    session_id: str = Field(
-        ...,
-        description="Unique session identifier."
-    )
+    session_id: str = Field(..., description="Unique session identifier.")
     conversation_id: str | None = Field(
         default=None,
         description="Conversation ID (persistent agent mode, ADR-016).",
     )
-    status: str = Field(
-        ...,
-        description="Execution status: completed, failed, paused, or pending."
-    )
-    message: str = Field(
-        ...,
-        description="Human-readable execution result summary."
-    )
+    status: str = Field(..., description="Execution status: completed, failed, paused, or pending.")
+    message: str = Field(..., description="Human-readable execution result summary.")
 
 
 @router.post(
@@ -384,9 +372,7 @@ class ExecuteMissionResponse(BaseModel):
     responses={
         200: {
             "description": "Mission result.",
-            "content": {
-                "application/json": {"examples": EXECUTE_RESPONSE_EXAMPLES}
-            },
+            "content": {"application/json": {"examples": EXECUTE_RESPONSE_EXAMPLES}},
         },
         400: {
             "model": ErrorResponse,
@@ -395,9 +381,7 @@ class ExecuteMissionResponse(BaseModel):
             "content": {
                 "application/json": {
                     "examples": {
-                        "invalid_request": ERROR_RESPONSE_EXAMPLES[
-                            "invalid_request"
-                        ],
+                        "invalid_request": ERROR_RESPONSE_EXAMPLES["invalid_request"],
                     }
                 }
             },
@@ -508,16 +492,12 @@ async def execute_mission(
         conversation_history = request.conversation_history
         conv_id = request.conversation_id
         if conv_id and conversation_history:
-            raise ValueError(
-                "conversation_id and conversation_history are mutually exclusive"
-            )
+            raise ValueError("conversation_id and conversation_history are mutually exclusive")
 
         # When conversation_id is provided, load history from ConversationManager.
         if conv_id:
             conv_mgr = get_conversation_manager()
-            await conv_mgr.append_message(
-                conv_id, {"role": "user", "content": request.mission}
-            )
+            await conv_mgr.append_message(conv_id, {"role": "user", "content": request.mission})
             conversation_history = await conv_mgr.get_messages(conv_id)
 
         result = await executor.execute_mission(
@@ -588,9 +568,7 @@ async def execute_mission(
     responses={
         200: {
             "description": "Server-Sent Events stream of updates.",
-            "content": {
-                "text/event-stream": {"examples": STREAM_RESPONSE_EXAMPLES}
-            },
+            "content": {"text/event-stream": {"examples": STREAM_RESPONSE_EXAMPLES}},
         },
     },
 )
@@ -627,7 +605,7 @@ async def execute_mission_stream(
                 planning_strategy=request.planning_strategy,
                 planning_strategy_params=request.planning_strategy_params,
                 plugin_path=None,
-                ):
+            ):
                 if update.event_type == EventType.FINAL_ANSWER.value:
                     _stream_logger.info(
                         "api.final_answer_event",
@@ -640,7 +618,66 @@ async def execute_mission_stream(
         except Exception as e:
             yield f"data: {_make_sse_error(e)}\n\n"
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+class InterruptResponse(BaseModel):
+    """Response from POST /execute/{session_id}/cancel."""
+
+    session_id: str = Field(..., description="Session that was signalled.")
+    status: str = Field(
+        ...,
+        description=(
+            "Request status: ``interrupt_requested`` when the active agent "
+            "was signalled to pause at the next ReAct loop boundary."
+        ),
+    )
+
+
+@router.post(
+    "/execute/{session_id}/cancel",
+    response_model=InterruptResponse,
+    status_code=202,
+    responses={
+        202: {
+            "description": (
+                "Interrupt was requested. The running agent will finish the "
+                "current step, persist its state, and emit an ``interrupted`` "
+                "event followed by a ``complete`` event with "
+                "``status=paused``."
+            ),
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "No active execution found for this session_id.",
+            "headers": ERROR_RESPONSE_HEADERS,
+        },
+    },
+)
+async def cancel_mission(
+    session_id: str,
+    executor=Depends(get_executor),
+) -> InterruptResponse:
+    """Request a cooperative pause for a running mission.
+
+    The agent completes its current step (LLM call + any in-flight tool
+    calls), persists state via the same mechanism used by ``ask_user``,
+    and exits with ``ExecutionStatus.PAUSED``.  Resume by posting a new
+    mission to ``/execute`` (or ``/execute/stream``) with the same
+    ``session_id``.
+    """
+    if not executor.interrupt(session_id):
+        raise _http_exception(
+            status_code=404,
+            code="session_not_running",
+            message=(
+                f"No active execution found for session '{session_id}'. "
+                "The mission may have already completed, never existed, "
+                "or is being served by a different executor instance."
+            ),
+            details={"session_id": session_id},
+        )
+    return InterruptResponse(
+        session_id=session_id,
+        status="interrupt_requested",
     )
