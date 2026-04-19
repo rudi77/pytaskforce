@@ -36,7 +36,6 @@ class AcpClient:
         mission: str,
         *,
         session_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         client = await self._session_client(peer, session_id)
         logger.debug("acp.client.run_sync", peer=peer.name, agent=peer.agent, session=session_id)
@@ -49,7 +48,6 @@ class AcpClient:
         mission: str,
         *,
         session_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         client = await self._session_client(peer, session_id)
         logger.debug("acp.client.run_stream", peer=peer.name, agent=peer.agent)
@@ -94,6 +92,17 @@ class AcpClient:
     async def _client_for(self, peer: AcpPeer) -> Any:
         if peer.name in self._pool:
             return self._pool[peer.name]
+        if peer.auth.type == AcpAuthType.MTLS:
+            raise NotImplementedError(
+                "mTLS authentication is declared in AcpAuthType but not yet "
+                "implemented; use bearer auth or a reverse-proxy sidecar."
+            )
+        if peer.auth.type == AcpAuthType.BEARER and peer.base_url.startswith("http://"):
+            logger.warning(
+                "acp.client.insecure_bearer",
+                peer=peer.name,
+                hint="Bearer tokens over plain HTTP are readable on the wire; use HTTPS.",
+            )
         client_cls = load_client()
         kwargs: dict[str, Any] = {"base_url": peer.base_url}
         if peer.auth.type == AcpAuthType.BEARER and peer.auth.token:

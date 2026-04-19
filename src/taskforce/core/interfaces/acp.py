@@ -43,6 +43,10 @@ class AcpServerProtocol(Protocol):
         """
         ...
 
+    def registered_manifests(self) -> list[AcpAgentManifest]:
+        """Return the manifests currently registered on the server."""
+        ...
+
 
 class AcpClientProtocol(Protocol):
     """Outbound ACP client for invoking remote agents."""

@@ -90,6 +90,7 @@ class AcpRuntime:
         peer = self._peers.get(peer_name)
         if peer is None:
             raise KeyError(f"Unknown ACP peer: {peer_name!r}")
+        started_at = utc_now()
         if stream:
             status = "streamed"
             run_id = ""
@@ -104,7 +105,7 @@ class AcpRuntime:
                 agent=peer.agent,
                 peer=peer.name,
                 status=status,
-                started_at=utc_now(),
+                started_at=started_at,
             )
         result = await self._client.run_sync(peer, mission, session_id=session_id)
         return AcpRunHandle(
@@ -112,5 +113,5 @@ class AcpRuntime:
             agent=peer.agent,
             peer=peer.name,
             status=str(result.get("status", "completed")),
-            started_at=utc_now(),
+            started_at=started_at,
         )

@@ -60,6 +60,11 @@ class FilePeerRegistry(InMemoryPeerRegistry):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"peers": [_peer_to_dict(p) for p in self._peers.values()]}
         self._path.write_text(json.dumps(payload, indent=2))
+        # The file may hold literal bearer tokens when callers skip token_env.
+        try:
+            self._path.chmod(0o600)
+        except OSError:  # pragma: no cover - non-POSIX filesystems
+            pass
 
     def register(self, peer: AcpPeer) -> None:
         super().register(peer)
