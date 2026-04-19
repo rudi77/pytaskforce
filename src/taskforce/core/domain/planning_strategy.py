@@ -14,6 +14,7 @@ focused on strategy orchestration.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -24,6 +25,7 @@ from taskforce.core.domain.enums import (
     PlannerAction,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
+from taskforce.core.domain.planning.interrupt import _handle_interrupt
 from taskforce.core.domain.planning_helpers import (
     DEFAULT_PLAN,
     _collect_result,
@@ -38,6 +40,16 @@ from taskforce.core.interfaces.logging import LoggerProtocol
 
 if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
+
+
+def _interrupt_requested(agent: Any) -> bool:
+    """Return True iff the agent's interrupt flag is a set asyncio.Event.
+
+    Defensive check: guards against mock agents whose
+    ``is_interrupt_requested`` would otherwise return a truthy MagicMock.
+    """
+    flag = getattr(agent, "_interrupt_event", None)
+    return isinstance(flag, asyncio.Event) and flag.is_set()
 
 
 class PlanningStrategy(Protocol):
@@ -183,13 +195,30 @@ class PlanAndExecuteStrategy:
                 if progress >= agent.max_steps:
                     break
 
+                if _interrupt_requested(agent):
+                    async for evt in _handle_interrupt(
+                        agent,
+                        session_id,
+                        state,
+                        logger,
+                        step=progress,
+                        plan=plan,
+                        plan_step_idx=idx,
+                        plan_iteration=it,
+                        paused_phase="act",
+                    ):
+                        yield evt
+                    return
+
                 await agent.record_heartbeat(
                     session_id,
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
                 await agent.context.prepare_for_llm(
-                    mission=mission, state=state, apply_compression=False,
+                    mission=mission,
+                    state=state,
+                    apply_compression=False,
                 )
                 agent.context.append_message(
                     {
@@ -352,13 +381,35 @@ class SparStrategy:
                 if progress >= agent.max_steps:
                     break
 
+                if _interrupt_requested(agent):
+                    phase = (
+                        "reflect"
+                        if (idx == start_idx and it == start_it and start_phase == "reflect")
+                        else "act"
+                    )
+                    async for evt in _handle_interrupt(
+                        agent,
+                        session_id,
+                        state,
+                        logger,
+                        step=progress,
+                        plan=plan,
+                        plan_step_idx=idx,
+                        plan_iteration=it,
+                        paused_phase=phase,
+                    ):
+                        yield evt
+                    return
+
                 await agent.record_heartbeat(
                     session_id,
                     ExecutionStatus.PENDING.value,
                     {"plan_step": idx, "iteration": it},
                 )
                 await agent.context.prepare_for_llm(
-                    mission=mission, state=state, apply_compression=False,
+                    mission=mission,
+                    state=state,
+                    apply_compression=False,
                 )
 
                 reflect_only = idx == start_idx and it == start_it and start_phase == "reflect"

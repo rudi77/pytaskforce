@@ -95,6 +95,19 @@ taskforce chat
 
 Use `Enter` to send messages (simple REPL-style input). Streaming output is enabled by default. Agent thoughts, events, and plan updates are printed inline with icons and color.
 
+### Interrupting the Agent
+
+Press `Ctrl+C` while a mission is running to **pause** the agent cooperatively:
+
+- The current step (LLM call + any in-flight tool calls) finishes normally.
+- State is persisted — messages, plan progress, step counter.
+- The chat shows `⏸ Paused — type your next message to resume.`
+- Your next input continues the session; no work is lost.
+
+Press `Ctrl+C` a **second** time within 5 seconds to force-exit (for stuck
+teardown). On POSIX you can also use `Ctrl+\` (SIGQUIT) as a guaranteed
+last-resort kill. See [ADR-019](adr/adr-019-agent-interruption.md).
+
 ### Chat Options
 
 | Option | Short | Description |

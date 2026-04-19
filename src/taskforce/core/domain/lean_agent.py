@@ -12,18 +12,19 @@ Key features:
 - Clean message history management
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.enums import EventType, ExecutionStatus
+from taskforce.core.domain.lean_agent_components.context_manager import (
+    ContextManager,
+)
 from taskforce.core.domain.lean_agent_components.memory_context_loader import (
     MemoryContextConfig,
     MemoryContextLoader,
-)
-from taskforce.core.domain.lean_agent_components.context_manager import (
-    ContextManager,
 )
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
@@ -233,6 +234,39 @@ class Agent:
         # Resource cleanup helper
         self.resource_closer = ResourceCloser(logger=self.logger)
 
+        # Cooperative interrupt flag.  Checked at the top of the ReAct loop so
+        # callers (CLI Ctrl+C, REST cancel endpoint) can pause execution
+        # between steps without losing state.  Created lazily on first access
+        # because an event loop may not exist at __init__ time (e.g. when the
+        # agent is constructed from sync code).
+        self._interrupt_event: asyncio.Event | None = None
+
+    def _get_interrupt_event(self) -> asyncio.Event:
+        """Return (lazily creating) the asyncio.Event used for cooperative interruption."""
+        if self._interrupt_event is None:
+            self._interrupt_event = asyncio.Event()
+        return self._interrupt_event
+
+    def request_interrupt(self) -> None:
+        """Request a cooperative pause at the next ReAct loop boundary.
+
+        Safe to call from any coroutine on the same event loop.  The effect
+        is observed at the top of the loop iteration in ``react_loop`` —
+        the agent finishes the current in-flight step (LLM call + tool
+        calls), persists state via the same mechanism used by ``ask_user``
+        and exits gracefully with an ``INTERRUPTED`` event.
+        """
+        self._get_interrupt_event().set()
+
+    def clear_interrupt(self) -> None:
+        """Clear a pending interrupt request (called after handling it)."""
+        if self._interrupt_event is not None:
+            self._interrupt_event.clear()
+
+    def is_interrupt_requested(self) -> bool:
+        """Return True if an interrupt has been requested and not yet handled."""
+        return self._interrupt_event is not None and self._interrupt_event.is_set()
+
     @property
     def system_prompt(self) -> str:
         """Return base system prompt (backward compatibility)."""
@@ -429,6 +463,7 @@ class Agent:
 
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
+        interrupt_info: dict[str, Any] | None = None
         stream = self.planning_strategy.execute_stream(self, mission, session_id)
         async for event in stream:  # type: ignore[union-attr]
             yield event
@@ -437,15 +472,23 @@ class Agent:
                 final_message = event.data.get("content", "")
             elif event.event_type == EventType.ERROR:
                 status = ExecutionStatus.FAILED.value
+            elif event.event_type == EventType.INTERRUPTED:
+                status = ExecutionStatus.PAUSED.value
+                interrupt_info = dict(event.data)
+                final_message = final_message or "Execution paused by user."
+
+        complete_data: dict[str, Any] = {
+            "status": status,
+            "session_id": session_id,
+            "final_message": final_message,
+        }
+        if interrupt_info is not None:
+            complete_data["interrupt"] = interrupt_info
 
         # Yield COMPLETE event for executor.execute_mission() compatibility
         yield StreamEvent(
             event_type=EventType.COMPLETE,
-            data={
-                "status": status,
-                "session_id": session_id,
-                "final_message": final_message,
-            },
+            data=complete_data,
         )
         await self.mark_finished(session_id, "stream_complete", None)
 

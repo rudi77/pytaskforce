@@ -31,6 +31,7 @@ Once the server is running, you can access the interactive documentation at:
 |--------|------|-------------|
 | `POST` | `/api/v1/execution/execute` | Run a mission synchronously |
 | `POST` | `/api/v1/execution/execute/stream` | Run a mission with real-time SSE progress |
+| `POST` | `/api/v1/execution/execute/{session_id}/cancel` | Cooperatively pause a running mission |
 
 **Request body:**
 
@@ -193,6 +194,46 @@ Persistent conversation management — the replacement for sessions.
 | `GET` | `/api/v1/conversations/{id}/messages` | Get messages for a conversation |
 | `POST` | `/api/v1/conversations/{id}/messages` | Send a message (runs agent, returns reply) |
 | `POST` | `/api/v1/conversations/{id}/archive` | Archive a conversation |
+
+### Cancelling a Running Mission
+
+`POST /api/v1/execution/execute/{session_id}/cancel`
+
+Cooperatively pauses a mission currently being executed for this
+`session_id`. The agent completes its in-flight step (LLM call + tool
+calls), persists its state, and exits with `status=paused`. A resume
+happens transparently when the same `session_id` is used in the next
+`/execute` or `/execute/stream` call.
+
+**Response (202 Accepted):**
+
+```json
+{"session_id": "abc-123", "status": "interrupt_requested"}
+```
+
+**Response (404 Not Found)** when no active execution exists for the
+given `session_id`:
+
+```json
+{"code": "session_not_running", "message": "...", "details": {"session_id": "abc-123"}}
+```
+
+**Example:**
+
+```bash
+# Terminal A — start a long-running mission
+curl -N -X POST http://localhost:8000/api/v1/execution/execute/stream \
+     -H 'Content-Type: application/json' \
+     -d '{"mission": "analyse every file in the repo", "session_id": "run-1"}'
+
+# Terminal B — pause it
+curl -X POST http://localhost:8000/api/v1/execution/execute/run-1/cancel
+# → 202 {"session_id": "run-1", "status": "interrupt_requested"}
+```
+
+The streaming response in Terminal A will emit an `interrupted` event
+followed by a `complete` event with `status: "paused"` before the
+connection closes.  See [ADR-019](adr/adr-019-agent-interruption.md).
 
 ### Memory Consolidation
 

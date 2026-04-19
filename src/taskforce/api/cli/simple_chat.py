@@ -7,9 +7,11 @@ import os
 import signal
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -25,15 +27,12 @@ from taskforce.api.cli.tool_display_formatter import (
     format_tool_change_preview,
     format_tool_result,
 )
-import structlog
-
 from taskforce.application.agent_registry import AgentRegistry
 from taskforce.application.executor import AgentExecutor, ProgressUpdate
 from taskforce.application.factory import AgentFactory
 from taskforce.application.skill_service import SkillService, get_skill_service
 from taskforce.core.domain.agent_definition import AgentSource
 from taskforce.core.domain.enums import EventType, MessageRole, SkillType, TaskStatus
-
 
 logger = structlog.get_logger(__name__)
 
@@ -103,6 +102,7 @@ def _install_force_exit_watchdog() -> None:
     # POSIX: SIGQUIT is a separate signal that bypasses prompt_toolkit's
     # Ctrl+C handling. Users hit Ctrl+\ to fire it.
     try:
+
         def _posix_handler(_sig: int, _frame: Any) -> None:
             os._exit(130)
 
@@ -113,13 +113,20 @@ def _install_force_exit_watchdog() -> None:
 
 
 class _CtrlCGuard:
-    """Double-Ctrl+C escape hatch.
+    """Double-Ctrl+C escape hatch with optional soft-interrupt hook.
 
-    First press behaves like the default SIGINT handler (raises
-    KeyboardInterrupt so prompt_toolkit / asyncio can unwind cleanly).
-    A second press within ``force_exit_window_s`` triggers ``os._exit``
-    so the user is never stuck with a hung event loop or a teardown
-    coroutine that won't complete.
+    Behaviour:
+
+    * If a soft-interrupt handler is registered (via
+      :meth:`set_soft_handler`) and we're not inside the double-press
+      window, the first Ctrl+C invokes the handler (e.g. to pause a
+      running agent) instead of raising KeyboardInterrupt.  The prompt
+      is not disturbed.
+    * Without a soft handler (or when the handler has already been
+      triggered for the current press window), Ctrl+C raises
+      KeyboardInterrupt so prompt_toolkit / asyncio can unwind.
+    * A second press within ``force_exit_window_s`` always triggers
+      ``os._exit`` so the user can escape a stuck shutdown.
 
     On platforms where ``signal.signal`` raises (e.g. non-main threads),
     install() degrades to a no-op — the user still has the default
@@ -132,6 +139,17 @@ class _CtrlCGuard:
         self._window_s = force_exit_window_s
         self._previous: Any = None
         self._installed = False
+        self._soft_handler: Callable[[], bool] | None = None
+
+    def set_soft_handler(self, handler: Callable[[], bool] | None) -> None:
+        """Register a soft-interrupt callback.
+
+        The callback is invoked on the first Ctrl+C press.  Return
+        ``True`` if the signal was handled (no KeyboardInterrupt will be
+        raised), or ``False`` to fall through to the default
+        KeyboardInterrupt behaviour.  Pass ``None`` to clear the handler.
+        """
+        self._soft_handler = handler
 
     def install(self) -> None:
         # Idempotent — a second install() must not overwrite _previous with
@@ -150,9 +168,7 @@ class _CtrlCGuard:
         if not self._installed:
             return
         try:
-            signal.signal(
-                signal.SIGINT, self._previous or signal.default_int_handler
-            )
+            signal.signal(signal.SIGINT, self._previous or signal.default_int_handler)
         except (ValueError, OSError):
             pass
         self._installed = False
@@ -169,6 +185,21 @@ class _CtrlCGuard:
         if self._press_count >= 2:
             print("\n[!] Force exit (Ctrl+C twice).", flush=True)
             os._exit(130)
+
+        # Try the soft handler first — gives running agents a chance to
+        # pause cleanly before we propagate KeyboardInterrupt to the REPL.
+        if self._soft_handler is not None:
+            try:
+                if self._soft_handler():
+                    print(
+                        "\n[!] Interrupt requested — finishing current step "
+                        "(press Ctrl+C again to force exit).",
+                        flush=True,
+                    )
+                    return
+            except Exception:
+                # Never let a handler bug defeat Ctrl+C — fall through.
+                pass
 
         print(
             "\n[!] Shutdown requested. Press Ctrl+C again within "
@@ -224,6 +255,16 @@ class SimpleChatRunner:
 
         # Wire up Communication Gateway for channel-targeted ask_user
         self._setup_gateway()
+
+    def _request_agent_interrupt(self) -> bool:
+        """Ctrl+C soft-handler: pause a running agent via the executor.
+
+        Returns True when an agent was signalled (the guard should
+        suppress the usual KeyboardInterrupt), False when no mission is
+        in flight so Ctrl+C falls through to its normal behaviour
+        (break out of the prompt).
+        """
+        return self.executor.interrupt(self.session_id)
 
     def _setup_scheduler(self) -> None:
         """Build a SchedulerService so ScheduleTool/ReminderTool can create jobs.
@@ -444,7 +485,10 @@ class SimpleChatRunner:
 
         # Install double-Ctrl+C escape hatch so the user can always
         # force-exit, even if a teardown coroutine or LLM stream hangs.
+        # The soft handler pauses a running agent on first Ctrl+C; the
+        # second press (within the force-exit window) still terminates.
         ctrl_c_guard = _CtrlCGuard()
+        ctrl_c_guard.set_soft_handler(self._request_agent_interrupt)
         ctrl_c_guard.install()
 
         # Install a C-level watchdog for Ctrl+Break (Windows) / SIGQUIT (POSIX)
@@ -453,13 +497,9 @@ class SimpleChatRunner:
         _install_force_exit_watchdog()
 
         if sys.platform == "win32":
-            self.console.print(
-                "[info]💡 Tip: press Ctrl+Break for a guaranteed force exit.[/info]"
-            )
+            self.console.print("[info]💡 Tip: press Ctrl+Break for a guaranteed force exit.[/info]")
         else:
-            self.console.print(
-                "[info]💡 Tip: press Ctrl+\\ for a guaranteed force exit.[/info]"
-            )
+            self.console.print("[info]💡 Tip: press Ctrl+\\ for a guaranteed force exit.[/info]")
 
         # Start a fresh conversation on each CLI launch.
         # The previous conversation is auto-archived by create_new().
@@ -499,18 +539,17 @@ class SimpleChatRunner:
         unresponsive subprocess, deadlocked LLM stream), we log it and
         move on rather than blocking the user from exiting.
         """
+
         async def _safe_stop(label: str, coro: Any, timeout: float = 3.0) -> None:
             try:
                 await asyncio.wait_for(coro, timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.console.print(
                     f"[warning]⚠️  {label} did not stop within "
                     f"{timeout:.0f}s — abandoning.[/warning]"
                 )
             except Exception as exc:
-                self.console.print(
-                    f"[warning]⚠️  {label} stop failed: {exc}[/warning]"
-                )
+                self.console.print(f"[warning]⚠️  {label} stop failed: {exc}[/warning]")
 
         if self._telegram_poller:
             await _safe_stop("Telegram poller", self._telegram_poller.stop())
@@ -766,7 +805,8 @@ class SimpleChatRunner:
         # Primary: persist to ConversationManager when available.
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
-                self._conversation_id, user_msg,
+                self._conversation_id,
+                user_msg,
             )
             # Load history from conversation manager (source of truth).
             history = await self._conversation_manager.get_messages(
@@ -786,6 +826,7 @@ class SimpleChatRunner:
         """Stream the agent response and show events inline."""
         final_tokens: list[str] = []
         paused_question: dict[str, Any] | None = None
+        interrupted = False
         started_output = False
         current_step: str | None = None
         thinking_emitted_for_steps: set[str] = set()
@@ -917,6 +958,15 @@ class SimpleChatRunner:
             elif event_type == EventType.ERROR.value:
                 self.console.print(f"[error]❌ Error:[/error] {update.message}")
 
+            elif event_type == EventType.INTERRUPTED.value:
+                interrupted = True
+                if started_output:
+                    self.console.print()
+                    started_output = False
+                self.console.print(
+                    "[warning]⏸ Paused — type your next message to resume.[/warning]"
+                )
+
             elif event_type == EventType.COMPLETE.value:
                 # COMPLETE is a status event, not agent content — don't
                 # capture its message (e.g. "Execution completed. Status: completed")
@@ -930,6 +980,12 @@ class SimpleChatRunner:
             question_text = str(paused_question.get("question", "")).strip()
             if question_text:
                 await self._persist_assistant_message(question_text)
+            return
+
+        if interrupted:
+            # State is already persisted by the interrupt handler; no
+            # partial assistant message is stored — the next user turn
+            # will be treated as a fresh continuation.
             return
 
         final_message = "".join(final_tokens) if final_tokens else "No response"
@@ -1011,7 +1067,8 @@ class SimpleChatRunner:
         }
         if self._conversation_manager and self._conversation_id:
             await self._conversation_manager.append_message(
-                self._conversation_id, assistant_msg,
+                self._conversation_id,
+                assistant_msg,
             )
         else:
             state = await self.agent.state_manager.load_state(self.session_id) or {}
@@ -1123,7 +1180,6 @@ class SimpleChatRunner:
 
         self.console.print(table)
 
-
     async def _show_tree(self, command_args: str = "") -> None:
         """Render the full LLM context mirroring the actual API call structure.
 
@@ -1144,9 +1200,8 @@ class SimpleChatRunner:
         tree = Tree(f"[bold]LLM API Call[/bold]  {header}")
 
         # --- messages parameter ---
-        all_msg_tokens = (
-            sum(i.tokens for i in snapshot.system_prompt)
-            + sum(i.tokens for i in snapshot.messages)
+        all_msg_tokens = sum(i.tokens for i in snapshot.system_prompt) + sum(
+            i.tokens for i in snapshot.messages
         )
         msg_param = tree.add(
             f"[bold]messages=[/bold]  "
@@ -1164,9 +1219,7 @@ class SimpleChatRunner:
                 sp_node.add(f"[dim]{preview}[/dim]")
             # Show memory as sub-info (injected into this prompt)
             for mem in snapshot.memory:
-                sp_node.add(
-                    f"[green]+ {mem.title}[/green]  [dim]~{mem.tokens:,} tok[/dim]"
-                )
+                sp_node.add(f"[green]+ {mem.title}[/green]  [dim]~{mem.tokens:,} tok[/dim]")
             # Show skills as sub-info (injected into this prompt)
             for skill in snapshot.skills:
                 marker = "[magenta]*[/magenta] " if skill.tokens > 0 else "[dim]-[/dim] "
@@ -1176,8 +1229,7 @@ class SimpleChatRunner:
         for item in snapshot.messages:
             role_style = self._role_style(item.title)
             node = msg_param.add(
-                f"[{role_style}]{item.title}[/{role_style}]  "
-                f"[dim]~{item.tokens:,} tok[/dim]"
+                f"[{role_style}]{item.title}[/{role_style}]  " f"[dim]~{item.tokens:,} tok[/dim]"
             )
             if item.content:
                 preview = self._truncate_content(item.content, 200)
@@ -1191,9 +1243,7 @@ class SimpleChatRunner:
                 f"[dim]{len(snapshot.tools)} tools, ~{tool_tokens:,} tokens[/dim]"
             )
             for item in snapshot.tools:
-                tool_param.add(
-                    f"[yellow]{item.title}[/yellow]  [dim]~{item.tokens:,} tok[/dim]"
-                )
+                tool_param.add(f"[yellow]{item.title}[/yellow]  [dim]~{item.tokens:,} tok[/dim]")
 
         # --- sub-agent contexts (opt-in via --sub-agents) ---
         show_sub = "--sub-agents" in command_args
@@ -1250,16 +1300,12 @@ class SimpleChatRunner:
             lines.append("---\n\n## Sub-Agent Contexts\n")
             for sa in snapshot.sub_agents:
                 lines.append(
-                    f"### sub-agent: {sa.specialist} "
-                    f"(~{sa.snapshot.total_tokens:,} tok)\n"
+                    f"### sub-agent: {sa.specialist} " f"(~{sa.snapshot.total_tokens:,} tok)\n"
                 )
                 lines.append(f"Session: `{sa.session_id}`\n")
                 self._write_system_prompt_section(lines, sa.snapshot)
                 self._write_messages_section(lines, sa.snapshot)
-                lines.append(
-                    f"**Tools:** "
-                    f"{', '.join(t.title for t in sa.snapshot.tools)}\n"
-                )
+                lines.append(f"**Tools:** " f"{', '.join(t.title for t in sa.snapshot.tools)}\n")
         elif snapshot.sub_agents:
             lines.append(
                 f"\n---\n\n*{len(snapshot.sub_agents)} sub-agent(s) hidden "
@@ -1273,7 +1319,9 @@ class SimpleChatRunner:
         self._print_system(f"Context written to {path.resolve()}", style="info")
 
     def _write_system_prompt_section(
-        self, lines: list[str], snapshot: Any,
+        self,
+        lines: list[str],
+        snapshot: Any,
     ) -> None:
         """Write system prompt section including memory and skills."""
         if not snapshot.system_prompt:
@@ -1293,7 +1341,9 @@ class SimpleChatRunner:
                 lines.append(f"{skill.content}\n")
 
     def _write_messages_section(
-        self, lines: list[str], snapshot: Any,
+        self,
+        lines: list[str],
+        snapshot: Any,
     ) -> None:
         """Write conversation messages section."""
         for item in snapshot.messages:
@@ -1306,9 +1356,7 @@ class SimpleChatRunner:
         # System prompt
         if snap.system_prompt:
             sp = snap.system_prompt[0]
-            sp_node = parent_node.add(
-                f"[cyan]system[/cyan]  [dim]~{sp.tokens:,} tok[/dim]"
-            )
+            sp_node = parent_node.add(f"[cyan]system[/cyan]  [dim]~{sp.tokens:,} tok[/dim]")
             if sp.content:
                 sp_node.add(f"[dim]{self._truncate_content(sp.content, 150)}[/dim]")
         # Messages

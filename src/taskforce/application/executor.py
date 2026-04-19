@@ -99,6 +99,11 @@ class AgentExecutor:
         self._error_handler = ExecutionErrorHandler()
         self._agent_pipeline = AgentCreationPipeline(self.factory)
 
+        # Registry of agents currently running under a session_id.  Populated
+        # at the start of ``execute_mission_streaming`` and cleared in the
+        # matching ``finally`` block.  Enables :meth:`interrupt` to look up
+        # the agent and request a cooperative pause.
+        self._active_agents: dict[str, Agent] = {}
 
     async def execute_mission(
         self,
@@ -194,6 +199,33 @@ class AgentExecutor:
 
         return result
 
+    def interrupt(self, session_id: str) -> bool:
+        """Request a cooperative pause for a running session.
+
+        Looks up the agent currently executing under ``session_id`` and
+        signals it to pause at the next ReAct loop boundary. The in-flight
+        step (LLM call + tool calls) finishes normally; state is then
+        persisted and an ``INTERRUPTED`` event is streamed out.
+
+        Returns:
+            True if an active agent was found and signalled, False if no
+            agent is currently running under the given session_id.
+        """
+        agent = self._active_agents.get(session_id)
+        if agent is None:
+            self.logger.warning(
+                "interrupt.no_active_agent",
+                session_id=session_id,
+            )
+            return False
+        agent.request_interrupt()
+        self.logger.info("interrupt.requested", session_id=session_id)
+        return True
+
+    def has_active_session(self, session_id: str) -> bool:
+        """Return True if an agent is currently running under ``session_id``."""
+        return session_id in self._active_agents
+
     def _extract_result_from_update(self, update: ProgressUpdate) -> ExecutionResult | None:
         """Extract an ExecutionResult from a COMPLETE progress update."""
         event_type = update.event_type
@@ -282,6 +314,20 @@ class AgentExecutor:
             conversation_history=conversation_history,
         )
 
+        # Register the agent so that interrupt(session_id) can find it.
+        # A previous entry under the same session_id is replaced (e.g. resume
+        # after a prior interrupt).  Clear any stale interrupt flag so the
+        # new run starts with a clean slate.  ``getattr`` guards against
+        # agent doubles in the test suite that omit the interrupt surface;
+        # the ``inspect`` check prevents the AsyncMock default from emitting
+        # "coroutine was never awaited" warnings.
+        self._active_agents[resolved_session_id] = agent
+        _clear = getattr(agent, "clear_interrupt", None)
+        if callable(_clear):
+            _result = _clear()
+            if asyncio.iscoroutine(_result):
+                _result.close()
+
         execution_failed = False
         try:
             async for update in self._execute_streaming(
@@ -314,6 +360,11 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
+            # Remove the agent from the active registry only if the entry
+            # still points to the same instance (guards against a rare race
+            # where a second run for the same session_id replaced it).
+            if self._active_agents.get(resolved_session_id) is agent:
+                self._active_agents.pop(resolved_session_id, None)
             if agent and owns_agent:
                 asyncio.create_task(
                     self._deferred_close(agent, delay=2.0),
@@ -390,7 +441,9 @@ class AgentExecutor:
                     # Ensure ask_user events have channel + recipient_id
                     # (fills in missing fields from source conversation context).
                     if source_channel and ask_router:
-                        ask_router.ensure_channel_complete(event, source_channel, source_conversation_id)
+                        ask_router.ensure_channel_complete(
+                            event, source_channel, source_conversation_id
+                        )
 
                     if ask_router and ChannelAskRouter.is_channel_targeted_ask(event):
                         channel_ask = event.data
@@ -649,4 +702,3 @@ class AgentExecutor:
 
     async def _create_plugin_agent_via_profile_name(self, *args, **kwargs):
         return await self._agent_pipeline._from_plugin_via_profile_name(*args, **kwargs)
-

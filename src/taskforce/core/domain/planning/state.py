@@ -28,49 +28,74 @@ def _resume_from_pause(
     logger: LoggerProtocol,
     session_id: str,
 ) -> ResumeContext | None:
-    """Try to resume from an ``ask_user`` pause.
+    """Try to resume from a pause (``ask_user`` or cooperative interrupt).
 
-    If the *state* dict contains a ``pending_question`` key the function
-    restores messages, injects the user's answer (passed as *mission*),
-    clears the pause markers from *state* and returns a
-    :class:`ResumeContext`.  Returns ``None`` when there is nothing to
-    resume.
+    Two resume triggers are supported:
+
+    * ``pending_question`` — an ``ask_user`` pause.  The user's answer
+      (passed as *mission*) is injected as a synthetic tool result so
+      the next LLM call sees it as the answer to the outstanding
+      question.
+    * ``pending_interrupt`` — a cooperative interrupt pause.  Messages
+      and plan progress are restored; the new *mission* is treated as a
+      fresh user turn and appended normally by the caller.
+
+    Returns ``None`` when neither marker is present in *state*.
     """
-    if state.get("pending_question") is None or state.get("paused_messages") is None:
+    has_question = state.get("pending_question") is not None
+    has_interrupt = state.get("pending_interrupt") is not None
+    if (not has_question and not has_interrupt) or state.get("paused_messages") is None:
         return None
 
     messages: list[dict[str, Any]] = state.get("paused_messages", [])
-    pending_question: dict[str, Any] = state.get("pending_question", {})
-    tool_call_id: str = state.get("paused_tool_call_id", "ask_user_call")
     step: int = state.get("paused_step", 0)
     plan: list[str] = state.get("paused_plan", DEFAULT_PLAN)
     plan_step_idx: int = state.get("paused_plan_step_idx", 1)
     plan_iteration: int = state.get("paused_plan_iteration", 1)
     phase: str = state.get("paused_phase", "act")
 
-    user_answer = mission.strip()
-    messages.append(
-        {
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": "ask_user",
-            "content": json.dumps(
-                {
-                    "success": True,
-                    "output": user_answer,
-                    "question": pending_question.get("question", ""),
-                    "missing": pending_question.get("missing", []),
-                    "resume_instruction": (
-                        "Interpret 'output' strictly as the answer to the previous "
-                        "ask_user question. It is not a new mission."
-                    ),
-                }
-            ),
-        }
-    )
+    if has_question:
+        pending_question: dict[str, Any] = state.get("pending_question", {})
+        tool_call_id: str = state.get("paused_tool_call_id", "ask_user_call")
+        user_answer = mission.strip()
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": "ask_user",
+                "content": json.dumps(
+                    {
+                        "success": True,
+                        "output": user_answer,
+                        "question": pending_question.get("question", ""),
+                        "missing": pending_question.get("missing", []),
+                        "resume_instruction": (
+                            "Interpret 'output' strictly as the answer to the previous "
+                            "ask_user question. It is not a new mission."
+                        ),
+                    }
+                ),
+            }
+        )
+        logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
+    else:
+        # Interrupt resume — treat the new mission as a fresh user turn and
+        # append it so the LLM sees the continuation input on the next call.
+        interrupt_info: dict[str, Any] = state.get("pending_interrupt", {})
+        new_user_turn = mission.strip()
+        if new_user_turn:
+            messages.append({"role": "user", "content": new_user_turn})
+        logger.info(
+            "resumed_from_interrupt",
+            session_id=session_id,
+            reason=interrupt_info.get("reason"),
+            paused_step=step,
+            has_new_turn=bool(new_user_turn),
+        )
 
     for key in [
         "pending_question",
+        "pending_interrupt",
         "paused_messages",
         "paused_tool_call_id",
         "paused_step",
@@ -80,8 +105,6 @@ def _resume_from_pause(
         "paused_phase",
     ]:
         state.pop(key, None)
-
-    logger.info("resumed_from_ask_user", session_id=session_id, user_answer=user_answer[:100])
 
     return ResumeContext(
         messages=messages,
