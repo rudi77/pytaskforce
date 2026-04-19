@@ -111,9 +111,7 @@ async def test_execute_mission_with_progress_callback():
         updates.append(update)
 
     executor = AgentExecutor(factory=mock_factory)
-    result = await executor.execute_mission(
-        "Test mission", progress_callback=progress_callback
-    )
+    result = await executor.execute_mission("Test mission", progress_callback=progress_callback)
 
     # Verify result
     assert result.status == "completed"
@@ -479,7 +477,9 @@ def test_is_channel_targeted_ask_true():
             "recipient_id": "user-42",
         },
     )
-    assert AgentExecutor._is_channel_targeted_ask(event) is True
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    assert ChannelAskRouter.is_channel_targeted_ask(event) is True
 
 
 def test_is_channel_targeted_ask_false_standard():
@@ -488,7 +488,9 @@ def test_is_channel_targeted_ask_false_standard():
         event_type=EventType.ASK_USER,
         data={"question": "Which account?"},
     )
-    assert AgentExecutor._is_channel_targeted_ask(event) is False
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    assert ChannelAskRouter.is_channel_targeted_ask(event) is False
 
 
 def test_is_channel_targeted_ask_false_other_event():
@@ -497,7 +499,9 @@ def test_is_channel_targeted_ask_false_other_event():
         event_type=EventType.TOOL_CALL,
         data={"tool": "file_read", "channel": "telegram", "recipient_id": "u1"},
     )
-    assert AgentExecutor._is_channel_targeted_ask(event) is False
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    assert ChannelAskRouter.is_channel_targeted_ask(event) is False
 
 
 def test_build_channel_question_sent_update():
@@ -510,7 +514,9 @@ def test_build_channel_question_sent_update():
             "recipient_id": "user-42",
         },
     )
-    update = AgentExecutor._build_channel_question_sent_update(event)
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    update = ChannelAskRouter.build_question_sent_update(event)
 
     assert update.details["channel_routed"] is True
     assert "telegram" in update.message
@@ -525,9 +531,9 @@ def test_build_channel_response_received_update():
         "recipient_id": "user-42",
         "question": "Missing date?",
     }
-    update = AgentExecutor._build_channel_response_received_update(
-        channel_ask, "2026-01-15"
-    )
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    update = ChannelAskRouter.build_response_received_update(channel_ask, "2026-01-15")
 
     assert update.details["channel_response_received"] is True
     assert update.details["response"] == "2026-01-15"
@@ -537,15 +543,17 @@ def test_build_channel_response_received_update():
 
 @pytest.mark.asyncio
 async def test_route_channel_question_success():
-    """Test that _route_channel_question sends and polls via gateway."""
+    """Test that ChannelAskRouter.route_channel_question sends and polls via gateway."""
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
     mock_gateway = AsyncMock()
     mock_gateway.send_channel_question.return_value = True
     mock_gateway.poll_channel_response.side_effect = [None, None, "2026-01-15"]
     mock_gateway.clear_channel_question.return_value = None
 
-    executor = AgentExecutor(gateway=mock_gateway)
+    router = ChannelAskRouter(mock_gateway)
 
-    response = await executor._route_channel_question(
+    response = await router.route_channel_question(
         session_id="sess-1",
         channel="telegram",
         recipient_id="user-42",
@@ -560,12 +568,14 @@ async def test_route_channel_question_success():
 @pytest.mark.asyncio
 async def test_route_channel_question_send_fails():
     """When sending the question fails, return None."""
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
     mock_gateway = AsyncMock()
     mock_gateway.send_channel_question.return_value = False
 
-    executor = AgentExecutor(gateway=mock_gateway)
+    router = ChannelAskRouter(mock_gateway)
 
-    response = await executor._route_channel_question(
+    response = await router.route_channel_question(
         session_id="sess-1",
         channel="telegram",
         recipient_id="user-42",
@@ -635,8 +645,11 @@ async def test_execute_streaming_intercepts_channel_ask():
     assert updates[1].details["response"] == "2026-01-15"
 
     # Third event: COMPLETE from resumed agent
-    complete_updates = [u for u in updates if u.event_type == EventType.COMPLETE
-                        or u.event_type == EventType.COMPLETE.value]
+    complete_updates = [
+        u
+        for u in updates
+        if u.event_type == EventType.COMPLETE or u.event_type == EventType.COMPLETE.value
+    ]
     assert len(complete_updates) == 1
 
     # Agent was called twice (original + resume)
@@ -670,5 +683,3 @@ async def test_execute_streaming_no_gateway_yields_raw_ask():
     assert len(updates) == 1
     assert updates[0].details.get("channel") == "telegram"
     assert updates[0].details.get("channel_routed") is None
-
-
