@@ -1042,9 +1042,16 @@ class AgentFactory:
         user_context: dict[str, Any] | None = None,
         specialist: str | None = None,
     ) -> Agent:
-        """Create Agent from inline parameters."""
-        from taskforce.application.tool_registry import ToolRegistry
-        from taskforce.core.domain.agent_definition import MCPServerConfig
+        """Create Agent from inline parameters.
+
+        Builds an ``AgentDefinition`` from the inline arguments and delegates
+        to :meth:`create`, so there is a single agent construction pipeline.
+        """
+        from taskforce.core.domain.agent_definition import (
+            AgentDefinition,
+            AgentSource,
+            MCPServerConfig,
+        )
 
         self.logger.info(
             "creating_agent_from_inline_params",
@@ -1053,7 +1060,6 @@ class AgentFactory:
             specialist=specialist,
         )
 
-        # Build merged config from inline params and defaults
         default_config = self.profile_loader.get_defaults()
 
         effective_persistence = persistence or default_config.get(
@@ -1070,99 +1076,45 @@ class AgentFactory:
             },
         )
 
-        merged_config: dict[str, Any] = {
+        agent_defaults = default_config.get("agent", {})
+        effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
+
+        # Inline callers never provide a YAML profile; the override carries
+        # every section `create()` would otherwise load from disk.
+        base_config_override: dict[str, Any] = {
             "persistence": effective_persistence,
             "llm": effective_llm,
             "context_policy": context_policy or default_config.get("context_policy"),
-            "tools": tools or [],
+            "tools": effective_tools,
             "mcp_servers": mcp_servers or [],
+            "agent": {
+                "max_steps": max_steps or agent_defaults.get("max_steps", 30),
+                "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
+                "planning_strategy": planning_strategy,
+                "planning_strategy_params": planning_strategy_params,
+            },
         }
 
-        # Build infrastructure
-        ib = self.infra_builder
-        mem_store, mem_cfg = self._build_memory_injection(merged_config, work_dir_override=work_dir)
-        infra: dict[str, Any] = {
-            "state_manager": ib.build_state_manager(merged_config, work_dir_override=work_dir),
-            "llm_provider": ib.build_llm_provider(merged_config),
-            "context_policy": self._create_context_policy(merged_config),
-            "runtime_tracker": self._create_runtime_tracker(
-                merged_config, work_dir_override=work_dir
-            ),
-            "memory_store": mem_store,
-            "memory_context_config": mem_cfg,
-            "mcp_contexts": [],
-        }
-
-        # Collect tools
-        llm_provider = infra["llm_provider"]
-        mcp_tools_list, mcp_contexts = await self.infra_builder.build_mcp_tools(
-            [MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
-            tool_filter=None,
-        )
-        infra["mcp_contexts"] = mcp_contexts
-
-        from taskforce.application.acp_service import build_acp_runtime_for_tools
-
-        acp_runtime = build_acp_runtime_for_tools(default_config)
-        tool_registry = ToolRegistry(
-            llm_provider=llm_provider,
-            user_context=user_context,
-            scheduler=self._scheduler,
-            tool_result_store=infra.get("tool_result_store"),
-            acp_runtime=acp_runtime,
-        )
-        self._tool_builder.set_resolver(tool_registry)
-        effective_tools = tools if tools is not None else list(DEFAULT_TOOL_NAMES)
-        all_tools = tool_registry.resolve(effective_tools) + mcp_tools_list
-
-        final_system_prompt = self.prompt_assembler.assemble(
-            all_tools,
+        definition = AgentDefinition(
+            agent_id=f"inline-{specialist or 'agent'}",
+            name=f"Inline Agent ({specialist or 'default'})",
+            source=AgentSource.PROFILE,
             specialist=specialist,
-            custom_prompt=system_prompt,
+            base_profile="butler",
+            work_dir=work_dir,
+            tools=effective_tools,
+            mcp_servers=[MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],
+            planning_strategy=planning_strategy,
+            planning_strategy_params=planning_strategy_params,
+            max_steps=max_steps,
+            system_prompt=system_prompt,
         )
 
-        # Build agent settings
-        agent_defaults = default_config.get("agent", {})
-        settings: dict[str, Any] = {
-            "max_steps": max_steps or agent_defaults.get("max_steps", 30),
-            "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
-            "planning_strategy": select_planning_strategy(
-                planning_strategy, planning_strategy_params
-            ),
-            "model_alias": effective_llm.get("default_model", "main"),
-        }
-
-        self.logger.debug(
-            "agent_created_from_inline",
-            tools_count=len(all_tools),
-            tool_names=[t.name for t in all_tools],
-            model_alias=settings["model_alias"],
-            planning_strategy=settings["planning_strategy"].name,
+        return await self.create(
+            definition,
+            user_context=user_context,
+            base_config_override=base_config_override,
         )
-
-        skill_manager = self._build_default_skill_manager()
-        activate_skill_tool = self._maybe_add_skill_tool_for_profile(skill_manager, all_tools)
-        if activate_skill_tool is not None:
-            final_system_prompt = self.prompt_assembler.assemble(
-                all_tools,
-                specialist=specialist,
-                custom_prompt=system_prompt,
-            )
-
-        agent = self._instantiate_agent(
-            infra=infra,
-            all_tools=all_tools,
-            system_prompt=final_system_prompt,
-            settings=settings,
-            skill_manager=skill_manager,
-            agent_id=specialist,
-        )
-
-        if activate_skill_tool is not None:
-            activate_skill_tool.set_agent_ref(agent)
-
-        _set_mcp_contexts(agent, infra["mcp_contexts"])
-        return self._apply_extensions(merged_config, agent)
 
     async def create_agent_with_plugin(
         self,
