@@ -227,9 +227,7 @@ class InfrastructureBuilder:
         from taskforce.infrastructure.llm.llm_router import build_llm_router
 
         llm_config = config.get("llm", {})
-        config_path = llm_config.get(
-            "config_path", "src/taskforce/configs/llm_config.yaml"
-        )
+        config_path = llm_config.get("config_path", "src/taskforce/configs/llm_config.yaml")
 
         # Resolve relative paths against base path (handles frozen executables)
         config_path_obj = Path(config_path)
@@ -424,7 +422,12 @@ class InfrastructureBuilder:
     # Memory Stores (Memory Consolidation)
     # -------------------------------------------------------------------------
 
-    def build_memory_store(self, work_dir: str = ".taskforce") -> Any:
+    def build_memory_store(
+        self,
+        work_dir: str = ".taskforce",
+        *,
+        decay_enabled: bool = False,
+    ) -> Any:
         """Build a FileMemoryStore instance.
 
         Centralises the infrastructure import so that API-layer code
@@ -432,13 +435,14 @@ class InfrastructureBuilder:
 
         Args:
             work_dir: Working directory for memory persistence.
+            decay_enabled: Whether time-based memory decay should apply.
 
         Returns:
             FileMemoryStore instance implementing MemoryStoreProtocol.
         """
         from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
-        return FileMemoryStore(work_dir)
+        return FileMemoryStore(work_dir, decay_enabled=decay_enabled)
 
     # -------------------------------------------------------------------------
     # Combined Infrastructure

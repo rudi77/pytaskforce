@@ -115,6 +115,52 @@ _DECAY_ARCHIVE_THRESHOLD = 0.10
 _REINFORCE_MIN_OVERLAP = 2
 
 
+class _DryRunStoreProxy:
+    """Read-through / write-capture proxy used for dry-run consolidation.
+
+    Reads delegate to the wrapped store.  Writes (``add``/``update``/
+    ``delete``) are captured in-memory and the underlying store is not
+    touched, so the CLI can preview a consolidation run without
+    persisting anything.
+    """
+
+    def __init__(self, real: MemoryStoreProtocol) -> None:
+        self._real = real
+        self.captured_adds: list[MemoryRecord] = []
+
+    async def add(self, record: MemoryRecord) -> MemoryRecord:
+        self.captured_adds.append(record)
+        return record
+
+    async def get(self, record_id: str) -> MemoryRecord | None:
+        return await self._real.get(record_id)
+
+    async def list(self, scope: Any = None, kind: Any = None) -> list[MemoryRecord]:
+        return await self._real.list(scope=scope, kind=kind)
+
+    async def search(
+        self,
+        query: str,
+        scope: Any = None,
+        kind: Any = None,
+        limit: int = 10,
+    ) -> list[MemoryRecord]:
+        return await self._real.search(query=query, scope=scope, kind=kind, limit=limit)
+
+    async def update(self, record: MemoryRecord) -> MemoryRecord:
+        return record
+
+    async def delete(self, record_id: str) -> bool:
+        return False
+
+    async def flush(self) -> None:
+        return None
+
+    @property
+    def decay_enabled(self) -> bool:
+        return bool(getattr(self._real, "decay_enabled", False))
+
+
 class ConsolidationEngine:
     """Simplified 4-phase consolidation pipeline.
 
@@ -139,6 +185,8 @@ class ConsolidationEngine:
         experiences: list[SessionExperience],
         existing_memories: list[MemoryRecord],
         strategy: str = "immediate",
+        *,
+        dry_run: bool = False,
     ) -> ConsolidationResult:
         """Run the simplified consolidation pipeline.
 
@@ -146,6 +194,9 @@ class ConsolidationEngine:
             experiences: Session experiences to consolidate.
             existing_memories: Current consolidated memories.
             strategy: ``immediate`` or ``batch`` (batch enables patterns).
+            dry_run: When ``True``, new consolidated memories are captured
+                in ``result.preview_memories`` but not written to the
+                underlying store.
 
         Returns:
             Consolidation result with metrics.
@@ -161,6 +212,32 @@ class ConsolidationEngine:
         if not experiences:
             result.ended_at = datetime.now(UTC)
             return result
+
+        # Swap to a capture-only proxy for dry-run runs, then restore.
+        real_store = self._memory_store
+        dry_proxy: _DryRunStoreProxy | None = None
+        if dry_run:
+            dry_proxy = _DryRunStoreProxy(real_store)
+            self._memory_store = dry_proxy  # type: ignore[assignment]
+        try:
+            return await self._consolidate_pipeline(
+                experiences=experiences,
+                existing_memories=existing_memories,
+                strategy=strategy,
+                result=result,
+                dry_proxy=dry_proxy,
+            )
+        finally:
+            self._memory_store = real_store
+
+    async def _consolidate_pipeline(
+        self,
+        experiences: list[SessionExperience],
+        existing_memories: list[MemoryRecord],
+        strategy: str,
+        result: ConsolidationResult,
+        dry_proxy: _DryRunStoreProxy | None,
+    ) -> ConsolidationResult:
 
         total_tokens = 0
         session_keywords = _extract_session_keywords(experiences)
@@ -205,7 +282,9 @@ class ConsolidationEngine:
         result.total_tokens = total_tokens
         result.ended_at = datetime.now(UTC)
 
-        if hasattr(self._memory_store, "flush"):
+        if dry_proxy is not None:
+            result.preview_memories = list(dry_proxy.captured_adds)
+        elif hasattr(self._memory_store, "flush"):
             await self._memory_store.flush()
 
         logger.info(
@@ -216,6 +295,7 @@ class ConsolidationEngine:
             created=result.memories_created,
             updated=result.memories_updated,
             quality=result.quality_score,
+            dry_run=dry_proxy is not None,
         )
         return result
 
@@ -305,13 +385,10 @@ class ConsolidationEngine:
             return {"patterns": [], "contradictions": [], "schemas": [], "_tokens": 0}
 
         summary_text = "\n\n".join(
-            f"Session {s.get('session_id', '?')}:\n{s.get('narrative', '')}"
-            for s in summaries
+            f"Session {s.get('session_id', '?')}:\n{s.get('narrative', '')}" for s in summaries
         )
         learnings_text = "\n".join(f"- {item}" for item in new_learnings[:20])
-        memory_text = "\n".join(
-            f"- [{m.id[:8]}] {m.content}" for m in existing_memories[:20]
-        )
+        memory_text = "\n".join(f"- [{m.id[:8]}] {m.content}" for m in existing_memories[:20])
 
         prompt = _INTEGRATE_PROMPT.format(
             summaries=summary_text,
@@ -390,9 +467,7 @@ class ConsolidationEngine:
                 continue
 
             if resolution == "merge":
-                existing.content = contradiction.get(
-                    "merged_content", existing.content
-                )
+                existing.content = contradiction.get("merged_content", existing.content)
                 existing.metadata["last_consolidation"] = consolidation_id
                 existing.reinforce()
                 await self._memory_store.update(existing)
@@ -540,13 +615,11 @@ def _build_associations(active_memories: list[MemoryRecord]) -> int:
 def _format_summarize_prompt(exp: SessionExperience) -> str:
     """Format the summarize prompt for a single session."""
     tool_details = "\n".join(
-        f"- {tc.tool_name}: {'success' if tc.success else 'FAILED'}"
-        f" ({tc.duration_ms}ms)"
+        f"- {tc.tool_name}: {'success' if tc.success else 'FAILED'}" f" ({tc.duration_ms}ms)"
         for tc in exp.tool_calls[:20]
     )
     plan_text = "\n".join(
-        f"- Step {pu.get('step', '?')}: {pu.get('action', '')}"
-        for pu in exp.plan_updates[:10]
+        f"- Step {pu.get('step', '?')}: {pu.get('action', '')}" for pu in exp.plan_updates[:10]
     )
     return _SUMMARIZE_PROMPT.format(
         mission=exp.mission[:500],

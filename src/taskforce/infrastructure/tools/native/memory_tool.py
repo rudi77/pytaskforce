@@ -100,14 +100,20 @@ class MemoryTool(BaseTool):
     tool_requires_approval = False
     tool_supports_parallelism = False
 
-    def __init__(self, store_dir: str = ".taskforce/memory.md") -> None:
+    def __init__(
+        self,
+        store_dir: str = ".taskforce/memory.md",
+        *,
+        decay_enabled: bool = False,
+    ) -> None:
         from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
 
-        self._store = FileMemoryStore(store_dir)
+        self._store = FileMemoryStore(store_dir, decay_enabled=decay_enabled)
         logger.info(
             "memory_tool.initialized",
             store_path=str(self._store._file),
             file_exists=self._store._file.exists(),
+            decay_enabled=decay_enabled,
         )
 
     async def _execute(self, **kwargs: Any) -> dict[str, Any]:
@@ -165,9 +171,7 @@ class MemoryTool(BaseTool):
         scope = self._parse_scope(kwargs.get("scope"))
         kind = self._parse_kind(kwargs.get("kind"))
         limit = int(kwargs.get("limit", 10))
-        records = await self._store.search(
-            query=query, scope=scope, kind=kind, limit=limit
-        )
+        records = await self._store.search(query=query, scope=scope, kind=kind, limit=limit)
         return {
             "success": True,
             "records": [self._record_payload(record) for record in records],
@@ -226,6 +230,16 @@ class MemoryTool(BaseTool):
         """Run a forgetting sweep — archive weak memories."""
         from taskforce.core.domain.memory_service import MemoryService
 
+        if not self._store.decay_enabled:
+            return {
+                "success": True,
+                "decayed": 0,
+                "archived": 0,
+                "message": (
+                    "Decay is disabled for this store (memory.decay.enabled: false) — "
+                    "nothing to sweep."
+                ),
+            }
         service = MemoryService(self._store)
         decayed, forgotten = await service.decay_sweep()
         return {
@@ -264,6 +278,7 @@ class MemoryTool(BaseTool):
         from datetime import UTC, datetime
 
         now = datetime.now(UTC)
+        decay_enabled = self._store.decay_enabled
         payload: dict[str, Any] = {
             "id": record.id,
             "scope": record.scope.value,
@@ -275,7 +290,9 @@ class MemoryTool(BaseTool):
             "updated_at": record.updated_at.isoformat(),
             # Human-like properties
             "strength": round(record.strength, 4),
-            "effective_strength": round(record.effective_strength(now), 4),
+            "effective_strength": round(
+                record.effective_strength(now, decay_enabled=decay_enabled), 4
+            ),
             "access_count": record.access_count,
             "emotional_valence": record.emotional_valence.value,
             "importance": round(record.importance, 4),

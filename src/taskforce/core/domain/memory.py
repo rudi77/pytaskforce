@@ -161,36 +161,52 @@ class MemoryRecord:
         """Update the record's updated_at timestamp."""
         self.updated_at = datetime.now(UTC)
 
-    def effective_strength(self, now: datetime | None = None) -> float:
-        """Compute current effective strength using the forgetting curve.
+    def effective_strength(
+        self,
+        now: datetime | None = None,
+        *,
+        decay_enabled: bool = True,
+    ) -> float:
+        """Compute current effective strength.
 
-        Combines Ebbinghaus-style exponential decay with boosts from
-        access frequency and a floor from importance.
-
-        Formula::
+        When *decay_enabled* is ``True`` (default) applies the Ebbinghaus
+        forgetting curve combined with an access-frequency boost and an
+        importance floor::
 
             raw = strength × e^(−decay_rate × hours_since_access)
             freq_boost = min(1.0 + log(access_count + 1) × 0.1, 1.5)
             effective = max(raw × freq_boost, importance)
 
-        Returns:
-            Effective strength in [0.0, 1.0].
+        When *decay_enabled* is ``False`` the time-based decay term is
+        skipped — ``strength`` is treated as a stable value.  The
+        frequency boost and importance floor still apply so access
+        patterns remain meaningful.
         """
+        freq_boost = min(1.0 + math.log(self.access_count + 1) * 0.1, 1.5)
+        if not decay_enabled:
+            effective = self.strength * freq_boost
+            return min(max(effective, self.importance), 1.0)
         if now is None:
             now = datetime.now(UTC)
         reference = self.last_accessed or self.updated_at
         hours = max((now - reference).total_seconds() / 3600.0, 0.0)
         raw = self.strength * math.exp(-self.decay_rate * hours)
-        freq_boost = min(1.0 + math.log(self.access_count + 1) * 0.1, 1.5)
         effective = raw * freq_boost
-        # Importance acts as a floor — important memories never fully fade.
         return min(max(effective, self.importance), 1.0)
 
-    def reinforce(self, now: datetime | None = None) -> None:
+    def reinforce(
+        self,
+        now: datetime | None = None,
+        *,
+        decay_enabled: bool = True,
+    ) -> None:
         """Strengthen memory on recall (spaced repetition effect).
 
         Longer gaps since last access produce a bigger strength boost,
-        mirroring the spacing effect in human memory research.
+        mirroring the spacing effect in human memory research.  When
+        *decay_enabled* is ``False`` the decay-rate reduction step is
+        skipped — strength and access_count are still updated so
+        recall patterns remain observable.
         """
         if now is None:
             now = datetime.now(UTC)
@@ -202,8 +218,8 @@ class MemoryRecord:
         self.strength = min(1.0, self.strength + boost)
         self.access_count += 1
         self.last_accessed = now
-        # Slow down decay on repeated access (memory trace strengthens).
-        self.decay_rate = max(self.decay_rate * 0.95, 0.0005)
+        if decay_enabled:
+            self.decay_rate = max(self.decay_rate * 0.95, 0.0005)
 
     def associate_with(self, other_id: str) -> None:
         """Create a bidirectional association link to another memory."""

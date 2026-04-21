@@ -2,14 +2,20 @@
 Profile Loader
 ==============
 
-Loads and resolves YAML configuration profiles for agent creation.
-Extracted from AgentFactory to enforce single-responsibility.
+Loads and resolves agent configuration profiles. Supports two file formats:
+
+* **``{name}.agent.md``** — markdown with YAML frontmatter. Frontmatter carries
+  identity + capabilities (tools, sub_agents, mcp_servers, skills, ...) and an
+  optional ``technical:`` block plus ``extends:`` preset references. The body
+  becomes the system prompt.
+* **``{name}.yaml``** — legacy flat YAML profile. Kept for backward
+  compatibility; fully supported until all agents migrate.
 
 Responsibilities:
-- Load profile YAML files from standard and custom directories
-- Validate profiles against Pydantic schema on load
-- Provide sensible defaults when no profile exists
-- Merge plugin configurations with base profiles
+- Search standard and extra (agent-package) config directories.
+- Apply framework ``defaults.yaml`` as baseline for ``.agent.md`` files.
+- Resolve ``extends:`` chains against ``presets/*.yaml``.
+- Validate the resulting dict against the Pydantic schema (warning on failure).
 """
 
 from __future__ import annotations
@@ -21,6 +27,10 @@ from typing import Any
 import structlog
 import yaml
 
+from taskforce.application.agent_file_loader import (
+    agent_file_to_config,
+    load_agent_md,
+)
 from taskforce.application.config_schema import (
     ConfigValidationError,
     validate_profile_config,
@@ -36,7 +46,7 @@ _extra_config_dirs: list[Path] = []
 
 
 def register_config_dir(path: Path | str) -> None:
-    """Register an additional directory to search for profile YAML files.
+    """Register an additional directory to search for profile files.
 
     Agent packages (e.g. ``taskforce_butler``, ``taskforce_coding_agent``)
     call this at CLI startup so their shipped configs are discoverable by
@@ -46,7 +56,7 @@ def register_config_dir(path: Path | str) -> None:
 
     Args:
         path: Absolute or relative path to a directory containing
-            ``*.yaml`` profile files.
+            ``*.agent.md`` or ``*.yaml`` profile files.
     """
     resolved = Path(path).resolve()
     if resolved not in _extra_config_dirs:
@@ -55,19 +65,12 @@ def register_config_dir(path: Path | str) -> None:
 
 
 def get_extra_config_dirs() -> list[Path]:
-    """Return the list of registered extra config directories.
-
-    Returns:
-        Snapshot of currently registered directories (defensive copy).
-    """
+    """Return the list of registered extra config directories."""
     return list(_extra_config_dirs)
 
 
 def clear_extra_config_dirs() -> None:
-    """Remove all registered extra config directories.
-
-    Primarily useful in tests to reset global state.
-    """
+    """Remove all registered extra config directories (useful in tests)."""
     _extra_config_dirs.clear()
 
 
@@ -82,7 +85,9 @@ DEFAULT_TOOL_NAMES: list[str] = [
     "ask_user",
 ]
 
-# Minimal fallback config when no profile YAML file exists.
+# Minimal fallback used when ``configs/defaults.yaml`` cannot be located
+# (e.g. stripped-down installs). Kept as module-level constant for
+# backward compatibility with tests and tooling that reference it.
 _FALLBACK_CONFIG: dict[str, Any] = {
     "persistence": {"type": "file", "work_dir": ".taskforce"},
     "llm": {
@@ -95,15 +100,20 @@ _FALLBACK_CONFIG: dict[str, Any] = {
 
 
 class ProfileLoader:
-    """Load and resolve YAML configuration profiles.
+    """Load and resolve agent configuration profiles.
 
-    Encapsulates the profile search order (standard → custom → defaults)
-    and provides a single source of truth for default configuration.
+    Search order for ``load(name)``:
 
-    Args:
-        config_dir: Root directory containing profile YAML files.
-            When ``None``, uses the standard config directory resolved
-            via ``get_base_path()``.
+    1. ``{primary}/ {name}.agent.md``
+    2. ``{primary}/ {name}.yaml``
+    3. ``{primary}/custom/{name}.agent.md``
+    4. ``{primary}/custom/{name}.yaml``
+    5. Same probe sequence in each registered extra directory.
+
+    ``.agent.md`` files are post-processed: framework defaults (``defaults.yaml``)
+    are applied first, then any ``extends:`` presets, then the frontmatter, then
+    the ``technical:`` block flattened onto the top level, and finally the body
+    is stored as ``system_prompt``.
     """
 
     def __init__(self, config_dir: Path | None = None) -> None:
@@ -132,38 +142,31 @@ class ProfileLoader:
 
     @staticmethod
     def _probe_dir(config_dir: Path, profile: str) -> Path | None:
-        """Check a config directory for a profile YAML file.
+        """Check a config directory for a profile file.
 
-        Looks for ``{config_dir}/{profile}.yaml`` first, then
-        ``{config_dir}/custom/{profile}.yaml``.
+        Probes in order: ``{profile}.agent.md`` → ``{profile}.yaml`` →
+        ``custom/{profile}.agent.md`` → ``custom/{profile}.yaml``.
 
         Returns:
             The resolved path if found, otherwise ``None``.
         """
-        candidate = config_dir / f"{profile}.yaml"
-        if candidate.exists():
-            return candidate
-        custom_candidate = config_dir / "custom" / f"{profile}.yaml"
-        if custom_candidate.exists():
-            return custom_candidate
+        candidates = [
+            config_dir / f"{profile}.agent.md",
+            config_dir / f"{profile}.yaml",
+            config_dir / "custom" / f"{profile}.agent.md",
+            config_dir / "custom" / f"{profile}.yaml",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
         return None
 
     def _find_profile_path(self, profile: str) -> Path | None:
-        """Search all config directories for a profile YAML file.
-
-        Order:
-        1. Primary config directory (``self._config_dir``)
-        2. Each registered extra config directory (in registration order)
-
-        Returns:
-            The first matching path, or ``None`` if not found.
-        """
-        # Primary directory first
+        """Search all config directories for a profile file."""
         result = self._probe_dir(self._config_dir, profile)
         if result is not None:
             return result
 
-        # Extra directories registered by agent packages
         for extra_dir in _extra_config_dirs:
             result = self._probe_dir(extra_dir, profile)
             if result is not None:
@@ -173,8 +176,31 @@ class ProfileLoader:
                     config_dir=str(extra_dir),
                 )
                 return result
-
         return None
+
+    def _preset_dirs(self) -> list[Path]:
+        """Directories searched when resolving ``extends:`` references."""
+        dirs: list[Path] = []
+        primary_presets = self._config_dir / "presets"
+        if primary_presets.is_dir():
+            dirs.append(primary_presets)
+        for extra_dir in _extra_config_dirs:
+            presets_dir = extra_dir / "presets"
+            if presets_dir.is_dir():
+                dirs.append(presets_dir)
+        return dirs
+
+    def _load_defaults(self) -> dict[str, Any]:
+        """Load ``configs/defaults.yaml`` as baseline config, or ``{}``."""
+        defaults_path = self._config_dir / "defaults.yaml"
+        if not defaults_path.is_file():
+            return {}
+        with open(defaults_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            self._logger.warning("defaults_yaml_not_a_mapping", path=str(defaults_path))
+            return {}
+        return data
 
     # ------------------------------------------------------------------
     # Public API
@@ -183,21 +209,14 @@ class ProfileLoader:
     def load(self, profile: str) -> dict[str, Any]:
         """Load a profile by name.
 
-        Search order:
-        1. ``{config_dir}/{profile}.yaml``
-        2. ``{config_dir}/custom/{profile}.yaml``
-        3. Each registered extra config directory (see :func:`register_config_dir`):
-           a. ``{extra_dir}/{profile}.yaml``
-           b. ``{extra_dir}/custom/{profile}.yaml``
-
         Args:
             profile: Profile name (e.g. ``"butler"``, ``"coding_agent"``).
 
         Returns:
-            Parsed YAML configuration dictionary.
+            Parsed configuration dictionary.
 
         Raises:
-            FileNotFoundError: If no matching YAML file is found.
+            FileNotFoundError: If no matching file is found.
         """
         profile_path = self._find_profile_path(profile)
         if profile_path is None:
@@ -207,11 +226,21 @@ class ProfileLoader:
                 f"Profile '{profile}' not found. Searched: {', '.join(searched)}"
             )
 
-        with open(profile_path, encoding="utf-8") as f:
-            config: dict[str, Any] = yaml.safe_load(f)
+        if profile_path.name.endswith(".agent.md"):
+            agent_file = load_agent_md(profile_path)
+            config = agent_file_to_config(
+                agent_file,
+                preset_dirs=self._preset_dirs(),
+                defaults=self._load_defaults(),
+            )
+        else:
+            with open(profile_path, encoding="utf-8") as f:
+                config = yaml.safe_load(f)
 
-        # Validate against Pydantic schema — logs a warning on failure
-        # but does NOT reject the config to stay backwards-compatible.
+        if not isinstance(config, dict):
+            raise ValueError(f"Profile '{profile}' did not parse to a mapping: {profile_path}")
+
+        # Validate against Pydantic schema — warn on failure, do not reject.
         try:
             validate_profile_config(config, file_path=profile_path)
         except ConfigValidationError as exc:
@@ -225,19 +254,13 @@ class ProfileLoader:
         self._logger.debug(
             "profile_loaded",
             profile=profile,
+            path=str(profile_path),
             config_keys=list(config.keys()),
         )
         return config
 
     def load_safe(self, profile: str) -> dict[str, Any]:
-        """Load a profile, falling back to defaults on ``FileNotFoundError``.
-
-        Args:
-            profile: Profile name.
-
-        Returns:
-            Parsed configuration, or :data:`_FALLBACK_CONFIG` if not found.
-        """
+        """Load a profile, falling back to defaults on ``FileNotFoundError``."""
         try:
             return self.load(profile)
         except FileNotFoundError:
@@ -245,15 +268,18 @@ class ProfileLoader:
                 "profile_not_found_using_defaults",
                 profile=profile,
             )
-            return copy.deepcopy(_FALLBACK_CONFIG)
+            return self.get_defaults()
 
     def get_defaults(self) -> dict[str, Any]:
-        """Return default configuration (loads ``butler`` or falls back).
+        """Return the framework defaults dict.
 
-        Returns:
-            Configuration dictionary.
+        Loads ``configs/defaults.yaml`` if present, else returns a minimal
+        hard-coded fallback so the framework still starts in a broken repo.
         """
-        return self.load_safe("butler")
+        data = self._load_defaults()
+        if data:
+            return copy.deepcopy(data)
+        return copy.deepcopy(_FALLBACK_CONFIG)
 
     # ------------------------------------------------------------------
     # Plugin config merging
@@ -279,17 +305,6 @@ class ProfileLoader:
 
         The ``persistence.type`` key always comes from *base_config* for
         security (prevents plugins from switching storage backends).
-
-        Note: ``llm`` overrides are allowed because plugins are user-installed
-        and may legitimately need their own model provider configuration
-        (e.g. an Anthropic-based plugin vs. an Azure-based base profile).
-
-        Args:
-            base_config: Base profile configuration.
-            plugin_config: Plugin-specific overrides.
-
-        Returns:
-            Deep-copied merged configuration.
         """
         merged = copy.deepcopy(base_config)
 
@@ -303,18 +318,16 @@ class ProfileLoader:
             merged["specialist"] = plugin_config["specialist"]
 
         if plugin_config.get("persistence", {}).get("work_dir"):
-            merged.setdefault("persistence", {})["work_dir"] = plugin_config[
-                "persistence"
-            ]["work_dir"]
+            merged.setdefault("persistence", {})["work_dir"] = plugin_config["persistence"][
+                "work_dir"
+            ]
 
         if "mcp_servers" in plugin_config:
             base_mcp = merged.get("mcp_servers", [])
             merged["mcp_servers"] = base_mcp + plugin_config["mcp_servers"]
 
         if "context_management" in plugin_config:
-            merged.setdefault("context_management", {}).update(
-                plugin_config["context_management"]
-            )
+            merged.setdefault("context_management", {}).update(plugin_config["context_management"])
 
         if "memory" in plugin_config:
             merged.setdefault("memory", {}).update(plugin_config["memory"])

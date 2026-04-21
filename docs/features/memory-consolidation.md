@@ -21,12 +21,19 @@ Add a `consolidation` section to your profile YAML:
 consolidation:
   enabled: true
   auto_capture: true        # Capture experiences during execution
-  auto_consolidate: false   # Set true for immediate consolidation after each session
+  auto_consolidate: false   # Explicit-only by default. Set true to run LLM
+                            # consolidation automatically after each session.
   strategy: batch            # immediate | batch | scheduled
   max_sessions: 50
   model_alias: main
   work_dir: .taskforce/experiences
 ```
+
+> **Butler default (since 2026-04-19):** the bundled butler preset ships with
+> ``auto_consolidate: false`` — experiences are captured but the expensive LLM
+> consolidation pipeline only runs when you invoke ``taskforce memory
+> consolidate`` manually. This keeps token costs predictable and surfaces new
+> consolidated memories where you can review them.
 
 ### 2. Run Missions (Experiences Are Captured Automatically)
 

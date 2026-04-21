@@ -35,9 +35,7 @@ def build_consolidation_components(
         be ``None`` if consolidation is not enabled.
     """
     consol_config = config.get("consolidation", {})
-    enabled = consol_config.get("enabled", False) or consol_config.get(
-        "auto_consolidate", False
-    )
+    enabled = consol_config.get("enabled", False) or consol_config.get("auto_consolidate", False)
     auto_capture = consol_config.get("auto_capture", True)
     if not enabled and not auto_capture:
         return None, None
@@ -118,6 +116,8 @@ class ConsolidationService:
         session_ids: list[str] | None = None,
         strategy: str | None = None,
         max_sessions: int = 20,
+        *,
+        dry_run: bool = False,
     ) -> ConsolidationResult:
         """Run a consolidation pass over session experiences.
 
@@ -126,6 +126,10 @@ class ConsolidationService:
                 uses unprocessed experiences.
             strategy: Override the default strategy.
             max_sessions: Maximum number of sessions to process.
+            dry_run: When ``True`` run the consolidation pipeline but
+                neither persist new memories nor mark the input sessions
+                as processed.  Useful for previewing what the CLI
+                ``memory consolidate`` command would do.
 
         Returns:
             Result with consolidation metrics.
@@ -145,7 +149,7 @@ class ConsolidationService:
             )
 
         if not experiences:
-            logger.info("consolidation.no_experiences")
+            logger.info("consolidation.no_experiences", dry_run=dry_run)
             return ConsolidationResult(strategy=effective_strategy)
 
         # Fetch existing consolidated memories for dedup/contradiction check
@@ -158,13 +162,23 @@ class ConsolidationService:
             strategy=effective_strategy,
             sessions=len(experiences),
             existing_memories=len(existing),
+            dry_run=dry_run,
         )
 
         result = await self._engine.consolidate(
             experiences=experiences,
             existing_memories=existing,
             strategy=effective_strategy,
+            dry_run=dry_run,
         )
+
+        if dry_run:
+            logger.info(
+                "consolidation.dry_run_complete",
+                sessions=len(experiences),
+                preview_memories=len(result.preview_memories),
+            )
+            return result
 
         # Mark processed
         processed_ids = [e.session_id for e in experiences]
@@ -199,6 +213,10 @@ class ConsolidationService:
             experience: The session experience to consolidate.
         """
         if not self._auto_consolidate:
+            logger.debug(
+                "consolidation.skipped.auto_disabled",
+                session_id=session_id,
+            )
             return
 
         # Batch strategy: accumulate and only consolidate when threshold reached.
@@ -252,9 +270,7 @@ class ConsolidationService:
             if config and not getattr(config, "trigger_after_consolidation", True):
                 return
 
-            await self._dream_service.trigger_dream(
-                trigger=DreamTrigger.POST_CONSOLIDATION
-            )
+            await self._dream_service.trigger_dream(trigger=DreamTrigger.POST_CONSOLIDATION)
         except Exception:
             logger.exception("consolidation.dream_after_consolidation_failed")
 

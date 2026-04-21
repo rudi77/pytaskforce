@@ -59,7 +59,9 @@ Each memory entry is a **record** with structured metadata and human-like proper
 
 ### Effective Strength Formula
 
-The **effective strength** determines whether a memory surfaces during retrieval:
+The **effective strength** determines whether a memory surfaces during retrieval.
+
+When decay is **enabled**:
 
 ```
 raw = strength × e^(−decay_rate × hours_since_access)
@@ -67,7 +69,27 @@ freq_boost = min(1.0 + log(access_count + 1) × 0.1, 1.5)
 effective = max(raw × freq_boost, importance)
 ```
 
+When decay is **disabled** (the default), the time-based term is skipped — `strength` is treated as a stable value:
+
+```
+freq_boost = min(1.0 + log(access_count + 1) × 0.1, 1.5)
+effective = max(strength × freq_boost, importance)
+```
+
 Memories are sorted by effective strength (most salient first) rather than simple recency.
+
+### Decay is opt-in
+
+Time-based forgetting is **off by default** — agents remember facts and preferences reliably until the record is explicitly removed.  This prioritises predictable behaviour over cognitive fidelity.  Enable decay per profile when you want automatic forgetting:
+
+```yaml
+memory:
+  store_dir: .taskforce/memory
+  decay:
+    enabled: true
+```
+
+When decay is off, `memory decay_sweep` becomes a no-op and `reinforce()` no longer reduces a record's `decay_rate`.  Access-count, emotional valence and `importance` continue to influence effective strength, so recall patterns remain meaningful.
 
 ### Default Strength & Decay by Kind
 

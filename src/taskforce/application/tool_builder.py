@@ -85,13 +85,9 @@ class ToolBuilder:
                 specialist=specialist,
                 tool_count=len(tools_config),
             )
-            tools = self.create_native_tools(
-                config, llm_provider, user_context=user_context
-            )
+            tools = self.create_native_tools(config, llm_provider, user_context=user_context)
         elif use_specialist_defaults and specialist in ("coding", "rag"):
-            self._logger.debug(
-                "using_specialist_defaults", specialist=specialist
-            )
+            self._logger.debug("using_specialist_defaults", specialist=specialist)
             tools = self.create_specialist_tools(
                 specialist, config, llm_provider, user_context=user_context
             )
@@ -148,9 +144,7 @@ class ToolBuilder:
             mcp_tools, _mcp_contexts = await self.create_mcp_tools(temp_config)
 
             if mcp_tool_allowlist:
-                filtered = [
-                    t for t in mcp_tools if t.name in mcp_tool_allowlist
-                ]
+                filtered = [t for t in mcp_tools if t.name in mcp_tool_allowlist]
                 self._logger.debug(
                     "mcp_tools_filtered",
                     original_count=len(mcp_tools),
@@ -198,9 +192,7 @@ class ToolBuilder:
         if orchestration_tool:
             tools.append(orchestration_tool)
 
-        include_llm_generate = config.get("agent", {}).get(
-            "include_llm_generate", False
-        )
+        include_llm_generate = config.get("agent", {}).get("include_llm_generate", False)
         if not include_llm_generate:
             original_count = len(tools)
             tools = [t for t in tools if t.name != "llm_generate"]
@@ -240,9 +232,7 @@ class ToolBuilder:
         tools: list[ToolProtocol] = []
         for tool_spec in tools_config:
             resolved_spec = self.hydrate_memory_tool_spec(tool_spec, config)
-            tool = self.instantiate_tool(
-                resolved_spec, llm_provider, user_context=user_context
-            )
+            tool = self.instantiate_tool(resolved_spec, llm_provider, user_context=user_context)
             if tool:
                 tools.append(tool)
         return tools
@@ -260,9 +250,7 @@ class ToolBuilder:
         "ask_user",
     ]
 
-    def create_default_tools(
-        self, llm_provider: LLMProviderProtocol
-    ) -> list[ToolProtocol]:
+    def create_default_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
         """Create default tool set (fallback when no config provided).
 
         Delegates to the injected resolver (preferred) or falls back
@@ -282,9 +270,7 @@ class ToolBuilder:
         registry = ToolRegistry(llm_provider=llm_provider)
         return registry.resolve(self._DEFAULT_TOOL_NAMES)
 
-    def get_all_native_tools(
-        self, llm_provider: LLMProviderProtocol
-    ) -> list[ToolProtocol]:
+    def get_all_native_tools(self, llm_provider: LLMProviderProtocol) -> list[ToolProtocol]:
         """Get all available native tools.
 
         Delegates to the injected resolver (preferred) or falls back
@@ -354,9 +340,7 @@ class ToolBuilder:
             )
             return self._resolver.resolve(tool_names)
 
-        return self._create_specialist_tools_legacy(
-            specialist, user_context
-        )
+        return self._create_specialist_tools_legacy(specialist, user_context)
 
     def _create_specialist_tools_legacy(
         self,
@@ -577,9 +561,7 @@ class ToolBuilder:
     # Orchestration & MCP
     # -------------------------------------------------------------------------
 
-    def build_orchestration_tool(
-        self, config: dict[str, Any]
-    ) -> ToolProtocol | None:
+    def build_orchestration_tool(self, config: dict[str, Any]) -> ToolProtocol | None:
         """Build AgentTool when orchestration is enabled."""
         orchestration_config = config.get("orchestration", {})
         if not orchestration_config.get("enabled", False):
@@ -600,26 +582,16 @@ class ToolBuilder:
             profile=orchestration_config.get("sub_agent_profile", "dev"),
             work_dir=orchestration_config.get("sub_agent_work_dir"),
             max_steps=orchestration_config.get("sub_agent_max_steps"),
-            summarize_results=orchestration_config.get(
-                "summarize_results", False
-            ),
-            summary_max_length=orchestration_config.get(
-                "summary_max_length", 2000
-            ),
-            auto_approve=bool(
-                orchestration_config.get("auto_approve", False)
-            ),
+            summarize_results=orchestration_config.get("summarize_results", False),
+            summary_max_length=orchestration_config.get("summary_max_length", 2000),
+            auto_approve=bool(orchestration_config.get("auto_approve", False)),
         )
 
         self._logger.info(
             "orchestration_enabled",
             agent_tool_added=True,
-            sub_agent_profile=orchestration_config.get(
-                "sub_agent_profile", "dev"
-            ),
-            sub_agent_max_steps=orchestration_config.get(
-                "sub_agent_max_steps"
-            ),
+            sub_agent_profile=orchestration_config.get("sub_agent_profile", "dev"),
+            sub_agent_max_steps=orchestration_config.get("sub_agent_max_steps"),
         )
         return agent_tool
 
@@ -646,8 +618,7 @@ class ToolBuilder:
             return [], []
 
         server_configs = [
-            MCPServerConfig.from_dict(s) if isinstance(s, dict) else s
-            for s in mcp_servers_config
+            MCPServerConfig.from_dict(s) if isinstance(s, dict) else s for s in mcp_servers_config
         ]
 
         manager = create_default_connection_manager()
@@ -661,12 +632,16 @@ class ToolBuilder:
     def hydrate_memory_tool_spec(
         tool_spec: str | dict[str, Any], config: dict[str, Any]
     ) -> str | dict[str, Any]:
-        """Hydrate memory tool spec with store directory from config."""
+        """Hydrate memory tool spec with store directory and decay flag."""
         if tool_spec != "memory":
             return tool_spec
 
         store_dir = ToolBuilder.resolve_memory_store_dir(config)
-        return {"type": "MemoryTool", "params": {"store_dir": store_dir}}
+        decay_enabled = bool(config.get("memory", {}).get("decay", {}).get("enabled", False))
+        return {
+            "type": "MemoryTool",
+            "params": {"store_dir": store_dir, "decay_enabled": decay_enabled},
+        }
 
     @staticmethod
     def resolve_memory_store_dir(
@@ -681,7 +656,7 @@ class ToolBuilder:
         store_dir = memory_config.get("store_dir")
         if store_dir:
             return str(store_dir)
-        persistence_dir = work_dir_override or config.get(
-            "persistence", {}
-        ).get("work_dir", ".taskforce")
+        persistence_dir = work_dir_override or config.get("persistence", {}).get(
+            "work_dir", ".taskforce"
+        )
         return str(Path(persistence_dir) / "memory.md")

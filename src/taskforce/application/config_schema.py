@@ -111,8 +111,8 @@ class AgentConfigSchema(BaseModel):
     )
     specialist: str | None = Field(
         None,
-        description="Specialist type (coding, rag, wiki, or None)",
-        pattern="^(coding|rag|wiki)$",
+        description="Specialist/role tag (coding, rag, wiki, butler, or a custom role name)",
+        pattern="^[a-zA-Z0-9_-]+$",
     )
     planning_strategy: str = Field(
         "native_react",
@@ -204,9 +204,7 @@ class AgentConfigSchema(BaseModel):
                     f"Got: {tool}"
                 )
             else:
-                raise ValueError(
-                    f"tools[{i}]: Tool must be a string, got {type(tool).__name__}"
-                )
+                raise ValueError(f"tools[{i}]: Tool must be a string, got {type(tool).__name__}")
         return validated
 
 
@@ -351,6 +349,18 @@ class ProfileConfigSchema(BaseModel):
     acp: AcpConfigSchema | None = Field(
         None,
         description="ACP (Agent Communication Protocol) configuration",
+    )
+
+    # Raw technical block (used by .agent.md files before the loader flattens
+    # it onto the top level). Retained so Pydantic doesn't reject it during
+    # post-flattening validation of mid-pipeline configs.
+    technical: dict[str, Any] | None = Field(
+        None,
+        description="Technical settings block (flattened onto top level by loader)",
+    )
+    extends: str | list[str] | None = Field(
+        None,
+        description="Preset name(s) to inherit from (resolved via configs/presets/)",
     )
 
 

@@ -69,9 +69,7 @@ class MemoryContextConfig:
             kinds (list of kind strings), scope (string).
         """
         kinds = data.get("kinds")
-        parsed_kinds = (
-            [MemoryKind(k) for k in kinds] if kinds else list(_DEFAULT_KINDS)
-        )
+        parsed_kinds = [MemoryKind(k) for k in kinds] if kinds else list(_DEFAULT_KINDS)
         scope_raw = data.get("scope")
         parsed_scope = MemoryScope(scope_raw) if scope_raw else MemoryScope.USER
         return cls(
@@ -133,13 +131,14 @@ class MemoryContextLoader:
             return None
 
         now = datetime.now(UTC)
+        decay_enabled = bool(getattr(self._store, "decay_enabled", False))
 
         # Filter out archived and very weak memories.
         active = [
             r
             for r in records
             if "archived" not in r.tags
-            and r.effective_strength(now) >= _MIN_INJECTION_STRENGTH
+            and r.effective_strength(now, decay_enabled=decay_enabled) >= _MIN_INJECTION_STRENGTH
         ]
         if not active:
             return None
@@ -147,13 +146,11 @@ class MemoryContextLoader:
         # Build mission keyword set for contextual boosting.
         mission_keywords: set[str] = set()
         if mission:
-            mission_keywords = {
-                w.lower() for w in mission.split() if len(w) > 2
-            }
+            mission_keywords = {w.lower() for w in mission.split() if len(w) > 2}
 
         # Sort by effective strength with optional mission-relevance boost.
         def _salience(record: MemoryRecord) -> float:
-            eff = record.effective_strength(now)
+            eff = record.effective_strength(now, decay_enabled=decay_enabled)
             if not mission_keywords:
                 return eff
             haystack = f"{record.content} {' '.join(record.tags)}".lower()
@@ -170,7 +167,7 @@ class MemoryContextLoader:
         # Reinforce injected memories (they are being "recalled").
         # Updates are batched in the cache — flush once at the end.
         for record in active:
-            record.reinforce(now)
+            record.reinforce(now, decay_enabled=decay_enabled)
             await self._store.update(record)
         if hasattr(self._store, "flush"):
             await self._store.flush()
@@ -219,7 +216,8 @@ class MemoryContextLoader:
         if len(content) > max_len:
             content = content[: max_len - 3] + "..."
         kind_label = record.kind.value.upper().replace("_", " ")
-        eff = record.effective_strength(now)
+        decay_enabled = bool(getattr(self._store, "decay_enabled", False))
+        eff = record.effective_strength(now, decay_enabled=decay_enabled)
         strength_bar = self._strength_indicator(eff)
         emotion = _EMOTION_ICONS.get(record.emotional_valence, "")
         emotion_suffix = f" {emotion}" if emotion else ""

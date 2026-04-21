@@ -182,6 +182,24 @@ class TestDecaySweep:
 # ------------------------------------------------------------------
 
 
+class TestDecayDisabled:
+    async def test_decay_sweep_is_noop_when_decay_disabled(self) -> None:
+        weak = _make_record(
+            content="faded",
+            record_id="w1",
+            strength=0.01,
+            importance=0.0,
+        )
+        store = _mock_store([weak])
+        store.decay_enabled = False
+        service = MemoryService(store)
+        decayed, forgotten = await service.decay_sweep(threshold=0.10, archive=True)
+        assert decayed == 0
+        assert forgotten == 0
+        assert not store.update.called
+        assert not store.delete.called
+
+
 class TestAutoAssociation:
     async def test_remember_discovers_associations(self) -> None:
         existing = _make_record(

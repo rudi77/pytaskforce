@@ -99,17 +99,19 @@ class TestAgentConfigSchema:
         assert config.base_profile == "dev"
 
     def test_valid_full(self) -> None:
-        config = AgentConfigSchema(**self._minimal_config(
-            description="A test agent",
-            source=AgentSourceType.PLUGIN,
-            system_prompt="You are helpful.",
-            specialist="coding",
-            planning_strategy="spar",
-            max_steps=50,
-            tools=["python", "file_read"],
-            base_profile="coding_agent",
-            work_dir="/tmp/work",
-        ))
+        config = AgentConfigSchema(
+            **self._minimal_config(
+                description="A test agent",
+                source=AgentSourceType.PLUGIN,
+                system_prompt="You are helpful.",
+                specialist="coding",
+                planning_strategy="spar",
+                max_steps=50,
+                tools=["python", "file_read"],
+                base_profile="coding_agent",
+                work_dir="/tmp/work",
+            )
+        )
         assert config.specialist == "coding"
         assert config.planning_strategy == "spar"
         assert config.max_steps == 50
@@ -132,11 +134,14 @@ class TestAgentConfigSchema:
             AgentConfigSchema(agent_id="test", name="")
 
     def test_invalid_specialist_raises(self) -> None:
+        # The ``specialist`` field accepts any alphanumeric identifier (including
+        # custom role names). Only characters outside that set are rejected.
         with pytest.raises(PydanticValidationError):
-            AgentConfigSchema(**self._minimal_config(specialist="invalid"))
+            AgentConfigSchema(**self._minimal_config(specialist="has spaces"))
 
     def test_valid_specialists(self) -> None:
-        for s in ["coding", "rag", "wiki"]:
+        # Built-in specialists plus free-form role tags (e.g. butler, accountant).
+        for s in ["coding", "rag", "wiki", "butler", "accountant", "my-role_v2"]:
             config = AgentConfigSchema(**self._minimal_config(specialist=s))
             assert config.specialist == s
 
@@ -163,9 +168,7 @@ class TestAgentConfigSchema:
 
     def test_tools_must_be_strings(self) -> None:
         with pytest.raises(PydanticValidationError, match="Tool must be a string.*not a dict"):
-            AgentConfigSchema(**self._minimal_config(
-                tools=[{"type": "WebSearchTool"}]
-            ))
+            AgentConfigSchema(**self._minimal_config(tools=[{"type": "WebSearchTool"}]))
 
     def test_tools_non_string_non_dict_raises(self) -> None:
         with pytest.raises(PydanticValidationError, match="must be a string, got int"):
@@ -176,9 +179,11 @@ class TestAgentConfigSchema:
             AgentConfigSchema(**self._minimal_config(tools="python"))
 
     def test_mcp_servers_validation(self) -> None:
-        config = AgentConfigSchema(**self._minimal_config(
-            mcp_servers=[{"type": "stdio", "command": "npx", "args": ["-y", "server"]}]
-        ))
+        config = AgentConfigSchema(
+            **self._minimal_config(
+                mcp_servers=[{"type": "stdio", "command": "npx", "args": ["-y", "server"]}]
+            )
+        )
         assert len(config.mcp_servers) == 1
         assert config.mcp_servers[0].command == "npx"
 
@@ -188,10 +193,12 @@ class TestAgentConfigSchema:
 
     def test_timestamps(self) -> None:
         now = datetime.now()
-        config = AgentConfigSchema(**self._minimal_config(
-            created_at=now,
-            updated_at=now,
-        ))
+        config = AgentConfigSchema(
+            **self._minimal_config(
+                created_at=now,
+                updated_at=now,
+            )
+        )
         assert config.created_at == now
         assert config.updated_at == now
 
@@ -219,16 +226,12 @@ class TestProfileConfigSchema:
         assert config.model_extra.get("custom_setting") == "value"
 
     def test_with_agent_section(self) -> None:
-        config = ProfileConfigSchema(
-            agent={"planning_strategy": "spar", "max_steps": 20}
-        )
+        config = ProfileConfigSchema(agent={"planning_strategy": "spar", "max_steps": 20})
         assert config.agent["planning_strategy"] == "spar"
 
     def test_with_legacy_dict_tools(self) -> None:
         """Profile supports legacy dict-format tools for backward compatibility."""
-        config = ProfileConfigSchema(
-            tools=[{"type": "WebSearchTool"}, "python"]
-        )
+        config = ProfileConfigSchema(tools=[{"type": "WebSearchTool"}, "python"])
         assert len(config.tools) == 2
 
 
@@ -313,11 +316,13 @@ class TestExtractToolNames:
         assert result == ["web_search"]
 
     def test_mixed_tools(self) -> None:
-        result = extract_tool_names([
-            "python",
-            {"type": "FileReadTool"},
-            "shell",
-        ])
+        result = extract_tool_names(
+            [
+                "python",
+                {"type": "FileReadTool"},
+                "shell",
+            ]
+        )
         assert result == ["python", "file_read", "shell"]
 
     def test_empty_list(self) -> None:

@@ -117,6 +117,23 @@ class TestConsolidationService:
         await service.post_execution_hook("sess-1", exp)
         mock_engine.consolidate.assert_awaited_once()
 
+    async def test_trigger_consolidation_dry_run_skips_persistence(
+        self, service, mock_experience_store, mock_engine
+    ):
+        """Dry-run must not mark sessions processed or save consolidation."""
+        exp = _make_experience()
+        mock_experience_store.list_experiences = AsyncMock(return_value=[exp])
+
+        await service.trigger_consolidation(dry_run=True)
+
+        mock_engine.consolidate.assert_awaited_once()
+        # dry_run must have been propagated to the engine.
+        _, kwargs = mock_engine.consolidate.call_args
+        assert kwargs.get("dry_run") is True
+        # No persistence side-effects for dry-run runs.
+        mock_experience_store.mark_processed.assert_not_awaited()
+        mock_experience_store.save_consolidation.assert_not_awaited()
+
     async def test_get_consolidation_history(self, service, mock_experience_store):
         mock_experience_store.list_consolidations = AsyncMock(
             return_value=[

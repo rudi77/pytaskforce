@@ -1,0 +1,84 @@
+# Butler Defaults Preset
+# ======================
+# Technical tuning shared by the butler profile and its sub-agents/roles.
+# Opt in from an .agent.md via:
+#
+#   ---
+#   extends: butler-defaults
+#   ---
+#
+# Values here layer on top of the framework defaults.yaml and can still be
+# overridden by a per-agent ``technical:`` block.
+
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 2
+    max_plan_steps: 12
+    reflect_every_step: false
+  max_steps: 30
+  llm_fallback: false
+
+memory:
+  store_dir: .taskforce/memory
+  auto_extract: true
+  compaction_interval_hours: 24
+
+consolidation:
+  # Session experiences are captured so consolidation CAN be run, but the
+  # LLM consolidation pipeline is explicit-only.  Use ``taskforce memory
+  # consolidate`` to run it manually.  Set ``auto_consolidate: true`` to
+  # re-enable automatic post-session consolidation.
+  enabled: true
+  auto_consolidate: false
+  auto_capture: true
+  strategy: batch
+  max_sessions: 50
+  model_alias: fast
+  throttle:
+    interval_minutes: 120
+    interval_requests: 100
+    association_interval_requests: 50
+
+dreaming:
+  enabled: false
+  max_memories_per_phase: 20
+  max_llm_calls: 4
+  replay_variations: 3
+  recombination_pairs: 4
+  emotional_decay_factor: 0.15
+  novelty_threshold: 0.4
+  model_alias: fast
+  schedule_expression: "0 3 * * *"
+  trigger_after_consolidation: true
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+context_management:
+  summary_threshold: 40
+  compression_trigger: 40000
+
+request_queue:
+  max_size: 100
+  drain_timeout: 30.0
+
+security:
+  auto_approve_risk_levels: [low, medium]
+  require_confirmation: [high, critical]
+  autonomous_mode: false
+
+scheduler:
+  enabled: true
+  store: file

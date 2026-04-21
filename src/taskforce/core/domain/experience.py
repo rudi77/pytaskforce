@@ -237,6 +237,9 @@ class ConsolidationResult:
     total_tokens: int = 0
     quality_score: float = 0.0
     session_ids: list[str] = field(default_factory=list)
+    # Populated only on dry-run consolidations; holds records that WOULD have
+    # been persisted.  Not serialized to dict — transient preview data.
+    preview_memories: list[Any] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""

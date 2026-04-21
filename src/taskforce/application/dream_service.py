@@ -68,10 +68,11 @@ class DreamService:
 
         # Load active memories
         all_memories = await self._memory_store.list()
+        decay_enabled = bool(getattr(self._memory_store, "decay_enabled", False))
         active = [
             m
             for m in all_memories
-            if "archived" not in m.tags and m.effective_strength() > 0.15
+            if "archived" not in m.tags and m.effective_strength(decay_enabled=decay_enabled) > 0.15
         ]
 
         if not active:
