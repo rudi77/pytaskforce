@@ -40,6 +40,7 @@ class EventRouter:
         memory_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         dream_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         llm_fallback: bool = False,
+        default_channel: str = "",
     ) -> None:
         self._rule_engine = rule_engine
         self._notify_callback = notify_callback
@@ -47,6 +48,7 @@ class EventRouter:
         self._memory_callback = memory_callback
         self._dream_callback = dream_callback
         self._llm_fallback = llm_fallback
+        self._default_channel = default_channel
         self._event_count = 0
         self._action_count = 0
 
@@ -124,7 +126,7 @@ class EventRouter:
             logger.warning("event_router.no_notify_callback")
             return
 
-        channel = action.params.get("channel", "telegram")
+        channel = action.params.get("channel", self._default_channel)
         recipient_id = action.params.get("recipient_id", "")
         message = action.params.get("message", "")
 

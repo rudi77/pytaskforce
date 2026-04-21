@@ -19,7 +19,7 @@ from taskforce.core.domain.trigger_rule import (
     TriggerCondition,
     TriggerRule,
 )
-from taskforce.infrastructure.rule_engine import RuleEngine
+from taskforce.infrastructure.rule_engine import FileRuleEngine
 from taskforce.infrastructure.scheduler.scheduler_service import SchedulerService
 
 logger = structlog.get_logger(__name__)
@@ -49,7 +49,7 @@ class ButlerService:
         self._default_recipient_id = default_recipient_id
 
         # Core components
-        self._rule_engine = RuleEngine(work_dir=work_dir, rules_filename="butler/rules.json")
+        self._rule_engine = FileRuleEngine(work_dir=work_dir, rules_filename="butler/rules.json")
         self._scheduler = SchedulerService(
             work_dir=work_dir,
             event_callback=self._on_event,
@@ -60,6 +60,7 @@ class ButlerService:
             execute_callback=self._execute_mission,
             memory_callback=self._log_memory,
             llm_fallback=llm_fallback,
+            default_channel=default_notification_channel,
         )
 
         # Event sources (added via add_event_source)
@@ -76,7 +77,7 @@ class ButlerService:
         self._running = False
 
     @property
-    def rule_engine(self) -> RuleEngine:
+    def rule_engine(self) -> FileRuleEngine:
         """Access the rule engine for direct rule management."""
         return self._rule_engine
 

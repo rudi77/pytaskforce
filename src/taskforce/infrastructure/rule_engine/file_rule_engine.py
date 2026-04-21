@@ -97,7 +97,7 @@ def _render_template(template: str, event: AgentEvent) -> str:
         return result
 
 
-class RuleEngine:
+class FileRuleEngine:
     """Evaluates trigger rules against agent events.
 
     Rules are stored in-memory and persisted to a JSON file
