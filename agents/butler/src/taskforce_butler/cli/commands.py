@@ -156,15 +156,15 @@ async def _manage_rules(
     template: str,
 ) -> None:
     """Manage trigger rules via the rule engine."""
-    from taskforce_butler.domain.trigger_rule import (
+    from taskforce.core.domain.trigger_rule import (
         RuleAction,
         RuleActionType,
         TriggerCondition,
         TriggerRule,
     )
-    from taskforce_butler.rule_engine import RuleEngine
+    from taskforce.infrastructure.rule_engine import RuleEngine
 
-    engine = RuleEngine(work_dir=".taskforce")
+    engine = RuleEngine(work_dir=".taskforce", rules_filename="butler/rules.json")
     await engine.load()
 
     if action == "list":

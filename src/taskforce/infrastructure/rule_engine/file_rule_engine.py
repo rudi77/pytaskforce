@@ -14,7 +14,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.domain.agent_event import AgentEvent
-from taskforce_butler.domain.trigger_rule import RuleAction, TriggerRule
+from taskforce.core.domain.trigger_rule import RuleAction, TriggerRule
 
 logger = structlog.get_logger(__name__)
 
@@ -104,9 +104,13 @@ class RuleEngine:
     for survival across restarts.
     """
 
-    def __init__(self, work_dir: str = ".taskforce") -> None:
+    def __init__(
+        self,
+        work_dir: str = ".taskforce",
+        rules_filename: str = "rules.json",
+    ) -> None:
         self._rules: dict[str, TriggerRule] = {}
-        self._store_path = Path(work_dir) / "butler" / "rules.json"
+        self._store_path = Path(work_dir) / rules_filename
 
     async def load(self) -> None:
         """Load persisted rules from disk."""

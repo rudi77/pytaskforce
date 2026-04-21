@@ -12,28 +12,29 @@ from typing import Any
 import structlog
 
 from taskforce.core.domain.agent_event import AgentEvent
-from taskforce_butler.domain.trigger_rule import RuleAction, RuleActionType
-from taskforce_butler.rule_engine import RuleEngine
+from taskforce.core.domain.trigger_rule import RuleAction, RuleActionType
+from taskforce.core.interfaces.rule_engine import RuleEngineProtocol
 
 logger = structlog.get_logger(__name__)
 
 
 class EventRouter:
-    """Routes AgentEvents through the RuleEngine and dispatches actions.
+    """Routes AgentEvents through a RuleEngine and dispatches actions.
 
     For each incoming event:
       1. Evaluate all rules via the RuleEngine
       2. For 'notify' actions -> send notification via callback
       3. For 'execute_mission' actions -> execute agent mission via callback
       4. For 'log_memory' actions -> store in memory via callback
-      5. If no rules match and llm_fallback is enabled -> send to agent
+      5. For 'run_dream_cycle' actions -> trigger a dream cycle via callback
+      6. If no rules match and llm_fallback is enabled -> send to agent
 
     Callbacks are injected to avoid direct dependencies on infrastructure.
     """
 
     def __init__(
         self,
-        rule_engine: RuleEngine,
+        rule_engine: RuleEngineProtocol,
         notify_callback: Callable[[str, str, str, dict[str, Any]], Awaitable[None]] | None = None,
         execute_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         memory_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,

@@ -269,14 +269,12 @@ class SimpleChatRunner:
     def _setup_scheduler(self) -> None:
         """Build a SchedulerService so ScheduleTool/ReminderTool can create jobs.
 
-        Imports SchedulerService from the installed `taskforce_butler` package
-        (only available when the butler agent is installed). When a scheduled
-        job fires, the callback dispatches either a notification via the
-        CommunicationGateway (wired later in ``_setup_gateway``) or a follow-up
-        agent mission.
+        When a scheduled job fires, the callback dispatches either a
+        notification via the CommunicationGateway (wired later in
+        ``_setup_gateway``) or a follow-up agent mission.
         """
         try:
-            from taskforce_butler.infrastructure.scheduler.scheduler_service import (
+            from taskforce.infrastructure.scheduler.scheduler_service import (
                 SchedulerService,
             )
         except ImportError as exc:

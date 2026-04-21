@@ -16,7 +16,7 @@ import structlog
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.domain.schedule import ScheduleJob, ScheduleType
 from taskforce.core.utils.time import utc_now
-from taskforce_butler.infrastructure.scheduler.job_store import FileJobStore
+from taskforce.infrastructure.scheduler.file_job_store import FileJobStore
 
 logger = structlog.get_logger(__name__)
 
@@ -40,7 +40,7 @@ def _next_cron_occurrence(expression: str, after: datetime) -> datetime:
 
     Supports standard 5-field cron: minute hour day_of_month month day_of_week.
     Uses a simple forward-scanning approach (not production-grade for all
-    edge cases, but sufficient for typical butler use cases).
+    edge cases, but sufficient for typical use cases).
     """
     parts = expression.strip().split()
     if len(parts) != 5:
