@@ -98,20 +98,20 @@ src/taskforce/
 │   ├── domain/                # Agent, LeanAgent, Planning, Events, Models, Dream, Workflow
 │   │   ├── lean_agent_components/  # Modular agent components (context_manager, prompt_builder, …)
 │   │   └── planning/          # Planning primitives (react_loop, interrupt, state, types)
-│   └── interfaces/            # Protocols (25 interface files — see table below)
+│   └── interfaces/            # Protocols (29 interface files — see table below)
 │
 ├── infrastructure/            # LAYER 2: External Integrations
 │   ├── acp/                   # Agent Communication Protocol runtime/client/server/message-bus
 │   ├── auth/                  # OAuth2 / token store implementations
 │   ├── cache/                 # Tool result caching
 │   ├── communication/         # Communication Gateway components (adapters, senders, registry)
-│   ├── event_sources/         # Event-source base (used by taskforce_butler)
+│   ├── event_sources/         # Polling event-source base (PollingEventSource)
 │   ├── llm/                   # LiteLLM service + LLM Router (multi-provider, dynamic routing)
 │   ├── memory/                # File-based memory store
 │   ├── messaging/             # In-memory message bus
 │   ├── persistence/           # File state manager, agent/conversation registries
 │   ├── runtime/               # Runtime tracking (heartbeats, checkpoints)
-│   ├── scheduler/             # Scheduler base (used by taskforce_butler)
+│   ├── scheduler/             # SchedulerService + FileJobStore (cron / interval / one-shot)
 │   ├── skills/                # Skill loading, parsing, registry (context/prompt/agent types)
 │   ├── tools/
 │   │   ├── native/            # Native tools (see "Native Tools" section)
@@ -267,11 +267,11 @@ from taskforce.api.routes.execution import execute_mission       # VIOLATION!
 
 All layer boundaries use **Python Protocols (PEP 544)** instead of abstract base classes.
 
-**25 interface files** in `src/taskforce/core/interfaces/` define the framework's
-protocols. Butler-specific protocols (`EventSourceProtocol`, `SchedulerProtocol`,
-`RuleEngineProtocol`, `LearningStrategyProtocol`, `ButlerProtocol`) live in the
-`taskforce_butler` agent package under
-`agents/butler/src/taskforce_butler/interfaces/butler.py` — not in the framework core.
+The framework's protocols live in `src/taskforce/core/interfaces/`. Event-driven
+primitives (`EventSourceProtocol`, `SchedulerProtocol`, `RuleEngineProtocol`,
+`LearningStrategyProtocol`) are part of the core so any agent package can reuse
+them. The `ButlerProtocol` and butler-only contracts remain inside the
+`taskforce_butler` agent package.
 
 | Protocol(s) | File | Purpose |
 |-------------|------|---------|
@@ -300,6 +300,10 @@ protocols. Butler-specific protocols (`EventSourceProtocol`, `SchedulerProtocol`
 | `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
 | `ContextManagerProtocol`, `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` | `context_manager.py` | Unified LLM context (messages, tools, snapshots) |
 | `AcpServerProtocol`, `AcpClientProtocol`, `AcpPeerRegistryProtocol`, `AcpRuntimeProtocol` | `acp.py` | Agent Communication Protocol (ADR-018) |
+| `EventSourceProtocol` | `event_source.py` | External event ingestion (polling/webhook) |
+| `SchedulerProtocol` | `scheduler.py` | Time-based job scheduling (cron, interval, one-shot) |
+| `RuleEngineProtocol` | `rule_engine.py` | Trigger-rule evaluation against agent events |
+| `LearningStrategyProtocol` | `learning.py` | Automatic knowledge extraction from conversations |
 
 ```python
 # core/interfaces/state.py
@@ -644,18 +648,13 @@ agents/butler/
 │   ├── __init__.py
 │   ├── daemon.py             # ButlerDaemon — top-level daemon process
 │   ├── service.py            # ButlerService — lifecycle orchestration
-│   ├── event_router.py       # Event-to-action dispatch
-│   ├── rule_engine.py        # Trigger rule evaluation and persistence
 │   ├── learning_service.py   # Auto-extraction from conversations
 │   ├── role_loader.py        # Butler role specialization loader
 │   ├── cli/commands.py       # Typer app registered as `taskforce butler`
-│   ├── interfaces/butler.py  # EventSourceProtocol, SchedulerProtocol,
-│   │                         # RuleEngineProtocol, LearningStrategyProtocol,
-│   │                         # ButlerProtocol
-│   ├── domain/               # butler_role.py, trigger_rule.py
+│   ├── domain/               # butler_role.py
 │   └── infrastructure/
-│       ├── scheduler/        # SchedulerService + FileJobStore
 │       ├── event_sources/    # CalendarEventSource, WebhookEventSource
+│       │                     # (extend taskforce.infrastructure.event_sources.polling_base)
 │       └── tools/            # gmail, google_drive, calendar, schedule,
 │                             # reminder, rule_manager, auth tools
 └── configs/
@@ -667,8 +666,13 @@ agents/butler/
 Framework-side helpers that Butler consumes:
 - `core/domain/agent_event.py` — `AgentEvent` model
 - `core/domain/schedule.py` — `ScheduleJob` model
-- `infrastructure/event_sources/` and `infrastructure/scheduler/` — thin base
-  packages that the Butler package extends.
+- `core/domain/trigger_rule.py` — `TriggerRule`, `RuleAction`, `RuleActionType`
+- `core/interfaces/{event_source,scheduler,rule_engine,learning}.py` — protocols
+- `application/event_router.py` — `EventRouter` (event → action dispatch)
+- `infrastructure/rule_engine/file_rule_engine.py` — `FileRuleEngine`
+- `infrastructure/scheduler/` — `SchedulerService` + `FileJobStore`
+- `infrastructure/event_sources/polling_base.py` — `PollingEventSource` base class
+  that Butler's concrete event sources extend.
 
 ### Running the Butler
 
@@ -1472,10 +1476,16 @@ See `docs/architecture/section-10-deployment.md` for:
 - `embeddings.py` - `EmbeddingsProtocol` - text embeddings
 - `context_manager.py` - `ContextManagerProtocol` + value objects - unified LLM context
 - `acp.py` - ACP protocols (ADR-018)
+- `event_source.py` - `EventSourceProtocol` - external event ingestion (polling/webhook)
+- `scheduler.py` - `SchedulerProtocol` - time-based job scheduling (cron, interval, one-shot)
+- `rule_engine.py` - `RuleEngineProtocol` - trigger-rule evaluation against agent events
+- `learning.py` - `LearningStrategyProtocol` - automatic knowledge extraction from conversations
 
-> Butler-specific protocols (`EventSourceProtocol`, `SchedulerProtocol`,
-> `RuleEngineProtocol`, `LearningStrategyProtocol`, `ButlerProtocol`) are consolidated in
-> `agents/butler/src/taskforce_butler/interfaces/butler.py`.
+> Event-driven primitives (`EventSourceProtocol`, `SchedulerProtocol`,
+> `RuleEngineProtocol`, `LearningStrategyProtocol`) live in the framework core
+> under `src/taskforce/core/interfaces/{event_source,scheduler,rule_engine,learning}.py`
+> so any agent package can reuse them. The `ButlerProtocol` and other butler-only
+> contracts remain inside the `taskforce_butler` agent package.
 
 ### Infrastructure
 - `src/taskforce/infrastructure/persistence/file_state_manager.py` - File-based state
@@ -1491,8 +1501,10 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/infrastructure/tools/native/*.py` - Native tools (see "Tools" section)
 - `src/taskforce/infrastructure/tools/orchestration/*.py` - `agent_tool`, `sub_agent_tool`, `parallel_agent_tool`, `acp_agent_tool`
 - `src/taskforce/infrastructure/tools/mcp/connection_manager.py` - MCP connections
-- `src/taskforce/infrastructure/event_sources/` - Base package used by `taskforce_butler` event sources
-- `src/taskforce/infrastructure/scheduler/` - Base package used by `taskforce_butler` scheduler
+- `src/taskforce/infrastructure/event_sources/polling_base.py` - `PollingEventSource` base class for polling event sources
+- `src/taskforce/infrastructure/scheduler/scheduler_service.py` - `SchedulerService` (asyncio cron / interval / one-shot)
+- `src/taskforce/infrastructure/scheduler/file_job_store.py` - `FileJobStore` for persisting `ScheduleJob`s
+- `src/taskforce/infrastructure/rule_engine/file_rule_engine.py` - `FileRuleEngine` for evaluating `TriggerRule`s
 - `src/taskforce/infrastructure/skills/` - Skill loading/parsing/registry
 - `src/taskforce/infrastructure/tracing/phoenix_tracer.py` - Phoenix tracing
 - `src/taskforce/infrastructure/acp/` - ACP runtime, client, server, message bus, gateway adapters (ADR-018)

@@ -162,9 +162,9 @@ async def _manage_rules(
         TriggerCondition,
         TriggerRule,
     )
-    from taskforce.infrastructure.rule_engine import RuleEngine
+    from taskforce.infrastructure.rule_engine import FileRuleEngine
 
-    engine = RuleEngine(work_dir=".taskforce", rules_filename="butler/rules.json")
+    engine = FileRuleEngine(work_dir=".taskforce", rules_filename="butler/rules.json")
     await engine.load()
 
     if action == "list":
