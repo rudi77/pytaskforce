@@ -203,3 +203,57 @@ class TestMemoryRecord:
             content=large,
         )
         assert len(record.content) == 100_000
+
+
+class TestDecayDisabled:
+    """Tests for the opt-out decay behavior."""
+
+    def test_effective_strength_ignores_time_when_decay_disabled(self) -> None:
+        past = datetime(2026, 1, 1, tzinfo=UTC)
+        record = MemoryRecord(
+            scope=MemoryScope.USER,
+            kind=MemoryKind.PREFERENCE,
+            content="User prefers concise responses",
+            updated_at=past,
+            strength=0.9,
+            importance=0.5,
+        )
+        future = datetime(2027, 1, 1, tzinfo=UTC)
+        # With decay disabled, elapsed time doesn't reduce effective strength.
+        assert record.effective_strength(future, decay_enabled=False) == pytest.approx(
+            0.9, abs=1e-6
+        )
+        # With decay enabled, strength drops (preference decay_rate=0.001/h × ~8760h).
+        assert record.effective_strength(future, decay_enabled=True) < 0.9
+
+    def test_reinforce_does_not_modify_decay_rate_when_disabled(self) -> None:
+        record = MemoryRecord(
+            scope=MemoryScope.USER,
+            kind=MemoryKind.PREFERENCE,
+            content="x",
+        )
+        original_decay = record.decay_rate
+        record.reinforce(decay_enabled=False)
+        assert record.decay_rate == original_decay
+        assert record.access_count == 1
+        assert record.strength > 0  # still boosted
+
+    def test_reinforce_reduces_decay_rate_when_enabled(self) -> None:
+        record = MemoryRecord(
+            scope=MemoryScope.USER,
+            kind=MemoryKind.LONG_TERM,
+            content="x",
+        )
+        original_decay = record.decay_rate
+        record.reinforce(decay_enabled=True)
+        assert record.decay_rate < original_decay
+
+    def test_importance_floor_still_applies_when_decay_disabled(self) -> None:
+        record = MemoryRecord(
+            scope=MemoryScope.USER,
+            kind=MemoryKind.PREFERENCE,
+            content="x",
+            strength=0.1,
+            importance=0.7,
+        )
+        assert record.effective_strength(decay_enabled=False) == pytest.approx(0.7)

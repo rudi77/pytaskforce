@@ -18,12 +18,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import structlog
+
 from taskforce.core.domain.memory import (
     MemoryKind,
     MemoryRecord,
     MemoryScope,
 )
 from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
+
+logger = structlog.get_logger(__name__)
 
 # Memories below this effective strength are candidates for archival.
 _FORGET_THRESHOLD: float = 0.10
@@ -40,10 +44,18 @@ class MemoryService:
 
     Acts as a facade over ``MemoryStoreProtocol`` adding strength
     management, associative linking, and decay.
+
+    The ``decay_enabled`` flag is derived from the store when available
+    and otherwise defaults to ``False`` — reinforcement, decay sweeps
+    and effective-strength calls all honor it.
     """
 
     def __init__(self, store: MemoryStoreProtocol) -> None:
         self._store = store
+
+    @property
+    def _decay_enabled(self) -> bool:
+        return bool(getattr(self._store, "decay_enabled", False))
 
     # ------------------------------------------------------------------
     # Core CRUD (delegated)
@@ -94,13 +106,12 @@ class MemoryService:
         Returns:
             Matching records sorted by combined relevance.
         """
-        results = await self._store.search(
-            query=query, scope=scope, kind=kind, limit=limit
-        )
+        results = await self._store.search(query=query, scope=scope, kind=kind, limit=limit)
         now = datetime.now(UTC)
+        decay_enabled = self._decay_enabled
         for record in results:
             if reinforce:
-                record.reinforce(now)
+                record.reinforce(now, decay_enabled=decay_enabled)
                 await self._store.update(record)
             if spread_activation:
                 await self._spread_activation(record, now)
@@ -123,7 +134,7 @@ class MemoryService:
         record = await self._store.get(record_id)
         if not record:
             return None
-        record.reinforce()
+        record.reinforce(decay_enabled=self._decay_enabled)
         return await self._store.update(record)
 
     # ------------------------------------------------------------------
@@ -205,12 +216,15 @@ class MemoryService:
         Returns:
             Tuple of (decayed_count, archived_or_deleted_count).
         """
+        if not self._decay_enabled:
+            logger.info("memory.decay_sweep.skipped", reason="decay_disabled")
+            return 0, 0
         all_records = await self._store.list()
         now = datetime.now(UTC)
         decayed = 0
         forgotten = 0
         for record in all_records:
-            eff = record.effective_strength(now)
+            eff = record.effective_strength(now, decay_enabled=True)
             if eff < threshold:
                 if archive:
                     if "archived" not in record.tags:
@@ -263,7 +277,7 @@ class MemoryService:
         """
         if not source.associations:
             return
-        source_eff = source.effective_strength(now)
+        source_eff = source.effective_strength(now, decay_enabled=self._decay_enabled)
         boost = source_eff * _ACTIVATION_SPREAD_FACTOR
         for assoc_id in source.associations:
             neighbour = await self._store.get(assoc_id)

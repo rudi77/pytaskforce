@@ -48,12 +48,18 @@ class FileMemoryStore(MemoryStoreProtocol):
             * If it ends with ``.md`` → used as-is (e.g. ``work_dir/memory.md``).
             * Otherwise treated as a directory and ``memory.md`` is appended.
         embedding_provider: Optional embedding service for semantic search.
+        decay_enabled: When ``False`` (default) the store treats stored
+            ``strength`` values as stable — time-based forgetting is not
+            applied at read time.  Access frequency and importance still
+            influence effective strength.
     """
 
     def __init__(
         self,
         base_dir: str | Path,
         embedding_provider: Any | None = None,
+        *,
+        decay_enabled: bool = False,
     ) -> None:
         path = Path(base_dir)
         if path.suffix == ".md":
@@ -70,8 +76,14 @@ class FileMemoryStore(MemoryStoreProtocol):
         self._embedder = embedding_provider
         # Embedding vector cache: record_id → vector
         self._embedding_cache: dict[str, list[float]] = {}
+        self._decay_enabled = decay_enabled
         # Migrate legacy directory layout if present
         self._migrate_legacy(path)
+
+    @property
+    def decay_enabled(self) -> bool:
+        """Whether time-based memory decay is active for this store."""
+        return self._decay_enabled
 
     # ------------------------------------------------------------------
     # Public API
@@ -99,8 +111,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         return [
             r
             for r in self._load_all()
-            if (scope is None or r.scope == scope)
-            and (kind is None or r.kind == kind)
+            if (scope is None or r.scope == scope) and (kind is None or r.kind == kind)
         ]
 
     async def search(
@@ -158,9 +169,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         scored: list[tuple[float, MemoryRecord]] = []
         for record in candidates:
             haystack = f"{record.content}\n{' '.join(record.tags)}".lower()
-            keyword_hits = sum(
-                1 for w in query_words if self._word_matches(w, haystack)
-            )
+            keyword_hits = sum(1 for w in query_words if self._word_matches(w, haystack))
             keyword_score = keyword_hits / max(len(query_words), 1)
             sem_score = semantic_scores.get(record.id, 0.0)
 
@@ -168,7 +177,7 @@ class FileMemoryStore(MemoryStoreProtocol):
             if keyword_hits == 0 and sem_score < 0.3:
                 continue
 
-            eff = record.effective_strength(now)
+            eff = record.effective_strength(now, decay_enabled=self._decay_enabled)
             combined = (keyword_score + sem_score) * (1.0 + eff)
             scored.append((combined, record))
 
@@ -387,9 +396,7 @@ class FileMemoryStore(MemoryStoreProtocol):
             # Human-like memory properties (backward-compatible defaults)
             strength=data.get("strength", -1.0),
             access_count=data.get("access_count", 0),
-            last_accessed=(
-                self._parse_datetime(last_accessed_raw) if last_accessed_raw else None
-            ),
+            last_accessed=(self._parse_datetime(last_accessed_raw) if last_accessed_raw else None),
             emotional_valence=(
                 EmotionalValence(valence_raw) if valence_raw else EmotionalValence.NEUTRAL
             ),
@@ -420,9 +427,7 @@ class FileMemoryStore(MemoryStoreProtocol):
         if not legacy_dir.is_dir():
             return
         legacy_files = [
-            p
-            for p in legacy_dir.rglob("*.md")
-            if p != self._file and p.parent != legacy_dir
+            p for p in legacy_dir.rglob("*.md") if p != self._file and p.parent != legacy_dir
         ]
         if not legacy_files:
             return

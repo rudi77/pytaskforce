@@ -1,0 +1,30 @@
+# Framework Defaults
+# ==================
+# Baseline applied to every agent before profile-/agent-specific overrides.
+# Keep this file minimal and conservative — only values that are safe for
+# *any* agent. Agent-specific tuning belongs in presets/*.yaml or in the
+# agent's own .agent.md frontmatter.
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+agent:
+  planning_strategy: native_react
+  max_steps: 30
+
+memory:
+  store_dir: .taskforce/memory
+
+logging:
+  level: WARNING
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000

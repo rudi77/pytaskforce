@@ -20,6 +20,8 @@ class ConsolidationEngineProtocol(Protocol):
         experiences: list[SessionExperience],
         existing_memories: list[MemoryRecord],
         strategy: str = "immediate",
+        *,
+        dry_run: bool = False,
     ) -> ConsolidationResult:
         """Run the consolidation pipeline on a batch of experiences.
 
@@ -27,6 +29,9 @@ class ConsolidationEngineProtocol(Protocol):
             experiences: Session experiences to consolidate.
             existing_memories: Current consolidated memories for deduplication.
             strategy: Consolidation strategy (``immediate`` or ``batch``).
+            dry_run: When ``True``, the pipeline runs but new memories
+                are not persisted.  Records that would have been created
+                are exposed via ``result.preview_memories``.
 
         Returns:
             Result with counts of created, updated, and retired memories.

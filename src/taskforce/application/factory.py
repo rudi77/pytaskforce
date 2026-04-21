@@ -436,7 +436,14 @@ class AgentFactory:
             except Exception:
                 pass  # Graceful fallback — keyword search still works.
 
-        memory_store = FileMemoryStore(store_dir, embedding_provider=embedding_provider)
+        decay_enabled = bool(
+            config.get("memory", {}).get("decay", {}).get("enabled", False)
+        )
+        memory_store = FileMemoryStore(
+            store_dir,
+            embedding_provider=embedding_provider,
+            decay_enabled=decay_enabled,
+        )
 
         injection_cfg = config.get("memory", {}).get("context_injection")
         memory_context_config = (
@@ -935,9 +942,9 @@ class AgentFactory:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
     ) -> Agent:
-        """Create Agent from a YAML configuration file."""
+        """Create Agent from a config file (``.yaml`` or ``.agent.md``)."""
         config_path_obj = self._resolve_config_path(config_path)
-        config = await self._load_yaml_config(config_path_obj)
+        config = await self._load_config_file(config_path_obj)
 
         self.logger.info(
             "creating_agent_from_config_file",
@@ -953,7 +960,7 @@ class AgentFactory:
             planning_strategy_params=planning_strategy_params,
             config_dir=config_path_obj.parent,
         )
-        # Pass the loaded YAML as base_config_override so sections the
+        # Pass the loaded config as base_config_override so sections the
         # AgentDefinition doesn't model (notifications, memory, context_policy,
         # logging, …) still reach downstream builders. Without this,
         # _resolve_base_config falls back to load_profile_safe(profile_name)
@@ -965,25 +972,38 @@ class AgentFactory:
         )
 
     def _resolve_config_path(self, config_path: str) -> Path:
-        """Resolve a config path to an absolute file path."""
+        """Resolve a config name or path to an absolute file path.
+
+        Probes, for each candidate directory:
+        ``{name}.agent.md`` → ``{name}.yaml`` → verbatim ``{name}``.
+        Candidate directories are: the factory's ``config_dir``, the current
+        working directory, and every ``agents/*/configs/`` package dir
+        (including their ``custom/`` subfolder).
+        """
         config_path_obj = Path(config_path)
         if not config_path_obj.is_absolute():
-            candidates = [
-                self.config_dir / config_path,
-                self.config_dir / f"{config_path}.yaml",
+
+            def _probe(base: Path, name: str) -> list[Path]:
+                return [
+                    base / f"{name}.agent.md",
+                    base / f"{name}.yaml",
+                    base / name,
+                ]
+
+            candidates: list[Path] = _probe(self.config_dir, config_path) + [
+                Path(f"{config_path}.agent.md"),
                 Path(f"{config_path}.yaml"),
             ]
-            # Also search agent package config directories (agents/*/configs/)
+
+            # Also search agent package config directories (agents/*/configs/).
             agents_dir = get_base_path() / "agents"
             if agents_dir.is_dir():
                 for agent_dir in agents_dir.iterdir():
                     agent_configs = agent_dir / "configs"
                     if agent_configs.is_dir():
-                        candidates.append(agent_configs / config_path)
-                        candidates.append(agent_configs / f"{config_path}.yaml")
-                        # Also search custom/ subdirectory
-                        candidates.append(agent_configs / "custom" / config_path)
-                        candidates.append(agent_configs / "custom" / f"{config_path}.yaml")
+                        candidates.extend(_probe(agent_configs, config_path))
+                        candidates.extend(_probe(agent_configs / "custom", config_path))
+
             for candidate in candidates:
                 if candidate.exists():
                     config_path_obj = candidate
@@ -992,6 +1012,51 @@ class AgentFactory:
         if not config_path_obj.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
         return config_path_obj
+
+    async def _load_config_file(self, path: Path) -> dict[str, Any]:
+        """Load either a ``.agent.md`` or a YAML config file into a dict."""
+        if path.name.endswith(".agent.md"):
+            return self._load_agent_md_config(path)
+        return await self._load_yaml_config(path)
+
+    def _load_agent_md_config(self, path: Path) -> dict[str, Any]:
+        """Load an ``.agent.md`` file with framework defaults + preset resolution."""
+        from taskforce.application.agent_file_loader import (
+            agent_file_to_config,
+            load_agent_md,
+        )
+
+        agent_file = load_agent_md(path)
+        preset_dirs = self._discover_preset_dirs()
+        defaults = self._load_framework_defaults()
+        return agent_file_to_config(
+            agent_file,
+            preset_dirs=preset_dirs,
+            defaults=defaults,
+        )
+
+    def _discover_preset_dirs(self) -> list[Path]:
+        """Preset directories searched when resolving ``extends:`` references."""
+        dirs: list[Path] = []
+        primary = self.config_dir / "presets"
+        if primary.is_dir():
+            dirs.append(primary)
+        agents_dir = get_base_path() / "agents"
+        if agents_dir.is_dir():
+            for agent_dir in agents_dir.iterdir():
+                presets = agent_dir / "configs" / "presets"
+                if presets.is_dir():
+                    dirs.append(presets)
+        return dirs
+
+    def _load_framework_defaults(self) -> dict[str, Any]:
+        """Load ``{config_dir}/defaults.yaml`` or an empty dict."""
+        defaults_path = self.config_dir / "defaults.yaml"
+        if not defaults_path.is_file():
+            return {}
+        with open(defaults_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data if isinstance(data, dict) else {}
 
     async def _load_yaml_config(self, path: Path) -> dict[str, Any]:
         """Load and parse a YAML config file asynchronously."""

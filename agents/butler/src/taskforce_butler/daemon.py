@@ -137,20 +137,17 @@ class ButlerDaemon:
     def _load_config(self) -> dict[str, Any]:
         """Load butler profile configuration and apply role overlay if set."""
         from taskforce.application.factory import AgentFactory
+        from taskforce.application.profile_loader import ProfileLoader
 
         factory = AgentFactory()
-        config_path = factory.config_dir / f"{self._profile}.yaml"
-
-        if config_path.exists():
-            import yaml  # type: ignore[import-untyped]
-
-            with open(config_path, encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
-        else:
+        profile_loader = ProfileLoader(factory.config_dir)
+        try:
+            config = profile_loader.load(self._profile)
+        except FileNotFoundError as exc:
             logger.warning(
                 "butler_daemon.config_not_found",
                 profile=self._profile,
-                path=str(config_path),
+                error=str(exc),
             )
             config = {}
 
@@ -223,9 +220,7 @@ class ButlerDaemon:
             )
             return None
 
-    async def _setup_gateway(
-        self, config: dict[str, Any], *, auth_manager: Any = None
-    ) -> None:
+    async def _setup_gateway(self, config: dict[str, Any], *, auth_manager: Any = None) -> None:
         """Set up the communication gateway if configured."""
         if self._butler is None:
             return
@@ -264,9 +259,7 @@ class ButlerDaemon:
         except Exception as exc:
             logger.warning("butler_daemon.gateway_setup_failed", error=str(exc))
 
-    async def _setup_executor(
-        self, config: dict[str, Any], *, auth_manager: Any = None
-    ) -> None:
+    async def _setup_executor(self, config: dict[str, Any], *, auth_manager: Any = None) -> None:
         """Set up the agent executor and optionally the PersistentAgentService."""
         if self._butler is None:
             return

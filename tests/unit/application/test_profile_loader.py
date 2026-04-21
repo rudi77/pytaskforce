@@ -65,7 +65,9 @@ class TestProfileLoaderInit:
         old_dir = tmp_path / "configs"
         old_dir.mkdir()
 
-        with patch("taskforce.application.profile_loader.ProfileLoader._resolve_default_config_dir") as mock:
+        with patch(
+            "taskforce.application.profile_loader.ProfileLoader._resolve_default_config_dir"
+        ) as mock:
             mock.return_value = new_dir
             loader = ProfileLoader()
             assert loader._config_dir == new_dir
@@ -93,9 +95,7 @@ class TestProfileLoaderLoad:
         with pytest.raises(FileNotFoundError, match="not found"):
             loader.load("nonexistent")
 
-    def test_load_missing_profile_error_includes_both_paths(
-        self, config_dir: Path
-    ) -> None:
+    def test_load_missing_profile_error_includes_both_paths(self, config_dir: Path) -> None:
         """Error message should mention both standard and custom paths."""
         loader = ProfileLoader(config_dir)
         with pytest.raises(FileNotFoundError) as exc_info:
@@ -115,9 +115,7 @@ class TestProfileLoaderLoad:
         assert config["profile"] == "my_custom"
         assert config["agent"]["max_steps"] == 5
 
-    def test_standard_profile_takes_precedence_over_custom(
-        self, config_dir: Path
-    ) -> None:
+    def test_standard_profile_takes_precedence_over_custom(self, config_dir: Path) -> None:
         """If both {config_dir}/foo.yaml and {config_dir}/custom/foo.yaml exist,
         the standard location wins."""
         standard_config = {"profile": "foo", "source": "standard"}
@@ -153,10 +151,7 @@ class TestProfileLoaderLoad:
         """An empty YAML file returns None from yaml.safe_load, which is not a dict."""
         (config_dir / "empty.yaml").write_text("")
         loader = ProfileLoader(config_dir)
-        # yaml.safe_load("") returns None; accessing it will fail since
-        # validate_profile_config expects a dict. The behavior depends on
-        # how the code handles None -- it will raise an error.
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="did not parse to a mapping"):
             loader.load("empty")
 
     def test_load_invalid_yaml_syntax(self, config_dir: Path) -> None:
@@ -187,17 +182,13 @@ class TestProfileLoaderLoadSafe:
         config = loader.load_safe("butler")
         assert config["profile"] == "butler"
 
-    def test_load_safe_missing_returns_fallback(
-        self, loader: ProfileLoader
-    ) -> None:
+    def test_load_safe_missing_returns_fallback(self, loader: ProfileLoader) -> None:
         config = loader.load_safe("nonexistent")
         assert config == _FALLBACK_CONFIG
         # Verify it's a deep copy (not the same object)
         assert config is not _FALLBACK_CONFIG
 
-    def test_load_safe_fallback_copies_are_independent(
-        self, loader: ProfileLoader
-    ) -> None:
+    def test_load_safe_fallback_copies_are_independent(self, loader: ProfileLoader) -> None:
         """Multiple calls to load_safe for missing profiles return independent copies."""
         config1 = loader.load_safe("missing1")
         config2 = loader.load_safe("missing2")
@@ -214,11 +205,15 @@ class TestProfileLoaderLoadSafe:
 class TestProfileLoaderGetDefaults:
     """Tests for ProfileLoader.get_defaults()."""
 
-    def test_get_defaults_loads_butler(self, loader: ProfileLoader) -> None:
+    def test_get_defaults_loads_defaults_yaml(self, tmp_path: Path) -> None:
+        """When configs/defaults.yaml exists, it becomes the defaults source."""
+        defaults_yaml = tmp_path / "defaults.yaml"
+        defaults_yaml.write_text(yaml.dump({"logging": {"level": "DEBUG"}}))
+        loader = ProfileLoader(tmp_path)
         config = loader.get_defaults()
-        assert config["profile"] == "butler"
+        assert config["logging"]["level"] == "DEBUG"
 
-    def test_get_defaults_fallback_when_no_butler(self, tmp_path: Path) -> None:
+    def test_get_defaults_fallback_when_no_defaults_yaml(self, tmp_path: Path) -> None:
         loader = ProfileLoader(tmp_path)
         config = loader.get_defaults()
         assert config == _FALLBACK_CONFIG
@@ -276,9 +271,7 @@ class TestProfileLoaderMergePluginConfig:
         assert merged["specialist"] == "rag"
 
     def test_merge_persistence_work_dir(self, loader: ProfileLoader) -> None:
-        base: dict[str, Any] = {
-            "persistence": {"type": "file", "work_dir": ".taskforce"}
-        }
+        base: dict[str, Any] = {"persistence": {"type": "file", "work_dir": ".taskforce"}}
         plugin: dict[str, Any] = {"persistence": {"work_dir": ".plugin_data"}}
         merged = loader.merge_plugin_config(base, plugin)
         assert merged["persistence"]["work_dir"] == ".plugin_data"
@@ -286,22 +279,16 @@ class TestProfileLoaderMergePluginConfig:
 
     def test_merge_persistence_type_not_overridden(self, loader: ProfileLoader) -> None:
         """Plugin cannot override persistence type (security constraint)."""
-        base: dict[str, Any] = {
-            "persistence": {"type": "file", "work_dir": ".taskforce"}
-        }
+        base: dict[str, Any] = {"persistence": {"type": "file", "work_dir": ".taskforce"}}
         plugin: dict[str, Any] = {"persistence": {"type": "postgres", "work_dir": ".plugin"}}
         merged = loader.merge_plugin_config(base, plugin)
         # Only work_dir is overridden, not type
         assert merged["persistence"]["type"] == "file"
         assert merged["persistence"]["work_dir"] == ".plugin"
 
-    def test_merge_persistence_empty_work_dir_not_overridden(
-        self, loader: ProfileLoader
-    ) -> None:
+    def test_merge_persistence_empty_work_dir_not_overridden(self, loader: ProfileLoader) -> None:
         """Plugin with empty work_dir does not override base."""
-        base: dict[str, Any] = {
-            "persistence": {"type": "file", "work_dir": ".taskforce"}
-        }
+        base: dict[str, Any] = {"persistence": {"type": "file", "work_dir": ".taskforce"}}
         plugin: dict[str, Any] = {"persistence": {"work_dir": ""}}
         merged = loader.merge_plugin_config(base, plugin)
         assert merged["persistence"]["work_dir"] == ".taskforce"
@@ -328,9 +315,7 @@ class TestProfileLoaderMergePluginConfig:
         assert merged["context_management"]["strategy"] == "fifo"
         assert merged["context_management"]["max_tokens"] == 1000
 
-    def test_merge_context_management_when_base_has_none(
-        self, loader: ProfileLoader
-    ) -> None:
+    def test_merge_context_management_when_base_has_none(self, loader: ProfileLoader) -> None:
         base: dict[str, Any] = {"agent": {"max_steps": 30}}
         plugin: dict[str, Any] = {"context_management": {"max_tokens": 1000}}
         merged = loader.merge_plugin_config(base, plugin)
@@ -375,9 +360,7 @@ class TestProfileLoaderMergePluginConfig:
 
     def test_merge_llm_override(self, loader: ProfileLoader) -> None:
         """Plugin can override llm default_model and config_path."""
-        base: dict[str, Any] = {
-            "llm": {"default_model": "main", "config_path": "base.yaml"}
-        }
+        base: dict[str, Any] = {"llm": {"default_model": "main", "config_path": "base.yaml"}}
         plugin: dict[str, Any] = {"llm": {"default_model": "claude-sonnet"}}
         merged = loader.merge_plugin_config(base, plugin)
         assert merged["llm"]["default_model"] == "claude-sonnet"
@@ -385,9 +368,7 @@ class TestProfileLoaderMergePluginConfig:
 
     def test_merge_llm_config_path_override(self, loader: ProfileLoader) -> None:
         """Plugin can override llm config_path for custom LLM configuration."""
-        base: dict[str, Any] = {
-            "llm": {"config_path": "base.yaml", "default_model": "main"}
-        }
+        base: dict[str, Any] = {"llm": {"config_path": "base.yaml", "default_model": "main"}}
         plugin: dict[str, Any] = {"llm": {"config_path": "plugin.yaml"}}
         merged = loader.merge_plugin_config(base, plugin)
         assert merged["llm"]["config_path"] == "plugin.yaml"

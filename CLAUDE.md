@@ -1142,7 +1142,11 @@ The native `memory` tool provides file-backed Markdown records for long-term mem
 # In profile YAML
 memory:
   store_dir: .taskforce/.memory
+  decay:
+    enabled: false   # default — memories persist until explicitly removed
 ```
+
+Time-based forgetting (`decay.enabled: true`) is opt-in. With decay off, `memory decay_sweep` is a no-op and `reinforce()` no longer shrinks a record's `decay_rate`; access-count, emotional valence and `importance` still influence effective strength.
 
 Alternatively, use an MCP Memory Server for knowledge graph-based memory:
 

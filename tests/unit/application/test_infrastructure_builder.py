@@ -134,9 +134,7 @@ class TestLoadProfileSafe:
         config = builder.load_profile_safe("dev")
         assert config["profile"] == "dev"
 
-    def test_missing_profile_returns_empty_dict(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_missing_profile_returns_empty_dict(self, builder: InfrastructureBuilder) -> None:
         config = builder.load_profile_safe("nonexistent")
         assert config == {}
 
@@ -170,9 +168,7 @@ class TestBuildStateManager:
             builder.build_state_manager(config, work_dir_override="/override")
             mock_cls.assert_called_once_with(work_dir="/override")
 
-    def test_file_state_manager_defaults_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_file_state_manager_defaults_work_dir(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {}
         with patch(
             "taskforce.infrastructure.persistence.file_state_manager.FileStateManager",
@@ -182,9 +178,7 @@ class TestBuildStateManager:
             mock_cls.assert_called_once_with(work_dir=".taskforce")
 
     def test_database_state_manager(self, builder: InfrastructureBuilder) -> None:
-        config: dict[str, Any] = {
-            "persistence": {"type": "database", "db_url_env": "TEST_DB_URL"}
-        }
+        config: dict[str, Any] = {"persistence": {"type": "database", "db_url_env": "TEST_DB_URL"}}
         import sys
         import types
 
@@ -203,9 +197,7 @@ class TestBuildStateManager:
             mock_db_cls.assert_called_once_with(db_url="postgresql://localhost/test")
             assert sm is mock_db_cls.return_value
 
-    def test_database_state_manager_missing_env_var(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_database_state_manager_missing_env_var(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {
             "persistence": {"type": "database", "db_url_env": "MISSING_DB_URL"}
         }
@@ -226,9 +218,7 @@ class TestBuildStateManager:
         ):
             builder.build_state_manager(config)
 
-    def test_database_state_manager_default_env_var(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_database_state_manager_default_env_var(self, builder: InfrastructureBuilder) -> None:
         """When no db_url_env is specified, defaults to DATABASE_URL."""
         config: dict[str, Any] = {"persistence": {"type": "database"}}
         import sys
@@ -248,9 +238,7 @@ class TestBuildStateManager:
             builder.build_state_manager(config)
             mock_db_cls.assert_called_once_with(db_url="postgresql://localhost/default")
 
-    def test_unknown_persistence_type_raises(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_unknown_persistence_type_raises(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {"persistence": {"type": "redis"}}
         with pytest.raises(ValueError, match="Unknown persistence type: redis"):
             builder.build_state_manager(config)
@@ -313,16 +301,12 @@ class TestBuildLlmProvider:
         ):
             builder.build_llm_provider(config)
             # default_model not in llm config, so falls back to provider attribute
-            mock_build_router.assert_called_once_with(
-                mock_service, {}, "fallback_model"
-            )
+            mock_build_router.assert_called_once_with(mock_service, {}, "fallback_model")
 
     def test_relative_config_path_resolved(
         self, builder: InfrastructureBuilder, tmp_path: Path
     ) -> None:
-        config: dict[str, Any] = {
-            "llm": {"config_path": "src/taskforce/configs/llm_config.yaml"}
-        }
+        config: dict[str, Any] = {"llm": {"config_path": "src/taskforce/configs/llm_config.yaml"}}
         mock_service = MagicMock()
         mock_service.routing_config = {}
         mock_service.default_model = "main"
@@ -376,9 +360,7 @@ class TestBuildLlmProvider:
         self, builder: InfrastructureBuilder, tmp_path: Path
     ) -> None:
         """Old configs/ path migrates to src/taskforce/configs/ if new path exists."""
-        config: dict[str, Any] = {
-            "llm": {"config_path": "configs/llm_config.yaml"}
-        }
+        config: dict[str, Any] = {"llm": {"config_path": "configs/llm_config.yaml"}}
         # The old resolved path does NOT exist, but the new one does
         new_path = tmp_path / "src" / "taskforce" / "configs" / "llm_config.yaml"
         new_path.parent.mkdir(parents=True)
@@ -452,9 +434,7 @@ class TestBuildContextPolicy:
         assert policy.max_items == 5
         assert policy.max_chars_per_item == 1000
 
-    def test_defaults_when_no_context_policy(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_defaults_when_no_context_policy(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {}
         policy = builder.build_context_policy(config)
         assert isinstance(policy, ContextPolicy)
@@ -478,16 +458,12 @@ class TestBuildContextPolicy:
 class TestBuildMcpTools:
     """Tests for build_mcp_tools."""
 
-    async def test_empty_servers_returns_empty(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    async def test_empty_servers_returns_empty(self, builder: InfrastructureBuilder) -> None:
         tools, contexts = await builder.build_mcp_tools([])
         assert tools == []
         assert contexts == []
 
-    async def test_delegates_to_connection_manager(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    async def test_delegates_to_connection_manager(self, builder: InfrastructureBuilder) -> None:
         mock_manager = MagicMock()
         mock_manager.connect_all = AsyncMock(return_value=([MagicMock()], [MagicMock()]))
         servers = [MagicMock()]
@@ -497,16 +473,16 @@ class TestBuildMcpTools:
             return_value=mock_manager,
         ):
             tools, contexts = await builder.build_mcp_tools(servers, tool_filter=["t1"])
-            mock_manager.connect_all.assert_awaited_once_with(
-                servers, tool_filter=["t1"]
-            )
+            mock_manager.connect_all.assert_awaited_once_with(servers, tool_filter=["t1"])
             assert len(tools) == 1
             assert len(contexts) == 1
 
     async def test_no_tool_filter(self, builder: InfrastructureBuilder) -> None:
         """When tool_filter is None, all tools are returned."""
         mock_manager = MagicMock()
-        mock_manager.connect_all = AsyncMock(return_value=([MagicMock(), MagicMock()], [MagicMock()]))
+        mock_manager.connect_all = AsyncMock(
+            return_value=([MagicMock(), MagicMock()], [MagicMock()])
+        )
         servers = [MagicMock()]
 
         with patch(
@@ -514,9 +490,7 @@ class TestBuildMcpTools:
             return_value=mock_manager,
         ):
             tools, contexts = await builder.build_mcp_tools(servers, tool_filter=None)
-            mock_manager.connect_all.assert_awaited_once_with(
-                servers, tool_filter=None
-            )
+            mock_manager.connect_all.assert_awaited_once_with(servers, tool_filter=None)
             assert len(tools) == 2
 
 
@@ -532,23 +506,15 @@ class TestBuildRuntimeTracker:
         config: dict[str, Any] = {"runtime": {"enabled": False}}
         assert builder.build_runtime_tracker(config) is None
 
-    def test_missing_runtime_config_returns_none(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_missing_runtime_config_returns_none(self, builder: InfrastructureBuilder) -> None:
         assert builder.build_runtime_tracker({}) is None
 
     def test_memory_store(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "memory"}}
         with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ) as mock_tracker,
-            patch(
-                "taskforce.infrastructure.runtime.InMemoryHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.InMemoryCheckpointStore"
-            ) as mock_cp,
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker") as mock_tracker,
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.InMemoryCheckpointStore") as mock_cp,
         ):
             mock_tracker.return_value = MagicMock()
             result = builder.build_runtime_tracker(config)
@@ -562,15 +528,9 @@ class TestBuildRuntimeTracker:
             "runtime": {"enabled": True, "store": "file", "work_dir": "/tmp/rt"}
         }
         with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ) as mock_tracker,
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ) as mock_cp,
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker") as mock_tracker,
+            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
         ):
             mock_tracker.return_value = MagicMock()
             result = builder.build_runtime_tracker(config)
@@ -578,61 +538,37 @@ class TestBuildRuntimeTracker:
             mock_cp.assert_called_once_with("/tmp/rt")
             assert result is mock_tracker.return_value
 
-    def test_file_store_work_dir_fallback_chain(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_file_store_work_dir_fallback_chain(self, builder: InfrastructureBuilder) -> None:
         """Falls back to work_dir_override, then persistence.work_dir, then .taskforce."""
         config: dict[str, Any] = {
             "runtime": {"enabled": True, "store": "file"},
             "persistence": {"work_dir": ".from_persistence"},
         }
         with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
+            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
         ):
             builder.build_runtime_tracker(config)
             mock_hb.assert_called_once_with(".from_persistence")
 
-    def test_file_store_work_dir_override(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_file_store_work_dir_override(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
         with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
+            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
         ):
             builder.build_runtime_tracker(config, work_dir_override="/override")
             mock_hb.assert_called_once_with("/override")
 
-    def test_file_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_file_store_default_work_dir(self, builder: InfrastructureBuilder) -> None:
         """When no work_dir is specified anywhere, defaults to .taskforce."""
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
         with (
-            patch(
-                "taskforce.infrastructure.runtime.AgentRuntimeTracker"
-            ),
-            patch(
-                "taskforce.infrastructure.runtime.FileHeartbeatStore"
-            ) as mock_hb,
-            patch(
-                "taskforce.infrastructure.runtime.FileCheckpointStore"
-            ),
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
+            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
         ):
             builder.build_runtime_tracker(config)
             mock_hb.assert_called_once_with(".taskforce")
@@ -652,45 +588,38 @@ class TestSimpleBuilders:
     """Tests for builder methods that delegate to infrastructure constructors."""
 
     def test_build_message_bus(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.messaging.InMemoryMessageBus"
-        ) as mock_cls:
+        with patch("taskforce.infrastructure.messaging.InMemoryMessageBus") as mock_cls:
             mock_cls.return_value = MagicMock()
             result = builder.build_message_bus()
             mock_cls.assert_called_once()
             assert result is mock_cls.return_value
 
     def test_build_memory_store(self, builder: InfrastructureBuilder) -> None:
-        with patch(
-            "taskforce.infrastructure.memory.file_memory_store.FileMemoryStore"
-        ) as mock_cls:
+        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
             mock_cls.return_value = MagicMock()
             result = builder.build_memory_store(work_dir="/data")
-            mock_cls.assert_called_once_with("/data")
+            mock_cls.assert_called_once_with("/data", decay_enabled=False)
             assert result is mock_cls.return_value
 
-    def test_build_memory_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
-        with patch(
-            "taskforce.infrastructure.memory.file_memory_store.FileMemoryStore"
-        ) as mock_cls:
+    def test_build_memory_store_default_work_dir(self, builder: InfrastructureBuilder) -> None:
+        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
             mock_cls.return_value = MagicMock()
             builder.build_memory_store()
-            mock_cls.assert_called_once_with(".taskforce")
+            mock_cls.assert_called_once_with(".taskforce", decay_enabled=False)
 
+    def test_build_memory_store_decay_enabled(self, builder: InfrastructureBuilder) -> None:
+        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            builder.build_memory_store(work_dir="/d", decay_enabled=True)
+            mock_cls.assert_called_once_with("/d", decay_enabled=True)
 
     def test_build_agent_registry(self, builder: InfrastructureBuilder) -> None:
         with (
             patch(
                 "taskforce.infrastructure.persistence.file_agent_registry.FileAgentRegistry"
             ) as mock_cls,
-            patch(
-                "taskforce.application.infrastructure_builder.get_tool_registry"
-            ) as mock_get_tr,
-            patch(
-                "taskforce.application.infrastructure_builder.get_base_path"
-            ) as mock_bp,
+            patch("taskforce.application.infrastructure_builder.get_tool_registry") as mock_get_tr,
+            patch("taskforce.application.infrastructure_builder.get_base_path") as mock_bp,
         ):
             mock_cls.return_value = MagicMock()
             mock_get_tr.return_value = MagicMock()
@@ -702,7 +631,6 @@ class TestSimpleBuilders:
             assert result is mock_cls.return_value
 
 
-
 # ---------------------------------------------------------------------------
 # build_for_definition
 # ---------------------------------------------------------------------------
@@ -711,9 +639,7 @@ class TestSimpleBuilders:
 class TestBuildForDefinition:
     """Tests for build_for_definition."""
 
-    async def test_builds_all_components(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    async def test_builds_all_components(self, builder: InfrastructureBuilder) -> None:
         definition = MagicMock()
         definition.base_profile = "dev"
         definition.work_dir = "/work"
@@ -728,12 +654,8 @@ class TestBuildForDefinition:
             patch.object(
                 builder, "load_profile_safe", return_value={"profile": "dev"}
             ) as mock_load,
-            patch.object(
-                builder, "build_state_manager", return_value=mock_sm
-            ) as mock_build_sm,
-            patch.object(
-                builder, "build_llm_provider", return_value=mock_llm
-            ) as mock_build_llm,
+            patch.object(builder, "build_state_manager", return_value=mock_sm) as mock_build_sm,
+            patch.object(builder, "build_llm_provider", return_value=mock_llm) as mock_build_llm,
             patch.object(
                 builder,
                 "build_mcp_tools",
@@ -744,14 +666,10 @@ class TestBuildForDefinition:
                 builder, "build_context_policy", return_value=mock_policy
             ) as mock_build_cp,
         ):
-            sm, llm, tools, ctxs, policy = await builder.build_for_definition(
-                definition
-            )
+            sm, llm, tools, ctxs, policy = await builder.build_for_definition(definition)
 
             mock_load.assert_called_once_with("dev")
-            mock_build_sm.assert_called_once_with(
-                {"profile": "dev"}, work_dir_override="/work"
-            )
+            mock_build_sm.assert_called_once_with({"profile": "dev"}, work_dir_override="/work")
             mock_build_llm.assert_called_once_with({"profile": "dev"})
             mock_build_mcp.assert_awaited_once_with([], tool_filter=None)
             mock_build_cp.assert_called_once_with({"profile": "dev"})
@@ -776,24 +694,16 @@ class TestBuildForDefinition:
         mock_mcp_ctx = MagicMock()
 
         with (
-            patch.object(
-                builder, "load_profile_safe", return_value={}
-            ),
-            patch.object(
-                builder, "build_state_manager", return_value=MagicMock()
-            ),
-            patch.object(
-                builder, "build_llm_provider", return_value=MagicMock()
-            ),
+            patch.object(builder, "load_profile_safe", return_value={}),
+            patch.object(builder, "build_state_manager", return_value=MagicMock()),
+            patch.object(builder, "build_llm_provider", return_value=MagicMock()),
             patch.object(
                 builder,
                 "build_mcp_tools",
                 new_callable=AsyncMock,
                 return_value=([mock_mcp_tool], [mock_mcp_ctx]),
             ) as mock_build_mcp,
-            patch.object(
-                builder, "build_context_policy", return_value=MagicMock()
-            ),
+            patch.object(builder, "build_context_policy", return_value=MagicMock()),
         ):
             _, _, tools, ctxs, _ = await builder.build_for_definition(definition)
 
