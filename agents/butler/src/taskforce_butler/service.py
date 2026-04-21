@@ -10,17 +10,17 @@ from typing import Any
 
 import structlog
 
+from taskforce.application.event_router import EventRouter
 from taskforce.core.domain.agent_event import AgentEvent
 from taskforce.core.domain.gateway import NotificationRequest
-from taskforce_butler.domain.trigger_rule import (
+from taskforce.core.domain.trigger_rule import (
     RuleAction,
     RuleActionType,
     TriggerCondition,
     TriggerRule,
 )
-from taskforce_butler.event_router import EventRouter
-from taskforce_butler.rule_engine import RuleEngine
-from taskforce_butler.infrastructure.scheduler.scheduler_service import SchedulerService
+from taskforce.infrastructure.rule_engine import RuleEngine
+from taskforce.infrastructure.scheduler.scheduler_service import SchedulerService
 
 logger = structlog.get_logger(__name__)
 
@@ -49,7 +49,7 @@ class ButlerService:
         self._default_recipient_id = default_recipient_id
 
         # Core components
-        self._rule_engine = RuleEngine(work_dir=work_dir)
+        self._rule_engine = RuleEngine(work_dir=work_dir, rules_filename="butler/rules.json")
         self._scheduler = SchedulerService(
             work_dir=work_dir,
             event_callback=self._on_event,

@@ -1,4 +1,4 @@
-"""Trigger rule domain models for the butler rule engine.
+"""Trigger rule domain models for the rule engine.
 
 Defines the "if X then Y" primitives that connect events to actions.
 Rules are evaluated by the RuleEngine when an AgentEvent arrives.

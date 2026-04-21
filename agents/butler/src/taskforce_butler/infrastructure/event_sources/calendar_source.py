@@ -14,7 +14,7 @@ import structlog
 
 from taskforce.core.domain.agent_event import AgentEvent, AgentEventType
 from taskforce.core.utils.time import utc_now
-from taskforce_butler.infrastructure.event_sources.base import PollingEventSource
+from taskforce.infrastructure.event_sources.polling_base import PollingEventSource
 
 logger = structlog.get_logger(__name__)
 

@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
-from taskforce_butler.domain.trigger_rule import (
+from taskforce.core.domain.trigger_rule import (
     RuleAction,
     RuleActionType,
     TriggerCondition,
