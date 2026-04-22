@@ -594,24 +594,27 @@ class TestSimpleBuilders:
             mock_cls.assert_called_once()
             assert result is mock_cls.return_value
 
-    def test_build_memory_store(self, builder: InfrastructureBuilder) -> None:
-        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
-            mock_cls.return_value = MagicMock()
-            result = builder.build_memory_store(work_dir="/data")
-            mock_cls.assert_called_once_with("/data", decay_enabled=False)
-            assert result is mock_cls.return_value
+    def test_build_wiki_store_default_work_dir(
+        self, builder: InfrastructureBuilder
+    ) -> None:
+        from pathlib import Path
 
-    def test_build_memory_store_default_work_dir(self, builder: InfrastructureBuilder) -> None:
-        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
-            mock_cls.return_value = MagicMock()
-            builder.build_memory_store()
-            mock_cls.assert_called_once_with(".taskforce", decay_enabled=False)
+        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
-    def test_build_memory_store_decay_enabled(self, builder: InfrastructureBuilder) -> None:
-        with patch("taskforce.infrastructure.memory.file_memory_store.FileMemoryStore") as mock_cls:
-            mock_cls.return_value = MagicMock()
-            builder.build_memory_store(work_dir="/d", decay_enabled=True)
-            mock_cls.assert_called_once_with("/d", decay_enabled=True)
+        store = builder.build_wiki_store()
+        assert isinstance(store, FileWikiStore)
+        assert store._root == Path(".taskforce") / "memory" / "wiki"
+
+    def test_build_wiki_store_custom_work_dir(
+        self, builder: InfrastructureBuilder
+    ) -> None:
+        from pathlib import Path
+
+        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
+
+        store = builder.build_wiki_store(work_dir="/data")
+        assert isinstance(store, FileWikiStore)
+        assert store._root == Path("/data") / "memory" / "wiki"
 
     def test_build_agent_registry(self, builder: InfrastructureBuilder) -> None:
         with (

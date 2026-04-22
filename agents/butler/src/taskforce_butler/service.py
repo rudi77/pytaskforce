@@ -70,9 +70,7 @@ class ButlerService:
         self._gateway: Any = None
         self._executor: Any = None
         self._agent_service: Any = None  # PersistentAgentService (preferred over executor)
-        self._memory_store: Any = None
-        self._learning_service: Any = None
-        self._dream_service: Any = None
+        self._wiki_store: Any = None
 
         self._running = False
 
@@ -113,18 +111,9 @@ class ButlerService:
         """
         self._agent_service = agent_service
 
-    def set_memory_store(self, memory_store: Any) -> None:
-        """Inject the memory store for learning."""
-        self._memory_store = memory_store
-
-    def set_learning_service(self, learning_service: Any) -> None:
-        """Inject the learning service for auto-extraction."""
-        self._learning_service = learning_service
-
-    def set_dream_service(self, dream_service: Any) -> None:
-        """Inject the dream service for generative dreaming cycles."""
-        self._dream_service = dream_service
-        self._event_router._dream_callback = self._run_dream_cycle
+    def set_wiki_store(self, wiki_store: Any) -> None:
+        """Inject the wiki store for long-term memory logging."""
+        self._wiki_store = wiki_store
 
     def add_event_source(self, source: Any) -> None:
         """Register an event source.
@@ -320,9 +309,6 @@ class ButlerService:
                 )
             await self._execute_mission(mission, params)
 
-        elif action_type == ScheduleActionType.RUN_DREAM_CYCLE:
-            await self._run_dream_cycle(params)
-
     async def _send_notification(
         self,
         channel: str,
@@ -422,41 +408,12 @@ class ButlerService:
         content: str,
         params: dict[str, Any],
     ) -> None:
-        """Log content to long-term memory."""
-        if not self._memory_store:
-            logger.warning("butler_service.no_memory_store_configured")
+        """Append content to the wiki log."""
+        if not self._wiki_store:
+            logger.warning("butler_service.no_wiki_store_configured")
             return
-
-        from taskforce.core.domain.memory import MemoryKind, MemoryRecord, MemoryScope
-
-        record = MemoryRecord(
-            scope=MemoryScope(params.get("scope", "user")),
-            kind=MemoryKind(params.get("kind", "learned_fact")),
-            content=content,
-            tags=params.get("tags", []),
-        )
-        await self._memory_store.add(record)
-        logger.info("butler_service.memory_logged", content_preview=content[:100])
-
-    async def _run_dream_cycle(self, params: dict[str, Any]) -> None:
-        """Run a generative dream cycle."""
-        if not self._dream_service:
-            logger.warning("butler_service.no_dream_service_configured")
-            return
-
-        from taskforce.core.domain.dream import DreamTrigger
-
-        trigger = DreamTrigger(params.get("trigger", "scheduled"))
-        try:
-            cycle = await self._dream_service.trigger_dream(trigger=trigger)
-            logger.info(
-                "butler_service.dream_completed",
-                dream_id=cycle.dream_id,
-                insights=len(cycle.insights),
-                memories_created=cycle.memories_created,
-            )
-        except Exception as exc:
-            logger.error("butler_service.dream_failed", error=str(exc))
+        await self._wiki_store.append_log(content)
+        logger.info("butler_service.wiki_log_appended", content_preview=content[:100])
 
     async def get_status(self) -> dict[str, Any]:
         """Get the current butler service status."""

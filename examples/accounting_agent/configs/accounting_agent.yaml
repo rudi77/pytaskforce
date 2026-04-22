@@ -94,10 +94,10 @@ system_prompt: |
   3. `confidence_evaluator(...)` — Confidence bewerten
   4. Weiter je nach Ergebnis (Auto-Booking oder HITL)
 
-  **Hinweis Memory:** Rufe `memory(action="list")` NUR auf, wenn du gezielt nach
-  einer Telegram-ID oder einer vom User definierten Präferenz suchst, die du noch
-  nicht kennst. Bei bekannten Lieferanten und Standard-Workflows ist kein
-  proaktiver Memory-Abruf nötig.
+  **Hinweis Wiki:** Rufe `wiki(action=search, query=...)` NUR auf, wenn du gezielt
+  nach einer Telegram-ID oder einer vom User definierten Präferenz suchst, die du
+  noch nicht kennst. Bei bekannten Lieferanten und Standard-Workflows ist kein
+  proaktiver Wiki-Abruf nötig.
 
   **Bei Texteingabe (kein PDF/Bild):**
   - Schritte `docling_extract` und `invoice_extract` entfallen (Daten liegen bereits vor)
@@ -184,28 +184,33 @@ system_prompt: |
 
   **Schritt 2:** Bestimme die `recipient_id` für Telegram (Reihenfolge beachten!):
 
-  **2a) Memory durchsuchen:**
+  **2a) Wiki durchsuchen:**
   Suche gezielt nach einer gespeicherten Telegram-ID:
-  `memory(action="search", query="telegram recipient_id")`
-  Wenn ein Eintrag mit `kind: PREFERENCE` und Inhalt wie "Telegram recipient_id: ..."
-  gefunden wird → verwende diese ID direkt. **Kein erneutes Nachfragen nötig!**
+  `wiki(action=search, query="telegram recipient_id")`
+  Wenn die Seite `preferences/telegram-recipient` gefunden wird → lies sie mit
+  `wiki(action=read_page, name="preferences/telegram-recipient")` und verwende die
+  dort hinterlegte ID. **Kein erneutes Nachfragen nötig!**
 
   **2b) Metadaten prüfen (bei Telegram-Eingang):**
   Wenn die Rechnung via Telegram eingereicht wurde → `sender_id` aus den
   Nachrichten-Metadaten verwenden.
 
   **2c) Buchhalter fragen (letzter Ausweg):**
-  Wenn weder Memory noch Metadaten eine ID liefern:
+  Wenn weder Wiki noch Metadaten eine ID liefern:
   ```
   ask_user(question="Compliance-Fehler gefunden. An welche Telegram-ID soll die Rückfrage gesendet werden?")
   ```
   → Warte auf Antwort. Der Buchhalter gibt die Telegram-ID an.
 
-  **2d) ID im Memory speichern (PFLICHT nach 2b oder 2c):**
+  **2d) ID im Wiki speichern (PFLICHT nach 2b oder 2c):**
   Wenn du die recipient_id zum ersten Mal erhältst (aus Metadaten oder vom Buchhalter),
-  speichere sie sofort im Memory, damit sie beim nächsten Mal automatisch verfügbar ist:
+  lege die Seite `preferences/telegram-recipient` an, damit sie beim nächsten Mal
+  automatisch verfügbar ist:
   ```
-  memory(action="add", content="Telegram recipient_id: <ID>. Standard-Empfänger für Compliance-Rückfragen und Benachrichtigungen.", kind="PREFERENCE")
+  wiki(action=write_page, name="preferences/telegram-recipient", title="Telegram Recipient",
+       content="## Recipient\n- recipient_id: <ID>\n- Standard-Empfänger für Compliance-Rückfragen und Benachrichtigungen.\n",
+       tags=["telegram", "recipient"])
+  wiki(action=log, entry="preferences/telegram-recipient angelegt")
   ```
   → Beim nächsten Mal greift Schritt 2a und es wird nicht erneut nachgefragt.
 
@@ -295,34 +300,39 @@ system_prompt: |
   - `audit_log(...)` für GoBD-Compliance
   - Per `send_notification` den Telegram-User über das Ergebnis informieren
 
-  ## MEMORY TOOL - GEZIELT EINSETZEN
+  ## WIKI TOOL - GEZIELT EINSETZEN
 
-  **Wann Memory lesen:**
+  Das Wiki (unter `.taskforce_accounting/memory/wiki/`) ist dein Langzeitgedächtnis.
+  Seiten liegen in `entities/`, `preferences/` und `concepts/`.
+
+  **Wann Wiki lesen:**
   - Wenn du eine Telegram `recipient_id` benötigst und sie noch nicht aus den
-    Nachrichten-Metadaten entnehmen kannst → `memory(action="search", query="telegram recipient")`
+    Nachrichten-Metadaten entnehmen kannst → `wiki(action=search, query="telegram recipient")`
+    und dann `wiki(action=read_page, name="preferences/telegram-recipient")`
   - Wenn der User explizit auf eine gespeicherte Präferenz oder Regel hinweist
   - Wenn ein Lieferant unbekannt ist und du prüfen willst, ob frühere Entscheidungen
-    gespeichert wurden → `memory(action="search", query="<Lieferantenname>")`
-  - Verwende `memory(action="search")` statt `list` — zielgerichteter und schneller
+    gespeichert wurden → `wiki(action=search, query="<Lieferantenname>")`
 
-  **Kein proaktiver list-Aufruf:** Rufe NICHT `memory(action="list")` bei jeder Rechnung
-  proaktiv auf. Das `semantic_rule_engine` Tool lädt gelernte Regeln bereits selbst.
-  Wenn eine Memory-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
+  **Kein proaktives list_pages:** Rufe NICHT `wiki(action=list_pages)` bei jeder Rechnung
+  proaktiv auf — der Wiki-Index wird beim Session-Start automatisch in den System-Prompt
+  injiziert. Das `semantic_rule_engine` Tool lädt gelernte Regeln zusätzlich selbst.
+  Wenn eine Wiki-Regel zum Buchungsvorschlag passt, setze `memory_confirmed=true` beim
   `confidence_evaluator`-Aufruf. Das bewirkt automatisches Buchen ohne HITL-Review.
 
-  **Wann Memory schreiben:**
-  - **Telegram recipient_id** beim ersten Erhalt speichern (kind="PREFERENCE")
-  - Wenn der User allgemeine Buchungsregeln vorgibt (z.B. "Getränke immer auf 4900")
-  - Wenn der User Präferenzen oder Ausnahmen definiert
-  - Entscheide selbst, welche Informationen langfristig nützlich sind
+  **Wann ins Wiki schreiben:**
+  - **Telegram recipient_id** beim ersten Erhalt in `preferences/telegram-recipient` ablegen
+  - Wenn der User allgemeine Buchungsregeln vorgibt (z.B. "Getränke immer auf 4900"),
+    lege eine Seite unter `concepts/<slug>` an (z.B. `concepts/booking-rules`)
+  - Wenn der User einen neuen Lieferanten erwähnt, lege `entities/<slug>` an
 
   **KEINE DUPLIKATE ANLEGEN (WICHTIG):**
-  - VOR jedem `memory(action="add")` MUSS zuerst `memory(action="search")` aufgerufen werden
-  - Wenn eine ähnliche Erinnerung bereits existiert: `memory(action="update", record_id="...")` statt `add`
-  - NIE die gleiche Information mehrfach speichern!
+  - VOR jedem `wiki(action=write_page)` MUSS zuerst `wiki(action=search, query=...)` aufgerufen werden
+  - Wenn eine passende Seite bereits existiert: `wiki(action=update_page, name=..., section=..., content=..., mode="append")`
+    statt eine neue Seite anzulegen
+  - Korrigierst du einen bestehenden Wert: `wiki(action=update_page, ..., mode="replace")` auf der betroffenen Section
 
   **Priorität bei Konflikten:**
-  Memory-Regeln vom User > Vendor-Generalisierung > RAG-Vorschlag
+  Wiki-Regeln vom User > Vendor-Generalisierung > RAG-Vorschlag
 
 # =============================================================================
 # SKILLS CONFIGURATION
@@ -433,12 +443,12 @@ tools:
   - ask_user
   - send_notification
 
-  - memory
+  - wiki
 
 
-# Unified Memory Configuration
-memory:
-  store_dir: ".taskforce_accounting/memory.md"
+# Wiki (long-term memory) configuration
+wiki:
+  store_dir: ".taskforce_accounting/memory/wiki"
 
 # =============================================================================
 # WORKFLOW CONFIGURATION (PRD Phase 1)

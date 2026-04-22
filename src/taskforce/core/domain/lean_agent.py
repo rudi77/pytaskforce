@@ -22,10 +22,6 @@ from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.lean_agent_components.context_manager import (
     ContextManager,
 )
-from taskforce.core.domain.lean_agent_components.memory_context_loader import (
-    MemoryContextConfig,
-    MemoryContextLoader,
-)
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
 )
@@ -43,9 +39,13 @@ from taskforce.core.domain.planning_strategy import (
 )
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
+from taskforce.core.domain.lean_agent_components.wiki_context_loader import (
+    WikiContextConfig,
+    WikiContextLoader,
+)
 from taskforce.core.interfaces.logging import LoggerProtocol
-from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
+from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
@@ -97,8 +97,8 @@ class Agent:
         runtime_tracker: AgentRuntimeTrackerProtocol | None = None,
         skill_manager: Any | None = None,
         summary_threshold: int | None = None,
-        memory_store: MemoryStoreProtocol | None = None,
-        memory_context_config: MemoryContextConfig | None = None,
+        wiki_store: WikiStoreProtocol | None = None,
+        wiki_context_config: WikiContextConfig | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -126,11 +126,12 @@ class Agent:
                           and automatic skill switching based on tool outputs.
             summary_threshold: Message count threshold for triggering compression
                               (default: 20, lower values compress more aggressively).
-            memory_store: Optional memory store for automatic memory injection.
-                         When provided, relevant memories are loaded at session
-                         start and injected into the system prompt.
-            memory_context_config: Optional configuration for memory injection
-                                  budget (max memories, char limits, kinds).
+            wiki_store: Optional wiki store for automatic index injection.
+                         When provided, the wiki index is loaded at session
+                         start and injected into the system prompt so the
+                         agent knows what pages exist.
+            wiki_context_config: Optional configuration for wiki context
+                                 injection budget (char limits, top-k).
         """
         self.state_manager = state_manager
         self.llm_provider = llm_provider
@@ -141,10 +142,10 @@ class Agent:
         self.runtime_tracker = runtime_tracker
         self.skill_manager = skill_manager
 
-        # Memory auto-injection
-        self._memory_store = memory_store
-        self._memory_context_config = memory_context_config or MemoryContextConfig()
-        self._memory_context: str | None = None
+        # Wiki auto-injection (long-term memory as markdown pages)
+        self._wiki_store = wiki_store
+        self._wiki_context_config = wiki_context_config or WikiContextConfig()
+        self._wiki_context: str | None = None
 
         # Skill suffix cache: (active_skill_name, suffix_string)
         self._cached_skill_suffix: tuple[str | None, str] | None = None
@@ -278,54 +279,20 @@ class Agent:
         return self._planner
 
     async def load_memory_context(self, mission: str | None = None) -> None:
-        """Load long-term memories and cache them for prompt injection.
+        """Load the wiki index and cache it for prompt injection.
 
-        Called once at session start (from planning helpers). Results are
-        cached in ``_memory_context`` and reused on every prompt rebuild.
-
-        Args:
-            mission: Optional current mission text.  When provided, memories
-                whose content is relevant to the mission receive a salience
-                boost (contextual retrieval).
-
-        Uses lazy loading: skips memory fetch when the mission is unlikely
-        to benefit from historical context (e.g., pure implementation tasks
-        delegated by an orchestrator). Memory is always loaded when:
-        - The mission explicitly references memory/history/preferences
-        - No mission is provided (interactive/chat sessions)
+        Called once at session start. The wiki index is small (always a
+        single markdown file) so we load it unconditionally when a wiki
+        store is configured — no keyword-gating needed.
         """
-        if not self._memory_store:
+        if not self._wiki_store:
             return
-
-        # Lazy check: skip memory loading for sub-agent tasks that won't
-        # benefit from historical context. Always load for chat/interactive.
-        if mission:
-            _lower = mission.lower()
-            _memory_keywords = (
-                "remember",
-                "memory",
-                "preference",
-                "previous",
-                "last time",
-                "history",
-                "learned",
-                "convention",
-                "style",
-                "pattern",
-            )
-            if not any(kw in _lower for kw in _memory_keywords):
-                self.logger.debug(
-                    "memory_context.skipped_lazy",
-                    reason="mission_has_no_memory_keywords",
-                )
-                return
-
-        loader = MemoryContextLoader(
-            memory_store=self._memory_store,
-            config=self._memory_context_config,
+        loader = WikiContextLoader(
+            wiki_store=self._wiki_store,
+            config=self._wiki_context_config,
             logger=self.logger,
         )
-        self._memory_context = await loader.load_memory_context(mission=mission)
+        self._wiki_context = await loader.load_wiki_context(mission=mission)
 
     def _build_system_prompt(
         self,
@@ -340,9 +307,9 @@ class Agent:
             messages=messages,
         )
 
-        # Inject cached long-term memory section
-        if self._memory_context:
-            base_prompt += self._memory_context
+        # Inject cached wiki index section (long-term memory)
+        if self._wiki_context:
+            base_prompt += self._wiki_context
 
         # Inject active skill instructions if skill manager is configured
         # Uses a cache keyed on the active skill name to avoid rebuilding

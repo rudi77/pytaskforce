@@ -1,5 +1,5 @@
-"""Memory management implementations."""
+"""File-backed long-term memory implementations (wiki + experience tracker)."""
 
-from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
-__all__ = ["FileMemoryStore"]
+__all__ = ["FileWikiStore"]

@@ -278,7 +278,7 @@ them. The `ButlerProtocol` and butler-only contracts remain inside the
 | `StateManagerProtocol` | `state.py` | Session state persistence |
 | `LLMProviderProtocol` | `llm.py` | LLM provider abstraction |
 | `ToolProtocol` | `tools.py` | Tool execution interface (also defines `ApprovalRiskLevel` enum) |
-| `MemoryStoreProtocol` | `memory_store.py` | Long-term memory storage |
+| `WikiStoreProtocol` | `wiki_store.py` | Wiki-style long-term memory storage (ADR-020) |
 | `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` | `gateway.py` | Communication Gateway contracts |
 | `MessageBusProtocol` | `messaging.py` | Inter-agent messaging |
 | `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` | `runtime.py` | Runtime tracking |
@@ -290,8 +290,9 @@ them. The `ButlerProtocol` and butler-only contracts remain inside the
 | `TenantContextProtocol`, `UserContextProtocol`, `IdentityProviderProtocol`, `PolicyEngineProtocol` | `identity_stubs.py` | Identity and tenancy management |
 | `LoggerProtocol` | `logging.py` | Structured logging |
 | `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` | `auth.py` | OAuth2 authentication |
-| `ConsolidationProtocol` | `consolidation.py` | Memory consolidation (ADR-013) |
-| `DreamEngineProtocol` | `dreaming.py` | Generative dreaming engine (ADR-014) |
+<!-- ADR-020 removed ConsolidationProtocol and DreamEngineProtocol: the wiki
+     is curated by the agent at save-time, not by background services. -->
+
 | `AgentStateProtocol` | `agent_state.py` | Singleton agent state persistence (ADR-016) |
 | `ChannelAskProtocol` | `channel_ask.py` | Channel-based user interaction |
 | `ExperienceProtocol` | `experience.py` | Session experience tracking |
@@ -498,7 +499,7 @@ corresponding package is installed.
 | `glob` | GlobTool | `search_tools` | File pattern search (glob-style) |
 | `edit` | EditTool | `edit_tool` | Targeted file editing (search/replace) |
 | `fetch_result` | FetchResultTool | `fetch_result_tool` | Retrieve previously stored tool results |
-| `memory` | MemoryTool | `memory_tool` | Long-term memory CRUD |
+| `wiki` | WikiTool | `wiki_tool` | Wiki-style long-term memory (markdown pages; see ADR-020) |
 | `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (`uv sync --extra browser && playwright install chromium`) |
 | `multimedia` | MultimediaTool | `multimedia_tool` | Image/media handling |
 | `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (`uv sync --extra office`) |
@@ -1138,33 +1139,29 @@ uv sync --group dev   # pytest, ruff, black, mypy, pyinstaller
 
 ## Common Patterns and Recipes
 
-### Enabling Long-Term Memory
+### Enabling Long-Term Memory (Wiki)
 
-The native `memory` tool provides file-backed Markdown records for long-term memory. Configure via profile YAML:
-
-```yaml
-# In profile YAML
-memory:
-  store_dir: .taskforce/.memory
-  decay:
-    enabled: false   # default — memories persist until explicitly removed
-```
-
-Time-based forgetting (`decay.enabled: true`) is opt-in. With decay off, `memory decay_sweep` is a no-op and `reinforce()` no longer shrinks a record's `decay_rate`; access-count, emotional valence and `importance` still influence effective strength.
-
-Alternatively, use an MCP Memory Server for knowledge graph-based memory:
+The native `wiki` tool provides wiki-style long-term memory — one
+markdown page per topic under `.taskforce/memory/wiki/`. Configure via
+profile YAML:
 
 ```yaml
-mcp_servers:
-  - type: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-memory"]
-    env:
-      MEMORY_FILE_PATH: ".taskforce/.memory/knowledge_graph.jsonl"
-    description: "Long-term knowledge graph memory"
+tools:
+  - wiki
+
+wiki:
+  store_dir: .taskforce/memory/wiki     # optional — derived from persistence.work_dir
+  context_injection:
+    max_total_chars: 2000
+    top_k_relevant: 5
+    include_index: true
 ```
 
-**See:** [Long-Term Memory Documentation](docs/features/longterm-memory.md), [ADR-007](docs/adr/adr-007-unified-memory-service.md)
+The agent curates the wiki itself (creates/updates/deletes pages via
+the `wiki` tool). There is no background consolidation or dreaming —
+relevance comes from search ranking plus index membership.
+
+**See:** [Long-Term Memory Documentation](docs/features/longterm-memory.md), [ADR-020](docs/adr/adr-020-wiki-style-memory.md).
 
 ### Adding a New Tool
 

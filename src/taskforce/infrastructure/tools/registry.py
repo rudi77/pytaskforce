@@ -114,10 +114,10 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.fetch_result_tool",
         "params": {},
     },
-    # Native tools - Memory
-    "memory": {
-        "type": "MemoryTool",
-        "module": "taskforce.infrastructure.tools.native.memory_tool",
+    # Native tools - Wiki (long-term memory)
+    "wiki": {
+        "type": "WikiTool",
+        "module": "taskforce.infrastructure.tools.native.wiki_tool",
         "params": {},
     },
     # Native tools - Browser automation

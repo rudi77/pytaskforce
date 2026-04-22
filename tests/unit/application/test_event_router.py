@@ -137,19 +137,6 @@ class TestEventRouterDispatch:
         await router.route(_event())
         assert stored == ["important"]
 
-    async def test_dream_callback_invoked(self) -> None:
-        engine = _StubRuleEngine()
-        calls: list[dict] = []
-
-        async def on_dream(params):
-            calls.append(params)
-
-        router = EventRouter(rule_engine=engine, dream_callback=on_dream)
-        await engine.add_rule(_rule(action_type=RuleActionType.RUN_DREAM_CYCLE))
-
-        await router.route(_event())
-        assert len(calls) == 1
-
     async def test_no_rules_match_yields_empty_list(self) -> None:
         engine = _StubRuleEngine()
         router = EventRouter(rule_engine=engine)

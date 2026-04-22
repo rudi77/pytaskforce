@@ -10,19 +10,20 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 004: Multi-Agent Runtime Tracking & Messaging](adr-004-multi-agent-runtime-and-messaging.md)**
 - **[ADR 005: Epic Orchestration Pipeline](adr-005-epic-orchestration-pipeline.md)**
 - **[ADR 006: Communication Provider Architecture](adr-006-communication-providers.md)**
-- **[ADR 007: Unified Memory Service](adr-007-unified-memory-service.md)**
+- **[ADR 007: Unified Memory Service](adr-007-unified-memory-service.md)** — _superseded by ADR 020_
 - **[ADR 008: Auto-Epic Orchestration](adr-008-auto-epic-orchestration.md)**
 - **[ADR 009: Unified Communication Gateway](adr-009-communication-gateway.md)**
 - **[ADR 010: Event-Driven Butler Agent Architecture](adr-010-event-driven-butler-agent.md)**
 - **[ADR 011: Unified Skills System (Slash Commands als Subset von Skills)](adr-011-unified-skills-system.md)**
 - **[ADR 012: Dynamic LLM Selection per Agent Step](adr-012-dynamic-llm-selection.md)**
-- **[ADR 013: Agent Memory Consolidation](adr-013-memory-consolidation.md)**
+- **[ADR 013: Agent Memory Consolidation](adr-013-memory-consolidation.md)** — _superseded by ADR 020_
 - **[ADR 014: Resumable Human-in-the-Loop Workflow Checkpoints](adr-014-resumable-human-in-the-loop-workflows.md)**
 - **[ADR 015: Parallel Sub-Agent Execution](adr-015-parallel-sub-agent-execution.md)**
 - **[ADR 016: Persistent Agent Architecture (Sessionless Orchestrator)](adr-016-persistent-agent-architecture.md)**
 - **[ADR 017: Butler Role Specialization](adr-017-butler-role-specialization.md)**
 - **[ADR 018: Agent Communication Protocol (ACP) Support](adr-018-acp-protocol-support.md)**
 - **[ADR 019: Cooperative Agent Interruption](adr-019-agent-interruption.md)**
+- **[ADR 020: Wiki-Style Long-Term Memory](adr-020-wiki-style-memory.md)** — _supersedes ADR 007, 013, 014 (dreaming)_
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*

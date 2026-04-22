@@ -45,65 +45,67 @@ def builder_with_resolver(
     return ToolBuilder(mock_factory, tool_resolver=mock_resolver)
 
 
-class TestHydrateMemoryToolSpec:
-    """Tests for the hydrate_memory_tool_spec static method."""
+class TestHydrateWikiToolSpec:
+    """Tests for the hydrate_wiki_tool_spec static method."""
 
-    def test_non_memory_spec_passthrough(self) -> None:
-        result = ToolBuilder.hydrate_memory_tool_spec("file_read", {})
-        assert result == "file_read"
+    def test_non_wiki_spec_passthrough(self) -> None:
+        assert ToolBuilder.hydrate_wiki_tool_spec("file_read", {}) == "file_read"
 
     def test_dict_spec_passthrough(self) -> None:
         spec: dict[str, Any] = {"type": "CustomTool", "params": {"key": "val"}}
-        result = ToolBuilder.hydrate_memory_tool_spec(spec, {})
-        assert result == spec
+        assert ToolBuilder.hydrate_wiki_tool_spec(spec, {}) == spec
 
-    def test_memory_spec_with_store_dir(self) -> None:
-        config: dict[str, Any] = {"memory": {"store_dir": "/custom/memory"}}
-        result = ToolBuilder.hydrate_memory_tool_spec("memory", config)
+    def test_wiki_spec_with_store_dir(self) -> None:
+        config: dict[str, Any] = {"wiki": {"store_dir": "/custom/wiki"}}
+        result = ToolBuilder.hydrate_wiki_tool_spec("wiki", config)
         assert isinstance(result, dict)
-        assert result["type"] == "MemoryTool"
-        assert result["params"]["store_dir"] == "/custom/memory"
+        assert result["type"] == "WikiTool"
+        assert result["params"]["store_dir"] == "/custom/wiki"
 
-    def test_memory_spec_derives_from_persistence(self) -> None:
+    def test_wiki_spec_derives_from_persistence(self) -> None:
         config: dict[str, Any] = {"persistence": {"work_dir": "/data/.tf"}}
-        result = ToolBuilder.hydrate_memory_tool_spec("memory", config)
+        result = ToolBuilder.hydrate_wiki_tool_spec("wiki", config)
         assert isinstance(result, dict)
-        assert result["type"] == "MemoryTool"
-        assert result["params"]["store_dir"] == str(Path("/data/.tf") / "memory.md")
+        assert result["params"]["store_dir"] == str(
+            Path("/data/.tf") / "memory" / "wiki"
+        )
 
-    def test_memory_spec_default_persistence(self) -> None:
-        result = ToolBuilder.hydrate_memory_tool_spec("memory", {})
+    def test_wiki_spec_default_persistence(self) -> None:
+        result = ToolBuilder.hydrate_wiki_tool_spec("wiki", {})
         assert isinstance(result, dict)
-        assert result["params"]["store_dir"] == str(Path(".taskforce") / "memory.md")
+        assert result["params"]["store_dir"] == str(
+            Path(".taskforce") / "memory" / "wiki"
+        )
 
 
-class TestResolveMemoryStoreDir:
-    """Tests for the resolve_memory_store_dir static method."""
+class TestResolveWikiStoreDir:
+    """Tests for the resolve_wiki_store_dir static method."""
 
     def test_explicit_store_dir(self) -> None:
-        config: dict[str, Any] = {"memory": {"store_dir": "/explicit/path"}}
-        result = ToolBuilder.resolve_memory_store_dir(config)
-        assert result == "/explicit/path"
+        config: dict[str, Any] = {"wiki": {"store_dir": "/explicit/path"}}
+        assert ToolBuilder.resolve_wiki_store_dir(config) == "/explicit/path"
 
     def test_work_dir_override(self) -> None:
-        result = ToolBuilder.resolve_memory_store_dir({}, work_dir_override="/override")
-        assert result == str(Path("/override") / "memory.md")
+        result = ToolBuilder.resolve_wiki_store_dir({}, work_dir_override="/override")
+        assert result == str(Path("/override") / "memory" / "wiki")
 
     def test_persistence_work_dir(self) -> None:
         config: dict[str, Any] = {"persistence": {"work_dir": "/persist"}}
-        result = ToolBuilder.resolve_memory_store_dir(config)
-        assert result == str(Path("/persist") / "memory.md")
+        result = ToolBuilder.resolve_wiki_store_dir(config)
+        assert result == str(Path("/persist") / "memory" / "wiki")
 
     def test_default_fallback(self) -> None:
-        result = ToolBuilder.resolve_memory_store_dir({})
-        assert result == str(Path(".taskforce") / "memory.md")
+        result = ToolBuilder.resolve_wiki_store_dir({})
+        assert result == str(Path(".taskforce") / "memory" / "wiki")
 
     def test_explicit_store_dir_takes_precedence(self) -> None:
         config: dict[str, Any] = {
-            "memory": {"store_dir": "/explicit"},
+            "wiki": {"store_dir": "/explicit"},
             "persistence": {"work_dir": "/persist"},
         }
-        result = ToolBuilder.resolve_memory_store_dir(config, work_dir_override="/override")
+        result = ToolBuilder.resolve_wiki_store_dir(
+            config, work_dir_override="/override"
+        )
         assert result == "/explicit"
 
 

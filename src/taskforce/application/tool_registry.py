@@ -59,7 +59,7 @@ class ToolRegistry:
         self,
         llm_provider: LLMProviderProtocol | None = None,
         user_context: dict[str, Any] | None = None,
-        memory_store_dir: str | None = None,
+        wiki_store_dir: str | None = None,
         gateway: Any | None = None,
         notification_defaults: dict[str, str] | None = None,
         scheduler: Any | None = None,
@@ -73,7 +73,7 @@ class ToolRegistry:
         Args:
             llm_provider: LLM provider for tools that need it (e.g., LLMTool)
             user_context: User context for RAG tools (user_id, org_id, scope)
-            memory_store_dir: Directory for file-based memory storage
+            wiki_store_dir: Root directory for the file-based wiki store
             gateway: Communication gateway for SendNotificationTool
             notification_defaults: Default channel/recipient for notifications
                 (keys: ``default_channel``, ``default_recipient_id``).
@@ -84,7 +84,7 @@ class ToolRegistry:
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
-        self._memory_store_dir = memory_store_dir
+        self._wiki_store_dir = wiki_store_dir
         self._gateway = gateway
         self._notification_defaults = notification_defaults or {}
         self._scheduler = scheduler
@@ -420,9 +420,10 @@ class ToolRegistry:
             if tool_type == "FetchResultTool" and self._tool_result_store:
                 tool_params["tool_result_store"] = self._tool_result_store
 
-            # Special handling for MemoryTool - inject store_dir
-            if tool_type == "MemoryTool" and self._memory_store_dir:
-                tool_params.setdefault("store_dir", self._memory_store_dir)
+            # Special handling for WikiTool - inject store_dir so the tool
+            # builds its FileWikiStore against the configured root.
+            if tool_type == "WikiTool" and self._wiki_store_dir:
+                tool_params.setdefault("store_dir", self._wiki_store_dir)
 
             # Special handling for SendNotificationTool - inject gateway + defaults
             if tool_type == "SendNotificationTool":
@@ -498,7 +499,7 @@ _catalog_registry: ToolRegistry | None = None
 def get_tool_registry(
     llm_provider: LLMProviderProtocol | None = None,
     user_context: dict[str, Any] | None = None,
-    memory_store_dir: str | None = None,
+    wiki_store_dir: str | None = None,
     gateway: Any | None = None,
     scheduler: Any | None = None,
     auth_manager: Any | None = None,
@@ -516,7 +517,7 @@ def get_tool_registry(
     Args:
         llm_provider: Optional LLM provider for tool instantiation.
         user_context: Optional user context for RAG tools.
-        memory_store_dir: Optional memory store directory.
+        wiki_store_dir: Optional wiki root directory.
         gateway: Optional communication gateway for SendNotificationTool.
         scheduler: Optional scheduler for ScheduleTool and ReminderTool.
         auth_manager: Optional authentication manager for AuthTool.
@@ -527,7 +528,7 @@ def get_tool_registry(
     has_params = (
         llm_provider is not None
         or user_context is not None
-        or memory_store_dir is not None
+        or wiki_store_dir is not None
         or gateway is not None
         or scheduler is not None
         or auth_manager is not None
@@ -538,7 +539,7 @@ def get_tool_registry(
         return ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
-            memory_store_dir=memory_store_dir,
+            wiki_store_dir=wiki_store_dir,
             gateway=gateway,
             scheduler=scheduler,
             auth_manager=auth_manager,

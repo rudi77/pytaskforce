@@ -125,20 +125,18 @@ class TestSkillRegistryProtocolCompliance:
 
 
 # ---------------------------------------------------------------------------
-# MemoryStoreProtocol compliance
+# WikiStoreProtocol compliance
 # ---------------------------------------------------------------------------
 
 
-class TestMemoryStoreProtocolCompliance:
-    """Verify that FileMemoryStore satisfies MemoryStoreProtocol."""
+class TestWikiStoreProtocolCompliance:
+    """Verify that FileWikiStore satisfies WikiStoreProtocol."""
 
-    def test_file_memory_store_satisfies_protocol(self) -> None:
-        from taskforce.core.interfaces.memory_store import MemoryStoreProtocol
-        from taskforce.infrastructure.memory.file_memory_store import (
-            FileMemoryStore,
-        )
+    def test_file_wiki_store_satisfies_protocol(self) -> None:
+        from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
+        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
-        _assert_implements(FileMemoryStore, MemoryStoreProtocol)
+        _assert_implements(FileWikiStore, WikiStoreProtocol)
 
 
 # ---------------------------------------------------------------------------

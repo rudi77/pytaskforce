@@ -13,7 +13,7 @@ sub_agents:
     description: "Recherche — USt-IdNr-Validierung, Steuerrecht-Lookup, Lieferantenprüfung."
 
 tools:
-  - memory
+  - wiki
   - send_notification
   - ask_user
   - activate_skill

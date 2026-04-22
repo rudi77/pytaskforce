@@ -47,4 +47,4 @@ tools:
   - glob
   - shell
   - git
-  - memory
+  - wiki

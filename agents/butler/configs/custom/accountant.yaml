@@ -13,8 +13,8 @@ persistence:
   type: file
   work_dir: .taskforce_accounting
 
-memory:
-  store_dir: .taskforce_accounting/memory
+wiki:
+  store_dir: .taskforce_accounting/memory/wiki
 
 llm:
   default_model: main
@@ -27,16 +27,10 @@ context_policy:
   max_chars_per_item: 3000
   max_total_chars: 10000
 
-# Disable experience tracking and consolidation for sub-agent (unnecessary overhead)
-consolidation:
-  enabled: false
-  auto_capture: false
-  auto_consolidate: false
-
 tools:
   - accounting_validate
   - accounting_audit
-  - memory
+  - wiki
   - ask_user
   - file_read
   - python

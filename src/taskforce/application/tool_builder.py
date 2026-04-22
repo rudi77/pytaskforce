@@ -231,7 +231,7 @@ class ToolBuilder:
         """Legacy tool instantiation path (no resolver)."""
         tools: list[ToolProtocol] = []
         for tool_spec in tools_config:
-            resolved_spec = self.hydrate_memory_tool_spec(tool_spec, config)
+            resolved_spec = self.hydrate_wiki_tool_spec(tool_spec, config)
             tool = self.instantiate_tool(resolved_spec, llm_provider, user_context=user_context)
             if tool:
                 tools.append(tool)
@@ -629,34 +629,33 @@ class ToolBuilder:
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def hydrate_memory_tool_spec(
+    def hydrate_wiki_tool_spec(
         tool_spec: str | dict[str, Any], config: dict[str, Any]
     ) -> str | dict[str, Any]:
-        """Hydrate memory tool spec with store directory and decay flag."""
-        if tool_spec != "memory":
+        """Hydrate wiki tool spec with the resolved store directory."""
+        if tool_spec != "wiki":
             return tool_spec
-
-        store_dir = ToolBuilder.resolve_memory_store_dir(config)
-        decay_enabled = bool(config.get("memory", {}).get("decay", {}).get("enabled", False))
+        store_dir = ToolBuilder.resolve_wiki_store_dir(config)
         return {
-            "type": "MemoryTool",
-            "params": {"store_dir": store_dir, "decay_enabled": decay_enabled},
+            "type": "WikiTool",
+            "params": {"store_dir": store_dir},
         }
 
     @staticmethod
-    def resolve_memory_store_dir(
+    def resolve_wiki_store_dir(
         config: dict[str, Any], work_dir_override: str | None = None
     ) -> str:
-        """Resolve memory store path from config.
+        """Resolve the wiki root directory from config.
 
-        Returns a path to the memory file (``memory.md``).  The
-        ``FileMemoryStore`` accepts both file and directory paths.
+        Returns a path to the wiki root (``<work_dir>/memory/wiki``) where
+        markdown pages live.  Users can override by setting
+        ``wiki.store_dir`` in the profile.
         """
-        memory_config = config.get("memory", {})
-        store_dir = memory_config.get("store_dir")
+        wiki_config = config.get("wiki", {})
+        store_dir = wiki_config.get("store_dir")
         if store_dir:
             return str(store_dir)
         persistence_dir = work_dir_override or config.get("persistence", {}).get(
             "work_dir", ".taskforce"
         )
-        return str(Path(persistence_dir) / "memory.md")
+        return str(Path(persistence_dir) / "memory" / "wiki")

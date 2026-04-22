@@ -19,8 +19,8 @@ llm:
   config_path: src/taskforce/configs/llm_config.yaml
   default_model: main
 
-memory:
-  store_dir: .taskforce/memory
+wiki:
+  store_dir: .taskforce/memory/wiki
 
 logging:
   level: INFO
@@ -44,5 +44,5 @@ tools:
   - glob
   - git
   - ask_user
-  - memory
+  - wiki
   - llm

@@ -111,7 +111,7 @@ consolidation:
 tools:
   - shell
   - edit
-  - memory
+  - wiki
   - send_notification
 
   # Sub-agent tools
@@ -132,7 +132,6 @@ notifications:
   default_channel: telegram
   default_recipient_id: "5865840420"
 
-# Unified Memory Configuration
-memory:
-  type: file
-  store_dir: ".taskforce_coding/memory"
+# Wiki (long-term memory) configuration
+wiki:
+  store_dir: ".taskforce_coding/memory/wiki"

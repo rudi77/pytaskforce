@@ -63,7 +63,7 @@ def test_get_tools_catalog_success(client):
         "github",
         "powershell",
         "ask_user",
-        "memory",
+        "wiki",
     }
     assert required_tools.issubset(tool_names)
 
@@ -249,7 +249,7 @@ def test_all_native_tools_in_catalog(client):
         "github",
         "powershell",
         "ask_user",
-        "memory",
+        "wiki",
     }
 
     missing = required_tools - tool_names

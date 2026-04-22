@@ -68,12 +68,11 @@ tools:
   - shell
 
   - ask_user
-  - memory
+  - wiki
 
-# Unified Memory Configuration
-memory:
-  type: file
-  store_dir: ".taskforce_rag/memory"
+# Wiki (long-term memory) configuration
+wiki:
+  store_dir: ".taskforce_rag/memory/wiki"
 
 # Example: Azure DevOps Wiki MCP Server (commented out)
 #  - type: stdio

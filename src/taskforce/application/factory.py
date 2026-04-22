@@ -365,15 +365,15 @@ class AgentFactory:
         base_config: dict[str, Any],
         definition: AgentDefinition,
     ) -> dict[str, Any]:
-        """Build core infrastructure components (state manager, LLM, runtime, memory).
+        """Build core infrastructure components (state manager, LLM, runtime, wiki).
 
         Returns:
             Dict with keys: state_manager, llm_provider, context_policy,
-            runtime_tracker, memory_store, memory_context_config,
+            runtime_tracker, wiki_store, wiki_context_config,
             mcp_contexts (populated later).
         """
         ib = self.infra_builder
-        memory_store, memory_context_config = self._build_memory_injection(
+        wiki_store, wiki_context_config = self._build_wiki_injection(
             base_config, work_dir_override=definition.work_dir
         )
         work_dir = definition.work_dir or base_config.get("persistence", {}).get(
@@ -389,67 +389,45 @@ class AgentFactory:
                 base_config, work_dir_override=definition.work_dir
             ),
             "model_alias": base_config.get("llm", {}).get("default_model", "main"),
-            "memory_store": memory_store,
-            "memory_context_config": memory_context_config,
+            "wiki_store": wiki_store,
+            "wiki_context_config": wiki_context_config,
             "tool_result_store": self._build_tool_result_store(work_dir),
             "mcp_contexts": [],
         }
 
-    def _build_memory_injection(
+    def _build_wiki_injection(
         self,
         config: dict[str, Any],
         work_dir_override: str | None = None,
     ) -> tuple[Any, Any]:
-        """Build memory store and config for auto-injection.
+        """Build wiki store and context config for auto-injection.
 
-        Returns ``(memory_store, memory_context_config)`` — both ``None``
-        when the agent has no ``memory`` tool configured.
+        Returns ``(wiki_store, wiki_context_config)`` — both ``None`` when
+        the agent has no ``wiki`` tool configured.
         """
-        from taskforce.core.domain.lean_agent_components.memory_context_loader import (
-            MemoryContextConfig,
+        from taskforce.core.domain.lean_agent_components.wiki_context_loader import (
+            WikiContextConfig,
         )
 
-        # Only inject if the memory tool is listed in tools
         tool_names = [
             (t if isinstance(t, str) else t.get("name", "")) for t in config.get("tools", [])
         ]
-        if "memory" not in tool_names:
+        if "wiki" not in tool_names:
             return None, None
 
-        store_dir = ToolBuilder.resolve_memory_store_dir(
+        store_dir = ToolBuilder.resolve_wiki_store_dir(
             config, work_dir_override=work_dir_override
         )
-        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
-        # Wire optional embedding provider for semantic search.
-        embedding_provider = None
-        embedding_cfg = config.get("memory", {}).get("embeddings", {})
-        if embedding_cfg.get("enabled", False):
-            try:
-                from taskforce.infrastructure.llm.embedding_service import (
-                    LiteLLMEmbeddingService,
-                )
-
-                embedding_provider = LiteLLMEmbeddingService(
-                    model=embedding_cfg.get("model", "text-embedding-3-small"),
-                )
-            except Exception:
-                pass  # Graceful fallback — keyword search still works.
-
-        decay_enabled = bool(
-            config.get("memory", {}).get("decay", {}).get("enabled", False)
+        wiki_store = FileWikiStore(store_dir)
+        injection_cfg = config.get("wiki", {}).get("context_injection")
+        wiki_context_config = (
+            WikiContextConfig.from_dict(injection_cfg)
+            if injection_cfg
+            else WikiContextConfig()
         )
-        memory_store = FileMemoryStore(
-            store_dir,
-            embedding_provider=embedding_provider,
-            decay_enabled=decay_enabled,
-        )
-
-        injection_cfg = config.get("memory", {}).get("context_injection")
-        memory_context_config = (
-            MemoryContextConfig.from_dict(injection_cfg) if injection_cfg else MemoryContextConfig()
-        )
-        return memory_store, memory_context_config
+        return wiki_store, wiki_context_config
 
     @staticmethod
     def _build_tool_result_store(work_dir: str) -> Any:
@@ -478,7 +456,7 @@ class AgentFactory:
         )
         infra["mcp_contexts"] = mcp_contexts
 
-        memory_store_dir = ToolBuilder.resolve_memory_store_dir(
+        wiki_store_dir = ToolBuilder.resolve_wiki_store_dir(
             base_config, work_dir_override=definition.work_dir
         )
 
@@ -494,7 +472,7 @@ class AgentFactory:
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
-            memory_store_dir=memory_store_dir,
+            wiki_store_dir=wiki_store_dir,
             gateway=self._gateway,
             notification_defaults=base_config.get("notifications"),
             scheduler=self._scheduler,
@@ -589,8 +567,8 @@ class AgentFactory:
             summary_threshold=summary_threshold,
             compression_trigger=compression_trigger,
             max_input_tokens=max_input_tokens,
-            memory_store=infra.get("memory_store"),
-            memory_context_config=infra.get("memory_context_config"),
+            wiki_store=infra.get("wiki_store"),
+            wiki_context_config=infra.get("wiki_context_config"),
             tool_result_store=infra.get("tool_result_store"),
         )
 
@@ -1267,7 +1245,7 @@ class AgentFactory:
             "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
         }
         plugin_work_dir = merged_config.get("persistence", {}).get("work_dir")
-        plugin_mem_store, plugin_mem_cfg = self._build_memory_injection(
+        plugin_wiki_store, plugin_wiki_cfg = self._build_wiki_injection(
             merged_config, work_dir_override=plugin_work_dir
         )
         infra = {
@@ -1278,8 +1256,8 @@ class AgentFactory:
                 merged_config,
                 work_dir_override=plugin_work_dir,
             ),
-            "memory_store": plugin_mem_store,
-            "memory_context_config": plugin_mem_cfg,
+            "wiki_store": plugin_wiki_store,
+            "wiki_context_config": plugin_wiki_cfg,
             "mcp_contexts": [],
         }
 
@@ -1339,15 +1317,13 @@ class AgentFactory:
         if not native_tool_names:
             return []
 
-        # Resolve memory_store_dir from merged config so MemoryTool uses
-        # the plugin's configured path instead of the default .taskforce/memory
-        memory_store_dir = None
+        wiki_store_dir = None
         if merged_config:
-            memory_store_dir = ToolBuilder.resolve_memory_store_dir(merged_config)
+            wiki_store_dir = ToolBuilder.resolve_wiki_store_dir(merged_config)
 
         registry = ToolRegistry(
             llm_provider=llm_provider,
-            memory_store_dir=memory_store_dir,
+            wiki_store_dir=wiki_store_dir,
             gateway=self._gateway,
             scheduler=self._scheduler,
             auth_manager=self._auth_manager,

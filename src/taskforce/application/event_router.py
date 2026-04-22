@@ -25,9 +25,8 @@ class EventRouter:
       1. Evaluate all rules via the RuleEngine
       2. For 'notify' actions -> send notification via callback
       3. For 'execute_mission' actions -> execute agent mission via callback
-      4. For 'log_memory' actions -> store in memory via callback
-      5. For 'run_dream_cycle' actions -> trigger a dream cycle via callback
-      6. If no rules match and llm_fallback is enabled -> send to agent
+      4. For 'log_memory' actions -> store in wiki log via callback
+      5. If no rules match and llm_fallback is enabled -> send to agent
 
     Callbacks are injected to avoid direct dependencies on infrastructure.
     """
@@ -38,7 +37,6 @@ class EventRouter:
         notify_callback: Callable[[str, str, str, dict[str, Any]], Awaitable[None]] | None = None,
         execute_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         memory_callback: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
-        dream_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         llm_fallback: bool = False,
         default_channel: str = "",
     ) -> None:
@@ -46,7 +44,6 @@ class EventRouter:
         self._notify_callback = notify_callback
         self._execute_callback = execute_callback
         self._memory_callback = memory_callback
-        self._dream_callback = dream_callback
         self._llm_fallback = llm_fallback
         self._default_channel = default_channel
         self._event_count = 0
@@ -106,8 +103,6 @@ class EventRouter:
                 await self._dispatch_execute(action, event)
             elif action.action_type == RuleActionType.LOG_MEMORY:
                 await self._dispatch_memory(action, event)
-            elif action.action_type == RuleActionType.RUN_DREAM_CYCLE:
-                await self._dispatch_dream(action, event)
             else:
                 logger.warning(
                     "event_router.unknown_action_type",
@@ -174,15 +169,6 @@ class EventRouter:
 
         logger.info("event_router.dispatching_memory_log", content_preview=content[:100])
         await self._memory_callback(content, action.params)
-
-    async def _dispatch_dream(self, action: RuleAction, event: AgentEvent) -> None:
-        """Dispatch a dream cycle action."""
-        if not self._dream_callback:
-            logger.warning("event_router.no_dream_callback")
-            return
-
-        logger.info("event_router.dispatching_dream_cycle")
-        await self._dream_callback(action.params)
 
     async def _dispatch_llm_fallback(self, event: AgentEvent) -> None:
         """Send unmatched event to the LLM for intelligent handling."""

@@ -419,30 +419,23 @@ class InfrastructureBuilder:
         return InMemoryMessageBus()
 
     # -------------------------------------------------------------------------
-    # Memory Stores (Memory Consolidation)
+    # Wiki Store (long-term memory)
     # -------------------------------------------------------------------------
 
-    def build_memory_store(
-        self,
-        work_dir: str = ".taskforce",
-        *,
-        decay_enabled: bool = False,
-    ) -> Any:
-        """Build a FileMemoryStore instance.
+    def build_wiki_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileWikiStore rooted at ``<work_dir>/memory/wiki``.
 
-        Centralises the infrastructure import so that API-layer code
-        does not reference infrastructure directly.
-
-        Args:
-            work_dir: Working directory for memory persistence.
-            decay_enabled: Whether time-based memory decay should apply.
+        Centralises the infrastructure import so that API-layer code does
+        not reference infrastructure directly.
 
         Returns:
-            FileMemoryStore instance implementing MemoryStoreProtocol.
+            FileWikiStore instance implementing WikiStoreProtocol.
         """
-        from taskforce.infrastructure.memory.file_memory_store import FileMemoryStore
+        from pathlib import Path
 
-        return FileMemoryStore(work_dir, decay_enabled=decay_enabled)
+        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
+
+        return FileWikiStore(Path(work_dir) / "memory" / "wiki")
 
     # -------------------------------------------------------------------------
     # Combined Infrastructure
