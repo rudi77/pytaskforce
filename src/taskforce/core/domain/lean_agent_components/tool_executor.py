@@ -16,6 +16,25 @@ from taskforce.core.tools.tool_converter import (
     tool_result_to_message,
 )
 
+MAX_LOGGED_STRING_CHARS = 4000
+
+
+def _truncate_for_log(value: Any, max_chars: int = MAX_LOGGED_STRING_CHARS) -> Any:
+    """Return a log-safe copy of *value* with long strings truncated.
+
+    Preserves dict/list structure so downstream log parsers keep field names
+    and types; only string leaves are shortened.
+    """
+    if isinstance(value, str):
+        if len(value) > max_chars:
+            return value[:max_chars] + f"...[+{len(value) - max_chars} chars]"
+        return value
+    if isinstance(value, dict):
+        return {k: _truncate_for_log(v, max_chars) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_truncate_for_log(v, max_chars) for v in value]
+    return value
+
 
 class ToolExecutor:
     """Execute tools and report standardized results."""
@@ -39,15 +58,40 @@ class ToolExecutor:
         if not tool:
             return {"success": False, "error": f"Tool not found: {tool_name}"}
 
+        logged_args = _truncate_for_log(tool_args)
         try:
-            self._logger.info("tool_execute", tool=tool_name, args_keys=list(tool_args.keys()))
+            self._logger.info("tool_execute", tool=tool_name, args=logged_args)
             result = await tool.execute(**tool_args)
             if not isinstance(result, dict):
                 result = {"success": True, "data": result}
-            self._logger.info("tool_complete", tool=tool_name, success=result.get("success"))
+            success = result.get("success")
+            logged_result = _truncate_for_log(result)
+            if success is False:
+                self._logger.warning(
+                    "tool_complete",
+                    tool=tool_name,
+                    success=False,
+                    error=result.get("error"),
+                    error_type=result.get("error_type"),
+                    details=_truncate_for_log(result.get("details")),
+                    result=logged_result,
+                )
+            else:
+                self._logger.info(
+                    "tool_complete",
+                    tool=tool_name,
+                    success=success,
+                    result=logged_result,
+                )
             return result
         except Exception as error:
-            self._logger.error("tool_exception", tool=tool_name, error=str(error))
+            self._logger.error(
+                "tool_exception",
+                tool=tool_name,
+                args=logged_args,
+                error=str(error),
+                error_type=type(error).__name__,
+            )
             return {"success": False, "error": str(error)}
 
 

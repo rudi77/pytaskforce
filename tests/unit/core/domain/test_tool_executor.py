@@ -11,8 +11,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from taskforce.core.domain.lean_agent_components.tool_executor import (
+    MAX_LOGGED_STRING_CHARS,
     ToolExecutor,
     ToolResultMessageFactory,
+    _truncate_for_log,
 )
 from taskforce.core.domain.tool_result import ToolResultHandle
 
@@ -144,8 +146,8 @@ class TestToolExecutorExecute:
         assert result["success"] is False
         assert "Something went wrong" in result["error"]
 
-    async def test_execution_logs_tool_name_and_args(self) -> None:
-        """execute logs tool name and arg keys."""
+    async def test_execution_logs_tool_name_and_full_args(self) -> None:
+        """execute logs tool name and full argument values."""
         logger = _StubLogger()
         tool = _make_mock_tool("file_write", result={"success": True})
         executor = ToolExecutor(
@@ -155,26 +157,59 @@ class TestToolExecutorExecute:
 
         await executor.execute("file_write", {"path": "/tmp/out.txt", "content": "data"})
 
-        # Should log tool_execute with tool name and args keys
         execute_logs = [log for log in logger.logs if log[1].get("event") == "tool_execute"]
         assert len(execute_logs) == 1
         assert execute_logs[0][1]["tool"] == "file_write"
-        assert set(execute_logs[0][1]["args_keys"]) == {"path", "content"}
+        # Full args (values), not just keys
+        assert execute_logs[0][1]["args"] == {
+            "path": "/tmp/out.txt",
+            "content": "data",
+        }
 
-    async def test_execution_logs_completion(self) -> None:
-        """execute logs tool_complete after successful execution."""
+    async def test_execution_logs_completion_with_result(self) -> None:
+        """execute logs tool_complete with full result dict on success."""
         logger = _StubLogger()
-        tool = _make_mock_tool("my_tool", result={"success": True})
+        tool = _make_mock_tool(
+            "my_tool", result={"success": True, "output": "done", "bytes": 42}
+        )
         executor = ToolExecutor(tools={"my_tool": tool}, logger=logger)
 
         await executor.execute("my_tool", {"input": "test"})
 
         complete_logs = [log for log in logger.logs if log[1].get("event") == "tool_complete"]
         assert len(complete_logs) == 1
-        assert complete_logs[0][1]["success"] is True
+        level, payload = complete_logs[0]
+        assert level == "info"
+        assert payload["success"] is True
+        assert payload["result"] == {"success": True, "output": "done", "bytes": 42}
 
-    async def test_exception_logs_error(self) -> None:
-        """execute logs tool_exception on failure."""
+    async def test_failed_result_logs_warning_with_error_fields(self) -> None:
+        """execute logs tool_complete at warning level with error/details on failure."""
+        logger = _StubLogger()
+        tool = _make_mock_tool(
+            "powershell",
+            result={
+                "success": False,
+                "error": "command exited with 1",
+                "error_type": "ToolError",
+                "details": {"stderr": "Get-Mailbox not recognized"},
+            },
+        )
+        executor = ToolExecutor(tools={"powershell": tool}, logger=logger)
+
+        await executor.execute("powershell", {"command": "Get-Mailbox"})
+
+        complete_logs = [log for log in logger.logs if log[1].get("event") == "tool_complete"]
+        assert len(complete_logs) == 1
+        level, payload = complete_logs[0]
+        assert level == "warning"
+        assert payload["success"] is False
+        assert payload["error"] == "command exited with 1"
+        assert payload["error_type"] == "ToolError"
+        assert payload["details"] == {"stderr": "Get-Mailbox not recognized"}
+
+    async def test_exception_logs_error_with_args_and_type(self) -> None:
+        """execute logs tool_exception with args and error_type on uncaught failure."""
         logger = _StubLogger()
         tool = _make_mock_tool(
             "failing_tool",
@@ -182,11 +217,77 @@ class TestToolExecutorExecute:
         )
         executor = ToolExecutor(tools={"failing_tool": tool}, logger=logger)
 
-        await executor.execute("failing_tool", {})
+        await executor.execute("failing_tool", {"input": "trigger"})
 
         error_logs = [log for log in logger.logs if log[1].get("event") == "tool_exception"]
         assert len(error_logs) == 1
-        assert "Boom" in error_logs[0][1]["error"]
+        level, payload = error_logs[0]
+        assert level == "error"
+        assert "Boom" in payload["error"]
+        assert payload["error_type"] == "RuntimeError"
+        assert payload["args"] == {"input": "trigger"}
+
+    async def test_long_string_values_are_truncated_in_args(self) -> None:
+        """execute truncates long string values in logged args."""
+        logger = _StubLogger()
+        tool = _make_mock_tool("my_tool", result={"success": True})
+        executor = ToolExecutor(tools={"my_tool": tool}, logger=logger)
+
+        big = "A" * (MAX_LOGGED_STRING_CHARS + 500)
+        await executor.execute("my_tool", {"blob": big})
+
+        execute_logs = [log for log in logger.logs if log[1].get("event") == "tool_execute"]
+        logged = execute_logs[0][1]["args"]["blob"]
+        assert len(logged) < len(big)
+        assert logged.startswith("A" * 100)
+        assert "chars]" in logged
+
+    async def test_long_string_values_are_truncated_in_result(self) -> None:
+        """execute truncates long string values in logged result."""
+        logger = _StubLogger()
+        big = "B" * (MAX_LOGGED_STRING_CHARS + 500)
+        tool = _make_mock_tool(
+            "reader",
+            result={"success": True, "output": big},
+        )
+        executor = ToolExecutor(tools={"reader": tool}, logger=logger)
+
+        await executor.execute("reader", {"path": "x"})
+
+        complete_logs = [log for log in logger.logs if log[1].get("event") == "tool_complete"]
+        logged = complete_logs[0][1]["result"]["output"]
+        assert len(logged) < len(big)
+        assert "chars]" in logged
+
+
+class TestTruncateForLog:
+    """Unit tests for the truncation helper."""
+
+    def test_short_string_unchanged(self) -> None:
+        assert _truncate_for_log("hello") == "hello"
+
+    def test_long_string_truncated_with_suffix(self) -> None:
+        value = "x" * 5000
+        out = _truncate_for_log(value, max_chars=100)
+        assert out.startswith("x" * 100)
+        assert out.endswith("chars]")
+        assert len(out) < len(value)
+
+    def test_nested_dict_truncation(self) -> None:
+        payload = {"outer": {"inner": "y" * 5000}}
+        out = _truncate_for_log(payload, max_chars=50)
+        assert out["outer"]["inner"].startswith("y" * 50)
+        assert "chars]" in out["outer"]["inner"]
+
+    def test_list_values_truncated(self) -> None:
+        out = _truncate_for_log(["a", "z" * 5000], max_chars=10)
+        assert out[0] == "a"
+        assert out[1].startswith("z" * 10)
+
+    def test_non_string_passthrough(self) -> None:
+        assert _truncate_for_log(42) == 42
+        assert _truncate_for_log(None) is None
+        assert _truncate_for_log(True) is True
 
     async def test_multiple_tools(self) -> None:
         """Executor can handle multiple registered tools."""

@@ -18,31 +18,28 @@ def butler_start(
     profile: str = typer.Option("butler", "--profile", "-p", help="Butler profile"),
     role: str = typer.Option("", "--role", "-r", help="Butler role (e.g. accountant)"),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in background"),
+    work_dir: str = typer.Option(
+        ".taskforce", "--work-dir", help="Working directory for state and logs"
+    ),
 ) -> None:
     """Start the butler daemon."""
-    import logging
-
-    import structlog
+    from taskforce.infrastructure.logging import configure_logging
 
     global_opts = ctx.obj or {}
     debug = global_opts.get("debug", False)
 
-    if debug:
-        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-        structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
-        )
-    else:
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-        structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        )
+    log_path = configure_logging(
+        log_dir=f"{work_dir}/logs",
+        log_name="butler.log",
+        debug=debug,
+    )
 
     role_name = role or None
     role_info = f", role: {role_name}" if role_name else ""
     console.print(
         f"[bold green]Starting butler daemon[/bold green] (profile: {profile}{role_info})"
     )
+    console.print(f"[dim]Logs: {log_path}[/dim]")
     asyncio.run(_run_butler(profile, role_name))
 
 
