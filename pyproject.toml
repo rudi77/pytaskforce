@@ -51,6 +51,7 @@ dependencies = [
     "aiohttp>=3.9",
     # Configuration
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
     # Logging
     "structlog>=24.2.0",
     # MCP integration

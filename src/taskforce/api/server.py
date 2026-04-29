@@ -3,6 +3,18 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+# Load .env before any module that reads provider credentials at import time
+# (LiteLLM, Azure SDKs, MCP server connectors). This makes
+# ``uvicorn taskforce.api.server:app`` behave the same as ``taskforce serve``.
+from taskforce.api.cli.env_loader import load_dotenv_if_present as _load_dotenv
+
+_load_dotenv()
+
+# Eagerly import the LiteLLM service so its module-level
+# ``AZURE_OPENAI_* -> AZURE_*`` env mapping runs before the first request
+# (which would otherwise hit the agent factory with half-mapped credentials).
+import taskforce.infrastructure.llm.litellm_service  # noqa: F401
+
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -14,12 +26,18 @@ from taskforce.api.routes import (
     agents,
     conversations,
     execution,
+    files,
     gateway,
     health,
+    llm,
     memory,
+    planning_strategies,
+    profiles,
+    skills,
     tools,
     workflows,
 )
+from taskforce.application.bootstrap_config_dirs import bootstrap_config_dirs
 from taskforce.application.plugin_loader import (
     get_plugin_registry,
     is_enterprise_available,
@@ -66,6 +84,11 @@ async def lifespan(app: FastAPI):
     # Initialize tracing first (before any LLM calls)
     init_tracing()
 
+    # Register agent-package config directories so /api/v1/profiles can
+    # discover butler / coding-agent / rag-agent profiles regardless of
+    # whether the CLI was used to start the server.
+    registered_dirs = bootstrap_config_dirs()
+
     # Note: Plugins are already loaded in create_app() before this runs
     # This ensures routers are registered before the app starts
     enterprise_status = "available" if is_enterprise_available() else "not installed"
@@ -73,6 +96,7 @@ async def lifespan(app: FastAPI):
         "fastapi.startup",
         message="Taskforce API starting...",
         enterprise=enterprise_status,
+        agent_config_dirs=[str(d) for d in registered_dirs],
     )
     yield
     await logger.ainfo("fastapi.shutdown", message="Taskforce API shutting down...")
@@ -145,6 +169,13 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])
     app.include_router(workflows.router, prefix="/api/v1", tags=["workflows"])
     app.include_router(acp.router, tags=["acp"])
+    app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"])
+    app.include_router(skills.router, prefix="/api/v1", tags=["skills"])
+    app.include_router(llm.router, prefix="/api/v1", tags=["llm"])
+    app.include_router(
+        planning_strategies.router, prefix="/api/v1", tags=["planning"]
+    )
+    app.include_router(files.router, prefix="/api/v1", tags=["files"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation

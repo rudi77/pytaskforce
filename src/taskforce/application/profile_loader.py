@@ -336,3 +336,164 @@ class ProfileLoader:
             merged.setdefault("llm", {}).update(plugin_config["llm"])
 
         return merged
+
+    # ------------------------------------------------------------------
+    # Discovery (used by management UI / API)
+    # ------------------------------------------------------------------
+
+    # Names that should not be surfaced as profiles even if they live in
+    # one of the searched directories.
+    _RESERVED_BASENAMES: tuple[str, ...] = (
+        "defaults",
+        "llm_config",
+        "pricing",
+    )
+
+    @staticmethod
+    def _profile_name_from_path(path: Path) -> str:
+        """Strip extension(s) from a profile filename to return its name."""
+        if path.name.endswith(".agent.md"):
+            return path.name[: -len(".agent.md")]
+        return path.stem
+
+    def _all_search_dirs(self) -> list[Path]:
+        """Return all directories searched for profile files (de-duplicated)."""
+        seen: set[Path] = set()
+        result: list[Path] = []
+        for candidate in [self._config_dir, *_extra_config_dirs]:
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            result.append(candidate)
+        return result
+
+    def list_profiles(self) -> list[dict[str, Any]]:
+        """Discover all profile files in the framework + extra config dirs.
+
+        Returns one entry per *unique* profile name. When the same name
+        appears in multiple search directories, the first hit wins (this
+        matches the resolution order of :meth:`load`).
+
+        Each entry is a plain dict with keys:
+
+        * ``name`` — profile name (e.g. ``"butler"``, ``"accountant"``)
+        * ``path`` — absolute path to the source file
+        * ``format`` — ``"agent_md"`` or ``"yaml"``
+        * ``description`` — best-effort description (``description`` field
+          or first non-empty line of the body), may be empty
+        * ``specialist`` — value of the top-level ``specialist`` field if
+          present, else ``None``
+        * ``is_custom`` — ``True`` if the file lives under a ``custom/``
+          subdirectory
+        """
+        seen: set[str] = set()
+        results: list[dict[str, Any]] = []
+
+        for search_dir in self._all_search_dirs():
+            if not search_dir.is_dir():
+                continue
+            for candidate_dir, is_custom in [
+                (search_dir, False),
+                (search_dir / "custom", True),
+                (search_dir / "roles", False),
+            ]:
+                if not candidate_dir.is_dir():
+                    continue
+                for entry in sorted(candidate_dir.iterdir()):
+                    if not entry.is_file():
+                        continue
+                    if not (entry.name.endswith(".agent.md") or entry.suffix == ".yaml"):
+                        continue
+                    name = self._profile_name_from_path(entry)
+                    if name in self._RESERVED_BASENAMES:
+                        continue
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    summary = self._summarize_profile(entry)
+                    summary["name"] = name
+                    summary["path"] = str(entry)
+                    summary["is_custom"] = is_custom
+                    results.append(summary)
+
+        results.sort(key=lambda item: item["name"])
+        return results
+
+    @staticmethod
+    def _summarize_profile(path: Path) -> dict[str, Any]:
+        """Extract lightweight summary fields without full schema validation."""
+        result: dict[str, Any] = {
+            "format": "agent_md" if path.name.endswith(".agent.md") else "yaml",
+            "description": "",
+            "specialist": None,
+            "name_label": None,
+        }
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return result
+
+        if path.name.endswith(".agent.md"):
+            frontmatter, body = _split_agent_md_frontmatter(text)
+            data: dict[str, Any] = {}
+            if frontmatter:
+                try:
+                    parsed = yaml.safe_load(frontmatter) or {}
+                    if isinstance(parsed, dict):
+                        data = parsed
+                except yaml.YAMLError:
+                    data = {}
+            result["description"] = str(data.get("description") or "").strip()
+            result["specialist"] = data.get("specialist")
+            result["name_label"] = data.get("name")
+            if not result["description"] and body:
+                first_line = next(
+                    (line.strip() for line in body.splitlines() if line.strip()),
+                    "",
+                )
+                result["description"] = first_line[:200]
+        else:
+            try:
+                parsed = yaml.safe_load(text) or {}
+            except yaml.YAMLError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                result["description"] = str(parsed.get("description") or "").strip()
+                result["specialist"] = parsed.get("specialist")
+                result["name_label"] = parsed.get("name")
+        return result
+
+    def load_with_raw(self, profile: str) -> tuple[dict[str, Any], str, Path]:
+        """Load a profile and return ``(parsed_config, raw_text, path)``.
+
+        Useful for management UIs that want both the normalised
+        configuration and the original on-disk YAML/markdown text.
+
+        Raises:
+            FileNotFoundError: if the profile cannot be located.
+        """
+        profile_path = self._find_profile_path(profile)
+        if profile_path is None:
+            searched = [str(d) for d in self._all_search_dirs()]
+            raise FileNotFoundError(
+                f"Profile '{profile}' not found. Searched: {', '.join(searched)}"
+            )
+        raw_text = profile_path.read_text(encoding="utf-8")
+        config = self.load(profile)
+        return config, raw_text, profile_path
+
+
+def _split_agent_md_frontmatter(text: str) -> tuple[str, str]:
+    """Split a `.agent.md` file into (frontmatter_yaml, body).
+
+    Returns ``("", text)`` if no frontmatter delimiter is present.
+    """
+    stripped = text.lstrip()
+    if not stripped.startswith("---"):
+        return "", text
+    # Use the original (non-stripped) text to preserve body indentation.
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return "", text
+    return parts[1].strip("\n"), parts[2].lstrip("\n")
