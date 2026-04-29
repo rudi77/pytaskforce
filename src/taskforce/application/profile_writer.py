@@ -229,21 +229,24 @@ class ProfileWriter:
 
 
 def _merge_preserve(target: Any, source: dict[str, Any]) -> None:
-    """Update ``target`` in-place with values from ``source``.
+    """Patch ``target`` in-place with values from ``source``.
 
-    Keys not present in ``source`` are removed so the on-disk file stays
-    in sync with the editor. Nested dicts are merged recursively to keep
-    comments attached to surviving keys.
+    Top-level keys absent from ``source`` are **kept** so editor forms can
+    submit a partial patch without nuking butler-specific fields they don't
+    know about (``event_sources``, ``schedule_jobs``, ``trigger_rules``,
+    ``learning``, ``notifications``, ``roles``, etc.). Nested dicts merge
+    recursively so comments stay attached to surviving keys; lists and
+    scalars in ``source`` replace whatever was at ``target[key]``.
+
+    To explicitly delete a key, send ``None``.
     """
     if not isinstance(target, dict):
         return
 
-    target_keys = list(target.keys())
-    for key in target_keys:
-        if key not in source:
-            del target[key]
-
     for key, value in source.items():
+        if value is None and key in target:
+            del target[key]
+            continue
         if (
             key in target
             and isinstance(target[key], dict)

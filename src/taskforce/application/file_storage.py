@@ -93,8 +93,7 @@ class FileStorage:
         max_bytes: int | None = None,
     ) -> None:
         self._root = (root or _default_root()).resolve()
-        self._db_path = self._root.with_suffix(".db") if self._root.suffix else self._root.parent / "uploads.db"
-        # Use {root}/index.db so reset_root_for_tests works cleanly.
+        # ``{root}/index.db`` keeps reset_root_for_tests cleanly scoped.
         self._db_path = self._root / "index.db"
         self._max_bytes = max_bytes if max_bytes is not None else _max_upload_bytes()
         self._root.mkdir(parents=True, exist_ok=True)
@@ -116,6 +115,11 @@ class FileStorage:
 
     def _init_db(self) -> None:
         with self._connect() as conn:
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.DatabaseError:  # pragma: no cover — defensive
+                pass
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS files (
@@ -134,6 +138,10 @@ class FileStorage:
 
     def _blob_path(self, file_id: str) -> Path:
         return self._shard_dir(file_id) / file_id
+
+    def blob_path(self, file_id: str) -> Path:
+        """Return the on-disk path for a blob (public accessor)."""
+        return self._blob_path(file_id)
 
     @property
     def max_bytes(self) -> int:

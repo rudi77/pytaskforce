@@ -1,8 +1,16 @@
+import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+
+# On Windows, asyncio.create_subprocess_exec() requires ProactorEventLoop;
+# uvicorn defaults to SelectorEventLoop, which raises NotImplementedError
+# when Playwright (browser tool) or other tools spawn subprocesses.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # Load .env before any module that reads provider credentials at import time
 # (LiteLLM, Azure SDKs, MCP server connectors). This makes

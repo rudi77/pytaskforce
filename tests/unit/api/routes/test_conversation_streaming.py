@@ -147,3 +147,45 @@ def test_streaming_rejects_unknown_attachment(client: TestClient) -> None:
     )
     assert response.status_code == 400
     assert response.json()["code"] == "attachment_not_found"
+
+
+class _SlowExecutor:
+    """Executor that idles long enough to trigger the SSE keepalive."""
+
+    def execute_mission_streaming(self, **_kwargs) -> AsyncIterator[_Update]:
+        async def _stream() -> AsyncIterator[_Update]:
+            import asyncio as _asyncio
+
+            yield _Update(event_type=EventType.STARTED.value, message="started")
+            # Idle for longer than the ping interval so the consumer must
+            # emit at least one ``: ping`` SSE comment.
+            await _asyncio.sleep(0.3)
+            yield _Update(
+                event_type=EventType.FINAL_ANSWER.value,
+                details={"content": "done"},
+            )
+            yield _Update(event_type=EventType.COMPLETE.value, message="done")
+
+        return _stream()
+
+
+def test_streaming_emits_keepalive_ping(
+    monkeypatch: pytest.MonkeyPatch,
+    storage_root: Path,
+    conv_manager: _RecordingConversationManager,
+) -> None:
+    """When the executor stalls, the SSE response must include ``: ping``."""
+    monkeypatch.setenv("TASKFORCE_SSE_PING_INTERVAL", "0.1")
+    app = create_app()
+    app.dependency_overrides[get_conversation_manager] = lambda: conv_manager
+    app.dependency_overrides[get_executor] = lambda: _SlowExecutor()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/conversations/conv-keepalive/messages/stream",
+        json={"message": "hi"},
+    )
+    assert response.status_code == 200
+    assert ": ping" in response.text
+    # The real events still get through.
+    assert "event: assistant_persisted" in response.text

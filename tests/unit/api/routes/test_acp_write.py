@@ -131,3 +131,111 @@ def test_test_peer_unknown_returns_404(client: TestClient) -> None:
     response = client.post("/api/v1/acp/peers/missing/test")
     assert response.status_code == 404
     assert response.json()["code"] == "peer_not_found"
+
+
+@pytest.mark.asyncio
+async def test_ping_peer_treats_401_as_failure_for_bearer_auth(
+    acp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bearer-auth peer that responds 401 must surface as ``ok=False``.
+
+    Regression test for the auth-bypass-as-success bug found in code review.
+    """
+    from taskforce.application.acp_service import ping_peer, upsert_persisted_peer
+    from taskforce.core.domain.acp import AcpAuth, AcpAuthType, AcpPeer
+
+    monkeypatch.setenv("REMOTE_BUTLER_TOKEN", "bogus")
+    upsert_persisted_peer(
+        AcpPeer(
+            name="remote-butler",
+            base_url="http://remote.local:8800",
+            agent="butler",
+            description="x",
+            auth=AcpAuth(type=AcpAuthType.BEARER, token_env="REMOTE_BUTLER_TOKEN"),
+        ),
+        work_dir=str(acp_dir),
+    )
+
+    class _FakeResponse:
+        def __init__(self, status: int) -> None:
+            self.status = status
+
+        async def __aenter__(self) -> "_FakeResponse":
+            return self
+
+        async def __aexit__(self, *exc: Any) -> None:
+            return None
+
+    class _FakeSession:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "_FakeSession":
+            return self
+
+        async def __aexit__(self, *exc: Any) -> None:
+            return None
+
+        def head(self, *_args: Any, **_kwargs: Any) -> _FakeResponse:
+            return _FakeResponse(401)
+
+    import aiohttp as _aiohttp
+
+    monkeypatch.setattr(_aiohttp, "ClientSession", _FakeSession)
+
+    result = await ping_peer("remote-butler", work_dir=str(acp_dir), timeout=1.0)
+    assert result["ok"] is False
+    assert result["status_code"] == 401
+    assert "auth rejected" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_ping_peer_treats_200_as_success_for_bearer_auth(
+    acp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful HEAD on an auth peer still resolves to ``ok=True``."""
+    from taskforce.application.acp_service import ping_peer, upsert_persisted_peer
+    from taskforce.core.domain.acp import AcpAuth, AcpAuthType, AcpPeer
+
+    monkeypatch.setenv("REMOTE_BUTLER_TOKEN", "good")
+    upsert_persisted_peer(
+        AcpPeer(
+            name="remote-butler",
+            base_url="http://remote.local:8800",
+            agent="butler",
+            description="x",
+            auth=AcpAuth(type=AcpAuthType.BEARER, token_env="REMOTE_BUTLER_TOKEN"),
+        ),
+        work_dir=str(acp_dir),
+    )
+
+    class _FakeResponse:
+        def __init__(self, status: int) -> None:
+            self.status = status
+
+        async def __aenter__(self) -> "_FakeResponse":
+            return self
+
+        async def __aexit__(self, *exc: Any) -> None:
+            return None
+
+    class _FakeSession:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "_FakeSession":
+            return self
+
+        async def __aexit__(self, *exc: Any) -> None:
+            return None
+
+        def head(self, *_args: Any, **_kwargs: Any) -> _FakeResponse:
+            return _FakeResponse(200)
+
+    import aiohttp as _aiohttp
+
+    monkeypatch.setattr(_aiohttp, "ClientSession", _FakeSession)
+
+    result = await ping_peer("remote-butler", work_dir=str(acp_dir), timeout=1.0)
+    assert result["ok"] is True
+    assert result["status_code"] == 200

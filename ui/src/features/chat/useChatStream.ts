@@ -51,7 +51,7 @@ export function useChatStream() {
           {
             body: {
               message,
-              profile: profile ?? "butler",
+              ...(profile ? { profile } : {}),
               attachments,
             },
           },

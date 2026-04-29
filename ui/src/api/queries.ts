@@ -5,6 +5,7 @@ export interface HealthResponse {
   status: string;
   version?: string;
   checks?: Record<string, unknown>;
+  default_profile?: string | null;
 }
 
 export interface CustomAgent {

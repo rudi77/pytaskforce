@@ -289,7 +289,26 @@ async def ping_peer(
                     "latency_ms": int((time.perf_counter() - start) * 1000),
                 }
         latency = int((time.perf_counter() - start) * 1000)
-        ok = status < 500  # any HTTP response counts as reachable
+        # Reachability — any HTTP response means the host is up. But when the
+        # peer requires auth, 401/403 is *not* a success: the user thinks
+        # they are reachable when they're really seeing an auth rejection
+        # (typically because ``token_env`` points at an unset env var).
+        requires_auth = (
+            resolved.auth is not None and resolved.auth.type != AcpAuthType.NONE
+        )
+        if requires_auth and status in (401, 403):
+            return {
+                "ok": False,
+                "status_code": status,
+                "latency_ms": latency,
+                "agent": resolved.agent,
+                "base_url": resolved.base_url,
+                "error": (
+                    f"auth rejected ({status}) — check token_env / token "
+                    f"for peer '{name}'"
+                ),
+            }
+        ok = status < 500
         return {
             "ok": ok,
             "status_code": status,

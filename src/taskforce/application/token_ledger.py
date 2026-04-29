@@ -129,6 +129,14 @@ class TokenLedger:
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
+            # WAL keeps reads (analytics aggregations) from blocking the
+            # writer (LiteLLM callback on the LLM hot path) under load.
+            # synchronous=NORMAL is safe with WAL and avoids fsync per commit.
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.DatabaseError:  # pragma: no cover — defensive
+                pass
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS llm_calls (

@@ -24,12 +24,34 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     checks: dict[str, str] | None = None
+    default_profile: str | None = None
+
+
+def _detect_default_profile() -> str:
+    """Mirror the unified CLI's default-profile detection for the UI.
+
+    Returns ``"butler"`` when the butler agent package is importable,
+    otherwise ``"default"``. Imported lazily so the framework still boots
+    cleanly when no agent packages are installed.
+    """
+    try:
+        import importlib.util as _ilu
+
+        if _ilu.find_spec("taskforce_butler") is not None:
+            return "butler"
+    except Exception:  # pragma: no cover — defensive
+        pass
+    return "default"
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Liveness probe - is the service running?"""
-    return HealthResponse(status="healthy", version=_get_version())
+    return HealthResponse(
+        status="healthy",
+        version=_get_version(),
+        default_profile=_detect_default_profile(),
+    )
 
 
 @router.get("/health/ready", response_model=HealthResponse)

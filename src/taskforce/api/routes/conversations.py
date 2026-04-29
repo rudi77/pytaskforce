@@ -37,6 +37,30 @@ _chat_logger = structlog.get_logger("taskforce.api.routes.conversations")
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
+def _default_profile() -> str:
+    """Resolve the chat default profile (mirrors the unified CLI behaviour)."""
+    try:
+        import importlib.util as _ilu
+
+        if _ilu.find_spec("taskforce_butler") is not None:
+            return "butler"
+    except Exception:  # pragma: no cover — defensive
+        pass
+    return "default"
+
+
+def _ping_interval_seconds() -> float:
+    """How long the SSE consumer waits before emitting a keepalive ping."""
+    import os as _os
+
+    raw = _os.environ.get("TASKFORCE_SSE_PING_INTERVAL", "10.0")
+    try:
+        value = float(raw)
+    except ValueError:
+        return 10.0
+    return max(0.1, value)
+
+
 # ------------------------------------------------------------------
 # Schemas
 # ------------------------------------------------------------------
@@ -81,7 +105,14 @@ class AppendMessageRequest(BaseModel):
     """Message to send to the agent within a conversation."""
 
     message: str = Field(..., max_length=32_000, description="User message content.")
-    profile: str = Field(default="butler", description="Agent profile.")
+    profile: str | None = Field(
+        default=None,
+        description=(
+            "Agent profile. When omitted, the server falls back to the same "
+            "profile the unified CLI would pick (``butler`` if installed, "
+            "otherwise ``default``)."
+        ),
+    )
     attachments: list[AttachmentRef] = Field(
         default_factory=list,
         description="File ids of previously uploaded attachments (POST /api/v1/files).",
@@ -145,7 +176,7 @@ def _build_attachments_prefix(attachments: list[dict[str, Any]]) -> str:
     storage = get_file_storage()
     lines = ["[Attachments]"]
     for att in attachments:
-        path = storage._blob_path(att["file_id"])  # type: ignore[attr-defined]
+        path = storage.blob_path(att["file_id"])
         lines.append(f"- {att['name']} ({att['mime']}, {att['size']} bytes) — {path}")
     return "\n".join(lines) + "\n\n"
 
@@ -286,11 +317,12 @@ async def append_message(
     history = await manager.get_messages(conversation_id)
 
     mission = _build_attachments_prefix(attachments) + request.message
+    resolved_profile = request.profile or _default_profile()
 
     # Execute agent with conversation history.
     result = await executor.execute_mission(
         mission=mission,
-        profile=request.profile,
+        profile=resolved_profile,
         conversation_history=history,
     )
 
@@ -354,16 +386,50 @@ async def stream_message(
         accumulated_chunks: list[str] = []
         final_text: str | None = None
         completed = False
+        # Sentinel used to signal end-of-stream from the producer task.
+        sentinel = object()
+        # Bounded queue keeps the producer in lock-step with the consumer
+        # so a slow client cannot starve the executor of its only feedback
+        # path, but doesn't unbounded-buffer either.
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+
+        async def _produce() -> None:
+            try:
+                async for update in executor.execute_mission_streaming(
+                    mission=mission,
+                    profile=request.profile or _default_profile(),
+                    conversation_history=history,
+                ):
+                    await queue.put(update)
+            except Exception as exc:  # noqa: BLE001 — forwarded to consumer
+                await queue.put(exc)
+            finally:
+                await queue.put(sentinel)
+
+        producer = asyncio.create_task(_produce())
         try:
             yield _sse(
                 "message_persisted",
                 {"conversation_id": conversation_id},
             )
-            async for update in executor.execute_mission_streaming(
-                mission=mission,
-                profile=request.profile,
-                conversation_history=history,
-            ):
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=_ping_interval_seconds()
+                    )
+                except asyncio.TimeoutError:
+                    # Reverse-proxy keepalive — yield an SSE comment so the
+                    # connection stays warm across nginx / Cloudflare /
+                    # Caddy idle thresholds (typically 30–60s).
+                    yield b": ping\n\n"
+                    continue
+
+                if item is sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+
+                update = item
                 if update.event_type == EventType.LLM_TOKEN.value:
                     chunk = (update.details or {}).get("token") or update.message or ""
                     if isinstance(chunk, str) and chunk:
@@ -377,6 +443,7 @@ async def stream_message(
                 payload = json.dumps(asdict(update), default=str)
                 yield f"data: {payload}\n\n".encode("utf-8")
         except asyncio.CancelledError:
+            producer.cancel()
             raise
         except Exception as exc:  # noqa: BLE001 — surfaced to client
             _chat_logger.exception("conversations.stream_failed")
@@ -385,6 +452,12 @@ async def stream_message(
                 {"error": str(exc), "error_type": type(exc).__name__},
             )
         finally:
+            if not producer.done():
+                producer.cancel()
+                try:
+                    await producer
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
             assistant_text = (final_text if final_text is not None else "".join(accumulated_chunks)).strip()
             if not completed and assistant_text:
                 assistant_text += "\n\n[partial — interrupted]"

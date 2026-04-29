@@ -13,7 +13,7 @@ import asyncio
 import json
 from typing import AsyncIterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from taskforce.api.schemas.analytics_schemas import ActiveRunResponse, ActiveRunsResponse
@@ -44,11 +44,15 @@ def list_active_runs() -> ActiveRunsResponse:
     summary="Stream active-runs snapshots via SSE",
     responses={200: {"content": {"text/event-stream": {}}}},
 )
-def stream_active_runs() -> StreamingResponse:
+def stream_active_runs(request: Request) -> StreamingResponse:
     async def _gen() -> AsyncIterator[bytes]:
         registry = get_run_registry()
         last_payload: str | None = None
         while True:
+            # Stop the loop the moment the client disconnects so the server
+            # doesn't hold a busy task slot until the next poll tick.
+            if await request.is_disconnected():
+                break
             snapshot = registry.snapshot_dicts()
             payload = json.dumps({"runs": snapshot})
             if payload != last_payload:

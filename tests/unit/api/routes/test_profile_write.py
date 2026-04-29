@@ -153,3 +153,81 @@ def test_create_profile_invalid_payload(client: TestClient) -> None:
     )
     assert response.status_code == 400
     assert response.json()["code"] == "profile_invalid"
+
+
+def test_update_preserves_unknown_top_level_keys(
+    client: TestClient, user_profiles_dir: Path
+) -> None:
+    """A partial form patch must not nuke butler-specific top-level keys.
+
+    Regression test for the data-loss bug found in code review: the editor
+    only knows about a handful of fields, so anything else (event_sources,
+    schedule_jobs, trigger_rules, learning, …) was silently deleted.
+    """
+    target = user_profiles_dir / "butler-shaped.yaml"
+    target.write_text(
+        "description: butler-shaped\n"
+        "specialist: butler\n"
+        "agent:\n"
+        "  planning_strategy: native_react\n"
+        "  max_steps: 30\n"
+        "tools:\n"
+        "  - python\n"
+        "event_sources:\n"
+        "  - type: calendar\n"
+        "    poll_interval_seconds: 60\n"
+        "schedule_jobs:\n"
+        "  - id: morning_brief\n"
+        "    cron: '0 8 * * *'\n"
+        "trigger_rules:\n"
+        "  - name: calendar_reminder\n"
+        "    source: calendar\n"
+        "learning:\n"
+        "  enabled: true\n",
+        encoding="utf-8",
+    )
+
+    response = client.put(
+        "/api/v1/profiles/butler-shaped",
+        json={
+            "config": {
+                "description": "butler-shaped",
+                "specialist": "butler",
+                "agent": {"planning_strategy": "spar", "max_steps": 25},
+                "tools": ["python", "file_read"],
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    text = target.read_text(encoding="utf-8")
+    assert "event_sources" in text
+    assert "schedule_jobs" in text
+    assert "trigger_rules" in text
+    assert "learning" in text
+    assert "planning_strategy: spar" in text
+    assert "file_read" in text
+
+
+def test_update_explicit_null_deletes_key(
+    client: TestClient, user_profiles_dir: Path
+) -> None:
+    """Sending a JSON ``null`` value still removes the key — explicit opt-in."""
+    target = user_profiles_dir / "explicit-delete.yaml"
+    target.write_text(
+        "description: dropme\n"
+        "specialist: demo\n"
+        "tools: [python]\n"
+        "extra_field: keepme\n",
+        encoding="utf-8",
+    )
+
+    response = client.put(
+        "/api/v1/profiles/explicit-delete",
+        json={"config": {"extra_field": None, "description": "kept"}},
+    )
+    assert response.status_code == 200, response.text
+
+    text = target.read_text(encoding="utf-8")
+    assert "extra_field" not in text
+    assert "description: kept" in text

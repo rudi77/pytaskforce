@@ -50,7 +50,11 @@ class RunRegistry:
     def __init__(self) -> None:
         self._runs: dict[str, ActiveRun] = {}
         self._lock = threading.Lock()
-        self._listeners: set[Any] = set()
+        # Listeners are stored as a list (not a set) so non-hashable
+        # closures and lambdas can subscribe safely. The current SSE
+        # endpoint polls instead of subscribing, so this stays empty in
+        # practice — but the API is published, so make it correct.
+        self._listeners: list[Any] = []
 
     # ------------------------------------------------------------------
     # Mutators
@@ -134,10 +138,14 @@ class RunRegistry:
     # ------------------------------------------------------------------
 
     def subscribe(self, listener: Any) -> None:
-        self._listeners.add(listener)
+        if listener not in self._listeners:
+            self._listeners.append(listener)
 
     def unsubscribe(self, listener: Any) -> None:
-        self._listeners.discard(listener)
+        try:
+            self._listeners.remove(listener)
+        except ValueError:
+            pass
 
     def _notify(self) -> None:
         for listener in list(self._listeners):
