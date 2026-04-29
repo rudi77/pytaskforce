@@ -146,6 +146,12 @@ dev = [
     "mypy>=1.7",
     "types-PyYAML>=6.0",
     "pyinstaller>=6.0.0",
+    # Bundled agent packages — installed editable from the workspace so
+    # ``uv sync`` makes butler / coding_agent / rag_agent discoverable.
+    "taskforce-butler",
+    "taskforce-coding-agent",
+    "taskforce-rag-agent",
+    "taskforce-cli",
 ]
 
 [build-system]
@@ -154,6 +160,27 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskforce", "cli/src/taskforce_cli"]
+
+# uv workspace — keeps the framework + unified CLI + all bundled agent packages in
+# sync so a single ``uv sync`` installs everything editable. Without this the
+# agent packages live in agents/ but are absent from the venv, and
+# ProfileLoader sees no butler / coding_agent / rag_agent profiles.
+[tool.uv.workspace]
+members = [
+    "cli",
+    "agents/butler",
+    "agents/coding-agent",
+    "agents/rag-agent",
+]
+
+# Each agent package depends on the published "taskforce" name. Route those
+# back to the in-tree workspace member so editable installs use this checkout.
+[tool.uv.sources]
+taskforce = { workspace = true }
+taskforce-cli = { workspace = true }
+taskforce-butler = { workspace = true }
+taskforce-coding-agent = { workspace = true }
+taskforce-rag-agent = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

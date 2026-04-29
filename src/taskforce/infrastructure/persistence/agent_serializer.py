@@ -115,6 +115,44 @@ def parse_profile_agent_yaml(
         return None
 
 
+def parse_profile_agent_md(profile_path: Path) -> ProfileAgentDefinition | None:
+    """Parse a ``*.agent.md`` profile (YAML frontmatter + markdown body)."""
+    try:
+        text = profile_path.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return None
+        end = text.find("\n---", 3)
+        if end == -1:
+            return None
+        frontmatter_block = text[3:end].strip()
+        data = yaml.safe_load(frontmatter_block) or {}
+        if not isinstance(data, dict):
+            return None
+
+        # ``{name}.agent.md`` → profile name = file stem without the ``.agent`` suffix.
+        stem = profile_path.stem
+        if stem.endswith(".agent"):
+            stem = stem[: -len(".agent")]
+
+        technical = data.get("technical") or {}
+        return ProfileAgentDefinition(
+            profile=stem,
+            specialist=data.get("specialist") or technical.get("specialist"),
+            tools=data.get("tools", technical.get("tools", [])),
+            mcp_servers=data.get("mcp_servers", technical.get("mcp_servers", [])),
+            llm=data.get("llm", technical.get("llm", {})),
+            persistence=data.get("persistence", technical.get("persistence", {})),
+        )
+    except Exception as e:
+        logger.warning(
+            "profile.agent_md.corrupt",
+            profile=profile_path.name,
+            path=str(profile_path),
+            error=str(e),
+        )
+        return None
+
+
 def build_agent_yaml(
     *,
     agent_id: str,

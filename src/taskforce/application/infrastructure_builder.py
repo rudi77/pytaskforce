@@ -145,8 +145,12 @@ class InfrastructureBuilder:
         does not need to reference infrastructure directly.
 
         Returns:
-            FileAgentRegistry wired with the tool registry and base path.
+            FileAgentRegistry wired with the tool registry, base path,
+            and the runtime list of extra agent-package config dirs
+            (so butler / coding_agent / rag_agent profiles surface in
+            ``GET /api/v1/agents``).
         """
+        from taskforce.application.profile_loader import get_extra_config_dirs
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
         )
@@ -154,6 +158,7 @@ class InfrastructureBuilder:
         return FileAgentRegistry(
             tool_mapper=get_tool_registry(),
             base_path=get_base_path(),
+            extra_dirs_provider=get_extra_config_dirs,
         )
 
     # -------------------------------------------------------------------------

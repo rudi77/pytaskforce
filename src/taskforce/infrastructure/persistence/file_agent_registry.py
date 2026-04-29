@@ -34,6 +34,7 @@ from taskforce.core.utils.paths import get_base_path
 from taskforce.infrastructure.persistence.agent_serializer import (
     build_agent_yaml,
     parse_custom_agent_yaml,
+    parse_profile_agent_md,
     parse_profile_agent_yaml,
 )
 from taskforce.infrastructure.persistence.plugin_scanner import (
@@ -80,6 +81,7 @@ class FileAgentRegistry:
         configs_dir: str | None = None,
         tool_mapper: ToolMapperProtocol | None = None,
         base_path: Path | None = None,
+        extra_dirs_provider: "object | None" = None,
     ):
         """
         Initialize the agent registry.
@@ -92,6 +94,11 @@ class FileAgentRegistry:
                         If not provided, tool mapping features are disabled.
             base_path: Optional base path for plugin discovery.
                       If not provided, uses configs_dir parent as base.
+            extra_dirs_provider: Optional zero-arg callable returning a list of
+                additional config directories (typically agent-package dirs
+                registered via ``bootstrap_config_dirs``). When set,
+                ``list_agents`` and ``get_agent`` also discover ``*.yaml`` and
+                ``*.agent.md`` profiles in those directories.
         """
         if configs_dir is None:
             detected_base = get_base_path()
@@ -111,7 +118,19 @@ class FileAgentRegistry:
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self._tool_mapper = tool_mapper
         self.base_path = base_path or self.configs_dir.parent
+        self._extra_dirs_provider = extra_dirs_provider
         self.logger = logger.bind(component="file_agent_registry")
+
+    def _extra_dirs(self) -> list[Path]:
+        """Return additional profile dirs (agent packages) to scan."""
+        provider = self._extra_dirs_provider
+        if provider is None:
+            return []
+        try:
+            dirs = provider()
+        except Exception:  # pragma: no cover — defensive
+            return []
+        return [Path(d).resolve() for d in dirs or []]
 
     def _get_agent_path(self, agent_id: str) -> Path:
         """Get the file path for an agent definition."""
@@ -222,6 +241,19 @@ class FileAgentRegistry:
         if profile_path.exists() and agent_id != "llm_config":
             return parse_profile_agent_yaml(profile_path)
 
+        # Try profile agents in extra dirs (agent packages)
+        for extra in self._extra_dirs():
+            yaml_candidate = extra / f"{agent_id}.yaml"
+            if yaml_candidate.exists() and agent_id != "llm_config":
+                profile = parse_profile_agent_yaml(yaml_candidate)
+                if profile:
+                    return profile
+            md_candidate = extra / f"{agent_id}.agent.md"
+            if md_candidate.exists():
+                profile = parse_profile_agent_md(md_candidate)
+                if profile:
+                    return profile
+
         # Try plugin agents
         plugin = find_plugin_agent(agent_id, self.base_path)
         if plugin:
@@ -256,10 +288,15 @@ class FileAgentRegistry:
                     agents.append(agent)
 
         # Load profile agents
+        seen_profiles: set[str] = set()
         if self.configs_dir.exists():
             for yaml_file in self.configs_dir.glob("*.yaml"):
-                # Skip llm_config.yaml and custom directory
-                if yaml_file.name == "llm_config.yaml":
+                # Skip llm_config.yaml, pricing.yaml, defaults.yaml and custom dir
+                if yaml_file.name in {
+                    "llm_config.yaml",
+                    "pricing.yaml",
+                    "defaults.yaml",
+                }:
                     continue
                 if yaml_file.parent.name == "custom":
                     continue
@@ -267,6 +304,28 @@ class FileAgentRegistry:
                 profile = parse_profile_agent_yaml(yaml_file)
                 if profile:
                     agents.append(profile)
+                    seen_profiles.add(profile.profile)
+
+        # Load profile agents from extra dirs (agent packages)
+        for extra in self._extra_dirs():
+            if not extra.exists():
+                continue
+            for yaml_file in extra.glob("*.yaml"):
+                if yaml_file.name in {
+                    "llm_config.yaml",
+                    "pricing.yaml",
+                    "defaults.yaml",
+                }:
+                    continue
+                profile = parse_profile_agent_yaml(yaml_file)
+                if profile and profile.profile not in seen_profiles:
+                    agents.append(profile)
+                    seen_profiles.add(profile.profile)
+            for md_file in extra.glob("*.agent.md"):
+                profile = parse_profile_agent_md(md_file)
+                if profile and profile.profile not in seen_profiles:
+                    agents.append(profile)
+                    seen_profiles.add(profile.profile)
 
         # Load plugin agents
         plugin_agents = discover_plugin_agents(self.base_path)

@@ -617,6 +617,8 @@ class TestSimpleBuilders:
         assert store._root == Path("/data") / "memory" / "wiki"
 
     def test_build_agent_registry(self, builder: InfrastructureBuilder) -> None:
+        from taskforce.application.profile_loader import get_extra_config_dirs
+
         with (
             patch(
                 "taskforce.infrastructure.persistence.file_agent_registry.FileAgentRegistry"
@@ -629,7 +631,9 @@ class TestSimpleBuilders:
             mock_bp.return_value = Path("/base")
             result = builder.build_agent_registry()
             mock_cls.assert_called_once_with(
-                tool_mapper=mock_get_tr.return_value, base_path=Path("/base")
+                tool_mapper=mock_get_tr.return_value,
+                base_path=Path("/base"),
+                extra_dirs_provider=get_extra_config_dirs,
             )
             assert result is mock_cls.return_value
 
