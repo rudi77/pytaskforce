@@ -345,6 +345,191 @@ export function useArchiveConversation() {
   });
 }
 
+export interface TokenUsageBucket {
+  bucket: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  call_count: number;
+}
+
+export interface TokenUsageResponse {
+  granularity: string;
+  pricing_as_of: string | null;
+  buckets: TokenUsageBucket[];
+}
+
+export interface AgentUsageEntry {
+  agent: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface ModelUsageEntry {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface CostSummaryResponse {
+  today_usd: number;
+  week_usd: number;
+  month_usd: number;
+  pricing_as_of: string | null;
+  by_agent: AgentUsageEntry[];
+  by_model: ModelUsageEntry[];
+}
+
+export interface ActiveRun {
+  session_id: string;
+  started_at: string;
+  profile: string | null;
+  agent_id: string | null;
+  conversation_id: string | null;
+  mission_preview: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  last_event: string;
+  last_event_at: string;
+}
+
+export interface ActiveRunsResponse {
+  runs: ActiveRun[];
+}
+
+export function useTokenUsage(params?: {
+  granularity?: "day" | "hour" | "minute";
+  from?: string;
+  to?: string;
+  agent?: string;
+}) {
+  const { granularity = "day", from, to, agent } = params ?? {};
+  return useQuery<TokenUsageResponse>({
+    queryKey: ["analytics", "token-usage", granularity, from ?? null, to ?? null, agent ?? null] as const,
+    queryFn: () =>
+      apiFetch<TokenUsageResponse>("/api/v1/analytics/token-usage", {
+        query: { granularity, from, to, agent },
+      }),
+    staleTime: 30_000,
+  });
+}
+
+export function useCostSummary() {
+  return useQuery<CostSummaryResponse>({
+    queryKey: ["analytics", "cost-summary"] as const,
+    queryFn: () => apiFetch<CostSummaryResponse>("/api/v1/analytics/cost-summary"),
+    staleTime: 30_000,
+  });
+}
+
+export function useActiveRuns(intervalMs = 4_000) {
+  return useQuery<ActiveRunsResponse>({
+    queryKey: ["runs", "active"] as const,
+    queryFn: () => apiFetch<ActiveRunsResponse>("/api/v1/runs/active"),
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useCancelRun() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (sessionId) =>
+      apiFetch<void>(`/api/v1/execute/${encodeURIComponent(sessionId)}/cancel`, {
+        method: "POST",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["runs", "active"] }),
+  });
+}
+
+export interface AcpPeer {
+  name: string;
+  agent: string;
+  base_url: string;
+  description: string;
+  auth_type: "none" | "bearer" | "mtls" | string;
+  token_env: string | null;
+}
+
+export interface AcpPeerInput {
+  name: string;
+  base_url: string;
+  agent: string;
+  description?: string;
+  auth: {
+    type: "none" | "bearer" | "mtls";
+    token_env?: string | null;
+    token?: string | null;
+  };
+}
+
+export interface AcpTestResult {
+  ok: boolean;
+  status_code?: number | null;
+  latency_ms: number;
+  agent?: string | null;
+  base_url?: string | null;
+  error?: string | null;
+}
+
+export function useAcpPeers() {
+  return useQuery<AcpPeer[]>({
+    queryKey: queryKeys.acpPeers,
+    queryFn: () => apiFetch<AcpPeer[]>("/api/v1/acp/peers"),
+  });
+}
+
+export function useCreateAcpPeer() {
+  const qc = useQueryClient();
+  return useMutation<AcpPeer, Error, AcpPeerInput>({
+    mutationFn: (payload) =>
+      apiFetch<AcpPeer>("/api/v1/acp/peers", {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.acpPeers }),
+  });
+}
+
+export function useUpdateAcpPeer() {
+  const qc = useQueryClient();
+  return useMutation<AcpPeer, Error, { name: string; payload: Omit<AcpPeerInput, "name"> }>({
+    mutationFn: ({ name, payload }) =>
+      apiFetch<AcpPeer>(`/api/v1/acp/peers/${encodeURIComponent(name)}`, {
+        method: "PUT",
+        body: payload,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.acpPeers }),
+  });
+}
+
+export function useDeleteAcpPeer() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (name) =>
+      apiFetch<void>(`/api/v1/acp/peers/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.acpPeers }),
+  });
+}
+
+export function useTestAcpPeer() {
+  return useMutation<AcpTestResult, Error, string>({
+    mutationFn: (name) =>
+      apiFetch<AcpTestResult>(
+        `/api/v1/acp/peers/${encodeURIComponent(name)}/test`,
+        { method: "POST" },
+      ),
+  });
+}
+
 export function useUploadFile() {
   return useMutation<FileMetadata, Error, File>({
     mutationFn: (file) => {

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { router } from "@/app/router";
 import { ThemeProvider } from "@/app/theme-provider";
+import { Toaster } from "@/components/ui/toast";
 import "@/app/globals.css";
 
 const queryClient = new QueryClient({
@@ -22,6 +23,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
+        <Toaster />
       </QueryClientProvider>
     </ThemeProvider>
   </React.StrictMode>,

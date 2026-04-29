@@ -573,11 +573,12 @@ export interface paths {
         };
         /**
          * List Peers
-         * @description List all peers registered in ``.taskforce/acp_peers.json``.
+         * @description List every peer persisted under ``acp_peers.json``.
          */
         get: operations["list_peers_api_v1_acp_peers_get"];
         put?: never;
-        post?: never;
+        /** Register a new ACP peer */
+        post: operations["create_peer_api_v1_acp_peers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -591,13 +592,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Status
-         * @description Return a snapshot of the on-disk ACP registry.
-         */
-        get: operations["status_api_v1_acp_status_get"];
+        /** Status Endpoint */
+        get: operations["status_endpoint_api_v1_acp_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/acp/peers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace an ACP peer (creates if missing) */
+        put: operations["update_peer_api_v1_acp_peers__name__put"];
+        post?: never;
+        /** Remove an ACP peer */
+        delete: operations["delete_peer_api_v1_acp_peers__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/acp/peers/{name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe an ACP peer for connectivity */
+        post: operations["test_peer_api_v1_acp_peers__name__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -782,10 +815,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/token-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aggregated token usage over time */
+        get: operations["token_usage_api_v1_analytics_token_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/cost-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Today / week / month cost roll-up */
+        get: operations["cost_summary_api_v1_analytics_cost_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/conversations/{conversation_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-conversation token usage breakdown */
+        get: operations["conversation_usage_api_v1_analytics_conversations__conversation_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List currently running executions */
+        get: operations["list_active_runs_api_v1_runs_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/active/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream active-runs snapshots via SSE */
+        get: operations["stream_active_runs_api_v1_runs_active_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcpPeerCreate
+         * @description Body for ``POST /acp/peers``.
+         */
+        AcpPeerCreate: {
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Agent */
+            agent: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Auth */
+            auth?: {
+                [key: string]: unknown;
+            };
+        };
         /** AcpPeerResponse */
         AcpPeerResponse: {
             /** Name */
@@ -804,6 +943,27 @@ export interface components {
              * @default none
              */
             auth_type: string;
+            /** Token Env */
+            token_env?: string | null;
+        };
+        /**
+         * AcpPeerUpdate
+         * @description Body for ``PUT /acp/peers/{name}`` (name comes from the URL).
+         */
+        AcpPeerUpdate: {
+            /** Base Url */
+            base_url: string;
+            /** Agent */
+            agent: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Auth */
+            auth?: {
+                [key: string]: unknown;
+            };
         };
         /** AcpStatusResponse */
         AcpStatusResponse: {
@@ -812,6 +972,74 @@ export interface components {
             /** Peers */
             peers: components["schemas"]["AcpPeerResponse"][];
         };
+        /** AcpTestResult */
+        AcpTestResult: {
+            /** Ok */
+            ok: boolean;
+            /** Status Code */
+            status_code?: number | null;
+            /**
+             * Latency Ms
+             * @default 0
+             */
+            latency_ms: number;
+            /** Agent */
+            agent?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** ActiveRunResponse */
+        ActiveRunResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Started At */
+            started_at: string;
+            /** Profile */
+            profile?: string | null;
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /**
+             * Mission Preview
+             * @default
+             */
+            mission_preview: string;
+            /**
+             * Prompt Tokens
+             * @default 0
+             */
+            prompt_tokens: number;
+            /**
+             * Completion Tokens
+             * @default 0
+             */
+            completion_tokens: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Cost Usd
+             * @default 0
+             */
+            cost_usd: number;
+            /**
+             * Last Event
+             * @default
+             */
+            last_event: string;
+            /** Last Event At */
+            last_event_at: string;
+        };
+        /** ActiveRunsResponse */
+        ActiveRunsResponse: {
+            /** Runs */
+            runs: components["schemas"]["ActiveRunResponse"][];
+        };
         /**
          * AgentListResponse
          * @description Response schema for listing all agents.
@@ -819,6 +1047,19 @@ export interface components {
         AgentListResponse: {
             /** Agents */
             agents: (components["schemas"]["CustomAgentResponse"] | components["schemas"]["ProfileAgentResponse"] | components["schemas"]["PluginAgentResponse"])[];
+        };
+        /** AgentUsageEntry */
+        AgentUsageEntry: {
+            /** Agent */
+            agent: string;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
         };
         /**
          * AppendMessageRequest
@@ -975,6 +1216,47 @@ export interface components {
             archived_at: string;
             /** Message Count */
             message_count: number;
+        };
+        /** ConversationUsageCall */
+        ConversationUsageCall: {
+            /** Model */
+            model: string;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Ts */
+            ts: string;
+        };
+        /** ConversationUsageResponse */
+        ConversationUsageResponse: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Total Prompt */
+            total_prompt: number;
+            /** Total Completion */
+            total_completion: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Calls */
+            calls: components["schemas"]["ConversationUsageCall"][];
+        };
+        /** CostSummaryResponse */
+        CostSummaryResponse: {
+            /** Today Usd */
+            today_usd: number;
+            /** Week Usd */
+            week_usd: number;
+            /** Month Usd */
+            month_usd: number;
+            /** Pricing As Of */
+            pricing_as_of?: string | null;
+            /** By Agent */
+            by_agent: components["schemas"]["AgentUsageEntry"][];
+            /** By Model */
+            by_model: components["schemas"]["ModelUsageEntry"][];
         };
         /**
          * CreateConversationRequest
@@ -1496,6 +1778,19 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** ModelUsageEntry */
+        ModelUsageEntry: {
+            /** Model */
+            model: string;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+        };
         /**
          * NotificationRequestSchema
          * @description Request to send a proactive push notification.
@@ -1810,6 +2105,33 @@ export interface components {
             file_path?: string | null;
             /** Allowed Tools */
             allowed_tools?: string[];
+        };
+        /** TokenUsageBucket */
+        TokenUsageBucket: {
+            /**
+             * Bucket
+             * @description ISO timestamp prefix (day/hour/minute)
+             */
+            bucket: string;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Call Count */
+            call_count: number;
+        };
+        /** TokenUsageResponse */
+        TokenUsageResponse: {
+            /** Granularity */
+            granularity: string;
+            /** Pricing As Of */
+            pricing_as_of?: string | null;
+            /** Buckets */
+            buckets: components["schemas"]["TokenUsageBucket"][];
         };
         /**
          * ToolCatalogResponse
@@ -2906,7 +3228,40 @@ export interface operations {
             };
         };
     };
-    status_api_v1_acp_status_get: {
+    create_peer_api_v1_acp_peers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpPeerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpPeerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_endpoint_api_v1_acp_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2922,6 +3277,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcpStatusResponse"];
+                };
+            };
+        };
+    };
+    update_peer_api_v1_acp_peers__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpPeerUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpPeerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_peer_api_v1_acp_peers__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_peer_api_v1_acp_peers__name__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3287,6 +3737,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_usage_api_v1_analytics_token_usage_get: {
+        parameters: {
+            query?: {
+                granularity?: string;
+                from?: string | null;
+                to?: string | null;
+                agent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenUsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cost_summary_api_v1_analytics_cost_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostSummaryResponse"];
+                };
+            };
+        };
+    };
+    conversation_usage_api_v1_analytics_conversations__conversation_id__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationUsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_active_runs_api_v1_runs_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveRunsResponse"];
+                };
+            };
+        };
+    };
+    stream_active_runs_api_v1_runs_active_stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": unknown;
                 };
             };
         };
