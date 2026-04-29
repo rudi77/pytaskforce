@@ -149,6 +149,7 @@ class TokenAnalyticsCallback(litellm.integrations.custom_logger.CustomLogger):
             step_number = metadata.get("step_number")
             phase = metadata.get("phase")
 
+            now = datetime.now(UTC)
             record = LLMCallRecord(
                 model=model,
                 prompt_tokens=usage.get("prompt_tokens", 0),
@@ -156,11 +157,39 @@ class TokenAnalyticsCallback(litellm.integrations.custom_logger.CustomLogger):
                 total_tokens=usage.get("total_tokens", 0),
                 latency_ms=latency_ms,
                 tool_call_names=tool_call_names,
-                timestamp=datetime.now(UTC),
+                timestamp=now,
                 step_number=step_number,
                 phase=phase,
             )
             self._calls.append(record)
+
+            # Persist to the SQLite ledger and update the run registry
+            # in a best-effort manner — never fail the LLM call.
+            try:
+                from taskforce.application.token_ledger import get_token_ledger
+
+                entry = get_token_ledger().record(
+                    timestamp=now,
+                    model=model,
+                    prompt_tokens=record.prompt_tokens,
+                    completion_tokens=record.completion_tokens,
+                )
+            except Exception:
+                logger.debug("token_ledger_record_failed", exc_info=True)
+                entry = None
+
+            if entry is not None and entry.session_id:
+                try:
+                    from taskforce.application.run_registry import get_run_registry
+
+                    get_run_registry().update_tokens(
+                        entry.session_id,
+                        prompt_delta=record.prompt_tokens,
+                        completion_delta=record.completion_tokens,
+                        cost_delta=entry.cost_usd,
+                    )
+                except Exception:
+                    logger.debug("run_registry_update_failed", exc_info=True)
 
         except Exception:
             # Never break the LLM call because of analytics

@@ -1,0 +1,32 @@
+# Provider pricing — USD per 1 million tokens.
+#
+# Used by application/pricing.py to estimate cost from prompt + completion
+# token counts. Update the ``as_of`` date when you refresh the table.
+#
+# When a model is not listed, the loader falls back to ``default`` and the
+# UI surfaces a "pricing approximate" banner.
+
+as_of: 2026-04-29
+
+models:
+  # Azure / OpenAI families
+  "azure/gpt-5.4-mini": { input_per_1m_usd: 0.15, output_per_1m_usd: 0.60 }
+  "azure/gpt-5.4-nano": { input_per_1m_usd: 0.05, output_per_1m_usd: 0.20 }
+  "azure/gpt-4.1": { input_per_1m_usd: 2.00, output_per_1m_usd: 8.00 }
+  "openai/gpt-4o": { input_per_1m_usd: 2.50, output_per_1m_usd: 10.00 }
+  "openai/gpt-4o-mini": { input_per_1m_usd: 0.15, output_per_1m_usd: 0.60 }
+
+  # Anthropic Claude
+  "anthropic/claude-opus-4-7": { input_per_1m_usd: 15.00, output_per_1m_usd: 75.00 }
+  "anthropic/claude-opus-4-6": { input_per_1m_usd: 15.00, output_per_1m_usd: 75.00 }
+  "anthropic/claude-sonnet-4-6": { input_per_1m_usd: 3.00, output_per_1m_usd: 15.00 }
+  "anthropic/claude-haiku-4-5-20251001": { input_per_1m_usd: 0.80, output_per_1m_usd: 4.00 }
+
+  # Google Gemini
+  "gemini/gemini-2.5-pro": { input_per_1m_usd: 1.25, output_per_1m_usd: 5.00 }
+
+  # Local — no cost
+  "ollama/*": { input_per_1m_usd: 0.0, output_per_1m_usd: 0.0 }
+
+  # Fallback — used when a model is not listed above.
+  default: { input_per_1m_usd: 1.00, output_per_1m_usd: 3.00 }

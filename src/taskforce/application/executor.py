@@ -286,6 +286,26 @@ class AgentExecutor:
         resolved_session_id = self._resolve_session_id(session_id)
         owns_agent = agent is None
 
+        # Register with the in-memory run registry so the management UI
+        # can list active runs. Lazy import keeps the executor module
+        # cheap to import in tests that don't need analytics.
+        try:
+            from taskforce.application.run_registry import get_run_registry
+
+            run_registry = get_run_registry()
+            run_registry.register(
+                resolved_session_id,
+                profile=profile,
+                agent_id=agent_id,
+                mission=mission,
+            )
+        except Exception:  # noqa: BLE001
+            run_registry = None
+
+        # Stamp run context so the LiteLLM token-ledger callback can
+        # attach session/agent metadata to every record.
+        from taskforce.application.token_ledger import run_context as _run_context
+
         yield build_started_update(mission, resolved_session_id, profile, agent_id, plugin_path)
 
         self.logger.info(
@@ -330,13 +350,18 @@ class AgentExecutor:
 
         execution_failed = False
         try:
-            async for update in self._execute_streaming(
-                agent,
-                mission,
-                resolved_session_id,
-                user_context=user_context,
+            with _run_context(
+                session_id=resolved_session_id,
+                agent_id=agent_id,
+                profile=profile,
             ):
-                yield update
+                async for update in self._execute_streaming(
+                    agent,
+                    mission,
+                    resolved_session_id,
+                    user_context=user_context,
+                ):
+                    yield update
 
             self.logger.info(
                 "mission.streaming.completed",
@@ -360,6 +385,8 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
+            if run_registry is not None:
+                run_registry.unregister(resolved_session_id)
             # Remove the agent from the active registry only if the entry
             # still points to the same instance (guards against a rare race
             # where a second run for the same session_id replaced it).

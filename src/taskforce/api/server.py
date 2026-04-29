@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 # Load .env before any module that reads provider credentials at import time
@@ -10,10 +11,37 @@ from taskforce.api.cli.env_loader import load_dotenv_if_present as _load_dotenv
 
 _load_dotenv()
 
+# Configure structured logging with a rotating file handler so the API
+# leaves a trail on disk even when started directly via uvicorn (without
+# the CLI wrapper). Console output stays color-rendered for development.
+from taskforce.infrastructure.logging.setup import configure_logging as _configure_logging
+
+_LOG_DIR = Path(os.environ.get("TASKFORCE_LOG_DIR", ".taskforce/logs")).expanduser()
+_LOG_NAME = os.environ.get("TASKFORCE_LOG_FILE", "api.log")
+_LOG_DEBUG = (os.environ.get("LOGLEVEL", "INFO").upper() == "DEBUG") or (
+    os.environ.get("TASKFORCE_LOG_DEBUG", "").lower() in {"1", "true", "yes"}
+)
+_LOG_PATH = _configure_logging(
+    log_dir=_LOG_DIR,
+    log_name=_LOG_NAME,
+    debug=_LOG_DEBUG,
+)
+
 # Eagerly import the LiteLLM service so its module-level
 # ``AZURE_OPENAI_* -> AZURE_*`` env mapping runs before the first request
 # (which would otherwise hit the agent factory with half-mapped credentials).
 import taskforce.infrastructure.llm.litellm_service  # noqa: F401
+
+# Install the LiteLLM token-analytics callback so every completion
+# lands in ``.taskforce/analytics.db``. Without this the analytics
+# endpoints stay empty because nothing ever writes a row.
+from taskforce.infrastructure.llm.token_analytics_callback import (  # noqa: E402
+    TokenAnalyticsCallback as _TokenAnalyticsCallback,
+    get_token_analytics as _get_token_analytics,
+)
+
+if _get_token_analytics() is None:
+    _TokenAnalyticsCallback().install()
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
@@ -24,6 +52,7 @@ from fastapi.responses import JSONResponse
 from taskforce.api.routes import (
     acp,
     agents,
+    analytics,
     conversations,
     execution,
     files,
@@ -33,6 +62,7 @@ from taskforce.api.routes import (
     memory,
     planning_strategies,
     profiles,
+    runs,
     skills,
     tools,
     workflows,
@@ -45,25 +75,6 @@ from taskforce.application.plugin_loader import (
     shutdown_plugins,
 )
 from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
-
-# Configure logging based on LOGLEVEL environment variable
-loglevel = os.getenv("LOGLEVEL", "INFO").upper()
-log_level_map = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL,
-}
-log_level = log_level_map.get(loglevel, logging.INFO)
-
-# Configure Python logging
-logging.basicConfig(level=log_level, format="%(message)s")
-
-# Configure structlog with the same level
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(log_level),
-)
 
 logger = structlog.get_logger()
 
@@ -97,6 +108,7 @@ async def lifespan(app: FastAPI):
         message="Taskforce API starting...",
         enterprise=enterprise_status,
         agent_config_dirs=[str(d) for d in registered_dirs],
+        log_path=str(_LOG_PATH),
     )
     yield
     await logger.ainfo("fastapi.shutdown", message="Taskforce API shutting down...")
@@ -176,6 +188,8 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
         planning_strategies.router, prefix="/api/v1", tags=["planning"]
     )
     app.include_router(files.router, prefix="/api/v1", tags=["files"])
+    app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
+    app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation

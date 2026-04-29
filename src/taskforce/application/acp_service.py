@@ -191,6 +191,143 @@ def list_persisted_peers(work_dir: str = ".taskforce") -> list[AcpPeer]:
     return FilePeerRegistry(work_dir=work_dir).list()
 
 
+def get_persisted_peer(name: str, work_dir: str = ".taskforce") -> AcpPeer | None:
+    """Return a single peer by name or ``None`` if it does not exist."""
+    return FilePeerRegistry(work_dir=work_dir).get(name)
+
+
+def upsert_persisted_peer(
+    peer: AcpPeer | dict[str, Any] | AcpPeerSchema,
+    *,
+    work_dir: str = ".taskforce",
+    overwrite: bool = True,
+) -> AcpPeer:
+    """Persist (or update) an ACP peer in the on-disk registry.
+
+    Args:
+        peer: ``AcpPeer`` domain model, validated ``AcpPeerSchema``, or the
+            raw dict that came in from the API.
+        work_dir: Directory holding ``acp_peers.json`` (default
+            ``.taskforce``). Tests pass a temp dir.
+        overwrite: When ``False``, raises :class:`FileExistsError` if a
+            peer with the same name already exists.
+
+    Returns:
+        The :class:`AcpPeer` that ended up on disk.
+    """
+    if isinstance(peer, AcpPeerSchema):
+        domain = _peer_from_schema(peer)
+    elif isinstance(peer, dict):
+        domain = _peer_from_schema(AcpPeerSchema(**peer))
+    else:
+        domain = peer
+
+    registry = FilePeerRegistry(work_dir=work_dir)
+    if not overwrite and registry.get(domain.name) is not None:
+        raise FileExistsError(f"ACP peer '{domain.name}' already exists")
+    registry.register(domain)
+    return domain
+
+
+def delete_persisted_peer(name: str, *, work_dir: str = ".taskforce") -> bool:
+    """Remove a peer from the on-disk registry. Returns ``True`` if removed."""
+    registry = FilePeerRegistry(work_dir=work_dir)
+    if registry.get(name) is None:
+        return False
+    registry.remove(name)
+    return True
+
+
+async def ping_peer(
+    name: str,
+    *,
+    work_dir: str = ".taskforce",
+    timeout: float = 5.0,
+) -> dict[str, Any]:
+    """Best-effort connectivity check for a registered ACP peer.
+
+    Resolves the peer's auth (env-backed bearer included) and probes its
+    base URL with an HTTP HEAD/GET request. Returns a serialisable dict
+    so the route can pass it through unchanged.
+    """
+    import time
+
+    inner = FilePeerRegistry(work_dir=work_dir)
+    resolved = EnvPeerRegistry(inner).get(name)
+    if resolved is None:
+        return {
+            "ok": False,
+            "error": f"peer '{name}' not found",
+            "latency_ms": 0,
+        }
+
+    headers: dict[str, str] = {}
+    if (
+        resolved.auth
+        and resolved.auth.type == AcpAuthType.BEARER
+        and resolved.auth.token
+    ):
+        headers["Authorization"] = f"Bearer {resolved.auth.token}"
+
+    target = resolved.base_url.rstrip("/")
+    start = time.perf_counter()
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as session:
+            try:
+                async with session.head(target, headers=headers) as resp:
+                    status = resp.status
+            except aiohttp.ClientResponseError as exc:
+                status = exc.status
+            except (aiohttp.ClientError, ConnectionError) as exc:
+                return {
+                    "ok": False,
+                    "error": str(exc),
+                    "latency_ms": int((time.perf_counter() - start) * 1000),
+                }
+        latency = int((time.perf_counter() - start) * 1000)
+        ok = status < 500  # any HTTP response counts as reachable
+        return {
+            "ok": ok,
+            "status_code": status,
+            "latency_ms": latency,
+            "agent": resolved.agent,
+            "base_url": resolved.base_url,
+        }
+    except ImportError:
+        return {
+            "ok": False,
+            "error": "aiohttp is required for connectivity tests",
+            "latency_ms": 0,
+        }
+    except Exception as exc:  # noqa: BLE001 — surfaced to the API
+        return {
+            "ok": False,
+            "error": str(exc),
+            "latency_ms": int((time.perf_counter() - start) * 1000),
+        }
+
+
+def _peer_from_schema(schema: AcpPeerSchema) -> AcpPeer:
+    auth = AcpAuth(
+        type=AcpAuthType(schema.auth.type),
+        token_env=schema.auth.token_env,
+        token=schema.auth.token,
+        cert_path=schema.auth.cert_path,
+        key_path=schema.auth.key_path,
+    )
+    return AcpPeer(
+        name=schema.name,
+        base_url=schema.base_url,
+        agent=schema.agent,
+        description=schema.description,
+        auth=auth,
+    )
+
+
 def build_acp_runtime_for_tools(
     base_config: dict[str, Any] | None,
     *,
