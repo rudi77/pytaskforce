@@ -3,6 +3,8 @@
 import typer
 from rich.console import Console
 
+from taskforce.api.cli.env_loader import load_dotenv_if_present
+
 # Framework commands (always available)
 from taskforce.api.cli.commands import (
     chat,
@@ -12,6 +14,8 @@ from taskforce.api.cli.commands import (
     skills,
     tools,
 )
+
+load_dotenv_if_present()
 
 app = typer.Typer(
     name="taskforce",

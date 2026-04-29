@@ -4,6 +4,10 @@ Delegates to the unified CLI in taskforce_cli if available,
 otherwise provides framework-only commands.
 """
 
+from taskforce.api.cli.env_loader import load_dotenv_if_present
+
+load_dotenv_if_present()
+
 try:
     # Use the unified CLI that integrates framework + agent packages
     from taskforce_cli.main import app  # noqa: F401
