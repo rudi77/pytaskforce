@@ -284,7 +284,8 @@
       "Bash(awk '{sum+=$1; n++; if\\($1>max\\) max=$1} END {print \"calls=\"n, \"total_estimated_tokens=\"sum, \"avg=\"sum/n, \"max=\"max}')",
       "Bash(playwright install *)",
       "Bash(awk 'NR>=11117 && NR<=11900' \"d:/home/Source/pytaskforce/.taskforce/logs/api.log\")",
-      "Bash(awk NR>=11800 && NR<=11850 *)"
+      "Bash(awk NR>=11800 && NR<=11850 *)",
+      "Bash(npm run *)"
     ],
     "deny": [
       ".env",

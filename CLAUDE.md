@@ -143,8 +143,7 @@ src/taskforce/
 │   ├── conversation_manager.py # Persistent conversation lifecycle (ADR-016)
 │   ├── persistent_agent_service.py # Persistent orchestrator runtime (ADR-016)
 │   ├── channel_ask_router.py  # Channel-based user question routing
-│   ├── consolidation_service.py / consolidation_orchestrator.py  # Memory consolidation (ADR-013)
-│   ├── dream_service.py       # Generative dreaming (ADR-014)
+│   ├── learning_service.py    # Post-mission knowledge extraction → wiki
 │   ├── workflow_runtime_service.py # Resumable HITL workflow runtime (ADR-014-hitl)
 │   ├── auth_manager.py        # OAuth2 manager
 │   ├── planning_strategy_factory.py # Planning strategy wiring
@@ -1463,8 +1462,6 @@ See `docs/architecture/section-10-deployment.md` for:
 - `identity_stubs.py` - `TenantContextProtocol`, `UserContextProtocol`, `IdentityProviderProtocol`, `PolicyEngineProtocol` - identity/tenancy
 - `logging.py` - `LoggerProtocol` - structured logging
 - `auth.py` - `TokenStoreProtocol`, `AuthFlowProtocol`, `AuthManagerProtocol` - OAuth2 authentication
-- `consolidation.py` - `ConsolidationProtocol` - memory consolidation (ADR-013)
-- `dreaming.py` - `DreamEngineProtocol` - generative dreaming (ADR-014)
 - `agent_state.py` - `AgentStateProtocol` - singleton agent state (ADR-016)
 - `channel_ask.py` - `ChannelAskProtocol` - channel-based user interaction
 - `experience.py` - `ExperienceProtocol` - session experience tracking
@@ -1530,8 +1527,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/conversation_manager.py` - Persistent conversation lifecycle (ADR-016)
 - `src/taskforce/application/persistent_agent_service.py` - Persistent orchestrator runtime (ADR-016)
 - `src/taskforce/application/channel_ask_router.py` - Channel-based user question routing
-- `src/taskforce/application/consolidation_service.py` / `consolidation_orchestrator.py` - Memory consolidation (ADR-013)
-- `src/taskforce/application/dream_service.py` - Generative dreaming (ADR-014)
+- `src/taskforce/application/learning_service.py` - Post-mission knowledge extraction (LLM → wiki)
 - `src/taskforce/application/workflow_runtime_service.py` - Resumable HITL workflow runtime
 - `src/taskforce/application/auth_manager.py` - OAuth2 manager
 - `src/taskforce/application/planning_strategy_factory.py` - Planning strategy wiring

@@ -26,36 +26,14 @@ agent:
 
 memory:
   store_dir: .taskforce/memory
-  auto_extract: true
-  compaction_interval_hours: 24
 
-consolidation:
-  # Session experiences are captured so consolidation CAN be run, but the
-  # LLM consolidation pipeline is explicit-only.  Use ``taskforce memory
-  # consolidate`` to run it manually.  Set ``auto_consolidate: true`` to
-  # re-enable automatic post-session consolidation.
+# Post-mission learning: after each successful mission, a fast LLM
+# extracts reusable knowledge (working sources, recurring entities,
+# workflow rules) and writes it to the wiki at .taskforce/memory/wiki/.
+# Transient answers (today's prices, the next train) are not stored.
+learning:
   enabled: true
-  auto_consolidate: false
-  auto_capture: true
-  strategy: batch
-  max_sessions: 50
   model_alias: fast
-  throttle:
-    interval_minutes: 120
-    interval_requests: 100
-    association_interval_requests: 50
-
-dreaming:
-  enabled: false
-  max_memories_per_phase: 20
-  max_llm_calls: 4
-  replay_variations: 3
-  recombination_pairs: 4
-  emotional_decay_factor: 0.15
-  novelty_threshold: 0.4
-  model_alias: fast
-  schedule_expression: "0 3 * * *"
-  trigger_after_consolidation: true
 
 logging:
   level: INFO

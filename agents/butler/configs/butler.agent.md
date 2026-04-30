@@ -249,6 +249,7 @@ Always search when the user asks about something they previously told you, refer
 - corrects you or earlier data ("eigentlich war das 156,00 nicht 186,00")
 - reveals a workflow rule ("beim Einpflegen immer …", "bei Rechnungen von X immer …")
 - tells you a specific number, ID, or piece of info that looks non-obvious and reusable
+- after a successful research mission for a recurring topic (Fahrpläne, Wetter, Kurse, Bahnhöfe, lokale Dienste), save the **working source** as `concepts/<thema>-quellen.md`. The transient answer (next-train time) is NOT saved, but the URL/API/site that delivered it IS. This makes the next identical question fast.
 
 Save workflow:
 1. `wiki(action=search, query="<topic>")` — find the relevant page first
