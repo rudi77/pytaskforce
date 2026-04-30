@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Archive, GitBranch, MessageSquarePlus } from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -211,8 +212,29 @@ export default function ChatPage() {
 
   const onFork = async () => {
     if (!conversationId) return;
-    const result = await fork.mutateAsync({ conversationId });
-    navigate(`/chat/${encodeURIComponent(result.conversation_id)}`);
+    try {
+      const result = await fork.mutateAsync({ conversationId });
+      const target = `/chat/${encodeURIComponent(result.conversation_id)}`;
+      // Open the fork in a new tab so the user keeps the original
+      // conversation in view (the most common reason to fork is to
+      // compare an alternate path side-by-side).
+      const opened = window.open(target, "_blank", "noopener,noreferrer");
+      if (opened) {
+        toast.success(
+          "Conversation forked",
+          `${result.messages_copied} messages copied — opened in a new tab.`,
+        );
+      } else {
+        // Pop-up blocked — fall back to in-place navigation so the user
+        // doesn't lose the operation entirely.
+        toast.info("Conversation forked", "Pop-up blocked; switching to the copy.");
+        navigate(target);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not fork conversation.";
+      toast.error("Fork failed", message);
+    }
   };
 
   const headerTitle = useMemo(() => {

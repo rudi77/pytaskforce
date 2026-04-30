@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/api/client";
+import { ApiError, apiFetch } from "@/api/client";
 
 export interface HealthResponse {
   status: string;
@@ -549,7 +549,15 @@ export function useRunTrace(sessionId: string | undefined, intervalMs = 3_000) {
     queryFn: () =>
       apiFetch<RunTrace>(`/api/v1/runs/${encodeURIComponent(sessionId!)}/trace`),
     enabled: !!sessionId,
+    retry: (failureCount, error) => {
+      // Stop retrying on 404 — the trace was evicted or never existed.
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 1;
+    },
     refetchInterval: (query) => {
+      // Stop polling on errors (especially 404) so an evicted trace
+      // doesn't keep hammering the server forever.
+      if (query.state.status === "error") return false;
       const data = (query.state as { data?: RunTrace }).data;
       if (data?.finished) return false;
       return intervalMs;
@@ -719,6 +727,7 @@ export interface CreateEvalRunInput {
   missions: string[];
   profiles: string[];
   parallelism?: number;
+  cell_timeout_s?: number;
 }
 
 export function useEvalRuns(intervalMs = 4_000) {
@@ -735,7 +744,12 @@ export function useEvalRun(runId: string | undefined, intervalMs = 2_000) {
     queryFn: () =>
       apiFetch<EvalRun>(`/api/v1/evals/runs/${encodeURIComponent(runId!)}`),
     enabled: !!runId,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 1;
+    },
     refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
       const data = (query.state as { data?: EvalRun }).data;
       if (data?.finished) return false;
       return intervalMs;

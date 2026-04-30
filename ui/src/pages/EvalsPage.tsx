@@ -34,6 +34,7 @@ const STATUS_VARIANT: Record<
   completed: "success",
   failed: "destructive",
   cancelled: "outline",
+  timeout: "destructive",
 };
 
 export default function EvalsPage() {
@@ -48,6 +49,7 @@ export default function EvalsPage() {
   ]);
   const [selected, setSelected] = useState<string[]>([]);
   const [parallelism, setParallelism] = useState(2);
+  const [cellTimeout, setCellTimeout] = useState(120);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   const create = useCreateEvalRun();
@@ -62,6 +64,7 @@ export default function EvalsPage() {
       missions: cleanMissions,
       profiles: selected,
       parallelism,
+      cell_timeout_s: cellTimeout,
     });
     setActiveRunId(result.run_id);
   };
@@ -180,6 +183,21 @@ export default function EvalsPage() {
                   className="w-20"
                 />
               </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-muted-foreground">
+                  Cell timeout (s)
+                </span>
+                <Input
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={cellTimeout}
+                  onChange={(e) =>
+                    setCellTimeout(Math.max(5, Math.min(600, Number(e.target.value))))
+                  }
+                  className="w-24"
+                />
+              </label>
               <Button type="submit" disabled={create.isPending || selected.length === 0}>
                 <Play className="h-4 w-4" />
                 {create.isPending ? "Starting…" : "Run comparison"}
@@ -274,13 +292,18 @@ export default function EvalsPage() {
 }
 
 function ResultsMatrix({ run }: { run: ReturnType<typeof useEvalRun>["data"] & {} }) {
-  const cellByKey = useMemo(() => {
+  // Index cells by ``(missionIndex, profileIndex)`` rather than raw strings
+  // so duplicate mission text or profile names cannot collapse rows together.
+  const cellsByCoord = useMemo(() => {
     const map = new Map<string, EvalCellResult>();
     for (const cell of run.cells) {
-      map.set(`${cell.mission}::${cell.profile}`, cell);
+      const mi = run.missions.indexOf(cell.mission);
+      const pi = run.profiles.indexOf(cell.profile);
+      if (mi === -1 || pi === -1) continue;
+      map.set(`${mi}::${pi}`, cell);
     }
     return map;
-  }, [run.cells]);
+  }, [run.cells, run.missions, run.profiles]);
 
   return (
     <div className="overflow-auto rounded-md border border-border">
@@ -288,23 +311,23 @@ function ResultsMatrix({ run }: { run: ReturnType<typeof useEvalRun>["data"] & {
         <thead className="bg-muted/40">
           <tr>
             <th className="px-3 py-2 text-left font-medium">Mission</th>
-            {run.profiles.map((p) => (
-              <th key={p} className="px-3 py-2 text-left font-medium">
+            {run.profiles.map((p, pi) => (
+              <th key={`${pi}-${p}`} className="px-3 py-2 text-left font-medium">
                 {p}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {run.missions.map((mission, i) => (
-            <tr key={i} className="border-t border-border align-top">
+          {run.missions.map((mission, mi) => (
+            <tr key={mi} className="border-t border-border align-top">
               <td className="max-w-[280px] px-3 py-2">
                 <p className="line-clamp-3 text-xs">{mission}</p>
               </td>
-              {run.profiles.map((p) => {
-                const cell = cellByKey.get(`${mission}::${p}`);
+              {run.profiles.map((_, pi) => {
+                const cell = cellsByCoord.get(`${mi}::${pi}`);
                 return (
-                  <td key={p} className="px-3 py-2">
+                  <td key={pi} className="px-3 py-2">
                     {cell ? <CellView cell={cell} /> : <span>—</span>}
                   </td>
                 );

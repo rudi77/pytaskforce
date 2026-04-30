@@ -118,9 +118,15 @@ export default function RunDetailPage() {
   const trace = useRunTrace(sessionId);
 
   const startedAt = trace.data ? new Date(trace.data.started_at) : null;
+  // Memoise on the event-count signature so identical re-fetched payloads
+  // (TanStack Query returns a fresh object reference per refetch) don't
+  // re-bucket thousands of events on every poll tick.
+  const eventCount = trace.data?.events.length ?? 0;
+  const finished = trace.data?.finished ?? false;
   const buckets = useMemo(
     () => (trace.data ? bucketByStep(trace.data.events) : []),
-    [trace.data],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trace.data?.session_id, eventCount, finished],
   );
 
   return (

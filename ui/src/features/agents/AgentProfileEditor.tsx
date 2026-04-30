@@ -225,6 +225,16 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               <strong>read-only</strong>. Use{" "}
               <span className="font-medium">"Clone to user profile"</span> to
               create an editable copy under <code>~/.taskforce/agents/</code>.
+              {profileQuery.data?.format === "agent_md" ? (
+                <>
+                  {" "}
+                  <em className="text-muted-foreground">
+                    Note: cloning an <code>.agent.md</code> profile produces a
+                    flat YAML — markdown body becomes <code>system_prompt</code>
+                    and merged defaults are made explicit.
+                  </em>
+                </>
+              ) : null}
             </span>
           </CardContent>
         </Card>
