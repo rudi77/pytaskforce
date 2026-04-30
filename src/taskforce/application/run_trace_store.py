@@ -23,13 +23,50 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Per-session event cap. Long missions can produce thousands of llm_token
-# events; the trace view only needs structural events, so we keep a generous
-# but bounded window per session.
+# Per-session event cap. The store only records *structural* events (see
+# ``STRUCTURAL_EVENT_TYPES`` below) — token-level streaming events
+# (``llm_token``) are dropped at the writer because the UI doesn't render
+# them and they would otherwise flush thousands of tokens through the
+# bounded buffer per mission.
 _DEFAULT_MAX_EVENTS_PER_SESSION = 2_000
 
 # How many sessions to keep in total (LRU-evict the oldest).
 _DEFAULT_MAX_SESSIONS = 50
+
+# Events the trace store keeps. ``llm_token`` is intentionally absent; the
+# UI's run-detail view filters it out, but more importantly: a single
+# streaming reply can emit thousands of llm_token events that would push
+# structural events out of the bounded buffer before the run finishes.
+STRUCTURAL_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "started",
+        "step_start",
+        "thought",
+        "observation",
+        "tool_call",
+        "tool_result",
+        "ask_user",
+        "plan_updated",
+        "token_usage",
+        "final_answer",
+        "complete",
+        "error",
+        "interrupted",
+        "skill_auto_activated",
+        "notification",
+        "butler_event_received",
+        "butler_rule_fired",
+        "butler_schedule_triggered",
+        "butler_learning_extracted",
+        "consolidation_started",
+        "consolidation_completed",
+    }
+)
+
+
+def is_structural_event(event_type: str) -> bool:
+    """Return True if the trace store should retain this event type."""
+    return event_type in STRUCTURAL_EVENT_TYPES
 
 
 @dataclass
@@ -109,6 +146,10 @@ class RunTraceStore:
         completion_tokens: int = 0,
         cost_usd: float = 0.0,
     ) -> None:
+        # Drop non-structural events (``llm_token``, etc.) so the bounded
+        # ring buffer keeps the events the UI actually renders.
+        if not is_structural_event(event_type):
+            return
         with self._lock:
             trace = self._sessions.get(session_id)
             if trace is None:

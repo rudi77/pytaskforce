@@ -12,11 +12,12 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from taskforce.api.dependencies import get_executor
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.application.eval_runner import (
+    DEFAULT_CELL_TIMEOUT_S,
     EvalRun,
     get_eval_run_store,
     run_eval,
@@ -25,10 +26,35 @@ from taskforce.application.eval_runner import (
 router = APIRouter()
 
 
+def _strip_dedup(values: list[str]) -> list[str]:
+    """Trim whitespace, drop empties, dedup while preserving order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values:
+        cleaned = (raw or "").strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        out.append(cleaned)
+    return out
+
+
 class EvalRunRequest(BaseModel):
     missions: list[str] = Field(..., min_length=1, max_length=20)
     profiles: list[str] = Field(..., min_length=1, max_length=10)
     parallelism: int = Field(default=2, ge=1, le=8)
+    cell_timeout_s: float = Field(
+        default=DEFAULT_CELL_TIMEOUT_S, ge=5.0, le=600.0,
+        description="Per-cell wall-clock cap in seconds.",
+    )
+
+    @field_validator("missions", "profiles")
+    @classmethod
+    def _strip_and_dedup(cls, value: list[str]) -> list[str]:
+        cleaned = _strip_dedup(value)
+        if not cleaned:
+            raise ValueError("must contain at least one non-empty entry")
+        return cleaned
 
 
 class EvalRunCreated(BaseModel):
@@ -58,7 +84,12 @@ async def create_eval_run(
 
     async def _runner() -> None:
         try:
-            await run_eval(run, executor=executor, parallelism=payload.parallelism)
+            await run_eval(
+                run,
+                executor=executor,
+                parallelism=payload.parallelism,
+                cell_timeout_s=payload.cell_timeout_s,
+            )
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — logged inside run_eval

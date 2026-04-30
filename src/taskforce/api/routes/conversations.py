@@ -538,13 +538,11 @@ async def fork_conversation(
     LLM model without mutating the original transcript.
     """
     body = request or ForkConversationRequest()
-    source_messages = await manager.get_messages(conversation_id)
-    new_id = await manager.fork(
+    new_id, copied = await manager.fork(
         conversation_id,
         up_to_index=body.up_to_index,
         channel=body.channel,
     )
-    copied = body.up_to_index if body.up_to_index is not None else len(source_messages)
     return ForkConversationResponse(
         conversation_id=new_id,
         source_id=conversation_id,

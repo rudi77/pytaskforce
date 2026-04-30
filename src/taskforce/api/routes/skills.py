@@ -9,6 +9,7 @@ and agent skills.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +17,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from taskforce.api.errors import http_exception as _http_exception
+from taskforce.application.profile_loader import _split_agent_md_frontmatter
 from taskforce.application.skill_service import get_skill_service
 
 router = APIRouter()
@@ -58,6 +60,36 @@ class SkillDetail(SkillSummary):
     body: str = Field(default="", description="Markdown body of the skill file")
 
 
+@lru_cache(maxsize=128)
+def _read_skill_body(path_str: str, mtime_ns: int) -> str:
+    """Read and de-frontmatter a SKILL.md, cached by ``(path, mtime_ns)``.
+
+    The mtime is part of the key so edits to the file invalidate the cache
+    automatically — it's a sentinel, not a stored value.
+    """
+    del mtime_ns  # used purely as cache key
+    path = Path(path_str)
+    if not path.is_file():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    _, body = _split_agent_md_frontmatter(text)
+    return body
+
+
+def _skill_body(path_str: str | None) -> str:
+    if not path_str:
+        return ""
+    path = Path(path_str)
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        return ""
+    return _read_skill_body(str(path), mtime_ns)
+
+
 @router.get(
     "/skills",
     response_model=SkillListResponse,
@@ -92,20 +124,5 @@ def get_skill(name: str) -> SkillDetail:
         )
 
     summary = _to_summary(metadata)
-    body = ""
-    file_path = getattr(metadata, "file_path", None)
-    if file_path:
-        path = Path(str(file_path))
-        if path.is_file():
-            try:
-                text = path.read_text(encoding="utf-8")
-                # Strip optional ``---``-delimited frontmatter so the body is
-                # readable on its own.
-                if text.startswith("---"):
-                    end = text.find("\n---", 3)
-                    if end != -1:
-                        text = text[end + 4 :].lstrip("\n")
-                body = text
-            except OSError:
-                body = ""
+    body = _skill_body(getattr(metadata, "file_path", None))
     return SkillDetail(**summary.model_dump(), body=body)

@@ -93,18 +93,38 @@ class ConversationManager:
         """Archive a conversation with an optional summary."""
         await self._store.archive(conversation_id, summary)
 
+    # Volatile per-message fields that the store fills in on append; these
+    # must not be transferred to the forked conversation because they refer
+    # to the source conversation's storage layout.
+    _FORK_DROPPED_FIELDS: frozenset[str] = frozenset(
+        {
+            "message_id",
+            "id",
+            "timestamp",
+            "created_at",
+            "conversation_id",
+            "sequence",
+            "index",
+        }
+    )
+
     async def fork(
         self,
         source_id: str,
         *,
         up_to_index: int | None = None,
         channel: str = "rest",
-    ) -> str:
+    ) -> tuple[str, int]:
         """Create a new conversation seeded with messages from ``source_id``.
 
         ``up_to_index`` is exclusive; ``None`` copies the full transcript.
-        Useful for replaying a conversation with a different profile or
-        model swap without mutating the original.
+        Returns ``(new_conversation_id, messages_copied)``. Useful for
+        replaying a conversation against a different profile or model
+        without mutating the original.
+
+        Tool-call linkage (``tool_calls``, ``tool_call_id``, ``name``) is
+        preserved so a forked conversation continues to validate against
+        provider APIs that require matched tool turns.
         """
         messages = await self._store.get_messages(source_id)
         if up_to_index is None:
@@ -113,9 +133,11 @@ class ConversationManager:
             slice_ = messages[: max(0, up_to_index)]
         new_id = await self._store.create_new(channel)
         for msg in slice_:
-            # ``message_count`` and timestamps in the source are not
-            # transferable; we just append fresh entries.
-            payload = {k: v for k, v in msg.items() if k in {"role", "content", "attachments"}}
+            payload = {
+                k: v
+                for k, v in msg.items()
+                if k not in self._FORK_DROPPED_FIELDS
+            }
             await self._store.append_message(new_id, payload)
         logger.info(
             "conversation.forked",
@@ -123,7 +145,7 @@ class ConversationManager:
             target=new_id,
             messages_copied=len(slice_),
         )
-        return new_id
+        return new_id, len(slice_)
 
     async def list_active(self) -> list[ConversationInfo]:
         """List all active conversations."""

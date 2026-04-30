@@ -149,11 +149,17 @@ def reset_eval_run_store() -> None:
     _store = None
 
 
+# Per-cell wall-clock cap. Long missions can burn budget without ever
+# producing a result; this is a safety net, not a hard correctness rule.
+DEFAULT_CELL_TIMEOUT_S: float = 120.0
+
+
 async def run_eval(
     run: EvalRun,
     *,
     executor: Any,
     parallelism: int = 2,
+    cell_timeout_s: float = DEFAULT_CELL_TIMEOUT_S,
 ) -> None:
     """Execute every (mission, profile) cell and update the run in place."""
     semaphore = asyncio.Semaphore(max(1, parallelism))
@@ -164,9 +170,12 @@ async def run_eval(
             cell.started_at = datetime.now(UTC)
             start = time.perf_counter()
             try:
-                result = await executor.execute_mission(
-                    mission=cell.mission,
-                    profile=cell.profile,
+                result = await asyncio.wait_for(
+                    executor.execute_mission(
+                        mission=cell.mission,
+                        profile=cell.profile,
+                    ),
+                    timeout=cell_timeout_s,
                 )
                 cell.session_id = getattr(result, "session_id", None)
                 cell.final_message = (
@@ -176,6 +185,22 @@ async def run_eval(
                     result, "status", "completed"
                 )
                 cell.status = "completed" if status in {"completed", "complete"} else str(status)
+            except asyncio.TimeoutError:
+                cell.status = "timeout"
+                cell.error = f"cell exceeded {cell_timeout_s}s wall-clock cap"
+                logger.warning(
+                    "eval_cell_timeout",
+                    run_id=run.run_id,
+                    profile=cell.profile,
+                    timeout_s=cell_timeout_s,
+                )
+            except asyncio.CancelledError:
+                # Cooperative cancellation (server shutdown / explicit cancel
+                # of the eval task) — record it so the matrix shows the
+                # actual final state instead of a stuck "running" cell.
+                cell.status = "cancelled"
+                cell.error = "cancelled"
+                raise
             except Exception as exc:  # noqa: BLE001
                 cell.status = "failed"
                 cell.error = f"{type(exc).__name__}: {exc}"
@@ -186,12 +211,22 @@ async def run_eval(
                     error=cell.error,
                 )
             finally:
+                # Defensive — if anything left the cell in ``running`` state
+                # (e.g. a synchronous exception inside our own code path),
+                # surface it as cancelled so the matrix never reports a
+                # forever-running cell.
+                if cell.status == "running":
+                    cell.status = "cancelled"
                 cell.finished_at = datetime.now(UTC)
                 cell.latency_ms = int((time.perf_counter() - start) * 1000)
                 _harvest_token_usage(cell)
 
-    await asyncio.gather(*(_execute(c) for c in run.cells))
-    run.finished = True
+    try:
+        await asyncio.gather(
+            *(_execute(c) for c in run.cells), return_exceptions=False
+        )
+    finally:
+        run.finished = True
 
 
 def _harvest_token_usage(cell: EvalCellResult) -> None:
@@ -201,16 +236,10 @@ def _harvest_token_usage(cell: EvalCellResult) -> None:
     try:
         from taskforce.application.token_ledger import get_token_ledger
 
-        ledger = get_token_ledger()
-        # ``per_session`` is not part of the public API yet — fall back to
-        # iterating recent calls if unavailable.
-        if hasattr(ledger, "per_session"):
-            agg = ledger.per_session(cell.session_id)
-        else:  # pragma: no cover — defensive
-            agg = None
-        if agg:
-            cell.prompt_tokens = int(agg.get("prompt_tokens", 0) or 0)
-            cell.completion_tokens = int(agg.get("completion_tokens", 0) or 0)
-            cell.cost_usd = float(agg.get("cost_usd", 0.0) or 0.0)
+        agg = get_token_ledger().per_session(cell.session_id)
     except Exception:  # noqa: BLE001 — non-fatal
         logger.debug("eval_token_harvest_failed", session_id=cell.session_id)
+        return
+    cell.prompt_tokens = int(agg.get("prompt_tokens", 0) or 0)
+    cell.completion_tokens = int(agg.get("completion_tokens", 0) or 0)
+    cell.cost_usd = float(agg.get("cost_usd", 0.0) or 0.0)

@@ -178,13 +178,7 @@ class TestArchiveConversation:
 
 class TestForkConversation:
     def test_forks_full_transcript(self, client, mock_conversation_manager):
-        mock_conversation_manager.get_messages = AsyncMock(
-            return_value=[
-                {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "hello"},
-            ]
-        )
-        mock_conversation_manager.fork = AsyncMock(return_value="new-conv-id")
+        mock_conversation_manager.fork = AsyncMock(return_value=("new-conv-id", 2))
         resp = client.post(
             "/api/v1/conversations/conv-source/fork",
             json={"up_to_index": None, "channel": "rest"},
@@ -197,13 +191,23 @@ class TestForkConversation:
         mock_conversation_manager.fork.assert_called_once()
 
     def test_forks_partial_transcript(self, client, mock_conversation_manager):
-        mock_conversation_manager.get_messages = AsyncMock(
-            return_value=[{"role": "user", "content": str(i)} for i in range(5)]
-        )
-        mock_conversation_manager.fork = AsyncMock(return_value="forked")
+        mock_conversation_manager.fork = AsyncMock(return_value=("forked", 2))
         resp = client.post(
             "/api/v1/conversations/source/fork",
             json={"up_to_index": 2},
         )
         assert resp.status_code == 201
         assert resp.json()["messages_copied"] == 2
+
+    def test_messages_copied_is_actual_count_not_request(
+        self, client, mock_conversation_manager
+    ):
+        """``up_to_index`` may exceed the source length; reported count must
+        be what was actually copied."""
+        mock_conversation_manager.fork = AsyncMock(return_value=("forked", 3))
+        resp = client.post(
+            "/api/v1/conversations/source/fork",
+            json={"up_to_index": 999},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["messages_copied"] == 3

@@ -246,6 +246,52 @@ def test_clone_conflict_when_target_exists(
     assert response.json()["code"] == "profile_exists"
 
 
+def test_clone_rejects_reserved_target_names(client: TestClient) -> None:
+    for name in ("default", "butler", "coding_agent", "rag_agent"):
+        response = client.post(
+            "/api/v1/profiles/default/clone",
+            json={"target_name": name},
+        )
+        assert response.status_code == 400, name
+        assert response.json()["code"] == "profile_name_reserved"
+
+
+def test_clone_agent_md_source_writes_yaml_in_user_dir(
+    client: TestClient, user_profiles_dir: Path, tmp_path: Path
+) -> None:
+    """Cloning a ``.agent.md`` source must produce an editable YAML."""
+    # Create a fake agent-package config dir with a .agent.md profile.
+    pkg_dir = tmp_path / "extra_pkg" / "configs"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "fake_butler.agent.md").write_text(
+        "---\n"
+        "specialist: butler\n"
+        "tools:\n"
+        "  - python\n"
+        "---\n"
+        "\n"
+        "You are fake-butler.\n",
+        encoding="utf-8",
+    )
+    from taskforce.application.profile_loader import register_config_dir
+
+    register_config_dir(pkg_dir)
+
+    response = client.post(
+        "/api/v1/profiles/fake_butler/clone",
+        json={"target_name": "fake_butler-copy"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "fake_butler-copy"
+    assert body["is_writable"] is True
+
+    target = user_profiles_dir / "fake_butler-copy.yaml"
+    assert target.is_file()
+    text = target.read_text(encoding="utf-8")
+    assert "specialist: butler" in text
+
+
 def test_update_explicit_null_deletes_key(
     client: TestClient, user_profiles_dir: Path
 ) -> None:

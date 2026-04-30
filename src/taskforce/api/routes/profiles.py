@@ -174,6 +174,26 @@ def update_profile(name: str, payload: ProfileDefinitionPayload) -> ProfileDetai
     return _detail_for(name, path)
 
 
+# Profile names that ship with the framework or its bundled agent packages.
+# The user-profiles directory wins by precedence, so allowing a clone to
+# shadow ``default`` / ``butler`` / ``coding_agent`` / ``rag_agent``
+# silently changes which profile users get when they say ``--profile butler``.
+# Block the obvious cases at clone time.
+_RESERVED_TARGET_NAMES: frozenset[str] = frozenset(
+    {
+        "default",
+        "butler",
+        "coding_agent",
+        "coding-agent",
+        "rag_agent",
+        "rag-agent",
+        "llm_config",
+        "pricing",
+        "defaults",
+    }
+)
+
+
 @router.post(
     "/profiles/{source}/clone",
     response_model=ProfileDetail,
@@ -186,6 +206,16 @@ def clone_profile(source: str, payload: ProfileClonePayload) -> ProfileDetail:
     Lets the UI customize butler / coding_agent / rag_agent profiles without
     touching the read-only files shipped by the agent packages.
     """
+    if payload.target_name in _RESERVED_TARGET_NAMES:
+        raise _http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="profile_name_reserved",
+            message=(
+                f"'{payload.target_name}' is reserved by the framework or a "
+                "bundled agent package. Choose a different name (e.g. "
+                f"'{payload.target_name}-copy')."
+            ),
+        )
     loader = ProfileLoader()
     writer = ProfileWriter(loader=loader)
     try:
