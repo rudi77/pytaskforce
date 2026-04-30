@@ -12,8 +12,12 @@ Requires the optional 'browser' dependency group:
 
 from __future__ import annotations
 
+import asyncio
+import sys
+import threading
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import structlog
 
@@ -23,8 +27,66 @@ from taskforce.infrastructure.tools.native.url_validator import validate_url_for
 
 logger = structlog.get_logger(__name__)
 
-# Module-level browser session – shared across tool calls within a process
-_session: _BrowserSession | None = None
+T = TypeVar("T")
+
+
+class _PlaywrightWorker:
+    """Run Playwright on a dedicated thread with a Windows-compatible loop.
+
+    On Windows ``asyncio.create_subprocess_exec`` only works with
+    ``ProactorEventLoop``; uvicorn and many other ASGI hosts default to
+    ``SelectorEventLoop`` which raises ``NotImplementedError``. By isolating
+    Playwright on its own thread+loop we make the browser tool work
+    regardless of how the host process configured its main loop.
+    """
+
+    _instance: "_PlaywrightWorker | None" = None
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def get(cls) -> "_PlaywrightWorker":
+        with cls._instance_lock:
+            if cls._instance is None:
+                worker = cls()
+                worker._start()
+                cls._instance = worker
+            return cls._instance
+
+    def __init__(self) -> None:
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._ready = threading.Event()
+
+    def _start(self) -> None:
+        def run_loop() -> None:
+            if sys.platform == "win32":
+                loop: asyncio.AbstractEventLoop = asyncio.ProactorEventLoop()
+            else:
+                loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._loop = loop
+            self._ready.set()
+            try:
+                loop.run_forever()
+            finally:
+                loop.close()
+
+        self._thread = threading.Thread(
+            target=run_loop, name="playwright-worker", daemon=True
+        )
+        self._thread.start()
+        self._ready.wait()
+
+    async def submit(self, coro_factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
+        """Schedule a coroutine on the worker loop and await its result."""
+        assert self._loop is not None
+        future = asyncio.run_coroutine_threadsafe(coro_factory(), self._loop)
+        return await asyncio.wrap_future(future)
+
+
+# Module-level browser session – shared across tool calls within a process.
+# All access must be from the playwright worker loop.
+_session: "_BrowserSession | None" = None
 
 
 class _BrowserSession:
@@ -267,43 +329,9 @@ class BrowserTool(ToolProtocol):
             Dictionary with 'success' bool and action-specific fields.
         """
         action = kwargs.get("action", "")
-        timeout = int(kwargs.get("timeout", 30_000))
-        headless = bool(kwargs.get("headless", True))
-
+        worker = _PlaywrightWorker.get()
         try:
-            if action == "close":
-                return await self._action_close()
-
-            session = await _get_session(headless=headless)
-            page = session.page
-
-            dispatch: dict[str, Any] = {
-                "navigate": self._action_navigate,
-                "click": self._action_click,
-                "fill": self._action_fill,
-                "screenshot": self._action_screenshot,
-                "get_text": self._action_get_text,
-                "get_html": self._action_get_html,
-                "evaluate": self._action_evaluate,
-                "wait_for_selector": self._action_wait_for_selector,
-                "wait_for_url": self._action_wait_for_url,
-                "select": self._action_select,
-                "hover": self._action_hover,
-                "press_key": self._action_press_key,
-                "scroll": self._action_scroll,
-            }
-
-            handler = dispatch.get(action)
-            if handler is None:
-                return {"success": False, "error": f"Unknown action: '{action}'"}
-
-            if action == "screenshot":
-                return await handler(page, kwargs)
-            elif action in ("evaluate", "scroll"):
-                return await handler(page, kwargs)
-            else:
-                return await handler(page, kwargs, timeout)
-
+            return await worker.submit(lambda: self._execute_in_worker(**kwargs))
         except ImportError:
             return {
                 "success": False,
@@ -315,12 +343,50 @@ class BrowserTool(ToolProtocol):
         except Exception as e:
             safe_kwargs = {k: v for k, v in kwargs.items() if k != "script"}
             tool_error = ToolError(
-                f"{self.name} action '{action}' failed: {e}",
+                f"{self.name} action '{action}' failed: {e!r}",
                 tool_name=self.name,
                 details={"action": action, **safe_kwargs},
             )
-            logger.error("browser_tool.error", action=action, error=str(e))
+            logger.error("browser_tool.error", action=action, error=repr(e))
             return tool_error_payload(tool_error)
+
+    async def _execute_in_worker(self, **kwargs: Any) -> dict[str, Any]:
+        """Run the action on the playwright worker loop. All page/browser
+        objects are bound to that loop, so every Playwright call must happen
+        inside this method."""
+        action = kwargs.get("action", "")
+        timeout = int(kwargs.get("timeout", 30_000))
+        headless = bool(kwargs.get("headless", True))
+
+        if action == "close":
+            return await self._action_close()
+
+        session = await _get_session(headless=headless)
+        page = session.page
+
+        dispatch: dict[str, Any] = {
+            "navigate": self._action_navigate,
+            "click": self._action_click,
+            "fill": self._action_fill,
+            "screenshot": self._action_screenshot,
+            "get_text": self._action_get_text,
+            "get_html": self._action_get_html,
+            "evaluate": self._action_evaluate,
+            "wait_for_selector": self._action_wait_for_selector,
+            "wait_for_url": self._action_wait_for_url,
+            "select": self._action_select,
+            "hover": self._action_hover,
+            "press_key": self._action_press_key,
+            "scroll": self._action_scroll,
+        }
+
+        handler = dispatch.get(action)
+        if handler is None:
+            return {"success": False, "error": f"Unknown action: '{action}'"}
+
+        if action in ("screenshot", "evaluate", "scroll"):
+            return await handler(page, kwargs)
+        return await handler(page, kwargs, timeout)
 
     # ------------------------------------------------------------------
     # Individual action implementations

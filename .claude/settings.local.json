@@ -271,7 +271,20 @@
       "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/application/ tests/unit/infrastructure/ -q --no-cov)",
       "Bash(powershell.exe -NoProfile -Command \"Get-Process git -ErrorAction SilentlyContinue | Select-Object Id, StartTime | Format-Table -AutoSize\")",
       "Bash(powershell.exe -NoProfile -Command \"Get-Process git -ErrorAction SilentlyContinue | Stop-Process -Force\")",
-      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/core/ tests/unit/application/ tests/unit/infrastructure/ -q --no-cov)"
+      "Bash(PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests/unit/core/ tests/unit/application/ tests/unit/infrastructure/ -q --no-cov)",
+      "Bash(awk -F'tool=' '{print $2}')",
+      "Bash(awk '{print $1, $5, $6, $7}')",
+      "Bash(awk -F\"args=\" '{print $2}')",
+      "Bash(awk '{print $3}')",
+      "Bash(awk '{$1=\"\"; $2=\"\"; print}')",
+      "Bash(awk '{for\\(i=1;i<=NF;i++\\) if\\($i ~ /latency_ms=/\\) print $i}')",
+      "Bash(awk '{sum+=$1; n++; if\\($1>max\\) max=$1} END {print \"calls=\"n, \"total_ms=\"sum, \"avg_ms=\"sum/n, \"max_ms=\"max}')",
+      "Bash(awk -F'estimated_tokens=' '{print $2}')",
+      "Bash(awk '{print $1}')",
+      "Bash(awk '{sum+=$1; n++; if\\($1>max\\) max=$1} END {print \"calls=\"n, \"total_estimated_tokens=\"sum, \"avg=\"sum/n, \"max=\"max}')",
+      "Bash(playwright install *)",
+      "Bash(awk 'NR>=11117 && NR<=11900' \"d:/home/Source/pytaskforce/.taskforce/logs/api.log\")",
+      "Bash(awk NR>=11800 && NR<=11850 *)"
     ],
     "deny": [
       ".env",
