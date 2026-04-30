@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { AgentSourceBadge } from "@/components/AgentSourceBadge";
 import { AgentProfileEditor } from "@/features/agents/AgentProfileEditor";
+import { AgentWizard } from "@/features/agents/wizard/AgentWizard";
 import { ApiError, apiFetch } from "@/api/client";
 import {
   AgentSummary,
@@ -153,7 +154,14 @@ function EditMode({ agentId }: { agentId: string }) {
 
 export default function AgentEditorPage({ mode }: Props) {
   const { agentId } = useParams();
-  if (mode === "create") return <AgentProfileEditor mode="create" />;
-  if (!agentId) return <AgentProfileEditor mode="create" />;
+  const [params] = useSearchParams();
+  const advanced = params.get("advanced") === "1";
+
+  if (mode === "create") {
+    return advanced ? <AgentProfileEditor mode="create" /> : <AgentWizard />;
+  }
+  if (!agentId) {
+    return advanced ? <AgentProfileEditor mode="create" /> : <AgentWizard />;
+  }
   return <EditMode agentId={agentId} />;
 }
