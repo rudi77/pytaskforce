@@ -3,7 +3,17 @@ import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import yaml from "js-yaml";
-import { ArrowLeft, Check, Save, Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Code2,
+  Copy,
+  Eye,
+  EyeOff,
+  Save,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,28 +38,35 @@ import {
 } from "@/features/agents/schema";
 import {
   ProfileDetail,
+  useCloneProfile,
   useCreateProfile,
   useDeleteProfile,
   useProfile,
   useUpdateProfile,
 } from "@/api/queries";
 import { ApiError } from "@/api/client";
+import { cn } from "@/lib/utils";
 
 interface Props {
   mode: "create" | "edit";
   profileName?: string;
 }
 
-const TABS = [
+const BASICS_TABS = [
   { id: "identity", label: "Identity" },
   { id: "tools", label: "Tools" },
+  { id: "llm", label: "LLM" },
+] as const;
+
+const ADVANCED_TABS = [
   { id: "subagents", label: "Sub-agents" },
   { id: "mcp", label: "MCP" },
   { id: "communication", label: "Communication" },
   { id: "planning", label: "Planning" },
-  { id: "llm", label: "LLM" },
   { id: "context", label: "Context" },
 ] as const;
+
+const PREVIEW_VISIBLE_KEY = "taskforce.editor.previewVisible";
 
 export function AgentProfileEditor({ mode, profileName }: Props) {
   const navigate = useNavigate();
@@ -57,9 +74,18 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
   const createMutation = useCreateProfile();
   const updateMutation = useUpdateProfile(profileName ?? "");
   const deleteMutation = useDeleteProfile();
+  const cloneMutation = useCloneProfile();
 
   const [serverError, setServerError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [section, setSection] = useState<"basics" | "advanced">("basics");
+  const [showPreview, setShowPreview] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(PREVIEW_VISIBLE_KEY) !== "0";
+  });
+  useEffect(() => {
+    window.localStorage.setItem(PREVIEW_VISIBLE_KEY, showPreview ? "1" : "0");
+  }, [showPreview]);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -117,6 +143,26 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
     }
   };
 
+  const onClone = async () => {
+    if (!profileName) return;
+    const suggestion = `${profileName}-copy`;
+    const target = window.prompt(
+      `Clone "${profileName}" to a user-owned profile.\nNew name:`,
+      suggestion,
+    );
+    if (!target) return;
+    setServerError(null);
+    try {
+      const created = await cloneMutation.mutateAsync({
+        source: profileName,
+        targetName: target.trim(),
+      });
+      navigate(`/agents/${encodeURIComponent(created.name)}`);
+    } catch (err) {
+      setServerError(err instanceof ApiError ? err.message : (err as Error).message);
+    }
+  };
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="flex items-center gap-3">
@@ -139,6 +185,18 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               Read-only
             </Badge>
           ) : null}
+          {mode === "edit" && !isWritable ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClone}
+              disabled={cloneMutation.isPending}
+            >
+              <Copy className="h-4 w-4" />
+              Clone to user profile
+            </Button>
+          ) : null}
           {mode === "edit" && isWritable ? (
             <Button type="button" variant="outline" size="sm" onClick={onDelete} disabled={isBusy}>
               <Trash2 className="h-4 w-4" />
@@ -158,61 +216,136 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
         </Card>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {mode === "edit" && !isWritable ? (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardContent className="flex flex-wrap items-center gap-2 py-3 text-sm">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <span>
+              This profile ships with an agent package and is{" "}
+              <strong>read-only</strong>. Use{" "}
+              <span className="font-medium">"Clone to user profile"</span> to
+              create an editable copy under <code>~/.taskforce/agents/</code>.
+            </span>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div
+        className={cn(
+          "grid gap-5",
+          showPreview ? "xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : "",
+        )}
+      >
         <Card>
-          <CardHeader>
-            <CardTitle>{mode === "create" ? "New profile" : profileName}</CardTitle>
-            <CardDescription>
-              {profileQuery.data?.path ? (
-                <span className="font-mono text-xs">{profileQuery.data.path}</span>
+          <CardHeader className="flex flex-row items-start justify-between gap-3">
+            <div>
+              <CardTitle>{mode === "create" ? "New profile" : profileName}</CardTitle>
+              <CardDescription>
+                {profileQuery.data?.path ? (
+                  <span className="font-mono text-xs">{profileQuery.data.path}</span>
+                ) : (
+                  "Will be written to ~/.taskforce/agents/<name>.yaml"
+                )}
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPreview((v) => !v)}
+              aria-pressed={showPreview}
+              title={showPreview ? "Hide YAML preview" : "Show YAML preview"}
+            >
+              {showPreview ? (
+                <EyeOff className="h-4 w-4" />
               ) : (
-                "Will be written to ~/.taskforce/agents/<name>.yaml"
+                <Eye className="h-4 w-4" />
               )}
-            </CardDescription>
+              <span className="ml-1.5 text-xs font-medium">YAML preview</span>
+            </Button>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="identity">
+            <div className="mb-3 inline-flex rounded-md bg-muted p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setSection("basics")}
+                className={cn(
+                  "rounded px-3 py-1 font-medium transition-colors",
+                  section === "basics"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Basics
+              </button>
+              <button
+                type="button"
+                onClick={() => setSection("advanced")}
+                className={cn(
+                  "rounded px-3 py-1 font-medium transition-colors",
+                  section === "advanced"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Advanced
+              </button>
+            </div>
+            <Tabs defaultValue={section === "basics" ? "identity" : "subagents"} key={section}>
               <TabsList className="flex-wrap">
-                {TABS.map((tab) => (
+                {(section === "basics" ? BASICS_TABS : ADVANCED_TABS).map((tab) => (
                   <TabsTrigger key={tab.id} value={tab.id}>
                     {tab.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
-              <TabsContent value="identity">
-                <IdentityTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="tools">
-                <ToolsTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="subagents">
-                <SubAgentsTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="mcp">
-                <MCPTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="communication">
-                <CommunicationTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="planning">
-                <PlanningTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="llm">
-                <LLMTab form={form} mode={mode} />
-              </TabsContent>
-              <TabsContent value="context">
-                <ContextTab form={form} mode={mode} />
-              </TabsContent>
+              {section === "basics" ? (
+                <>
+                  <TabsContent value="identity">
+                    <IdentityTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="tools">
+                    <ToolsTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="llm">
+                    <LLMTab form={form} mode={mode} />
+                  </TabsContent>
+                </>
+              ) : (
+                <>
+                  <TabsContent value="subagents">
+                    <SubAgentsTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="mcp">
+                    <MCPTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="communication">
+                    <CommunicationTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="planning">
+                    <PlanningTab form={form} mode={mode} />
+                  </TabsContent>
+                  <TabsContent value="context">
+                    <ContextTab form={form} mode={mode} />
+                  </TabsContent>
+                </>
+              )}
             </Tabs>
           </CardContent>
         </Card>
 
+        {showPreview ? (
         <Card className="xl:sticky xl:top-4 xl:self-start">
-          <CardHeader>
-            <CardTitle>YAML preview</CardTitle>
-            <CardDescription>
-              Live serialisation of the form. Save to write to disk.
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Code2 className="h-4 w-4" />
+                YAML preview
+              </CardTitle>
+              <CardDescription>
+                Live serialisation of the form. Save to write to disk.
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             <pre className="max-h-[640px] overflow-auto scrollbar-thin rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed">
@@ -223,6 +356,7 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
             ) : null}
           </CardContent>
         </Card>
+        ) : null}
       </div>
     </form>
   );

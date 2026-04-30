@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search } from "lucide-react";
+import { GitCompare, Search } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -63,9 +63,17 @@ export default function AgentsListPage() {
               Custom agents, framework profiles and plugin agents discovered at runtime.
             </p>
           </div>
-          <Button asChild>
-            <Link to="/agents/new">New custom agent</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link to="/agents/compare">
+                <GitCompare className="h-4 w-4" />
+                Compare
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to="/agents/new">New custom agent</Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

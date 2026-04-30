@@ -1,7 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Controller, useFieldArray } from "react-hook-form";
 import type { Control, UseFormRegister, UseFormReturn } from "react-hook-form";
-import { Plus, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Plug,
+  Plus,
+  Search,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +21,10 @@ import { EmptyState } from "@/components/EmptyState";
 import {
   useLLMModels,
   usePlanningStrategies,
+  useProbeMcp,
   useSubagentCandidates,
   useTools,
+  type McpProbeResult,
   type ToolEntry,
 } from "@/api/queries";
 import type { ProfileFormValues } from "@/features/agents/schema";
@@ -107,12 +118,25 @@ export function IdentityTab({ form, mode }: TabProps) {
   );
 }
 
+type RiskFilter = "all" | "approval" | "no-approval";
+
+const RISK_VARIANT: Record<string, "default" | "secondary" | "warning" | "destructive"> = {
+  low: "secondary",
+  medium: "secondary",
+  high: "warning",
+  critical: "destructive",
+};
+
 export function ToolsTab({ form }: TabProps) {
   const { data, isLoading } = useTools();
   const tools = data?.tools ?? [];
   const selected = form.watch("tools");
   const setSelected = (next: string[]) =>
     form.setValue("tools", next, { shouldDirty: true });
+
+  const [search, setSearch] = useState("");
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 
   const toggle = (name: string) => {
     if (selected.includes(name)) {
@@ -122,20 +146,84 @@ export function ToolsTab({ form }: TabProps) {
     }
   };
 
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return tools.filter((tool) => {
+      if (showSelectedOnly && !selected.includes(tool.name)) return false;
+      if (riskFilter === "approval" && !tool.requires_approval) return false;
+      if (riskFilter === "no-approval" && tool.requires_approval) return false;
+      if (!needle) return true;
+      const haystack = [tool.name, tool.description ?? "", tool.origin ?? ""]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [tools, search, riskFilter, showSelectedOnly, selected]);
+
+  const counts = useMemo(() => {
+    let approval = 0;
+    for (const t of tools) if (t.requires_approval) approval += 1;
+    return { all: tools.length, approval, plain: tools.length - approval };
+  }, [tools]);
+
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading tools…</p>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative flex-1 lg:max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tools…"
+            className="pl-8"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-md bg-muted p-1 text-xs">
+          {(
+            [
+              { id: "all", label: "All", count: counts.all },
+              { id: "approval", label: "Needs approval", count: counts.approval },
+              { id: "no-approval", label: "Auto", count: counts.plain },
+            ] as const
+          ).map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setRiskFilter(f.id)}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition-colors",
+                riskFilter === f.id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {f.label}
+              <span className="ml-1.5 text-[10px] tabular-nums opacity-60">
+                {f.count}
+              </span>
+            </button>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant={showSelectedOnly ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowSelectedOnly((v) => !v)}
+        >
           Selected ({selected.length})
-        </span>
-        {selected.length === 0 ? (
-          <span className="text-sm text-muted-foreground">None — pick at least one below.</span>
-        ) : (
-          selected.map((name) => (
+        </Button>
+      </div>
+
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Active
+          </span>
+          {selected.map((name) => (
             <Badge key={name} variant="secondary" className="gap-1">
               <span>{name}</span>
               <button
@@ -147,19 +235,26 @@ export function ToolsTab({ form }: TabProps) {
                 ×
               </button>
             </Badge>
-          ))
-        )}
-      </div>
-      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {tools.map((tool) => (
-          <ToolCheck
-            key={tool.name}
-            tool={tool}
-            checked={selected.includes(tool.name)}
-            onToggle={() => toggle(tool.name)}
-          />
-        ))}
-      </ul>
+          ))}
+        </div>
+      ) : null}
+
+      {filtered.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No tools match the current filters.
+        </p>
+      ) : (
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((tool) => (
+            <ToolCheck
+              key={tool.name}
+              tool={tool}
+              checked={selected.includes(tool.name)}
+              onToggle={() => toggle(tool.name)}
+            />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -173,34 +268,76 @@ function ToolCheck({
   checked: boolean;
   onToggle: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const hasSchema =
+    tool.parameters_schema !== undefined &&
+    tool.parameters_schema !== null &&
+    Object.keys(tool.parameters_schema as Record<string, unknown>).length > 0;
+  const riskVariant = tool.approval_risk_level
+    ? RISK_VARIANT[tool.approval_risk_level] ?? "secondary"
+    : null;
+
   return (
     <li>
-      <label
+      <div
         className={cn(
-          "flex cursor-pointer items-start gap-2 rounded-md border border-border p-3 transition-colors",
-          checked ? "border-primary/40 bg-primary/5" : "hover:bg-accent",
+          "rounded-md border border-border transition-colors",
+          checked ? "border-primary/40 bg-primary/5" : "bg-background hover:bg-accent/40",
         )}
       >
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggle}
-          className="mt-0.5 h-4 w-4 accent-primary"
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{tool.name}</span>
-          {tool.description ? (
-            <span className="line-clamp-2 text-xs text-muted-foreground">
-              {tool.description}
+        <label className="flex cursor-pointer items-start gap-2 p-3">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={onToggle}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span className="block text-sm font-medium">{tool.name}</span>
+              {tool.origin ? (
+                <Badge variant="outline" className="px-1.5 py-0 text-[9px] font-normal">
+                  {tool.origin}
+                </Badge>
+              ) : null}
             </span>
-          ) : null}
-        </span>
-        {tool.requires_approval ? (
-          <Badge variant="warning" className="ml-1 px-1.5 py-0 text-[10px]">
-            approval
-          </Badge>
+            {tool.description ? (
+              <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {tool.description}
+              </span>
+            ) : null}
+          </span>
+          <div className="flex items-center gap-1">
+            {tool.requires_approval ? (
+              <Badge
+                variant={riskVariant ?? "warning"}
+                className="px-1.5 py-0 text-[10px]"
+              >
+                {tool.approval_risk_level ?? "approval"}
+              </Badge>
+            ) : null}
+          </div>
+        </label>
+        {hasSchema ? (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          >
+            {open ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            <span>{open ? "Hide" : "Show"} parameters schema</span>
+          </button>
         ) : null}
-      </label>
+        {open && hasSchema ? (
+          <pre className="max-h-64 overflow-auto scrollbar-thin border-t border-border bg-muted/40 p-2 text-[11px] leading-relaxed">
+            <code>{JSON.stringify(tool.parameters_schema, null, 2)}</code>
+          </pre>
+        ) : null}
+      </div>
     </li>
   );
 }
@@ -357,6 +494,35 @@ function MCPRow({
     control: form.control as Control<ProfileFormValues>,
     name: `mcp_servers.${index}.args`,
   });
+  const probe = useProbeMcp();
+  const [probeResult, setProbeResult] = useState<McpProbeResult | null>(null);
+
+  const onProbe = async () => {
+    const data = form.getValues(`mcp_servers.${index}`);
+    setProbeResult(null);
+    const args = (data.args ?? []).map((a) => a.value).filter((s) => s.length > 0);
+    const env: Record<string, string> = {};
+    for (const e of data.env ?? []) {
+      if (e.key) env[e.key] = e.value;
+    }
+    try {
+      const result = await probe.mutateAsync({
+        type: data.type as "stdio" | "sse",
+        command: data.command || undefined,
+        args,
+        env,
+        url: data.url || undefined,
+      });
+      setProbeResult(result);
+    } catch (err) {
+      setProbeResult({
+        ok: false,
+        elapsed_ms: 0,
+        tools: [],
+        error: (err as Error).message,
+      });
+    }
+  };
 
   return (
     <li className="space-y-3 rounded-md border border-border p-3">
@@ -380,10 +546,65 @@ function MCPRow({
             />
           </FormField>
         </div>
-        <Button type="button" variant="ghost" size="icon" onClick={onRemove}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onProbe}
+            disabled={probe.isPending}
+          >
+            <Plug className="h-3.5 w-3.5" />
+            {probe.isPending ? "Probing…" : "Probe"}
+          </Button>
+          <Button type="button" variant="ghost" size="icon" onClick={onRemove}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+
+      {probeResult ? (
+        <div
+          className={cn(
+            "rounded-md border p-2 text-xs",
+            probeResult.ok
+              ? "border-success/30 bg-success/5 text-success"
+              : "border-destructive/30 bg-destructive/5 text-destructive",
+          )}
+        >
+          {probeResult.ok ? (
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="font-medium">
+                {probeResult.tools.length} tool
+                {probeResult.tools.length === 1 ? "" : "s"} discovered
+              </span>
+              <span className="text-[10px] text-success/70">
+                ({probeResult.elapsed_ms} ms)
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-start gap-1.5">
+              <XCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>{probeResult.error ?? "probe failed"}</span>
+            </div>
+          )}
+          {probeResult.ok && probeResult.tools.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {probeResult.tools.map((t) => (
+                <Badge
+                  key={t.name}
+                  variant="outline"
+                  className="px-1.5 py-0 text-[10px] font-normal"
+                  title={t.description ?? t.name}
+                >
+                  {t.name}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {type === "stdio" ? (
         <div className="grid gap-3 md:grid-cols-2">

@@ -1,11 +1,16 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
+  Beaker,
   Bot,
   LayoutDashboard,
   MessageSquare,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
+  Sparkle,
   Sparkles,
   Wrench,
   Moon,
@@ -31,6 +36,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/monitoring", label: "Monitoring", icon: Activity },
   { to: "/acp", label: "ACP Peers", icon: Network },
   { to: "/tools", label: "Tools", icon: Wrench },
+  { to: "/skills", label: "Skills", icon: Sparkle },
+  { to: "/evals", label: "Evals", icon: Beaker },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -40,8 +47,12 @@ const PAGE_TITLES: Record<string, string> = {
   "/monitoring": "Monitoring",
   "/acp": "ACP Peers",
   "/tools": "Tool Catalog",
+  "/skills": "Skills",
+  "/evals": "Evals",
   "/settings": "Settings",
 };
+
+const COLLAPSED_KEY = "taskforce.sidebar.collapsed";
 
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
@@ -58,48 +69,87 @@ function ThemeToggle() {
   );
 }
 
-function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card/40">
-      <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-        <Sparkles className="h-5 w-5 text-primary" />
-        <span className="text-base font-semibold tracking-tight">Taskforce</span>
+    <aside
+      className={cn(
+        "hidden md:flex shrink-0 flex-col border-r border-border bg-card/40 transition-[width] duration-150",
+        collapsed ? "w-14" : "w-60",
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-14 items-center gap-2 border-b border-border",
+          collapsed ? "justify-center px-2" : "px-4",
+        )}
+      >
+        <Sparkles className="h-5 w-5 shrink-0 text-primary" />
+        {collapsed ? null : (
+          <span className="text-base font-semibold tracking-tight">Taskforce</span>
+        )}
       </div>
-      <nav className="flex-1 space-y-0.5 p-3">
+      <nav className={cn("flex-1 space-y-0.5", collapsed ? "p-1.5" : "p-3")}>
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
+            title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
+                collapsed ? "justify-center p-2" : "px-3 py-2",
                 isActive
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )
             }
           >
-            <item.icon className="h-4 w-4" />
-            <span>{item.label}</span>
+            <item.icon className="h-4 w-4 shrink-0" />
+            {collapsed ? null : <span>{item.label}</span>}
           </NavLink>
         ))}
       </nav>
-      <div className="border-t border-border p-3">
+      <div className={cn("border-t border-border", collapsed ? "p-1.5" : "p-3")}>
         <NavLink
           to="/settings"
+          title={collapsed ? "Settings" : undefined}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
+              collapsed ? "justify-center p-2" : "px-3 py-2",
               isActive
                 ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )
           }
         >
-          <Settings className="h-4 w-4" />
-          <span>Settings</span>
+          <Settings className="h-4 w-4 shrink-0" />
+          {collapsed ? null : <span>Settings</span>}
         </NavLink>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn("mt-2 w-full", collapsed ? "h-8" : "h-7 justify-start gap-2 px-3")}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-4 w-4" />
+          ) : (
+            <>
+              <PanelLeftClose className="h-4 w-4" />
+              <span className="text-xs font-medium">Collapse</span>
+            </>
+          )}
+        </Button>
       </div>
     </aside>
   );
@@ -114,9 +164,18 @@ function getPageTitle(pathname: string): string {
 export function AppShell() {
   const { pathname } = useLocation();
   const title = getPageTitle(pathname);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
+
   return (
     <div className="flex h-full">
-      <Sidebar />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
           <h1 className="text-base font-semibold tracking-tight">{title}</h1>
@@ -126,7 +185,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-          <div className="mx-auto max-w-7xl p-6">
+          <div className="mx-auto w-full max-w-[1600px] p-6">
             <Outlet />
           </div>
         </main>

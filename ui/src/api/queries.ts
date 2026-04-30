@@ -204,6 +204,18 @@ export function useSkills() {
   });
 }
 
+export interface SkillDetail extends SkillSummary {
+  body: string;
+}
+
+export function useSkill(name: string | undefined) {
+  return useQuery<SkillDetail>({
+    queryKey: ["skills", "detail", name ?? ""] as const,
+    queryFn: () => apiFetch<SkillDetail>(`/api/v1/skills/${encodeURIComponent(name!)}`),
+    enabled: !!name,
+  });
+}
+
 export function usePlanningStrategies() {
   return useQuery<{ strategies: PlanningStrategy[] }>({
     queryKey: queryKeys.planningStrategies,
@@ -286,6 +298,29 @@ export function useDeleteProfile() {
   });
 }
 
+export interface ProfileCloneInput {
+  source: string;
+  targetName: string;
+}
+
+export function useCloneProfile() {
+  const qc = useQueryClient();
+  return useMutation<ProfileDetail, Error, ProfileCloneInput>({
+    mutationFn: ({ source, targetName }) =>
+      apiFetch<ProfileDetail>(
+        `/api/v1/profiles/${encodeURIComponent(source)}/clone`,
+        {
+          method: "POST",
+          body: { target_name: targetName },
+        },
+      ),
+    onSuccess: (data) => {
+      invalidateProfileCaches(qc);
+      qc.setQueryData(queryKeys.profile(data.name), data);
+    },
+  });
+}
+
 export function useConversations() {
   return useQuery<ConversationInfo[]>({
     queryKey: queryKeys.conversations,
@@ -327,6 +362,32 @@ export function useCreateConversation() {
         method: "POST",
         body: payload ?? { channel: "rest" },
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.conversations }),
+  });
+}
+
+export interface ForkConversationInput {
+  conversationId: string;
+  upToIndex?: number;
+}
+
+export interface ForkConversationResult {
+  conversation_id: string;
+  source_id: string;
+  messages_copied: number;
+}
+
+export function useForkConversation() {
+  const qc = useQueryClient();
+  return useMutation<ForkConversationResult, Error, ForkConversationInput>({
+    mutationFn: ({ conversationId, upToIndex }) =>
+      apiFetch<ForkConversationResult>(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}/fork`,
+        {
+          method: "POST",
+          body: { up_to_index: upToIndex ?? null, channel: "rest" },
+        },
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.conversations }),
   });
 }
@@ -438,6 +499,64 @@ export function useActiveRuns(intervalMs = 4_000) {
   });
 }
 
+export interface TraceEvent {
+  timestamp: string;
+  event_type: string;
+  message?: string;
+  details?: Record<string, unknown> | null;
+  step?: number | null;
+}
+
+export interface RunTrace {
+  session_id: string;
+  started_at: string;
+  profile?: string | null;
+  agent_id?: string | null;
+  mission: string;
+  finished: boolean;
+  final_status?: string | null;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cost_usd: number;
+  events: TraceEvent[];
+}
+
+export interface RecentRunSummary {
+  session_id: string;
+  started_at: string;
+  profile?: string | null;
+  agent_id?: string | null;
+  mission_preview: string;
+  finished: boolean;
+  final_status?: string | null;
+  event_count: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cost_usd: number;
+}
+
+export function useRecentRuns(intervalMs = 6_000) {
+  return useQuery<{ runs: RecentRunSummary[] }>({
+    queryKey: ["runs", "recent"] as const,
+    queryFn: () => apiFetch<{ runs: RecentRunSummary[] }>("/api/v1/runs/recent"),
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useRunTrace(sessionId: string | undefined, intervalMs = 3_000) {
+  return useQuery<RunTrace>({
+    queryKey: ["runs", "trace", sessionId ?? ""] as const,
+    queryFn: () =>
+      apiFetch<RunTrace>(`/api/v1/runs/${encodeURIComponent(sessionId!)}/trace`),
+    enabled: !!sessionId,
+    refetchInterval: (query) => {
+      const data = (query.state as { data?: RunTrace }).data;
+      if (data?.finished) return false;
+      return intervalMs;
+    },
+  });
+}
+
 export function useCancelRun() {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({
@@ -528,6 +647,111 @@ export function useTestAcpPeer() {
         `/api/v1/acp/peers/${encodeURIComponent(name)}/test`,
         { method: "POST" },
       ),
+  });
+}
+
+export interface McpProbeRequest {
+  type: "stdio" | "sse";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+
+export interface McpProbeTool {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown> | null;
+}
+
+export interface McpProbeResult {
+  ok: boolean;
+  elapsed_ms: number;
+  tools: McpProbeTool[];
+  error?: string | null;
+}
+
+export function useProbeMcp() {
+  return useMutation<McpProbeResult, Error, McpProbeRequest>({
+    mutationFn: (payload) =>
+      apiFetch<McpProbeResult>("/api/v1/mcp/probe", {
+        method: "POST",
+        body: payload,
+      }),
+  });
+}
+
+export interface EvalCellResult {
+  profile: string;
+  mission: string;
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  latency_ms?: number | null;
+  final_message: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  error?: string | null;
+  session_id?: string | null;
+}
+
+export interface EvalRun {
+  run_id: string;
+  missions: string[];
+  profiles: string[];
+  created_at: string;
+  finished: boolean;
+  cells: EvalCellResult[];
+}
+
+export interface EvalRunSummary {
+  run_id: string;
+  missions: string[];
+  profiles: string[];
+  created_at: string;
+  finished: boolean;
+  cell_count: number;
+  completed_cells: number;
+}
+
+export interface CreateEvalRunInput {
+  missions: string[];
+  profiles: string[];
+  parallelism?: number;
+}
+
+export function useEvalRuns(intervalMs = 4_000) {
+  return useQuery<{ runs: EvalRunSummary[] }>({
+    queryKey: ["evals", "list"] as const,
+    queryFn: () => apiFetch<{ runs: EvalRunSummary[] }>("/api/v1/evals/runs"),
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useEvalRun(runId: string | undefined, intervalMs = 2_000) {
+  return useQuery<EvalRun>({
+    queryKey: ["evals", "detail", runId ?? ""] as const,
+    queryFn: () =>
+      apiFetch<EvalRun>(`/api/v1/evals/runs/${encodeURIComponent(runId!)}`),
+    enabled: !!runId,
+    refetchInterval: (query) => {
+      const data = (query.state as { data?: EvalRun }).data;
+      if (data?.finished) return false;
+      return intervalMs;
+    },
+  });
+}
+
+export function useCreateEvalRun() {
+  const qc = useQueryClient();
+  return useMutation<{ run_id: string; cell_count: number }, Error, CreateEvalRunInput>({
+    mutationFn: (payload) =>
+      apiFetch<{ run_id: string; cell_count: number }>("/api/v1/evals/runs", {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["evals", "list"] }),
   });
 }
 

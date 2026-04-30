@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, MessageSquarePlus } from "lucide-react";
+import { Archive, GitBranch, MessageSquarePlus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
   useConversationMessages,
   useConversations,
   useCreateConversation,
+  useForkConversation,
   type ChatMessage as ChatMessageT,
   type FileMetadata,
 } from "@/api/queries";
@@ -161,8 +162,10 @@ export default function ChatPage() {
   const conversationId = params.conversationId;
   const messagesQuery = useConversationMessages(conversationId);
   const archive = useArchiveConversation();
+  const fork = useForkConversation();
   const stream = useChatStream();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const messages = messagesQuery.data ?? [];
   const isStreaming = stream.isStreaming;
@@ -206,6 +209,12 @@ export default function ChatPage() {
     await archive.mutateAsync({ id: conversationId });
   };
 
+  const onFork = async () => {
+    if (!conversationId) return;
+    const result = await fork.mutateAsync({ conversationId });
+    navigate(`/chat/${encodeURIComponent(result.conversation_id)}`);
+  };
+
   const headerTitle = useMemo(() => {
     return conversationId ? `Conversation ${conversationId.slice(0, 12)}…` : "Chat";
   }, [conversationId]);
@@ -220,10 +229,22 @@ export default function ChatPage() {
           <CardTitle>{headerTitle}</CardTitle>
           <div className="flex items-center gap-2">
             {conversationId ? (
-              <Button variant="outline" size="sm" onClick={onArchive} disabled={archive.isPending}>
-                <Archive className="h-4 w-4" />
-                Archive
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onFork}
+                  disabled={fork.isPending}
+                  title="Create a copy of this conversation to replay or branch"
+                >
+                  <GitBranch className="h-4 w-4" />
+                  Fork
+                </Button>
+                <Button variant="outline" size="sm" onClick={onArchive} disabled={archive.isPending}>
+                  <Archive className="h-4 w-4" />
+                  Archive
+                </Button>
+              </>
             ) : null}
           </div>
         </CardHeader>

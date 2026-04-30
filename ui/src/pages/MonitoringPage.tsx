@@ -11,6 +11,7 @@ import { TokenUsageChart } from "@/features/monitoring/TokenUsageChart";
 import { AgentCostChart } from "@/features/monitoring/AgentCostChart";
 import { ModelDistributionChart } from "@/features/monitoring/ModelDistributionChart";
 import { ActiveRunsTable } from "@/features/monitoring/ActiveRunsTable";
+import { RecentRunsTable } from "@/features/monitoring/RecentRunsTable";
 import { cn } from "@/lib/utils";
 
 type Range = "today" | "7d" | "30d";
@@ -89,7 +90,10 @@ export default function MonitoringPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+      >
         <KpiCard
           label="Tokens"
           value={formatTokens(tokensInRange)}
@@ -132,7 +136,10 @@ export default function MonitoringPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}
+      >
         <Card>
           <CardHeader>
             <CardTitle>Cost per agent</CardTitle>
@@ -164,6 +171,19 @@ export default function MonitoringPage() {
         </CardHeader>
         <CardContent>
           <ActiveRunsTable intervalMs={4_000} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent runs</CardTitle>
+          <CardDescription>
+            Last sessions captured by the in-memory trace store. Click any row
+            to inspect the ReAct trace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RecentRunsTable />
         </CardContent>
       </Card>
     </div>

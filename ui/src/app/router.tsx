@@ -5,10 +5,14 @@ import { AppShell } from "@/app/AppShell";
 const Dashboard = lazy(() => import("@/pages/DashboardPage"));
 const AgentsList = lazy(() => import("@/pages/AgentsListPage"));
 const AgentEditor = lazy(() => import("@/pages/AgentEditorPage"));
+const AgentCompare = lazy(() => import("@/pages/AgentComparePage"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const MonitoringPage = lazy(() => import("@/pages/MonitoringPage"));
+const RunDetailPage = lazy(() => import("@/pages/RunDetailPage"));
 const AcpPage = lazy(() => import("@/pages/AcpPage"));
 const ToolsPage = lazy(() => import("@/pages/ToolsPage"));
+const SkillsPage = lazy(() => import("@/pages/SkillsPage"));
+const EvalsPage = lazy(() => import("@/pages/EvalsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
@@ -31,14 +35,17 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: withSuspense(<Dashboard />) },
       { path: "agents", element: withSuspense(<AgentsList />) },
+      { path: "agents/compare", element: withSuspense(<AgentCompare />) },
       { path: "agents/new", element: withSuspense(<AgentEditor mode="create" />) },
       { path: "agents/:agentId", element: withSuspense(<AgentEditor mode="edit" />) },
       { path: "chat", element: withSuspense(<ChatPage />) },
       { path: "chat/:conversationId", element: withSuspense(<ChatPage />) },
       { path: "monitoring", element: withSuspense(<MonitoringPage />) },
-      { path: "monitoring/runs/:sessionId", element: withSuspense(<MonitoringPage />) },
+      { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />) },
       { path: "acp", element: withSuspense(<AcpPage />) },
       { path: "tools", element: withSuspense(<ToolsPage />) },
+      { path: "skills", element: withSuspense(<SkillsPage />) },
+      { path: "evals", element: withSuspense(<EvalsPage />) },
       { path: "settings", element: withSuspense(<SettingsPage />) },
       { path: "*", element: withSuspense(<NotFoundPage />) },
     ],
