@@ -689,6 +689,53 @@ export function useProbeMcp() {
   });
 }
 
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  persona_hint: string;
+  recommended_tools: string[];
+  recommended_skills: string[];
+  system_prompt_template: string;
+  example_prompts: string[];
+  tone_default: string;
+  language_default: string;
+}
+
+export function useAgentTemplates() {
+  return useQuery<{ templates: AgentTemplate[] }>({
+    queryKey: ["agent-templates", "list"] as const,
+    queryFn: () =>
+      apiFetch<{ templates: AgentTemplate[] }>("/api/v1/agent-templates"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export interface ComposePromptInput {
+  template_id?: string | null;
+  description?: string;
+  tone?: string;
+  language?: string;
+  rules?: string;
+  use_ai?: boolean;
+}
+
+export interface ComposePromptResponse {
+  system_prompt: string;
+  used_ai: boolean;
+}
+
+export function useComposePrompt() {
+  return useMutation<ComposePromptResponse, Error, ComposePromptInput>({
+    mutationFn: (payload) =>
+      apiFetch<ComposePromptResponse>(
+        "/api/v1/agent-templates/compose-prompt",
+        { method: "POST", body: payload },
+      ),
+  });
+}
+
 export interface EvalCellResult {
   profile: string;
   mission: string;

@@ -70,8 +70,13 @@ export default function AgentsListPage() {
                 Compare
               </Link>
             </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/agents/new?advanced=1" title="Profi-Editor mit allen Tabs">
+                Profi-Editor
+              </Link>
+            </Button>
             <Button asChild>
-              <Link to="/agents/new">New custom agent</Link>
+              <Link to="/agents/new">+ Neuer Agent</Link>
             </Button>
           </div>
         </CardHeader>

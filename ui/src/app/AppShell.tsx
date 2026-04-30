@@ -10,9 +10,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
-  Sparkle,
   Sparkles,
-  Wrench,
   Moon,
   Sun,
 } from "lucide-react";
@@ -34,9 +32,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/agents", label: "Agents", icon: Bot },
   { to: "/chat", label: "Chat", icon: MessageSquare },
   { to: "/monitoring", label: "Monitoring", icon: Activity },
+  { to: "/capabilities", label: "Fähigkeiten", icon: Sparkles },
   { to: "/acp", label: "ACP Peers", icon: Network },
-  { to: "/tools", label: "Tools", icon: Wrench },
-  { to: "/skills", label: "Skills", icon: Sparkle },
   { to: "/evals", label: "Evals", icon: Beaker },
 ];
 
@@ -46,8 +43,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/chat": "Chat",
   "/monitoring": "Monitoring",
   "/acp": "ACP Peers",
-  "/tools": "Tool Catalog",
-  "/skills": "Skills",
+  "/capabilities": "Fähigkeiten",
   "/evals": "Evals",
   "/settings": "Settings",
 };

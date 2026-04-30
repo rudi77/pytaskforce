@@ -10,8 +10,7 @@ const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const MonitoringPage = lazy(() => import("@/pages/MonitoringPage"));
 const RunDetailPage = lazy(() => import("@/pages/RunDetailPage"));
 const AcpPage = lazy(() => import("@/pages/AcpPage"));
-const ToolsPage = lazy(() => import("@/pages/ToolsPage"));
-const SkillsPage = lazy(() => import("@/pages/SkillsPage"));
+const CapabilitiesPage = lazy(() => import("@/pages/CapabilitiesPage"));
 const EvalsPage = lazy(() => import("@/pages/EvalsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
@@ -43,8 +42,9 @@ export const router = createBrowserRouter([
       { path: "monitoring", element: withSuspense(<MonitoringPage />) },
       { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />) },
       { path: "acp", element: withSuspense(<AcpPage />) },
-      { path: "tools", element: withSuspense(<ToolsPage />) },
-      { path: "skills", element: withSuspense(<SkillsPage />) },
+      { path: "capabilities", element: withSuspense(<CapabilitiesPage />) },
+      { path: "tools", element: <Navigate to="/capabilities" replace /> },
+      { path: "skills", element: <Navigate to="/capabilities" replace /> },
       { path: "evals", element: withSuspense(<EvalsPage />) },
       { path: "settings", element: withSuspense(<SettingsPage />) },
       { path: "*", element: withSuspense(<NotFoundPage />) },
