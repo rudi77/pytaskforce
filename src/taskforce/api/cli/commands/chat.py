@@ -5,15 +5,13 @@ import contextlib
 import logging
 import os
 import uuid
-from datetime import UTC, datetime
-from pathlib import Path
 
-import structlog
 import typer
 
 from taskforce.api.cli.simple_chat import run_simple_chat
 from taskforce.application.factory import AgentFactory
 from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
+from taskforce.infrastructure.logging import configure_logging
 
 app = typer.Typer(help="Interactive chat mode", invoke_without_command=True)
 
@@ -78,23 +76,15 @@ def _run_chat(
     profile = profile or global_opts.get("profile", "butler")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
-    # Configure logging to file to avoid interfering with console output
-    log_dir = Path.home() / ".taskforce" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    log_path = log_dir / f"taskforce_chat_{timestamp}.log"
-
-    logging.captureWarnings(True)
-    logging.basicConfig(
-        level=logging.DEBUG if debug else logging.WARNING,
-        format="%(message)s",
-        handlers=[logging.FileHandler(log_path, encoding="utf-8")],
-        force=True,
-    )
-    structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(
-            logging.DEBUG if debug else logging.WARNING
-        ),
+    # Configure logging: chat REPL needs file-only output so it doesn't
+    # interfere with the console UI. Tool args/results land in butler.log
+    # next to the daemon's log so all sessions write to one place.
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    log_path = configure_logging(
+        log_dir=f"{work_dir}/logs",
+        log_name="butler.log",
+        debug=debug,
+        console=False,
     )
 
     # Initialize Phoenix OTEL tracing (auto-instruments LiteLLM calls)
