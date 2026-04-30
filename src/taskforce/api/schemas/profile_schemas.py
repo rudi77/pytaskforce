@@ -83,3 +83,15 @@ class ProfileCreatePayload(ProfileDefinitionPayload):
         pattern="^[a-zA-Z0-9._-]+$",
         description="Profile identifier (filename minus extension)",
     )
+
+
+class ProfileClonePayload(BaseModel):
+    """Body for ``POST /profiles/{source}/clone``."""
+
+    target_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern="^[a-zA-Z0-9._-]+$",
+        description="Name of the new user-owned profile",
+    )

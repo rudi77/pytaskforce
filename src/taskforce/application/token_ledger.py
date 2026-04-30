@@ -356,6 +356,23 @@ class TokenLedger:
             by_model=self.aggregate_by_model(from_iso=month.isoformat()),
         )
 
+    def per_session(self, session_id: str) -> dict[str, object]:
+        """Aggregate token usage and cost for a single session id."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(prompt_tokens), 0) AS p, "
+                "COALESCE(SUM(completion_tokens), 0) AS c, "
+                "COALESCE(SUM(cost_usd), 0.0) AS cost "
+                "FROM llm_calls WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return {
+            "session_id": session_id,
+            "prompt_tokens": int(row["p"] or 0) if row else 0,
+            "completion_tokens": int(row["c"] or 0) if row else 0,
+            "cost_usd": float(row["cost"] or 0.0) if row else 0.0,
+        }
+
     def per_conversation(self, conversation_id: str) -> dict[str, object]:
         with self._connect() as conn:
             rows = conn.execute(

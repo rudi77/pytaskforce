@@ -499,3 +499,54 @@ async def archive_conversation(
     """Archive a conversation with an optional summary."""
     summary = request.summary if request else None
     await manager.archive(conversation_id, summary)
+
+
+class ForkConversationRequest(BaseModel):
+    """Body for ``POST /conversations/{id}/fork``."""
+
+    up_to_index: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Number of messages to copy from the source. ``None`` means "
+            "copy the full transcript."
+        ),
+    )
+    channel: str = Field(default="rest")
+
+
+class ForkConversationResponse(BaseModel):
+    conversation_id: str
+    source_id: str
+    messages_copied: int
+
+
+@router.post(
+    "/{conversation_id}/fork",
+    response_model=ForkConversationResponse,
+    status_code=201,
+    summary="Fork a conversation into a fresh copy",
+)
+async def fork_conversation(
+    conversation_id: str,
+    request: ForkConversationRequest | None = None,
+    manager=Depends(get_conversation_manager),
+) -> ForkConversationResponse:
+    """Create a new conversation seeded with the source's messages.
+
+    Use case: replay a past conversation through a different profile or
+    LLM model without mutating the original transcript.
+    """
+    body = request or ForkConversationRequest()
+    source_messages = await manager.get_messages(conversation_id)
+    new_id = await manager.fork(
+        conversation_id,
+        up_to_index=body.up_to_index,
+        channel=body.channel,
+    )
+    copied = body.up_to_index if body.up_to_index is not None else len(source_messages)
+    return ForkConversationResponse(
+        conversation_id=new_id,
+        source_id=conversation_id,
+        messages_copied=copied,
+    )

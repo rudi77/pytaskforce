@@ -13,11 +13,13 @@ import asyncio
 import json
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, status
 from fastapi.responses import StreamingResponse
 
+from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.analytics_schemas import ActiveRunResponse, ActiveRunsResponse
 from taskforce.application.run_registry import get_run_registry
+from taskforce.application.run_trace_store import get_run_trace_store
 
 router = APIRouter()
 
@@ -37,6 +39,29 @@ def _to_response(snapshot: list[dict]) -> ActiveRunsResponse:
 )
 def list_active_runs() -> ActiveRunsResponse:
     return _to_response(get_run_registry().snapshot_dicts())
+
+
+@router.get(
+    "/runs/recent",
+    summary="List recent runs (active + recently finished, captured by the trace store)",
+)
+def list_recent_runs() -> dict:
+    return {"runs": get_run_trace_store().list_sessions()}
+
+
+@router.get(
+    "/runs/{session_id}/trace",
+    summary="Return the recorded ReAct trace for a run",
+)
+def get_run_trace(session_id: str) -> dict:
+    trace = get_run_trace_store().get(session_id)
+    if trace is None:
+        raise _http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"No recorded trace for session '{session_id}'.",
+        )
+    return trace
 
 
 @router.get(

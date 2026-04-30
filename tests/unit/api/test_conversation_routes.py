@@ -174,3 +174,36 @@ class TestArchiveConversation:
         resp = client.post("/api/v1/conversations/conv-123/archive")
         assert resp.status_code == 204
         mock_conversation_manager.archive.assert_called_once_with("conv-123", None)
+
+
+class TestForkConversation:
+    def test_forks_full_transcript(self, client, mock_conversation_manager):
+        mock_conversation_manager.get_messages = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ]
+        )
+        mock_conversation_manager.fork = AsyncMock(return_value="new-conv-id")
+        resp = client.post(
+            "/api/v1/conversations/conv-source/fork",
+            json={"up_to_index": None, "channel": "rest"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["conversation_id"] == "new-conv-id"
+        assert body["source_id"] == "conv-source"
+        assert body["messages_copied"] == 2
+        mock_conversation_manager.fork.assert_called_once()
+
+    def test_forks_partial_transcript(self, client, mock_conversation_manager):
+        mock_conversation_manager.get_messages = AsyncMock(
+            return_value=[{"role": "user", "content": str(i)} for i in range(5)]
+        )
+        mock_conversation_manager.fork = AsyncMock(return_value="forked")
+        resp = client.post(
+            "/api/v1/conversations/source/fork",
+            json={"up_to_index": 2},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["messages_copied"] == 2

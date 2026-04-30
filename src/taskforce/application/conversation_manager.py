@@ -93,6 +93,38 @@ class ConversationManager:
         """Archive a conversation with an optional summary."""
         await self._store.archive(conversation_id, summary)
 
+    async def fork(
+        self,
+        source_id: str,
+        *,
+        up_to_index: int | None = None,
+        channel: str = "rest",
+    ) -> str:
+        """Create a new conversation seeded with messages from ``source_id``.
+
+        ``up_to_index`` is exclusive; ``None`` copies the full transcript.
+        Useful for replaying a conversation with a different profile or
+        model swap without mutating the original.
+        """
+        messages = await self._store.get_messages(source_id)
+        if up_to_index is None:
+            slice_ = messages
+        else:
+            slice_ = messages[: max(0, up_to_index)]
+        new_id = await self._store.create_new(channel)
+        for msg in slice_:
+            # ``message_count`` and timestamps in the source are not
+            # transferable; we just append fresh entries.
+            payload = {k: v for k, v in msg.items() if k in {"role", "content", "attachments"}}
+            await self._store.append_message(new_id, payload)
+        logger.info(
+            "conversation.forked",
+            source=source_id,
+            target=new_id,
+            messages_copied=len(slice_),
+        )
+        return new_id
+
     async def list_active(self) -> list[ConversationInfo]:
         """List all active conversations."""
         return await self._store.list_active()

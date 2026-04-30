@@ -9,11 +9,13 @@ and agent skills.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
+from taskforce.api.errors import http_exception as _http_exception
 from taskforce.application.skill_service import get_skill_service
 
 router = APIRouter()
@@ -50,6 +52,12 @@ def _to_summary(meta) -> SkillSummary:
     )
 
 
+class SkillDetail(SkillSummary):
+    """Skill summary plus the SKILL.md body so the UI can preview it."""
+
+    body: str = Field(default="", description="Markdown body of the skill file")
+
+
 @router.get(
     "/skills",
     response_model=SkillListResponse,
@@ -61,3 +69,43 @@ def list_skills() -> SkillListResponse:
     skills = [_to_summary(meta) for meta in service.get_all_metadata()]
     skills.sort(key=lambda s: s.name)
     return SkillListResponse(skills=skills)
+
+
+@router.get(
+    "/skills/{name:path}",
+    response_model=SkillDetail,
+    summary="Read a skill (frontmatter + body)",
+)
+def get_skill(name: str) -> SkillDetail:
+    """Return the parsed skill metadata plus the SKILL.md body."""
+    service = get_skill_service()
+    metadata = None
+    for meta in service.get_all_metadata():
+        if getattr(meta, "name", None) == name:
+            metadata = meta
+            break
+    if metadata is None:
+        raise _http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="skill_not_found",
+            message=f"Skill '{name}' not found.",
+        )
+
+    summary = _to_summary(metadata)
+    body = ""
+    file_path = getattr(metadata, "file_path", None)
+    if file_path:
+        path = Path(str(file_path))
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8")
+                # Strip optional ``---``-delimited frontmatter so the body is
+                # readable on its own.
+                if text.startswith("---"):
+                    end = text.find("\n---", 3)
+                    if end != -1:
+                        text = text[end + 4 :].lstrip("\n")
+                body = text
+            except OSError:
+                body = ""
+    return SkillDetail(**summary.model_dump(), body=body)

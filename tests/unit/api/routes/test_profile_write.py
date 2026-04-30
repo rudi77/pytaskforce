@@ -209,6 +209,43 @@ def test_update_preserves_unknown_top_level_keys(
     assert "file_read" in text
 
 
+def test_clone_framework_profile_to_user_dir(
+    client: TestClient, user_profiles_dir: Path
+) -> None:
+    """A read-only profile clones into the user dir as a fresh, editable copy."""
+    response = client.post(
+        "/api/v1/profiles/default/clone",
+        json={"target_name": "default-copy"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "default-copy"
+    assert body["is_writable"] is True
+    assert (user_profiles_dir / "default-copy.yaml").is_file()
+
+
+def test_clone_unknown_returns_404(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/profiles/never-existed/clone",
+        json={"target_name": "anything"},
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == "profile_not_found"
+
+
+def test_clone_conflict_when_target_exists(
+    client: TestClient, user_profiles_dir: Path
+) -> None:
+    create = client.post("/api/v1/profiles", json=_minimal_payload())
+    assert create.status_code == 201
+    response = client.post(
+        "/api/v1/profiles/default/clone",
+        json={"target_name": "demo-agent"},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "profile_exists"
+
+
 def test_update_explicit_null_deletes_key(
     client: TestClient, user_profiles_dir: Path
 ) -> None:

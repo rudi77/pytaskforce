@@ -62,11 +62,13 @@ from taskforce.api.routes import (
     agents,
     analytics,
     conversations,
+    evals,
     execution,
     files,
     gateway,
     health,
     llm,
+    mcp,
     memory,
     planning_strategies,
     profiles,
@@ -198,6 +200,8 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(files.router, prefix="/api/v1", tags=["files"])
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
+    app.include_router(mcp.router, prefix="/api/v1", tags=["mcp"])
+    app.include_router(evals.router, prefix="/api/v1", tags=["evals"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation

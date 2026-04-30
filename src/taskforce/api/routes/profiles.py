@@ -20,6 +20,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.profile_schemas import (
+    ProfileClonePayload,
     ProfileCreatePayload,
     ProfileDefinitionPayload,
     ProfileDetail,
@@ -171,6 +172,45 @@ def update_profile(name: str, payload: ProfileDefinitionPayload) -> ProfileDetai
         ) from exc
 
     return _detail_for(name, path)
+
+
+@router.post(
+    "/profiles/{source}/clone",
+    response_model=ProfileDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Clone a (read-only) profile into the user-profiles directory",
+)
+def clone_profile(source: str, payload: ProfileClonePayload) -> ProfileDetail:
+    """Copy ``source`` into the user-profiles directory under ``target_name``.
+
+    Lets the UI customize butler / coding_agent / rag_agent profiles without
+    touching the read-only files shipped by the agent packages.
+    """
+    loader = ProfileLoader()
+    writer = ProfileWriter(loader=loader)
+    try:
+        config, _raw, _path = loader.load_with_raw(source)
+    except FileNotFoundError as exc:
+        raise _http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="profile_not_found",
+            message=str(exc),
+        ) from exc
+    try:
+        path = writer.create(payload.target_name, config)
+    except ProfileExists as exc:
+        raise _http_exception(
+            status_code=status.HTTP_409_CONFLICT,
+            code="profile_exists",
+            message=str(exc),
+        ) from exc
+    except (ProfileWriteError, ValueError) as exc:
+        raise _http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="profile_invalid",
+            message=str(exc),
+        ) from exc
+    return _detail_for(payload.target_name, path)
 
 
 @router.delete(

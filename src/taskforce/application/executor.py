@@ -302,6 +302,19 @@ class AgentExecutor:
         except Exception:  # noqa: BLE001
             run_registry = None
 
+        try:
+            from taskforce.application.run_trace_store import get_run_trace_store
+
+            trace_store = get_run_trace_store()
+            trace_store.start(
+                resolved_session_id,
+                mission=mission,
+                profile=profile,
+                agent_id=agent_id,
+            )
+        except Exception:  # noqa: BLE001
+            trace_store = None
+
         # Stamp run context so the LiteLLM token-ledger callback can
         # attach session/agent metadata to every record.
         from taskforce.application.token_ledger import run_context as _run_context
@@ -361,6 +374,17 @@ class AgentExecutor:
                     resolved_session_id,
                     user_context=user_context,
                 ):
+                    if trace_store is not None:
+                        try:
+                            trace_store.record(
+                                resolved_session_id,
+                                event_type=update.event_type,
+                                message=getattr(update, "message", "") or "",
+                                details=getattr(update, "details", None),
+                                step=getattr(update, "step_number", None),
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
                     yield update
 
             self.logger.info(
@@ -368,6 +392,13 @@ class AgentExecutor:
                 session_id=resolved_session_id,
                 agent_id=agent_id,
                 plugin_path=plugin_path,
+            )
+
+            await self._run_post_mission_learning(
+                mission=mission,
+                agent=agent,
+                profile=profile,
+                session_id=resolved_session_id,
             )
 
         except asyncio.CancelledError as e:
@@ -387,6 +418,14 @@ class AgentExecutor:
         finally:
             if run_registry is not None:
                 run_registry.unregister(resolved_session_id)
+            if trace_store is not None:
+                try:
+                    trace_store.finish(
+                        resolved_session_id,
+                        final_status="failed" if execution_failed else "completed",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             # Remove the agent from the active registry only if the entry
             # still points to the same instance (guards against a rare race
             # where a second run for the same session_id replaced it).
@@ -544,3 +583,65 @@ class AgentExecutor:
             await agent.close()
         except Exception:
             pass
+
+    async def _run_post_mission_learning(
+        self,
+        mission: str,
+        agent: Agent | None,
+        profile: str | None,
+        session_id: str,
+    ) -> None:
+        """Optionally extract reusable knowledge into the wiki.
+
+        Activated only when the resolved profile config sets
+        ``learning.enabled: true``. All exceptions are swallowed so
+        learning never breaks the mission flow.
+        """
+        if agent is None or not profile:
+            return
+        try:
+            from taskforce.application.profile_loader import ProfileLoader
+
+            config = ProfileLoader().load(profile)
+            learning_cfg = (config or {}).get("learning") or {}
+            if not learning_cfg.get("enabled"):
+                return
+
+            wiki_store = getattr(agent, "_wiki_store", None) or getattr(
+                agent, "wiki_store", None
+            )
+            llm_service = getattr(agent, "llm_provider", None)
+            if wiki_store is None or llm_service is None:
+                return
+
+            messages = list(getattr(agent.context, "messages", []) or [])
+            if not messages:
+                return
+
+            from taskforce.application.learning_service import (
+                LlmExtractingLearningService,
+            )
+
+            service = LlmExtractingLearningService(
+                wiki_store=wiki_store,
+                llm_service=llm_service,
+                model_alias=str(learning_cfg.get("model_alias", "fast")),
+            )
+            result = await service.learn_from_mission(
+                mission=mission,
+                messages=messages,
+                session_id=session_id,
+            )
+            self.logger.info(
+                "post_mission_learning",
+                session_id=session_id,
+                pages_written=result.pages_written,
+                extracted=result.extracted_count,
+                skipped=result.skipped_reason,
+            )
+        except Exception as e:
+            self.logger.warning(
+                "post_mission_learning_failed",
+                session_id=session_id,
+                error=repr(e),
+            )

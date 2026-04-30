@@ -130,3 +130,55 @@ def test_active_runs_empty(client, registry):
     response = client.get("/api/v1/runs/active")
     assert response.status_code == 200
     assert response.json() == {"runs": []}
+
+
+def test_run_trace_round_trip(client):
+    """Recording a structural event makes it appear in the trace endpoint."""
+    from taskforce.application.run_trace_store import (
+        get_run_trace_store,
+        reset_run_trace_store,
+    )
+
+    reset_run_trace_store()
+    try:
+        store = get_run_trace_store()
+        store.start("sess-trace", mission="Demo run", profile="butler")
+        store.record(
+            "sess-trace",
+            event_type="tool_call",
+            details={"tool": "python", "args": {"code": "1+1"}},
+            step=1,
+        )
+        store.record(
+            "sess-trace",
+            event_type="tool_result",
+            details={"tool": "python", "result": 2},
+            step=1,
+        )
+        store.finish("sess-trace", final_status="completed")
+
+        recent = client.get("/api/v1/runs/recent")
+        assert recent.status_code == 200
+        runs = recent.json()["runs"]
+        assert any(r["session_id"] == "sess-trace" for r in runs)
+
+        trace = client.get("/api/v1/runs/sess-trace/trace")
+        assert trace.status_code == 200
+        body = trace.json()
+        assert body["session_id"] == "sess-trace"
+        assert body["finished"] is True
+        assert body["final_status"] == "completed"
+        events = body["events"]
+        assert [e["event_type"] for e in events] == ["tool_call", "tool_result"]
+        assert events[0]["step"] == 1
+    finally:
+        reset_run_trace_store()
+
+
+def test_run_trace_unknown_returns_404(client):
+    from taskforce.application.run_trace_store import reset_run_trace_store
+
+    reset_run_trace_store()
+    response = client.get("/api/v1/runs/never-existed/trace")
+    assert response.status_code == 404
+    assert response.json()["code"] == "run_not_found"
