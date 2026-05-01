@@ -397,11 +397,13 @@ class InfrastructureBuilder:
             from taskforce.infrastructure.runtime import (
                 AgentRuntimeTracker,
                 FileCheckpointStore,
-                FileHeartbeatStore,
+                InMemoryHeartbeatStore,
             )
 
+            # Heartbeats are recorded per step but never read in production,
+            # so they stay in memory even when checkpoints are persisted.
             return AgentRuntimeTracker(
-                heartbeat_store=FileHeartbeatStore(runtime_work_dir),
+                heartbeat_store=InMemoryHeartbeatStore(),
                 checkpoint_store=FileCheckpointStore(runtime_work_dir),
             )
         raise ValueError(f"Unknown runtime store type: {store_type}")
