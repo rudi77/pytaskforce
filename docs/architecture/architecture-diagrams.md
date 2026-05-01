@@ -1908,7 +1908,7 @@ flowchart TB
         ProviderRegistry[Provider Registry<br/>build_provider_registry]
         TelegramProvider[TelegramProvider]
         TeamsProvider[TeamsProvider]
-        Store[FileConversationStore<br/>.taskforce/conversations]
+        Store[GatewayConversationStore<br/>.taskforce/gateway_sessions]
     end
 
     subgraph "Core Interfaces"

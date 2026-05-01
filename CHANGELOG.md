@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Gateway conversation store renamed and moved on disk.** The Communication
+  Gateway's `FileConversationStore` (in
+  `taskforce.infrastructure.communication`) is now `GatewayConversationStore`
+  and writes to `.taskforce/gateway_sessions/{channel}/{conversation_id}.json`
+  instead of `.taskforce/conversations/{channel}/{conversation_id}.json`. This
+  removes a name and path collision with the persistence-layer
+  `FileConversationStore` (ADR-016). The corresponding in-memory class is
+  `InMemoryGatewayConversationStore`.
+  - **Migration:** existing channel-to-session mappings under
+    `.taskforce/conversations/{channel}/` are not auto-migrated. To preserve
+    them, move the files: `mv .taskforce/conversations/{channel} .taskforce/gateway_sessions/{channel}`.
+    Otherwise the gateway will mint new sessions on next inbound message.
+
+### Removed
+
+- **`FileHeartbeatStore`** (`taskforce.infrastructure.runtime`). Heartbeats
+  were recorded per ReAct step but never read by production code, so the
+  per-step file write produced disk churn without a consumer. The
+  infrastructure builder now uses `InMemoryHeartbeatStore` even when
+  `runtime.store: file` is configured. `FileCheckpointStore` continues to
+  persist checkpoints normally; infer cross-process liveness from checkpoint
+  mtimes if needed.
+
 ## [0.1.0] - 2026-01-05
 
 ### Added
