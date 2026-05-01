@@ -43,12 +43,24 @@ class ProgressUpdate:
         event_type: Type of event (see EventType enum)
         message: Human-readable message describing the event
         details: Additional structured data about the event
+        agent_path: Hierarchical path of agent specialists when this event
+            originated from a sub-agent (e.g. ``["coding_worker"]`` or
+            ``["coding_worker", "test_engineer"]``).  ``None`` for events
+            emitted by the root agent.
+        parent_session_id: Session ID of the parent agent when this event
+            originated from a sub-agent.  ``None`` for root events.
+        source_agent: Specialist / agent identifier that emitted the event
+            (matches the last element of ``agent_path``).  ``None`` for
+            root events.
     """
 
     timestamp: datetime
     event_type: EventType | str  # Allow string for backward compatibility
     message: str
     details: dict[str, Any]
+    agent_path: list[str] | None = None
+    parent_session_id: str | None = None
+    source_agent: str | None = None
 
     @property
     def event_type_value(self) -> str:

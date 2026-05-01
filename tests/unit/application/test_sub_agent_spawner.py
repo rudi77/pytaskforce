@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from taskforce.application.sub_agent_spawner import SubAgentSpawner
+from taskforce.core.domain.enums import EventType, ExecutionStatus
+from taskforce.core.domain.models import StreamEvent
 from taskforce.core.domain.sub_agents import SubAgentSpec
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 
@@ -83,6 +86,24 @@ class FakeAgent:
 
     async def execute(self, mission: str, session_id: str) -> FakeExecutionResult:
         return FakeExecutionResult()
+
+    async def execute_stream(
+        self, mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        # Minimal stream: a final answer followed by a COMPLETE event so
+        # ``run_sub_agent_with_forwarding`` records a successful outcome.
+        yield StreamEvent(
+            event_type=EventType.FINAL_ANSWER,
+            data={"content": "done"},
+        )
+        yield StreamEvent(
+            event_type=EventType.COMPLETE,
+            data={
+                "status": ExecutionStatus.COMPLETED.value,
+                "final_message": "done",
+                "session_id": session_id,
+            },
+        )
 
     async def close(self) -> None:
         pass

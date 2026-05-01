@@ -17,6 +17,9 @@ from taskforce.core.domain.sub_agents import (
 )
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
+from taskforce.infrastructure.tools.orchestration._event_forwarding import (
+    run_sub_agent_with_forwarding,
+)
 
 if TYPE_CHECKING:
     from taskforce.application.factory import AgentFactory
@@ -71,7 +74,15 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             # misinterpreted as answers to a previous question.
             await self._clear_stale_pause(agent, session_id, spec.mission)
             try:
-                result = await agent.execute(mission=spec.mission, session_id=session_id)
+                outcome = await run_sub_agent_with_forwarding(
+                    agent,
+                    mission=spec.mission,
+                    session_id=session_id,
+                    parent_session_id=spec.parent_session_id,
+                    parent_event_sink=spec.parent_event_sink,
+                    parent_agent_path=spec.parent_agent_path,
+                    specialist=spec.specialist,
+                )
                 # Capture context snapshot before closing the agent
                 if hasattr(agent, "context") and agent.context.is_initialized:
                     context_snapshot = agent.context.snapshot(
@@ -99,16 +110,13 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 error=str(exc),
             )
 
-        success = result.status in {
-            ExecutionStatus.COMPLETED.value,
-            ExecutionStatus.PAUSED.value,
-        }
+        success = outcome.success
         return SubAgentResult(
             session_id=session_id,
-            status=result.status,
+            status=outcome.status,
             success=success,
-            final_message=result.final_message or "",
-            error=None if success else result.final_message,
+            final_message=outcome.final_message or "",
+            error=None if success else outcome.final_message,
             context_snapshot=context_snapshot,
         )
 

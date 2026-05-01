@@ -242,6 +242,14 @@ class Agent:
         # agent is constructed from sync code).
         self._interrupt_event: asyncio.Event | None = None
 
+        # Sub-agent event forwarding.  When this agent runs as a sub-agent
+        # the parent injects an asyncio.Queue here so this agent's tool
+        # calls (and nested sub-agent events) get streamed back up the
+        # hierarchy.  ``_agent_path`` carries the chain of specialist names
+        # leading to this agent; the root agent has an empty path.
+        self._sub_agent_event_sink: asyncio.Queue | None = None
+        self._agent_path: list[str] = []
+
     def _get_interrupt_event(self) -> asyncio.Event:
         """Return (lazily creating) the asyncio.Event used for cooperative interruption."""
         if self._interrupt_event is None:
@@ -513,7 +521,14 @@ class Agent:
         # Inject parent session ID for orchestration tools (AgentTool, SubAgentTool)
         tool = self.tool_executor.get_tool(tool_name)
         if tool and getattr(tool, "requires_parent_session", False) and session_id:
-            tool_args = {**tool_args, "_parent_session_id": session_id}
+            tool_args = {
+                **tool_args,
+                "_parent_session_id": session_id,
+                # Forward the active event sink and agent path so nested
+                # sub-agents can stream their tool calls back to the root.
+                "_parent_event_sink": self._sub_agent_event_sink,
+                "_parent_agent_path": list(self._agent_path),
+            }
 
         result = await self.tool_executor.execute(tool_name, tool_args)
 

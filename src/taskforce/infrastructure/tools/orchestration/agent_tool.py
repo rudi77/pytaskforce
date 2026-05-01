@@ -8,15 +8,20 @@ This tool implements the "Agents as Tools" pattern for multi-agent coordination,
 allowing parallel execution of sub-agents and hierarchical session management.
 """
 
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
 
 import structlog
 
+from taskforce.core.domain.models import StreamEvent
 from taskforce.core.domain.sub_agents import SubAgentSpec
 from taskforce.core.interfaces.sub_agents import SubAgentSpawnerProtocol
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from taskforce.infrastructure.tools.orchestration._event_forwarding import (
+    run_sub_agent_with_forwarding,
+)
 
 
 class AgentTool:
@@ -269,6 +274,10 @@ class AgentTool:
         """
         # Get parent session from kwargs (injected by ToolExecutor)
         parent_session = kwargs.get("_parent_session_id", "unknown")
+        parent_event_sink: asyncio.Queue[StreamEvent] | None = kwargs.get(
+            "_parent_event_sink"
+        )
+        parent_agent_path: list[str] = list(kwargs.get("_parent_agent_path", []) or [])
 
         # Generate unique session ID for sub-agent
         sub_session_suffix = specialist or "generic"
@@ -286,6 +295,8 @@ class AgentTool:
                     profile=self._profile,
                     work_dir=self._work_dir,
                     max_steps=self._max_steps,
+                    parent_event_sink=parent_event_sink,
+                    parent_agent_path=parent_agent_path,
                 )
                 result = await self._spawner.spawn(spec)
                 return self._format_spawner_result(result)
@@ -346,34 +357,38 @@ class AgentTool:
             )
 
             try:
-                result = await sub_agent.execute(
+                outcome = await run_sub_agent_with_forwarding(
+                    sub_agent,
                     mission=mission,
                     session_id=sub_session_id,
+                    parent_session_id=parent_session,
+                    parent_event_sink=parent_event_sink,
+                    parent_agent_path=parent_agent_path,
+                    specialist=specialist,
                 )
             finally:
                 # Cleanup sub-agent resources (MCP connections, etc.)
                 await sub_agent.close()
 
-            # Determine success based on status
-            success = result.status in ("completed", "paused")
+            success = outcome.success
 
             self.logger.info(
                 "sub_agent_completed",
                 sub_session_id=sub_session_id,
-                status=result.status,
+                status=outcome.status,
                 success=success,
             )
 
             # Prepare result for parent agent
-            result_text = self._maybe_summarize_result_text(result.final_message)
+            result_text = self._maybe_summarize_result_text(outcome.final_message)
 
             # Return result to parent agent
             return {
                 "success": success,
                 "result": result_text,
                 "session_id": sub_session_id,
-                "status": result.status,
-                "error": result.final_message if not success else None,
+                "status": outcome.status,
+                "error": outcome.final_message if not success else None,
             }
 
         except Exception as e:
