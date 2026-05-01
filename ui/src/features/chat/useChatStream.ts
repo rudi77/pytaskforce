@@ -7,6 +7,13 @@ export interface ToolCallView {
   args?: unknown;
   result?: unknown;
   pending: boolean;
+  /** Hierarchical chain of specialists when the call originated from a
+   *  sub-agent (e.g. ``["coding_worker"]`` or ``["planner", "worker"]``).
+   *  ``null`` for tool calls from the root agent. */
+  agentPath?: string[] | null;
+  /** Specialist label of the agent that emitted the call (matches the
+   *  last entry of ``agentPath``). */
+  sourceAgent?: string | null;
 }
 
 export interface AssistantStreamState {
@@ -112,17 +119,27 @@ function handleEvent(
       break;
     }
     case "tool_call": {
-      const id = String(details.tool_call_id ?? `call-${Date.now()}-${Math.random()}`);
+      const id = String(
+        details.tool_call_id ?? details.id ?? `call-${Date.now()}-${Math.random()}`,
+      );
       const name = String(details.tool ?? details.name ?? "tool");
       const args = details.arguments ?? details.args;
+      const agentPath = Array.isArray(details.agent_path)
+        ? (details.agent_path as string[])
+        : null;
+      const sourceAgent =
+        typeof details.source_agent === "string" ? details.source_agent : null;
       setState((prev) => ({
         ...prev,
-        toolCalls: [...prev.toolCalls, { id, name, args, pending: true }],
+        toolCalls: [
+          ...prev.toolCalls,
+          { id, name, args, pending: true, agentPath, sourceAgent },
+        ],
       }));
       break;
     }
     case "tool_result": {
-      const id = String(details.tool_call_id ?? "");
+      const id = String(details.tool_call_id ?? details.id ?? "");
       const result = details.result ?? details.output ?? payload.message;
       setState((prev) => ({
         ...prev,

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Download, FileText, ImageIcon, Wrench } from "lucide-react";
+import { Bot, Download, FileText, ImageIcon, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -71,49 +71,70 @@ function ToolCallList({ calls }: { calls: ToolCallView[] }) {
   if (calls.length === 0) return null;
   return (
     <ul className="mb-2 space-y-1.5">
-      {calls.map((call) => (
-        <li
-          key={call.id}
-          className="rounded-md border border-border bg-muted/40 text-xs"
-        >
-          <details>
-            <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5">
-              <Wrench className="h-3 w-3 text-muted-foreground" />
-              <span className="font-mono">{call.name}</span>
-              {call.pending ? (
-                <Badge variant="warning" className="ml-auto px-1 py-0 text-[10px]">
-                  running…
-                </Badge>
-              ) : (
-                <Badge variant="success" className="ml-auto px-1 py-0 text-[10px]">
-                  done
-                </Badge>
-              )}
-            </summary>
-            <div className="space-y-2 px-2 pb-2 font-mono text-[11px] text-muted-foreground">
-              {call.args !== undefined ? (
-                <div>
-                  <div className="font-semibold text-foreground">args</div>
-                  <pre className="overflow-auto whitespace-pre-wrap">
-                    {typeof call.args === "string" ? call.args : JSON.stringify(call.args, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-              {call.result !== undefined ? (
-                <div>
-                  <div className="font-semibold text-foreground">result</div>
-                  <pre className="overflow-auto whitespace-pre-wrap">
-                    {typeof call.result === "string"
-                      ? call.result
-                      : JSON.stringify(call.result, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-          </details>
-        </li>
-      ))}
+      {calls.map((call) => {
+        const depth = call.agentPath?.length ?? 0;
+        return (
+          <li
+            key={call.id}
+            className="rounded-md border border-border bg-muted/40 text-xs"
+            style={depth > 0 ? { marginLeft: depth * 12 } : undefined}
+          >
+            <details>
+              <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5">
+                <Wrench className="h-3 w-3 text-muted-foreground" />
+                <span className="font-mono">{call.name}</span>
+                {depth > 0 ? <SubAgentBadge path={call.agentPath ?? []} /> : null}
+                {call.pending ? (
+                  <Badge variant="warning" className="ml-auto px-1 py-0 text-[10px]">
+                    running…
+                  </Badge>
+                ) : (
+                  <Badge variant="success" className="ml-auto px-1 py-0 text-[10px]">
+                    done
+                  </Badge>
+                )}
+              </summary>
+              <div className="space-y-2 px-2 pb-2 font-mono text-[11px] text-muted-foreground">
+                {call.args !== undefined ? (
+                  <div>
+                    <div className="font-semibold text-foreground">args</div>
+                    <pre className="overflow-auto whitespace-pre-wrap">
+                      {typeof call.args === "string"
+                        ? call.args
+                        : JSON.stringify(call.args, null, 2)}
+                    </pre>
+                  </div>
+                ) : null}
+                {call.result !== undefined ? (
+                  <div>
+                    <div className="font-semibold text-foreground">result</div>
+                    <pre className="overflow-auto whitespace-pre-wrap">
+                      {typeof call.result === "string"
+                        ? call.result
+                        : JSON.stringify(call.result, null, 2)}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+function SubAgentBadge({ path }: { path: string[] }) {
+  if (path.length === 0) return null;
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-primary/40 px-1 py-0 text-[10px] font-normal text-primary"
+      title={`Sub-agent: ${path.join(" › ")}`}
+    >
+      <Bot className="h-2.5 w-2.5" />
+      <span className="font-mono">{path.join(" › ")}</span>
+    </Badge>
   );
 }
 
