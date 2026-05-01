@@ -54,7 +54,12 @@ function bucketByStep(events: TraceEvent[]): StepBucket[] {
   for (const ev of events) {
     if (ev.event_type === "llm_token") continue;
     if (!STRUCTURAL_EVENTS.has(ev.event_type) && !ev.step) continue;
-    const stepKey = ev.step ?? null;
+    // Sub-agent events arrive without a step number — keep them attached to
+    // the current bucket (the parent's step) instead of opening a new
+    // ``Events`` bucket between two of the parent's steps.
+    const isSubAgent = !!extractAgentPath(ev);
+    const stepKey: number | null =
+      ev.step ?? (isSubAgent && current ? current.step : null);
     if (!current || current.step !== stepKey) {
       current = { step: stepKey, events: [] };
       buckets.push(current);
@@ -65,6 +70,19 @@ function bucketByStep(events: TraceEvent[]): StepBucket[] {
     buckets.push({ step: null, events });
   }
   return buckets;
+}
+
+function extractAgentPath(event: TraceEvent): string[] | null {
+  const path = event.details?.agent_path;
+  if (Array.isArray(path) && path.length > 0) {
+    return path.map(String);
+  }
+  return null;
+}
+
+function extractSourceAgent(event: TraceEvent): string | null {
+  const src = event.details?.source_agent;
+  return typeof src === "string" && src ? src : null;
 }
 
 function eventIcon(eventType: string) {
@@ -282,9 +300,15 @@ function TraceEventView({ event, base }: { event: TraceEvent; base: Date }) {
   const summary =
     event.message ||
     (event.details ? summarizeDetails(event.event_type, event.details) : "");
+  const agentPath = extractAgentPath(event);
+  const sourceAgent = extractSourceAgent(event);
+  const depth = agentPath?.length ?? 0;
 
   return (
-    <li className="px-3 py-2">
+    <li
+      className="px-3 py-2"
+      style={depth > 0 ? { paddingLeft: 12 + depth * 16 } : undefined}
+    >
       <button
         type="button"
         onClick={() => hasDetails && setOpen((o) => !o)}
@@ -300,6 +324,18 @@ function TraceEventView({ event, base }: { event: TraceEvent; base: Date }) {
             <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
               {event.event_type}
             </Badge>
+            {agentPath ? (
+              <Badge
+                variant="outline"
+                className="gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-normal text-primary"
+                title={`Sub-agent: ${agentPath.join(" › ")}`}
+              >
+                <Bot className="h-2.5 w-2.5" />
+                <span className="font-mono">
+                  {sourceAgent ?? agentPath.join(" › ")}
+                </span>
+              </Badge>
+            ) : null}
             {summary ? (
               <span className="line-clamp-2 text-xs">{summary}</span>
             ) : null}
