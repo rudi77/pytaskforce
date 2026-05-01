@@ -724,6 +724,8 @@ export interface ComposePromptInput {
 export interface ComposePromptResponse {
   system_prompt: string;
   used_ai: boolean;
+  ai_attempted?: boolean;
+  ai_error?: string | null;
 }
 
 export function useComposePrompt() {
