@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
+
+from taskforce.core.domain.models import StreamEvent
 
 
 def build_sub_agent_session_id(
@@ -47,6 +50,11 @@ class SubAgentSpec:
     work_dir: str | None = None
     max_steps: int | None = None
     agent_definition: dict[str, Any] | None = None
+    # Streaming-event forwarding: when set, the spawner runs the sub-agent
+    # via ``execute_stream`` and pushes annotated events into this queue so
+    # the management UI sees the sub-agent's tool calls in real time.
+    parent_event_sink: asyncio.Queue[StreamEvent] | None = None
+    parent_agent_path: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -142,6 +142,8 @@ class ParallelAgentTool(BaseTool):
         missions: list[dict[str, Any]] = kwargs.get("missions", [])
         max_concurrency = int(kwargs.get("max_concurrency", self._default_max_concurrency))
         parent_session = kwargs.get("_parent_session_id", "unknown")
+        parent_event_sink = kwargs.get("_parent_event_sink")
+        parent_agent_path: list[str] = list(kwargs.get("_parent_agent_path", []) or [])
 
         if not missions:
             return {"success": False, "error": "No missions provided."}
@@ -155,7 +157,13 @@ class ParallelAgentTool(BaseTool):
 
         semaphore = asyncio.Semaphore(max_concurrency)
         tasks = [
-            self._run_with_semaphore(semaphore, mission_spec, parent_session)
+            self._run_with_semaphore(
+                semaphore,
+                mission_spec,
+                parent_session,
+                parent_event_sink,
+                parent_agent_path,
+            )
             for mission_spec in missions
         ]
 
@@ -243,6 +251,8 @@ class ParallelAgentTool(BaseTool):
         semaphore: asyncio.Semaphore,
         mission_spec: dict[str, Any],
         parent_session: str,
+        parent_event_sink: asyncio.Queue | None,
+        parent_agent_path: list[str],
     ) -> dict[str, Any]:
         """Run a single sub-agent mission with semaphore-controlled concurrency."""
         async with semaphore:
@@ -258,6 +268,8 @@ class ParallelAgentTool(BaseTool):
                 profile=self._profile,
                 work_dir=self._work_dir,
                 max_steps=self._max_steps,
+                parent_event_sink=parent_event_sink,
+                parent_agent_path=list(parent_agent_path),
             )
 
             result = await self._spawner.spawn(spec)

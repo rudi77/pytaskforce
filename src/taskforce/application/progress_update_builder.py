@@ -70,11 +70,21 @@ def stream_event_to_progress_update(event: StreamEvent) -> ProgressUpdate:
     )
     message_fn = message_map.get(event_type_value, lambda d: str(d))
 
+    data = event.data or {}
+    agent_path = data.get("agent_path")
+    if isinstance(agent_path, list):
+        # Defensive copy so downstream mutations don't bleed back into the event.
+        agent_path = list(agent_path)
+    else:
+        agent_path = None
     return ProgressUpdate(
         timestamp=event.timestamp,
         event_type=event.event_type,
-        message=message_fn(event.data),
-        details=event.data,
+        message=message_fn(data),
+        details=data,
+        agent_path=agent_path,
+        parent_session_id=data.get("parent_session_id"),
+        source_agent=data.get("source_agent"),
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from taskforce.core.domain.enums import EventType, MessageRole
@@ -20,6 +21,19 @@ from taskforce.core.tools.tool_converter import assistant_tool_calls_to_message
 
 if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
+
+
+@dataclass
+class _ToolCallBatchResults:
+    """Per-tool results from a batch tool execution.
+
+    Yielded as the *final* item of ``_stream_tool_calls_with_event_pump``
+    after all sub-agent stream events have been emitted live.
+    """
+
+    tool_results: list[tuple[ToolCallRequest, dict[str, Any]]] = field(
+        default_factory=list
+    )
 
 
 def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> None:
@@ -80,6 +94,56 @@ async def _execute_tool_calls(
             results[req.tool_call_id] = res
 
     return [(req, results[req.tool_call_id]) for req in requests]
+
+
+async def _stream_tool_calls_with_event_pump(
+    agent: Agent,
+    requests: list[ToolCallRequest],
+    session_id: str | None,
+    sub_event_sink: asyncio.Queue[StreamEvent] | None,
+) -> AsyncIterator[StreamEvent | _ToolCallBatchResults]:
+    """Execute tool calls, yielding sub-agent events live as they arrive.
+
+    Yields ``StreamEvent`` instances forwarded by sub-agent tools (annotated
+    with ``agent_path``) while the parent's tool tasks are running.  Once
+    all tool tasks finish and the sink is drained, yields a final
+    ``_ToolCallBatchResults`` carrying the per-tool result tuples.
+
+    When ``sub_event_sink`` is ``None`` (nested call), no live pumping
+    happens — sub-agent events flow up to the root sink — and only the
+    final ``_ToolCallBatchResults`` is yielded.
+    """
+    if sub_event_sink is None:
+        tool_results = await _execute_tool_calls(agent, requests, session_id)
+        yield _ToolCallBatchResults(tool_results=tool_results)
+        return
+
+    tools_task: asyncio.Task[list[tuple[ToolCallRequest, dict[str, Any]]]] = (
+        asyncio.create_task(_execute_tool_calls(agent, requests, session_id))
+    )
+
+    # Race the tool task against the queue; emit events as they arrive.
+    while True:
+        sink_get: asyncio.Task[StreamEvent] = asyncio.create_task(sub_event_sink.get())
+        done, _pending = await asyncio.wait(
+            [tools_task, sink_get],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if sink_get in done:
+            yield sink_get.result()
+        else:
+            sink_get.cancel()
+        if tools_task in done:
+            break
+
+    # Drain anything queued after the tool task signaled done.
+    while not sub_event_sink.empty():
+        try:
+            yield sub_event_sink.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+    yield _ToolCallBatchResults(tool_results=tools_task.result())
 
 
 async def _handle_ask_user(
@@ -270,17 +334,48 @@ async def _process_tool_calls(
 
         requests.append(ToolCallRequest(tc_id, name, args))
 
-    for req, res in await _execute_tool_calls(agent, requests, session_id):
-        async for e in _emit_tool_result(agent, req, res):
-            yield e
-        # Capture sub-agent context snapshots before they're lost to serialization
-        _collect_sub_agent_snapshots(agent, res)
-        agent.context.append_message(
-            await agent.tool_result_message_factory.build_message(
-                tool_call_id=req.tool_call_id,
-                tool_name=req.tool_name,
-                tool_result=res,
-                session_id=session_id,
-                step=step,
+    # Set up an event sink so sub-agent tools can stream their inner
+    # tool_call/tool_result events back to this stream while their tool
+    # call is in flight.  The sink is owned by the *root* call only;
+    # nested ``_process_tool_calls`` invocations inherit it but do not
+    # pump it (the root pump drains everything).
+    inherited_sink = getattr(agent, "_sub_agent_event_sink", None)
+    owns_sink = inherited_sink is None
+    if owns_sink:
+        sub_event_sink: asyncio.Queue[StreamEvent] = asyncio.Queue()
+        agent._sub_agent_event_sink = sub_event_sink
+    else:
+        sub_event_sink = inherited_sink
+
+    try:
+        batch_results: _ToolCallBatchResults | None = None
+        async for item in _stream_tool_calls_with_event_pump(
+            agent,
+            requests,
+            session_id,
+            sub_event_sink if owns_sink else None,
+        ):
+            if isinstance(item, _ToolCallBatchResults):
+                batch_results = item
+            else:
+                # Sub-agent StreamEvent forwarded live.
+                yield item
+
+        assert batch_results is not None  # noqa: S101 — invariant of pump
+        for req, res in batch_results.tool_results:
+            async for e in _emit_tool_result(agent, req, res):
+                yield e
+            # Capture sub-agent context snapshots before they're lost to serialization
+            _collect_sub_agent_snapshots(agent, res)
+            agent.context.append_message(
+                await agent.tool_result_message_factory.build_message(
+                    tool_call_id=req.tool_call_id,
+                    tool_name=req.tool_name,
+                    tool_result=res,
+                    session_id=session_id,
+                    step=step,
+                )
             )
-        )
+    finally:
+        if owns_sink:
+            agent._sub_agent_event_sink = None
