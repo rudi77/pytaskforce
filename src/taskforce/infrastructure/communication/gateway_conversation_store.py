@@ -1,7 +1,15 @@
-"""Conversation store adapters implementing ConversationStoreProtocol.
+"""Gateway session store adapters implementing ConversationStoreProtocol.
 
-Provides file-based and in-memory implementations for session mapping
-and conversation history persistence. Channel-agnostic by design.
+Provides file-based and in-memory implementations of the Communication
+Gateway's session-mapping and channel-history persistence. Channel-agnostic
+by design.
+
+Note: This store is distinct from
+``taskforce.infrastructure.persistence.file_conversation_store.FileConversationStore``,
+which implements ``ConversationManagerProtocol`` (ADR-016) and persists
+domain conversations under ``{work_dir}/conversations/``. To keep the two
+storage areas separate on disk, gateway records live under
+``{work_dir}/gateway_sessions/``.
 """
 
 from __future__ import annotations
@@ -20,7 +28,7 @@ import structlog
 
 @dataclass(frozen=True)
 class ConversationRecord:
-    """Persisted conversation record."""
+    """Persisted gateway session record."""
 
     channel: str
     conversation_id: str
@@ -29,11 +37,11 @@ class ConversationRecord:
     updated_at: str
 
 
-class FileConversationStore:
-    """File-based conversation store for session mapping and history.
+class GatewayConversationStore:
+    """File-based gateway session store for channel-to-session mapping and history.
 
     Stores one JSON file per (channel, conversation_id) pair under
-    ``{work_dir}/conversations/{channel}/{conversation_id}.json``.
+    ``{work_dir}/gateway_sessions/{channel}/{conversation_id}.json``.
     Uses per-file async locks and atomic temp-file writes.
     """
 
@@ -42,7 +50,7 @@ class FileConversationStore:
         work_dir: str = ".taskforce",
         time_provider: Callable[[], datetime] | None = None,
     ) -> None:
-        self._base_dir = Path(work_dir) / "conversations"
+        self._base_dir = Path(work_dir) / "gateway_sessions"
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._locks: dict[str, asyncio.Lock] = {}
         self._logger = structlog.get_logger()
@@ -160,8 +168,8 @@ class FileConversationStore:
                 )
 
 
-class InMemoryConversationStore:
-    """In-memory conversation store for tests."""
+class InMemoryGatewayConversationStore:
+    """In-memory gateway session store for tests."""
 
     def __init__(self) -> None:
         self._records: dict[tuple[str, str], ConversationRecord] = {}

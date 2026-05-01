@@ -12,7 +12,7 @@ from taskforce.core.domain.gateway import (
 )
 from taskforce.core.domain.models import ExecutionResult
 from taskforce.infrastructure.communication.gateway_conversation_store import (
-    InMemoryConversationStore,
+    InMemoryGatewayConversationStore,
 )
 from taskforce.infrastructure.communication.recipient_registry import (
     InMemoryRecipientRegistry,
@@ -68,7 +68,7 @@ def conv_manager(tmp_path):
 @pytest.fixture
 def gateway_with_conv_manager(conv_manager):
     """Build gateway with ConversationManager wired in."""
-    legacy_store = InMemoryConversationStore()
+    legacy_store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     sender = FakeSender()
     executor = FakeExecutor()
@@ -225,7 +225,7 @@ async def test_executor_receives_full_conversation_history(
 @pytest.mark.asyncio
 async def test_gateway_without_conversation_manager_returns_no_conversation_id() -> None:
     """Legacy mode: no ConversationManager → conversation_id is None."""
-    legacy_store = InMemoryConversationStore()
+    legacy_store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),

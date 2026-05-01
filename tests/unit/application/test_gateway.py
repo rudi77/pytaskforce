@@ -17,7 +17,7 @@ from taskforce.core.domain.gateway import (
 )
 from taskforce.core.domain.models import ExecutionResult
 from taskforce.infrastructure.communication.gateway_conversation_store import (
-    InMemoryConversationStore,
+    InMemoryGatewayConversationStore,
 )
 from taskforce.infrastructure.communication.recipient_registry import (
     InMemoryRecipientRegistry,
@@ -58,7 +58,7 @@ class FakeSender:
 @pytest.fixture
 def gateway_parts():
     """Build gateway with in-memory stores and a fake sender."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     sender = FakeSender()
     gateway = CommunicationGateway(
@@ -256,7 +256,7 @@ class FailingSender:
 @pytest.mark.asyncio
 async def test_send_notification_sender_raises_returns_failure() -> None:
     """When the OutboundSender raises, send_notification returns failure."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -286,7 +286,7 @@ async def test_send_notification_sender_raises_returns_failure() -> None:
 @pytest.mark.asyncio
 async def test_handle_message_outbound_failure_does_not_lose_response() -> None:
     """When outbound reply fails, the gateway response is still returned."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -316,7 +316,7 @@ async def test_supported_channels(gateway_parts) -> None:
 @pytest.mark.asyncio
 async def test_no_outbound_for_unconfigured_channel() -> None:
     """Gateway works without outbound sender -- just no push."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -390,7 +390,7 @@ class FakePendingStore:
 @pytest.fixture
 def gateway_with_pending():
     """Build gateway with pending channel question store."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     sender = FakeSender()
     pending = FakePendingStore()
@@ -687,7 +687,7 @@ async def test_reset_sends_welcome_via_outbound(gateway_parts) -> None:
 @pytest.mark.asyncio
 async def test_reset_welcome_failure_does_not_raise() -> None:
     """If outbound sender fails during reset, no exception propagates."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -709,7 +709,7 @@ async def test_reset_welcome_failure_does_not_raise() -> None:
 @pytest.mark.asyncio
 async def test_reset_without_outbound_sender() -> None:
     """Reset works even when no outbound sender is configured."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -735,7 +735,7 @@ async def test_reset_without_outbound_sender() -> None:
 @pytest.mark.asyncio
 async def test_trim_history_limits_messages() -> None:
     """Conversation history is trimmed to max_conversation_history."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     calls: list[dict[str, Any]] = []
 
@@ -911,7 +911,7 @@ async def test_broadcast_empty_recipients(gateway_parts) -> None:
 @pytest.mark.asyncio
 async def test_broadcast_partial_failure() -> None:
     """Broadcast returns per-recipient results even when some fail."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
 
     call_count = 0
@@ -967,7 +967,7 @@ async def test_broadcast_partial_failure() -> None:
 @pytest.mark.asyncio
 async def test_supported_channels_empty() -> None:
     """supported_channels returns empty set when no senders configured."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     gateway = CommunicationGateway(
         executor=FakeExecutor(),
@@ -980,7 +980,7 @@ async def test_supported_channels_empty() -> None:
 @pytest.mark.asyncio
 async def test_supported_channels_multiple() -> None:
     """supported_channels returns all configured channel names."""
-    store = InMemoryConversationStore()
+    store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     sender = FakeSender()
     gateway = CommunicationGateway(

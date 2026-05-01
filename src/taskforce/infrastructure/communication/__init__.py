@@ -10,8 +10,8 @@ Gateway components for unified channel-based agent communication:
 
 # --- Stores ---
 from taskforce.infrastructure.communication.gateway_conversation_store import (
-    FileConversationStore,
-    InMemoryConversationStore,
+    GatewayConversationStore,
+    InMemoryGatewayConversationStore,
 )
 
 # --- Wiring ---
@@ -36,8 +36,8 @@ from taskforce.infrastructure.communication.recipient_registry import (
 
 __all__ = [
     # Stores
-    "FileConversationStore",
-    "InMemoryConversationStore",
+    "GatewayConversationStore",
+    "InMemoryGatewayConversationStore",
     "FileRecipientRegistry",
     "InMemoryRecipientRegistry",
     # Channel adapters

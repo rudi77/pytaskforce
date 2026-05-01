@@ -620,11 +620,11 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
 - **Send Notification Tool:** `infrastructure/tools/native/send_notification_tool.py` - allows agents to proactively push messages
 - **Extension Implementations:** `taskforce/infrastructure/communication/`:
   - `gateway_registry.py` - Component wiring and factory
-  - `gateway_conversation_store.py` - File-based conversation persistence
+  - `gateway_conversation_store.py` - File-based gateway session/history persistence (`GatewayConversationStore`, distinct from the persistence-layer `FileConversationStore`)
   - `inbound_adapters.py` - Channel-specific payload normalization
   - `outbound_senders.py` - Channel-specific message dispatch
   - `recipient_registry.py` - Push notification recipient store
-- **Persistence:** Chat history in `.taskforce/conversations/`
+- **Persistence:** Domain conversations in `.taskforce/conversations/` (ADR-016 `FileConversationStore`); gateway session/history records in `.taskforce/gateway_sessions/` (`GatewayConversationStore`)
 - **ADRs:** `docs/adr/adr-006-communication-providers.md` (original), `docs/adr/adr-009-communication-gateway.md` (current)
 - **Docs:** `docs/integrations.md`
 

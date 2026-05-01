@@ -18,7 +18,7 @@ from taskforce.core.interfaces.gateway import (
     RecipientRegistryProtocol,
 )
 from taskforce.infrastructure.communication.gateway_conversation_store import (
-    FileConversationStore,
+    GatewayConversationStore,
 )
 from taskforce.infrastructure.communication.inbound_adapters import (
     TeamsInboundAdapter,
@@ -72,7 +72,7 @@ def build_gateway_components(
     """
     logger = structlog.get_logger()
 
-    conversation_store = FileConversationStore(work_dir=work_dir)
+    conversation_store = GatewayConversationStore(work_dir=work_dir)
     recipient_registry = FileRecipientRegistry(work_dir=work_dir)
 
     senders: dict[str, OutboundSenderProtocol] = dict(extra_senders or {})

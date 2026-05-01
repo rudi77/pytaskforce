@@ -529,12 +529,12 @@ class TestBuildRuntimeTracker:
         }
         with (
             patch("taskforce.infrastructure.runtime.AgentRuntimeTracker") as mock_tracker,
-            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore") as mock_hb,
             patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
         ):
             mock_tracker.return_value = MagicMock()
             result = builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with("/tmp/rt")
+            mock_hb.assert_called_once_with()
             mock_cp.assert_called_once_with("/tmp/rt")
             assert result is mock_tracker.return_value
 
@@ -546,32 +546,32 @@ class TestBuildRuntimeTracker:
         }
         with (
             patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
-            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
-            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore"),
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
         ):
             builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with(".from_persistence")
+            mock_cp.assert_called_once_with(".from_persistence")
 
     def test_file_store_work_dir_override(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
         with (
             patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
-            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
-            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore"),
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
         ):
             builder.build_runtime_tracker(config, work_dir_override="/override")
-            mock_hb.assert_called_once_with("/override")
+            mock_cp.assert_called_once_with("/override")
 
     def test_file_store_default_work_dir(self, builder: InfrastructureBuilder) -> None:
         """When no work_dir is specified anywhere, defaults to .taskforce."""
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "file"}}
         with (
             patch("taskforce.infrastructure.runtime.AgentRuntimeTracker"),
-            patch("taskforce.infrastructure.runtime.FileHeartbeatStore") as mock_hb,
-            patch("taskforce.infrastructure.runtime.FileCheckpointStore"),
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore"),
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
         ):
             builder.build_runtime_tracker(config)
-            mock_hb.assert_called_once_with(".taskforce")
+            mock_cp.assert_called_once_with(".taskforce")
 
     def test_unknown_store_type_raises(self, builder: InfrastructureBuilder) -> None:
         config: dict[str, Any] = {"runtime": {"enabled": True, "store": "redis"}}

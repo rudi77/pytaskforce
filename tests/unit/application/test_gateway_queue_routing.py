@@ -11,7 +11,7 @@ from taskforce.application.request_queue import RequestProcessor, RequestQueue
 from taskforce.core.domain.gateway import GatewayOptions, InboundMessage
 from taskforce.core.domain.models import ExecutionResult
 from taskforce.infrastructure.communication.gateway_conversation_store import (
-    InMemoryConversationStore,
+    InMemoryGatewayConversationStore,
 )
 from taskforce.infrastructure.communication.recipient_registry import (
     InMemoryRecipientRegistry,
@@ -56,7 +56,7 @@ def queue_setup(tmp_path):
     """Build gateway with RequestQueue and ConversationManager."""
     conv_store = FileConversationStore(work_dir=str(tmp_path))
     conv_manager = ConversationManager(conv_store)
-    legacy_store = InMemoryConversationStore()
+    legacy_store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     sender = FakeSender()
     executor = FakeExecutor()
@@ -268,7 +268,7 @@ async def test_queue_without_processor_raises(queue_setup) -> None:
 @pytest.mark.asyncio
 async def test_gateway_without_queue_uses_direct_execution() -> None:
     """When no queue is provided, gateway uses direct execution (Phase 3 path)."""
-    legacy_store = InMemoryConversationStore()
+    legacy_store = InMemoryGatewayConversationStore()
     registry = InMemoryRecipientRegistry()
     executor = FakeExecutor(reply="Direct reply")
     gateway = CommunicationGateway(
