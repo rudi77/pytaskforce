@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.models import StreamEvent
@@ -42,7 +42,6 @@ class SubAgentExecutionOutcome:
 
     status: str = ExecutionStatus.COMPLETED.value
     final_message: str = ""
-    interrupt: dict[str, Any] | None = None
 
     @property
     def success(self) -> bool:
@@ -116,7 +115,6 @@ def _track_outcome(event: StreamEvent, outcome: SubAgentExecutionOutcome) -> Non
         outcome.status = ExecutionStatus.FAILED.value
     elif et == EventType.INTERRUPTED:
         outcome.status = ExecutionStatus.PAUSED.value
-        outcome.interrupt = dict(event.data)
         if not outcome.final_message:
             outcome.final_message = "Execution paused by user."
     elif et == EventType.COMPLETE:

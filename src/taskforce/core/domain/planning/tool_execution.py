@@ -361,7 +361,13 @@ async def _process_tool_calls(
                 # Sub-agent StreamEvent forwarded live.
                 yield item
 
-        assert batch_results is not None  # noqa: S101 — invariant of pump
+        if batch_results is None:
+            # Defensive: the pump always yields exactly one batch result as
+            # its final item.  A None here means the contract was violated
+            # (e.g. someone refactored the pump and forgot the final yield).
+            raise RuntimeError(
+                "tool-call event pump did not yield a _ToolCallBatchResults"
+            )
         for req, res in batch_results.tool_results:
             async for e in _emit_tool_result(agent, req, res):
                 yield e
