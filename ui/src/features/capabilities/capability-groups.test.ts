@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CAPABILITY_GROUPS,
+  groupForSkill,
   groupForTool,
   isHighRiskTool,
   labelForTool,
@@ -70,5 +71,30 @@ describe("capability-groups", () => {
         seen.set(tool, group.id);
       }
     }
+  });
+});
+
+describe("groupForSkill", () => {
+  it("routes code-related skills to the code group", () => {
+    expect(groupForSkill("code-review", "context")).toBe("code");
+    expect(groupForSkill("test-runner", "context")).toBe("code");
+  });
+
+  it("routes office-related skills to the office group", () => {
+    expect(groupForSkill("pdf-processing", "library")).toBe("office");
+    expect(groupForSkill("docx-extract", "library")).toBe("office");
+  });
+
+  it("routes communication skills to the communication group", () => {
+    expect(groupForSkill("mail-formatter", "context")).toBe("communication");
+    expect(groupForSkill("calendar-helper", "context")).toBe("communication");
+  });
+
+  it("routes 'agent' type skills to the domain group", () => {
+    expect(groupForSkill("anything", "agent")).toBe("domain");
+  });
+
+  it("falls back to 'knowledge' for everything else", () => {
+    expect(groupForSkill("misc-skill", "context")).toBe("knowledge");
   });
 });

@@ -23,6 +23,7 @@ import {
 import { ApiError } from "@/api/client";
 import {
   CAPABILITY_GROUPS,
+  groupForSkill,
   groupForTool,
   labelForTool,
   isHighRiskTool,
@@ -71,9 +72,7 @@ function skillRow(skill: SkillSummary): CapabilityRow {
     name: skill.name,
     label: skill.slash_name ? `/${skill.slash_name}` : skill.name,
     description: skill.description,
-    // Skills get bucketed under Wissen by default; users can still find them
-    // by searching by name.
-    group: "knowledge",
+    group: groupForSkill(skill.name, skill.skill_type),
     meta: {
       skillType: skill.skill_type,
       slashName: skill.slash_name,

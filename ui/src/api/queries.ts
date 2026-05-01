@@ -194,6 +194,9 @@ export function useTools() {
   return useQuery<ToolCatalogResponse>({
     queryKey: queryKeys.tools,
     queryFn: () => apiFetch<ToolCatalogResponse>("/api/v1/tools"),
+    // Tool catalog rarely changes during a session — cache for 5 minutes
+    // so the wizard's three steps that consume it don't refetch needlessly.
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -201,6 +204,7 @@ export function useSkills() {
   return useQuery<{ skills: SkillSummary[] }>({
     queryKey: queryKeys.skills,
     queryFn: () => apiFetch<{ skills: SkillSummary[] }>("/api/v1/skills"),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
