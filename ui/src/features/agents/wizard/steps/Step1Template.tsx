@@ -25,11 +25,19 @@ export function Step1Template({ selectedId, onSelect }: Props) {
     );
   }
 
-  if (error || templates.length === 0) {
+  if (error) {
     return (
       <EmptyState
         title="Konnte Vorlagen nicht laden"
-        description="Probiere es später noch einmal oder starte mit einer leeren Vorlage."
+        description="Backend nicht erreichbar oder fehlerhafte Antwort. Probier den Profi-Editor."
+      />
+    );
+  }
+  if (templates.length === 0) {
+    return (
+      <EmptyState
+        title="Keine Vorlagen verfügbar"
+        description="Es ist keine einzige Vorlage registriert — das sollte nicht passieren. Bitte den Profi-Editor verwenden."
       />
     );
   }

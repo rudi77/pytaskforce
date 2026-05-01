@@ -179,6 +179,27 @@ export function isHighRiskTool(toolName: string): boolean {
   return HIGH_RISK_TOOLS.has(toolName);
 }
 
+/**
+ * Best-effort mapping of a skill into a capability group based on its name
+ * and skill_type. Falls back to ``knowledge`` because skills are most often
+ * documentation/playbooks for the agent.
+ */
+export function groupForSkill(skillName: string, skillType: string): CapabilityGroupId {
+  const lower = skillName.toLowerCase();
+  if (skillType === "agent") return "domain";
+  if (lower.includes("code") || lower.includes("review") || lower.includes("test"))
+    return "code";
+  if (lower.includes("pdf") || lower.includes("doc") || lower.includes("excel") || lower.includes("office"))
+    return "office";
+  if (lower.includes("mail") || lower.includes("calendar") || lower.includes("notify"))
+    return "communication";
+  if (lower.includes("web") || lower.includes("search") || lower.includes("browse"))
+    return "web";
+  if (lower.includes("file") || lower.includes("read") || lower.includes("write"))
+    return "files";
+  return "knowledge";
+}
+
 export const CAPABILITY_KIND_META = {
   tool: { label: "Werkzeug", icon: Wrench },
   skill: { label: "Workflow", icon: Sparkles },
