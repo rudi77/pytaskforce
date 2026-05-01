@@ -15,8 +15,9 @@ agent through the existing endpoints.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from taskforce.application.skill_service import get_skill_service
 from taskforce.application.tool_registry import get_tool_registry
 
 
@@ -35,7 +36,6 @@ class AgentTemplate:
     example_prompts: tuple[str, ...]
     tone_default: str = "professionell"
     language_default: str = "Deutsch"
-    requires_packages: tuple[str, ...] = field(default_factory=tuple)
 
 
 _BUCHHALTER = AgentTemplate(
@@ -222,20 +222,37 @@ _TEMPLATES: tuple[AgentTemplate, ...] = (
 )
 
 
+def _available_skill_names() -> set[str]:
+    """Return skill names that the local SkillService can resolve.
+
+    Failures here (no skills configured, file IO error) degrade to an empty
+    set rather than raising — the wizard works fine without skills.
+    """
+    try:
+        service = get_skill_service()
+        return {meta.name for meta in service.get_all_metadata()}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def list_templates() -> list[AgentTemplate]:
-    """Return all available templates, filtering out tools that aren't registered.
+    """Return all available templates, filtering tools and skills the server can't resolve.
 
     The registry varies by which agent packages are installed (e.g. butler).
-    For each template we drop tools that the running server can't actually
-    resolve, so the wizard never offers a tool that would fail at agent build.
+    For each template we drop tools and skills that the running server can't
+    actually resolve, so the wizard never offers a capability that would fail
+    at agent build.
     """
-    registry = get_tool_registry()
-    available = set(registry.get_native_tool_names())
+    available_tools = set(get_tool_registry().get_native_tool_names())
+    available_skills = _available_skill_names()
 
     filtered: list[AgentTemplate] = []
     for template in _TEMPLATES:
-        kept_tools = tuple(t for t in template.recommended_tools if t in available)
-        if kept_tools == template.recommended_tools:
+        kept_tools = tuple(t for t in template.recommended_tools if t in available_tools)
+        kept_skills = tuple(
+            s for s in template.recommended_skills if s in available_skills
+        )
+        if kept_tools == template.recommended_tools and kept_skills == template.recommended_skills:
             filtered.append(template)
         else:
             filtered.append(
@@ -246,20 +263,42 @@ def list_templates() -> list[AgentTemplate]:
                     emoji=template.emoji,
                     persona_hint=template.persona_hint,
                     recommended_tools=kept_tools,
-                    recommended_skills=template.recommended_skills,
+                    recommended_skills=kept_skills,
                     system_prompt_template=template.system_prompt_template,
                     example_prompts=template.example_prompts,
                     tone_default=template.tone_default,
                     language_default=template.language_default,
-                    requires_packages=template.requires_packages,
                 )
             )
     return filtered
 
 
 def get_template(template_id: str) -> AgentTemplate | None:
-    """Return a single template by id, or ``None`` if it doesn't exist."""
-    for template in list_templates():
-        if template.id == template_id:
-            return template
-    return None
+    """Return a single template by id, or ``None`` if it doesn't exist.
+
+    Iterates ``_TEMPLATES`` directly to skip the per-call registry lookup that
+    ``list_templates()`` performs. The capability filtering is reapplied so
+    callers still get a server-resolvable result.
+    """
+    base = next((t for t in _TEMPLATES if t.id == template_id), None)
+    if base is None:
+        return None
+    available_tools = set(get_tool_registry().get_native_tool_names())
+    available_skills = _available_skill_names()
+    kept_tools = tuple(t for t in base.recommended_tools if t in available_tools)
+    kept_skills = tuple(s for s in base.recommended_skills if s in available_skills)
+    if kept_tools == base.recommended_tools and kept_skills == base.recommended_skills:
+        return base
+    return AgentTemplate(
+        id=base.id,
+        name=base.name,
+        description=base.description,
+        emoji=base.emoji,
+        persona_hint=base.persona_hint,
+        recommended_tools=kept_tools,
+        recommended_skills=kept_skills,
+        system_prompt_template=base.system_prompt_template,
+        example_prompts=base.example_prompts,
+        tone_default=base.tone_default,
+        language_default=base.language_default,
+    )

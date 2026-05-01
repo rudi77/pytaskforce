@@ -105,13 +105,69 @@ def test_compose_prompt_blank_template(client):
     assert "locker" in body["system_prompt"]
 
 
+def test_compose_prompt_rejects_invalid_tone(client):
+    """Tone is locked down to a Literal — anything else is a 422."""
+    response = client.post(
+        "/api/v1/agent-templates/compose-prompt",
+        json={
+            "template_id": "buchhalter",
+            "tone": "rude",  # not in the allowed Literal
+            "language": "Deutsch",
+            "use_ai": False,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_compose_prompt_enforces_length_limits(client):
+    """Free-text fields are bounded so a single request can't blow the LLM budget."""
+    response = client.post(
+        "/api/v1/agent-templates/compose-prompt",
+        json={
+            "description": "x" * 5000,  # > 2000 chars
+            "tone": "professionell",
+            "language": "Deutsch",
+            "rules": "",
+            "use_ai": False,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_compose_prompt_ai_success_marks_used_ai(client, monkeypatch):
+    """When the LLM returns content, used_ai is True and ai_error is None."""
+    import taskforce.api.routes.agent_templates as mod
+
+    async def _ok(req, deterministic):
+        return "REFINED PROMPT\n", None
+
+    monkeypatch.setattr(mod, "_ai_compose", _ok)
+    response = client.post(
+        "/api/v1/agent-templates/compose-prompt",
+        json={
+            "template_id": "buchhalter",
+            "description": "Belege",
+            "tone": "professionell",
+            "language": "Deutsch",
+            "rules": "",
+            "use_ai": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["used_ai"] is True
+    assert body["ai_attempted"] is True
+    assert body["ai_error"] is None
+    assert body["system_prompt"] == "REFINED PROMPT\n"
+
+
 def test_compose_prompt_falls_back_when_ai_unavailable(client, monkeypatch):
-    """If the LLM call raises, the deterministic prompt is returned."""
+    """If the LLM call raises, the deterministic prompt is returned with an error."""
     import taskforce.api.routes.agent_templates as mod
 
     async def _boom(req, deterministic):
-        # Simulate an unconfigured LLM by returning the deterministic draft.
-        return deterministic
+        # Simulate an unconfigured LLM by returning a deterministic draft + error.
+        return deterministic, "simulated LLM failure"
 
     monkeypatch.setattr(mod, "_ai_compose", _boom)
     response = client.post(
@@ -128,4 +184,6 @@ def test_compose_prompt_falls_back_when_ai_unavailable(client, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["used_ai"] is False
+    assert body["ai_attempted"] is True
+    assert body["ai_error"] == "simulated LLM failure"
     assert "Angebote" in body["system_prompt"]
