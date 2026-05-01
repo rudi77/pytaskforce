@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { useTools, useSkills } from "@/api/queries";
+import { useTools } from "@/api/queries";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +31,6 @@ interface ToolItem {
 
 export function Step3Capabilities({ state, onChange }: Props) {
   const tools = useTools();
-  const skills = useSkills();
 
   const items = useMemo<ToolItem[]>(() => {
     return (tools.data?.tools ?? []).map((tool) => ({
@@ -57,25 +56,14 @@ export function Step3Capabilities({ state, onChange }: Props) {
     return out;
   }, [items]);
 
-  const skillItems = (skills.data?.skills ?? []).filter(
-    (skill) => skill.skill_type === "context" || skill.skill_type === "library",
-  );
-
-  const isLoading = tools.isLoading || skills.isLoading;
-  const error = tools.error || skills.error;
+  const isLoading = tools.isLoading;
+  const error = tools.error;
 
   function toggleTool(name: string) {
     const set = new Set(state.tools);
     if (set.has(name)) set.delete(name);
     else set.add(name);
     onChange({ tools: Array.from(set) });
-  }
-
-  function toggleSkill(name: string) {
-    const set = new Set(state.skills);
-    if (set.has(name)) set.delete(name);
-    else set.add(name);
-    onChange({ skills: Array.from(set) });
   }
 
   if (isLoading) {
@@ -97,7 +85,7 @@ export function Step3Capabilities({ state, onChange }: Props) {
   }
 
   const selectedTools = new Set(state.tools);
-  const selectedSkills = new Set(state.skills);
+  const recommendedSkills = state.template?.recommended_skills ?? [];
 
   return (
     <div className="space-y-5">
@@ -189,48 +177,23 @@ export function Step3Capabilities({ state, onChange }: Props) {
         );
       })}
 
-      {skillItems.length > 0 ? (
+      {recommendedSkills.length > 0 ? (
         <Card>
           <CardContent className="space-y-2 p-4">
-            <div>
-              <p className="text-sm font-semibold">Workflows (Skills)</p>
-              <p className="text-xs text-muted-foreground">
-                Optional: vordefinierte Anweisungen für spezielle Aufgaben. Wähle nur,
-                was wirklich passt — sonst lenkst du den Agenten ab.
-              </p>
+            <p className="text-sm font-semibold">Empfohlene Workflows</p>
+            <p className="text-xs text-muted-foreground">
+              Diese Skills passen zu deiner Vorlage und stehen dem Agenten
+              automatisch zur Verfügung. Du musst sie nicht extra aktivieren —
+              der Agent ruft sie bei Bedarf selbst auf oder du startest sie im
+              Chat per Slash-Befehl (z.B. <code className="rounded bg-muted px-1">/{recommendedSkills[0]}</code>).
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {recommendedSkills.map((skill) => (
+                <Badge key={skill} variant="outline">
+                  /{skill}
+                </Badge>
+              ))}
             </div>
-            <ul className="grid gap-1.5 sm:grid-cols-2">
-              {skillItems.map((skill) => {
-                const checked = selectedSkills.has(skill.name);
-                return (
-                  <li key={skill.name}>
-                    <label
-                      className={cn(
-                        "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
-                        checked
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:bg-accent",
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleSkill(skill.name)}
-                        className="mt-0.5"
-                      />
-                      <span className="flex-1">
-                        <span className="text-sm font-medium">{skill.name}</span>
-                        {skill.description ? (
-                          <span className="block text-xs text-muted-foreground">
-                            {skill.description}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
           </CardContent>
         </Card>
       ) : null}

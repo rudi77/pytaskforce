@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, Wand2 } from "lucide-react";
+import { AlertTriangle, Sparkles, Wand2 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useComposePrompt } from "@/api/queries";
+import { ApiError } from "@/api/client";
 import {
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
@@ -22,9 +23,13 @@ interface Props {
 export function Step4Personality({ state, onChange }: Props) {
   const compose = useComposePrompt();
   const [busyMode, setBusyMode] = useState<"deterministic" | "ai" | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [composeError, setComposeError] = useState<string | null>(null);
 
   async function handleCompose(useAi: boolean) {
     setBusyMode(useAi ? "ai" : "deterministic");
+    setComposeError(null);
+    setAiNotice(null);
     try {
       const res = await compose.mutateAsync({
         template_id: state.template?.id ?? null,
@@ -38,6 +43,18 @@ export function Step4Personality({ state, onChange }: Props) {
         systemPrompt: res.system_prompt,
         promptUsedAI: res.used_ai,
       });
+      // Honest feedback when the AI was attempted but couldn't produce a
+      // refined version: the user got the deterministic draft, and we tell
+      // them why.
+      if (useAi && res.ai_attempted && !res.used_ai) {
+        setAiNotice(
+          res.ai_error
+            ? `Die KI-Verfeinerung war nicht möglich (${res.ai_error}). Du siehst den deterministischen Entwurf — du kannst ihn manuell anpassen.`
+            : "Die KI lieferte keine andere Version. Der deterministische Entwurf ist eingefügt.",
+        );
+      }
+    } catch (err) {
+      setComposeError(err instanceof ApiError ? err.message : (err as Error).message);
     } finally {
       setBusyMode(null);
     }
@@ -103,6 +120,26 @@ export function Step4Personality({ state, onChange }: Props) {
             Diese Regeln werden dem Agenten als verbindliche Anweisungen mitgegeben.
           </p>
         </div>
+
+        {composeError ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Fehler beim Erzeugen: {composeError}</span>
+          </div>
+        ) : null}
+
+        {aiNotice ? (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{aiNotice}</span>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           <Button
