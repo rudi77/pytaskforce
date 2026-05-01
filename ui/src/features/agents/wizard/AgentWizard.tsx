@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import yaml from "js-yaml";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -17,7 +18,7 @@ import {
   formToProfileConfig,
   type ProfileFormValues,
 } from "@/features/agents/schema";
-import { useCreateProfile } from "@/api/queries";
+import { useAgents, useCreateProfile } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import {
   EMPTY_WIZARD_STATE,
@@ -36,7 +37,7 @@ const STEPS = [
   { id: 2, label: "Vorstellen" },
   { id: 3, label: "Fähigkeiten" },
   { id: 4, label: "Persönlichkeit" },
-  { id: 5, label: "Testen" },
+  { id: 5, label: "Übersicht" },
 ] as const;
 
 type StepNumber = (typeof STEPS)[number]["id"];
@@ -52,12 +53,60 @@ function wizardToProfileForm(state: WizardState): ProfileFormValues {
   };
 }
 
+/**
+ * Build the deterministic prompt skeleton used when the user enters step 4
+ * for the first time. Mirror of the backend ``_deterministic_compose`` shape
+ * (intentionally simpler — full feature parity goes through the
+ * ``compose-prompt`` endpoint when the user clicks "Prompt erzeugen").
+ */
+function buildInitialPrompt(state: WizardState): string {
+  if (!state.template) return "";
+  const lines: string[] = [];
+  const body = state.template.system_prompt_template.trim();
+  if (body) lines.push(body);
+  if (state.description.trim()) {
+    lines.push(`Was du für den Nutzer tust:\n${state.description.trim()}`);
+  }
+  const styleLines: string[] = [];
+  if (state.tone) styleLines.push(`Tonfall: ${state.tone}`);
+  if (state.language) styleLines.push(`Antworte standardmäßig auf: ${state.language}`);
+  if (styleLines.length > 0) {
+    lines.push("Stil:\n" + styleLines.map((line) => `- ${line}`).join("\n"));
+  }
+  return lines.join("\n\n").trim() + "\n";
+}
+
 export function AgentWizard() {
   const navigate = useNavigate();
   const createMutation = useCreateProfile();
+  const agentsQuery = useAgents();
   const [step, setStep] = useState<StepNumber>(1);
   const [state, setState] = useState<WizardState>(EMPTY_WIZARD_STATE);
   const [error, setError] = useState<string | null>(null);
+
+  // Track whether the prompt has ever been initialized for the current
+  // template. We keep this outside React state so the initialization effect
+  // doesn't re-fire when the user erases the prompt manually in step 4 —
+  // that was the original race-condition. Resetting the ref happens in
+  // selectTemplate so each template gets one fresh init.
+  const promptInitRef = useRef<{ templateId: string | null }>({ templateId: null });
+
+  const existingAgentNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const agent of agentsQuery.data?.agents ?? []) {
+      const id =
+        agent.source === "profile"
+          ? agent.profile
+          : "agent_id" in agent
+            ? agent.agent_id
+            : null;
+      if (id) names.add(id);
+    }
+    return names;
+  }, [agentsQuery.data]);
+
+  const slugConflict =
+    state.name.length > 0 && existingAgentNames.has(state.name);
 
   function update(patch: Partial<WizardState>) {
     setState((prev) => ({ ...prev, ...patch }));
@@ -69,60 +118,56 @@ export function AgentWizard() {
       ...prev,
       template,
       emoji: template.emoji || prev.emoji,
-      tools: Array.from(new Set([...prev.tools, ...template.recommended_tools])),
-      skills: Array.from(new Set([...prev.skills, ...template.recommended_skills])),
+      // REPLACE tools with the template's recommendation. The previous
+      // implementation merged sets, which produced confusing union-of-templates
+      // when a user switched templates mid-wizard.
+      tools: [...template.recommended_tools],
       tone: template.tone_default || prev.tone,
       language: template.language_default || prev.language,
       // Reset the system prompt so step 4's compose picks up the new template.
       systemPrompt: "",
       promptUsedAI: false,
     }));
+    // Clear the init guard so step 4 builds a fresh prompt for this template.
+    promptInitRef.current = { templateId: null };
   }
 
-  // When the user enters step 4 with no prompt yet, kick off a deterministic
-  // compose so the textarea isn't empty. Users can tweak or hit "Mit KI verfeinern".
+  // Initialize the prompt exactly once per template the first time step 4
+  // is entered. Using a ref keeps the effect immune to in-step prompt edits
+  // (including full deletion).
   useEffect(() => {
-    if (step === 4 && !state.systemPrompt && state.template) {
-      // Build a deterministic prompt locally so we don't depend on the LLM here.
-      const lines: string[] = [];
-      const body = state.template.system_prompt_template.trim();
-      if (body) lines.push(body);
-      if (state.description.trim()) {
-        lines.push(`Was du für den Nutzer tust:\n${state.description.trim()}`);
-      }
-      const styleLines: string[] = [];
-      if (state.tone) styleLines.push(`Tonfall: ${state.tone}`);
-      if (state.language) styleLines.push(`Antworte standardmäßig auf: ${state.language}`);
-      if (styleLines.length > 0) {
-        lines.push(
-          "Stil:\n" + styleLines.map((line) => `- ${line}`).join("\n"),
-        );
-      }
-      setState((prev) => ({
-        ...prev,
-        systemPrompt: lines.join("\n\n").trim() + "\n",
-      }));
-    }
-  }, [step, state.template, state.description, state.tone, state.language, state.systemPrompt]);
+    if (step !== 4 || !state.template) return;
+    if (promptInitRef.current.templateId === state.template.id) return;
+    promptInitRef.current = { templateId: state.template.id };
+    setState((prev) =>
+      prev.systemPrompt
+        ? prev
+        : { ...prev, systemPrompt: buildInitialPrompt(prev) },
+    );
+  }, [step, state.template]);
 
   const canAdvance = useMemo(() => {
     switch (step) {
       case 1:
         return state.template !== null;
       case 2:
-        return state.displayName.trim().length > 0 && state.name.trim().length > 0;
+        return (
+          state.displayName.trim().length > 0 &&
+          state.name.trim().length > 0 &&
+          !slugConflict
+        );
       case 3:
-        return true; // tools optional
+        return true;
       case 4:
         return state.systemPrompt.trim().length > 0;
       case 5:
-        return true;
+        return state.systemPrompt.trim().length > 0 && !slugConflict;
       default:
         return false;
     }
-  }, [step, state]);
+  }, [step, state, slugConflict]);
 
-  async function handleCreate(openInChat: boolean) {
+  async function handleCreate() {
     setError(null);
     const profileForm = wizardToProfileForm(state);
     const config = formToProfileConfig(profileForm);
@@ -131,11 +176,7 @@ export function AgentWizard() {
         name: profileForm.name,
         config,
       });
-      if (openInChat) {
-        navigate(`/chat?profile=${encodeURIComponent(created.name)}`);
-      } else {
-        navigate(`/agents/${encodeURIComponent(created.name)}`);
-      }
+      navigate(`/agents/${encodeURIComponent(created.name)}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message);
     }
@@ -159,7 +200,7 @@ export function AgentWizard() {
       </div>
 
       <Card className="p-6">
-        <ol className="mb-6 flex flex-wrap items-center gap-2">
+        <ol className="mb-6 flex flex-wrap items-center gap-2" aria-label="Wizard-Schritte">
           {STEPS.map((s, idx) => {
             const isActive = step === s.id;
             const isDone = step > s.id;
@@ -167,8 +208,9 @@ export function AgentWizard() {
               <li key={s.id} className="flex items-center gap-2">
                 <button
                   type="button"
+                  aria-current={isActive ? "step" : undefined}
+                  aria-label={`Schritt ${s.id}: ${s.label}${isDone ? " (erledigt)" : ""}`}
                   onClick={() => {
-                    // Allow jumping back to earlier steps freely.
                     if (s.id <= step) setStep(s.id);
                   }}
                   className={cn(
@@ -196,7 +238,9 @@ export function AgentWizard() {
                   {s.label}
                 </button>
                 {idx < STEPS.length - 1 ? (
-                  <span className="text-muted-foreground">›</span>
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    ›
+                  </span>
                 ) : null}
               </li>
             );
@@ -210,7 +254,11 @@ export function AgentWizard() {
               onSelect={selectTemplate}
             />
           ) : step === 2 ? (
-            <Step2Identity state={state} onChange={update} />
+            <Step2Identity
+              state={state}
+              onChange={update}
+              slugConflict={slugConflict}
+            />
           ) : step === 3 ? (
             <Step3Capabilities state={state} onChange={update} />
           ) : step === 4 ? (
@@ -221,8 +269,12 @@ export function AgentWizard() {
         </div>
 
         {error ? (
-          <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {error}
+          <div
+            role="alert"
+            className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
           </div>
         ) : null}
 
@@ -239,32 +291,20 @@ export function AgentWizard() {
           {step < 5 ? (
             <Button
               type="button"
-              onClick={() =>
-                setStep((s) => (s < 5 ? ((s + 1) as StepNumber) : s))
-              }
+              onClick={() => setStep((s) => (s < 5 ? ((s + 1) as StepNumber) : s))}
               disabled={!canAdvance}
             >
               Weiter <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleCreate(false)}
-                disabled={createMutation.isPending}
-              >
-                <Save className="mr-2 h-4 w-4" /> Anlegen &amp; schließen
-              </Button>
-              <Button
-                type="button"
-                onClick={() => handleCreate(true)}
-                disabled={createMutation.isPending}
-              >
-                {createMutation.isPending ? "Lege an…" : "Anlegen & im Chat öffnen"}
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
+            <Button
+              type="button"
+              onClick={handleCreate}
+              disabled={!canAdvance || createMutation.isPending}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {createMutation.isPending ? "Lege an…" : "Anlegen"}
+            </Button>
           )}
         </div>
       </Card>

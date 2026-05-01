@@ -9,13 +9,11 @@ export interface WizardState {
   emoji: string;
   /** Selected tool short-names. */
   tools: string[];
-  /** Skill names selected as additional capabilities. */
-  skills: string[];
   tone: string;
   language: string;
   rules: string;
   systemPrompt: string;
-  /** Whether the user pressed "Mit AI generieren". */
+  /** Whether the LLM-refine pass produced this prompt successfully. */
   promptUsedAI: boolean;
 }
 
@@ -26,7 +24,6 @@ export const EMPTY_WIZARD_STATE: WizardState = {
   description: "",
   emoji: "✨",
   tools: [],
-  skills: [],
   tone: "professionell",
   language: "Deutsch",
   rules: "",
