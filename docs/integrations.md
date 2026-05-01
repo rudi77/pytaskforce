@@ -235,7 +235,7 @@ Content-Type: application/json
 
 - Each channel conversation maps to a Taskforce `session_id`.
 - Subsequent messages resume the same session automatically.
-- Chat history is stored in `.taskforce/conversations/{channel}/`.
+- Gateway session/history records are stored in `.taskforce/gateway_sessions/{channel}/` (`GatewayConversationStore`). Domain conversations from ADR-016 live separately under `.taskforce/conversations/`.
 - Recipient references are stored in `.taskforce/recipients/{channel}/`.
 - History is injected into the agent as `conversation_history` for each run.
 
