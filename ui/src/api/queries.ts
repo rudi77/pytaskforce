@@ -48,6 +48,16 @@ export interface AgentListResponse {
   agents: AgentSummary[];
 }
 
+export interface CreateCustomAgentPayload {
+  agent_id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  tool_allowlist: string[];
+  mcp_servers?: Record<string, unknown>[];
+  mcp_tool_allowlist?: string[];
+}
+
 export interface ProfileSummary {
   name: string;
   path: string;
@@ -245,8 +255,7 @@ export function useDeployAgent(agentId: string) {
     mutationFn: (payload) =>
       apiFetch<AgentDeployment>(`/api/v1/agents/${encodeURIComponent(agentId)}/deploy`, {
         method: "POST",
-        body: JSON.stringify(payload ?? {}),
-        headers: { "Content-Type": "application/json" },
+        body: payload ?? {},
       }),
     onSuccess: () => invalidateDeploymentCaches(qc, agentId),
   });
@@ -258,8 +267,7 @@ export function useRollbackAgent(agentId: string) {
     mutationFn: (payload) =>
       apiFetch<AgentDeployment>(`/api/v1/agents/${encodeURIComponent(agentId)}/rollback`, {
         method: "POST",
-        body: JSON.stringify(payload),
-        headers: { "Content-Type": "application/json" },
+        body: payload,
       }),
     onSuccess: () => invalidateDeploymentCaches(qc, agentId),
   });
@@ -278,6 +286,36 @@ export function useAgents() {
   return useQuery<AgentListResponse>({
     queryKey: queryKeys.agents,
     queryFn: () => apiFetch<AgentListResponse>("/api/v1/agents"),
+  });
+}
+
+export function useCreateCustomAgent() {
+  const qc = useQueryClient();
+  return useMutation<CustomAgent, Error, CreateCustomAgentPayload>({
+    mutationFn: (payload) =>
+      apiFetch<CustomAgent>("/api/v1/agents", {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+      qc.setQueryData(queryKeys.agent(data.agent_id), data);
+    },
+  });
+}
+
+export function useDeleteCustomAgent() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (agentId) =>
+      apiFetch<void>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: (_data, agentId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+      invalidateDeploymentCaches(qc, agentId);
+      qc.removeQueries({ queryKey: queryKeys.agent(agentId) });
+    },
   });
 }
 

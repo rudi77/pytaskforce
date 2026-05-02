@@ -1,5 +1,5 @@
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,12 +15,14 @@ import { ApiError, apiFetch } from "@/api/client";
 import {
   AgentSummary,
   queryKeys,
+  useDeleteCustomAgent,
 } from "@/api/queries";
 import {
   getAgentDescription,
   getAgentName,
   getAgentTools,
 } from "@/features/agents/agent-helpers";
+import { toast } from "@/components/ui/toast";
 
 interface Props {
   mode: "create" | "edit";
@@ -97,6 +99,24 @@ function CustomOrPluginDetail({ agent }: { agent: AgentSummary }) {
 }
 
 function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
+  const navigate = useNavigate();
+  const deleteMutation = useDeleteCustomAgent();
+
+  const onDelete = async () => {
+    if (agent.source !== "custom") return;
+    if (!window.confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteMutation.mutateAsync(agent.agent_id);
+      toast.success("Agent deleted", agent.name);
+      navigate("/agents");
+    } catch (err) {
+      toast.error(
+        "Delete failed",
+        err instanceof ApiError ? err.message : (err as Error).message,
+      );
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
@@ -106,6 +126,19 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
             All agents
           </Link>
         </Button>
+        {agent.source === "custom" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onDelete}
+            disabled={deleteMutation.isPending}
+            className="ml-auto"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        ) : null}
       </div>
       <Card>
         <CardHeader>

@@ -5,10 +5,11 @@ import { GitCompare, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { AgentSourceBadge } from "@/components/AgentSourceBadge";
-import { useAgents } from "@/api/queries";
+import { useActiveDeployment, useAgents, type DeploymentStatus } from "@/api/queries";
 import {
   getAgentDescription,
   getAgentId,
@@ -25,6 +26,30 @@ const FILTERS: { id: SourceFilter; label: string }[] = [
   { id: "custom", label: "Custom" },
   { id: "plugin", label: "Plugin" },
 ];
+
+const STATUS_VARIANT: Record<DeploymentStatus, "success" | "warning" | "destructive" | "secondary"> = {
+  pending: "secondary",
+  validating: "warning",
+  deployed: "success",
+  failed: "destructive",
+  rolled_back: "warning",
+};
+
+function CustomAgentDeploymentBadge({ agentId }: { agentId: string }) {
+  const active = useActiveDeployment(agentId);
+
+  if (active.isLoading) {
+    return <Badge variant="secondary">Deployment...</Badge>;
+  }
+  if (!active.data) {
+    return <Badge variant="warning">Not deployed</Badge>;
+  }
+  return (
+    <Badge variant={STATUS_VARIANT[active.data.status]}>
+      {active.data.environment}: {active.data.status}
+    </Badge>
+  );
+}
 
 export default function AgentsListPage() {
   const { data, isLoading, error } = useAgents();
@@ -153,6 +178,15 @@ export default function AgentsListPage() {
                           <p className="truncate text-xs text-muted-foreground">{id}</p>
                         </div>
                         <AgentSourceBadge source={agent.source} />
+                      </div>
+                      <div className="mt-3">
+                        {agent.source === "custom" ? (
+                          <CustomAgentDeploymentBadge agentId={agent.agent_id} />
+                        ) : (
+                          <Badge variant="outline">
+                            {agent.source === "profile" ? "Profile runtime" : "Plugin runtime"}
+                          </Badge>
+                        )}
                       </div>
                       <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
                         {getAgentDescription(agent) || "No description available."}

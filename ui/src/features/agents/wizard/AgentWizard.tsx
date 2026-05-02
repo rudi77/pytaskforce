@@ -14,11 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  EMPTY_PROFILE_FORM,
-  formToProfileConfig,
-  type ProfileFormValues,
-} from "@/features/agents/schema";
-import { useAgents, useCreateProfile } from "@/api/queries";
+  useAgents,
+  useCreateCustomAgent,
+  type CreateCustomAgentPayload,
+} from "@/api/queries";
 import { ApiError } from "@/api/client";
 import {
   EMPTY_WIZARD_STATE,
@@ -42,14 +41,21 @@ const STEPS = [
 
 type StepNumber = (typeof STEPS)[number]["id"];
 
-function wizardToProfileForm(state: WizardState): ProfileFormValues {
+function toCustomAgentId(value: string): string {
+  const id = value.replace(/\./g, "-").replace(/-{2,}/g, "-");
+  return id.length >= 3 ? id : `${id}-agent`;
+}
+
+function wizardToCustomAgentPayload(state: WizardState): CreateCustomAgentPayload {
+  const agentId = state.name || deriveProfileId(state.displayName);
   return {
-    ...EMPTY_PROFILE_FORM,
-    name: state.name || deriveProfileId(state.displayName),
-    display_name: state.displayName,
-    description: state.description,
+    agent_id: toCustomAgentId(agentId),
+    name: state.displayName,
+    description: state.description.trim() || state.template?.persona_hint || state.displayName,
     system_prompt: state.systemPrompt,
-    tools: state.tools,
+    tool_allowlist: state.tools,
+    mcp_servers: [],
+    mcp_tool_allowlist: [],
   };
 }
 
@@ -78,7 +84,7 @@ function buildInitialPrompt(state: WizardState): string {
 
 export function AgentWizard() {
   const navigate = useNavigate();
-  const createMutation = useCreateProfile();
+  const createMutation = useCreateCustomAgent();
   const agentsQuery = useAgents();
   const [step, setStep] = useState<StepNumber>(1);
   const [state, setState] = useState<WizardState>(EMPTY_WIZARD_STATE);
@@ -106,7 +112,7 @@ export function AgentWizard() {
   }, [agentsQuery.data]);
 
   const slugConflict =
-    state.name.length > 0 && existingAgentNames.has(state.name);
+    state.name.length > 0 && existingAgentNames.has(toCustomAgentId(state.name));
 
   function update(patch: Partial<WizardState>) {
     setState((prev) => ({ ...prev, ...patch }));
@@ -169,14 +175,10 @@ export function AgentWizard() {
 
   async function handleCreate() {
     setError(null);
-    const profileForm = wizardToProfileForm(state);
-    const config = formToProfileConfig(profileForm);
+    const payload = wizardToCustomAgentPayload(state);
     try {
-      const created = await createMutation.mutateAsync({
-        name: profileForm.name,
-        config,
-      });
-      navigate(`/agents/${encodeURIComponent(created.name)}`);
+      const created = await createMutation.mutateAsync(payload);
+      navigate(`/agents/${encodeURIComponent(created.agent_id)}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message);
     }
@@ -317,8 +319,7 @@ export function AgentWizard() {
         <pre className="mt-2 overflow-auto scrollbar-thin font-mono text-[11px] leading-relaxed">
           {(() => {
             try {
-              const profileForm = wizardToProfileForm(state);
-              return yaml.dump(formToProfileConfig(profileForm), {
+              return yaml.dump(wizardToCustomAgentPayload(state), {
                 noRefs: true,
                 sortKeys: false,
               });
