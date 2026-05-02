@@ -24,6 +24,7 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 018: Agent Communication Protocol (ACP) Support](adr-018-acp-protocol-support.md)**
 - **[ADR 019: Cooperative Agent Interruption](adr-019-agent-interruption.md)**
 - **[ADR 020: Wiki-Style Long-Term Memory](adr-020-wiki-style-memory.md)** — _supersedes ADR 007, 013, 014 (dreaming)_
+- **[ADR 021: UI Plugin System for the Management UI](adr-021-ui-plugin-system.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*
