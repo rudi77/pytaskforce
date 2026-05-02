@@ -278,7 +278,7 @@ them. The `ButlerProtocol` and butler-only contracts remain inside the
 | `LLMProviderProtocol` | `llm.py` | LLM provider abstraction |
 | `ToolProtocol` | `tools.py` | Tool execution interface (also defines `ApprovalRiskLevel` enum) |
 | `WikiStoreProtocol` | `wiki_store.py` | Wiki-style long-term memory storage (ADR-020) |
-| `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` | `gateway.py` | Communication Gateway contracts |
+| `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol` | `gateway.py` | Communication Gateway contracts (incl. opaque-recipient resolution extension point) |
 | `MessageBusProtocol` | `messaging.py` | Inter-agent messaging |
 | `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` | `runtime.py` | Runtime tracking |
 | `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` | `skills.py` | Skill interface and lifecycle (context/prompt/agent types) |
@@ -608,7 +608,7 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
 
 ### Architecture
 
-- **Protocols:** `core/interfaces/gateway.py` (4 protocols: `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`)
+- **Protocols:** `core/interfaces/gateway.py` (5 protocols: `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol` — the last is an opt-in seam used by external auth/identity layers; the framework ships a pass-through default)
 - **Domain Models:** `core/domain/gateway.py` (`InboundMessage`, `GatewayOptions`, `GatewayResponse`, `NotificationRequest`, `NotificationResult`)
 - **Gateway Service:** `application/gateway.py` (`CommunicationGateway`) - orchestrates inbound processing, session management, agent execution, outbound replies, and proactive push
 - **API Routes:** `api/routes/gateway.py`:
@@ -1451,7 +1451,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `llm.py` - `LLMProviderProtocol` - LLM provider abstraction
 - `tools.py` - `ToolProtocol`, `ApprovalRiskLevel` - tool execution interface
 - `memory_store.py` - `MemoryStoreProtocol` - memory storage
-- `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol` - Communication Gateway
+- `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol` (+ `RecipientInfo` value object) - Communication Gateway
 - `messaging.py` - `MessageBusProtocol` - inter-agent messaging
 - `runtime.py` - `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` - runtime tracking
 - `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle

@@ -5,10 +5,13 @@ Separates concerns that were previously mixed in CommunicationProviderProtocol:
 - InboundAdapterProtocol: normalizing raw channel payloads
 - ConversationStoreProtocol: session mapping and history persistence
 - RecipientRegistryProtocol: managing push-notification recipients
+- RecipientResolverProtocol: mapping a channel-specific identity to a
+  logical recipient (extension point for external auth/identity layers)
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 
@@ -181,4 +184,65 @@ class RecipientRegistryProtocol(Protocol):
 
     async def remove(self, *, channel: str, user_id: str) -> bool:
         """Remove a recipient. Returns True if it existed."""
+        ...
+
+
+@dataclass(frozen=True)
+class RecipientInfo:
+    """Resolved recipient for an inbound message.
+
+    The framework treats ``recipient_id`` opaquely — its meaning is
+    decided by whatever ``RecipientResolverProtocol`` implementation
+    produced it (a global user id, an externally-namespaced identity,
+    an anonymous session token, etc.). The framework only uses it as
+    the routing key.
+
+    ``default_agent_id`` lets the resolver suggest which agent should
+    handle the message when no explicit agent override is supplied via
+    ``GatewayOptions``. The gateway falls back to the default routing
+    behaviour when this is ``None``.
+
+    ``attributes`` is an extension point for resolver-specific data
+    (e.g. preferred language, role flags). The framework does not
+    inspect these.
+    """
+
+    recipient_id: str
+    default_agent_id: str | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+
+class RecipientResolverProtocol(Protocol):
+    """Resolve a channel-specific identity to a logical recipient.
+
+    Implementations consume the channel name plus any channel-specific
+    identity payload (e.g. ``{"sender_id": "..."}`` for a webhook,
+    JWT claims for an HTTP request) and return a ``RecipientInfo`` or
+    ``None`` if the identity cannot be mapped.
+
+    The framework ships a pass-through default that treats
+    ``channel_identity["sender_id"]`` as the recipient. External
+    packages can install a richer resolver that, for example,
+    consults an identity provider or a user database.
+    """
+
+    async def resolve(
+        self,
+        channel: str,
+        channel_identity: dict[str, Any],
+    ) -> RecipientInfo | None:
+        """Map a channel identity to a logical recipient.
+
+        Args:
+            channel: Channel identifier (e.g. 'web', 'telegram').
+            channel_identity: Channel-specific identity payload. The
+                framework's pass-through resolver looks for a
+                ``sender_id`` key; richer resolvers may use any keys
+                their auth layer populates.
+
+        Returns:
+            ``RecipientInfo`` for a successful mapping, or ``None``
+            when the identity cannot be resolved (the gateway treats
+            this as an audited deny).
+        """
         ...
