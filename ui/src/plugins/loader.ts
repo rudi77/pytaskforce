@@ -36,7 +36,6 @@ interface OptionalPluginEntry {
 const OPTIONAL_PLUGINS: OptionalPluginEntry[] = [
   {
     id: "enterprise",
-    // @ts-expect-error - package is optional, may not be installed
     load: () => import("@taskforce/enterprise-ui"),
   },
 ];
