@@ -50,7 +50,7 @@ Anything not directly required for this is post-Beta.
 |-----|------------------------------------------|------------------------------------------------------------|--------|--------------|----------|
 | 1   | Store-Provider Hook + Per-Tenant Stores  | Late-bind stores in `AgentFactory`; per-tenant file stores in plugin | 4-6d   | both         | Framework: **In Review**, Plugin: Planned |
 | 2   | Real Users (Postgres-backed admin)       | JWT login + Postgres-backed users/tenants/roles            | 4-6d   | enterprise   | Planned  |
-| 3   | Web-Chat End-to-End                      | Authenticated web chat reaches user's default agent        | 3-5d   | both         | Planned  |
+| 3   | Web-Chat End-to-End                      | Authenticated web chat reaches user's default agent        | 3-5d   | both         | Framework: **In Review**, Plugin: Planned |
 | ⭐  | **Beta milestone**                       | The two-user journey runs end-to-end                       | —      | merge → main | Beta     |
 | 4   | Telegram per User                        | Per-user Telegram identity → tenant resolution             | 2-3d   | enterprise   | Planned  |
 | 5   | Tool Sandboxing (path scoping)           | Tools can't escape the agent workspace                     | 4-5d   | both         | Planned  |

@@ -32,7 +32,9 @@ from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStorePro
 from taskforce.core.interfaces.gateway import (
     ConversationStoreProtocol,
     OutboundSenderProtocol,
+    RecipientInfo,
     RecipientRegistryProtocol,
+    RecipientResolverProtocol,
 )
 
 if TYPE_CHECKING:
@@ -59,6 +61,33 @@ _FALLBACK_MESSAGES = {
         "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
     ),
 }
+
+
+class _PassthroughRecipientResolver:
+    """Default resolver: treats ``channel_identity['sender_id']`` as the recipient.
+
+    Preserves the gateway's pre-resolver behaviour exactly — every
+    inbound message resolves to a recipient with ``recipient_id``
+    derived from (in order) ``sender_id``, ``conversation_id``, or
+    the literal ``"anonymous"``. The pass-through never produces a
+    ``None`` result, so legacy callers never see the gateway's
+    deny path.
+
+    Custom resolvers replace this implementation and may return
+    ``None`` to refuse a message.
+    """
+
+    async def resolve(
+        self,
+        channel: str,
+        channel_identity: dict[str, Any],
+    ) -> RecipientInfo | None:
+        sender_id = (
+            channel_identity.get("sender_id")
+            or channel_identity.get("conversation_id")
+            or "anonymous"
+        )
+        return RecipientInfo(recipient_id=str(sender_id))
 
 
 def _sanitize_reply(reply: str, status: str | Any) -> str:
@@ -114,8 +143,7 @@ class CommunicationGateway:
 
     # Default welcome message sent after a conversation reset.
     _WELCOME_MESSAGE = (
-        "👋 Willkommen! Die Konversation wurde zurückgesetzt. "
-        "Wie kann ich Ihnen helfen?"
+        "👋 Willkommen! Die Konversation wurde zurückgesetzt. " "Wie kann ich Ihnen helfen?"
     )
 
     def __init__(
@@ -129,6 +157,7 @@ class CommunicationGateway:
         conversation_manager: ConversationManager | None = None,
         request_queue: RequestQueue | None = None,
         max_conversation_history: int = 30,
+        recipient_resolver: RecipientResolverProtocol | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -138,6 +167,9 @@ class CommunicationGateway:
         self._conversation_manager = conversation_manager
         self._request_queue = request_queue
         self._max_conversation_history = max_conversation_history
+        self._recipient_resolver: RecipientResolverProtocol = (
+            recipient_resolver or _PassthroughRecipientResolver()
+        )
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -209,8 +241,40 @@ class CommunicationGateway:
         if stripped in self.RESET_COMMANDS:
             return await self._handle_reset(message)
 
+        # ------- Resolve recipient via injected resolver -------
+        # Custom resolvers may refuse a message by returning ``None``;
+        # the default pass-through always succeeds so legacy callers
+        # never reach this branch.
+        recipient = await self._recipient_resolver.resolve(
+            message.channel,
+            {
+                "sender_id": message.sender_id,
+                "conversation_id": message.conversation_id,
+                "metadata": message.metadata,
+            },
+        )
+        if recipient is None:
+            self._logger.info(
+                "gateway.recipient.unresolved",
+                channel=message.channel,
+                conversation_id=message.conversation_id,
+                sender_id=message.sender_id,
+            )
+            return GatewayResponse(
+                session_id="",
+                status="recipient_unresolved",
+                reply="",
+                history=[],
+            )
+
         # ------- Normal inbound message flow -------
         resolved_options = options or GatewayOptions()
+
+        # Use resolver-provided default agent when no explicit override is given.
+        if resolved_options.agent_id is None and recipient.default_agent_id is not None:
+            from dataclasses import replace
+
+            resolved_options = replace(resolved_options, agent_id=recipient.default_agent_id)
 
         session_id = await self._resolve_session_id(
             channel=message.channel,
@@ -538,9 +602,7 @@ class CommunicationGateway:
 
         # Delete the entire conversation record (history + session mapping)
         # so that the next message gets a fresh session ID.
-        await self._conversation_store.delete_conversation(
-            message.channel, message.conversation_id
-        )
+        await self._conversation_store.delete_conversation(message.channel, message.conversation_id)
 
         # Archive current conversation and start fresh (ADR-016).
         conv_id: str | None = None
@@ -572,9 +634,7 @@ class CommunicationGateway:
             conversation_id=conv_id,
         )
 
-    def _trim_history(
-        self, history: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _trim_history(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Trim conversation history to the last N messages."""
         if len(history) <= self._max_conversation_history:
             return history
@@ -610,9 +670,7 @@ class CommunicationGateway:
                 "or PersistentAgentService before routing messages through the queue."
             )
 
-        conv_id = await self._conversation_manager.get_or_create(
-            message.channel, message.sender_id
-        )
+        conv_id = await self._conversation_manager.get_or_create(message.channel, message.sender_id)
 
         # Build multimodal content for the queue metadata so the processor
         # can pass it through to the conversation history.
@@ -681,9 +739,7 @@ class CommunicationGateway:
         """
         assert self._conversation_manager is not None  # guarded by caller
 
-        conv_id = await self._conversation_manager.get_or_create(
-            message.channel, message.sender_id
-        )
+        conv_id = await self._conversation_manager.get_or_create(message.channel, message.sender_id)
 
         # Append user message to conversation.
         user_content = _build_multimodal_content(
@@ -799,9 +855,7 @@ class CommunicationGateway:
             return None
 
         for user_id in recipients:
-            reference = await self._recipient_registry.resolve(
-                channel=channel, user_id=user_id
-            )
+            reference = await self._recipient_registry.resolve(channel=channel, user_id=user_id)
             conversation_id = str((reference or {}).get("conversation_id", ""))
             if conversation_id and conversation_id == recipient_id:
                 return user_id
@@ -922,17 +976,13 @@ def _build_multimodal_content(
 
     for att in attachments:
         if att.get("type") == "image" and att.get("data_url"):
-            parts.append(
-                {"type": "image_url", "image_url": {"url": att["data_url"]}}
-            )
+            parts.append({"type": "image_url", "image_url": {"url": att["data_url"]}})
             # If the image was also saved to disk, add a file reference so
             # sub-agents (which cannot see inline images) can access the file.
             if att.get("file_path"):
                 file_path = att["file_path"]
                 file_name = att.get("file_name", "photo.jpg")
-                doc_references.append(
-                    f"[Attached file: {file_name} (image) saved at: {file_path}]"
-                )
+                doc_references.append(f"[Attached file: {file_name} (image) saved at: {file_path}]")
         elif att.get("type") == "document":
             file_path = att.get("file_path", "")
             file_name = att.get("file_name", "document")

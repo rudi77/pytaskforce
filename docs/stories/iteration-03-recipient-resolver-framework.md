@@ -1,8 +1,8 @@
 # Iteration 3 (Framework) — `RecipientResolverProtocol` for Communication Gateway
 
-**Status:** Planned (depends on Iter 1 framework merge)
+**Status:** In Review (implemented on the iter-1 branch alongside the store-provider hook)
 **Repo:** `pytaskforce`
-**Branch:** `feat/iter-03-recipient-resolver`
+**Branch:** `feat/iter-01-store-provider-hook` (consolidated with Iter 1 framework work)
 **Effort:** 1-2 days
 **Roadmap:** [`docs/enterprise-saas-roadmap.md`](../enterprise-saas-roadmap.md)
 **Companion story:** `taskforce-enterprise/docs/stories/iteration-03-web-chat-plugin.md`
