@@ -606,15 +606,17 @@ class TestSimpleBuilders:
         assert store._root == Path(".taskforce") / "memory" / "wiki"
 
     def test_build_wiki_store_custom_work_dir(
-        self, builder: InfrastructureBuilder
+        self, builder: InfrastructureBuilder, tmp_path: Path
     ) -> None:
-        from pathlib import Path
-
         from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
-        store = builder.build_wiki_store(work_dir="/data")
+        # Use a tmp_path-rooted directory so the test does not depend on
+        # a writable filesystem root (e.g. ``/data`` is unwritable for
+        # non-root processes on CI runners).
+        custom_work_dir = tmp_path / "custom_work"
+        store = builder.build_wiki_store(work_dir=str(custom_work_dir))
         assert isinstance(store, FileWikiStore)
-        assert store._root == Path("/data") / "memory" / "wiki"
+        assert store._root == custom_work_dir / "memory" / "wiki"
 
     def test_build_agent_registry(self, builder: InfrastructureBuilder) -> None:
         from taskforce.application.profile_loader import get_extra_config_dirs
