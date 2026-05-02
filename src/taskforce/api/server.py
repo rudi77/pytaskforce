@@ -76,6 +76,7 @@ from taskforce.api.routes import (
     runs,
     skills,
     tools,
+    ui,
     workflows,
 )
 from taskforce.application.bootstrap_config_dirs import bootstrap_config_dirs
@@ -206,6 +207,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
     app.include_router(mcp.router, prefix="/api/v1", tags=["mcp"])
     app.include_router(evals.router, prefix="/api/v1", tags=["evals"])
+    app.include_router(ui.router, prefix="/api/v1", tags=["ui"])
 
     # Load plugins BEFORE registering them (must happen before lifespan)
     # This ensures routers are available for OpenAPI schema generation

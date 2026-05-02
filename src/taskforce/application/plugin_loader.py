@@ -46,7 +46,7 @@ import inspect
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 import structlog
 import yaml
@@ -695,6 +695,24 @@ class PluginLoader:
 # ---------------------------------------------------------------------------
 
 
+class UIManifest(TypedDict, total=False):
+    """Metadata that a plugin contributes for the management UI.
+
+    A plugin returns this from ``get_ui_manifest()`` so the React UI knows
+    which capabilities are active and which optional npm package provides
+    the matching components.
+
+    Required keys: ``id``, ``capabilities``. All others are optional.
+    """
+
+    id: str
+    version: str
+    display_name: str
+    capabilities: list[str]
+    npm_package: str | None
+    min_ui_version: str | None
+
+
 @runtime_checkable
 class PluginProtocol(Protocol):
     """Protocol that plugins must implement.
@@ -703,6 +721,7 @@ class PluginProtocol(Protocol):
     - Middleware (authentication, logging, etc.)
     - API routers (admin endpoints, etc.)
     - Factory extensions (additional tools, providers, etc.)
+    - UI manifests (optional, for management UI integration)
     """
 
     name: str
@@ -1026,3 +1045,33 @@ def is_enterprise_available() -> bool:
             return True
 
     return False
+
+
+def collect_ui_manifests() -> list[UIManifest]:
+    """Collect UI manifests from all loaded plugins.
+
+    Plugins may optionally implement ``get_ui_manifest() -> UIManifest | None``
+    to declare capabilities the management UI should expose. Plugins without
+    the method (or returning ``None``) are silently skipped.
+
+    Returns:
+        List of UIManifest dictionaries from plugins that contributed one.
+    """
+    manifests: list[UIManifest] = []
+    for instance in get_loaded_plugins():
+        getter = getattr(instance, "get_ui_manifest", None)
+        if not callable(getter):
+            continue
+        try:
+            manifest = getter()
+        except Exception as exc:  # Broad: a buggy plugin must not break the endpoint
+            logger.warning(
+                "plugin.ui_manifest_failed",
+                plugin_name=getattr(instance, "name", "<unknown>"),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            continue
+        if manifest:
+            manifests.append(manifest)
+    return manifests

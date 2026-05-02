@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -19,25 +19,29 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
+import { capabilitiesSatisfied, usePluginRegistry } from "@/plugins/registry";
+import type { PluginNavItem } from "@/plugins/types";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   end?: boolean;
+  section?: "main" | "admin";
+  order?: number;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/agents", label: "Agents", icon: Bot },
-  { to: "/chat", label: "Chat", icon: MessageSquare },
-  { to: "/monitoring", label: "Monitoring", icon: Activity },
-  { to: "/capabilities", label: "Fähigkeiten", icon: Sparkles },
-  { to: "/acp", label: "ACP Peers", icon: Network },
-  { to: "/evals", label: "Evals", icon: Beaker },
+const BUILTIN_NAV_ITEMS: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, section: "main", order: 0 },
+  { to: "/agents", label: "Agents", icon: Bot, section: "main", order: 10 },
+  { to: "/chat", label: "Chat", icon: MessageSquare, section: "main", order: 20 },
+  { to: "/monitoring", label: "Monitoring", icon: Activity, section: "main", order: 30 },
+  { to: "/capabilities", label: "Fähigkeiten", icon: Sparkles, section: "main", order: 40 },
+  { to: "/acp", label: "ACP Peers", icon: Network, section: "main", order: 50 },
+  { to: "/evals", label: "Evals", icon: Beaker, section: "main", order: 60 },
 ];
 
-const PAGE_TITLES: Record<string, string> = {
+const BUILTIN_PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/agents": "Agents",
   "/chat": "Chat",
@@ -68,9 +72,52 @@ function ThemeToggle() {
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  mainItems: NavItem[];
+  adminItems: NavItem[];
 }
 
-function Sidebar({ collapsed, onToggle }: SidebarProps) {
+function NavSection({
+  items,
+  collapsed,
+  label,
+}: {
+  items: NavItem[];
+  collapsed: boolean;
+  label?: string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-0.5">
+      {!collapsed && label ? (
+        <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          {label}
+        </div>
+      ) : null}
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          title={collapsed ? item.label : undefined}
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
+              collapsed ? "justify-center p-2" : "px-3 py-2",
+              isActive
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            )
+          }
+        >
+          <item.icon className="h-4 w-4 shrink-0" />
+          {collapsed ? null : <span>{item.label}</span>}
+        </NavLink>
+      ))}
+    </div>
+  );
+}
+
+function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
   return (
     <aside
       className={cn(
@@ -89,27 +136,9 @@ function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <span className="text-base font-semibold tracking-tight">Taskforce</span>
         )}
       </div>
-      <nav className={cn("flex-1 space-y-0.5", collapsed ? "p-1.5" : "p-3")}>
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            title={collapsed ? item.label : undefined}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
-                collapsed ? "justify-center p-2" : "px-3 py-2",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              )
-            }
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {collapsed ? null : <span>{item.label}</span>}
-          </NavLink>
-        ))}
+      <nav className={cn("flex-1 space-y-1", collapsed ? "p-1.5" : "p-3")}>
+        <NavSection items={mainItems} collapsed={collapsed} />
+        <NavSection items={adminItems} collapsed={collapsed} label="Admin" />
       </nav>
       <div className={cn("border-t border-border", collapsed ? "p-1.5" : "p-3")}>
         <NavLink
@@ -151,19 +180,69 @@ function Sidebar({ collapsed, onToggle }: SidebarProps) {
   );
 }
 
-function getPageTitle(pathname: string): string {
-  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+function getPageTitle(pathname: string, pageTitles: Record<string, string>): string {
+  if (pageTitles[pathname]) return pageTitles[pathname];
   const segment = "/" + pathname.split("/").filter(Boolean)[0];
-  return PAGE_TITLES[segment] ?? "Taskforce";
+  return pageTitles[segment] ?? "Taskforce";
+}
+
+function pluginNavItemToNavItem(
+  item: PluginNavItem,
+  fallbackRequires: readonly string[],
+  active: ReadonlySet<string>,
+): NavItem | null {
+  const requires = item.requires ?? fallbackRequires;
+  if (!capabilitiesSatisfied(requires, active)) return null;
+  return {
+    to: item.to,
+    label: item.label,
+    icon: item.icon,
+    end: item.end,
+    section: item.section ?? "admin",
+    order: item.order,
+  };
 }
 
 export function AppShell() {
   const { pathname } = useLocation();
-  const title = getPageTitle(pathname);
+  const { plugins, activeCapabilities } = usePluginRegistry();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
   });
+
+  const { mainItems, adminItems, pageTitles } = useMemo(() => {
+    const collected: NavItem[] = [...BUILTIN_NAV_ITEMS];
+    for (const plugin of plugins) {
+      for (const navItem of plugin.navItems) {
+        const resolved = pluginNavItemToNavItem(
+          navItem,
+          plugin.capabilities,
+          activeCapabilities,
+        );
+        if (resolved) collected.push(resolved);
+      }
+    }
+
+    const sortByOrder = (a: NavItem, b: NavItem) =>
+      (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
+
+    const mainItems = collected
+      .filter((it) => (it.section ?? "main") === "main")
+      .sort(sortByOrder);
+    const adminItems = collected
+      .filter((it) => it.section === "admin")
+      .sort(sortByOrder);
+
+    const pageTitles: Record<string, string> = { ...BUILTIN_PAGE_TITLES };
+    for (const item of [...mainItems, ...adminItems]) {
+      pageTitles[item.to] = item.label;
+    }
+
+    return { mainItems, adminItems, pageTitles };
+  }, [plugins, activeCapabilities]);
+
+  const title = getPageTitle(pathname, pageTitles);
 
   useEffect(() => {
     window.localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -171,7 +250,12 @@ export function AppShell() {
 
   return (
     <div className="flex h-full">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        mainItems={mainItems}
+        adminItems={adminItems}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
           <h1 className="text-base font-semibold tracking-tight">{title}</h1>
