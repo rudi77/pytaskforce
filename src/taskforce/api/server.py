@@ -59,6 +59,7 @@ from fastapi.responses import JSONResponse
 
 from taskforce.api.routes import (
     acp,
+    agent_deployments,
     agent_templates,
     agents,
     analytics,
@@ -186,6 +187,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     # Include core routers
     app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
     app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
+    app.include_router(agent_deployments.router, prefix="/api/v1", tags=["agent-deployments"])
     app.include_router(
         agent_templates.router, prefix="/api/v1", tags=["agent-templates"]
     )

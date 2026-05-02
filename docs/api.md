@@ -156,6 +156,10 @@ print(response.json())
 | `POST` | `/api/v1/agents` | Create a new custom agent |
 | `PUT` | `/api/v1/agents/{agent_id}` | Update an existing custom agent |
 | `DELETE` | `/api/v1/agents/{agent_id}` | Delete a custom agent |
+| `POST` | `/api/v1/agents/{agent_id}/deploy` | Queue deployment for an agent version |
+| `POST` | `/api/v1/agents/{agent_id}/rollback` | Roll back an agent to a target version |
+| `GET` | `/api/v1/agents/{agent_id}/deployments` | List deployment history for an agent |
+| `GET` | `/api/v1/agents/{agent_id}/active` | Get currently active deployment status |
 
 #### Plugin Agent Discovery
 
