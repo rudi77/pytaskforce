@@ -15,7 +15,7 @@ from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
     PluginAgentDefinition,
 )
-from taskforce.core.domain.errors import NotFoundError, ValidationError
+from taskforce.core.domain.errors import ConflictError, NotFoundError, ValidationError
 
 if TYPE_CHECKING:
     from taskforce.application.factory import AgentFactory
@@ -41,6 +41,8 @@ class AgentCreationPipeline:
         profile: str,
         user_context: dict[str, Any] | None = None,
         agent_id: str | None = None,
+        environment: str | None = None,
+        version: str | None = None,
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         plugin_path: str | None = None,
@@ -51,6 +53,8 @@ class AgentCreationPipeline:
             profile=profile,
             has_user_context=user_context is not None,
             agent_id=agent_id,
+            environment=environment,
+            version=version,
             planning_strategy=planning_strategy,
             plugin_path=plugin_path,
         )
@@ -65,6 +69,7 @@ class AgentCreationPipeline:
             return await self._from_agent_id(
                 agent_id, profile, user_context,
                 planning_strategy, planning_strategy_params,
+                environment, version,
             )
 
         return await self._from_profile(
@@ -101,26 +106,54 @@ class AgentCreationPipeline:
         user_context: dict[str, Any] | None,
         planning_strategy: str | None,
         planning_strategy_params: dict[str, Any] | None,
+        environment: str | None,
+        version: str | None,
     ) -> Agent:
         """Create agent from a registered agent ID."""
         self._validate_agent_id_format(agent_id)
 
+        resolved_agent_id = agent_id
+        deployment_status = "not_requested"
+        resolved_version = version
+        if environment or version:
+            (
+                resolved_agent_id,
+                resolved_version,
+                deployment_status,
+            ) = self._resolve_deployment_context(agent_id, environment, version)
+
         agent_response = self._lookup_agent_definition(agent_id)
+        if resolved_agent_id != agent_id:
+            agent_response = self._lookup_agent_definition(resolved_agent_id)
         if not agent_response:
             raise NotFoundError(
-                f"Agent '{agent_id}' not found",
-                details={"agent_id": agent_id},
+                f"Agent '{resolved_agent_id}' not found",
+                details={
+                    "agent_id": resolved_agent_id,
+                    "requested_agent_id": agent_id,
+                    "environment": environment,
+                    "version": resolved_version,
+                },
             )
+
+        self._logger.info(
+            "agent_deployment_context_resolved",
+            requested_agent_id=agent_id,
+            resolved_agent_id=resolved_agent_id,
+            resolved_version=resolved_version,
+            environment=environment,
+            deployment_status=deployment_status,
+        )
 
         if isinstance(agent_response, PluginAgentDefinition):
             return await self._from_plugin_definition(
-                agent_response, agent_id, profile, user_context,
+                agent_response, resolved_agent_id, profile, user_context,
                 planning_strategy, planning_strategy_params,
             )
 
         if isinstance(agent_response, CustomAgentDefinition):
             return await self._from_custom_definition(
-                agent_response, agent_id,
+                agent_response, resolved_agent_id,
                 planning_strategy, planning_strategy_params,
             )
 
@@ -129,6 +162,68 @@ class AgentCreationPipeline:
             "Use 'profile' parameter for profile agents.",
             details={"agent_id": agent_id, "source": agent_response.source},
         )
+
+    def _resolve_deployment_context(
+        self,
+        agent_id: str,
+        environment: str | None,
+        requested_version: str | None,
+    ) -> tuple[str, str | None, str]:
+        """Resolve deployed agent/version for an environment with draft fallback.
+
+        Fallback behavior:
+        - If no deployment registry is available, fall back to the requested agent.
+        - If explicit version is provided, use it directly.
+        - If environment is provided, resolve the active deployment.
+        - If no active deployment exists, fall back to draft/custom agent if present.
+        - If neither deployment nor draft/custom exists, raise NotFoundError.
+        - If deployment metadata exists but is not active, raise ConflictError.
+        """
+        registry = self._build_agent_registry()
+        if not environment:
+            return agent_id, requested_version, "version_override" if requested_version else "not_requested"
+
+        resolver = getattr(registry, "get_active_deployment", None)
+        if not callable(resolver):
+            return agent_id, requested_version, "registry_no_deployment_support"
+
+        if requested_version:
+            versioned_agent_id = self._build_versioned_agent_id(agent_id, requested_version)
+            return versioned_agent_id, requested_version, "explicit_version"
+
+        deployment = resolver(agent_id=agent_id, environment=environment)
+        if deployment is None:
+            fallback_definition = self._lookup_agent_definition(agent_id)
+            if fallback_definition:
+                return agent_id, None, "fallback_draft_or_custom"
+            raise NotFoundError(
+                f"No active deployment found for agent '{agent_id}' in environment '{environment}'",
+                details={"agent_id": agent_id, "environment": environment},
+            )
+
+        status = getattr(deployment, "status", "active")
+        if status != "active":
+            raise ConflictError(
+                f"Deployment for agent '{agent_id}' in '{environment}' is not active",
+                details={"agent_id": agent_id, "environment": environment, "status": status},
+            )
+
+        resolved_version = str(getattr(deployment, "version", "")) or None
+        if not resolved_version:
+            return agent_id, None, "active_no_version"
+
+        resolved_agent_id = self._build_versioned_agent_id(agent_id, resolved_version)
+        return resolved_agent_id, resolved_version, "active_deployment"
+
+    def _build_versioned_agent_id(self, agent_id: str, version: str) -> str:
+        """Build canonical agent ID for a specific version."""
+        return f"{agent_id}@{version}"
+
+    def _build_agent_registry(self) -> Any:
+        """Build and return the configured agent registry instance."""
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+        return InfrastructureBuilder().build_agent_registry()
 
     def _validate_agent_id_format(self, agent_id: str) -> None:
         """Validate that agent_id does not contain slashes."""
