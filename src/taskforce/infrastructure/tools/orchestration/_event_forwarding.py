@@ -29,10 +29,31 @@ if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
 
 
-# Events that describe sub-agent lifecycle but do not represent actual
-# work — they would clutter the parent stream without adding signal.
-_SUPPRESSED_FORWARD_EVENTS = frozenset(
-    {EventType.STARTED, EventType.COMPLETE}
+# Sub-agent events that are safe to forward into the *parent's* stream.
+#
+# Parent-stream consumers (e.g. ``simple_chat._stream_response``,
+# ``api/routes/conversations.py``) treat ``LLM_TOKEN`` and
+# ``FINAL_ANSWER`` as the parent assistant's reply: they append the
+# token text into the rendered response and persist it as the
+# assistant message.  Forwarding those events from a sub-agent would
+# splice the sub-agent's internal text into the parent's reply (and on
+# parent failure, persist the sub-agent's text as the assistant
+# message).  Likewise ``ERROR`` / ``INTERRUPTED`` / ``ASK_USER`` would
+# trigger parent-level error handling, interrupt UX, or user-prompts
+# for what is really an internal sub-agent state — the sub-agent
+# already surfaces those via its return value (the
+# ``call_agent`` / ``call_agents_parallel`` tool result).
+#
+# What the parent *does* benefit from is the sub-agent's tool-call
+# trace (so the UI can render nested tool calls) and the step / token
+# accounting events.  Everything else is intentionally dropped.
+_FORWARDED_EVENT_TYPES = frozenset(
+    {
+        EventType.TOOL_CALL,
+        EventType.TOOL_RESULT,
+        EventType.STEP_START,
+        EventType.TOKEN_USAGE,
+    }
 )
 
 
@@ -94,10 +115,12 @@ async def run_sub_agent_with_forwarding(
         _track_outcome(event, outcome)
         if parent_event_sink is None:
             continue
-        if event.event_type in _SUPPRESSED_FORWARD_EVENTS:
+        if event.event_type not in _FORWARDED_EVENT_TYPES:
+            # FINAL_ANSWER / ERROR / LLM_TOKEN / ASK_USER / etc. are
+            # tracked locally by ``_track_outcome`` (and surfaced via
+            # the sub-agent tool's return value), but must not bleed
+            # into the parent stream — see ``_FORWARDED_EVENT_TYPES``.
             continue
-        # COMPLETE is handled above; other lifecycle markers (STEP_START,
-        # TOOL_CALL, TOOL_RESULT, FINAL_ANSWER, ERROR, …) all forward.
         annotated = _annotate(event, own_path, parent_session_id, label)
         await parent_event_sink.put(annotated)
 
