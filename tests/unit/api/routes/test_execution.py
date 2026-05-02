@@ -9,7 +9,7 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
-from taskforce.api.dependencies import get_executor
+from taskforce.api.dependencies import get_agent_registry, get_executor
 from taskforce.api.server import create_app
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.errors import LLMError, PlanningError, ToolError
@@ -37,6 +37,9 @@ def client(mock_executor):
     """Create a TestClient with a mock executor dependency override."""
     app = create_app()
     app.dependency_overrides[get_executor] = lambda: mock_executor
+    mock_registry = AsyncMock()
+    mock_registry.get_agent.return_value = None
+    app.dependency_overrides[get_agent_registry] = lambda: mock_registry
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -85,6 +88,23 @@ class TestExecuteMission:
     def test_execute_missing_mission_returns_422(self, client):
         response = client.post("/api/v1/execute", json={})
         assert response.status_code == 422
+
+    def test_execute_custom_agent_requires_deploy(self, client, mock_executor):
+        from taskforce.core.domain.agent_models import CustomAgentDefinition
+        from taskforce.api.dependencies import get_agent_registry
+
+        mock_registry = AsyncMock()
+        mock_registry.get_agent.return_value = CustomAgentDefinition(
+            agent_id="a1",
+            name="a1",
+            description="d",
+            system_prompt="s",
+        )
+        mock_registry.get_active_agent.side_effect = ValueError("Agent 'a1' is not deployed")
+        client.app.dependency_overrides[get_agent_registry] = lambda: mock_registry
+
+        response = client.post("/api/v1/execute", json={"mission": "x", "agent_id": "a1"})
+        assert response.status_code == 409
 
     def test_execute_file_not_found_returns_404(self, client, mock_executor):
         mock_executor.execute_mission = AsyncMock(

@@ -90,6 +90,7 @@ class CustomAgentDefinition:
     mcp_tool_allowlist: list[str] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
+    deployment: dict[str, Any] = field(default_factory=dict)
     source: str = "custom"
 
     def to_unified(self) -> AgentDefinition:

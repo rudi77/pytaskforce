@@ -146,6 +146,11 @@ class CustomAgentResponse(BaseModel):
     mcp_tool_allowlist: list[str]
     created_at: str
     updated_at: str
+    deployment_status: str | None = None
+    deployment_active: bool = False
+    active_version: str | None = None
+    deployed_at: str | None = None
+    ready_to_use: bool = False
 
     @classmethod
     def from_domain(
@@ -162,6 +167,14 @@ class CustomAgentResponse(BaseModel):
             mcp_tool_allowlist=domain.mcp_tool_allowlist,
             created_at=domain.created_at,
             updated_at=domain.updated_at,
+            deployment_status=(domain.deployment or {}).get("status"),
+            deployment_active=(domain.deployment or {}).get("active", False),
+            active_version=(domain.deployment or {}).get("active_version"),
+            deployed_at=(domain.deployment or {}).get("deployed_at"),
+            ready_to_use=(
+                (domain.deployment or {}).get("status") == "deployed"
+                and (domain.deployment or {}).get("active", False)
+            ),
         )
 
 

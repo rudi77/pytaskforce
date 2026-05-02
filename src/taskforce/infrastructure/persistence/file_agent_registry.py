@@ -215,6 +215,7 @@ class FileAgentRegistry:
             mcp_tool_allowlist=agent_input.mcp_tool_allowlist,
             created_at=now,
             updated_at=now,
+            deployment={},
         )
 
     def get_agent(
@@ -389,7 +390,40 @@ class FileAgentRegistry:
             mcp_tool_allowlist=update_input.mcp_tool_allowlist,
             created_at=existing.created_at,
             updated_at=now,
+            deployment=existing.deployment,
         )
+
+    def deploy_agent(self, agent_id: str) -> CustomAgentDefinition:
+        """Mark a custom agent as deployed and active."""
+        path = self._get_agent_path(agent_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Agent '{agent_id}' not found")
+        data = safe_load_yaml(path)
+        if not isinstance(data, dict):
+            raise FileNotFoundError(f"Agent '{agent_id}' is corrupt")
+        now = datetime.now(UTC).isoformat()
+        active_version = data.get("updated_at") or now
+        data["deployment"] = {
+            "status": "deployed",
+            "active": True,
+            "active_version": active_version,
+            "deployed_at": now,
+        }
+        atomic_write_yaml(path, data)
+        deployed = self._load_custom_agent(agent_id)
+        if not deployed:
+            raise FileNotFoundError(f"Agent '{agent_id}' is corrupt")
+        return deployed
+
+    def get_active_agent(self, agent_id: str) -> CustomAgentDefinition:
+        """Return active deployed custom agent definition."""
+        agent = self._load_custom_agent(agent_id)
+        if not agent:
+            raise FileNotFoundError(f"Agent '{agent_id}' not found")
+        deployment = agent.deployment or {}
+        if deployment.get("status") != "deployed" or not deployment.get("active", False):
+            raise ValueError(f"Agent '{agent_id}' is not deployed")
+        return agent
 
     def delete_agent(self, agent_id: str) -> None:
         """

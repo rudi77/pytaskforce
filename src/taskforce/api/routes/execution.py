@@ -24,7 +24,11 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_conversation_manager, get_executor
+from taskforce.api.dependencies import (
+    get_agent_registry,
+    get_conversation_manager,
+    get_executor,
+)
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
@@ -454,6 +458,7 @@ class ExecuteMissionResponse(BaseModel):
 async def execute_mission(
     request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
     executor=Depends(get_executor),
+    registry=Depends(get_agent_registry),
 ):
     """Execute agent mission synchronously.
 
@@ -499,6 +504,18 @@ async def execute_mission(
             conv_mgr = get_conversation_manager()
             await conv_mgr.append_message(conv_id, {"role": "user", "content": request.mission})
             conversation_history = await conv_mgr.get_messages(conv_id)
+
+        if request.agent_id:
+            domain_agent = registry.get_agent(request.agent_id)
+            if domain_agent and getattr(domain_agent, "source", None) == "custom":
+                try:
+                    registry.get_active_agent(request.agent_id)
+                except ValueError as e:
+                    raise _http_exception(
+                        status_code=409,
+                        code="agent_not_deployed",
+                        message=str(e),
+                    ) from e
 
         result = await executor.execute_mission(
             mission=request.mission,

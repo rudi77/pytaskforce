@@ -75,6 +75,7 @@ def parse_custom_agent_yaml(
         mcp_tool_allowlist=data.get("mcp_tool_allowlist", []),
         created_at=data.get("created_at", ""),
         updated_at=data.get("updated_at", ""),
+        deployment=data.get("deployment", {}),
     )
 
 

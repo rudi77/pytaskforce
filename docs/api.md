@@ -156,6 +156,7 @@ print(response.json())
 | `POST` | `/api/v1/agents` | Create a new custom agent |
 | `PUT` | `/api/v1/agents/{agent_id}` | Update an existing custom agent |
 | `DELETE` | `/api/v1/agents/{agent_id}` | Delete a custom agent |
+| `POST` | `/api/v1/agents/{agent_id}/deploy` | Deploy custom agent, sets active version + ready state |
 
 #### Plugin Agent Discovery
 
@@ -349,3 +350,11 @@ execute_response = requests.post(
     }
 )
 ```
+
+
+### Agent Deployment Contract (Management UI)
+
+- Nach `POST /api/v1/agents` kann die UI direkt `POST /api/v1/agents/{agent_id}/deploy` aufrufen.
+- Agent responses enthalten jetzt: `deployment_status`, `deployment_active`, `active_version`, `deployed_at`, `ready_to_use`.
+- `ready_to_use=true` entspricht `deployment_status=deployed` und `deployment_active=true`.
+- `POST /api/v1/execution/execute` mit `agent_id` prüft für Custom Agents den Deploy-Status und akzeptiert nur aktive Deployments.

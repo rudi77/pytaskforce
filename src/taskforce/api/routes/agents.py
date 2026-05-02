@@ -218,6 +218,28 @@ def get_agent(
     return _domain_to_response(domain_agent)
 
 
+@router.post(
+    "/agents/{agent_id}/deploy",
+    response_model=CustomAgentResponse,
+    summary="Deploy custom agent",
+    description="Deploy a custom agent and mark its current version as active.",
+)
+def deploy_agent(
+    agent_id: str,
+    registry=Depends(get_agent_registry),
+) -> CustomAgentResponse:
+    """Deploy a custom agent so it is ready for execute calls."""
+    try:
+        domain_agent = registry.deploy_agent(agent_id)
+        return CustomAgentResponse.from_domain(domain_agent)
+    except FileNotFoundError as e:
+        raise _http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="not_found",
+            message=str(e),
+        ) from e
+
+
 @router.put(
     "/agents/{agent_id}",
     response_model=CustomAgentResponse,

@@ -53,6 +53,7 @@ def mock_registry():
     mock.list_agents = MagicMock(return_value=[_make_custom_agent()])
     mock.update_agent = MagicMock(return_value=_make_custom_agent())
     mock.delete_agent = MagicMock(return_value=None)
+    mock.deploy_agent = MagicMock(return_value=_make_custom_agent(deployment={"status": "deployed", "active": True, "active_version": "v1", "deployed_at": "2025-01-01T00:00:00+00:00"}))
     return mock
 
 
@@ -236,3 +237,13 @@ class TestDeleteAgent:
         response = client.delete("/api/v1/agents/unknown")
         assert response.status_code == 404
         assert response.json()["code"] == "not_found"
+
+
+class TestDeployAgent:
+    def test_deploy_agent_success(self, client):
+        response = client.post("/api/v1/agents/test-agent/deploy")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deployment_status"] == "deployed"
+        assert body["deployment_active"] is True
+        assert body["ready_to_use"] is True
