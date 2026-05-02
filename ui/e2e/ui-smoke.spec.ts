@@ -40,6 +40,22 @@ const agents = [
   },
 ];
 
+const accountantAssistantName = "Buchhalter DACH Assistant";
+const accountantAssistantSlug = "buchhalter-dach-assistant";
+const accountantAssistantDescription =
+  "Übernimmt die vorbereitende Buchhaltung für Kleinunternehmen im DACH-Raum: Belege prüfen, Rechnungen erfassen, Buchungsvorschläge vorbereiten und USt-/MwSt.-Sachverhalte strukturiert für die Steuerberatung aufbereiten.";
+const accountantAssistantRules = [
+  "Arbeite nach DACH-Kontext: Deutschland, Österreich und Schweiz klar unterscheiden.",
+  "Keine Rechts- oder Steuerberatung vortäuschen; bei Unsicherheit an Steuerberater oder Treuhänder verweisen.",
+  "Beträge, Währungen, Steuersätze und Belegdatum immer explizit prüfen.",
+  "Fehlende Pflichtangaben bei Rechnungen und Belegen aktiv benennen.",
+].join("\n");
+const accountantAssistantPrompt =
+  "Du bist ein Buchhalter-Assistent für Kleinunternehmen im DACH-Raum.\n\n" +
+  "Du unterstützt bei vorbereitender Buchhaltung, Belegprüfung, Rechnungsprüfung, Buchungsvorschlägen, Umsatzsteuer-/Mehrwertsteuer-Einordnung und sauberer Übergabe an Steuerberatung oder Treuhand.\n\n" +
+  `Aufgabe:\n${accountantAssistantDescription}\n\n` +
+  `Verbindliche Regeln:\n${accountantAssistantRules}`;
+
 const profiles = [
   {
     name: "default",
@@ -80,6 +96,41 @@ const tools = [
     approval_risk_level: "low",
   },
   {
+    name: "file_write",
+    description: "Write generated accounting summaries to files.",
+    parameters_schema: { type: "object", properties: {} },
+    requires_approval: true,
+    approval_risk_level: "medium",
+  },
+  {
+    name: "excel",
+    description: "Read and write spreadsheet-based accounting exports.",
+    parameters_schema: { type: "object", properties: {} },
+    requires_approval: false,
+    approval_risk_level: "low",
+  },
+  {
+    name: "docx",
+    description: "Create Word summaries for handoff to tax advisors.",
+    parameters_schema: { type: "object", properties: {} },
+    requires_approval: false,
+    approval_risk_level: "low",
+  },
+  {
+    name: "accounting_validate",
+    description: "Validate invoice and bookkeeping data.",
+    parameters_schema: { type: "object", properties: {} },
+    requires_approval: false,
+    approval_risk_level: "low",
+  },
+  {
+    name: "ask_user",
+    description: "Ask the user for missing accounting context.",
+    parameters_schema: { type: "object", properties: {} },
+    requires_approval: false,
+    approval_risk_level: "low",
+  },
+  {
     name: "edit",
     description: "Perform exact string replacements in files.",
     parameters_schema: { type: "object", properties: {} },
@@ -100,6 +151,14 @@ const conversations = [
 ];
 
 async function mockTaskforceApi(page: Page) {
+  let createdProfile:
+    | {
+        name: string;
+        config: Record<string, unknown>;
+        yaml_text: string;
+      }
+    | null = null;
+
   await page.route("**/health", (route) =>
     route.fulfill({ json: { status: "ok", version: "test" } }),
   );
@@ -108,10 +167,63 @@ async function mockTaskforceApi(page: Page) {
     const path = url.pathname;
 
     if (path === "/api/v1/agents") {
-      return route.fulfill({ json: { agents } });
+      const createdAgent = createdProfile
+        ? [
+            {
+              source: "profile",
+              profile: createdProfile.name,
+              specialist: null,
+              tools: (createdProfile.config.tools as string[]) ?? [],
+              mcp_servers: [],
+              llm: {},
+              persistence: {},
+            },
+          ]
+        : [];
+      return route.fulfill({ json: { agents: [...agents, ...createdAgent] } });
+    }
+    if (path === "/api/v1/profiles" && route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as {
+        name: string;
+        config: Record<string, unknown>;
+      };
+      createdProfile = {
+        name: payload.name,
+        config: payload.config,
+        yaml_text: `profile: ${payload.name}\n`,
+      };
+      return route.fulfill({
+        json: {
+          name: payload.name,
+          path: `custom/${payload.name}.yaml`,
+          format: "yaml",
+          description: String(payload.config.description ?? ""),
+          specialist: null,
+          is_writable: true,
+          config: payload.config,
+          yaml_text: createdProfile.yaml_text,
+        },
+      });
     }
     if (path === "/api/v1/profiles") {
-      return route.fulfill({ json: { profiles } });
+      const createdSummary = createdProfile
+        ? [
+            {
+              name: createdProfile.name,
+              path: `custom/${createdProfile.name}.yaml`,
+              format: "yaml",
+              description: String(createdProfile.config.description ?? ""),
+              specialist: null,
+              name_label:
+                typeof createdProfile.config.agent === "object" &&
+                createdProfile.config.agent !== null
+                  ? String((createdProfile.config.agent as { name?: unknown }).name ?? "")
+                  : null,
+              is_custom: true,
+            },
+          ]
+        : [];
+      return route.fulfill({ json: { profiles: [...profiles, ...createdSummary] } });
     }
     if (path === "/api/v1/profiles/default") {
       return route.fulfill({
@@ -128,6 +240,20 @@ async function mockTaskforceApi(page: Page) {
           ...profiles[1],
           config: { profile: "butler", specialist: "butler", tools: ["wiki"] },
           yaml_text: "profile: butler\nspecialist: butler\ntools:\n  - wiki\n",
+        },
+      });
+    }
+    if (path === `/api/v1/profiles/${accountantAssistantSlug}` && createdProfile) {
+      return route.fulfill({
+        json: {
+          name: createdProfile.name,
+          path: `custom/${createdProfile.name}.yaml`,
+          format: "yaml",
+          description: String(createdProfile.config.description ?? ""),
+          specialist: null,
+          is_writable: true,
+          config: createdProfile.config,
+          yaml_text: createdProfile.yaml_text,
         },
       });
     }
@@ -171,6 +297,33 @@ async function mockTaskforceApi(page: Page) {
         json: {
           templates: [
             {
+              id: "accounting",
+              name: "Buchhalter-Assistent",
+              description:
+                "Hilft beim Erfassen von Belegen, Buchungssätzen und einfachen Buchhaltungsfragen.",
+              emoji: "🧾",
+              persona_hint:
+                "Beschreibe, welche Buchhaltungsaufgaben der Agent für dein Kleinunternehmen übernehmen soll.",
+              recommended_tools: [
+                "file_read",
+                "file_write",
+                "excel",
+                "docx",
+                "accounting_validate",
+                "ask_user",
+                "wiki",
+              ],
+              recommended_skills: [],
+              system_prompt_template:
+                "Du bist ein sorgfältiger Buchhalter-Assistent für Kleinunternehmen.",
+              example_prompts: [
+                "Prüfe diese Eingangsrechnung auf fehlende Pflichtangaben.",
+                "Bereite eine Monatsübersicht für die Steuerberatung vor.",
+              ],
+              tone_default: "professionell",
+              language_default: "Deutsch",
+            },
+            {
               id: "research",
               name: "Recherche-Assistent",
               description: "Sucht im Web und fasst Quellen zusammen.",
@@ -184,6 +337,16 @@ async function mockTaskforceApi(page: Page) {
               language_default: "Deutsch",
             },
           ],
+        },
+      });
+    }
+    if (path === "/api/v1/agent-templates/compose-prompt") {
+      return route.fulfill({
+        json: {
+          system_prompt: accountantAssistantPrompt,
+          used_ai: false,
+          ai_attempted: false,
+          ai_error: null,
         },
       });
     }
@@ -364,6 +527,80 @@ test("checks the agent wizard and profile comparison flow", async ({ page }) => 
   await page.getByLabel(/Right/).selectOption("butler");
   await expect(page.getByRole("heading", { name: "default ↔ butler" })).toBeVisible();
   await expect(page.getByText(/\+\d+ additions/)).toBeVisible();
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("creates a DACH bookkeeping assistant through the complete new-agent wizard", async ({
+  page,
+}) => {
+  const consoleErrors = collectConsoleErrors(page);
+  let createPayload:
+    | {
+        name: string;
+        config: {
+          description?: string;
+          system_prompt?: string;
+          tools?: string[];
+          agent?: { name?: string; planning_strategy?: string; max_steps?: number };
+        };
+      }
+    | null = null;
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "POST" && url.pathname === "/api/v1/profiles") {
+      createPayload = request.postDataJSON();
+    }
+  });
+
+  await page.goto("/agents/new");
+  await page.getByRole("button", { name: /Buchhalter-Assistent/ }).click();
+  await page.getByRole("button", { name: "Weiter" }).click();
+
+  await page.getByLabel("Wie soll dein Agent heißen?").fill(accountantAssistantName);
+  await expect(page.getByText(accountantAssistantSlug)).toBeVisible();
+  await page.getByLabel("Was soll er für dich tun?").fill(accountantAssistantDescription);
+  await page.getByRole("button", { name: "Weiter" }).click();
+
+  await expect(page.getByText(/Werkzeuge vorausgewählt/)).toBeVisible();
+  await expect(page.getByLabel(/Datei lesen/)).toBeChecked();
+  await expect(page.getByLabel(/Excel-Tabellen/)).toBeChecked();
+  await expect(page.getByLabel(/Eigenes Wiki/)).toBeChecked();
+  await page.getByRole("button", { name: "Weiter" }).click();
+
+  await page.getByLabel("Wichtige Regeln (optional)").fill(accountantAssistantRules);
+  await page.getByRole("button", { name: /Prompt neu erzeugen|Prompt erzeugen/ }).click();
+  await expect(page.getByRole("textbox", { name: /Prompt erzeugen/ })).toHaveValue(
+    /Du bist ein Buchhalter-Assistent/,
+  );
+  await page.getByRole("button", { name: "Weiter" }).click();
+
+  await expect(page.getByText(accountantAssistantName).first()).toBeVisible();
+  await expect(page.getByText(accountantAssistantSlug).first()).toBeVisible();
+  await expect(page.getByText("Ausgewählte Werkzeuge (7)")).toBeVisible();
+  await expect(page.getByText("DACH-Raum").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Anlegen" }).click();
+  await expect(page).toHaveURL(new RegExp(`/agents/${accountantAssistantSlug}$`));
+
+  expect(createPayload).not.toBeNull();
+  expect(createPayload?.name).toBe(accountantAssistantSlug);
+  expect(createPayload?.config.agent?.name).toBe(accountantAssistantName);
+  expect(createPayload?.config.description).toBe(accountantAssistantDescription);
+  expect(createPayload?.config.system_prompt).toContain("DACH-Raum");
+  expect(createPayload?.config.system_prompt).toContain("Kleinunternehmen");
+  expect(createPayload?.config.tools).toEqual(
+    expect.arrayContaining([
+      "file_read",
+      "file_write",
+      "excel",
+      "docx",
+      "accounting_validate",
+      "ask_user",
+      "wiki",
+    ]),
+  );
 
   expect(consoleErrors).toEqual([]);
 });
