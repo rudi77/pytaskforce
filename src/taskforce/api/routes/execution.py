@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -571,6 +571,8 @@ async def execute_mission(
             code="invalid_request",
             message=str(e),
         ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         # Other errors -> 500
         raise _http_exception(

@@ -1,7 +1,7 @@
 """Unit tests for the execution routes."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -93,7 +93,7 @@ class TestExecuteMission:
         from taskforce.core.domain.agent_models import CustomAgentDefinition
         from taskforce.api.dependencies import get_agent_registry
 
-        mock_registry = AsyncMock()
+        mock_registry = MagicMock()
         mock_registry.get_agent.return_value = CustomAgentDefinition(
             agent_id="a1",
             name="a1",
