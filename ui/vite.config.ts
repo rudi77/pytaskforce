@@ -1,12 +1,10 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 
 const BACKEND = process.env.TASKFORCE_API_URL ?? "http://127.0.0.1:8070";
-
-const requireFromHere = createRequire(import.meta.url);
 
 /**
  * UI plugin packages that are loaded via dynamic `import()` in
@@ -16,16 +14,16 @@ const requireFromHere = createRequire(import.meta.url);
  * detect installation at config time and externalize the missing
  * packages so the import remains a no-op the runtime catch block can
  * silently swallow.
+ *
+ * We probe by checking the package.json directly, because
+ * `require.resolve` does not honor the `exports` field for ESM-only
+ * packages and would mis-classify them as missing.
  */
 const OPTIONAL_PLUGIN_PACKAGES = ["@taskforce/enterprise-ui"];
 
 const missingOptionalPlugins = OPTIONAL_PLUGIN_PACKAGES.filter((name) => {
-  try {
-    requireFromHere.resolve(name);
-    return false;
-  } catch {
-    return true;
-  }
+  const pkgJsonPath = path.resolve(__dirname, "node_modules", name, "package.json");
+  return !fs.existsSync(pkgJsonPath);
 });
 
 export default defineConfig({
