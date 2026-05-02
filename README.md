@@ -295,6 +295,10 @@ uv sync --group dev
 ```bash
 uv run pytest
 uv run pytest --cov=taskforce --cov-report=html
+
+cd ui
+npm run test
+npm run test:e2e
 ```
 
 ### Code Quality

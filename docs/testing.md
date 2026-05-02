@@ -17,6 +17,18 @@ uv run pytest tests/unit
 uv run pytest tests/integration
 ```
 
+The React UI has its own tests under `ui/`.
+
+```powershell
+cd ui
+npm run test
+npm run test:e2e
+```
+
+`npm run test:e2e` runs Playwright smoke tests from `ui/e2e/`. The tests start
+the Vite dev server automatically and mock Taskforce API responses so they are
+repeatable without requiring a local backend state.
+
 ## 📊 Coverage Reports
 To generate an HTML coverage report:
 ```powershell
