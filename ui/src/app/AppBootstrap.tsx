@@ -13,6 +13,7 @@
 import { useEffect, type ReactNode } from "react";
 
 import { registry } from "@/plugins/registry";
+import { checkSkew, logSkewIssue } from "@/plugins/skew";
 import { useUIManifest } from "@/plugins/useManifest";
 
 interface AppBootstrapProps {
@@ -26,6 +27,20 @@ export function AppBootstrap({ children }: AppBootstrapProps) {
     if (data) {
       const flags = data.plugins.flatMap((p) => p.capabilities ?? []);
       registry.setActiveCapabilities(flags);
+
+      const hostVersion =
+        typeof __TASKFORCE_UI_VERSION__ === "string"
+          ? __TASKFORCE_UI_VERSION__
+          : "0.0.0";
+      for (const plugin of data.plugins) {
+        const issue = checkSkew({
+          pluginId: plugin.id,
+          hostVersion,
+          pluginVersion: plugin.version ?? "0.0.0",
+          constraint: plugin.min_ui_version,
+        });
+        if (issue) logSkewIssue(issue);
+      }
     }
   }, [data]);
 

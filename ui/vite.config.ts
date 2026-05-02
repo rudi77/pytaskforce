@@ -6,6 +6,17 @@ import path from "node:path";
 
 const BACKEND = process.env.TASKFORCE_API_URL ?? "http://127.0.0.1:8070";
 
+const HOST_VERSION = (() => {
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
+    ) as { version?: string };
+    return raw.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
+
 /**
  * UI plugin packages that are loaded via dynamic `import()` in
  * `src/plugins/loader.ts`. When the operator has not installed one of
@@ -28,6 +39,9 @@ const missingOptionalPlugins = OPTIONAL_PLUGIN_PACKAGES.filter((name) => {
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __TASKFORCE_UI_VERSION__: JSON.stringify(HOST_VERSION),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
