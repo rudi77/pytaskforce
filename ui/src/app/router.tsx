@@ -15,7 +15,7 @@ import { AppShell } from "@/app/AppShell";
 import { CapabilityGuard } from "@/plugins/CapabilityGuard";
 import { RequireRole } from "@/plugins/RequireRole";
 import { registry as defaultRegistry } from "@/plugins/registry";
-import type { PluginRegistry, PluginRoute } from "@/plugins/types";
+import type { PluginRegistry, PluginRoute, UIPlugin } from "@/plugins/types";
 
 const Dashboard = lazy(() => import("@/pages/DashboardPage"));
 const AgentsList = lazy(() => import("@/pages/AgentsListPage"));
@@ -51,7 +51,16 @@ function renderPluginElement(element: PluginRoute["element"]): ReactNode {
   return element as ReactNode;
 }
 
-function pluginRouteToRouteObject(route: PluginRoute): RouteObject {
+/**
+ * Strip leading and trailing slashes so plugin authors can write
+ * either `"admin/users"` or `"/admin/users/"` without breaking
+ * react-router matching.
+ */
+function normalizeRoutePath(raw: string): string {
+  return raw.replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function pluginRouteToRouteObject(plugin: UIPlugin, route: PluginRoute): RouteObject {
   const required = route.requires ?? [];
   const roles = route.requireRoles ?? [];
 
@@ -62,23 +71,32 @@ function pluginRouteToRouteObject(route: PluginRoute): RouteObject {
   if (required.length > 0) {
     body = <CapabilityGuard requires={required}>{body}</CapabilityGuard>;
   }
+  // Plugin-supplied wrapper sits outside the guards so any provider
+  // it mounts (e.g. UserRolesProvider) is visible to RequireRole.
+  if (plugin.wrap) {
+    body = plugin.wrap(body);
+  }
 
   return {
-    path: route.path.replace(/^\//, ""),
+    path: normalizeRoutePath(route.path),
     element: withSuspense(body),
   };
 }
 
 /**
  * Build the React-Router router. Plugin routes are appended to the
- * AppShell layout so they share its sidebar / header chrome. Routes
- * are statically registered at build time — capability gating happens
- * at render time inside `<CapabilityGuard>`.
+ * AppShell layout so they share its sidebar / header chrome.
+ *
+ * Plugin routes are read from the registry once at build time; later
+ * `registry.register()` calls do NOT add new routes to an existing
+ * router. The host calls `buildRouter()` exactly once after
+ * `bootstrapPlugins()` resolves (see `src/main.tsx`). For HMR,
+ * Vite's full-reload on `main.tsx` rebuilds the whole router.
  */
 export function buildRouter(registry: PluginRegistry = defaultRegistry) {
   const pluginRoutes: RouteObject[] = registry
     .list()
-    .flatMap((plugin) => plugin.routes.map(pluginRouteToRouteObject));
+    .flatMap((plugin) => plugin.routes.map((r) => pluginRouteToRouteObject(plugin, r)));
 
   return createBrowserRouter([
     {
@@ -107,6 +125,3 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
     { path: "/index.html", element: <Navigate to="/" replace /> },
   ]);
 }
-
-/** Default router built against the global plugin registry. */
-export const router = buildRouter();

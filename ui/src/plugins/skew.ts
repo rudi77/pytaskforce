@@ -15,8 +15,15 @@
  *   ">=1.0.0,<2.0.0"     host must be >= 1.0.0 AND < 2.0.0
  *   "1.2.3"              host must be exactly 1.2.3
  *
- * Anything else short-circuits as "no constraint" — false negatives
- * are preferable to spurious warnings.
+ * **Pre-release / build metadata is ignored**: `1.0.0-rc1` parses as
+ * `1.0.0`. If you need to gate on pre-release identifiers, encode
+ * them into the patch number (`1.0.0-rc1` → `1.0.1`).
+ *
+ * **Two-segment versions** (e.g. `"1.2"`) and unrecognized grammar
+ * short-circuit as "no constraint" so a typo in `min_ui_version`
+ * won't lock users out — but the host emits a one-time
+ * `console.warn` per unparseable constraint so the typo is at least
+ * visible.
  */
 
 export interface SkewIssue {
@@ -81,17 +88,39 @@ function evaluate(host: ParsedVersion, clause: RangeClause): boolean {
   }
 }
 
+/** One-time warnings: do not pester the operator on every refetch. */
+const warnedUnparseable = new Set<string>();
+
+function warnUnparseableConstraint(
+  pluginId: string,
+  constraint: string,
+  log: (msg: string) => void,
+): void {
+  const key = `${pluginId}::${constraint}`;
+  if (warnedUnparseable.has(key)) return;
+  warnedUnparseable.add(key);
+  log(
+    `[ui-plugins] '${pluginId}' declared min_ui_version='${constraint}' ` +
+      "but the constraint did not parse. Skew check skipped — fix the " +
+      "constraint or use one of: '>=1.0.0', '>=1.0.0,<2.0.0', '1.2.3'.",
+  );
+}
+
 /**
  * Return an explanation when the host fails the constraint, or null
  * when it satisfies the constraint (or when the constraint cannot be
- * parsed).
+ * parsed). Unparseable constraints additionally log a one-time
+ * console warning so a typo is visible without blocking startup.
  */
-export function checkSkew(args: {
-  pluginId: string;
-  hostVersion: string;
-  pluginVersion: string;
-  constraint: string | null | undefined;
-}): SkewIssue | null {
+export function checkSkew(
+  args: {
+    pluginId: string;
+    hostVersion: string;
+    pluginVersion: string;
+    constraint: string | null | undefined;
+  },
+  log: (msg: string) => void = console.warn,
+): SkewIssue | null {
   const { pluginId, hostVersion, pluginVersion, constraint } = args;
   if (!constraint) return null;
 
@@ -103,7 +132,10 @@ export function checkSkew(args: {
     .map(parseClause)
     .filter((c): c is RangeClause => c !== null);
 
-  if (clauses.length === 0) return null;
+  if (clauses.length === 0) {
+    warnUnparseableConstraint(pluginId, constraint, log);
+    return null;
+  }
 
   for (const clause of clauses) {
     if (evaluate(host, clause)) continue;
@@ -116,6 +148,11 @@ export function checkSkew(args: {
     return { pluginId, hostVersion, pluginVersion, constraint, reason };
   }
   return null;
+}
+
+/** Test-only: clears the unparseable-warning de-dupe cache. */
+export function __resetSkewWarningsForTests() {
+  warnedUnparseable.clear();
 }
 
 const HINT: Record<SkewIssue["reason"], string> = {

@@ -12,7 +12,7 @@
  * `<RequireRole>` component renders a forbidden page when the
  * current user lacks any of the listed roles.
  */
-import { lazy } from "react";
+import { createElement, lazy, type ReactNode } from "react";
 import {
   Building2,
   GitPullRequestArrow,
@@ -21,6 +21,8 @@ import {
   Users,
 } from "lucide-react";
 import type { UIPlugin } from "@taskforce/ui-shell";
+
+import { EnterpriseAuthBoundary } from "./components/EnterpriseAuthBoundary";
 
 // Capability flags — must match the strings the backend
 // `EnterprisePlugin.get_ui_manifest()` returns under "capabilities".
@@ -43,6 +45,14 @@ export const enterpriseUIPlugin: UIPlugin = {
     CAPS.CATALOG,
     CAPS.APPROVALS,
   ],
+  // Mount the enterprise auth boundary OUTSIDE the host's
+  // <CapabilityGuard> + <RequireRole> chain so the role guard sees
+  // real claims fetched from /api/v1/admin/me. Without this wrapper
+  // the host falls back to permissive RBAC (a console.warn is
+  // emitted) and admin pages would render for every authenticated
+  // user.
+  wrap: (children: ReactNode): ReactNode =>
+    createElement(EnterpriseAuthBoundary, null, children),
   navItems: [
     {
       to: "/admin/tenants",

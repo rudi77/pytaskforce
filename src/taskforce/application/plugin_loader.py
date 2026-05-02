@@ -1052,7 +1052,14 @@ def collect_ui_manifests() -> list[UIManifest]:
 
     Plugins may optionally implement ``get_ui_manifest() -> UIManifest | None``
     to declare capabilities the management UI should expose. Plugins without
-    the method (or returning ``None``) are silently skipped.
+    the method (or returning ``None`` / an empty mapping) are silently skipped
+    — the API endpoint additionally validates each manifest with Pydantic and
+    drops invalid ones with a logged warning, so this helper can stay
+    minimal.
+
+    Buggy plugins that raise from ``get_ui_manifest`` are logged with full
+    traceback (``exc_info=True``) and skipped — they must not blank out the
+    manifest endpoint for everybody else.
 
     Returns:
         List of UIManifest dictionaries from plugins that contributed one.
@@ -1064,12 +1071,11 @@ def collect_ui_manifests() -> list[UIManifest]:
             continue
         try:
             manifest = getter()
-        except Exception as exc:  # Broad: a buggy plugin must not break the endpoint
+        except Exception:  # Broad: a buggy plugin must not break the endpoint
             logger.warning(
                 "plugin.ui_manifest_failed",
                 plugin_name=getattr(instance, "name", "<unknown>"),
-                error=str(exc),
-                error_type=type(exc).__name__,
+                exc_info=True,
             )
             continue
         if manifest:

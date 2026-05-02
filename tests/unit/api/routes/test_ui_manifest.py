@@ -121,7 +121,8 @@ def test_manifest_endpoint_empty_payload(client):
     assert response.status_code == 200
     body = response.json()
     assert body["plugins"] == []
-    assert "server_version" in body
+    # Endpoint deliberately does not expose the server version (info disclosure).
+    assert "server_version" not in body
 
 
 def test_manifest_endpoint_returns_registered_plugin(isolated_registry, client):

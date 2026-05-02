@@ -70,16 +70,18 @@ interface List<T> {
 }
 
 /**
- * Read helper that swallows 404 / 501 from the backend by returning an
- * empty list. The enterprise plugin may ship some endpoints later than
- * others; missing endpoints surface as an empty state rather than a
- * red screen.
+ * Read helper that swallows 404 from the backend by returning an
+ * empty list — useful while individual admin endpoints are still
+ * being rolled out. We deliberately do NOT swallow 501 ("Not
+ * Implemented"): a 501 in production indicates a deployment
+ * misconfiguration that operators should see and fix, not paper over
+ * with an empty table.
  */
 async function listOrEmpty<T>(path: string): Promise<List<T>> {
   try {
     return await apiFetch<List<T>>(path);
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+    if (error instanceof ApiError && error.status === 404) {
       return { items: [], total: 0 };
     }
     throw error;

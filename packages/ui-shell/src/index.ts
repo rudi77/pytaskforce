@@ -33,6 +33,15 @@ export type {
   PluginContext,
 } from "./plugins/types";
 
+// RBAC context — plugins mount a `<UserRolesProvider>`, host's
+// `<RequireRole>` reads via `useUserRoles()`.
+export {
+  UserRolesContext,
+  UserRolesProvider,
+  useUserRoles,
+  type UserRolesContextValue,
+} from "./plugins/auth";
+
 // shadcn-derived primitives
 export { Button, buttonVariants, type ButtonProps } from "./components/ui/button";
 export {

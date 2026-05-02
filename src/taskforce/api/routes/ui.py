@@ -16,27 +16,37 @@ compatible with existing plugins.
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter
+from pydantic import ValidationError
 
 from taskforce.api.schemas.ui_manifest import UIManifestEntry, UIManifestResponse
 from taskforce.application.plugin_loader import collect_ui_manifests
 
 router = APIRouter()
-
-
-def _get_server_version() -> str:
-    """Best-effort lookup of the installed taskforce package version."""
-    try:
-        from importlib.metadata import version
-
-        return version("taskforce")
-    except Exception:
-        return "0.0.0-dev"
+logger = structlog.get_logger(__name__)
 
 
 @router.get("/ui/manifest", response_model=UIManifestResponse, tags=["ui"])
 async def get_ui_manifest() -> UIManifestResponse:
-    """Return UI manifests contributed by all loaded backend plugins."""
+    """Return UI manifests contributed by all loaded backend plugins.
+
+    Each loaded plugin may implement
+    :py:meth:`PluginProtocol.get_ui_manifest`; plugins without the
+    method are silently skipped. Manifests that fail Pydantic
+    validation (e.g. missing required fields, empty capabilities) are
+    logged and dropped rather than failing the whole endpoint, so one
+    misbehaving plugin can never blank out the UI.
+    """
     raw_manifests = collect_ui_manifests()
-    entries = [UIManifestEntry.model_validate(dict(m)) for m in raw_manifests]
-    return UIManifestResponse(plugins=entries, server_version=_get_server_version())
+    entries: list[UIManifestEntry] = []
+    for manifest in raw_manifests:
+        try:
+            entries.append(UIManifestEntry.model_validate(dict(manifest)))
+        except ValidationError as exc:
+            logger.warning(
+                "plugin.ui_manifest_invalid",
+                plugin_id=manifest.get("id", "<unknown>"),
+                errors=exc.errors(include_url=False),
+            )
+    return UIManifestResponse(plugins=entries)

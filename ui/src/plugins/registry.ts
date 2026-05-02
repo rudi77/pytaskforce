@@ -74,14 +74,23 @@ export function capabilitiesSatisfied(
   return requires.every((flag) => active.has(flag));
 }
 
-/** Reactive hook for components that want to re-render on registry changes. */
+/**
+ * Reactive hook for components that want to re-render on registry changes.
+ *
+ * The selector returns the underlying plugin map and the active-caps
+ * Set unchanged so `useShallow` shallow-compares stable references.
+ * `Object.values(...)` runs OUTSIDE the selector so a fresh array per
+ * render (which would defeat shallow comparison) is never produced
+ * inside the equality check.
+ */
 export function usePluginRegistry() {
-  return usePluginStore(
+  const { plugins, activeCapabilities } = usePluginStore(
     useShallow((state) => ({
-      plugins: Object.values(state.plugins),
+      plugins: state.plugins,
       activeCapabilities: state.activeCapabilities,
     })),
   );
+  return { plugins: Object.values(plugins), activeCapabilities };
 }
 
 /** Reactive hook returning a single capability's active state. */
