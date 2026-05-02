@@ -112,7 +112,6 @@ async def test_does_not_forward_text_or_terminal_events() -> None:
         [
             StreamEvent(event_type=EventType.LLM_TOKEN, data={"content": "hi"}),
             StreamEvent(event_type=EventType.FINAL_ANSWER, data={"content": "done"}),
-            StreamEvent(event_type=EventType.ASK_USER, data={"question": "?"}),
             StreamEvent(event_type=EventType.ERROR, data={"error": "boom"}),
             StreamEvent(event_type=EventType.INTERRUPTED, data={}),
             # STEP_START + TOKEN_USAGE *are* forwarded so the trace UI
@@ -143,6 +142,56 @@ async def test_does_not_forward_text_or_terminal_events() -> None:
         EventType.STEP_START,
         EventType.TOKEN_USAGE,
     ]
+
+
+@pytest.mark.asyncio
+async def test_forwards_ask_user_and_marks_outcome_paused() -> None:
+    """Sub-agent ``ASK_USER`` must reach parent-stream consumers so they
+    can render the prompt, and the orchestration tool's outcome must
+    reflect the paused state — otherwise the parent agent treats a
+    sub-agent waiting for input as a successful empty completion."""
+
+    sink: asyncio.Queue[StreamEvent] = asyncio.Queue()
+    agent = _FakeAgent(
+        [
+            StreamEvent(
+                event_type=EventType.ASK_USER,
+                data={"question": "What's the budget?", "missing": ["budget"]},
+            ),
+            # LeanAgent.execute_stream has no pause branch for ASK_USER, so
+            # it emits COMPLETE with status=completed even though the
+            # sub-agent is paused. The outcome must not be downgraded.
+            StreamEvent(
+                event_type=EventType.COMPLETE,
+                data={
+                    "status": ExecutionStatus.COMPLETED.value,
+                    "final_message": "",
+                },
+            ),
+        ]
+    )
+
+    outcome = await run_sub_agent_with_forwarding(
+        agent,
+        mission="m",
+        session_id="s",
+        parent_session_id="root",
+        parent_event_sink=sink,
+        parent_agent_path=[],
+        specialist="worker",
+    )
+
+    forwarded: list[StreamEvent] = []
+    while not sink.empty():
+        forwarded.append(sink.get_nowait())
+
+    assert [e.event_type for e in forwarded] == [EventType.ASK_USER]
+    assert forwarded[0].data["question"] == "What's the budget?"
+    assert forwarded[0].data["agent_path"] == ["worker"]
+
+    assert outcome.status == ExecutionStatus.PAUSED.value
+    assert outcome.final_message == "What's the budget?"
+    assert outcome.success  # PAUSED counts as success for the tool result
 
 
 @pytest.mark.asyncio

@@ -38,21 +38,30 @@ if TYPE_CHECKING:
 # assistant message.  Forwarding those events from a sub-agent would
 # splice the sub-agent's internal text into the parent's reply (and on
 # parent failure, persist the sub-agent's text as the assistant
-# message).  Likewise ``ERROR`` / ``INTERRUPTED`` / ``ASK_USER`` would
-# trigger parent-level error handling, interrupt UX, or user-prompts
-# for what is really an internal sub-agent state — the sub-agent
-# already surfaces those via its return value (the
-# ``call_agent`` / ``call_agents_parallel`` tool result).
+# message).  Likewise ``ERROR`` and ``INTERRUPTED`` are translated
+# into the sub-agent tool's return value (failed/paused status) by
+# ``_track_outcome``; forwarding the raw events would trigger
+# parent-level error / interrupt UX for what is really an internal
+# sub-agent state.
 #
-# What the parent *does* benefit from is the sub-agent's tool-call
-# trace (so the UI can render nested tool calls) and the step / token
-# accounting events.  Everything else is intentionally dropped.
+# ``ASK_USER`` is the exception: parent-stream consumers only render
+# the question and pause the chat when they observe this event, and
+# ``LeanAgent.execute_stream`` does not translate it into a paused
+# COMPLETE status, so dropping it would silently turn a sub-agent
+# that needs user input into a "no-result" success.  It must reach
+# the consumer.
+#
+# What the parent additionally benefits from is the sub-agent's
+# tool-call trace (so the UI can render nested tool calls) and the
+# step / token accounting events.  Everything else is intentionally
+# dropped.
 _FORWARDED_EVENT_TYPES = frozenset(
     {
         EventType.TOOL_CALL,
         EventType.TOOL_RESULT,
         EventType.STEP_START,
         EventType.TOKEN_USAGE,
+        EventType.ASK_USER,
     }
 )
 
@@ -116,10 +125,10 @@ async def run_sub_agent_with_forwarding(
         if parent_event_sink is None:
             continue
         if event.event_type not in _FORWARDED_EVENT_TYPES:
-            # FINAL_ANSWER / ERROR / LLM_TOKEN / ASK_USER / etc. are
-            # tracked locally by ``_track_outcome`` (and surfaced via
-            # the sub-agent tool's return value), but must not bleed
-            # into the parent stream — see ``_FORWARDED_EVENT_TYPES``.
+            # FINAL_ANSWER / ERROR / LLM_TOKEN / etc. are tracked
+            # locally by ``_track_outcome`` (and surfaced via the
+            # sub-agent tool's return value), but must not bleed into
+            # the parent stream — see ``_FORWARDED_EVENT_TYPES``.
             continue
         annotated = _annotate(event, own_path, parent_session_id, label)
         await parent_event_sink.put(annotated)
@@ -140,13 +149,33 @@ def _track_outcome(event: StreamEvent, outcome: SubAgentExecutionOutcome) -> Non
         outcome.status = ExecutionStatus.PAUSED.value
         if not outcome.final_message:
             outcome.final_message = "Execution paused by user."
+    elif et == EventType.ASK_USER:
+        # ``LeanAgent.execute_stream`` does not translate ``ASK_USER``
+        # into a paused COMPLETE status, so the only signal that the
+        # sub-agent is waiting for user input is the event itself.
+        # Reflect that in the outcome so the orchestration tool's
+        # return value carries a meaningful question instead of an
+        # empty "completed" string.
+        outcome.status = ExecutionStatus.PAUSED.value
+        question = event.data.get("question")
+        if isinstance(question, str) and question and not outcome.final_message:
+            outcome.final_message = question
     elif et == EventType.COMPLETE:
-        # The COMPLETE event carries the authoritative final state.
+        # The COMPLETE event carries the authoritative final state —
+        # but only when it actually advances the outcome. ASK_USER /
+        # INTERRUPTED already set ``status=paused`` above; the
+        # subsequent COMPLETE (which LeanAgent.execute_stream emits
+        # with ``status=completed`` after ``ASK_USER`` because it has
+        # no pause branch) must not downgrade that.
         status = event.data.get("status")
-        if isinstance(status, str) and status:
+        if (
+            isinstance(status, str)
+            and status
+            and outcome.status != ExecutionStatus.PAUSED.value
+        ):
             outcome.status = status
         msg = event.data.get("final_message")
-        if isinstance(msg, str) and msg:
+        if isinstance(msg, str) and msg and not outcome.final_message:
             outcome.final_message = msg
 
 
