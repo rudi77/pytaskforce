@@ -1,64 +1,59 @@
 import { useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Bot, Download, FileText, ImageIcon, Wrench } from "lucide-react";
+import { Bot, ChevronRight, Download, FileText, ImageIcon, User, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getApiBaseUrl, getApiToken } from "@/lib/settings";
 import type { ChatMessage, FileMetadata } from "@/api/queries";
 import type { ToolCallView } from "@/features/chat/useChatStream";
+import { MessageContent, partsFromContent } from "@/features/chat/MessageContent";
+import type { WidgetEventHandler } from "@/features/chat/widgets/types";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   pending?: boolean;
   toolCalls?: ToolCallView[];
+  onWidgetEvent?: WidgetEventHandler;
 }
 
-export function MessageBubble({ message, pending, toolCalls }: MessageBubbleProps) {
+/**
+ * One row in the chat transcript.
+ *
+ * Layout note: both user and assistant messages share a uniform full-width
+ * content column (avatar on the left, body on the right). We deliberately
+ * dropped the variable-width "speech bubble" look — distinct widths felt
+ * inconsistent and made the transcript hard to scan. The role is signalled
+ * via avatar, label and a subtle background tint instead.
+ */
+export function MessageBubble({ message, pending, toolCalls, onWidgetEvent }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const parts = partsFromContent(message.content, message.parts);
+
   return (
-    <div className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[88%] rounded-lg border px-4 py-3 text-sm shadow-sm",
-          isUser
-            ? "border-primary/40 bg-primary/10 text-foreground"
-            : "border-border bg-card",
-        )}
-      >
-        <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <span>{isUser ? "You" : "Assistant"}</span>
-          {pending ? <span className="animate-pulse text-primary">streaming…</span> : null}
-        </div>
+    <div
+      className={cn(
+        "group flex gap-4 rounded-xl border border-transparent px-4 py-4 transition-colors",
+        isUser ? "bg-muted/40" : "bg-card hover:border-border",
+      )}
+    >
+      <Avatar isUser={isUser} />
+      <div className="min-w-0 flex-1 space-y-2">
+        <header className="flex items-center gap-2 text-xs">
+          <span className="font-semibold text-foreground">
+            {isUser ? "You" : "Assistant"}
+          </span>
+          {pending ? (
+            <span className="inline-flex items-center gap-1 text-primary">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+              streaming
+            </span>
+          ) : null}
+        </header>
+
         {toolCalls && toolCalls.length > 0 ? <ToolCallList calls={toolCalls} /> : null}
-        <div className="prose prose-sm max-w-none break-words dark:prose-invert">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              code({ className, children, ...props }) {
-                return (
-                  <code
-                    className={cn(
-                      "rounded bg-muted px-1 py-0.5 font-mono text-xs",
-                      className,
-                    )}
-                    {...props}
-                  >
-                    {children}
-                  </code>
-                );
-              },
-              pre: ({ children }) => (
-                <pre className="overflow-auto scrollbar-thin rounded-md bg-muted p-3 text-xs">
-                  {children}
-                </pre>
-              ),
-            }}
-          >
-            {message.content || (pending ? "▍" : "")}
-          </ReactMarkdown>
-        </div>
+
+        <MessageContent parts={parts} pending={pending} onWidgetEvent={onWidgetEvent} />
+
         {message.attachments && message.attachments.length > 0 ? (
           <AttachmentChips attachments={message.attachments} />
         ) : null}
@@ -67,10 +62,26 @@ export function MessageBubble({ message, pending, toolCalls }: MessageBubbleProp
   );
 }
 
+function Avatar({ isUser }: { isUser: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-foreground",
+        isUser
+          ? "border-border bg-background"
+          : "border-primary/30 bg-primary/10 text-primary",
+      )}
+      aria-hidden
+    >
+      {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+    </div>
+  );
+}
+
 function ToolCallList({ calls }: { calls: ToolCallView[] }) {
   if (calls.length === 0) return null;
   return (
-    <ul className="mb-2 space-y-1.5">
+    <ul className="space-y-1.5">
       {calls.map((call) => {
         const depth = call.agentPath?.length ?? 0;
         return (
@@ -79,8 +90,9 @@ function ToolCallList({ calls }: { calls: ToolCallView[] }) {
             className="rounded-md border border-border bg-muted/40 text-xs"
             style={depth > 0 ? { marginLeft: depth * 12 } : undefined}
           >
-            <details>
-              <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5">
+            <details className="group/tool">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="h-3 w-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />
                 <Wrench className="h-3 w-3 text-muted-foreground" />
                 <span className="font-mono">{call.name}</span>
                 {depth > 0 ? <SubAgentBadge path={call.agentPath ?? []} /> : null}
@@ -144,7 +156,7 @@ interface AttachmentChipsProps {
 
 export function AttachmentChips({ attachments }: AttachmentChipsProps) {
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2">
       {attachments.map((att) => (
         <AttachmentChip key={att.file_id} attachment={att} />
       ))}
@@ -187,7 +199,7 @@ function AttachmentChip({ attachment }: { attachment: FileMetadata }) {
     <button
       type="button"
       onClick={() => download(attachment)}
-      className="group flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs transition-colors hover:border-primary/40"
+      className="group inline-flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs transition-colors hover:border-primary/40 hover:bg-muted"
       title={`Download ${attachment.name}`}
     >
       <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />

@@ -28,6 +28,7 @@ import {
   labelForTool,
   isHighRiskTool,
   type CapabilityGroupId,
+  type CapabilityGroup,
 } from "@/features/capabilities/capability-groups";
 import { cn } from "@/lib/utils";
 
@@ -80,29 +81,48 @@ function skillRow(skill: SkillSummary): CapabilityRow {
   };
 }
 
-function GroupHeading({
+function GroupSection({
   group,
-  count,
+  rows,
+  selection,
+  onSelect,
 }: {
-  group: (typeof CAPABILITY_GROUPS)[number];
-  count: number;
+  group: CapabilityGroup;
+  rows: CapabilityRow[];
+  selection: Selection | null;
+  onSelect: (s: Selection) => void;
 }) {
+  if (rows.length === 0) return null;
   const Icon = group.icon;
   return (
-    <div className="flex items-start gap-3 px-1 pt-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-      <div className="flex-1">
-        <p className="text-sm font-semibold">{group.label}</p>
-        <p className="text-xs text-muted-foreground">{group.description}</p>
+    <section className="space-y-3">
+      <header className="flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold leading-tight">{group.label}</h3>
+          <p className="truncate text-xs text-muted-foreground">{group.description}</p>
+        </div>
+        <Badge variant="outline" className="font-mono text-[10px]">
+          {rows.length}
+        </Badge>
+      </header>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+        {rows.map((row) => (
+          <CapabilityTile
+            key={`${row.kind}:${row.name}`}
+            row={row}
+            active={selection?.kind === row.kind && selection.name === row.name}
+            onSelect={() => onSelect({ kind: row.kind, name: row.name })}
+          />
+        ))}
       </div>
-      <Badge variant="outline" className="font-mono text-[10px]">
-        {count}
-      </Badge>
-    </div>
+    </section>
   );
 }
 
-function CapabilityRowItem({
+function CapabilityTile({
   row,
   active,
   onSelect,
@@ -117,20 +137,25 @@ function CapabilityRowItem({
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full rounded-md border border-transparent px-3 py-2 text-left transition-colors",
+        "group flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-left shadow-sm transition-all",
+        "hover:-translate-y-px hover:border-primary/40 hover:shadow-md",
         active
-          ? "border-primary/40 bg-primary/10"
-          : "hover:bg-accent",
+          ? "border-primary/60 ring-2 ring-primary/30"
+          : "border-border",
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-sm font-medium">{row.label}</p>
-        <div className="flex shrink-0 gap-1">
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-1 font-medium">{row.label}</p>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
           {row.kind === "skill" ? (
             <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
               Workflow
             </Badge>
-          ) : null}
+          ) : (
+            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+              Werkzeug
+            </Badge>
+          )}
           {high ? (
             <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
               Erweitert
@@ -144,11 +169,13 @@ function CapabilityRowItem({
         </div>
       </div>
       {row.description ? (
-        <p className="line-clamp-2 text-xs text-muted-foreground">
-          {row.description}
+        <p className="line-clamp-2 text-sm text-muted-foreground">{row.description}</p>
+      ) : (
+        <p className="line-clamp-2 text-sm italic text-muted-foreground/70">
+          Keine Beschreibung verfügbar.
         </p>
-      ) : null}
-      <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
+      )}
+      <p className="mt-auto truncate font-mono text-[11px] text-muted-foreground/70">
         {row.name}
       </p>
     </button>
@@ -168,9 +195,7 @@ function ToolDetail({ tool }: { tool: ToolEntry }) {
         {tool.approval_risk_level ? (
           <Badge variant="outline">Risiko: {tool.approval_risk_level}</Badge>
         ) : null}
-        {isHighRiskTool(tool.name) ? (
-          <Badge variant="warning">Erweitert</Badge>
-        ) : null}
+        {isHighRiskTool(tool.name) ? <Badge variant="warning">Erweitert</Badge> : null}
       </div>
       {tool.description ? (
         <p className="text-sm text-muted-foreground">{tool.description}</p>
@@ -278,137 +303,166 @@ export default function CapabilitiesPage() {
   const error = tools.error || skills.error;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
-      <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Fähigkeiten
-          </CardTitle>
-          <CardDescription>
-            Alles, was deine Agenten können — Werkzeuge, Workflows und Verbindungen
-            an einem Ort. Klick auf eine Fähigkeit für Details.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex h-full min-h-0 flex-col gap-3 pt-0">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Suchen…"
-              className="pl-8"
-            />
-          </div>
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-primary">
+          <Sparkles className="h-4 w-4" />
+          <span className="text-xs font-semibold uppercase tracking-wider">
+            Capabilities
+          </span>
+        </div>
+        <h2 className="text-2xl font-semibold tracking-tight">Was deine Agenten können</h2>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Werkzeuge, Workflows und Verbindungen — gruppiert nach Aufgabe. Klick auf
+          eine Kachel, um Parameter und Details zu sehen.
+        </p>
+      </div>
 
-          <div className="flex flex-wrap gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveGroup("all")}
-              className={cn(
-                "rounded-md border px-2 py-1 text-xs",
-                activeGroup === "all"
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:bg-accent",
-              )}
-            >
-              Alle ({counts.all ?? 0})
-            </button>
-            {CAPABILITY_GROUPS.map((group) => {
-              const n = counts[group.id] ?? 0;
-              if (n === 0) return null;
-              return (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => setActiveGroup(group.id)}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs",
-                    activeGroup === group.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted-foreground hover:bg-accent",
-                  )}
-                >
-                  {group.label} ({n})
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-            {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : error ? (
-              <EmptyState
-                title="Konnte Fähigkeiten nicht laden"
-                description={error instanceof ApiError ? error.message : "Backend-Fehler."}
+      {/* Toolbar: search + filter chips */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Suche nach Fähigkeit, Werkzeug oder Workflow…"
+            className="pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <FilterChip
+            active={activeGroup === "all"}
+            count={counts.all ?? 0}
+            label="Alle"
+            onClick={() => setActiveGroup("all")}
+          />
+          {CAPABILITY_GROUPS.map((group) => {
+            const n = counts[group.id] ?? 0;
+            if (n === 0) return null;
+            return (
+              <FilterChip
+                key={group.id}
+                active={activeGroup === group.id}
+                count={n}
+                label={group.label}
+                onClick={() => setActiveGroup(group.id)}
               />
-            ) : filtered.length === 0 ? (
-              <EmptyState
-                title="Keine Treffer"
-                description={search ? "Probier einen anderen Suchbegriff." : "Es sind keine Fähigkeiten registriert."}
-              />
-            ) : (
-              <div className="space-y-3 pb-3">
-                {CAPABILITY_GROUPS.map((group) => {
-                  const items = grouped.get(group.id) ?? [];
-                  if (items.length === 0) return null;
-                  if (activeGroup !== "all" && activeGroup !== group.id) return null;
-                  return (
-                    <section key={group.id} className="space-y-1">
-                      <GroupHeading group={group} count={items.length} />
-                      <ul className="space-y-1">
-                        {items.map((row) => (
-                          <li key={`${row.kind}:${row.name}`}>
-                            <CapabilityRowItem
-                              row={row}
-                              active={
-                                selection?.kind === row.kind &&
-                                selection.name === row.name
-                              }
-                              onSelect={() =>
-                                setSelection({ kind: row.kind, name: row.name })
-                              }
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            );
+          })}
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {selection ? (selection.kind === "tool" ? selectedTool?.name : selection.name) : "Wähle eine Fähigkeit"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {!selection ? (
+      {/* Two columns: grid + detail */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+        <div className="min-w-0 space-y-6">
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-28 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : error ? (
             <EmptyState
-              title="Nichts ausgewählt"
-              description="Klicke links auf eine Fähigkeit, um Details und Parameter zu sehen."
+              title="Konnte Fähigkeiten nicht laden"
+              description={error instanceof ApiError ? error.message : "Backend-Fehler."}
             />
-          ) : selection.kind === "tool" ? (
-            selectedTool ? (
-              <ToolDetail tool={selectedTool} />
-            ) : (
-              <p className="text-sm text-muted-foreground">Werkzeug nicht gefunden.</p>
-            )
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              title="Keine Treffer"
+              description={
+                search
+                  ? "Probier einen anderen Suchbegriff."
+                  : "Es sind keine Fähigkeiten registriert."
+              }
+            />
           ) : (
-            <SkillDetailView skillName={selection.name} />
+            CAPABILITY_GROUPS.map((group) => {
+              const items = grouped.get(group.id) ?? [];
+              if (activeGroup !== "all" && activeGroup !== group.id) return null;
+              return (
+                <GroupSection
+                  key={group.id}
+                  group={group}
+                  rows={items}
+                  selection={selection}
+                  onSelect={setSelection}
+                />
+              );
+            })
           )}
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="xl:sticky xl:top-4 xl:self-start">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {selection
+                  ? selection.kind === "tool"
+                    ? selectedTool?.name ?? selection.name
+                    : selection.name
+                  : "Wähle eine Fähigkeit"}
+              </CardTitle>
+              {!selection ? (
+                <CardDescription>
+                  Details, Parameter und Genehmigungs­anforderungen erscheinen hier.
+                </CardDescription>
+              ) : null}
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {!selection ? (
+                <EmptyState
+                  title="Nichts ausgewählt"
+                  description="Klick auf eine Kachel — links — um die Details zu öffnen."
+                />
+              ) : selection.kind === "tool" ? (
+                selectedTool ? (
+                  <ToolDetail tool={selectedTool} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Werkzeug nicht gefunden.</p>
+                )
+              ) : (
+                <SkillDetailView skillName={selection.name} />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function FilterChip({
+  active,
+  count,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+        active
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
+      <span>{label}</span>
+      <span
+        className={cn(
+          "rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+          active ? "bg-primary/20" : "bg-muted",
+        )}
+      >
+        {count}
+      </span>
+    </button>
   );
 }

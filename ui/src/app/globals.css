@@ -80,9 +80,16 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Bumped from the browser default 16px so all rem-based Tailwind sizes
+       (text-xs, text-sm, text-base) scale up by ~6%, giving the whole UI a
+       slightly more breathable feel without retouching every component. */
+    font-size: 17px;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    line-height: 1.55;
   }
   html,
   body,

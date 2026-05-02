@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, GitBranch, MessageSquarePlus } from "lucide-react";
+import { Archive, GitBranch, MessageSquare, MessageSquarePlus, Sparkles } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -143,17 +143,37 @@ function MessageList({
   }, [messages, pending?.text, pending?.toolCalls]);
 
   return (
-    <div ref={ref} className="flex-1 space-y-4 overflow-auto scrollbar-thin px-1">
-      {messages.map((m, i) => (
-        <MessageBubble key={i} message={m} />
-      ))}
-      {pending ? (
-        <MessageBubble
-          message={{ role: "assistant", content: pending.text }}
-          pending
-          toolCalls={pending.toolCalls}
-        />
-      ) : null}
+    <div ref={ref} className="flex-1 overflow-auto scrollbar-thin">
+      <div className="mx-auto flex max-w-3xl flex-col gap-2 py-2">
+        {messages.length === 0 && !pending ? <ConversationStarter /> : null}
+        {messages.map((m, i) => (
+          <MessageBubble key={i} message={m} />
+        ))}
+        {pending ? (
+          <MessageBubble
+            message={{ role: "assistant", content: pending.text }}
+            pending
+            toolCalls={pending.toolCalls}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ConversationStarter() {
+  return (
+    <div className="my-8 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card/40 px-6 py-10 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <Sparkles className="h-5 w-5" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-base font-semibold">How can the agent help?</p>
+        <p className="max-w-md text-sm text-muted-foreground">
+          Ask anything — files can be dragged in or pasted directly. Replies stream
+          live, including tool calls and (soon) interactive widgets.
+        </p>
+      </div>
     </div>
   );
 }
@@ -242,13 +262,16 @@ export default function ChatPage() {
   }, [conversationId]);
 
   return (
-    <div className="grid h-[calc(100vh-7rem)] grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div className="grid h-[calc(100vh-7rem)] grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <div className="hidden lg:block">
         <ConversationsSidebar activeId={conversationId} />
       </div>
-      <Card className="flex h-full min-h-0 flex-col">
-        <CardHeader className="flex flex-row items-center justify-between gap-2 border-b border-border pb-3">
-          <CardTitle>{headerTitle}</CardTitle>
+      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 border-b border-border bg-card/60 py-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <MessageSquare className="h-4 w-4" />
+            <span className="font-mono text-xs">{headerTitle}</span>
+          </CardTitle>
           <div className="flex items-center gap-2">
             {conversationId ? (
               <>
@@ -270,7 +293,7 @@ export default function ChatPage() {
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
           {!conversationId ? (
             <NoConversation />
           ) : messagesQuery.isLoading ? (

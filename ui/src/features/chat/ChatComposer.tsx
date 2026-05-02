@@ -94,7 +94,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
     <div
       {...getRootProps()}
       className={cn(
-        "rounded-lg border border-border bg-card p-3 shadow-sm transition-colors",
+        "mx-auto w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm transition-colors focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20",
         isDragActive && "border-primary/60 bg-primary/5",
       )}
     >
@@ -140,8 +140,8 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Ask the agent… (drag files in or paste images)"
-        className="resize-none border-0 bg-transparent p-0 font-sans shadow-none focus-visible:ring-0"
+        placeholder="Ask the agent…  (drag files in or paste images)"
+        className="resize-none border-0 bg-transparent p-0 font-sans text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
         disabled={disabled}
       />
 

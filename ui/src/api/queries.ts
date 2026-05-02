@@ -149,6 +149,12 @@ export interface ChatMessage {
   role: string;
   content: string;
   attachments?: FileMetadata[];
+  /**
+   * Optional rich-content parts (text + widgets) that take precedence over
+   * `content` when present. Backend integration follows the A2UI shape — see
+   * `features/chat/widgets/types.ts`.
+   */
+  parts?: import("@/features/chat/widgets/types").MessagePart[];
 }
 
 export const queryKeys = {
