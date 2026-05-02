@@ -14,16 +14,17 @@ import { apiFetch } from "@/api/client";
 
 export interface UIManifestEntry {
   id: string;
-  version?: string;
-  display_name?: string;
+  /** Plugin version, used for skew warnings. Defaults to "0.0.0". */
+  version: string;
+  /** Capability flags; the registry treats an empty list as "plugin opted out". */
   capabilities: string[];
+  display_name?: string;
   npm_package?: string | null;
   min_ui_version?: string | null;
 }
 
 export interface UIManifestResponse {
   plugins: UIManifestEntry[];
-  server_version: string;
 }
 
 export const UI_MANIFEST_QUERY_KEY = ["ui-manifest"] as const;

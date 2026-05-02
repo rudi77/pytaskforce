@@ -31,11 +31,14 @@ An operator who wants the enterprise admin pages does this once:
    discovers the package automatically. Confirm it loaded:
 
    ```bash
-   curl -H "Authorization: Bearer $TOKEN" \
-        http://localhost:8070/api/v1/ui/manifest
+   curl http://localhost:8070/api/v1/ui/manifest
    ```
 
-   The response should include `{"id": "enterprise", ...}`.
+   The response should include `{"id": "enterprise", ...}`. The
+   manifest endpoint is intentionally unauthenticated (the same level
+   of disclosure as the React shell would already make at first
+   render) but deliberately omits the server version to limit
+   fingerprinting — use `GET /health` if you need a version probe.
 
 2. **Install the matching UI plugin** (npm) and rebuild the host UI:
 

@@ -40,7 +40,6 @@ export default defineConfig({
         "react",
         "react/jsx-runtime",
         "react-dom",
-        "react-router-dom",
         "@tanstack/react-query",
         "lucide-react",
         "@taskforce/ui-shell",

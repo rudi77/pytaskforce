@@ -42,6 +42,12 @@ export default defineConfig({
         "react-router-dom",
         "@tanstack/react-query",
         "lucide-react",
+        // zustand 5 ships `shallow` as an explicit subpath export. We
+        // must externalize both the root and the subpath, otherwise
+        // Rollup tries to bundle `zustand/react/shallow` as if it were
+        // a relative module and fails to resolve it. Subpath externals
+        // are NOT inferred from a parent external, so listing them
+        // separately here is required.
         "zustand",
         "zustand/react/shallow",
         /^@radix-ui\//,

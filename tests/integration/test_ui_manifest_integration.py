@@ -101,7 +101,9 @@ def test_manifest_pipeline_with_fake_enterprise_plugin(isolated_registry, client
     assert response.status_code == 200
     body = response.json()
 
-    assert "server_version" in body
+    # The endpoint deliberately does NOT leak server version to avoid
+    # giving unauthenticated callers a fingerprinting surface.
+    assert "server_version" not in body
     assert len(body["plugins"]) == 1
 
     plugin = body["plugins"][0]

@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { checkSkew, logSkewIssue } from "./skew";
+import { __resetSkewWarningsForTests, checkSkew, logSkewIssue } from "./skew";
+
+beforeEach(() => {
+  __resetSkewWarningsForTests();
+});
 
 describe("checkSkew", () => {
   it("returns null when no constraint is given", () => {
@@ -99,15 +103,33 @@ describe("checkSkew", () => {
     ).toBeNull();
   });
 
-  it("returns null on garbage constraints (false negatives over false positives)", () => {
+  it("returns null on garbage constraints and warns once via the log callback", () => {
+    const log = vi.fn();
     expect(
-      checkSkew({
+      checkSkew(
+        {
+          pluginId: "p",
+          hostVersion: "1.0.0",
+          pluginVersion: "1.0.0",
+          constraint: "not a version",
+        },
+        log,
+      ),
+    ).toBeNull();
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain("min_ui_version");
+
+    // Second call with the same plugin+constraint must not re-warn.
+    checkSkew(
+      {
         pluginId: "p",
         hostVersion: "1.0.0",
         pluginVersion: "1.0.0",
         constraint: "not a version",
-      }),
-    ).toBeNull();
+      },
+      log,
+    );
+    expect(log).toHaveBeenCalledTimes(1);
   });
 
   it("returns null when host version is unparseable", () => {

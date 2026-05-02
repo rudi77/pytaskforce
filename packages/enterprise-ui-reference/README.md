@@ -7,6 +7,14 @@ the host integration can be developed and verified together. The
 [`taskforce-enterprise`](https://github.com/rudi77/taskforce-enterprise)
 repository (typically as a `web/` subdirectory).
 
+> **For pytaskforce contributors:** the host UI (`ui/`) already
+> depends on this package via a `file:` link, so no setup is required
+> on a fresh clone — `npm install` in `ui/` resolves it automatically
+> and `npm run build` in `ui/` produces a bundle containing all five
+> admin pages. The "How to copy this into …" instructions below are
+> for the **enterprise-repo maintainer** publishing the plugin
+> downstream, not for someone hacking on pytaskforce itself.
+
 ## What this package does
 
 Contributes five admin pages to the pytaskforce management UI:

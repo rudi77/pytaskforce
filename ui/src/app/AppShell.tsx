@@ -188,10 +188,13 @@ function getPageTitle(pathname: string, pageTitles: Record<string, string>): str
 
 function pluginNavItemToNavItem(
   item: PluginNavItem,
-  fallbackRequires: readonly string[],
+  pluginCapabilities: readonly string[],
   active: ReadonlySet<string>,
 ): NavItem | null {
-  const requires = item.requires ?? fallbackRequires;
+  // `requires` is the per-item override; when omitted we fall back to
+  // the owning plugin's full capability list so an item is hidden as
+  // soon as ANY of the plugin's caps becomes inactive.
+  const requires = item.requires ?? pluginCapabilities;
   if (!capabilitiesSatisfied(requires, active)) return null;
   return {
     to: item.to,

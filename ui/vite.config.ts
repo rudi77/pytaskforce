@@ -2,6 +2,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const BACKEND = process.env.TASKFORCE_API_URL ?? "http://127.0.0.1:8070";
@@ -26,16 +27,50 @@ const HOST_VERSION = (() => {
  * packages so the import remains a no-op the runtime catch block can
  * silently swallow.
  *
- * We probe by checking the package.json directly, because
- * `require.resolve` does not honor the `exports` field for ESM-only
- * packages and would mis-classify them as missing.
+ * Detection probes via:
+ *   1. `require.resolve(name, { paths })` — handles standard CJS, npm
+ *      workspaces, pnpm hoisting, and yarn berry pnp layouts. This
+ *      respects Node's `exports` field for any package shipping
+ *      `main`/`module`.
+ *   2. Fallback: probe `<basedir>/node_modules/<name>/package.json`
+ *      directly, because `require.resolve` does NOT honor the
+ *      `exports` field for ESM-only packages without a `main` field
+ *      (Node refuses to resolve such packages from a CJS context).
+ *
+ * NOTE: This runs at vite config-load time. Operators who install an
+ * optional plugin AFTER `vite dev` is already running must restart
+ * the dev server.
  */
 const OPTIONAL_PLUGIN_PACKAGES = ["@taskforce/enterprise-ui"];
 
-const missingOptionalPlugins = OPTIONAL_PLUGIN_PACKAGES.filter((name) => {
-  const pkgJsonPath = path.resolve(__dirname, "node_modules", name, "package.json");
-  return !fs.existsSync(pkgJsonPath);
-});
+const PLUGIN_RESOLUTION_PATHS = [
+  __dirname,
+  path.resolve(__dirname, ".."),
+  path.resolve(__dirname, "..", ".."),
+];
+
+const requireFromHere = createRequire(import.meta.url);
+
+function isPluginPackageInstalled(name: string): boolean {
+  // Step 1: try Node's resolver against several candidate base dirs.
+  try {
+    requireFromHere.resolve(name, { paths: PLUGIN_RESOLUTION_PATHS });
+    return true;
+  } catch {
+    /* fall through */
+  }
+  // Step 2: ESM-only packages without `main` / with `exports` only —
+  // probe the package.json directly under each candidate node_modules.
+  for (const base of PLUGIN_RESOLUTION_PATHS) {
+    const pkgJson = path.resolve(base, "node_modules", name, "package.json");
+    if (fs.existsSync(pkgJson)) return true;
+  }
+  return false;
+}
+
+const missingOptionalPlugins = OPTIONAL_PLUGIN_PACKAGES.filter(
+  (name) => !isPluginPackageInstalled(name),
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -67,7 +102,12 @@ export default defineConfig({
     exclude: OPTIONAL_PLUGIN_PACKAGES,
   },
   test: {
-    environment: "node",
+    // jsdom is required for React component tests (testing-library/react,
+    // CapabilityGuard, RequireRole, AppBootstrap rendering). Pure-logic
+    // tests (registry.test.ts, skew.test.ts) work in any environment.
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
   },
 });

@@ -11,12 +11,16 @@
  * package names. To add a new plugin, append it to `OPTIONAL_PLUGINS`.
  */
 import { registry } from "./registry";
-import type { PluginRegistry } from "./types";
+import type { PluginContext, PluginRegistry, UIPlugin } from "./types";
 
 interface OptionalPluginModule {
   register?: (registry: PluginRegistry) => void;
   default?: { register?: (registry: PluginRegistry) => void };
 }
+
+const pluginContext: PluginContext = {
+  isCapabilityActive: (flag) => registry.isCapabilityActive(flag),
+};
 
 interface OptionalPluginEntry {
   /** Human-readable plugin id, only used for diagnostic logs. */
@@ -40,11 +44,25 @@ const OPTIONAL_PLUGINS: OptionalPluginEntry[] = [
   },
 ];
 
-/** Load all optional plugin packages and let them register themselves. */
+/**
+ * Load all optional plugin packages and let them register themselves.
+ *
+ * For each successfully imported package the loader:
+ *   1. Calls `register(registry)` synchronously.
+ *   2. Awaits each newly-registered plugin's optional `init(ctx)` so
+ *      plugins can perform async startup (e.g. priming queries) before
+ *      the router renders any of their pages.
+ *
+ * `register()` itself must be synchronous — its job is purely to add
+ * the plugin's `UIPlugin` value to the registry. Anything async
+ * belongs in `init`.
+ */
 export async function bootstrapPlugins(): Promise<void> {
   await Promise.all(
     OPTIONAL_PLUGINS.map(async (entry) => {
+      let beforeIds: ReadonlySet<string>;
       try {
+        beforeIds = new Set(registry.list().map((p) => p.id));
         const mod = await entry.load();
         const register = mod.register ?? mod.default?.register;
         if (typeof register === "function") {
@@ -53,11 +71,28 @@ export async function bootstrapPlugins(): Promise<void> {
           console.warn(
             `[plugins] '${entry.id}' loaded but exports no register() function`,
           );
+          return;
         }
       } catch {
         // Package not installed or failed to import — expected when the
         // operator has not opted into this feature. Stay quiet.
+        return;
       }
+
+      const justRegistered: UIPlugin[] = registry
+        .list()
+        .filter((p) => !beforeIds.has(p.id));
+      await Promise.all(
+        justRegistered.map(async (plugin) => {
+          if (!plugin.init) return;
+          try {
+            await plugin.init(pluginContext);
+          } catch (error) {
+            // Init failures must not block other plugins.
+            console.error(`[plugins] '${plugin.id}' init() failed:`, error);
+          }
+        }),
+      );
     }),
   );
 }

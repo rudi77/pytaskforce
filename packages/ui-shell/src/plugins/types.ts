@@ -82,7 +82,21 @@ export interface UIPlugin {
   navItems: PluginNavItem[];
   /** Pages this plugin contributes. */
   routes: PluginRoute[];
-  /** Optional one-time bootstrap callback. */
+  /**
+   * Optional wrapper applied around every contributed route — OUTSIDE
+   * `<CapabilityGuard>` and `<RequireRole>`. This is the canonical
+   * place to mount auth providers (e.g. `<UserRolesProvider>`) so the
+   * RBAC guard sees real claims. The wrapper is invoked once per
+   * route-mount; a typical implementation will use a single React
+   * Query call (deduplicated by query key) so the request fires once
+   * across all routes.
+   */
+  wrap?(children: ReactNode): ReactNode;
+  /**
+   * Optional one-time bootstrap callback invoked by the host's
+   * `bootstrapPlugins()` after `register()` succeeds. Use it for
+   * async startup work (priming caches, warming OAuth tokens, …).
+   */
   init?(ctx: PluginContext): void | Promise<void>;
 }
 
