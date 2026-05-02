@@ -1,8 +1,10 @@
 """API Schemas Package."""
 
 from taskforce.api.schemas.agent_deployment_schemas import (
-    AgentDeploymentRequest,
+    AgentDeploymentListResponse,
     AgentDeploymentResponse,
+    DeployRequest,
+    RollbackRequest,
 )
 from taskforce.api.schemas.agent_schemas import (
     AgentListResponse,
@@ -14,8 +16,10 @@ from taskforce.api.schemas.agent_schemas import (
 from taskforce.api.schemas.errors import ErrorResponse
 
 __all__ = [
-    "AgentDeploymentRequest",
+    "AgentDeploymentListResponse",
     "AgentDeploymentResponse",
+    "DeployRequest",
+    "RollbackRequest",
     "CustomAgentCreate",
     "CustomAgentUpdate",
     "CustomAgentResponse",

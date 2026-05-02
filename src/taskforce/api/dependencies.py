@@ -64,6 +64,35 @@ def get_agent_registry():
 
 
 # ---------------------------------------------------------------------------
+# Agent Deployment (registry + lifecycle service)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_deployment_registry():
+    """Provide a shared file-backed deployment registry."""
+    from taskforce.infrastructure.persistence.file_agent_deployment_registry import (
+        FileAgentDeploymentRegistry,
+    )
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return FileAgentDeploymentRegistry(work_dir=work_dir)
+
+
+@lru_cache(maxsize=1)
+def get_agent_deployment_service():
+    """Provide a shared :class:`AgentDeploymentService` instance."""
+    from taskforce.application.agent_deployment_service import AgentDeploymentService
+    from taskforce.application.tool_registry import get_tool_registry
+
+    return AgentDeploymentService(
+        agent_registry=get_agent_registry(),
+        deployment_registry=get_deployment_registry(),
+        tool_catalog=get_tool_registry(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Communication Gateway
 # ---------------------------------------------------------------------------
 
@@ -164,5 +193,3 @@ def get_workflow_runtime_service():
 
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     return WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
-
-

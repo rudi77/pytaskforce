@@ -145,6 +145,9 @@ export const queryKeys = {
   health: ["health"] as const,
   agents: ["agents", "list"] as const,
   agent: (id: string) => ["agents", "detail", id] as const,
+  agentActiveDeployment: (id: string, environment: string) =>
+    ["agents", "deployment", "active", id, environment] as const,
+  agentDeployments: (id: string) => ["agents", "deployment", "history", id] as const,
   tools: ["tools"] as const,
   profiles: ["profiles", "list"] as const,
   profile: (name: string) => ["profiles", "detail", name] as const,
@@ -158,6 +161,109 @@ export const queryKeys = {
   archivedConversations: ["conversations", "archived"] as const,
   conversationMessages: (id: string) => ["conversations", "messages", id] as const,
 };
+
+// --- Agent deployments -----------------------------------------------------
+
+export type DeploymentEnvironment = "local" | "staging" | "prod";
+export type DeploymentStatus =
+  | "pending"
+  | "validating"
+  | "deployed"
+  | "failed"
+  | "rolled_back";
+
+export interface AgentDeployment {
+  agent_id: string;
+  version: string;
+  status: DeploymentStatus;
+  environment: DeploymentEnvironment;
+  deployed_at: string | null;
+  deployed_by: string | null;
+  message: string | null;
+  rollback_from: string | null;
+  error: string | null;
+  config_snapshot: Record<string, unknown>;
+}
+
+export interface DeploymentListResponse {
+  deployments: AgentDeployment[];
+}
+
+export interface DeployAgentPayload {
+  environment?: DeploymentEnvironment;
+  deployed_by?: string | null;
+  message?: string | null;
+}
+
+export interface RollbackAgentPayload {
+  to_version: string;
+  environment?: DeploymentEnvironment;
+  deployed_by?: string | null;
+  message?: string | null;
+}
+
+function invalidateDeploymentCaches(qc: ReturnType<typeof useQueryClient>, agentId: string) {
+  qc.invalidateQueries({ queryKey: queryKeys.agentDeployments(agentId) });
+  qc.invalidateQueries({ queryKey: ["agents", "deployment", "active", agentId] });
+}
+
+export function useActiveDeployment(
+  agentId: string | undefined,
+  environment: DeploymentEnvironment = "local",
+) {
+  return useQuery<AgentDeployment | null>({
+    queryKey: queryKeys.agentActiveDeployment(agentId ?? "", environment),
+    enabled: !!agentId,
+    retry: 0,
+    queryFn: async () => {
+      try {
+        return await apiFetch<AgentDeployment>(
+          `/api/v1/agents/${encodeURIComponent(agentId!)}/active?environment=${environment}`,
+        );
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+  });
+}
+
+export function useDeploymentHistory(agentId: string | undefined) {
+  return useQuery<DeploymentListResponse>({
+    queryKey: queryKeys.agentDeployments(agentId ?? ""),
+    enabled: !!agentId,
+    queryFn: () =>
+      apiFetch<DeploymentListResponse>(
+        `/api/v1/agents/${encodeURIComponent(agentId!)}/deployments`,
+      ),
+  });
+}
+
+export function useDeployAgent(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation<AgentDeployment, Error, DeployAgentPayload | void>({
+    mutationFn: (payload) =>
+      apiFetch<AgentDeployment>(`/api/v1/agents/${encodeURIComponent(agentId)}/deploy`, {
+        method: "POST",
+        body: JSON.stringify(payload ?? {}),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => invalidateDeploymentCaches(qc, agentId),
+  });
+}
+
+export function useRollbackAgent(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation<AgentDeployment, Error, RollbackAgentPayload>({
+    mutationFn: (payload) =>
+      apiFetch<AgentDeployment>(`/api/v1/agents/${encodeURIComponent(agentId)}/rollback`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => invalidateDeploymentCaches(qc, agentId),
+  });
+}
 
 export function useHealth(intervalMs = 10_000) {
   return useQuery<HealthResponse>({

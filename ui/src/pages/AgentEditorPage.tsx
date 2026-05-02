@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { AgentSourceBadge } from "@/components/AgentSourceBadge";
 import { AgentProfileEditor } from "@/features/agents/AgentProfileEditor";
 import { AgentWizard } from "@/features/agents/wizard/AgentWizard";
+import { DeploymentPanel } from "@/features/agents/DeploymentPanel";
 import { ApiError, apiFetch } from "@/api/client";
 import {
   AgentSummary,
@@ -117,6 +118,7 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
           </div>
         </CardHeader>
       </Card>
+      {agent.source === "custom" ? <DeploymentPanel agentId={agent.agent_id} /> : null}
       <CustomOrPluginDetail agent={agent} />
     </div>
   );

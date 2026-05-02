@@ -1,7 +1,7 @@
 """Unit tests for the execution routes."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -9,7 +9,11 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
-from taskforce.api.dependencies import get_executor
+from taskforce.api.dependencies import (
+    get_agent_deployment_service,
+    get_agent_registry,
+    get_executor,
+)
 from taskforce.api.server import create_app
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.errors import LLMError, PlanningError, ToolError
@@ -34,9 +38,18 @@ def mock_executor():
 
 @pytest.fixture
 def client(mock_executor):
-    """Create a TestClient with a mock executor dependency override."""
+    """Create a TestClient with mock executor / registry / deployment dependency overrides."""
     app = create_app()
     app.dependency_overrides[get_executor] = lambda: mock_executor
+
+    mock_registry = MagicMock()
+    mock_registry.get_agent.return_value = None
+    app.dependency_overrides[get_agent_registry] = lambda: mock_registry
+
+    mock_deployment_service = MagicMock()
+    mock_deployment_service.is_deployed.return_value = True
+    app.dependency_overrides[get_agent_deployment_service] = lambda: mock_deployment_service
+
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -85,6 +98,50 @@ class TestExecuteMission:
     def test_execute_missing_mission_returns_422(self, client):
         response = client.post("/api/v1/execute", json={})
         assert response.status_code == 422
+
+    def test_execute_custom_agent_requires_deploy(self, client):
+        from taskforce.core.domain.agent_models import CustomAgentDefinition
+
+        mock_registry = MagicMock()
+        mock_registry.get_agent.return_value = CustomAgentDefinition(
+            agent_id="a1",
+            name="a1",
+            description="d",
+            system_prompt="s",
+        )
+        client.app.dependency_overrides[get_agent_registry] = lambda: mock_registry
+
+        mock_deployment_service = MagicMock()
+        mock_deployment_service.is_deployed.return_value = False
+        client.app.dependency_overrides[get_agent_deployment_service] = (
+            lambda: mock_deployment_service
+        )
+
+        response = client.post("/api/v1/execute", json={"mission": "x", "agent_id": "a1"})
+        assert response.status_code == 409
+        assert response.json()["code"] == "agent_not_deployed"
+
+    def test_execute_deployed_custom_agent_runs(self, client, mock_executor):
+        from taskforce.core.domain.agent_models import CustomAgentDefinition
+
+        mock_executor.execute_mission = AsyncMock(return_value=_mock_result())
+        mock_registry = MagicMock()
+        mock_registry.get_agent.return_value = CustomAgentDefinition(
+            agent_id="a1",
+            name="a1",
+            description="d",
+            system_prompt="s",
+        )
+        client.app.dependency_overrides[get_agent_registry] = lambda: mock_registry
+
+        mock_deployment_service = MagicMock()
+        mock_deployment_service.is_deployed.return_value = True
+        client.app.dependency_overrides[get_agent_deployment_service] = (
+            lambda: mock_deployment_service
+        )
+
+        response = client.post("/api/v1/execute", json={"mission": "x", "agent_id": "a1"})
+        assert response.status_code == 200
 
     def test_execute_file_not_found_returns_404(self, client, mock_executor):
         mock_executor.execute_mission = AsyncMock(

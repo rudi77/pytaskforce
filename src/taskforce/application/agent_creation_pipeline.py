@@ -61,20 +61,29 @@ class AgentCreationPipeline:
 
         if plugin_path:
             return await self._from_plugin_path(
-                plugin_path, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                plugin_path,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         if agent_id:
             return await self._from_agent_id(
-                agent_id, profile, user_context,
-                planning_strategy, planning_strategy_params,
-                environment, version,
+                agent_id,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
+                environment,
+                version,
             )
 
         return await self._from_profile(
-            profile, user_context,
-            planning_strategy, planning_strategy_params,
+            profile,
+            user_context,
+            planning_strategy,
+            planning_strategy_params,
         )
 
     async def _from_plugin_path(
@@ -147,14 +156,20 @@ class AgentCreationPipeline:
 
         if isinstance(agent_response, PluginAgentDefinition):
             return await self._from_plugin_definition(
-                agent_response, resolved_agent_id, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                resolved_agent_id,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         if isinstance(agent_response, CustomAgentDefinition):
             return await self._from_custom_definition(
-                agent_response, resolved_agent_id,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                resolved_agent_id,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         raise ValidationError(
@@ -169,51 +184,71 @@ class AgentCreationPipeline:
         environment: str | None,
         requested_version: str | None,
     ) -> tuple[str, str | None, str]:
-        """Resolve deployed agent/version for an environment with draft fallback.
+        """Resolve the agent/version to load for a given environment.
 
-        Fallback behavior:
-        - If no deployment registry is available, fall back to the requested agent.
-        - If explicit version is provided, use it directly.
-        - If environment is provided, resolve the active deployment.
-        - If no active deployment exists, fall back to draft/custom agent if present.
-        - If neither deployment nor draft/custom exists, raise NotFoundError.
-        - If deployment metadata exists but is not active, raise ConflictError.
+        Resolution order:
+        1. Explicit version wins (returns the versioned id without
+           consulting the deployment registry).
+        2. ``environment`` set + active deployment exists → resolved version.
+        3. ``environment`` set + no deployment but a draft/custom agent
+           exists → fall back to the draft.
+        4. ``environment`` set + nothing exists → ``NotFoundError``.
+        5. No environment → return the requested agent_id verbatim.
         """
-        registry = self._build_agent_registry()
         if not environment:
-            return agent_id, requested_version, "version_override" if requested_version else "not_requested"
-
-        resolver = getattr(registry, "get_active_deployment", None)
-        if not callable(resolver):
-            return agent_id, requested_version, "registry_no_deployment_support"
+            return (
+                agent_id,
+                requested_version,
+                "version_override" if requested_version else "not_requested",
+            )
 
         if requested_version:
-            versioned_agent_id = self._build_versioned_agent_id(agent_id, requested_version)
-            return versioned_agent_id, requested_version, "explicit_version"
+            return (
+                self._build_versioned_agent_id(agent_id, requested_version),
+                requested_version,
+                "explicit_version",
+            )
 
-        deployment = resolver(agent_id=agent_id, environment=environment)
-        if deployment is None:
-            fallback_definition = self._lookup_agent_definition(agent_id)
-            if fallback_definition:
+        deployment_registry = self._build_deployment_registry()
+        active = deployment_registry.get_active(agent_id, environment)
+
+        if active is None:
+            if self._lookup_agent_definition(agent_id):
                 return agent_id, None, "fallback_draft_or_custom"
             raise NotFoundError(
-                f"No active deployment found for agent '{agent_id}' in environment '{environment}'",
+                f"No active deployment found for agent '{agent_id}' "
+                f"in environment '{environment}'",
                 details={"agent_id": agent_id, "environment": environment},
             )
 
-        status = getattr(deployment, "status", "active")
-        if status != "active":
+        from taskforce.core.domain.agent_deployment import AgentDeploymentStatus
+
+        if active.status != AgentDeploymentStatus.DEPLOYED:
             raise ConflictError(
                 f"Deployment for agent '{agent_id}' in '{environment}' is not active",
-                details={"agent_id": agent_id, "environment": environment, "status": status},
+                details={
+                    "agent_id": agent_id,
+                    "environment": environment,
+                    "status": active.status.value,
+                },
             )
 
-        resolved_version = str(getattr(deployment, "version", "")) or None
-        if not resolved_version:
+        if not active.version:
             return agent_id, None, "active_no_version"
 
-        resolved_agent_id = self._build_versioned_agent_id(agent_id, resolved_version)
-        return resolved_agent_id, resolved_version, "active_deployment"
+        return (
+            self._build_versioned_agent_id(agent_id, active.version),
+            active.version,
+            "active_deployment",
+        )
+
+    def _build_deployment_registry(self) -> Any:
+        """Build the file-backed deployment registry (lazy infra import)."""
+        from taskforce.infrastructure.persistence.file_agent_deployment_registry import (
+            FileAgentDeploymentRegistry,
+        )
+
+        return FileAgentDeploymentRegistry()
 
     def _build_versioned_agent_id(self, agent_id: str, version: str) -> str:
         """Build canonical agent ID for a specific version."""
@@ -309,8 +344,11 @@ class AgentCreationPipeline:
 
         if isinstance(agent_response, PluginAgentDefinition):
             return await self._from_plugin_via_profile_name(
-                agent_response, profile, user_context,
-                planning_strategy, planning_strategy_params,
+                agent_response,
+                profile,
+                user_context,
+                planning_strategy,
+                planning_strategy_params,
             )
 
         return await self._factory.create_agent(

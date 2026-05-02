@@ -80,6 +80,13 @@ class ValidationError(TaskforceError):
         super().__init__(message=message, code="validation_error", details=details)
 
 
+class ConflictError(TaskforceError):
+    """Error raised when a request conflicts with the current resource state."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message=message, code="conflict", details=details)
+
+
 class PluginError(TaskforceError):
     """Error raised for plugin loading failures."""
 

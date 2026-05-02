@@ -1,146 +1,148 @@
-"""File-backed registry for agent deployment releases and environment pointers."""
+"""File-backed registry for agent deployment lifecycle records.
+
+Storage layout (under ``<work_dir>/deployments/<agent_id>/``)::
+
+    history.yaml                      # ordered list of deployment records
+    active/<environment>.yaml         # pointer to the currently-active version
+
+Implements :class:`DeploymentRegistryProtocol` and is the single source of
+truth for deployment lifecycle data. The agent definition itself remains in
+the agent registry (``configs/custom/<agent_id>.yaml``) — this module never
+mutates it.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from taskforce.infrastructure.persistence.yaml_io import atomic_write_yaml, safe_load_yaml
+from taskforce.core.domain.agent_deployment import (
+    AgentDeployment,
+    AgentDeploymentStatus,
+    DeploymentEnvironment,
+)
+from taskforce.infrastructure.persistence.yaml_io import (
+    atomic_write_yaml,
+    safe_load_yaml,
+)
 
 
 class FileAgentDeploymentRegistry:
-    """Persist agent releases, active environment pointers, and rollback history."""
+    """File-based implementation of :class:`DeploymentRegistryProtocol`."""
 
-    def __init__(self, root_dir: str | Path = ".taskforce/deployments") -> None:
-        self._root_dir = Path(root_dir)
-        self._root_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, work_dir: str | Path | None = None) -> None:
+        base = Path(work_dir) if work_dir else Path(os.getenv("TASKFORCE_WORK_DIR", ".taskforce"))
+        self._root = base / "deployments"
+        self._root.mkdir(parents=True, exist_ok=True)
 
-    def create_release(
+    # ------------------------------------------------------------------ API
+
+    def record(self, deployment: AgentDeployment) -> AgentDeployment:
+        """Append a deployment record and update the active pointer."""
+        history = self._load_history(deployment.agent_id)
+        history.append(self._to_dict(deployment))
+        atomic_write_yaml(self._history_path(deployment.agent_id), {"deployments": history})
+
+        env = deployment.environment
+        if deployment.status == AgentDeploymentStatus.DEPLOYED:
+            self._write_active_pointer(deployment.agent_id, env, deployment)
+        elif deployment.status == AgentDeploymentStatus.ROLLED_BACK:
+            # The rolled-back version is no longer active.
+            active_path = self._active_path(deployment.agent_id, env)
+            if active_path.exists():
+                active_path.unlink()
+
+        return deployment
+
+    def get_active(
         self,
         agent_id: str,
-        release_id: str,
-        metadata: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Create a release record for an agent."""
-        release = {
-            "agent_id": agent_id,
-            "release_id": release_id,
-            "created_at": self._now_iso(),
-            "metadata": metadata,
-            "deployments": [],
-        }
-        release_path = self._release_path(agent_id, release_id)
-        if release_path.exists():
-            msg = f"Release '{release_id}' already exists for agent '{agent_id}'"
-            raise FileExistsError(msg)
-        release_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_yaml(release_path, release)
-        return release
+        environment: DeploymentEnvironment | str = DeploymentEnvironment.LOCAL,
+    ) -> AgentDeployment | None:
+        env = DeploymentEnvironment.coerce(environment)
+        data = safe_load_yaml(self._active_path(agent_id, env))
+        if not isinstance(data, dict):
+            return None
+        return self._from_dict(data)
 
-    def mark_deployed(
+    def list_for_agent(self, agent_id: str) -> list[AgentDeployment]:
+        history = self._load_history(agent_id)
+        return [self._from_dict(item) for item in reversed(history)]
+
+    def is_deployed(
         self,
         agent_id: str,
-        release_id: str,
-        environment: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Append deployment metadata to a release and update active pointer."""
-        release = self._load_release(agent_id, release_id)
-        deployment_event = {
-            "environment": environment,
-            "deployed_at": self._now_iso(),
-            "metadata": metadata or {},
-        }
-        release.setdefault("deployments", []).append(deployment_event)
-        atomic_write_yaml(self._release_path(agent_id, release_id), release)
-        self.set_active(agent_id, environment, release_id)
-        return deployment_event
+        environment: DeploymentEnvironment | str = DeploymentEnvironment.LOCAL,
+    ) -> bool:
+        active = self.get_active(agent_id, environment)
+        return active is not None and active.status == AgentDeploymentStatus.DEPLOYED
 
-    def set_active(self, agent_id: str, environment: str, release_id: str) -> dict[str, Any]:
-        """Set active release pointer for an environment."""
-        self._load_release(agent_id, release_id)
-        active_record = {
-            "agent_id": agent_id,
-            "environment": environment,
-            "release_id": release_id,
-            "updated_at": self._now_iso(),
-        }
-        pointer_path = self._active_pointer_path(agent_id, environment)
-        pointer_path.parent.mkdir(parents=True, exist_ok=True)
-        previous = safe_load_yaml(pointer_path)
-        atomic_write_yaml(pointer_path, active_record)
-        self._append_history(agent_id, environment, previous, active_record)
-        return active_record
+    # --------------------------------------------------------------- helpers
 
-    def list_releases(self, agent_id: str) -> list[dict[str, Any]]:
-        """Return releases for an agent sorted by creation time descending."""
-        releases_dir = self._agent_dir(agent_id) / "releases"
-        if not releases_dir.exists():
+    def _load_history(self, agent_id: str) -> list[dict[str, Any]]:
+        data = safe_load_yaml(self._history_path(agent_id))
+        if not isinstance(data, dict):
             return []
-        releases: list[dict[str, Any]] = []
-        for path in sorted(releases_dir.glob("*.yaml")):
-            data = safe_load_yaml(path)
-            if data is not None:
-                releases.append(data)
-        return sorted(releases, key=lambda item: item.get("created_at", ""), reverse=True)
+        items = data.get("deployments")
+        return list(items) if isinstance(items, list) else []
 
-    def rollback_to(self, agent_id: str, environment: str, release_id: str) -> dict[str, Any]:
-        """Rollback environment active pointer to an existing release."""
-        self._load_release(agent_id, release_id)
-        rollback_event = {
-            "agent_id": agent_id,
-            "environment": environment,
-            "release_id": release_id,
-            "rolled_back_at": self._now_iso(),
-        }
-        self.set_active(agent_id, environment, release_id)
-        history_path = self._history_path(agent_id, environment)
-        history = safe_load_yaml(history_path) or {"events": []}
-        history.setdefault("events", []).append({"type": "rollback", **rollback_event})
-        atomic_write_yaml(history_path, history)
-        return rollback_event
-
-    def _append_history(
+    def _write_active_pointer(
         self,
         agent_id: str,
-        environment: str,
-        previous: dict[str, Any] | None,
-        current: dict[str, Any],
+        environment: DeploymentEnvironment,
+        deployment: AgentDeployment,
     ) -> None:
-        history_path = self._history_path(agent_id, environment)
-        history = safe_load_yaml(history_path) or {"events": []}
-        history.setdefault("events", []).append(
-            {
-                "type": "set_active",
-                "changed_at": self._now_iso(),
-                "previous": previous,
-                "current": current,
-            }
-        )
-        history_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_yaml(history_path, history)
-
-    def _load_release(self, agent_id: str, release_id: str) -> dict[str, Any]:
-        release_path = self._release_path(agent_id, release_id)
-        release = safe_load_yaml(release_path)
-        if release is None:
-            msg = f"Release '{release_id}' not found for agent '{agent_id}'"
-            raise FileNotFoundError(msg)
-        return release
+        atomic_write_yaml(self._active_path(agent_id, environment), self._to_dict(deployment))
 
     def _agent_dir(self, agent_id: str) -> Path:
-        return self._root_dir / agent_id
+        path = self._root / agent_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
-    def _release_path(self, agent_id: str, release_id: str) -> Path:
-        return self._agent_dir(agent_id) / "releases" / f"{release_id}.yaml"
+    def _history_path(self, agent_id: str) -> Path:
+        return self._agent_dir(agent_id) / "history.yaml"
 
-    def _active_pointer_path(self, agent_id: str, environment: str) -> Path:
-        return self._agent_dir(agent_id) / "active" / f"{environment}.yaml"
-
-    def _history_path(self, agent_id: str, environment: str) -> Path:
-        return self._agent_dir(agent_id) / "history" / f"{environment}.yaml"
+    def _active_path(self, agent_id: str, environment: DeploymentEnvironment) -> Path:
+        active_dir = self._agent_dir(agent_id) / "active"
+        active_dir.mkdir(parents=True, exist_ok=True)
+        return active_dir / f"{environment.value}.yaml"
 
     @staticmethod
-    def _now_iso() -> str:
-        return datetime.now(UTC).isoformat()
+    def _to_dict(deployment: AgentDeployment) -> dict[str, Any]:
+        return {
+            "agent_id": deployment.agent_id,
+            "version": deployment.version,
+            "status": deployment.status.value,
+            "environment": deployment.environment.value,
+            "deployed_at": deployment.deployed_at.isoformat() if deployment.deployed_at else None,
+            "deployed_by": deployment.deployed_by,
+            "message": deployment.message,
+            "rollback_from": deployment.rollback_from,
+            "error": deployment.error,
+            "config_snapshot": dict(deployment.config_snapshot),
+        }
+
+    @staticmethod
+    def _from_dict(data: dict[str, Any]) -> AgentDeployment:
+        deployed_at_raw = data.get("deployed_at")
+        deployed_at: datetime | None = None
+        if deployed_at_raw:
+            try:
+                deployed_at = datetime.fromisoformat(deployed_at_raw)
+            except (TypeError, ValueError):
+                deployed_at = None
+
+        return AgentDeployment(
+            agent_id=data["agent_id"],
+            version=str(data.get("version", "")),
+            status=AgentDeploymentStatus(data["status"]),
+            environment=DeploymentEnvironment.coerce(data["environment"]),
+            deployed_at=deployed_at,
+            deployed_by=data.get("deployed_by"),
+            message=data.get("message"),
+            rollback_from=data.get("rollback_from"),
+            error=data.get("error"),
+            config_snapshot=data.get("config_snapshot") or {},
+        )

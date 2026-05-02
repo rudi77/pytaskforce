@@ -156,10 +156,58 @@ print(response.json())
 | `POST` | `/api/v1/agents` | Create a new custom agent |
 | `PUT` | `/api/v1/agents/{agent_id}` | Update an existing custom agent |
 | `DELETE` | `/api/v1/agents/{agent_id}` | Delete a custom agent |
-| `POST` | `/api/v1/agents/{agent_id}/deploy` | Queue deployment for an agent version |
-| `POST` | `/api/v1/agents/{agent_id}/rollback` | Roll back an agent to a target version |
-| `GET` | `/api/v1/agents/{agent_id}/deployments` | List deployment history for an agent |
-| `GET` | `/api/v1/agents/{agent_id}/active` | Get currently active deployment status |
+
+#### Custom Agent Deployment
+
+Custom agents (``source: "custom"``) must be **deployed** before they can be
+invoked through ``POST /api/v1/execute``. The deploy endpoint runs preflight
+validation (system prompt + tool allowlist + MCP wiring) and, on success,
+records a ``deployed`` lifecycle entry under ``.taskforce/deployments/<agent_id>/``
+which is then resolved by the execute gate. Profile and plugin agents are
+not deployed — they are always available.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/agents/{agent_id}/deploy` | Validate and activate the current agent definition |
+| `POST` | `/api/v1/agents/{agent_id}/rollback` | Re-activate a previously deployed version |
+| `GET`  | `/api/v1/agents/{agent_id}/active` | Get the currently active deployment (`?environment=local\|staging\|prod`) |
+| `GET`  | `/api/v1/agents/{agent_id}/deployments` | List the full deployment history (newest first) |
+
+**Deploy request:**
+```json
+{
+  "environment": "local",
+  "deployed_by": "alice@example.com",
+  "message": "Initial deploy"
+}
+```
+
+All fields are optional — `environment` defaults to `local`.
+
+**Deploy response (`200 OK`):**
+```json
+{
+  "agent_id": "research_agent",
+  "version": "2026-04-19T10:21:00+00:00",
+  "status": "deployed",
+  "environment": "local",
+  "deployed_at": "2026-04-19T10:21:14+00:00",
+  "deployed_by": "alice@example.com",
+  "message": "Initial deploy",
+  "rollback_from": null,
+  "error": null,
+  "config_snapshot": { "system_prompt": "...", "tool_allowlist": ["python"] }
+}
+```
+
+**Preflight failures** return `400` (or `404` for `agent_not_found` /
+`rollback_target_not_found`, `409` for `agent_not_custom`) with a structured
+`ErrorResponse`. A `failed` record is also persisted to the deployment history
+for debugging.
+
+**Execute gating:** when `POST /api/v1/execute` is called with `agent_id`
+referencing a custom agent that has no active deployment, the request is
+rejected with `409 agent_not_deployed`.
 
 #### Plugin Agent Discovery
 
@@ -299,7 +347,7 @@ See [Enterprise Features](features/enterprise.md) for details on the RBAC system
 import requests
 
 response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Write a hello world in Rust",
         "agent_id": "coding_agent"
@@ -319,7 +367,7 @@ all_agents = agents_response.json()["agents"]
 
 # Execute with a plugin agent
 response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Check invoice.pdf for completeness",
         "agent_id": "accounting_agent"
@@ -346,10 +394,18 @@ create_response = requests.post(
 
 # Use the custom agent
 execute_response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Scrape product prices from example.com",
         "agent_id": "web-scraper"
     }
 )
 ```
+
+
+### Agent Deployment Contract (Management UI)
+
+- After `POST /api/v1/agents`, the UI can immediately call `POST /api/v1/agents/{agent_id}/deploy`.
+- Agent responses include: `deployment_status`, `deployment_active`, `active_version`, `deployed_at`, `ready_to_use`.
+- `ready_to_use=true` maps to `deployment_status=deployed` and `deployment_active=true`.
+- `POST /api/v1/execute` with `agent_id` checks deploy status for custom agents and accepts only active deployments.
