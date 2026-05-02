@@ -20,7 +20,6 @@ Clean Architecture Notes:
 - No direct infrastructure imports (registry provided via dependencies.py)
 """
 
-
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 
@@ -34,6 +33,7 @@ from taskforce.api.schemas.agent_schemas import (
     PluginAgentResponse,
     ProfileAgentResponse,
 )
+from taskforce.application.deployment_service import DeploymentReadinessError, DeploymentService
 from taskforce.application.tool_registry import get_tool_registry
 from taskforce.core.domain.agent_models import (
     CustomAgentDefinition,
@@ -64,9 +64,7 @@ def _validate_tool_allowlists(
 
     # Validate native tools
     if tool_allowlist:
-        is_valid, invalid_tools = catalog.validate_native_tools(
-            tool_allowlist
-        )
+        is_valid, invalid_tools = catalog.validate_native_tools(tool_allowlist)
         if not is_valid:
             available_tools = sorted(catalog.get_native_tool_names())
             raise _http_exception(
@@ -98,6 +96,28 @@ def _domain_to_response(
         return PluginAgentResponse.from_domain(domain)
     else:
         return ProfileAgentResponse.from_domain(domain)
+
+
+@router.post(
+    "/agents/{agent_id}/deployments/readiness",
+    summary="Run deployment readiness checks",
+)
+def deployment_readiness_check(
+    agent_id: str,
+    dry_run: bool = False,
+) -> dict:
+    """Validate whether an agent profile is ready for deployment."""
+    deployment = {"agent_id": agent_id, "profile": agent_id, "status": "pending"}
+    service = DeploymentService()
+    try:
+        return service.validate_readiness(deployment=deployment, dry_run=dry_run)
+    except DeploymentReadinessError as exc:
+        raise _http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code=exc.code,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
 
 
 @router.post(
@@ -157,10 +177,7 @@ def create_agent(
     "/agents",
     response_model=AgentListResponse,
     summary="List all agents",
-    description=(
-        "List all agents (custom + profile). "
-        "Corrupt YAML files are skipped."
-    ),
+    description=("List all agents (custom + profile). Corrupt YAML files are skipped."),
 )
 def list_agents(
     registry=Depends(get_agent_registry),
