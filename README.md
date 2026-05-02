@@ -68,6 +68,8 @@ taskforce chat --plugin examples/accounting_agent
 # API: Plugins are automatically discovered and available via agent_id
 # GET /api/v1/agents lists all agents including plugins
 # POST /api/v1/execution/execute with agent_id: "accounting_agent"
+# POST /api/v1/agents/{agent_id}/deploy to queue agent deployments
+# GET /api/v1/agents/{agent_id}/active for deployment status
 ```
 
 ---
