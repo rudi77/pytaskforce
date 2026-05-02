@@ -1,127 +1,138 @@
-"""Agent deployment routes for deploy, rollback, and status visibility."""
+"""Agent deployment routes — deploy, rollback, history, active version.
+
+All routes delegate to :class:`AgentDeploymentService` which is wired
+via :func:`get_agent_deployment_service` (see ``api/dependencies.py``).
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Literal
+from fastapi import APIRouter, Depends, Query, status
 
-from fastapi import APIRouter, status
-from pydantic import BaseModel, Field
-
+from taskforce.api.dependencies import get_agent_deployment_service
 from taskforce.api.errors import http_exception
+from taskforce.api.schemas.agent_deployment_schemas import (
+    AgentDeploymentListResponse,
+    AgentDeploymentResponse,
+    DeployRequest,
+    RollbackRequest,
+)
 from taskforce.api.schemas.errors import ErrorResponse
+from taskforce.application.agent_deployment_service import (
+    AgentDeploymentService,
+    DeploymentPreflightError,
+)
+from taskforce.core.domain.agent_deployment import DeploymentEnvironment
 
 router = APIRouter()
 
 
-class DeploymentActionRequest(BaseModel):
-    """Request payload for deployment actions."""
-
-    version: str = Field(..., min_length=1)
-    environment: str = Field(default="production", min_length=1)
-    message: str | None = None
-
-
-class AgentDeploymentResponse(BaseModel):
-    """Standard deployment response for UI progress/status rendering."""
-
-    status: Literal["queued", "in_progress", "success", "failed", "rolled_back"]
-    version: str
-    environment: str
-    message: str
-    timestamp: datetime
-
-
-class AgentDeploymentListResponse(BaseModel):
-    """Deployment history response."""
-
-    deployments: list[AgentDeploymentResponse]
-
-
-_DEPLOYMENTS: dict[str, list[AgentDeploymentResponse]] = {}
-
-
-def _require_agent(agent_id: str) -> None:
-    """Validate an agent identifier before deployment actions."""
-    if not agent_id.strip():
-        raise http_exception(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            code="invalid_agent_id",
-            message="agent_id must not be empty",
-        )
-
-
-def _latest_deployment(agent_id: str) -> AgentDeploymentResponse:
-    """Return latest deployment or raise standardized 404 error."""
-    deployments = _DEPLOYMENTS.get(agent_id, [])
-    if not deployments:
-        raise http_exception(
-            status_code=status.HTTP_404_NOT_FOUND,
-            code="deployment_not_found",
-            message=f"No deployments found for agent '{agent_id}'",
-        )
-    return deployments[-1]
+def _preflight_to_http(exc: DeploymentPreflightError):
+    """Map preflight errors to standard HTTP responses."""
+    code_to_status = {
+        "agent_not_found": status.HTTP_404_NOT_FOUND,
+        "rollback_target_not_found": status.HTTP_404_NOT_FOUND,
+        "agent_not_custom": status.HTTP_409_CONFLICT,
+    }
+    return http_exception(
+        status_code=code_to_status.get(exc.code, status.HTTP_400_BAD_REQUEST),
+        code=exc.code,
+        message=exc.message,
+        details=exc.details,
+    )
 
 
 @router.post(
     "/agents/{agent_id}/deploy",
     response_model=AgentDeploymentResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    status_code=status.HTTP_200_OK,
+    summary="Deploy a custom agent",
+    description=(
+        "Validate and deploy the current definition of a custom agent. "
+        "On success the agent becomes the active version for the target "
+        "environment and is immediately available to ``POST /api/v1/execute``."
+    ),
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
 )
-def deploy_agent(agent_id: str, request: DeploymentActionRequest) -> AgentDeploymentResponse:
-    """Create a deployment record for an agent."""
-    _require_agent(agent_id)
-
-    deployment = AgentDeploymentResponse(
-        status="queued",
-        version=request.version,
-        environment=request.environment,
-        message=request.message or "Deployment queued",
-        timestamp=datetime.now(timezone.utc),
-    )
-    _DEPLOYMENTS.setdefault(agent_id, []).append(deployment)
-    return deployment
+def deploy_agent(
+    agent_id: str,
+    request: DeployRequest | None = None,
+    service: AgentDeploymentService = Depends(get_agent_deployment_service),
+) -> AgentDeploymentResponse:
+    payload = request or DeployRequest()
+    try:
+        deployment = service.deploy(
+            agent_id,
+            environment=payload.environment,
+            deployed_by=payload.deployed_by,
+            message=payload.message,
+        )
+    except DeploymentPreflightError as exc:
+        raise _preflight_to_http(exc) from exc
+    return AgentDeploymentResponse.from_domain(deployment)
 
 
 @router.post(
     "/agents/{agent_id}/rollback",
     response_model=AgentDeploymentResponse,
+    summary="Roll back to a previously deployed version",
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
 )
-def rollback_agent(agent_id: str, request: DeploymentActionRequest) -> AgentDeploymentResponse:
-    """Append a rollback record for an agent deployment."""
-    _require_agent(agent_id)
-    _latest_deployment(agent_id)
-
-    rollback = AgentDeploymentResponse(
-        status="rolled_back",
-        version=request.version,
-        environment=request.environment,
-        message=request.message or "Rollback completed",
-        timestamp=datetime.now(timezone.utc),
-    )
-    _DEPLOYMENTS.setdefault(agent_id, []).append(rollback)
-    return rollback
+def rollback_agent(
+    agent_id: str,
+    request: RollbackRequest,
+    service: AgentDeploymentService = Depends(get_agent_deployment_service),
+) -> AgentDeploymentResponse:
+    try:
+        deployment = service.rollback(
+            agent_id,
+            to_version=request.to_version,
+            environment=request.environment,
+            deployed_by=request.deployed_by,
+            message=request.message,
+        )
+    except DeploymentPreflightError as exc:
+        raise _preflight_to_http(exc) from exc
+    return AgentDeploymentResponse.from_domain(deployment)
 
 
 @router.get(
     "/agents/{agent_id}/deployments",
     response_model=AgentDeploymentListResponse,
-    responses={400: {"model": ErrorResponse}},
+    summary="List deployment history (newest first)",
 )
-def list_deployments(agent_id: str) -> AgentDeploymentListResponse:
-    """List known deployments for an agent."""
-    _require_agent(agent_id)
-    return AgentDeploymentListResponse(deployments=_DEPLOYMENTS.get(agent_id, []))
+def list_deployments(
+    agent_id: str,
+    service: AgentDeploymentService = Depends(get_agent_deployment_service),
+) -> AgentDeploymentListResponse:
+    history = service.list_history(agent_id)
+    return AgentDeploymentListResponse(
+        deployments=[AgentDeploymentResponse.from_domain(d) for d in history]
+    )
 
 
 @router.get(
     "/agents/{agent_id}/active",
     response_model=AgentDeploymentResponse,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    summary="Get the currently active deployment for an environment",
+    responses={404: {"model": ErrorResponse}},
 )
-def get_active_deployment(agent_id: str) -> AgentDeploymentResponse:
-    """Return the currently active deployment for an agent."""
-    _require_agent(agent_id)
-    return _latest_deployment(agent_id)
+def get_active_deployment(
+    agent_id: str,
+    environment: DeploymentEnvironment = Query(default=DeploymentEnvironment.LOCAL),
+    service: AgentDeploymentService = Depends(get_agent_deployment_service),
+) -> AgentDeploymentResponse:
+    deployment = service.get_active(agent_id, environment)
+    if deployment is None:
+        raise http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="deployment_not_found",
+            message=(
+                f"No active deployment found for agent '{agent_id}' "
+                f"in environment '{environment.value}'."
+            ),
+        )
+    return AgentDeploymentResponse.from_domain(deployment)

@@ -1,37 +1,49 @@
-from datetime import datetime
+"""Tests for agent deployment API schemas."""
 
-import pytest
-from pydantic import ValidationError
+from datetime import datetime, timezone
 
-from taskforce.api.schemas.agent_deployment_schemas import AgentDeploymentRequest
-from taskforce.core.domain.agent_deployment import AgentDeploymentStatus, DeploymentEnvironment
-
-
-def test_deployment_request_requires_metadata_for_deployed_status() -> None:
-    with pytest.raises(ValidationError, match="deployed status requires"):
-        AgentDeploymentRequest(
-            agent_id="writer",
-            version="1.0.0",
-            status=AgentDeploymentStatus.DEPLOYED,
-            target_environment=DeploymentEnvironment.PROD,
-            config_snapshot={"profile": "coding"},
-        )
+from taskforce.api.schemas.agent_deployment_schemas import (
+    AgentDeploymentResponse,
+    DeployRequest,
+    RollbackRequest,
+)
+from taskforce.core.domain.agent_deployment import (
+    AgentDeployment,
+    AgentDeploymentStatus,
+    DeploymentEnvironment,
+)
 
 
-def test_deployment_request_to_domain_roundtrip() -> None:
-    deployed_at = datetime.utcnow()
-    req = AgentDeploymentRequest(
+def test_deploy_request_defaults() -> None:
+    req = DeployRequest()
+    assert req.environment is DeploymentEnvironment.LOCAL
+    assert req.deployed_by is None
+    assert req.message is None
+
+
+def test_rollback_request_requires_to_version() -> None:
+    req = RollbackRequest(to_version="2024-01-01T00:00:00+00:00")
+    assert req.to_version == "2024-01-01T00:00:00+00:00"
+    assert req.environment is DeploymentEnvironment.LOCAL
+
+
+def test_response_round_trip_from_domain() -> None:
+    deployed_at = datetime.now(timezone.utc)
+    domain = AgentDeployment(
         agent_id="writer",
-        version=2,
+        version="2024-04-01",
         status=AgentDeploymentStatus.DEPLOYED,
-        target_environment=DeploymentEnvironment.STAGING,
+        environment=DeploymentEnvironment.STAGING,
         deployed_at=deployed_at,
         deployed_by="ci",
-        config_snapshot={"max_parallel_tools": 4},
+        config_snapshot={"system_prompt": "you are a writer"},
     )
 
-    deployment = req.to_domain()
+    resp = AgentDeploymentResponse.from_domain(domain)
 
-    assert deployment.version == 2
-    assert deployment.status == AgentDeploymentStatus.DEPLOYED
-    assert deployment.target_environment == DeploymentEnvironment.STAGING
+    assert resp.agent_id == "writer"
+    assert resp.version == "2024-04-01"
+    assert resp.status is AgentDeploymentStatus.DEPLOYED
+    assert resp.environment is DeploymentEnvironment.STAGING
+    assert resp.deployed_at == deployed_at
+    assert resp.config_snapshot == {"system_prompt": "you are a writer"}

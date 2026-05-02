@@ -20,11 +20,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_conversation_manager, get_executor
+from taskforce.api.dependencies import (
+    get_agent_deployment_service,
+    get_agent_registry,
+    get_conversation_manager,
+    get_executor,
+)
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.enums import EventType
@@ -454,6 +459,8 @@ class ExecuteMissionResponse(BaseModel):
 async def execute_mission(
     request: ExecuteMissionRequest = Body(..., examples=REQUEST_EXAMPLES),
     executor=Depends(get_executor),
+    registry=Depends(get_agent_registry),
+    deployment_service=Depends(get_agent_deployment_service),
 ):
     """Execute agent mission synchronously.
 
@@ -499,6 +506,19 @@ async def execute_mission(
             conv_mgr = get_conversation_manager()
             await conv_mgr.append_message(conv_id, {"role": "user", "content": request.mission})
             conversation_history = await conv_mgr.get_messages(conv_id)
+
+        if request.agent_id:
+            domain_agent = registry.get_agent(request.agent_id)
+            if domain_agent and getattr(domain_agent, "source", None) == "custom":
+                if not deployment_service.is_deployed(request.agent_id):
+                    raise _http_exception(
+                        status_code=409,
+                        code="agent_not_deployed",
+                        message=(
+                            f"Agent '{request.agent_id}' has no active deployment. "
+                            "Deploy it first via POST /api/v1/agents/{agent_id}/deploy."
+                        ),
+                    )
 
         result = await executor.execute_mission(
             mission=request.mission,
@@ -554,6 +574,8 @@ async def execute_mission(
             code="invalid_request",
             message=str(e),
         ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         # Other errors -> 500
         raise _http_exception(

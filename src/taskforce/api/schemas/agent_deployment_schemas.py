@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from taskforce.core.domain.agent_deployment import (
     AgentDeployment,
@@ -14,66 +14,58 @@ from taskforce.core.domain.agent_deployment import (
 )
 
 
-class AgentDeploymentRequest(BaseModel):
-    """Request payload for creating or updating an agent deployment."""
+class DeployRequest(BaseModel):
+    """Body for ``POST /agents/{agent_id}/deploy``.
 
-    agent_id: str = Field(..., min_length=3, max_length=64)
-    version: str | int
-    status: AgentDeploymentStatus
-    target_environment: DeploymentEnvironment
-    deployed_at: datetime | None = None
-    deployed_by: str | None = None
-    rollback_from: str | int | None = None
-    config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    All fields are optional. Defaults match the most common case
+    (deploy the current agent definition to ``local`` with no message).
+    """
 
-    @model_validator(mode="after")
-    def validate_status_fields(self) -> "AgentDeploymentRequest":
-        """Enforce status-dependent deployment fields."""
-        if self.status == AgentDeploymentStatus.DEPLOYED:
-            if self.deployed_at is None or not self.deployed_by:
-                raise ValueError(
-                    "deployed status requires deployed_at and deployed_by"
-                )
-        if self.status == AgentDeploymentStatus.ROLLED_BACK and self.rollback_from is None:
-            raise ValueError("rolled_back status requires rollback_from")
-        return self
+    environment: DeploymentEnvironment = DeploymentEnvironment.LOCAL
+    deployed_by: str | None = Field(default=None, max_length=128)
+    message: str | None = Field(default=None, max_length=512)
 
-    def to_domain(self) -> AgentDeployment:
-        """Convert request schema to domain model."""
-        return AgentDeployment(
-            agent_id=self.agent_id,
-            version=self.version,
-            status=self.status,
-            target_environment=self.target_environment,
-            deployed_at=self.deployed_at,
-            deployed_by=self.deployed_by,
-            rollback_from=self.rollback_from,
-            config_snapshot=self.config_snapshot,
-        )
+
+class RollbackRequest(BaseModel):
+    """Body for ``POST /agents/{agent_id}/rollback``."""
+
+    to_version: str = Field(..., min_length=1, max_length=128)
+    environment: DeploymentEnvironment = DeploymentEnvironment.LOCAL
+    deployed_by: str | None = Field(default=None, max_length=128)
+    message: str | None = Field(default=None, max_length=512)
 
 
 class AgentDeploymentResponse(BaseModel):
-    """Response payload representing a versioned deployment."""
+    """Single deployment record returned to the management UI."""
 
     agent_id: str
-    version: str | int
+    version: str
     status: AgentDeploymentStatus
-    target_environment: DeploymentEnvironment
+    environment: DeploymentEnvironment
     deployed_at: datetime | None = None
     deployed_by: str | None = None
-    rollback_from: str | int | None = None
-    config_snapshot: dict[str, Any]
+    message: str | None = None
+    rollback_from: str | None = None
+    error: str | None = None
+    config_snapshot: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def from_domain(cls, deployment: AgentDeployment) -> "AgentDeploymentResponse":
-        """Build API response from domain model."""
+    def from_domain(cls, deployment: AgentDeployment) -> AgentDeploymentResponse:
         return cls(
             agent_id=deployment.agent_id,
             version=deployment.version,
             status=deployment.status,
-            target_environment=deployment.target_environment,
+            environment=deployment.environment,
             deployed_at=deployment.deployed_at,
             deployed_by=deployment.deployed_by,
+            message=deployment.message,
             rollback_from=deployment.rollback_from,
+            error=deployment.error,
             config_snapshot=dict(deployment.config_snapshot),
         )
+
+
+class AgentDeploymentListResponse(BaseModel):
+    """Deployment history response."""
+
+    deployments: list[AgentDeploymentResponse]

@@ -134,7 +134,16 @@ class CustomAgentUpdate(BaseModel):
 
 
 class CustomAgentResponse(BaseModel):
-    """Response schema for custom agent (with timestamps)."""
+    """Response schema for custom agent (with timestamps).
+
+    Deployment status is *not* included here — query
+    ``GET /api/v1/agents/{agent_id}/active`` for the active deployment
+    or ``GET /api/v1/agents/{agent_id}/deployments`` for full history.
+    Keeping the agent definition and the deployment lifecycle as
+    separate resources mirrors the file layout
+    (``configs/custom/`` vs ``deployments/``) and keeps both endpoints
+    independently cacheable.
+    """
 
     source: Literal["custom"] = "custom"
     agent_id: str
