@@ -16,9 +16,11 @@ eggs/
 .eggs/
 lib/
 lib64/
-# UI-side lib directory (shadcn utils, Zustand stores) is not Python build output.
+# UI-side lib directories (shadcn utils, Zustand stores) are not Python build output.
 !ui/src/lib/
 !ui/src/lib/**
+!packages/*/src/lib/
+!packages/*/src/lib/**
 parts/
 sdist/
 var/
