@@ -138,11 +138,17 @@ class InfrastructureBuilder:
     # Agent Registry
     # -------------------------------------------------------------------------
 
-    def build_agent_registry(self):
+    def build_agent_registry(self) -> Any:
         """Build a FileAgentRegistry instance.
 
         Centralises the infrastructure import so that API-layer code
         does not need to reference infrastructure directly.
+
+        If an override is installed via
+        ``infrastructure_overrides.set_agent_registry_override``,
+        delegate to it. The override is expected to return an
+        object compatible with ``FileAgentRegistry``'s public
+        interface.
 
         Returns:
             FileAgentRegistry wired with the tool registry, base path,
@@ -150,6 +156,14 @@ class InfrastructureBuilder:
             (so butler / coding_agent / rag_agent profiles surface in
             ``GET /api/v1/agents``).
         """
+        from taskforce.application.infrastructure_overrides import (
+            get_agent_registry_override,
+        )
+
+        override = get_agent_registry_override()
+        if override is not None:
+            return override()
+
         from taskforce.application.profile_loader import get_extra_config_dirs
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
@@ -173,6 +187,11 @@ class InfrastructureBuilder:
         """
         Build state manager based on configuration.
 
+        If an override is installed via
+        ``infrastructure_overrides.set_state_manager_override``,
+        delegate to it (passing through ``config`` and
+        ``work_dir_override``).
+
         Args:
             config: Profile configuration dictionary
             work_dir_override: Optional override for work directory
@@ -183,6 +202,16 @@ class InfrastructureBuilder:
         Raises:
             ValueError: If persistence type is unknown or database URL not found
         """
+        from typing import cast
+
+        from taskforce.application.infrastructure_overrides import (
+            get_state_manager_override,
+        )
+
+        override = get_state_manager_override()
+        if override is not None:
+            return cast(StateManagerProtocol, override(config, work_dir_override))
+
         persistence_config = config.get("persistence", {})
         persistence_type = persistence_config.get("type", "file")
 
@@ -329,11 +358,15 @@ class InfrastructureBuilder:
     # Communication Gateway
     # -------------------------------------------------------------------------
 
-    def build_gateway_components(self, work_dir: str = ".taskforce"):
+    def build_gateway_components(self, work_dir: str = ".taskforce") -> Any:
         """Build Communication Gateway infrastructure components.
 
         Centralises the extensions-infrastructure import so that API-layer
         code does not reference infrastructure directly.
+
+        If an override is installed via
+        ``infrastructure_overrides.set_gateway_components_override``,
+        delegate to it.
 
         Args:
             work_dir: Working directory for conversation persistence.
@@ -341,6 +374,14 @@ class InfrastructureBuilder:
         Returns:
             GatewayComponents dataclass with stores, senders, and adapters.
         """
+        from taskforce.application.infrastructure_overrides import (
+            get_gateway_components_override,
+        )
+
+        override = get_gateway_components_override()
+        if override is not None:
+            return override(work_dir)
+
         from taskforce.infrastructure.communication.gateway_registry import (
             build_gateway_components,
         )

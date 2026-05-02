@@ -82,6 +82,7 @@ class FileAgentRegistry:
         tool_mapper: ToolMapperProtocol | None = None,
         base_path: Path | None = None,
         extra_dirs_provider: "object | None" = None,
+        custom_dir_subpath: str = "custom",
     ):
         """
         Initialize the agent registry.
@@ -99,6 +100,13 @@ class FileAgentRegistry:
                 registered via ``bootstrap_config_dirs``). When set,
                 ``list_agents`` and ``get_agent`` also discover ``*.yaml`` and
                 ``*.agent.md`` profiles in those directories.
+            custom_dir_subpath: Subpath under ``configs_dir`` where mutable
+                custom-agent YAMLs live. Defaults to ``"custom"``. External
+                packages can pass nested values (e.g. ``"custom/<scope>"``)
+                to point the registry at a per-context subdirectory without
+                forking this class. The subpath is resolved relative to
+                ``configs_dir``; callers are responsible for ensuring any
+                interpolated segments are sanitised against path traversal.
         """
         if configs_dir is None:
             detected_base = get_base_path()
@@ -114,7 +122,7 @@ class FileAgentRegistry:
         else:
             self.configs_dir = Path(configs_dir)
 
-        self.custom_dir = self.configs_dir / "custom"
+        self.custom_dir = self.configs_dir / custom_dir_subpath
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self._tool_mapper = tool_mapper
         self.base_path = base_path or self.configs_dir.parent
