@@ -17,7 +17,30 @@ from taskforce.infrastructure.llm.token_analytics_callback import (
 
 @pytest.fixture()
 def callback():
-    """Create a fresh callback and clean up after test."""
+    """Create a fresh callback and clean up after test.
+
+    Importing ``taskforce.api.server`` installs a ``TokenAnalyticsCallback``
+    at module load (so production runs always have analytics wired up).
+    When other tests in the suite touch the API server module first, the
+    global ``_active_callback`` singleton — and litellm's callback list —
+    leak into this test. Reset both at fixture setup so each test starts
+    from a clean state regardless of execution order.
+    """
+    import litellm
+
+    from taskforce.infrastructure.llm import token_analytics_callback as tac
+
+    leaked = tac._active_callback
+    if leaked is not None:
+        leaked.uninstall()
+    # Defensive: drop any stray TokenAnalyticsCallback instances that
+    # somehow detached from ``_active_callback`` but remain registered
+    # with litellm (older test interactions, double-install, etc.).
+    litellm.callbacks = [
+        c for c in litellm.callbacks if not isinstance(c, TokenAnalyticsCallback)
+    ]
+    tac._active_callback = None
+
     cb = TokenAnalyticsCallback()
     yield cb
     cb.uninstall()
