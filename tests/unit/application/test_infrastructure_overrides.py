@@ -1,0 +1,279 @@
+"""Tests for the infrastructure override hooks.
+
+The framework itself never installs an override; these tests verify
+that an external package (e.g. ``taskforce-enterprise``) can replace
+the default behaviour of selected ``InfrastructureBuilder`` methods
+without subclassing or forking the builder.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from taskforce.application.infrastructure_builder import InfrastructureBuilder
+from taskforce.application.infrastructure_overrides import (
+    clear_infrastructure_overrides,
+    get_agent_registry_override,
+    get_gateway_components_override,
+    get_state_manager_override,
+    set_agent_registry_override,
+    set_gateway_components_override,
+    set_state_manager_override,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_overrides():
+    """Reset overrides before and after each test to prevent leakage."""
+    clear_infrastructure_overrides()
+    yield
+    clear_infrastructure_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Defaults — no override installed
+# ---------------------------------------------------------------------------
+
+
+def test_defaults_are_unset() -> None:
+    """No overrides are installed by default."""
+    assert get_agent_registry_override() is None
+    assert get_state_manager_override() is None
+    assert get_gateway_components_override() is None
+
+
+def test_default_build_agent_registry_returns_file_registry() -> None:
+    """With no override installed the builder returns a FileAgentRegistry."""
+    from taskforce.infrastructure.persistence.file_agent_registry import (
+        FileAgentRegistry,
+    )
+
+    builder = InfrastructureBuilder()
+    registry = builder.build_agent_registry()
+    assert isinstance(registry, FileAgentRegistry)
+
+
+def test_default_build_state_manager_returns_file_state_manager(tmp_path) -> None:
+    """With no override the builder honours profile config."""
+    from taskforce.infrastructure.persistence.file_state_manager import (
+        FileStateManager,
+    )
+
+    builder = InfrastructureBuilder()
+    config = {"persistence": {"type": "file", "work_dir": str(tmp_path)}}
+    state_manager = builder.build_state_manager(config)
+    assert isinstance(state_manager, FileStateManager)
+
+
+# ---------------------------------------------------------------------------
+# Agent registry override
+# ---------------------------------------------------------------------------
+
+
+def test_agent_registry_override_is_invoked() -> None:
+    """When an override is installed, build_agent_registry returns its value."""
+    sentinel: Any = object()
+    calls: list[None] = []
+
+    def my_provider() -> Any:
+        calls.append(None)
+        return sentinel
+
+    set_agent_registry_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    result = builder.build_agent_registry()
+
+    assert result is sentinel
+    assert len(calls) == 1
+
+
+def test_agent_registry_override_invoked_per_call() -> None:
+    """Override is consulted on every call (no caching by the builder)."""
+    counter = {"n": 0}
+
+    def my_provider() -> Any:
+        counter["n"] += 1
+        return f"instance-{counter['n']}"
+
+    set_agent_registry_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    a = builder.build_agent_registry()
+    b = builder.build_agent_registry()
+
+    assert a == "instance-1"
+    assert b == "instance-2"
+    assert counter["n"] == 2
+
+
+def test_agent_registry_override_cleared() -> None:
+    """Setting the override to None reverts to the default behaviour."""
+    set_agent_registry_override(lambda: "first")
+
+    builder = InfrastructureBuilder()
+    assert builder.build_agent_registry() == "first"
+
+    set_agent_registry_override(None)
+
+    from taskforce.infrastructure.persistence.file_agent_registry import (
+        FileAgentRegistry,
+    )
+
+    assert isinstance(builder.build_agent_registry(), FileAgentRegistry)
+
+
+# ---------------------------------------------------------------------------
+# State manager override
+# ---------------------------------------------------------------------------
+
+
+def test_state_manager_override_receives_config_and_work_dir(tmp_path) -> None:
+    """The override receives the same arguments as the default method."""
+    received: dict[str, Any] = {}
+
+    def my_provider(config: dict[str, Any], work_dir_override: str | None) -> Any:
+        received["config"] = config
+        received["work_dir_override"] = work_dir_override
+        return "stub-state-manager"
+
+    set_state_manager_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    config = {"persistence": {"type": "file"}}
+    result = builder.build_state_manager(config, work_dir_override=str(tmp_path))
+
+    assert result == "stub-state-manager"
+    assert received["config"] == config
+    assert received["work_dir_override"] == str(tmp_path)
+
+
+def test_state_manager_override_does_not_inspect_config() -> None:
+    """The override is called even when config is malformed for the default path.
+
+    This proves the override truly short-circuits the default's config validation.
+    """
+
+    def my_provider(config: dict[str, Any], work_dir_override: str | None) -> Any:
+        return "from-override"
+
+    set_state_manager_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    # Config that would raise ValueError in the default branch
+    bad_config = {"persistence": {"type": "totally-unknown"}}
+    result = builder.build_state_manager(bad_config)
+
+    assert result == "from-override"
+
+
+# ---------------------------------------------------------------------------
+# Gateway components override
+# ---------------------------------------------------------------------------
+
+
+def test_gateway_components_override_receives_work_dir() -> None:
+    """The override receives the work_dir argument verbatim."""
+    received: dict[str, Any] = {}
+
+    def my_provider(work_dir: str) -> Any:
+        received["work_dir"] = work_dir
+        return "stub-gateway-components"
+
+    set_gateway_components_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    result = builder.build_gateway_components(work_dir=".my-work")
+
+    assert result == "stub-gateway-components"
+    assert received["work_dir"] == ".my-work"
+
+
+# ---------------------------------------------------------------------------
+# Override exceptions propagate
+# ---------------------------------------------------------------------------
+
+
+def test_agent_registry_override_exception_propagates() -> None:
+    """If the override raises, the exception bubbles out unchanged."""
+
+    class BoomError(RuntimeError):
+        pass
+
+    def my_provider() -> Any:
+        raise BoomError("override blew up")
+
+    set_agent_registry_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    with pytest.raises(BoomError, match="override blew up"):
+        builder.build_agent_registry()
+
+
+def test_state_manager_override_exception_propagates() -> None:
+    """If the override raises, the exception bubbles out unchanged."""
+
+    class BoomError(RuntimeError):
+        pass
+
+    def my_provider(config: dict[str, Any], work_dir_override: str | None) -> Any:
+        raise BoomError("state override blew up")
+
+    set_state_manager_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    with pytest.raises(BoomError, match="state override blew up"):
+        builder.build_state_manager({}, None)
+
+
+def test_gateway_components_override_exception_propagates() -> None:
+    """If the override raises, the exception bubbles out unchanged."""
+
+    class BoomError(RuntimeError):
+        pass
+
+    def my_provider(work_dir: str) -> Any:
+        raise BoomError("gateway override blew up")
+
+    set_gateway_components_override(my_provider)
+
+    builder = InfrastructureBuilder()
+    with pytest.raises(BoomError, match="gateway override blew up"):
+        builder.build_gateway_components(work_dir=".x")
+
+
+# ---------------------------------------------------------------------------
+# clear_infrastructure_overrides
+# ---------------------------------------------------------------------------
+
+
+def test_clear_resets_all_overrides() -> None:
+    """clear_infrastructure_overrides removes every installed override."""
+    set_agent_registry_override(lambda: "a")
+    set_state_manager_override(lambda c, w: "s")
+    set_gateway_components_override(lambda w: "g")
+
+    clear_infrastructure_overrides()
+
+    assert get_agent_registry_override() is None
+    assert get_state_manager_override() is None
+    assert get_gateway_components_override() is None
+
+
+def test_clear_is_idempotent() -> None:
+    """Calling clear with no overrides set is a no-op."""
+    clear_infrastructure_overrides()
+    clear_infrastructure_overrides()  # second call must not raise
+    assert get_agent_registry_override() is None
+
+
+def test_override_can_be_reinstalled_after_clear() -> None:
+    """An override can be reinstalled after a clear."""
+    set_agent_registry_override(lambda: "first")
+    clear_infrastructure_overrides()
+    set_agent_registry_override(lambda: "second")
+
+    builder = InfrastructureBuilder()
+    assert builder.build_agent_registry() == "second"

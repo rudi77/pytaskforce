@@ -64,6 +64,7 @@ class AgentRegistry:
         self,
         config_dir: Path | str | None = None,
         base_path: Path | None = None,
+        custom_dir_subpath: str = "custom",
     ) -> None:
         """
         Initialize the unified agent registry.
@@ -73,6 +74,13 @@ class AgentRegistry:
                        'src/taskforce/configs/' relative to project root.
                        Falls back to 'configs/' for backward compatibility.
             base_path: Base path for plugin discovery (defaults to config_dir parent)
+            custom_dir_subpath: Subpath under ``config_dir`` where mutable
+                custom-agent YAMLs live. Defaults to ``"custom"``. External
+                packages can pass nested values (e.g. ``"custom/<scope>"``)
+                to point the registry at a per-context subdirectory without
+                forking this class. The subpath is resolved relative to
+                ``config_dir``; callers are responsible for ensuring any
+                interpolated segments are sanitised against path traversal.
         """
         if config_dir is None:
             base_path_obj = get_base_path()
@@ -88,7 +96,7 @@ class AgentRegistry:
                 self.config_dir = new_config_dir
         else:
             self.config_dir = Path(config_dir)
-        self.custom_dir = self.config_dir / "custom"
+        self.custom_dir = self.config_dir / custom_dir_subpath
         self.custom_dir.mkdir(parents=True, exist_ok=True)
         self.base_path = base_path or self.config_dir.parent
         self._logger = logger.bind(component="AgentRegistry")
@@ -411,9 +419,7 @@ class AgentRegistry:
     # Parsing Helpers
     # -------------------------------------------------------------------------
 
-    def _parse_custom_agent_file(
-        self, yaml_file: Path, agent_id: str
-    ) -> AgentDefinition | None:
+    def _parse_custom_agent_file(self, yaml_file: Path, agent_id: str) -> AgentDefinition | None:
         """Parse a custom agent YAML file."""
         with open(yaml_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -436,9 +442,7 @@ class AgentRegistry:
                 updated_at = data["updated_at"]
 
         # Parse MCP servers
-        mcp_servers = [
-            MCPServerConfig.from_dict(s) for s in data.get("mcp_servers", [])
-        ]
+        mcp_servers = [MCPServerConfig.from_dict(s) for s in data.get("mcp_servers", [])]
 
         # Support both 'tools' and 'tool_allowlist' for backwards compatibility
         mcp_tool_filter = data.get("mcp_tool_allowlist")
@@ -571,9 +575,7 @@ class AgentRegistry:
 
     def _atomic_write_yaml(self, path: Path, data: dict[str, Any]) -> None:
         """Write YAML atomically using temp file + rename."""
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=path.parent, suffix=".tmp", prefix=".agent_"
-        )
+        temp_fd, temp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=".agent_")
         try:
             with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
                 yaml.safe_dump(

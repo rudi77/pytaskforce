@@ -1523,6 +1523,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `src/taskforce/application/skill_service.py` - Skill discovery, slash-command resolution
 - `src/taskforce/application/plugin_loader.py` - Plugin loading and discovery
 - `src/taskforce/application/infrastructure_builder.py` - Infrastructure setup
+- `src/taskforce/application/infrastructure_overrides.py` - Optional override hooks (`set_agent_registry_override`, `set_state_manager_override`, `set_gateway_components_override`) used by external packages to replace selected `InfrastructureBuilder` build methods without subclassing
 - `src/taskforce/application/sub_agent_spawner.py` - Sub-agent session spawning
 - `src/taskforce/application/conversation_manager.py` - Persistent conversation lifecycle (ADR-016)
 - `src/taskforce/application/persistent_agent_service.py` - Persistent orchestrator runtime (ADR-016)
