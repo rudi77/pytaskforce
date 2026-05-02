@@ -184,4 +184,5 @@ root/
 - Sub-agent tool specs can set `summarize_results` and `summary_max_length`; defaults in `ToolBuilder.instantiate_sub_agent_tool` now enable truncation (`summarize_results: true`) to prevent verbose sub-agent outputs from bloating orchestrator context.
 
 - CLI simple chat streaming now prints an explicit "💭 Thinking..." indicator on step start and includes compact file change previews (`Update(...)` for `edit`, `Write(...)` for `file_write`) to make in-flight modifications visible.
+- Agent deployment registry persistence now lives in `src/taskforce/infrastructure/persistence/file_agent_deployment_registry.py` and stores release metadata, per-environment active pointers, and rollback/set-active history under `.taskforce/deployments/<agent_id>/` using atomic YAML writes.
 - CLI thinking indicator is tracked per step in simple chat streaming, so each `step_start` prints a fresh `💭 Thinking...` marker even when earlier steps already emitted detailed thought events.
