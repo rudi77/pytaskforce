@@ -296,7 +296,7 @@ See [Enterprise Features](features/enterprise.md) for details on the RBAC system
 import requests
 
 response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Write a hello world in Rust",
         "agent_id": "coding_agent"
@@ -316,7 +316,7 @@ all_agents = agents_response.json()["agents"]
 
 # Execute with a plugin agent
 response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Check invoice.pdf for completeness",
         "agent_id": "accounting_agent"
@@ -343,7 +343,7 @@ create_response = requests.post(
 
 # Use the custom agent
 execute_response = requests.post(
-    "http://localhost:8000/api/v1/execution/execute",
+    "http://localhost:8000/api/v1/execute",
     json={
         "mission": "Scrape product prices from example.com",
         "agent_id": "web-scraper"
@@ -354,7 +354,7 @@ execute_response = requests.post(
 
 ### Agent Deployment Contract (Management UI)
 
-- Nach `POST /api/v1/agents` kann die UI direkt `POST /api/v1/agents/{agent_id}/deploy` aufrufen.
-- Agent responses enthalten jetzt: `deployment_status`, `deployment_active`, `active_version`, `deployed_at`, `ready_to_use`.
-- `ready_to_use=true` entspricht `deployment_status=deployed` und `deployment_active=true`.
-- `POST /api/v1/execution/execute` mit `agent_id` prüft für Custom Agents den Deploy-Status und akzeptiert nur aktive Deployments.
+- After `POST /api/v1/agents`, the UI can immediately call `POST /api/v1/agents/{agent_id}/deploy`.
+- Agent responses include: `deployment_status`, `deployment_active`, `active_version`, `deployed_at`, `ready_to_use`.
+- `ready_to_use=true` maps to `deployment_status=deployed` and `deployment_active=true`.
+- `POST /api/v1/execute` with `agent_id` checks deploy status for custom agents and accepts only active deployments.
