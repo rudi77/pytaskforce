@@ -8,6 +8,12 @@ This package contains the core domain models for the Taskforce framework:
 - Skill models
 """
 
+from taskforce.core.domain.agent_deployment import (
+    AgentDeployment,
+    AgentDeploymentStatus,
+    DeploymentEnvironment,
+    validate_unique_deployments,
+)
 from taskforce.core.domain.skill import (
     Skill,
     SkillContext,
@@ -16,6 +22,10 @@ from taskforce.core.domain.skill import (
 )
 
 __all__ = [
+    "AgentDeployment",
+    "AgentDeploymentStatus",
+    "DeploymentEnvironment",
+    "validate_unique_deployments",
     "Skill",
     "SkillContext",
     "SkillMetadataModel",
