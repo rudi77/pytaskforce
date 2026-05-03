@@ -17,9 +17,11 @@ from taskforce.application.infrastructure_overrides import (
     clear_infrastructure_overrides,
     get_agent_registry_override,
     get_gateway_components_override,
+    get_recipient_resolver_override,
     get_state_manager_override,
     set_agent_registry_override,
     set_gateway_components_override,
+    set_recipient_resolver_override,
     set_state_manager_override,
 )
 
@@ -42,6 +44,7 @@ def test_defaults_are_unset() -> None:
     assert get_agent_registry_override() is None
     assert get_state_manager_override() is None
     assert get_gateway_components_override() is None
+    assert get_recipient_resolver_override() is None
 
 
 def test_default_build_agent_registry_returns_file_registry() -> None:
@@ -254,12 +257,42 @@ def test_clear_resets_all_overrides() -> None:
     set_agent_registry_override(lambda: "a")
     set_state_manager_override(lambda c, w: "s")
     set_gateway_components_override(lambda w: "g")
+    set_recipient_resolver_override(lambda: "r")
 
     clear_infrastructure_overrides()
 
     assert get_agent_registry_override() is None
     assert get_state_manager_override() is None
     assert get_gateway_components_override() is None
+    assert get_recipient_resolver_override() is None
+
+
+# ---------------------------------------------------------------------------
+# Recipient resolver override
+# ---------------------------------------------------------------------------
+
+
+def test_recipient_resolver_override_round_trip() -> None:
+    """The recipient-resolver provider survives a get/set round-trip."""
+    sentinel: Any = object()
+
+    def my_provider() -> Any:
+        return sentinel
+
+    set_recipient_resolver_override(my_provider)
+    assert get_recipient_resolver_override() is my_provider
+
+
+def test_recipient_resolver_override_cleared_individually() -> None:
+    """Setting the override to None removes it without affecting others."""
+    set_agent_registry_override(lambda: "a")
+    set_recipient_resolver_override(lambda: "r")
+
+    set_recipient_resolver_override(None)
+
+    assert get_recipient_resolver_override() is None
+    # Other override still installed.
+    assert get_agent_registry_override() is not None
 
 
 def test_clear_is_idempotent() -> None:

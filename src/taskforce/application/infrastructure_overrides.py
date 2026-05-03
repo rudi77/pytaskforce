@@ -53,6 +53,7 @@ from typing import Any
 _agent_registry_override: Callable[[], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
 _gateway_components_override: Callable[[str], Any] | None = None
+_recipient_resolver_override: Callable[[], Any] | None = None
 
 
 def set_agent_registry_override(
@@ -98,6 +99,32 @@ def get_gateway_components_override() -> Callable[[str], Any] | None:
     return _gateway_components_override
 
 
+def set_recipient_resolver_override(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) a provider for the gateway's recipient resolver.
+
+    The provider is called once when the global ``CommunicationGateway``
+    instance is built (via ``api.dependencies.get_gateway``) and is
+    expected to return a ``RecipientResolverProtocol`` implementation.
+    When no override is installed the gateway falls back to its built-in
+    pass-through resolver (which never refuses a message), preserving
+    legacy behaviour.
+
+    External packages use this hook to inject identity-aware resolvers
+    (for example, the enterprise plugin's ``ConfigBackedRecipientResolver``
+    which maps channel-specific identities to logical recipients and
+    binds tenant context for downstream per-tenant routing).
+    """
+    global _recipient_resolver_override
+    _recipient_resolver_override = provider
+
+
+def get_recipient_resolver_override() -> Callable[[], Any] | None:
+    """Return the currently installed recipient-resolver provider, if any."""
+    return _recipient_resolver_override
+
+
 def clear_infrastructure_overrides() -> None:
     """Reset all installed overrides.
 
@@ -107,6 +134,8 @@ def clear_infrastructure_overrides() -> None:
     global _agent_registry_override
     global _state_manager_override
     global _gateway_components_override
+    global _recipient_resolver_override
     _agent_registry_override = None
     _state_manager_override = None
     _gateway_components_override = None
+    _recipient_resolver_override = None
