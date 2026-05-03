@@ -246,8 +246,14 @@ class SchedulerService:
                 "job_id": job.job_id,
                 "job_name": job.name,
                 "action": job.action.to_dict(),
+                "tenant_id": job.tenant_id,
+                "agent_id": job.agent_id,
             },
-            metadata={"schedule_type": job.schedule_type.value},
+            metadata={
+                "schedule_type": job.schedule_type.value,
+                "tenant_id": job.tenant_id,
+                "agent_id": job.agent_id,
+            },
         )
 
         logger.info(

@@ -479,11 +479,81 @@ class InfrastructureBuilder:
         Returns:
             FileWikiStore instance implementing WikiStoreProtocol.
         """
+        from taskforce.application.infrastructure_overrides import (
+            get_wiki_store_override,
+        )
+
+        override = get_wiki_store_override()
+        if override is not None:
+            return override(work_dir)
+
         from pathlib import Path
 
         from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
         return FileWikiStore(Path(work_dir) / "memory" / "wiki")
+
+    def build_conversation_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a conversation store for persistent conversations."""
+        from taskforce.application.infrastructure_overrides import (
+            get_conversation_store_override,
+        )
+
+        override = get_conversation_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.file_conversation_store import (
+            FileConversationStore,
+        )
+
+        return FileConversationStore(work_dir=work_dir)
+
+    def build_agent_state(self, work_dir: str = ".taskforce") -> Any:
+        """Build persistent singleton-agent state storage."""
+        from taskforce.application.infrastructure_overrides import (
+            get_agent_state_override,
+        )
+
+        override = get_agent_state_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.file_agent_state import FileAgentState
+
+        return FileAgentState(work_dir=work_dir)
+
+    def build_workflow_checkpoint_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build storage for workflow checkpoints."""
+        from taskforce.application.infrastructure_overrides import (
+            get_workflow_checkpoint_store_override,
+        )
+
+        override = get_workflow_checkpoint_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
+            FileWorkflowCheckpointStore,
+        )
+
+        return FileWorkflowCheckpointStore(work_dir=work_dir)
+
+    def build_workflow_definition_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build storage for first-class workflow definitions."""
+        from taskforce.application.infrastructure_overrides import (
+            get_workflow_definition_store_override,
+        )
+
+        override = get_workflow_definition_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.runtime.workflow_definition_store import (
+            FileWorkflowDefinitionStore,
+        )
+
+        return FileWorkflowDefinitionStore(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
     # Combined Infrastructure

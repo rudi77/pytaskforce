@@ -86,10 +86,15 @@ class AcpRuntime:
         *,
         session_id: str | None = None,
         stream: bool = False,
+        tenant_id: str = "default",
     ) -> AcpRunHandle:
         peer = self._peers.get(peer_name)
         if peer is None:
             raise KeyError(f"Unknown ACP peer: {peer_name!r}")
+        if peer.tenant_id != tenant_id and not peer.allow_cross_tenant:
+            raise PermissionError(
+                f"ACP peer {peer_name!r} is not reachable from tenant {tenant_id!r}"
+            )
         started_at = utc_now()
         if stream:
             status = "streamed"

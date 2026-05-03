@@ -84,3 +84,20 @@ def test_registered_manifests_is_on_server_protocol() -> None:
     rt = _runtime()
     # Should not raise; returns whatever the server tracks (empty MagicMock).
     assert rt.server.registered_manifests() == []
+
+
+@pytest.mark.asyncio
+async def test_call_rejects_cross_tenant_peer_without_opt_in() -> None:
+    peers = InMemoryPeerRegistry(
+        [AcpPeer(name="other", base_url="http://x", agent="remote-agent", tenant_id="tenant_b")]
+    )
+    server = MagicMock()
+    server.is_running = False
+    client = MagicMock()
+    client.run_sync = AsyncMock()
+    rt = AcpRuntime(server=server, client=client, peers=peers)
+
+    with pytest.raises(PermissionError):
+        await rt.call("other", "mission", tenant_id="tenant_a")
+
+    client.run_sync.assert_not_called()

@@ -2,7 +2,9 @@
 
 from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent
+from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
 from taskforce.infrastructure.runtime.workflow_checkpoint_store import FileWorkflowCheckpointStore
+from taskforce.infrastructure.runtime.workflow_definition_store import FileWorkflowDefinitionStore
 
 
 def test_create_wait_checkpoint_and_resume(tmp_path):
@@ -32,7 +34,9 @@ def test_create_wait_checkpoint_and_resume(tmp_path):
     )
 
     assert resumed.status == "resumed"
-    assert resumed.state["latest_resume_event"]["payload"]["supplier_reply"] == "USt-ID nachgereicht"
+    assert (
+        resumed.state["latest_resume_event"]["payload"]["supplier_reply"] == "USt-ID nachgereicht"
+    )
 
 
 def test_resume_rejects_missing_required_fields(tmp_path):
@@ -60,3 +64,29 @@ def test_resume_rejects_missing_required_fields(tmp_path):
         raise AssertionError("Expected ValueError")
     except ValueError as exc:
         assert "Missing required" in str(exc)
+
+
+def test_workflow_definition_crud(tmp_path):
+    checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
+    definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
+    service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
+
+    definition = WorkflowDefinition(
+        workflow_id="invoice-review",
+        name="Invoice Review",
+        steps=[
+            WorkflowStep(
+                step_id="extract",
+                agent="document_extraction",
+                task="Extract invoice fields",
+            )
+        ],
+    )
+
+    service.save_definition(definition)
+
+    loaded = service.get_definition("invoice-review")
+    assert loaded == definition
+    assert service.list_definitions() == [definition]
+    assert service.delete_definition("invoice-review") is True
+    assert service.get_definition("invoice-review") is None

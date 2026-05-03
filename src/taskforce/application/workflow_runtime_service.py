@@ -7,17 +7,50 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent, WorkflowCheckpoint
+from taskforce.core.domain.workflow_definition import WorkflowDefinition
 from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
     FileWorkflowCheckpointStore,
     validate_required_inputs,
+)
+from taskforce.infrastructure.runtime.workflow_definition_store import (
+    FileWorkflowDefinitionStore,
 )
 
 
 class WorkflowRuntimeService:
     """Create and resume workflow checkpoints."""
 
-    def __init__(self, store: FileWorkflowCheckpointStore):
+    def __init__(
+        self,
+        store: FileWorkflowCheckpointStore,
+        definition_store: FileWorkflowDefinitionStore | None = None,
+    ) -> None:
         self._store = store
+        self._definition_store = definition_store
+
+    def save_definition(self, definition: WorkflowDefinition) -> WorkflowDefinition:
+        """Persist a first-class workflow definition."""
+        if self._definition_store is None:
+            raise RuntimeError("Workflow definitions are not configured")
+        return self._definition_store.save(definition)
+
+    def get_definition(self, workflow_id: str) -> WorkflowDefinition | None:
+        """Get a workflow definition by id."""
+        if self._definition_store is None:
+            return None
+        return self._definition_store.get(workflow_id)
+
+    def list_definitions(self) -> list[WorkflowDefinition]:
+        """List workflow definitions."""
+        if self._definition_store is None:
+            return []
+        return self._definition_store.list()
+
+    def delete_definition(self, workflow_id: str) -> bool:
+        """Delete a workflow definition."""
+        if self._definition_store is None:
+            return False
+        return self._definition_store.delete(workflow_id)
 
     def create_wait_checkpoint(
         self,

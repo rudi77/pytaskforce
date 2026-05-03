@@ -113,6 +113,8 @@ def _resolve_env_auth(peer: AcpPeer) -> AcpPeer:
         base_url=peer.base_url,
         agent=peer.agent,
         description=peer.description,
+        tenant_id=peer.tenant_id,
+        allow_cross_tenant=peer.allow_cross_tenant,
         auth=AcpAuth(
             type=AcpAuthType.BEARER,
             token_env=peer.auth.token_env,
@@ -127,6 +129,8 @@ def _peer_to_dict(peer: AcpPeer) -> dict:
         "base_url": peer.base_url,
         "agent": peer.agent,
         "description": peer.description,
+        "tenant_id": peer.tenant_id,
+        "allow_cross_tenant": peer.allow_cross_tenant,
         "auth": {
             "type": peer.auth.type.value,
             "token_env": peer.auth.token_env,
@@ -150,6 +154,8 @@ def _peer_from_dict(data: dict) -> AcpPeer | None:
             base_url=str(data["base_url"]),
             agent=str(data["agent"]),
             description=str(data.get("description", "")),
+            tenant_id=str(data.get("tenant_id", "default")),
+            allow_cross_tenant=bool(data.get("allow_cross_tenant", False)),
             auth=auth,
         )
     except (KeyError, ValueError):

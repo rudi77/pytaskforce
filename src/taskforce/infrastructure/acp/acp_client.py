@@ -138,6 +138,7 @@ def _run_to_dict(run: Any, peer: AcpPeer) -> dict[str, Any]:
     return {
         "peer": peer.name,
         "agent": peer.agent,
+        "tenant_id": peer.tenant_id,
         "run_id": str(getattr(run, "run_id", "")),
         "status": str(getattr(run, "status", "completed")),
         "output_text": text,
@@ -149,6 +150,7 @@ def _event_to_dict(event: Any, peer: AcpPeer) -> dict[str, Any]:
     return {
         "peer": peer.name,
         "agent": peer.agent,
+        "tenant_id": peer.tenant_id,
         "type": type(event).__name__,
         "raw": _safe_dump(event),
     }

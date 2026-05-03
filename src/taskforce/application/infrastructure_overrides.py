@@ -52,6 +52,11 @@ from typing import Any
 # through ``InfrastructureBuilder`` consistently.
 _agent_registry_override: Callable[[], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
+_conversation_store_override: Callable[[str], Any] | None = None
+_agent_state_override: Callable[[str], Any] | None = None
+_wiki_store_override: Callable[[str], Any] | None = None
+_workflow_definition_store_override: Callable[[str], Any] | None = None
+_workflow_checkpoint_store_override: Callable[[str], Any] | None = None
 _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
 
@@ -84,6 +89,71 @@ def set_state_manager_override(
 def get_state_manager_override() -> Callable[[dict[str, Any], str | None], Any] | None:
     """Return the currently installed state-manager override, if any."""
     return _state_manager_override
+
+
+def set_conversation_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for conversation-store construction."""
+    global _conversation_store_override
+    _conversation_store_override = provider
+
+
+def get_conversation_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed conversation-store override, if any."""
+    return _conversation_store_override
+
+
+def set_agent_state_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for agent-state construction."""
+    global _agent_state_override
+    _agent_state_override = provider
+
+
+def get_agent_state_override() -> Callable[[str], Any] | None:
+    """Return the currently installed agent-state override, if any."""
+    return _agent_state_override
+
+
+def set_wiki_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for wiki-store construction."""
+    global _wiki_store_override
+    _wiki_store_override = provider
+
+
+def get_wiki_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed wiki-store override, if any."""
+    return _wiki_store_override
+
+
+def set_workflow_definition_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for workflow-definition-store construction."""
+    global _workflow_definition_store_override
+    _workflow_definition_store_override = provider
+
+
+def get_workflow_definition_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed workflow-definition-store override, if any."""
+    return _workflow_definition_store_override
+
+
+def set_workflow_checkpoint_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for workflow-checkpoint-store construction."""
+    global _workflow_checkpoint_store_override
+    _workflow_checkpoint_store_override = provider
+
+
+def get_workflow_checkpoint_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed workflow-checkpoint-store override, if any."""
+    return _workflow_checkpoint_store_override
 
 
 def set_gateway_components_override(
@@ -135,9 +205,19 @@ def clear_infrastructure_overrides() -> None:
     """
     global _agent_registry_override
     global _state_manager_override
+    global _conversation_store_override
+    global _agent_state_override
+    global _wiki_store_override
+    global _workflow_definition_store_override
+    global _workflow_checkpoint_store_override
     global _gateway_components_override
     global _workspace_context_provider
     _agent_registry_override = None
     _state_manager_override = None
+    _conversation_store_override = None
+    _agent_state_override = None
+    _wiki_store_override = None
+    _workflow_definition_store_override = None
+    _workflow_checkpoint_store_override = None
     _gateway_components_override = None
     _workspace_context_provider = None

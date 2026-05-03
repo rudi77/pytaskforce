@@ -80,10 +80,14 @@ class TestSchedulerServiceLifecycle:
             schedule_type=ScheduleType.CRON,
             expression="0 8 * * *",
             action=ScheduleAction(ScheduleActionType.EXECUTE_MISSION),
+            tenant_id="acme",
+            agent_id="accountant",
         )
         await svc.add_job(job)
         jobs = await svc.list_jobs()
         assert len(jobs) == 1 and jobs[0].name == "briefing"
+        assert jobs[0].tenant_id == "acme"
+        assert jobs[0].agent_id == "accountant"
 
     async def test_remove_job(self, tmp_path: Path) -> None:
         svc = SchedulerService(work_dir=str(tmp_path))
@@ -139,6 +143,8 @@ class TestSchedulerServiceLifecycle:
             assert len(fired) == 1
             assert fired[0].event_type == AgentEventType.SCHEDULE_TRIGGERED
             assert fired[0].payload["job_id"] == job.job_id
+            assert fired[0].payload["tenant_id"] == "default"
+            assert fired[0].payload["agent_id"] == "default"
             # Cleaned up from memory and disk
             assert await svc.get_job(job.job_id) is None
         finally:

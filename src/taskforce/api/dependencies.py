@@ -161,12 +161,10 @@ def get_inbound_adapters() -> dict[str, Any]:
 def get_conversation_manager():
     """Provide a ConversationManager instance backed by file storage."""
     from taskforce.application.conversation_manager import ConversationManager
-    from taskforce.infrastructure.persistence.file_conversation_store import (
-        FileConversationStore,
-    )
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-    store = FileConversationStore(work_dir=work_dir)
+    store = InfrastructureBuilder().build_conversation_store(work_dir=work_dir)
     return ConversationManager(store)
 
 
@@ -186,10 +184,10 @@ def get_request_queue():
 @lru_cache(maxsize=1)
 def get_workflow_runtime_service():
     """Provide a shared WorkflowRuntimeService instance."""
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
     from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
-    from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
-        FileWorkflowCheckpointStore,
-    )
 
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-    return WorkflowRuntimeService(FileWorkflowCheckpointStore(work_dir=work_dir))
+    store = InfrastructureBuilder().build_workflow_checkpoint_store(work_dir=work_dir)
+    definition_store = InfrastructureBuilder().build_workflow_definition_store(work_dir=work_dir)
+    return WorkflowRuntimeService(store, definition_store=definition_store)

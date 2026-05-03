@@ -12,6 +12,7 @@ from taskforce.api.errors import http_exception
 from taskforce.application.factory import AgentFactory
 from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent
+from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
 
 router = APIRouter(prefix="/workflows")
 
@@ -41,6 +42,92 @@ class ResumeAndContinueRequest(ResumeWorkflowRequest):
     """Payload for resuming and immediately continuing workflow execution."""
 
     profile: str = Field(default="butler")
+
+
+class WorkflowStepRequest(BaseModel):
+    """API payload for one workflow step."""
+
+    step_id: str = Field(..., min_length=1)
+    agent: str = Field(..., min_length=1)
+    task: str = Field(..., min_length=1)
+    depends_on: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDefinitionRequest(BaseModel):
+    """API payload for saving a workflow definition."""
+
+    workflow_id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    description: str = ""
+    trigger: str = "manual"
+    steps: list[WorkflowStepRequest] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+def _workflow_from_request(request: WorkflowDefinitionRequest) -> WorkflowDefinition:
+    return WorkflowDefinition(
+        workflow_id=request.workflow_id,
+        name=request.name,
+        description=request.description,
+        trigger=request.trigger,
+        steps=[
+            WorkflowStep(
+                step_id=step.step_id,
+                agent=step.agent,
+                task=step.task,
+                depends_on=step.depends_on,
+                metadata=step.metadata,
+            )
+            for step in request.steps
+        ],
+        metadata=request.metadata,
+    )
+
+
+@router.get("/definitions")
+def list_workflow_definitions(
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+) -> dict[str, Any]:
+    """List first-class workflow definitions."""
+    return {
+        "success": True,
+        "workflows": [definition.to_dict() for definition in service.list_definitions()],
+    }
+
+
+@router.post("/definitions")
+def save_workflow_definition(
+    request: WorkflowDefinitionRequest,
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+) -> dict[str, Any]:
+    """Create or update a first-class workflow definition."""
+    definition = service.save_definition(_workflow_from_request(request))
+    return {"success": True, "workflow": definition.to_dict()}
+
+
+@router.get("/definitions/{workflow_id}")
+def get_workflow_definition(
+    workflow_id: str,
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+) -> dict[str, Any]:
+    """Get a first-class workflow definition."""
+    definition = service.get_definition(workflow_id)
+    if definition is None:
+        raise http_exception(404, f"Workflow definition not found: {workflow_id}", code="not_found")
+    return {"success": True, "workflow": definition.to_dict()}
+
+
+@router.delete("/definitions/{workflow_id}")
+def delete_workflow_definition(
+    workflow_id: str,
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+) -> dict[str, Any]:
+    """Delete a first-class workflow definition."""
+    deleted = service.delete_definition(workflow_id)
+    if not deleted:
+        raise http_exception(404, f"Workflow definition not found: {workflow_id}", code="not_found")
+    return {"success": True, "deleted": True}
 
 
 @router.post("/wait")

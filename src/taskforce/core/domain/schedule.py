@@ -70,6 +70,8 @@ class ScheduleJob:
         expression: Schedule expression ("0 8 * * *" for cron, "15m" for interval,
                     ISO datetime for one_shot).
         action: What to do when the schedule fires.
+        tenant_id: Tenant scope for enterprise runtimes (defaults to "default").
+        agent_id: Agent scope that owns the job (defaults to "default").
         enabled: Whether the job is active.
         created_at: When the job was created.
         last_run: When the job last executed (None if never).
@@ -83,6 +85,8 @@ class ScheduleJob:
     action: ScheduleAction = field(
         default_factory=lambda: ScheduleAction(ScheduleActionType.SEND_NOTIFICATION)
     )
+    tenant_id: str = "default"
+    agent_id: str = "default"
     enabled: bool = True
     created_at: datetime = field(default_factory=utc_now)
     last_run: datetime | None = None
@@ -96,6 +100,8 @@ class ScheduleJob:
             "schedule_type": self.schedule_type.value,
             "expression": self.expression,
             "action": self.action.to_dict(),
+            "tenant_id": self.tenant_id,
+            "agent_id": self.agent_id,
             "enabled": self.enabled,
             "created_at": self.created_at.isoformat(),
             "last_run": self.last_run.isoformat() if self.last_run else None,
@@ -115,6 +121,8 @@ class ScheduleJob:
             schedule_type=ScheduleType(data.get("schedule_type", "cron")),
             expression=str(data.get("expression", "")),
             action=ScheduleAction.from_dict(data.get("action", {})),
+            tenant_id=str(data.get("tenant_id", "default")),
+            agent_id=str(data.get("agent_id", "default")),
             enabled=bool(data.get("enabled", True)),
             created_at=datetime.fromisoformat(created_raw) if created_raw else utc_now(),
             last_run=datetime.fromisoformat(last_raw) if last_raw else None,

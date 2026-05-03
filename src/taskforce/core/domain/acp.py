@@ -43,6 +43,8 @@ class AcpPeer:
     agent: str
     auth: AcpAuth = field(default_factory=AcpAuth)
     description: str = ""
+    tenant_id: str = "default"
+    allow_cross_tenant: bool = False
 
 
 @dataclass(frozen=True)
