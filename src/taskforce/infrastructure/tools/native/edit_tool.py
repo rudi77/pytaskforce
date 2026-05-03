@@ -5,11 +5,14 @@ Provides surgical file editing via exact string replacement, similar to Claude C
 This approach ensures precise, predictable edits without regex complexity or accidental changes.
 """
 
-from pathlib import Path
 from typing import Any
 
 from taskforce.core.domain.errors import ToolError, tool_error_payload
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.core.interfaces.workspace import (
+    WorkspaceTraversalError,
+    resolve_workspace_path,
+)
 
 
 class EditTool(ToolProtocol):
@@ -128,7 +131,10 @@ class EditTool(ToolProtocol):
             - error: Error message if failed
         """
         try:
-            path = Path(file_path)
+            try:
+                path = resolve_workspace_path(file_path)
+            except WorkspaceTraversalError as exc:
+                return {"success": False, "error": str(exc)}
 
             # Validate file exists
             if not path.exists():
