@@ -52,11 +52,10 @@ if _get_token_analytics() is None:
     _TokenAnalyticsCallback().install()
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exception_handlers import http_exception_handler
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
+from taskforce.api.exception_handlers import taskforce_http_exception_handler
 from taskforce.api.routes import (
     acp,
     agent_deployments,
@@ -90,16 +89,6 @@ from taskforce.application.plugin_loader import (
 from taskforce.application.tracing_facade import init_tracing, shutdown_tracing
 
 logger = structlog.get_logger()
-
-
-async def taskforce_http_exception_handler(
-    request: Request,
-    exc: HTTPException,
-) -> JSONResponse:
-    """Return standardized error responses for Taskforce exceptions."""
-    if exc.headers and exc.headers.get("X-Taskforce-Error") == "1" and isinstance(exc.detail, dict):
-        return JSONResponse(status_code=exc.status_code, content=exc.detail)
-    return await http_exception_handler(request, exc)
 
 
 @asynccontextmanager
@@ -188,9 +177,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
     app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
     app.include_router(agent_deployments.router, prefix="/api/v1", tags=["agent-deployments"])
-    app.include_router(
-        agent_templates.router, prefix="/api/v1", tags=["agent-templates"]
-    )
+    app.include_router(agent_templates.router, prefix="/api/v1", tags=["agent-templates"])
     app.include_router(tools.router, prefix="/api/v1", tags=["tools"])
     app.include_router(gateway.router, prefix="/api/v1", tags=["gateway"])
     app.include_router(health.router, tags=["health"])
@@ -201,9 +188,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"])
     app.include_router(skills.router, prefix="/api/v1", tags=["skills"])
     app.include_router(llm.router, prefix="/api/v1", tags=["llm"])
-    app.include_router(
-        planning_strategies.router, prefix="/api/v1", tags=["planning"]
-    )
+    app.include_router(planning_strategies.router, prefix="/api/v1", tags=["planning"])
     app.include_router(files.router, prefix="/api/v1", tags=["files"])
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(runs.router, prefix="/api/v1", tags=["runs"])

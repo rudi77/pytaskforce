@@ -18,6 +18,7 @@ Note:
     global skill discovery and browsing is needed.
 """
 
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -30,6 +31,56 @@ from taskforce.infrastructure.skills.skill_registry import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+# ------------------------------------------------------------------
+# Module-level extra skill directory registry
+#
+# Mirrors :func:`taskforce.application.profile_loader.register_config_dir`.
+# Host applications and plugins call :func:`register_skill_dir` at startup
+# to make additional skills discoverable to the singleton ``SkillService``.
+# ------------------------------------------------------------------
+
+_extra_skill_dirs: list[Path] = []
+
+
+def register_skill_dir(path: str | Path) -> None:
+    """Register an additional directory to search for skills.
+
+    Paths are resolved to absolute form so ``"./foo"`` and ``"foo"``
+    deduplicate to the same entry. Mirrors the behaviour of
+    :func:`taskforce.application.profile_loader.register_config_dir`.
+
+    If a singleton :class:`SkillService` already exists, the directory is
+    also added to its registry and a refresh is triggered so the new
+    skills become visible without a restart. **Host applications that
+    want their skills available before any agent runs should call this
+    BEFORE the first** :func:`get_skill_service` **/** ``AgentFactory``
+    **call**, otherwise the skills only appear after the late-registration
+    refresh.
+
+    Duplicate paths are silently ignored.
+    """
+    resolved = Path(path).expanduser().resolve()
+    if resolved in _extra_skill_dirs:
+        return
+    _extra_skill_dirs.append(resolved)
+    logger.debug("skill_dir_registered", path=str(resolved))
+
+    # Late registration — propagate to live singleton if one exists.
+    if _skill_service is not None:
+        if _skill_service.registry.add_directory(resolved):
+            _skill_service.refresh()
+
+
+def get_extra_skill_dirs() -> list[Path]:
+    """Return all skill directories registered via :func:`register_skill_dir`."""
+    return list(_extra_skill_dirs)
+
+
+def clear_extra_skill_dirs() -> None:
+    """Remove all registered extra skill directories (testing helper)."""
+    _extra_skill_dirs.clear()
 
 
 class SkillService:
@@ -130,9 +181,7 @@ class SkillService:
             ValueError: If command_input does not start with "/".
         """
         if not command_input.startswith("/"):
-            raise ValueError(
-                f"Expected command starting with '/': {command_input!r}"
-            )
+            raise ValueError(f"Expected command starting with '/': {command_input!r}")
 
         stripped = command_input.lstrip("/")
         parts = stripped.split(maxsplit=1)
@@ -358,8 +407,16 @@ def get_skill_service(
     """
     global _skill_service
     if _skill_service is None:
+        # Merge globally registered extra dirs (from register_skill_dir)
+        # with caller-provided ones so host apps don't need to inject them
+        # at every call site.
+        merged = list(skill_directories or [])
+        for extra in _extra_skill_dirs:
+            extra_str = str(extra)
+            if extra_str not in merged:
+                merged.append(extra_str)
         _skill_service = SkillService(
-            skill_directories=skill_directories,
+            skill_directories=merged or None,
             extension_directories=extension_directories,
         )
     return _skill_service

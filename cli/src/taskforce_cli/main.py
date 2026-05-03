@@ -3,8 +3,6 @@
 import typer
 from rich.console import Console
 
-from taskforce.api.cli.env_loader import load_dotenv_if_present
-
 # Framework commands (always available)
 from taskforce.api.cli.commands import (
     chat,
@@ -14,6 +12,10 @@ from taskforce.api.cli.commands import (
     skills,
     tools,
 )
+from taskforce.api.cli.env_loader import load_dotenv_if_present
+
+# CLI-package-local commands
+from taskforce_cli.commands import serve
 
 load_dotenv_if_present()
 
@@ -34,6 +36,7 @@ app.add_typer(tools.app, name="tools", help="Tool management")
 app.add_typer(skills.app, name="skills", help="Skill management")
 app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(memory.app, name="memory", help="Memory management")
+app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
 
 # --- Agent commands (optional, loaded if packages installed) ---
 
