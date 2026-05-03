@@ -121,6 +121,9 @@ def get_gateway():
     ``SendNotificationTool`` receives a gateway reference at instantiation).
     """
     from taskforce.application.gateway import CommunicationGateway
+    from taskforce.application.infrastructure_overrides import (
+        get_recipient_resolver_override,
+    )
     from taskforce.infrastructure.persistence.pending_channel_store import (
         FilePendingChannelQuestionStore,
     )
@@ -129,6 +132,13 @@ def get_gateway():
     executor = get_executor()
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     conversation_manager = get_conversation_manager()
+
+    # When a plugin installed a recipient-resolver provider, build the
+    # resolver now so it can be passed to the gateway constructor. The
+    # framework's pass-through default kicks in when no override is set.
+    resolver_provider = get_recipient_resolver_override()
+    recipient_resolver = resolver_provider() if resolver_provider is not None else None
+
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
@@ -136,6 +146,7 @@ def get_gateway():
         outbound_senders=components.outbound_senders,
         pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
         conversation_manager=conversation_manager,
+        recipient_resolver=recipient_resolver,
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed
