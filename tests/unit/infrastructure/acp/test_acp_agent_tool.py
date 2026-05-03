@@ -79,3 +79,25 @@ async def test_call_acp_agent_stream_collects_events() -> None:
     assert result["stream"] is True
     assert len(result["events"]) == 2
     assert result["output_text"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_call_acp_agent_enforces_runtime_tenant_policy() -> None:
+    peers = InMemoryPeerRegistry(
+        [AcpPeer(name="other", base_url="http://x", agent="a1", tenant_id="tenant_b")]
+    )
+    fake_server = MagicMock()
+    fake_server.is_running = False
+    client = _FakeClient()
+    runtime = AcpRuntime(
+        server=fake_server,
+        client=client,
+        peers=peers,
+        tenant_id_provider=lambda: "tenant_a",
+    )
+    tool = AcpAgentTool(runtime)
+
+    result = await tool.execute(peer="other", mission="do X")
+
+    assert result["success"] is False
+    client.run_sync.assert_not_called()

@@ -11,6 +11,7 @@ unchanged. Nothing in the core or main infrastructure wiring depends on
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import structlog
@@ -45,6 +46,7 @@ class AcpService:
         config: AcpConfigSchema,
         *,
         work_dir: str = ".taskforce",
+        tenant_id_provider: Callable[[], str] | None = None,
     ) -> None:
         self._config = config
         self._work_dir = work_dir
@@ -54,6 +56,7 @@ class AcpService:
             host=config.server.host,
             port=config.server.port,
             peers=self._peers,
+            tenant_id_provider=tenant_id_provider,
         )
         self._bus: MessageBusProtocol | None = None
 
@@ -167,6 +170,7 @@ def build_acp_service(
     config: dict[str, Any] | AcpConfigSchema | None,
     *,
     work_dir: str = ".taskforce",
+    tenant_id_provider: Callable[[], str] | None = None,
 ) -> AcpService | None:
     """Factory used by higher-level builders / CLI commands."""
     if config is None:
@@ -174,7 +178,7 @@ def build_acp_service(
     if isinstance(config, dict):
         config = AcpConfigSchema(**config)
     # Even when disabled, still build peers so the CLI can list them.
-    return AcpService(config, work_dir=work_dir)
+    return AcpService(config, work_dir=work_dir, tenant_id_provider=tenant_id_provider)
 
 
 def acp_server_schema_from_dict(data: dict[str, Any]) -> AcpServerSchema:
@@ -262,11 +266,7 @@ async def ping_peer(
         }
 
     headers: dict[str, str] = {}
-    if (
-        resolved.auth
-        and resolved.auth.type == AcpAuthType.BEARER
-        and resolved.auth.token
-    ):
+    if resolved.auth and resolved.auth.type == AcpAuthType.BEARER and resolved.auth.token:
         headers["Authorization"] = f"Bearer {resolved.auth.token}"
 
     target = resolved.base_url.rstrip("/")
@@ -274,9 +274,7 @@ async def ping_peer(
     try:
         import aiohttp
 
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             try:
                 async with session.head(target, headers=headers) as resp:
                     status = resp.status
@@ -293,9 +291,7 @@ async def ping_peer(
         # peer requires auth, 401/403 is *not* a success: the user thinks
         # they are reachable when they're really seeing an auth rejection
         # (typically because ``token_env`` points at an unset env var).
-        requires_auth = (
-            resolved.auth is not None and resolved.auth.type != AcpAuthType.NONE
-        )
+        requires_auth = resolved.auth is not None and resolved.auth.type != AcpAuthType.NONE
         if requires_auth and status in (401, 403):
             return {
                 "ok": False,
@@ -304,8 +300,7 @@ async def ping_peer(
                 "agent": resolved.agent,
                 "base_url": resolved.base_url,
                 "error": (
-                    f"auth rejected ({status}) — check token_env / token "
-                    f"for peer '{name}'"
+                    f"auth rejected ({status}) — check token_env / token " f"for peer '{name}'"
                 ),
             }
         ok = status < 500
@@ -343,6 +338,8 @@ def _peer_from_schema(schema: AcpPeerSchema) -> AcpPeer:
         base_url=schema.base_url,
         agent=schema.agent,
         description=schema.description,
+        tenant_id=schema.tenant_id,
+        allow_cross_tenant=schema.allow_cross_tenant,
         auth=auth,
     )
 
@@ -364,7 +361,13 @@ def build_acp_runtime_for_tools(
     raw = base_config.get("acp")
     if not raw:
         return None
-    service = build_acp_service(raw, work_dir=work_dir)
+    from taskforce.application.infrastructure_overrides import get_acp_tenant_id_provider
+
+    service = build_acp_service(
+        raw,
+        work_dir=work_dir,
+        tenant_id_provider=get_acp_tenant_id_provider(),
+    )
     if service is None or not service.list_peers():
         return None
     return service.runtime

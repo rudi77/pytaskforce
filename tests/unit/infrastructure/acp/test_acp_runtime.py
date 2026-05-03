@@ -69,6 +69,7 @@ async def test_call_returns_run_id_and_status() -> None:
     assert handle.peer == "p"
     assert handle.agent == "remote-agent"
     assert handle.status == "completed"
+    assert handle.result["output_text"] == "hi"
 
 
 def test_register_agent_delegates_to_server() -> None:
@@ -101,3 +102,24 @@ async def test_call_rejects_cross_tenant_peer_without_opt_in() -> None:
         await rt.call("other", "mission", tenant_id="tenant_a")
 
     client.run_sync.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_call_uses_tenant_provider_for_cross_tenant_check() -> None:
+    peers = InMemoryPeerRegistry(
+        [AcpPeer(name="same", base_url="http://x", agent="remote-agent", tenant_id="tenant_a")]
+    )
+    server = MagicMock()
+    server.is_running = False
+    client = MagicMock()
+    client.run_sync = AsyncMock(return_value={"run_id": "r-3", "status": "completed"})
+    rt = AcpRuntime(
+        server=server,
+        client=client,
+        peers=peers,
+        tenant_id_provider=lambda: "tenant_a",
+    )
+
+    handle = await rt.call("same", "mission")
+
+    assert handle.run_id == "r-3"

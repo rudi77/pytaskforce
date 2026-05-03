@@ -113,6 +113,7 @@ class AcpRuntimeProtocol(Protocol):
         *,
         session_id: str | None = None,
         stream: bool = False,
+        tenant_id: str | None = None,
     ) -> AcpRunHandle:
         """High-level helper: resolve peer by name and run mission."""
         ...

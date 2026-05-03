@@ -74,29 +74,21 @@ class AcpAgentTool(BaseTool):
             )
 
         try:
-            if stream:
-                events: list[dict[str, Any]] = []
-                async for event in self._runtime.client.run_stream(
-                    peer, mission, session_id=session_id
-                ):
-                    events.append(event)
-                final_text = _last_text(events)
-                return {
-                    "success": True,
-                    "peer": peer.name,
-                    "agent": peer.agent,
-                    "stream": True,
-                    "events": events,
-                    "output_text": final_text,
-                }
-            result = await self._runtime.client.run_sync(peer, mission, session_id=session_id)
+            result = await self._runtime.call(
+                peer.name,
+                mission,
+                session_id=session_id,
+                stream=stream,
+            )
             return {
                 "success": True,
-                "peer": peer.name,
-                "agent": peer.agent,
-                "run_id": result.get("run_id"),
-                "status": result.get("status"),
-                "output_text": result.get("output_text", ""),
+                "peer": result.peer,
+                "agent": result.agent,
+                "stream": stream,
+                "run_id": result.run_id,
+                "status": result.status,
+                "events": result.result.get("events", []) if stream else [],
+                "output_text": result.result.get("output_text", ""),
             }
         except Exception as exc:  # pragma: no cover - exercised via mock failure
             logger.warning("acp.tool.call_failed", peer=peer_name, error=str(exc))
@@ -106,13 +98,3 @@ class AcpAgentTool(BaseTool):
                     details={"peer": peer_name, "cause": type(exc).__name__},
                 )
             )
-
-
-def _last_text(events: list[dict[str, Any]]) -> str:
-    for event in reversed(events):
-        raw = event.get("raw")
-        if isinstance(raw, dict):
-            text = raw.get("output_text")
-            if isinstance(text, str) and text:
-                return text
-    return ""

@@ -59,6 +59,7 @@ _workflow_definition_store_override: Callable[[str], Any] | None = None
 _workflow_checkpoint_store_override: Callable[[str], Any] | None = None
 _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
+_acp_tenant_id_provider: Callable[[], str] | None = None
 
 
 def set_agent_registry_override(
@@ -197,6 +198,17 @@ def get_workspace_context_provider() -> Callable[[], Any] | None:
     return _workspace_context_provider
 
 
+def set_acp_tenant_id_provider(provider: Callable[[], str] | None) -> None:
+    """Install (or clear) a provider for ACP caller tenant context."""
+    global _acp_tenant_id_provider
+    _acp_tenant_id_provider = provider
+
+
+def get_acp_tenant_id_provider() -> Callable[[], str] | None:
+    """Return the currently installed ACP tenant provider, if any."""
+    return _acp_tenant_id_provider
+
+
 def clear_infrastructure_overrides() -> None:
     """Reset all installed overrides.
 
@@ -212,6 +224,7 @@ def clear_infrastructure_overrides() -> None:
     global _workflow_checkpoint_store_override
     global _gateway_components_override
     global _workspace_context_provider
+    global _acp_tenant_id_provider
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -221,3 +234,4 @@ def clear_infrastructure_overrides() -> None:
     _workflow_checkpoint_store_override = None
     _gateway_components_override = None
     _workspace_context_provider = None
+    _acp_tenant_id_provider = None

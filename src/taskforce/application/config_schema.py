@@ -239,6 +239,8 @@ class AcpPeerSchema(BaseModel):
     base_url: str = Field(..., min_length=1)
     agent: str = Field(..., min_length=1)
     description: str = Field("", max_length=1024)
+    tenant_id: str = Field("default", min_length=1)
+    allow_cross_tenant: bool = False
     auth: AcpAuthSchema = Field(default_factory=AcpAuthSchema)
 
 

@@ -65,6 +65,7 @@ class AcpRunHandle:
     peer: str
     status: str
     started_at: datetime = field(default_factory=_utc_now)
+    result: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

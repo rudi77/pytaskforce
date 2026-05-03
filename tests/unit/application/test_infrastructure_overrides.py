@@ -15,10 +15,12 @@ import pytest
 from taskforce.application.infrastructure_builder import InfrastructureBuilder
 from taskforce.application.infrastructure_overrides import (
     clear_infrastructure_overrides,
+    get_acp_tenant_id_provider,
     get_agent_registry_override,
     get_gateway_components_override,
     get_state_manager_override,
     get_workspace_context_provider,
+    set_acp_tenant_id_provider,
     set_agent_registry_override,
     set_gateway_components_override,
     set_state_manager_override,
@@ -45,6 +47,7 @@ def test_defaults_are_unset() -> None:
     assert get_state_manager_override() is None
     assert get_gateway_components_override() is None
     assert get_workspace_context_provider() is None
+    assert get_acp_tenant_id_provider() is None
 
 
 def test_default_build_agent_registry_returns_file_registry() -> None:
@@ -91,6 +94,16 @@ def test_agent_registry_override_is_invoked() -> None:
 
     assert result is sentinel
     assert len(calls) == 1
+
+
+def test_acp_tenant_id_provider_round_trip() -> None:
+    """ACP tenant provider can be installed and cleared."""
+    set_acp_tenant_id_provider(lambda: "tenant_a")
+    assert get_acp_tenant_id_provider()() == "tenant_a"
+
+    clear_infrastructure_overrides()
+
+    assert get_acp_tenant_id_provider() is None
 
 
 def test_agent_registry_override_invoked_per_call() -> None:

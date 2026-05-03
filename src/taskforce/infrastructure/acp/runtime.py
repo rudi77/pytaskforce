@@ -34,10 +34,12 @@ class AcpRuntime:
         peers: AcpPeerRegistryProtocol | None = None,
         host: str = "0.0.0.0",
         port: int = 8800,
+        tenant_id_provider: Callable[[], str] | None = None,
     ) -> None:
         self._server: AcpServerProtocol = server or AcpServer(host=host, port=port)
         self._client: AcpClientProtocol = client or AcpClient()
         self._peers: AcpPeerRegistryProtocol = peers or InMemoryPeerRegistry()
+        self._tenant_id_provider = tenant_id_provider
         self._started = False
 
     @property
@@ -86,20 +88,23 @@ class AcpRuntime:
         *,
         session_id: str | None = None,
         stream: bool = False,
-        tenant_id: str = "default",
+        tenant_id: str | None = None,
     ) -> AcpRunHandle:
         peer = self._peers.get(peer_name)
         if peer is None:
             raise KeyError(f"Unknown ACP peer: {peer_name!r}")
-        if peer.tenant_id != tenant_id and not peer.allow_cross_tenant:
+        caller_tenant_id = tenant_id or self._current_tenant_id()
+        if peer.tenant_id != caller_tenant_id and not peer.allow_cross_tenant:
             raise PermissionError(
-                f"ACP peer {peer_name!r} is not reachable from tenant {tenant_id!r}"
+                f"ACP peer {peer_name!r} is not reachable from tenant {caller_tenant_id!r}"
             )
         started_at = utc_now()
         if stream:
             status = "streamed"
             run_id = ""
+            events: list[dict[str, Any]] = []
             async for event in self._client.run_stream(peer, mission, session_id=session_id):
+                events.append(event)
                 run_id = (
                     str(event.get("raw", {}).get("run_id", run_id))
                     if isinstance(event.get("raw"), dict)
@@ -111,6 +116,7 @@ class AcpRuntime:
                 peer=peer.name,
                 status=status,
                 started_at=started_at,
+                result={"events": events, "output_text": _last_text(events)},
             )
         result = await self._client.run_sync(peer, mission, session_id=session_id)
         return AcpRunHandle(
@@ -119,4 +125,21 @@ class AcpRuntime:
             peer=peer.name,
             status=str(result.get("status", "completed")),
             started_at=started_at,
+            result=result,
         )
+
+    def _current_tenant_id(self) -> str:
+        """Return caller tenant from host integration, falling back to default."""
+        if self._tenant_id_provider is None:
+            return "default"
+        return self._tenant_id_provider() or "default"
+
+
+def _last_text(events: list[dict[str, Any]]) -> str:
+    for event in reversed(events):
+        raw = event.get("raw")
+        if isinstance(raw, dict):
+            text = raw.get("output_text")
+            if isinstance(text, str) and text:
+                return text
+    return ""
