@@ -18,9 +18,11 @@ from taskforce.application.infrastructure_overrides import (
     get_agent_registry_override,
     get_gateway_components_override,
     get_state_manager_override,
+    get_workspace_context_provider,
     set_agent_registry_override,
     set_gateway_components_override,
     set_state_manager_override,
+    set_workspace_context_provider,
 )
 
 
@@ -42,6 +44,7 @@ def test_defaults_are_unset() -> None:
     assert get_agent_registry_override() is None
     assert get_state_manager_override() is None
     assert get_gateway_components_override() is None
+    assert get_workspace_context_provider() is None
 
 
 def test_default_build_agent_registry_returns_file_registry() -> None:
@@ -254,12 +257,39 @@ def test_clear_resets_all_overrides() -> None:
     set_agent_registry_override(lambda: "a")
     set_state_manager_override(lambda c, w: "s")
     set_gateway_components_override(lambda w: "g")
+    set_workspace_context_provider(lambda: "w")
 
     clear_infrastructure_overrides()
 
     assert get_agent_registry_override() is None
     assert get_state_manager_override() is None
     assert get_gateway_components_override() is None
+    assert get_workspace_context_provider() is None
+
+
+# ---------------------------------------------------------------------------
+# Workspace context provider
+# ---------------------------------------------------------------------------
+
+
+def test_workspace_context_provider_round_trip() -> None:
+    sentinel: Any = object()
+
+    def my_provider() -> Any:
+        return sentinel
+
+    set_workspace_context_provider(my_provider)
+    assert get_workspace_context_provider() is my_provider
+
+
+def test_workspace_context_provider_cleared_individually() -> None:
+    set_agent_registry_override(lambda: "a")
+    set_workspace_context_provider(lambda: "w")
+
+    set_workspace_context_provider(None)
+
+    assert get_workspace_context_provider() is None
+    assert get_agent_registry_override() is not None
 
 
 def test_clear_is_idempotent() -> None:

@@ -4,7 +4,6 @@ Unit tests for File Tools
 Tests FileReadTool and FileWriteTool functionality.
 """
 
-
 import pytest
 
 from taskforce.infrastructure.tools.native.file_tools import (
@@ -152,9 +151,7 @@ class TestFileWriteTool:
         old_content = "Old content"
         test_file.write_text(old_content)
 
-        result = await tool.execute(
-            path=str(test_file), content="New content", backup=True
-        )
+        result = await tool.execute(path=str(test_file), content="New content", backup=True)
 
         assert result["success"] is True
         assert result["backed_up"] is True
@@ -169,9 +166,7 @@ class TestFileWriteTool:
         test_file = tmp_path / "test.txt"
         test_file.write_text("Old content")
 
-        result = await tool.execute(
-            path=str(test_file), content="New content", backup=False
-        )
+        result = await tool.execute(path=str(test_file), content="New content", backup=False)
 
         assert result["success"] is True
         assert result["backed_up"] is False
@@ -185,9 +180,7 @@ class TestFileWriteTool:
         test_file = tmp_path / "log.md"
         test_file.write_text("# Log\n")
 
-        result = await tool.execute(
-            path=str(test_file), content="- entry 1\n", mode="append"
-        )
+        result = await tool.execute(path=str(test_file), content="- entry 1\n", mode="append")
 
         assert result["success"] is True
         assert result["mode"] == "append"
@@ -199,9 +192,7 @@ class TestFileWriteTool:
         """Test appending to a non-existent file creates it."""
         test_file = tmp_path / "new_log.md"
 
-        result = await tool.execute(
-            path=str(test_file), content="first line\n", mode="append"
-        )
+        result = await tool.execute(path=str(test_file), content="first line\n", mode="append")
 
         assert result["success"] is True
         assert test_file.exists()
@@ -239,3 +230,94 @@ class TestFileWriteTool:
         assert valid is False
         assert "content" in error
 
+
+# ----------------------------------------------------------------------
+# Workspace path scoping (ADR-022 §5)
+# ----------------------------------------------------------------------
+
+
+class TestFileToolsWorkspaceScoping:
+    """Tools resolve paths against the active workspace, if any."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_workspace(self):
+        from taskforce.core.interfaces.workspace import set_workspace_context
+
+        set_workspace_context(None)
+        yield
+        set_workspace_context(None)
+
+    @pytest.fixture
+    def workspace(self, tmp_path):
+        """Install a workspace context rooted at tmp_path."""
+        from dataclasses import dataclass
+        from pathlib import Path
+
+        from taskforce.core.interfaces.workspace import set_workspace_context
+
+        @dataclass
+        class _Ctx:
+            _root: Path
+
+            def root(self) -> Path:
+                return self._root
+
+        set_workspace_context(_Ctx(tmp_path))
+        return tmp_path
+
+    @pytest.mark.asyncio
+    async def test_file_read_respects_workspace_root(self, workspace):
+        target = workspace / "doc.md"
+        target.write_text("hello", encoding="utf-8")
+
+        tool = FileReadTool()
+        result = await tool.execute(path="doc.md")
+
+        assert result["success"] is True
+        assert result["content"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_file_read_rejects_traversal(self, workspace):
+        # Create a file outside the workspace that the agent tries to read.
+        outside = workspace.parent / "secret.txt"
+        outside.write_text("classified", encoding="utf-8")
+
+        tool = FileReadTool()
+        result = await tool.execute(path="../secret.txt")
+
+        assert result["success"] is False
+        assert "escapes workspace" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_file_write_respects_workspace_root(self, workspace):
+        tool = FileWriteTool()
+        result = await tool.execute(path="output.log", content="line1")
+
+        assert result["success"] is True
+        assert (workspace / "output.log").read_text() == "line1"
+
+    @pytest.mark.asyncio
+    async def test_file_write_rejects_absolute_outside_root(self, workspace, tmp_path):
+        outside = tmp_path.parent / "evil.txt"
+        tool = FileWriteTool()
+        result = await tool.execute(path=str(outside), content="x")
+
+        assert result["success"] is False
+        assert "escapes workspace" in result["error"]
+        assert not outside.exists()
+
+    @pytest.mark.asyncio
+    async def test_no_context_keeps_legacy_behaviour(self, tmp_path):
+        """Without a workspace context the tools behave as before."""
+        from taskforce.core.interfaces.workspace import set_workspace_context
+
+        set_workspace_context(None)
+
+        target = tmp_path / "anywhere.md"
+        target.write_text("fine", encoding="utf-8")
+
+        tool = FileReadTool()
+        # Absolute path with no scoping → success.
+        result = await tool.execute(path=str(target))
+        assert result["success"] is True
+        assert result["content"] == "fine"

@@ -4,10 +4,13 @@ File System Tools
 Provides safe file reading and writing operations with size limits and backup support.
 """
 
-from pathlib import Path
 from typing import Any
 
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
+from taskforce.core.interfaces.workspace import (
+    WorkspaceTraversalError,
+    resolve_workspace_path,
+)
 from taskforce.infrastructure.tools.base_tool import BaseTool
 
 
@@ -51,7 +54,10 @@ class FileReadTool(BaseTool):
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Read file contents safely with size limits and encoding detection."""
-        file_path = Path(path)
+        try:
+            file_path = resolve_workspace_path(path)
+        except WorkspaceTraversalError as exc:
+            return {"success": False, "error": str(exc)}
 
         if not file_path.exists():
             return {"success": False, "error": f"File not found: {path}"}
@@ -156,7 +162,10 @@ class FileWriteTool(BaseTool):
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Write or append content to a file with backup and safety checks."""
-        file_path = Path(path)
+        try:
+            file_path = resolve_workspace_path(path)
+        except WorkspaceTraversalError as exc:
+            return {"success": False, "error": str(exc)}
 
         # Create parent directories
         file_path.parent.mkdir(parents=True, exist_ok=True)

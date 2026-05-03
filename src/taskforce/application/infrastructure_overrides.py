@@ -53,6 +53,7 @@ from typing import Any
 _agent_registry_override: Callable[[], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
 _gateway_components_override: Callable[[str], Any] | None = None
+_workspace_context_provider: Callable[[], Any] | None = None
 
 
 def set_agent_registry_override(
@@ -98,6 +99,34 @@ def get_gateway_components_override() -> Callable[[str], Any] | None:
     return _gateway_components_override
 
 
+def set_workspace_context_provider(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) a per-request workspace-context factory.
+
+    Unlike the store-related overrides above, the workspace provider
+    is **not** consulted by ``InfrastructureBuilder``. It is consumed
+    by the agent execution path (typically before each tool call) to
+    populate :func:`taskforce.core.interfaces.workspace.set_workspace_context`
+    so path-aware tools (``file_read``, ``file_write``, ``edit``,
+    etc.) resolve relative paths against the agent's writable
+    workspace and reject ``..`` traversal.
+
+    The provider is a zero-argument callable returning either a
+    :class:`taskforce.core.interfaces.workspace.WorkspaceContextProtocol`
+    instance or ``None``. Returning ``None`` keeps the framework's
+    default (no scoping) for that call — useful for system agents or
+    background jobs that legitimately need the host filesystem.
+    """
+    global _workspace_context_provider
+    _workspace_context_provider = provider
+
+
+def get_workspace_context_provider() -> Callable[[], Any] | None:
+    """Return the currently installed workspace-context provider, if any."""
+    return _workspace_context_provider
+
+
 def clear_infrastructure_overrides() -> None:
     """Reset all installed overrides.
 
@@ -107,6 +136,8 @@ def clear_infrastructure_overrides() -> None:
     global _agent_registry_override
     global _state_manager_override
     global _gateway_components_override
+    global _workspace_context_provider
     _agent_registry_override = None
     _state_manager_override = None
     _gateway_components_override = None
+    _workspace_context_provider = None
