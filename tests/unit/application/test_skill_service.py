@@ -13,8 +13,14 @@ import pytest
 
 from taskforce.application.skill_service import (
     SkillService,
+    clear_extra_skill_dirs,
+    get_extra_skill_dirs,
     get_skill_service,
+    get_writable_skill_root,
+    refresh_dynamic_skill_dirs,
     reset_skill_service,
+    set_skill_dir_provider,
+    set_writable_skill_root_provider,
 )
 from taskforce.core.domain.enums import SkillType
 from taskforce.core.domain.skill import Skill, SkillMetadataModel
@@ -94,6 +100,7 @@ def _make_mock_registry(
     registry.get_skill_by_slash_name.side_effect = lambda sn: skill_map.get(
         slash_index.get(sn.lower(), "")
     )
+    registry.add_directory.return_value = True
     registry.directories = []
 
     return registry
@@ -175,6 +182,30 @@ class TestSkillServiceBasics:
         svc = _make_service([])
         svc.refresh()
         svc.registry.refresh.assert_called_once()
+
+    def test_dynamic_skill_dir_provider_refreshes_live_registry(self, tmp_path) -> None:
+        """Dynamic skill dirs are added to the live singleton registry."""
+        clear_extra_skill_dirs()
+        reset_skill_service()
+        service = _make_service([])
+        with patch("taskforce.application.skill_service._skill_service", service):
+            tenant_dir = tmp_path / "tenants" / "acme" / "skills"
+            set_skill_dir_provider(lambda: [tenant_dir])
+
+            refresh_dynamic_skill_dirs()
+
+            service.registry.add_directory.assert_called_with(tenant_dir.resolve())
+            service.registry.refresh.assert_called_once()
+            assert tenant_dir.resolve() in get_extra_skill_dirs()
+
+    def test_writable_skill_root_provider_overrides_default(self, tmp_path) -> None:
+        """Writable skill root can be supplied by host integrations."""
+        clear_extra_skill_dirs()
+        tenant_root = tmp_path / "tenants" / "acme" / "skills"
+        set_writable_skill_root_provider(lambda: tenant_root)
+
+        assert get_writable_skill_root(tmp_path) == tenant_root.resolve()
+        clear_extra_skill_dirs()
 
 
 # ---------------------------------------------------------------------------
@@ -433,9 +464,7 @@ class TestSingleton:
     def test_get_skill_service_returns_same_instance(self) -> None:
         """get_skill_service returns the same instance on repeated calls."""
         reset_skill_service()
-        with patch(
-            "taskforce.application.skill_service.create_skill_registry"
-        ) as mock_create:
+        with patch("taskforce.application.skill_service.create_skill_registry") as mock_create:
             mock_create.return_value = _make_mock_registry()
             svc1 = get_skill_service()
             svc2 = get_skill_service()
@@ -444,9 +473,7 @@ class TestSingleton:
     def test_reset_skill_service_clears_singleton(self) -> None:
         """reset_skill_service causes get_skill_service to create new instance."""
         reset_skill_service()
-        with patch(
-            "taskforce.application.skill_service.create_skill_registry"
-        ) as mock_create:
+        with patch("taskforce.application.skill_service.create_skill_registry") as mock_create:
             mock_create.return_value = _make_mock_registry()
             svc1 = get_skill_service()
             reset_skill_service()

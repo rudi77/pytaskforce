@@ -18,6 +18,7 @@ Note:
     global skill discovery and browsing is needed.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,8 @@ logger = structlog.get_logger(__name__)
 # ------------------------------------------------------------------
 
 _extra_skill_dirs: list[Path] = []
+_skill_dir_provider: Callable[[], list[Path]] | None = None
+_writable_skill_root_provider: Callable[[], Path] | None = None
 
 
 def register_skill_dir(path: str | Path) -> None:
@@ -73,14 +76,63 @@ def register_skill_dir(path: str | Path) -> None:
             _skill_service.refresh()
 
 
+def set_skill_dir_provider(provider: Callable[[], list[str | Path]] | None) -> None:
+    """Set a dynamic provider for per-request skill directories."""
+
+    global _skill_dir_provider
+    if provider is None:
+        _skill_dir_provider = None
+        return
+
+    def _resolved_provider() -> list[Path]:
+        return [Path(path).expanduser().resolve() for path in provider()]
+
+    _skill_dir_provider = _resolved_provider
+
+
+def set_writable_skill_root_provider(provider: Callable[[], str | Path] | None) -> None:
+    """Set the writable root used by API-created skills."""
+    global _writable_skill_root_provider
+    if provider is None:
+        _writable_skill_root_provider = None
+        return
+
+    def _resolved_provider() -> Path:
+        return Path(provider()).expanduser().resolve()
+
+    _writable_skill_root_provider = _resolved_provider
+
+
 def get_extra_skill_dirs() -> list[Path]:
     """Return all skill directories registered via :func:`register_skill_dir`."""
-    return list(_extra_skill_dirs)
+    dynamic_dirs = _skill_dir_provider() if _skill_dir_provider is not None else []
+    return list(dict.fromkeys([*_extra_skill_dirs, *dynamic_dirs]))
+
+
+def refresh_dynamic_skill_dirs() -> None:
+    """Add dynamic provider directories to the live singleton, then refresh."""
+    if _skill_service is None:
+        return
+    changed = False
+    for directory in get_extra_skill_dirs():
+        changed = _skill_service.registry.add_directory(directory) or changed
+    if changed:
+        _skill_service.refresh()
+
+
+def get_writable_skill_root(default_work_dir: str | Path = ".taskforce") -> Path:
+    """Return the directory under which API-created skills should be stored."""
+    if _writable_skill_root_provider is not None:
+        return _writable_skill_root_provider()
+    return Path(default_work_dir).expanduser().resolve() / "skills"
 
 
 def clear_extra_skill_dirs() -> None:
     """Remove all registered extra skill directories (testing helper)."""
+    global _skill_dir_provider, _writable_skill_root_provider
     _extra_skill_dirs.clear()
+    _skill_dir_provider = None
+    _writable_skill_root_provider = None
 
 
 class SkillService:
@@ -411,7 +463,7 @@ def get_skill_service(
         # with caller-provided ones so host apps don't need to inject them
         # at every call site.
         merged = list(skill_directories or [])
-        for extra in _extra_skill_dirs:
+        for extra in get_extra_skill_dirs():
             extra_str = str(extra)
             if extra_str not in merged:
                 merged.append(extra_str)

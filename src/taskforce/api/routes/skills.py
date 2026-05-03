@@ -19,7 +19,12 @@ from pydantic import BaseModel, Field
 
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.application.profile_loader import _split_agent_md_frontmatter
-from taskforce.application.skill_service import get_skill_service, register_skill_dir
+from taskforce.application.skill_service import (
+    get_skill_service,
+    get_writable_skill_root,
+    refresh_dynamic_skill_dirs,
+    register_skill_dir,
+)
 
 router = APIRouter()
 
@@ -109,6 +114,7 @@ def _skill_body(path_str: str | None) -> str:
 )
 def list_skills() -> SkillListResponse:
     """Return every skill discovered by the global SkillService."""
+    refresh_dynamic_skill_dirs()
     service = get_skill_service()
     skills = [_to_summary(meta) for meta in service.get_all_metadata()]
     skills.sort(key=lambda s: s.name)
@@ -135,13 +141,14 @@ def write_skill(request: SkillWriteRequest) -> SkillSummary:
             message=f"Invalid skill name: {request.name}",
         )
 
-    work_dir = Path(os.getenv("TASKFORCE_WORK_DIR", ".taskforce"))
-    skill_dir = work_dir / "skills" / normalised
+    skill_root = get_writable_skill_root(os.getenv("TASKFORCE_WORK_DIR", ".taskforce"))
+    skill_dir = skill_root / normalised
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_file = skill_dir / "SKILL.md"
     skill_file.write_text(request.content, encoding="utf-8")
 
-    register_skill_dir(work_dir / "skills")
+    register_skill_dir(skill_root)
+    refresh_dynamic_skill_dirs()
     service = get_skill_service()
     service.refresh()
     metadata = None
@@ -168,6 +175,7 @@ def write_skill(request: SkillWriteRequest) -> SkillSummary:
 )
 def get_skill(name: str) -> SkillDetail:
     """Return the parsed skill metadata plus the SKILL.md body."""
+    refresh_dynamic_skill_dirs()
     service = get_skill_service()
     metadata = None
     for meta in service.get_all_metadata():
