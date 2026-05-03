@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent, WorkflowCheckpoint
-from taskforce.core.domain.workflow_definition import WorkflowDefinition
+from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
 from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
     FileWorkflowCheckpointStore,
     validate_required_inputs,
@@ -51,6 +51,13 @@ class WorkflowRuntimeService:
         if self._definition_store is None:
             return False
         return self._definition_store.delete(workflow_id)
+
+    def ordered_steps(self, workflow_id: str) -> list[WorkflowStep]:
+        """Return workflow steps in dependency order."""
+        definition = self.get_definition(workflow_id)
+        if definition is None:
+            raise ValueError(f"Workflow definition not found: {workflow_id}")
+        return _order_steps(definition.steps)
 
     def create_wait_checkpoint(
         self,
@@ -111,3 +118,34 @@ class WorkflowRuntimeService:
     def get(self, run_id: str) -> WorkflowCheckpoint | None:
         """Get checkpoint by run ID."""
         return self._store.get(run_id)
+
+
+def _order_steps(steps: list[WorkflowStep]) -> list[WorkflowStep]:
+    """Topologically order workflow steps and reject missing deps/cycles."""
+    by_id = {step.step_id: step for step in steps}
+    if len(by_id) != len(steps):
+        raise ValueError("Workflow contains duplicate step IDs")
+    for step in steps:
+        missing = [dep for dep in step.depends_on if dep not in by_id]
+        if missing:
+            raise ValueError(f"Workflow step '{step.step_id}' depends on missing steps: {missing}")
+
+    ordered: list[WorkflowStep] = []
+    temporary: set[str] = set()
+    permanent: set[str] = set()
+
+    def visit(step: WorkflowStep) -> None:
+        if step.step_id in permanent:
+            return
+        if step.step_id in temporary:
+            raise ValueError(f"Workflow contains a dependency cycle at step '{step.step_id}'")
+        temporary.add(step.step_id)
+        for dependency_id in step.depends_on:
+            visit(by_id[dependency_id])
+        temporary.remove(step.step_id)
+        permanent.add(step.step_id)
+        ordered.append(step)
+
+    for step in steps:
+        visit(step)
+    return ordered

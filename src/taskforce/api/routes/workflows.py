@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_factory, get_workflow_runtime_service
+from taskforce.api.dependencies import get_executor, get_factory, get_workflow_runtime_service
 from taskforce.api.errors import http_exception
 from taskforce.application.factory import AgentFactory
 from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
@@ -63,6 +63,12 @@ class WorkflowDefinitionRequest(BaseModel):
     trigger: str = "manual"
     steps: list[WorkflowStepRequest] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunWorkflowDefinitionRequest(BaseModel):
+    """Payload for running a stored workflow definition."""
+
+    session_id: str | None = None
 
 
 def _workflow_from_request(request: WorkflowDefinitionRequest) -> WorkflowDefinition:
@@ -128,6 +134,51 @@ def delete_workflow_definition(
     if not deleted:
         raise http_exception(404, f"Workflow definition not found: {workflow_id}", code="not_found")
     return {"success": True, "deleted": True}
+
+
+@router.post("/definitions/{workflow_id}/run")
+async def run_workflow_definition(
+    workflow_id: str,
+    request: RunWorkflowDefinitionRequest,
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+    executor=Depends(get_executor),
+) -> dict[str, Any]:
+    """Run a first-class workflow definition sequentially by dependency order."""
+    try:
+        steps = service.ordered_steps(workflow_id)
+    except ValueError as exc:
+        raise http_exception(400, str(exc), code="invalid_workflow") from exc
+
+    results: dict[str, dict[str, Any]] = {}
+    for step in steps:
+        mission = _mission_for_step(step, results)
+        execution = await executor.execute_mission(
+            mission=mission,
+            profile=step.agent,
+            session_id=request.session_id,
+        )
+        results[step.step_id] = {
+            "step_id": step.step_id,
+            "agent": step.agent,
+            "status": getattr(execution, "status", "completed"),
+            "final_message": getattr(execution, "final_message", ""),
+        }
+
+    return {
+        "success": True,
+        "workflow_id": workflow_id,
+        "steps": list(results.values()),
+    }
+
+
+def _mission_for_step(step: WorkflowStep, results: dict[str, dict[str, Any]]) -> str:
+    if not step.depends_on:
+        return step.task
+    dependency_lines = [
+        f"- {dependency_id}: {results[dependency_id].get('final_message', '')}"
+        for dependency_id in step.depends_on
+    ]
+    return f"{step.task}\n\nDependency results:\n" + "\n".join(dependency_lines)
 
 
 @router.post("/wait")
