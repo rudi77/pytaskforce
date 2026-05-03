@@ -3,6 +3,12 @@
 This guide explains how to connect Taskforce to external chat providers such as
 **Telegram**, **Microsoft Teams**, and other channels via the **Communication Gateway**.
 
+> **Looking to embed Taskforce in your application?** The [Integration Guide](integration-guide.md)
+> covers the three integration modes (library / CLI / webservice), the public
+> `taskforce.host` API, and end-to-end recipes for production deployments.
+> This page focuses on the *channel side* — how the gateway talks to providers
+> like Telegram and Teams once Taskforce is running.
+
 > For **agent-to-agent** interoperability over the Agent Communication
 > Protocol (ACP) — another Taskforce deployment, BeeAI, or any ACP-compliant
 > framework — see the dedicated guide: [ACP integration](features/acp.md)
