@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from taskforce.api.dependencies import get_executor, get_factory, get_workflow_runtime_service
 from taskforce.api.errors import http_exception
+from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent
@@ -120,7 +121,11 @@ def get_workflow_definition(
     """Get a first-class workflow definition."""
     definition = service.get_definition(workflow_id)
     if definition is None:
-        raise http_exception(404, f"Workflow definition not found: {workflow_id}", code="not_found")
+        raise http_exception(
+            status_code=404,
+            code="not_found",
+            message=f"Workflow definition not found: {workflow_id}",
+        )
     return {"success": True, "workflow": definition.to_dict()}
 
 
@@ -132,7 +137,11 @@ def delete_workflow_definition(
     """Delete a first-class workflow definition."""
     deleted = service.delete_definition(workflow_id)
     if not deleted:
-        raise http_exception(404, f"Workflow definition not found: {workflow_id}", code="not_found")
+        raise http_exception(
+            status_code=404,
+            code="not_found",
+            message=f"Workflow definition not found: {workflow_id}",
+        )
     return {"success": True, "deleted": True}
 
 
@@ -141,13 +150,13 @@ async def run_workflow_definition(
     workflow_id: str,
     request: RunWorkflowDefinitionRequest,
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
-    executor=Depends(get_executor),
+    executor: AgentExecutor = Depends(get_executor),
 ) -> dict[str, Any]:
     """Run a first-class workflow definition sequentially by dependency order."""
     try:
         steps = service.ordered_steps(workflow_id)
     except ValueError as exc:
-        raise http_exception(400, str(exc), code="invalid_workflow") from exc
+        raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
 
     results: dict[str, dict[str, Any]] = {}
     for step in steps:
@@ -215,7 +224,9 @@ def get_checkpoint(
     """Get workflow checkpoint by run id."""
     checkpoint = service.get(run_id)
     if checkpoint is None:
-        raise http_exception(404, f"Workflow run not found: {run_id}", code="not_found")
+        raise http_exception(
+            status_code=404, code="not_found", message=f"Workflow run not found: {run_id}"
+        )
     return {"success": True, "checkpoint": checkpoint.to_dict()}
 
 
@@ -235,7 +246,7 @@ def resume_workflow(
     try:
         checkpoint = service.resume(event)
     except ValueError as exc:
-        raise http_exception(400, str(exc), code="invalid_request") from exc
+        raise http_exception(status_code=400, code="invalid_request", message=str(exc)) from exc
 
     return {
         "success": True,
@@ -263,19 +274,23 @@ async def resume_and_continue_workflow(
     try:
         checkpoint = service.resume(event)
     except ValueError as exc:
-        raise http_exception(400, str(exc), code="invalid_request") from exc
+        raise http_exception(status_code=400, code="invalid_request", message=str(exc)) from exc
 
     if not checkpoint.session_id:
         raise http_exception(
-            400,
-            "Checkpoint is missing session_id; cannot continue automatically",
+            status_code=400,
             code="invalid_request",
+            message="Checkpoint is missing session_id; cannot continue automatically",
         )
 
     agent = await factory.create_agent(profile=request.profile)
     tool = agent.tools.get("activate_skill")
     if tool is None:
-        raise http_exception(500, "activate_skill tool is not available", code="tool_error")
+        raise http_exception(
+            status_code=500,
+            code="tool_error",
+            message="activate_skill tool is not available",
+        )
 
     execution = await tool.execute(
         skill_name=checkpoint.workflow_name,

@@ -180,6 +180,24 @@ tools:
     name: coding_planner
 ```
 
+### ACP Peers
+
+Profiles that include `call_acp_agent` can declare remote peers:
+
+```yaml
+acp:
+  peers:
+    - name: researcher
+      base_url: http://localhost:8801
+      agent: researcher
+      tenant_id: default
+      allow_cross_tenant: false
+      auth:
+        type: none
+```
+
+`tenant_id` and `allow_cross_tenant` are optional and default to `default` and `false`. Enterprise runtimes can provide the caller tenant dynamically; cross-tenant ACP calls are denied unless the peer explicitly opts in with `allow_cross_tenant: true`.
+
 ### MCP Servers
 
 ```yaml

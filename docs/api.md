@@ -124,10 +124,25 @@ response = requests.post(
 print(response.json())
 ```
 
+### Skills
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/skills` | List discovered skills |
+| `POST` | `/api/v1/skills` | Create or replace a `SKILL.md` file and refresh discovery |
+| `GET` | `/api/v1/skills/{name}` | Read one skill's metadata and body |
+
+`POST /api/v1/skills` writes under `${TASKFORCE_WORK_DIR}/skills/<name>/SKILL.md` by default. Host integrations can override the writable skill root and discovery directories, which is how enterprise runtimes route skills under the active tenant.
+
 ### Workflow Resume (Human-in-the-Loop)
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/v1/workflows/definitions` | List stored workflow definitions |
+| `POST` | `/api/v1/workflows/definitions` | Create or replace a workflow definition |
+| `GET` | `/api/v1/workflows/definitions/{workflow_id}` | Fetch a workflow definition |
+| `DELETE` | `/api/v1/workflows/definitions/{workflow_id}` | Delete a workflow definition |
+| `POST` | `/api/v1/workflows/definitions/{workflow_id}/run` | Execute a stored workflow definition in dependency order |
 | `POST` | `/api/v1/workflows/wait` | Persist a waiting checkpoint |
 | `GET` | `/api/v1/workflows/{run_id}` | Fetch checkpoint state |
 | `POST` | `/api/v1/workflows/{run_id}/resume` | Submit resume payload, transition to `resumed` |

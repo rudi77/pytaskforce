@@ -95,7 +95,7 @@ taskforce chat --plugin examples/accounting_agent
 - **Butler Agent** (optional): Event-driven personal assistant daemon with scheduling, rules,
   and Google Workspace integration — shipped in the `taskforce-butler` package.
 - **Persistent Agents**: Sessionless orchestrator architecture with durable conversations (ADR-016).
-- **Resumable HITL Workflows**: Durable wait/resume checkpoints with workflow APIs (`/api/v1/workflows/*`).
+- **First-Class Workflows**: Durable wait/resume checkpoints plus stored workflow definitions that can be run through `/api/v1/workflows/*`.
 - **Long-Term Memory**: Session-persistent memory with human-like consolidation (forgetting curves, spaced repetition) and a generative dreaming engine (ADR-014).
 - **ACP Support**: Remote-agent invocation over the Agent Communication Protocol (ADR-018).
 - **Enterprise Ready**: Optional `taskforce-enterprise` add-on for RBAC, multi-tenancy, and compliance.
