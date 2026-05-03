@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import structlog
 
@@ -91,8 +92,9 @@ class SchedulerService:
         self,
         work_dir: str = ".taskforce",
         event_callback: Callable[[AgentEvent], Awaitable[None]] | None = None,
+        job_store: Any | None = None,
     ) -> None:
-        self._store = FileJobStore(work_dir)
+        self._store = job_store or FileJobStore(work_dir)
         self._event_callback = event_callback
         self._jobs: dict[str, ScheduleJob] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}

@@ -72,7 +72,35 @@ class TestNextCronOccurrence:
             _next_cron_occurrence("too few fields", datetime.now(UTC))
 
 
+class InMemoryJobStore:
+    """Minimal job-store fake for injection tests."""
+
+    def __init__(self) -> None:
+        self.jobs: dict[str, ScheduleJob] = {}
+
+    async def save(self, job: ScheduleJob) -> None:
+        self.jobs[job.job_id] = job
+
+    async def load(self, job_id: str) -> ScheduleJob | None:
+        return self.jobs.get(job_id)
+
+    async def load_all(self) -> list[ScheduleJob]:
+        return list(self.jobs.values())
+
+    async def delete(self, job_id: str) -> bool:
+        return self.jobs.pop(job_id, None) is not None
+
+
 class TestSchedulerServiceLifecycle:
+    async def test_uses_injected_job_store(self) -> None:
+        store = InMemoryJobStore()
+        svc = SchedulerService(job_store=store)
+        job = ScheduleJob(name="briefing", schedule_type=ScheduleType.CRON, expression="0 8 * * *")
+
+        await svc.add_job(job)
+
+        assert await store.load(job.job_id) == job
+
     async def test_add_job_persists_and_lists(self, tmp_path: Path) -> None:
         svc = SchedulerService(work_dir=str(tmp_path))
         job = ScheduleJob(
