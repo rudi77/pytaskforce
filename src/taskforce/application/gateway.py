@@ -541,6 +541,7 @@ class CommunicationGateway:
                 success=False,
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
                 error=f"No outbound sender configured for channel '{request.channel}'",
             )
 
@@ -552,6 +553,7 @@ class CommunicationGateway:
                 success=False,
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
                 error=f"Recipient '{request.recipient_id}' not registered on '{request.channel}'",
             )
 
@@ -585,24 +587,28 @@ class CommunicationGateway:
                 "gateway.notification.sent",
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
                 attachments=len(request.attachments),
             )
             return NotificationResult(
                 success=True,
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
             )
         except Exception as exc:
             self._logger.error(
                 "gateway.notification.failed",
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
                 error=str(exc),
             )
             return NotificationResult(
                 success=False,
                 channel=request.channel,
                 recipient_id=request.recipient_id,
+                tenant_id=request.tenant_id,
                 error=str(exc),
             )
 
@@ -616,26 +622,46 @@ class CommunicationGateway:
         channel: str,
         message: str,
         metadata: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
     ) -> list[NotificationResult]:
         """Send a message to all registered recipients on a channel.
+
+        ADR-022 §4: when ``tenant_id`` is supplied the broadcast is
+        filtered to recipients whose stored reference carries the
+        matching ``tenant_id``. With ``tenant_id=None`` the legacy
+        single-tenant behaviour applies (every registered recipient
+        receives the message). Each :class:`NotificationResult` carries
+        the originating tenant id so audit logs can group deliveries.
 
         Args:
             channel: Target channel.
             message: Message text.
             metadata: Optional channel-specific formatting.
+            tenant_id: When provided, only recipients registered with a
+                matching ``tenant_id`` field on their reference receive
+                the broadcast.
 
         Returns:
             List of NotificationResult, one per recipient.
         """
+        scope_tenant_id = tenant_id or "default"
         recipients = await self._recipient_registry.list_recipients(channel)
         results: list[NotificationResult] = []
         for user_id in recipients:
+            if tenant_id is not None:
+                reference = await self._recipient_registry.resolve(
+                    channel=channel, user_id=user_id
+                )
+                ref_tenant = (reference or {}).get("tenant_id", "default")
+                if ref_tenant != tenant_id:
+                    continue
             result = await self.send_notification(
                 NotificationRequest(
                     channel=channel,
                     recipient_id=user_id,
                     message=message,
                     metadata=metadata or {},
+                    tenant_id=scope_tenant_id,
                 )
             )
             results.append(result)

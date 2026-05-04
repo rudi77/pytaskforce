@@ -1285,3 +1285,73 @@ async def test_handle_message_without_mention_uses_default_agent() -> None:
 
     assert lookup.calls == []  # No mention → no lookup call.
     assert captured["agent_id"] == "default-agent"
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §4: tenant-aware outbound notifications + broadcast
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_notification_records_tenant_id_in_result(gateway_parts) -> None:
+    gateway, store, registry, sender = gateway_parts
+    await registry.register(
+        channel="telegram", user_id="user-1", reference={"conversation_id": "chat-1"}
+    )
+
+    result = await gateway.send_notification(
+        NotificationRequest(
+            channel="telegram",
+            recipient_id="user-1",
+            message="hi",
+            tenant_id="tenant-acme",
+        )
+    )
+
+    assert result.success is True
+    assert result.tenant_id == "tenant-acme"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_without_tenant_reaches_all_recipients(gateway_parts) -> None:
+    gateway, store, registry, sender = gateway_parts
+    await registry.register(
+        channel="telegram", user_id="u1", reference={"conversation_id": "c1", "tenant_id": "a"}
+    )
+    await registry.register(
+        channel="telegram", user_id="u2", reference={"conversation_id": "c2", "tenant_id": "b"}
+    )
+
+    results = await gateway.broadcast(channel="telegram", message="hi")
+
+    delivered = {r.recipient_id for r in results if r.success}
+    assert delivered == {"u1", "u2"}
+
+
+@pytest.mark.asyncio
+async def test_broadcast_with_tenant_filters_recipients(gateway_parts) -> None:
+    gateway, store, registry, sender = gateway_parts
+    await registry.register(
+        channel="telegram", user_id="u1", reference={"conversation_id": "c1", "tenant_id": "a"}
+    )
+    await registry.register(
+        channel="telegram", user_id="u2", reference={"conversation_id": "c2", "tenant_id": "b"}
+    )
+
+    results = await gateway.broadcast(channel="telegram", message="hi", tenant_id="a")
+
+    assert len(results) == 1
+    assert results[0].recipient_id == "u1"
+    assert results[0].tenant_id == "a"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_with_unknown_tenant_skips_everyone(gateway_parts) -> None:
+    gateway, store, registry, sender = gateway_parts
+    await registry.register(
+        channel="telegram", user_id="u1", reference={"conversation_id": "c1", "tenant_id": "a"}
+    )
+
+    results = await gateway.broadcast(channel="telegram", message="hi", tenant_id="other")
+
+    assert results == []

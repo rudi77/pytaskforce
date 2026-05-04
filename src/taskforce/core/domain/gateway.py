@@ -91,6 +91,11 @@ class NotificationRequest:
             file extension (images → sendPhoto, audio → sendAudio,
             everything else → sendDocument). Callers can force a specific
             type via metadata['attachment_type'].
+        tenant_id: Tenant scope for the notification. Single-tenant builds
+            leave this at ``"default"``; an enterprise runtime sets it
+            from the current request's tenant context (ADR-022 §4) so
+            audit logs and broadcast filtering can scope deliveries to
+            the calling tenant.
     """
 
     channel: str
@@ -98,6 +103,7 @@ class NotificationRequest:
     message: str
     metadata: dict[str, Any] = field(default_factory=dict)
     attachments: list[str] = field(default_factory=list)
+    tenant_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -109,9 +115,11 @@ class NotificationResult:
         channel: Which channel was used.
         recipient_id: Who was notified.
         error: Error message if delivery failed.
+        tenant_id: Tenant scope captured from the originating request.
     """
 
     success: bool
     channel: str
     recipient_id: str
     error: str | None = None
+    tenant_id: str = "default"
