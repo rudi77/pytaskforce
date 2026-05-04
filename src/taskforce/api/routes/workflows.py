@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import os
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from taskforce.api.dependencies import get_executor, get_factory, get_workflow_runtime_service
@@ -212,10 +216,80 @@ async def run_workflow_definition(
     }
 
 
+def _resolve_webhook_secret(trigger_config: dict[str, Any]) -> str | None:
+    """Pull the webhook HMAC secret from the trigger config.
+
+    Operators can supply the secret either inline (``trigger_config.secret``)
+    or by environment-variable reference (``trigger_config.secret_env``).
+    The env-var form is preferred because YAML definitions land on disk
+    and may be checked into source control. Returns ``None`` when no
+    secret is configured at all — that turns the webhook into an open
+    endpoint, which is the operator's explicit choice.
+    """
+    secret = trigger_config.get("secret")
+    if isinstance(secret, str) and secret:
+        return secret
+    env_var = trigger_config.get("secret_env")
+    if isinstance(env_var, str) and env_var:
+        return os.getenv(env_var)
+    return None
+
+
+def _verify_webhook_signature(
+    body: bytes,
+    trigger_config: dict[str, Any],
+    headers: dict[str, str],
+) -> bool:
+    """Verify an HMAC signature carried in the request headers.
+
+    Supports the two common formats:
+
+    * Plain hex digest (``X-Signature: abc123...``)
+    * GitHub-style ``<algo>=<hex>`` (``X-Hub-Signature-256: sha256=abc...``)
+
+    The secret is read via :func:`_resolve_webhook_secret`. If no secret
+    is configured this returns ``True`` — the operator opted into an
+    unsigned webhook. Returns ``False`` when a secret IS configured but
+    the header is missing or the digest does not match.
+    """
+    secret = _resolve_webhook_secret(trigger_config)
+    if secret is None:
+        return True
+
+    header_name = trigger_config.get("signature_header") or "X-Signature"
+    algo = (trigger_config.get("signature_algo") or "sha256").lower()
+    if algo not in {"sha1", "sha256", "sha512"}:
+        return False
+
+    # FastAPI normalises header lookups; mimic that here.
+    received = (
+        headers.get(header_name)
+        or headers.get(header_name.lower())
+        or headers.get(header_name.title())
+    )
+    if not received:
+        return False
+
+    # Strip an optional ``<algo>=`` prefix.
+    if "=" in received:
+        prefix, _, digest_hex = received.partition("=")
+        if prefix.lower() != algo:
+            return False
+    else:
+        digest_hex = received
+
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        body,
+        getattr(hashlib, algo),
+    ).hexdigest()
+    return hmac.compare_digest(expected.lower(), digest_hex.strip().lower())
+
+
 @router.post("/webhooks/{trigger_path:path}")
 async def trigger_workflow_webhook(
     trigger_path: str,
-    payload: dict[str, Any] | None = None,
+    request: Request,
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
     executor: AgentExecutor = Depends(get_executor),
 ) -> dict[str, Any]:
@@ -226,12 +300,16 @@ async def trigger_workflow_webhook(
         trigger: webhook
         trigger_config:
           path: hooks/daily-report
+          secret_env: GITHUB_WEBHOOK_SECRET   # or: secret: <inline>
+          signature_header: X-Hub-Signature-256
+          signature_algo: sha256
 
     becomes reachable at ``POST /api/v1/workflows/webhooks/hooks/daily-report``.
-    The request body is forwarded into the run via ``session_id`` (when
-    provided) — the steps themselves are agent missions, not raw HTTP
-    handlers, so any custom payload semantics are the workflow's
-    responsibility to interpret.
+    The route bypasses the auth middleware (the path prefix is in
+    ``exempt_path_prefixes``) and verifies the per-workflow HMAC
+    signature itself before invoking the runtime. With no secret
+    configured the webhook is open — that is the operator's choice and
+    must be made deliberately.
     """
     definition = service.find_webhook_workflow(trigger_path)
     if definition is None:
@@ -240,6 +318,26 @@ async def trigger_workflow_webhook(
             code="webhook_workflow_not_found",
             message=f"No workflow registered for webhook path: {trigger_path}",
         )
+
+    raw_body = await request.body()
+    headers = {k: v for k, v in request.headers.items()}
+    if not _verify_webhook_signature(
+        body=raw_body,
+        trigger_config=dict(definition.trigger_config or {}),
+        headers=headers,
+    ):
+        raise http_exception(
+            status_code=401,
+            code="invalid_webhook_signature",
+            message="Webhook signature verification failed.",
+        )
+
+    payload: Any = None
+    if raw_body:
+        try:
+            payload = json.loads(raw_body)
+        except json.JSONDecodeError:
+            payload = None
 
     session_id = None
     if isinstance(payload, dict):

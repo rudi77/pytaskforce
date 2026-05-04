@@ -31,7 +31,9 @@ and move on.
 
 ---
 
-### ☐ G2 — Webhook trigger blocked by AuthMiddleware
+### ☑ G2 — Webhook trigger blocked by AuthMiddleware
+
+**Closed in:** `feat(adr-022/G2): exempt webhook prefix + verify HMAC signature` (pytaskforce + taskforce-enterprise). The enterprise auth middleware now supports `exempt_path_prefixes` (default `/api/v1/workflows/webhooks/`) and the framework's webhook route reads the raw body, verifies an HMAC signature carried in a configurable header against a per-workflow secret (inline or via `secret_env`), and supports both plain-hex and GitHub-style `<algo>=<hex>` formats. With no secret configured the webhook is intentionally open — that is the operator's choice.
 
 **Where:** `taskforce-enterprise/src/taskforce_enterprise/api/middleware/auth.py:54-63` (`exempt_paths` default), `pytaskforce/src/taskforce/api/routes/workflows.py` (`/webhooks/{path}`)
 
