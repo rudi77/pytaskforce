@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
   Beaker,
   Bot,
   LayoutDashboard,
+  LogOut,
   MessageSquare,
   Network,
   PanelLeftClose,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
+import { useSettings } from "@/lib/settings";
 import { capabilitiesSatisfied, usePluginRegistry } from "@/plugins/registry";
 import type { PluginNavItem } from "@/plugins/types";
 
@@ -118,6 +120,12 @@ function NavSection({
 }
 
 function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
+  const navigate = useNavigate();
+  const setApiToken = useSettings((s) => s.setApiToken);
+  const handleLogout = () => {
+    setApiToken("");
+    navigate("/login", { replace: true });
+  };
   return (
     <aside
       className={cn(
@@ -157,6 +165,18 @@ function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
           <Settings className="h-4 w-4 shrink-0" />
           {collapsed ? null : <span>Settings</span>}
         </NavLink>
+        <button
+          type="button"
+          onClick={handleLogout}
+          title={collapsed ? "Sign out" : undefined}
+          className={cn(
+            "mt-1 flex w-full items-center gap-3 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+            collapsed ? "justify-center p-2" : "px-3 py-2",
+          )}
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          {collapsed ? null : <span>Sign out</span>}
+        </button>
         <Button
           type="button"
           variant="ghost"

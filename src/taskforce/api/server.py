@@ -160,19 +160,6 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
 
     app.add_exception_handler(HTTPException, taskforce_http_exception_handler)
 
-    # CORS middleware - origins configurable via CORS_ORIGINS env var
-    cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
-    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
-    # allow_credentials=True is only safe with explicit origins
-    allow_creds = cors_origins != ["*"]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=allow_creds,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     # Include core routers
     app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
     app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
@@ -203,6 +190,21 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
 
     # Register plugin components (middleware and routers)
     _register_plugins(app)
+
+    # CORS middleware - origins configurable via CORS_ORIGINS env var.
+    # Added LAST so it wraps every other middleware (incl. plugin auth) and
+    # answers preflight + attaches Access-Control-* headers to error responses.
+    cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+    # allow_credentials=True is only safe with explicit origins
+    allow_creds = cors_origins != ["*"]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=allow_creds,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app
 

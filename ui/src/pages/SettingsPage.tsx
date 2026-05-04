@@ -78,8 +78,8 @@ export default function SettingsPage() {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Forward-looking — the backend ignores this header today, but will require it once
-              <code className="ml-1">TASKFORCE_API_TOKEN</code> is set.
+              Fallback for headless / CI use. Interactive users sign in via{" "}
+              <code>/login</code> instead.
             </p>
           </div>
           <div className="flex items-center gap-3">

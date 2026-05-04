@@ -8,7 +8,7 @@ import { AppBootstrap } from "@/app/AppBootstrap";
 import { buildRouter } from "@/app/router";
 import { ThemeProvider } from "@/app/theme-provider";
 import { Toaster } from "@/components/ui/toast";
-import { getApiBaseUrl, getApiToken } from "@/lib/settings";
+import { getApiBaseUrl, getApiToken, useSettings } from "@/lib/settings";
 import { bootstrapPlugins } from "@/plugins/loader";
 import "@/app/globals.css";
 
@@ -19,6 +19,13 @@ import "@/app/globals.css";
 configureApiClient({
   getBaseUrl: () => getApiBaseUrl(),
   getToken: () => getApiToken() || null,
+  onUnauthorized: () => {
+    console.warn("[auth] 401 received, clearing token + redirecting to /login");
+    useSettings.getState().setApiToken("");
+    if (window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+  },
 });
 
 const queryClient = new QueryClient({

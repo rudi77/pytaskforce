@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppShell } from "@/app/AppShell";
+import { RequireAuth } from "@/app/RequireAuth";
 import { CapabilityGuard } from "@/plugins/CapabilityGuard";
 import { RequireRole } from "@/plugins/RequireRole";
 import { registry as defaultRegistry } from "@/plugins/registry";
@@ -28,6 +29,7 @@ const AcpPage = lazy(() => import("@/pages/AcpPage"));
 const CapabilitiesPage = lazy(() => import("@/pages/CapabilitiesPage"));
 const EvalsPage = lazy(() => import("@/pages/EvalsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
 function PageFallback() {
@@ -45,10 +47,9 @@ function withSuspense(node: React.ReactNode) {
 /** Render a `PluginRoute.element` whether it was passed as a node or a component. */
 function renderPluginElement(element: PluginRoute["element"]): ReactNode {
   if (isValidElement(element)) return element;
-  if (typeof element === "function") {
-    return createElement(element as ComponentType);
-  }
-  return element as ReactNode;
+  // Components (function/class) AND lazy/memo/forwardRef wrappers are non-element
+  // values that must be instantiated via createElement, not rendered as children.
+  return createElement(element as ComponentType);
 }
 
 /**
@@ -99,9 +100,14 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
     .flatMap((plugin) => plugin.routes.map((r) => pluginRouteToRouteObject(plugin, r)));
 
   return createBrowserRouter([
+    { path: "/login", element: withSuspense(<LoginPage />) },
     {
       path: "/",
-      element: <AppShell />,
+      element: (
+        <RequireAuth>
+          <AppShell />
+        </RequireAuth>
+      ),
       children: [
         { index: true, element: withSuspense(<Dashboard />) },
         { path: "agents", element: withSuspense(<AgentsList />) },

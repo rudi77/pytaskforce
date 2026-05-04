@@ -14,12 +14,23 @@ export interface ApiClientConfig {
   getBaseUrl(): string;
   /** Returns the bearer token, or null/empty when none. */
   getToken(): string | null;
+  /**
+   * Optional hook fired when an authenticated request is rejected with
+   * 401. The host typically clears its stored token and redirects the
+   * user to the login screen. The hook is *not* called for the login
+   * endpoint itself, so failed credential checks don't cause a loop.
+   */
+  onUnauthorized?: () => void;
 }
 
 const NOOP_CONFIG: ApiClientConfig = {
   getBaseUrl: () => "",
   getToken: () => null,
 };
+
+function isLoginPath(path: string): boolean {
+  return path.endsWith("/auth/login");
+}
 
 let _config: ApiClientConfig = NOOP_CONFIG;
 
@@ -103,6 +114,9 @@ export async function apiFetch<T = unknown>(
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !isLoginPath(path)) {
+      _config.onUnauthorized?.();
+    }
     throw await parseError(response);
   }
 
@@ -140,7 +154,12 @@ export async function* sseStream(
           : JSON.stringify(body),
     signal,
   });
-  if (!response.ok || !response.body) throw await parseError(response);
+  if (!response.ok || !response.body) {
+    if (response.status === 401 && !isLoginPath(path)) {
+      _config.onUnauthorized?.();
+    }
+    throw await parseError(response);
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
