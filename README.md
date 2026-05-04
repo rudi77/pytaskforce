@@ -1,6 +1,6 @@
 # Taskforce
 
-Production-grade multi-agent orchestration framework built with Clean Architecture principles.
+Production-grade multi-agent orchestration framework built with **hexagonal (clean) architecture** principles.
 
 ## Quick Start
 
@@ -98,29 +98,17 @@ taskforce chat --plugin examples/accounting_agent
 - **First-Class Workflows**: Durable wait/resume checkpoints plus stored workflow definitions that can be run through `/api/v1/workflows/*`.
 - **Long-Term Memory**: Session-persistent memory with human-like consolidation (forgetting curves, spaced repetition) and a generative dreaming engine (ADR-014).
 - **ACP Support**: Remote-agent invocation over the Agent Communication Protocol (ADR-018).
-- **Enterprise Ready**: Optional `taskforce-enterprise` add-on for RBAC, multi-tenancy, and compliance.
+- **Enterprise Integration Surface**: Core contains stable interfaces/stubs and middleware seams for enterprise extensions maintained in separate repositories.
 
-## Enterprise Features (Optional)
+## Enterprise Integration (separate repository)
 
-Enterprise features are available as a separate package:
+Enterprise product features were moved to a dedicated repository. The OSS core keeps only the integration seams:
 
-```bash
-pip install taskforce-enterprise
-# or
-uv pip install taskforce-enterprise
-```
+- interface protocols/stubs under `src/taskforce/core/interfaces/`
+- plugin discovery + middleware hooks
+- UI plugin manifest endpoint: `GET /api/v1/ui/manifest`
 
-After installation, enterprise features are **automatically activated** via the entry-point plugin system:
-
-| Feature | Description |
-|---------|-------------|
-| **Multi-Tenant RBAC** | JWT/API-Key auth, roles, permissions |
-| **Admin API** | User, role, tenant management under `/api/v1/admin/*` |
-| **Policy Engine** | Fine-grained access control |
-| **Audit Logging** | Compliance-level logging |
-| **Evidence Tracking** | Citations and audit trails for RAG |
-
-See [docs/features/enterprise.md](docs/features/enterprise.md) for details.
+This means `pytaskforce` stays lightweight while allowing enterprise packages to plug in cleanly without forking the core.
 
 ## Architecture Overview
 

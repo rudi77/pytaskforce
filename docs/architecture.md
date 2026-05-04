@@ -1,7 +1,6 @@
 # Architecture Overview
 
-Taskforce is designed using **Clean Architecture** (also known as Hexagonal or
-Onion Architecture). This ensures that the core business logic is isolated
+Taskforce is designed using **Hexagonal Architecture** (also known as Clean/Onion Architecture). This ensures that the core business logic is isolated
 from external dependencies like databases, LLM providers, and APIs.
 
 ## 📦 Package Layout
@@ -243,24 +242,18 @@ taskforce (Base)              taskforce-enterprise (Optional)
 
 Siehe **[Plugin System Architecture](architecture/plugin-system.md)** für Details.
 
-## Enterprise Capabilities (Optional)
+## Enterprise Extension Boundary
 
-> **Hinweis**: Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
-> Nach Installation werden Features automatisch via Plugin-Discovery aktiviert.
+Enterprise-specific product modules are no longer part of this repository.
+The core keeps extension seams so external packages can attach safely:
 
-```bash
-pip install taskforce-enterprise
-```
+- Protocols and stub contracts in `src/taskforce/core/interfaces/`
+- Plugin entry-point discovery and extension hooks
+- API/middleware integration points in the standalone server and embedded host API
+- Management UI capability negotiation through `/api/v1/ui/manifest`
 
-| Capability | Components | Paket |
-|------------|------------|-------|
-| **Identity & RBAC** | TenantContext, UserContext, PolicyEngine | `taskforce-enterprise` |
-| **Admin API** | /api/v1/admin/users, roles, tenants | `taskforce-enterprise` |
-| **Evidence Tracking** | Evidence, RAGCitations | `taskforce-enterprise` |
-| **Memory Governance** | Encryption, MemoryACL | `taskforce-enterprise` |
-| **Operations** | Metrics, Usage, Cost, Compliance | `taskforce-enterprise` |
+This preserves the hexagonal dependency direction while enabling private/commercial extensions outside `pytaskforce`.
 
-Siehe **[Enterprise Features](features/enterprise.md)** und **[ADR-003](adr/adr-003-enterprise-transformation.md)** für Details.
 
 ## 📄 Detailed Documentation
 

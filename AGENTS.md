@@ -186,3 +186,7 @@ root/
 - CLI simple chat streaming now prints an explicit "💭 Thinking..." indicator on step start and includes compact file change previews (`Update(...)` for `edit`, `Write(...)` for `file_write`) to make in-flight modifications visible.
 - Agent deployment registry persistence now lives in `src/taskforce/infrastructure/persistence/file_agent_deployment_registry.py` and stores release metadata, per-environment active pointers, and rollback/set-active history under `.taskforce/deployments/<agent_id>/` using atomic YAML writes.
 - CLI thinking indicator is tracked per step in simple chat streaming, so each `step_start` prints a fresh `💭 Thinking...` marker even when earlier steps already emitted detailed thought events.
+
+- Enterprise product functionality has been externalized to separate repositories; core `pytaskforce` now documents and maintains only extension seams (interfaces/stubs, plugin hooks, middleware integration points, and `/api/v1/ui/manifest` capability negotiation).
+- Core positioning should consistently describe three first-class consumption modes: in-process library (`taskforce.host`), CLI tooling (`taskforce`), and REST service (standalone or embedded in third-party FastAPI apps).
+- Documentation should prefer the term **Hexagonal Architecture** (Clean/Onion equivalent) when describing the main architectural style.
