@@ -161,7 +161,9 @@ and move on.
 
 ## Hygiene / smaller items
 
-### ☐ G10 — `POST /api/v1/skills` lives in framework, should live in enterprise
+### ☑ G10 — `POST /api/v1/skills` lives in framework, should live in enterprise
+
+**Closed in:** `feat(adr-022/G10): move skill write to enterprise admin route` — framework's `routes/skills.py` is now GET-only; the write surface moved to `taskforce_enterprise/api/routes/admin/skills.py` as `POST /api/v1/admin/skills`, gated by new `Permission.SKILL_CREATE` (granted to `admin` + `agent_designer` roles, not to `operator`). Enterprise re-uses framework's `SkillSummary` + `_to_summary` so write + read agree on the response shape.
 
 **Where:** `pytaskforce/src/taskforce/api/routes/skills.py`
 
