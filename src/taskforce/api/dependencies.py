@@ -209,6 +209,27 @@ def get_request_queue():
 
 
 # ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_scheduler():
+    """Provide the shared SchedulerService.
+
+    Lazily constructed on first access; the API server's lifespan handler
+    starts it on startup and stops it on shutdown so cron-triggered jobs
+    fire while the API is up. The instance is keyed on the process so
+    the workflow runtime service and any future agent that registers
+    jobs share the same job store and event callback wiring.
+    """
+    from taskforce.infrastructure.scheduler.scheduler_service import SchedulerService
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return SchedulerService(work_dir=work_dir)
+
+
+# ---------------------------------------------------------------------------
 # Workflow Runtime Service
 # ---------------------------------------------------------------------------
 
@@ -222,4 +243,9 @@ def get_workflow_runtime_service():
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     store = InfrastructureBuilder().build_workflow_checkpoint_store(work_dir=work_dir)
     definition_store = InfrastructureBuilder().build_workflow_definition_store(work_dir=work_dir)
-    return WorkflowRuntimeService(store, definition_store=definition_store)
+    # ADR-022 §7 / G3: thread the framework scheduler through so saved
+    # workflow definitions with a schedule trigger automatically register
+    # cron jobs without the API caller having to await a separate hook.
+    return WorkflowRuntimeService(
+        store, definition_store=definition_store, scheduler=get_scheduler()
+    )

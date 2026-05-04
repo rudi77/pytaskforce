@@ -104,13 +104,26 @@ def list_workflow_definitions(
 
 
 @router.post("/definitions")
-def save_workflow_definition(
+async def save_workflow_definition(
     request: WorkflowDefinitionRequest,
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
-    """Create or update a first-class workflow definition."""
+    """Create or update a first-class workflow definition.
+
+    ADR-022 §7 / G3: when the definition's trigger is ``schedule``, the
+    runtime mirror-registers the cron job in the framework's scheduler
+    so the workflow actually fires on its expression. Re-saving with a
+    different cron is idempotent — the prior job is removed first.
+    Removing the schedule trigger entirely also removes the registered
+    job.
+    """
     definition = service.save_definition(_workflow_from_request(request))
-    return {"success": True, "workflow": definition.to_dict()}
+    job_id = await service.register_schedule_for(definition)
+    return {
+        "success": True,
+        "workflow": definition.to_dict(),
+        "scheduled_job_id": job_id,
+    }
 
 
 @router.get("/definitions/{workflow_id}")
@@ -130,11 +143,11 @@ def get_workflow_definition(
 
 
 @router.delete("/definitions/{workflow_id}")
-def delete_workflow_definition(
+async def delete_workflow_definition(
     workflow_id: str,
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
-    """Delete a first-class workflow definition."""
+    """Delete a first-class workflow definition and its scheduled job."""
     deleted = service.delete_definition(workflow_id)
     if not deleted:
         raise http_exception(
@@ -142,6 +155,9 @@ def delete_workflow_definition(
             code="not_found",
             message=f"Workflow definition not found: {workflow_id}",
         )
+    # ADR-022 §7 / G3: also drop any cron job that mirrored this
+    # definition's schedule trigger.
+    await service.unregister_schedule_for(workflow_id)
     return {"success": True, "deleted": True}
 
 

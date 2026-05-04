@@ -112,8 +112,24 @@ async def lifespan(app: FastAPI):
         agent_config_dirs=[str(d) for d in registered_dirs],
         log_path=str(_LOG_PATH),
     )
+    # Start the workflow scheduler so schedule-triggered workflow
+    # definitions actually fire on their cron expressions (ADR-022 §7,
+    # G3/G4). Lazy import keeps the framework's startup independent of
+    # the scheduler's optional deps.
+    from taskforce.api.dependencies import get_scheduler
+
+    scheduler = get_scheduler()
+    await scheduler.start()
+
     yield
     await logger.ainfo("fastapi.shutdown", message="Taskforce API shutting down...")
+
+    # Stop the scheduler before shutting down plugins so any in-flight
+    # job that calls into a plugin sees it still loaded.
+    try:
+        await scheduler.stop()
+    except Exception:  # pragma: no cover — defensive
+        pass
 
     # Shutdown plugins
     shutdown_plugins()

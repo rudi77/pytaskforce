@@ -379,3 +379,66 @@ def test_find_webhook_workflow_skips_non_webhook_triggers(tmp_path):
         )
     )
     assert runtime.find_webhook_workflow("hooks/run") is None
+
+
+# ---------------------------------------------------------------------------
+# G3: save_definition + register_schedule_for auto-wiring contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_then_register_schedule_idempotent_round_trip(tmp_path) -> None:
+    """save_definition stays sync, but the runtime service's register_schedule
+    helper, used by the API layer, must turn a saved schedule-trigger
+    definition into exactly one ScheduleJob."""
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-3",
+        name="Daily",
+        trigger="schedule",
+        trigger_config={"cron": "0 8 * * *"},
+    )
+
+    # Simulate the API route's two-step "persist then schedule" flow.
+    saved = runtime.save_definition(definition)
+    job_id_first = await runtime.register_schedule_for(saved)
+
+    # Re-saving with the same definition must NOT accumulate jobs.
+    saved_again = runtime.save_definition(saved)
+    job_id_second = await runtime.register_schedule_for(saved_again)
+
+    assert job_id_first == job_id_second == "workflow:wf-3"
+    # Two registers (each removes-then-adds → 2 add_calls total)
+    assert len(scheduler.add_calls) == 2
+    # Final state has exactly one live job
+    assert "workflow:wf-3" in scheduler.jobs
+
+
+@pytest.mark.asyncio
+async def test_delete_definition_then_unregister_clears_the_schedule(tmp_path) -> None:
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-4",
+        name="x",
+        trigger="schedule",
+        trigger_config={"cron": "* * * * *"},
+    )
+    runtime.save_definition(definition)
+    await runtime.register_schedule_for(definition)
+    assert "workflow:wf-4" in scheduler.jobs
+
+    runtime.delete_definition("wf-4")
+    removed = await runtime.unregister_schedule_for("wf-4")
+
+    assert removed is True
+    assert "workflow:wf-4" not in scheduler.jobs

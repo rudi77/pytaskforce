@@ -45,7 +45,9 @@ and move on.
 
 ---
 
-### ☐ G3 — Workflow schedule trigger doesn't auto-register
+### ☑ G3 — Workflow schedule trigger doesn't auto-register
+
+**Closed in:** `feat(adr-022/G3): auto-register workflow schedules on save` — `dependencies.py` now wires a shared `SchedulerService` into the workflow runtime service; the API server's lifespan handler starts/stops it; `POST /workflows/definitions` and `DELETE /workflows/definitions/{id}` are now async and call `register_schedule_for` / `unregister_schedule_for` so schedule-triggered workflows actually register cron jobs.
 
 **Where:** `src/taskforce/application/workflow_runtime_service.py` (`save_definition` is sync, `register_schedule_for` is async + opt-in), `src/taskforce/api/dependencies.py` (`get_workflow_runtime_service` does not pass a SchedulerProtocol).
 
