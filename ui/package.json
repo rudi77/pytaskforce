@@ -44,7 +44,7 @@
     "zustand": "^5.0.0"
   },
   "optionalDependencies": {
-    "@taskforce/enterprise-ui": "file:../packages/enterprise-ui-reference"
+    "@taskforce/enterprise-ui": "file:../../taskforce-enterprise/web"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
