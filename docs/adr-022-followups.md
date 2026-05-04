@@ -4,6 +4,8 @@
 **Last verified end-to-end:** 2026-05-04 (browser login + admin nav + tenant tables)
 **Status legend:** ☐ open · ☑ done · ⊘ explicitly out of scope
 
+**Critical-wiring + workflow-runtime gaps (G1–G7, G10, G11): all closed.** Self-service product gaps (G8 agent-create UX, G9 tenant signup) remain open by design — they are real product features that need their own UX iteration. The container-backed sandbox (G12) stays out of scope.
+
 This file tracks the gaps that remain between the framework slots
 ADR-022 specified and a real end-to-end story for each slice. Items
 that exist as protocols/seams but are not yet wired through to
@@ -177,7 +179,9 @@ and move on.
 
 ---
 
-### ☐ G11 — Update ADR-022 with implementation status
+### ☑ G11 — Update ADR-022 with implementation status
+
+**Closed in:** `docs(adr-022/G11): record post-iteration slice status` — added a "Status (post-iteration)" section to ADR-022 with a table of the 7 slices, their final state, and the closing commit refs across both repos. Pointer to this backlog file added.
 
 **Where:** `docs/adr/adr-022-multi-tenant-enterprise-runtime.md`
 
