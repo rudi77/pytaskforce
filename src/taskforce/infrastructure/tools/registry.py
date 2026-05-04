@@ -217,7 +217,7 @@ _TOOL_REGISTRY: dict[str, ToolSpec] = {
     },
     "schedule": {
         "type": "ScheduleTool",
-        "module": "taskforce_butler.infrastructure.tools.schedule_tool",
+        "module": "taskforce.infrastructure.tools.native.schedule_tool",
         "params": {},
     },
     "reminder": {
