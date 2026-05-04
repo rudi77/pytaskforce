@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -138,29 +139,78 @@ class WorkflowRuntimeService:
         *,
         session_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Run a stored workflow's ordered steps via ``executor``.
+        """Run a stored workflow's steps via ``executor``.
+
+        Independent steps in the same dependency level run in parallel
+        via ``asyncio.gather`` — true fan-out + join (ADR-022 §7, G6).
+        Within a level the relative order in the returned list matches
+        the definition's step order.
 
         Used by the schedule dispatcher (G4) and any other event source
-        that knows a workflow_id but not the steps. Returns the per-step
-        result list in topological order. Raises ``ValueError`` when
-        the workflow_id is unknown or its dependency graph is invalid.
+        that knows a workflow_id but not the steps. Raises ``ValueError``
+        when the workflow_id is unknown or its dependency graph is
+        invalid.
         """
-        steps = self.ordered_steps(workflow_id)
+        definition = self.get_definition(workflow_id)
+        if definition is None:
+            raise ValueError(f"Workflow definition not found: {workflow_id}")
+        return await self.run_steps(definition.steps, executor, session_id=session_id)
+
+    async def run_steps(
+        self,
+        steps: list[WorkflowStep],
+        executor: Any,
+        *,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Execute ``steps`` level-by-level (parallel within a level).
+
+        The dependency graph is split into Kahn-style "levels" of
+        mutually independent steps. Each level is run with
+        ``asyncio.gather`` so two independent missions truly overlap.
+        Levels are awaited in order so a downstream step always sees
+        every dependency's ``final_message`` in its mission text.
+
+        Returned results are flattened to match the topological order
+        callers used to see — caller code that expects a flat list of
+        per-step dicts is unaffected.
+        """
+        levels = _dependency_levels(steps)
         results: dict[str, dict[str, Any]] = {}
-        for step in steps:
-            mission = self._mission_for_step(step, results)
-            execution = await executor.execute_mission(
-                mission=mission,
-                profile=step.agent,
-                session_id=session_id,
+        ordered: list[dict[str, Any]] = []
+
+        for level in levels:
+            outcomes = await asyncio.gather(
+                *(
+                    self._run_step(step, executor, results, session_id)
+                    for step in level
+                )
             )
-            results[step.step_id] = {
-                "step_id": step.step_id,
-                "agent": step.agent,
-                "status": getattr(execution, "status", "completed"),
-                "final_message": getattr(execution, "final_message", ""),
-            }
-        return list(results.values())
+            for step, outcome in zip(level, outcomes):
+                results[step.step_id] = outcome
+                ordered.append(outcome)
+        return ordered
+
+    async def _run_step(
+        self,
+        step: WorkflowStep,
+        executor: Any,
+        results: dict[str, dict[str, Any]],
+        session_id: str | None,
+    ) -> dict[str, Any]:
+        """Execute a single step using ``results`` for dependency context."""
+        mission = self._mission_for_step(step, results)
+        execution = await executor.execute_mission(
+            mission=mission,
+            profile=step.agent,
+            session_id=session_id,
+        )
+        return {
+            "step_id": step.step_id,
+            "agent": step.agent,
+            "status": getattr(execution, "status", "completed"),
+            "final_message": getattr(execution, "final_message", ""),
+        }
 
     @staticmethod
     def _mission_for_step(
@@ -313,3 +363,43 @@ def _order_steps(steps: list[WorkflowStep]) -> list[WorkflowStep]:
     for step in steps:
         visit(step)
     return ordered
+
+
+def _dependency_levels(steps: list[WorkflowStep]) -> list[list[WorkflowStep]]:
+    """Group steps into Kahn-style levels of mutual independence.
+
+    Level 0 contains every step with no ``depends_on`` entry. Level
+    *n+1* contains steps whose dependencies are all in levels 0..*n*.
+    Steps in the same level are guaranteed independent of each other,
+    so a runtime can execute them concurrently.
+
+    Reuses :func:`_order_steps` for missing-dep / cycle / duplicate
+    detection — invalid inputs raise ``ValueError`` before any level
+    is built.
+    """
+    # Validate duplicates / missing deps / cycles first.
+    _order_steps(steps)
+
+    by_id = {step.step_id: step for step in steps}
+    remaining_deps: dict[str, set[str]] = {
+        step.step_id: set(step.depends_on) for step in steps
+    }
+    levels: list[list[WorkflowStep]] = []
+    placed: set[str] = set()
+
+    while remaining_deps:
+        ready_ids = [
+            step_id
+            for step_id, deps in remaining_deps.items()
+            if not deps - placed
+        ]
+        if not ready_ids:
+            # _order_steps already rejects cycles, but be defensive.
+            raise ValueError("Workflow contains a dependency cycle")
+        # Preserve definition order within a level for reproducible output.
+        ready_ids.sort(key=lambda sid: list(by_id).index(sid))
+        levels.append([by_id[sid] for sid in ready_ids])
+        placed.update(ready_ids)
+        for sid in ready_ids:
+            remaining_deps.pop(sid, None)
+    return levels

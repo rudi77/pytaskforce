@@ -442,3 +442,127 @@ async def test_delete_definition_then_unregister_clears_the_schedule(tmp_path) -
 
     assert removed is True
     assert "workflow:wf-4" not in scheduler.jobs
+
+
+# ---------------------------------------------------------------------------
+# G6: independent steps run in parallel (fan-out + join)
+# ---------------------------------------------------------------------------
+
+
+import asyncio
+import time
+
+from taskforce.application.workflow_runtime_service import _dependency_levels
+
+
+def test_dependency_levels_groups_by_independence() -> None:
+    steps = [
+        WorkflowStep(step_id="a", agent="x", task="t"),
+        WorkflowStep(step_id="b", agent="x", task="t"),
+        WorkflowStep(step_id="c", agent="x", task="t", depends_on=["a", "b"]),
+        WorkflowStep(step_id="d", agent="x", task="t", depends_on=["c"]),
+    ]
+    levels = _dependency_levels(steps)
+    assert [s.step_id for s in levels[0]] == ["a", "b"]  # independent fan-out
+    assert [s.step_id for s in levels[1]] == ["c"]  # join
+    assert [s.step_id for s in levels[2]] == ["d"]
+
+
+def test_dependency_levels_preserves_definition_order_within_level() -> None:
+    steps = [
+        WorkflowStep(step_id="z", agent="x", task="t"),
+        WorkflowStep(step_id="a", agent="x", task="t"),
+    ]
+    levels = _dependency_levels(steps)
+    assert [s.step_id for s in levels[0]] == ["z", "a"]
+
+
+def test_dependency_levels_rejects_cycles() -> None:
+    steps = [
+        WorkflowStep(step_id="a", agent="x", task="t", depends_on=["b"]),
+        WorkflowStep(step_id="b", agent="x", task="t", depends_on=["a"]),
+    ]
+    with pytest.raises(ValueError):
+        _dependency_levels(steps)
+
+
+@pytest.mark.asyncio
+async def test_independent_steps_run_in_parallel(tmp_path) -> None:
+    """A workflow with two independent slow steps must finish in ~max(step),
+    not sum(step) — proving fan-out runs them concurrently."""
+
+    class _SlowExecutor:
+        async def execute_mission(self, **kwargs):
+            await asyncio.sleep(0.1)
+            from taskforce.core.domain.models import ExecutionResult
+
+            return ExecutionResult(
+                session_id=kwargs.get("session_id") or "s",
+                status="completed",
+                final_message="ok",
+            )
+
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="parallel",
+            name="x",
+            steps=[
+                WorkflowStep(step_id="a", agent="x", task="t"),
+                WorkflowStep(step_id="b", agent="x", task="t"),
+                WorkflowStep(step_id="c", agent="x", task="t", depends_on=["a", "b"]),
+            ],
+        )
+    )
+
+    started = time.perf_counter()
+    results = await runtime.run_workflow_id("parallel", _SlowExecutor())
+    elapsed = time.perf_counter() - started
+
+    assert len(results) == 3
+    # Sequential would be ~0.3s, parallel-at-level should be ~0.2s.
+    # Pick a generous threshold so test isn't flaky on busy CI.
+    assert elapsed < 0.25, f"steps did not run in parallel (elapsed={elapsed:.3f}s)"
+
+
+@pytest.mark.asyncio
+async def test_dependency_results_visible_to_join_step(tmp_path) -> None:
+    """A step that depends_on its predecessors must see their final_messages."""
+    captured: list[str] = []
+
+    class _CapturingExecutor:
+        async def execute_mission(self, **kwargs):
+            captured.append(kwargs["mission"])
+            from taskforce.core.domain.models import ExecutionResult
+
+            return ExecutionResult(
+                session_id="s",
+                status="completed",
+                final_message=f"reply for {kwargs['profile']}",
+            )
+
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="joiner",
+            name="x",
+            steps=[
+                WorkflowStep(step_id="a", agent="alpha", task="ask alpha"),
+                WorkflowStep(step_id="b", agent="beta", task="ask beta"),
+                WorkflowStep(
+                    step_id="c", agent="gamma", task="merge", depends_on=["a", "b"]
+                ),
+            ],
+        )
+    )
+    await runtime.run_workflow_id("joiner", _CapturingExecutor())
+
+    join_mission = next(m for m in captured if "merge" in m)
+    assert "reply for alpha" in join_mission
+    assert "reply for beta" in join_mission

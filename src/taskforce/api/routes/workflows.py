@@ -171,27 +171,14 @@ async def _execute_workflow_steps(
     executor: AgentExecutor,
     session_id: str | None,
 ) -> list[dict[str, Any]]:
-    """Run a workflow's ordered steps and return per-step results.
+    """Run a workflow's steps and return per-step results.
 
-    Shared by the explicit ``/run`` endpoint and the webhook-trigger
-    endpoint so both paths produce identical step result shapes.
+    Independent steps in the same dependency level run in parallel
+    (ADR-022 §7, G6). Delegates to ``WorkflowRuntimeService.run_workflow_id``
+    so the explicit ``/run`` endpoint and the webhook-trigger endpoint
+    see identical execution semantics.
     """
-    steps = service.ordered_steps(workflow_id)
-    results: dict[str, dict[str, Any]] = {}
-    for step in steps:
-        mission = _mission_for_step(step, results)
-        execution = await executor.execute_mission(
-            mission=mission,
-            profile=step.agent,
-            session_id=session_id,
-        )
-        results[step.step_id] = {
-            "step_id": step.step_id,
-            "agent": step.agent,
-            "status": getattr(execution, "status", "completed"),
-            "final_message": getattr(execution, "final_message", ""),
-        }
-    return list(results.values())
+    return await service.run_workflow_id(workflow_id, executor, session_id=session_id)
 
 
 @router.post("/definitions/{workflow_id}/run")
@@ -358,16 +345,6 @@ async def trigger_workflow_webhook(
         "trigger_path": trigger_path,
         "steps": results,
     }
-
-
-def _mission_for_step(step: WorkflowStep, results: dict[str, dict[str, Any]]) -> str:
-    if not step.depends_on:
-        return step.task
-    dependency_lines = [
-        f"- {dependency_id}: {results[dependency_id].get('final_message', '')}"
-        for dependency_id in step.depends_on
-    ]
-    return f"{step.task}\n\nDependency results:\n" + "\n".join(dependency_lines)
 
 
 @router.post("/wait")

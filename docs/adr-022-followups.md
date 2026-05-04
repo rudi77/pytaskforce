@@ -95,7 +95,9 @@ and move on.
 
 ## Workflow runtime gaps (ADR-022 §7 topology)
 
-### ☐ G6 — Fan-out + Join executes sequentially
+### ☑ G6 — Fan-out + Join executes sequentially
+
+**Closed in:** `feat(adr-022/G6): execute independent workflow steps in parallel` — workflow steps now run in Kahn-style dependency levels via `asyncio.gather`. Two independent slow steps now overlap (verified by wallclock test) instead of running serially. Definition order within a level is preserved so the result list matches what callers used to see.
 
 **Where:** `src/taskforce/api/routes/workflows.py:_execute_workflow_steps`
 
