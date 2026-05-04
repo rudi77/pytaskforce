@@ -29,6 +29,7 @@ class ScheduleActionType(str, Enum):
     EXECUTE_MISSION = "execute_mission"
     SEND_NOTIFICATION = "send_notification"
     PUBLISH_EVENT = "publish_event"
+    EXECUTE_WORKFLOW = "execute_workflow"
 
 
 @dataclass

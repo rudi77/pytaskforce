@@ -134,3 +134,166 @@ def test_workflow_definition_rejects_dependency_cycles(tmp_path):
         raise AssertionError("Expected ValueError")
     except ValueError as exc:
         assert "dependency cycle" in str(exc)
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §7: schedule-trigger ↔ SchedulerService integration
+# ---------------------------------------------------------------------------
+
+
+import pytest
+
+from taskforce.core.domain.schedule import ScheduleActionType, ScheduleJob
+
+
+class _FakeScheduler:
+    """In-memory SchedulerProtocol stand-in for tests."""
+
+    def __init__(self) -> None:
+        self.jobs: dict[str, ScheduleJob] = {}
+        self.add_calls: list[ScheduleJob] = []
+        self.remove_calls: list[str] = []
+
+    async def add_job(self, job: ScheduleJob) -> str:
+        self.add_calls.append(job)
+        self.jobs[job.job_id] = job
+        return job.job_id
+
+    async def remove_job(self, job_id: str) -> bool:
+        self.remove_calls.append(job_id)
+        return self.jobs.pop(job_id, None) is not None
+
+
+@pytest.mark.asyncio
+async def test_register_schedule_creates_execute_workflow_job(tmp_path):
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="report",
+        name="Daily Report",
+        trigger="schedule",
+        trigger_config={"cron": "0 8 * * *"},
+        steps=[WorkflowStep(step_id="s1", agent="reporter", task="run")],
+    )
+
+    job_id = await runtime.register_schedule_for(definition)
+
+    assert job_id == "workflow:report"
+    assert len(scheduler.add_calls) == 1
+    job = scheduler.add_calls[0]
+    assert job.action.action_type == ScheduleActionType.EXECUTE_WORKFLOW
+    assert job.action.params["workflow_id"] == "report"
+    assert job.expression == "0 8 * * *"
+
+
+@pytest.mark.asyncio
+async def test_register_schedule_replaces_previous_job(tmp_path):
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="report",
+        name="Daily",
+        trigger="schedule",
+        trigger_config={"cron": "0 8 * * *"},
+    )
+    await runtime.register_schedule_for(definition)
+    # Re-register with a different cron — old job must be removed first.
+    updated = WorkflowDefinition(
+        workflow_id="report",
+        name="Daily",
+        trigger="schedule",
+        trigger_config={"cron": "0 9 * * *"},
+    )
+    await runtime.register_schedule_for(updated)
+
+    # Two add_job calls (initial + replacement)
+    assert len(scheduler.add_calls) == 2
+    # Remove was called twice (once defensive in each register call)
+    assert scheduler.remove_calls.count("workflow:report") == 2
+    # Final stored job has the new expression
+    assert scheduler.jobs["workflow:report"].expression == "0 9 * * *"
+
+
+@pytest.mark.asyncio
+async def test_register_schedule_skips_when_trigger_not_schedule(tmp_path):
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="manual-only",
+        name="x",
+        trigger="manual",
+    )
+    job_id = await runtime.register_schedule_for(definition)
+    assert job_id is None
+    assert scheduler.add_calls == []
+
+
+@pytest.mark.asyncio
+async def test_register_schedule_warns_on_missing_cron(tmp_path):
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="incomplete",
+        name="x",
+        trigger="schedule",
+        trigger_config={},  # no cron
+    )
+    job_id = await runtime.register_schedule_for(definition)
+    assert job_id is None
+    assert scheduler.add_calls == []
+
+
+@pytest.mark.asyncio
+async def test_unregister_schedule_removes_job(tmp_path):
+    scheduler = _FakeScheduler()
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        scheduler=scheduler,
+    )
+    await runtime.register_schedule_for(
+        WorkflowDefinition(
+            workflow_id="x",
+            name="x",
+            trigger="schedule",
+            trigger_config={"cron": "* * * * *"},
+        )
+    )
+    assert "workflow:x" in scheduler.jobs
+
+    removed = await runtime.unregister_schedule_for("x")
+    assert removed is True
+    assert "workflow:x" not in scheduler.jobs
+
+
+@pytest.mark.asyncio
+async def test_register_schedule_noop_without_scheduler(tmp_path):
+    """When no scheduler is wired the registration is a no-op."""
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="x",
+        name="x",
+        trigger="schedule",
+        trigger_config={"cron": "* * * * *"},
+    )
+    assert await runtime.register_schedule_for(definition) is None
+    assert await runtime.unregister_schedule_for("x") is False

@@ -4,10 +4,24 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
+import structlog
+
+from taskforce.core.domain.schedule import (
+    ScheduleAction,
+    ScheduleActionType,
+    ScheduleJob,
+    ScheduleType,
+)
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent, WorkflowCheckpoint
-from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
+from taskforce.core.domain.workflow_definition import (
+    WORKFLOW_TRIGGER_SCHEDULE,
+    WorkflowDefinition,
+    WorkflowStep,
+)
+from taskforce.core.interfaces.scheduler import SchedulerProtocol
 from taskforce.infrastructure.runtime.workflow_checkpoint_store import (
     FileWorkflowCheckpointStore,
     validate_required_inputs,
@@ -16,23 +30,106 @@ from taskforce.infrastructure.runtime.workflow_definition_store import (
     FileWorkflowDefinitionStore,
 )
 
+logger = structlog.get_logger(__name__)
+
+
+def _schedule_job_id(workflow_id: str) -> str:
+    """Deterministic schedule-job id for a workflow's schedule trigger."""
+    return f"workflow:{workflow_id}"
+
 
 class WorkflowRuntimeService:
-    """Create and resume workflow checkpoints."""
+    """Create and resume workflow checkpoints, and keep schedule triggers in sync.
+
+    When a :class:`SchedulerProtocol` is supplied, workflow definitions
+    whose ``trigger == "schedule"`` are mirrored into the scheduler as
+    ``ScheduleJob`` rows with ``ScheduleActionType.EXECUTE_WORKFLOW``
+    on ``save_definition``. ``delete_definition`` removes the matching
+    job. The actual execution-on-fire is the scheduler's
+    ``event_callback`` concern (an event handler dispatching on
+    ``EXECUTE_WORKFLOW``).
+    """
 
     def __init__(
         self,
         store: FileWorkflowCheckpointStore,
         definition_store: FileWorkflowDefinitionStore | None = None,
+        scheduler: SchedulerProtocol | None = None,
     ) -> None:
         self._store = store
         self._definition_store = definition_store
+        self._scheduler = scheduler
 
     def save_definition(self, definition: WorkflowDefinition) -> WorkflowDefinition:
-        """Persist a first-class workflow definition."""
+        """Persist a first-class workflow definition.
+
+        Synchronous so existing FastAPI sync handlers stay unchanged.
+        Scheduler integration is exposed separately via
+        :meth:`register_schedule_for` so a caller with an event loop
+        can opt in.
+        """
         if self._definition_store is None:
             raise RuntimeError("Workflow definitions are not configured")
         return self._definition_store.save(definition)
+
+    async def register_schedule_for(self, definition: WorkflowDefinition) -> str | None:
+        """Mirror a workflow's schedule trigger into the wired scheduler.
+
+        Returns the registered ``job_id`` on success, ``None`` when
+        either no scheduler is wired or the definition has no
+        schedule trigger / no cron expression. Removes any previous
+        scheduled job for the same workflow id first so re-saving a
+        definition with a changed cron doesn't accumulate orphans.
+        """
+        if self._scheduler is None:
+            return None
+        if definition.trigger != WORKFLOW_TRIGGER_SCHEDULE:
+            # Trigger changed away from schedule → clean up if needed.
+            await self._scheduler.remove_job(_schedule_job_id(definition.workflow_id))
+            return None
+
+        cron = (definition.trigger_config or {}).get("cron")
+        if not cron:
+            logger.warning(
+                "workflow.schedule_trigger.missing_cron",
+                workflow_id=definition.workflow_id,
+            )
+            return None
+
+        job_id = _schedule_job_id(definition.workflow_id)
+        # Remove any prior copy first so changing cron expressions is idempotent.
+        await self._scheduler.remove_job(job_id)
+
+        job = ScheduleJob(
+            job_id=job_id,
+            name=f"workflow:{definition.name or definition.workflow_id}",
+            schedule_type=ScheduleType.CRON,
+            expression=str(cron),
+            action=ScheduleAction(
+                action_type=ScheduleActionType.EXECUTE_WORKFLOW,
+                params={"workflow_id": definition.workflow_id},
+            ),
+            tenant_id=str((definition.metadata or {}).get("tenant_id", "default")),
+            agent_id=str((definition.metadata or {}).get("agent_id", "default")),
+        )
+        await self._scheduler.add_job(job)
+        logger.info(
+            "workflow.schedule_trigger.registered",
+            workflow_id=definition.workflow_id,
+            job_id=job_id,
+            cron=cron,
+        )
+        return job_id
+
+    async def unregister_schedule_for(self, workflow_id: str) -> bool:
+        """Remove the scheduled job mirroring a workflow's schedule trigger.
+
+        Returns ``True`` when a job was actually removed. Idempotent —
+        calling on a workflow without a schedule trigger is a no-op.
+        """
+        if self._scheduler is None:
+            return False
+        return await self._scheduler.remove_job(_schedule_job_id(workflow_id))
 
     def get_definition(self, workflow_id: str) -> WorkflowDefinition | None:
         """Get a workflow definition by id."""
