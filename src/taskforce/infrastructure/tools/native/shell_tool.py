@@ -13,14 +13,90 @@ Security note:
     allowlist-based approach.
 """
 
-import asyncio
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
+from taskforce.application.infrastructure_overrides import get_sandboxed_executor
 from taskforce.core.domain.errors import ToolError, tool_error_payload
+from taskforce.core.interfaces.sandbox import (
+    CommandKind,
+    SandboxedExecutorProtocol,
+    SandboxRequest,
+)
 from taskforce.core.interfaces.tools import ApprovalRiskLevel, ToolProtocol
+from taskforce.infrastructure.sandbox.in_process import InProcessSandboxedExecutor
+
+# Module-level fallback executor reused across tool calls so the in-process
+# default has a single instance per process.
+_DEFAULT_EXECUTOR: SandboxedExecutorProtocol = InProcessSandboxedExecutor()
+
+
+def _resolve_executor() -> SandboxedExecutorProtocol:
+    """Return the currently installed sandboxed executor (or the default)."""
+    return get_sandboxed_executor() or _DEFAULT_EXECUTOR
+
+
+async def _run_via_sandbox(
+    *,
+    tool_name: str,
+    kind: CommandKind,
+    command: str,
+    timeout: int,
+    cwd: str | None,
+) -> dict[str, Any]:
+    """Execute a shell-style command through the sandbox executor seam.
+
+    Maps :class:`SandboxResult` back to the historical dict shape every
+    shell tool returns so its callers (and stored tool-result caches)
+    are unaffected.
+    """
+    import asyncio
+
+    workspace_dir = Path(cwd) if cwd else Path.cwd()
+    request = SandboxRequest(
+        kind=kind,
+        script=command,
+        workspace_dir=workspace_dir,
+        timeout_seconds=float(timeout) if timeout else None,
+    )
+    try:
+        result = await _resolve_executor().run(request)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+    except asyncio.CancelledError:
+        # Tools historically returned a dict for cancellation rather than
+        # propagating the exception so the agent loop sees a normal tool
+        # result. Preserve that contract.
+        return {
+            "success": False,
+            "error": f"Command cancelled after {timeout}s",
+            "command": command,
+        }
+    except Exception as exc:  # pragma: no cover — defensive
+        tool_error = ToolError(
+            f"{tool_name} failed: {exc}",
+            tool_name=tool_name,
+            details={"command": command, "cwd": cwd, "timeout": timeout},
+        )
+        return tool_error_payload(tool_error)
+
+    if result.timed_out:
+        return {"success": False, "error": result.stderr}
+
+    success = result.returncode == 0
+    payload: dict[str, Any] = {
+        "success": success,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "returncode": result.returncode,
+        "command": command,
+    }
+    if not success:
+        payload["error"] = (
+            result.stderr or f"Command failed with code {result.returncode}"
+        )
+    return payload
 
 # Dangerous command patterns shared across shell tools
 _DANGEROUS_PATTERNS = [
@@ -112,65 +188,17 @@ class ShellTool(ToolProtocol):
             - command: str - Executed command
             - error: str - Error message (if failed)
         """
-        try:
-            # Safety check - block dangerous commands
-            if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
-                return {"success": False, "error": "Command blocked for safety reasons"}
+        # Safety check - block dangerous commands
+        if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
+            return {"success": False, "error": "Command blocked for safety reasons"}
 
-            # Platform-aware execution: explicit bash on Linux, system shell on Windows
-            if os.name != "nt":
-                bash_path = shutil.which("bash") or "/bin/bash"
-                process = await asyncio.create_subprocess_exec(
-                    bash_path,
-                    "-c",
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd,
-                )
-            else:
-                process = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd,
-                )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout
-                )
-
-                success = process.returncode == 0
-                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
-
-                resp = {
-                    "success": success,
-                    "stdout": stdout_text,
-                    "stderr": stderr_text,
-                    "returncode": process.returncode,
-                    "command": command,
-                }
-                if not success:
-                    resp["error"] = (
-                        stderr_text or f"Command failed with code {process.returncode}"
-                    )
-                return resp
-            except TimeoutError:
-                process.kill()
-                return {
-                    "success": False,
-                    "error": f"Command timed out after {timeout}s",
-                }
-
-        except Exception as e:
-            tool_error = ToolError(
-                f"{self.name} failed: {e}",
-                tool_name=self.name,
-                details={"command": command, "cwd": cwd, "timeout": timeout},
-            )
-            return tool_error_payload(tool_error)
+        return await _run_via_sandbox(
+            tool_name=self.name,
+            kind="shell",
+            command=command,
+            timeout=timeout,
+            cwd=cwd,
+        )
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""
@@ -253,48 +281,17 @@ class BashTool(ToolProtocol):
         Returns:
             Dictionary with success, stdout, stderr, returncode, command keys.
         """
-        try:
-            if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
-                return {"success": False, "error": "Command blocked for safety reasons"}
+        if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
+            return {"success": False, "error": "Command blocked for safety reasons"}
 
-            bash_path = shutil.which("bash") or "/bin/bash"
-            process = await asyncio.create_subprocess_exec(
-                bash_path,
-                "-c",
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        try:
+            return await _run_via_sandbox(
+                tool_name=self.name,
+                kind="bash",
+                command=command,
+                timeout=timeout,
                 cwd=cwd,
             )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout
-                )
-
-                success = process.returncode == 0
-                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
-
-                resp = {
-                    "success": success,
-                    "stdout": stdout_text,
-                    "stderr": stderr_text,
-                    "returncode": process.returncode,
-                    "command": command,
-                }
-                if not success:
-                    resp["error"] = (
-                        stderr_text or f"Command failed with code {process.returncode}"
-                    )
-                return resp
-            except TimeoutError:
-                process.kill()
-                return {
-                    "success": False,
-                    "error": f"Command timed out after {timeout}s",
-                }
-
         except Exception as e:
             tool_error = ToolError(
                 f"{self.name} failed: {e}",
@@ -394,14 +391,6 @@ class PowerShellTool(ToolProtocol):
         if any(pattern in lower_cmd for pattern in lower_patterns):
             return {"success": False, "error": "Command blocked for safety reasons"}
 
-        # Resolve PowerShell executable
-        shell_exe = shutil.which("pwsh") or shutil.which("powershell")
-        if not shell_exe:
-            return {
-                "success": False,
-                "error": "No PowerShell executable found (pwsh/powershell)",
-            }
-
         # Coerce command to string (LLM may send non-string by mistake)
         if not isinstance(command, str):
             try:
@@ -438,94 +427,21 @@ class PowerShellTool(ToolProtocol):
                     }
                 cwd_path = str(p)
 
-        try:
-            # Force UTF-8 output from PowerShell to avoid encoding errors
-            # with non-ASCII characters (e.g. German umlauts in file paths).
-            utf8_prefix = (
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-                "$OutputEncoding = [System.Text.Encoding]::UTF8; "
-            )
-            wrapped_command = utf8_prefix + command
+        # Force UTF-8 output from PowerShell to avoid encoding errors with
+        # non-ASCII characters (e.g. German umlauts in file paths).
+        utf8_prefix = (
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "$OutputEncoding = [System.Text.Encoding]::UTF8; "
+        )
+        wrapped_command = utf8_prefix + command
 
-            # Execute command explicitly via PowerShell
-            process = await asyncio.create_subprocess_exec(
-                shell_exe,
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                wrapped_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd_path,
-            )
-        except Exception as e:
-            tool_error = ToolError(
-                f"{self.name} failed: {e}",
-                tool_name=self.name,
-                details={"command": command, "cwd": cwd_path, "timeout": timeout},
-            )
-            return tool_error_payload(tool_error)
-
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=timeout
-            )
-        except TimeoutError:
-            try:
-                process.kill()
-            except Exception:
-                pass
-            return {
-                "success": False,
-                "error": f"Command timed out after {timeout}s",
-                "command": command,
-                "cwd": cwd_path,
-                "returncode": None,
-            }
-        except asyncio.CancelledError:
-            try:
-                process.kill()
-            except Exception:
-                pass
-            return {
-                "success": False,
-                "error": f"Command cancelled after {timeout}s",
-                "command": command,
-                "cwd": cwd_path,
-                "returncode": None,
-            }
-        except Exception as e:
-            try:
-                process.kill()
-            except Exception:
-                pass
-            tool_error = ToolError(
-                f"{self.name} failed: {e}",
-                tool_name=self.name,
-                details={"command": command, "cwd": cwd_path},
-            )
-            return tool_error_payload(
-                tool_error, extra={"command": command, "cwd": cwd_path}
-            )
-
-        success = process.returncode == 0
-        stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
-
-        resp = {
-            "success": success,
-            "stdout": stdout_text,
-            "stderr": stderr_text,
-            "returncode": process.returncode,
-            "command": command,
-        }
-        if not success:
-            resp["error"] = (
-                stderr_text or f"Command failed with code {process.returncode}"
-            )
-        return resp
+        return await _run_via_sandbox(
+            tool_name=self.name,
+            kind="powershell",
+            command=wrapped_command,
+            timeout=timeout,
+            cwd=cwd_path,
+        )
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""

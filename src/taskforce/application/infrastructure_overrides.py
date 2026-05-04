@@ -61,6 +61,8 @@ _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
 _acp_tenant_id_provider: Callable[[], str] | None = None
 _tenant_resolver: Callable[[], str] | None = None
+_sandboxed_executor: Any | None = None
+_multi_tenant_sandbox_warning_emitted: bool = False
 
 
 def set_agent_registry_override(
@@ -252,6 +254,72 @@ def get_current_tenant_id() -> str:
     return resolved or "default"
 
 
+def set_sandboxed_executor(executor: Any | None) -> None:
+    """Install (or clear) the sandboxed executor for dangerous tools.
+
+    See ADR-022 §5: the framework ships an in-process default that
+    preserves single-tenant behaviour; multi-tenant deployments
+    install a container-backed implementation that mounts only the
+    workspace, drops network capabilities and applies CPU/memory/
+    wall-clock limits.
+
+    The slot is typed ``Any`` here to avoid pulling
+    ``SandboxedExecutorProtocol`` into the application layer just for
+    the type annotation. Callers should pass an implementation of
+    :class:`taskforce.core.interfaces.sandbox.SandboxedExecutorProtocol`.
+    """
+    global _sandboxed_executor
+    _sandboxed_executor = executor
+
+
+def get_sandboxed_executor() -> Any | None:
+    """Return the installed sandboxed executor, or ``None``."""
+    return _sandboxed_executor
+
+
+def warn_if_multi_tenant_without_sandbox() -> bool:
+    """Emit a hard one-shot warning when multi-tenant runs without a sandbox.
+
+    The framework treats a multi-tenant runtime as one where a tenant
+    resolver has been installed (i.e. an enterprise plugin sets a
+    real ``current_tenant_id`` callable instead of the default
+    ``"default"``). In that mode running dangerous tools through the
+    in-process default is unsafe: a misbehaving agent in tenant A can
+    read tenant B's secrets.
+
+    The warning fires at most once per process so callers can invoke
+    it from multiple bootstrap paths (factory, lifespan, plugin init)
+    without producing log spam. Returns True if the warning was
+    emitted *this* call.
+    """
+    global _multi_tenant_sandbox_warning_emitted
+    if _multi_tenant_sandbox_warning_emitted:
+        return False
+    if _tenant_resolver is None:
+        # Single-tenant build — the in-process executor is the right default.
+        return False
+    if _sandboxed_executor is not None:
+        # Operator wired a real sandbox.
+        return False
+
+    import warnings
+
+    warnings.warn(
+        "Multi-tenant runtime detected (a tenant resolver is installed) but "
+        "no SandboxedExecutorProtocol implementation is registered. "
+        "Dangerous tools (bash, shell, powershell) will run in the host "
+        "process with full filesystem visibility — a misbehaving or "
+        "malicious agent in one tenant can read another tenant's data. "
+        "Install a container-backed executor via "
+        "taskforce.application.infrastructure_overrides.set_sandboxed_executor(...) "
+        "before running untrusted workloads. See ADR-022 §5.",
+        category=RuntimeWarning,
+        stacklevel=2,
+    )
+    _multi_tenant_sandbox_warning_emitted = True
+    return True
+
+
 def clear_infrastructure_overrides() -> None:
     """Reset all installed overrides.
 
@@ -269,6 +337,8 @@ def clear_infrastructure_overrides() -> None:
     global _workspace_context_provider
     global _acp_tenant_id_provider
     global _tenant_resolver
+    global _sandboxed_executor
+    global _multi_tenant_sandbox_warning_emitted
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -280,3 +350,5 @@ def clear_infrastructure_overrides() -> None:
     _workspace_context_provider = None
     _acp_tenant_id_provider = None
     _tenant_resolver = None
+    _sandboxed_executor = None
+    _multi_tenant_sandbox_warning_emitted = False

@@ -362,3 +362,69 @@ def test_override_can_be_reinstalled_after_clear() -> None:
 
     builder = InfrastructureBuilder()
     assert builder.build_agent_registry() == "second"
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §5: SandboxedExecutor + multi-tenant startup warning
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    get_sandboxed_executor,
+    set_sandboxed_executor,
+    warn_if_multi_tenant_without_sandbox,
+)
+
+
+def test_sandboxed_executor_round_trip() -> None:
+    sentinel = object()
+    set_sandboxed_executor(sentinel)
+    assert get_sandboxed_executor() is sentinel
+    set_sandboxed_executor(None)
+    assert get_sandboxed_executor() is None
+
+
+def test_warn_silent_when_no_tenant_resolver() -> None:
+    """Single-tenant build: no resolver → no warning even without a sandbox."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        warned = warn_if_multi_tenant_without_sandbox()
+
+    assert warned is False
+    assert captured == []
+
+
+def test_warn_silent_when_sandbox_installed() -> None:
+    """Multi-tenant + sandbox installed → no warning."""
+    import warnings
+
+    set_tenant_resolver(lambda: "tenant-a")
+    set_sandboxed_executor(object())
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        warned = warn_if_multi_tenant_without_sandbox()
+
+    assert warned is False
+    assert captured == []
+
+
+def test_warn_fires_once_in_multi_tenant_without_sandbox() -> None:
+    """Multi-tenant resolver, no sandbox → one warning, then silent."""
+    import warnings
+
+    set_tenant_resolver(lambda: "tenant-a")
+    # No sandbox installed.
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        warned1 = warn_if_multi_tenant_without_sandbox()
+        warned2 = warn_if_multi_tenant_without_sandbox()
+
+    assert warned1 is True
+    assert warned2 is False
+    assert len(captured) == 1
+    assert issubclass(captured[0].category, RuntimeWarning)
+    assert "multi-tenant" in str(captured[0].message).lower()

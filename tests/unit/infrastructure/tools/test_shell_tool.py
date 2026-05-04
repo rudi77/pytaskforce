@@ -17,9 +17,11 @@ import pytest
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 from taskforce.infrastructure.tools.native.shell_tool import PowerShellTool, ShellTool
 
-# On Windows, ShellTool uses create_subprocess_shell; on Unix, create_subprocess_exec.
+# All shell-style tools now route through InProcessSandboxedExecutor (ADR-022 §5),
+# which always calls asyncio.create_subprocess_exec — patch it at the executor's
+# import site so the seam stays explicit.
 _SHELL_SUBPROCESS_TARGET = (
-    "asyncio.create_subprocess_shell" if os.name == "nt" else "asyncio.create_subprocess_exec"
+    "taskforce.infrastructure.sandbox.in_process.asyncio.create_subprocess_exec"
 )
 
 # ---------------------------------------------------------------------------
@@ -192,6 +194,8 @@ class TestShellToolExecution:
 
     async def test_custom_cwd(self, tool):
         """Test command execution with custom working directory."""
+        from pathlib import Path
+
         with patch(_SHELL_SUBPROCESS_TARGET) as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"/tmp\n", b""))
@@ -203,7 +207,8 @@ class TestShellToolExecution:
             assert result["success"] is True
             mock_create.assert_called_once()
             call_kwargs = mock_create.call_args
-            assert call_kwargs.kwargs.get("cwd") == "/tmp"
+            # Round-trip through Path normalises path separators on Windows.
+            assert call_kwargs.kwargs.get("cwd") == str(Path("/tmp"))
 
     async def test_exception_returns_error_payload(self, tool):
         """Test that unexpected exceptions produce an error payload."""
