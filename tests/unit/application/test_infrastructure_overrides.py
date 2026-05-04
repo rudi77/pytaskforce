@@ -461,3 +461,28 @@ def test_clear_resets_gateway_overrides() -> None:
     clear_infrastructure_overrides()
     assert get_recipient_resolver_override() is None
     assert get_agent_lookup_override() is None
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §6: cross-tenant ACP authorizer
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    get_cross_tenant_acp_authorizer,
+    set_cross_tenant_acp_authorizer,
+)
+
+
+def test_cross_tenant_acp_authorizer_round_trip() -> None:
+    def allow_all(caller, peer_t, peer) -> bool:
+        return True
+
+    set_cross_tenant_acp_authorizer(allow_all)
+    assert get_cross_tenant_acp_authorizer() is allow_all
+
+
+def test_clear_resets_cross_tenant_acp_authorizer() -> None:
+    set_cross_tenant_acp_authorizer(lambda c, p, pe: True)
+    clear_infrastructure_overrides()
+    assert get_cross_tenant_acp_authorizer() is None

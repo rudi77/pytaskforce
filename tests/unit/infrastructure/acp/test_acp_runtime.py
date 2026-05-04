@@ -123,3 +123,113 @@ async def test_call_uses_tenant_provider_for_cross_tenant_check() -> None:
     handle = await rt.call("same", "mission")
 
     assert handle.run_id == "r-3"
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §6: cross-tenant call goes through the installable authorizer
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    clear_infrastructure_overrides,
+    set_cross_tenant_acp_authorizer,
+)
+
+
+@pytest.fixture(autouse=False)
+def _reset_authorizer():
+    clear_infrastructure_overrides()
+    yield
+    clear_infrastructure_overrides()
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_call_consults_authorizer(_reset_authorizer) -> None:
+    """allow_cross_tenant=True peer + authorizer that says no → PermissionError."""
+    peers = InMemoryPeerRegistry(
+        [
+            AcpPeer(
+                name="shared",
+                base_url="http://x",
+                agent="remote-agent",
+                tenant_id="tenant_b",
+                allow_cross_tenant=True,
+            )
+        ]
+    )
+    server = MagicMock()
+    server.is_running = False
+    client = MagicMock()
+    client.run_sync = AsyncMock()
+    rt = AcpRuntime(server=server, client=client, peers=peers)
+
+    captured: list[tuple[str, str, str]] = []
+
+    def deny(caller: str, peer_t: str, peer) -> bool:
+        captured.append((caller, peer_t, peer.name))
+        return False
+
+    set_cross_tenant_acp_authorizer(deny)
+
+    with pytest.raises(PermissionError):
+        await rt.call("shared", "mission", tenant_id="tenant_a")
+
+    assert captured == [("tenant_a", "tenant_b", "shared")]
+    client.run_sync.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_call_proceeds_when_authorizer_allows(_reset_authorizer) -> None:
+    peers = InMemoryPeerRegistry(
+        [
+            AcpPeer(
+                name="shared",
+                base_url="http://x",
+                agent="remote-agent",
+                tenant_id="tenant_b",
+                allow_cross_tenant=True,
+            )
+        ]
+    )
+    server = MagicMock()
+    server.is_running = False
+    client = MagicMock()
+    client.run_sync = AsyncMock(return_value={"run_id": "r-x", "status": "completed"})
+    rt = AcpRuntime(server=server, client=client, peers=peers)
+
+    set_cross_tenant_acp_authorizer(lambda c, p, peer: True)
+
+    handle = await rt.call("shared", "mission", tenant_id="tenant_a")
+    assert handle.run_id == "r-x"
+    client.run_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_same_tenant_call_does_not_consult_authorizer(_reset_authorizer) -> None:
+    """Authorizer should only fire on actual cross-tenant calls."""
+    peers = InMemoryPeerRegistry(
+        [
+            AcpPeer(
+                name="local",
+                base_url="http://x",
+                agent="remote-agent",
+                tenant_id="tenant_a",
+            )
+        ]
+    )
+    server = MagicMock()
+    server.is_running = False
+    client = MagicMock()
+    client.run_sync = AsyncMock(return_value={"run_id": "r-z", "status": "completed"})
+    rt = AcpRuntime(server=server, client=client, peers=peers)
+
+    called = {"n": 0}
+
+    def authorizer(c: str, p: str, peer) -> bool:
+        called["n"] += 1
+        return True
+
+    set_cross_tenant_acp_authorizer(authorizer)
+
+    await rt.call("local", "mission", tenant_id="tenant_a")
+    assert called["n"] == 0

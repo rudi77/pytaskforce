@@ -94,10 +94,30 @@ class AcpRuntime:
         if peer is None:
             raise KeyError(f"Unknown ACP peer: {peer_name!r}")
         caller_tenant_id = tenant_id or self._current_tenant_id()
-        if peer.tenant_id != caller_tenant_id and not peer.allow_cross_tenant:
-            raise PermissionError(
-                f"ACP peer {peer_name!r} is not reachable from tenant {caller_tenant_id!r}"
+        if peer.tenant_id != caller_tenant_id:
+            if not peer.allow_cross_tenant:
+                raise PermissionError(
+                    f"ACP peer {peer_name!r} is not reachable from tenant "
+                    f"{caller_tenant_id!r}"
+                )
+            # ADR-022 §6: cross-tenant calls require explicit authorisation
+            # on every call. The framework asks an installed authorizer
+            # whether THIS caller may use this peer right now; on no
+            # authorizer the legacy "allow_cross_tenant flag is sufficient"
+            # behaviour is preserved.
+            from taskforce.application.infrastructure_overrides import (
+                get_cross_tenant_acp_authorizer,
             )
+
+            authorizer = get_cross_tenant_acp_authorizer()
+            if authorizer is not None and not authorizer(
+                caller_tenant_id, peer.tenant_id, peer
+            ):
+                raise PermissionError(
+                    f"Cross-tenant ACP call to {peer_name!r} denied by "
+                    f"authorizer (caller tenant {caller_tenant_id!r}, peer "
+                    f"tenant {peer.tenant_id!r})"
+                )
         started_at = utc_now()
         if stream:
             status = "streamed"

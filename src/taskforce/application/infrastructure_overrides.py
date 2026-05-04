@@ -65,6 +65,7 @@ _sandboxed_executor: Any | None = None
 _multi_tenant_sandbox_warning_emitted: bool = False
 _recipient_resolver_override: Callable[[], Any] | None = None
 _agent_lookup_override: Callable[[], Any] | None = None
+_cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
 
 
 def set_agent_registry_override(
@@ -321,6 +322,36 @@ def get_agent_lookup_override() -> Callable[[], Any] | None:
     return _agent_lookup_override
 
 
+def set_cross_tenant_acp_authorizer(
+    authorizer: Callable[[str, str, Any], bool] | None,
+) -> None:
+    """Install (or clear) the policy check for cross-tenant ACP calls.
+
+    See ADR-022 §6: when an ACP peer is reachable across tenants
+    (``allow_cross_tenant=True`` on the peer record), the framework
+    asks an installable authorizer whether the *current* caller may
+    actually use it. Returning ``False`` raises ``PermissionError``
+    on the call site; returning ``True`` proceeds.
+
+    Signature:
+        ``authorizer(caller_tenant_id, peer_tenant_id, peer) -> bool``
+
+    The third arg is the framework's ``AcpPeer`` value object (passed
+    untyped here to avoid a core/infra cycle); enterprise authorizers
+    use it to log richer audit events. With no authorizer installed
+    the framework falls back to "allow" — i.e. the
+    ``allow_cross_tenant`` flag alone is the policy, which is the
+    legacy single-tenant behaviour.
+    """
+    global _cross_tenant_acp_authorizer
+    _cross_tenant_acp_authorizer = authorizer
+
+
+def get_cross_tenant_acp_authorizer() -> Callable[[str, str, Any], bool] | None:
+    """Return the installed cross-tenant ACP authorizer, if any."""
+    return _cross_tenant_acp_authorizer
+
+
 def warn_if_multi_tenant_without_sandbox() -> bool:
     """Emit a hard one-shot warning when multi-tenant runs without a sandbox.
 
@@ -385,6 +416,7 @@ def clear_infrastructure_overrides() -> None:
     global _multi_tenant_sandbox_warning_emitted
     global _recipient_resolver_override
     global _agent_lookup_override
+    global _cross_tenant_acp_authorizer
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -400,3 +432,4 @@ def clear_infrastructure_overrides() -> None:
     _multi_tenant_sandbox_warning_emitted = False
     _recipient_resolver_override = None
     _agent_lookup_override = None
+    _cross_tenant_acp_authorizer = None
