@@ -340,37 +340,17 @@ connection closes.  See [ADR-019](adr/adr-019-agent-interruption.md).
 }
 ```
 
-### Admin APIs (Enterprise - Optional)
+### Enterprise Extension Endpoints
 
-> **Note:** These endpoints are only available when `taskforce-enterprise` is installed.
-> After installation, admin endpoints are automatically registered via the plugin system.
+Enterprise admin endpoints are provided by external plugins/packages.
+`pytaskforce` itself does **not** ship `/api/v1/admin/*` routes.
 
-All admin endpoints require authentication via:
-- **JWT Bearer Token**: `Authorization: Bearer <token>`
-- **API Key**: `X-API-Key: <key>`
+What the core guarantees:
+- Plugin autoload and route registration at startup
+- Shared error handling + middleware seams
+- UI plugin negotiation via `GET /api/v1/ui/manifest`
 
-#### Tenant Management
-- `GET /api/v1/admin/tenants` — List all tenants
-- `POST /api/v1/admin/tenants` — Create a new tenant
-- `GET /api/v1/admin/tenants/{tenant_id}` — Get tenant details
-- `PUT /api/v1/admin/tenants/{tenant_id}` — Update tenant settings
-- `DELETE /api/v1/admin/tenants/{tenant_id}` — Delete a tenant
-
-#### User Management
-- `GET /api/v1/admin/users` — List users for a tenant
-- `POST /api/v1/admin/users` — Create a new user
-- `GET /api/v1/admin/users/{user_id}` — Get user details
-- `PUT /api/v1/admin/users/{user_id}` — Update user profile
-- `DELETE /api/v1/admin/users/{user_id}` — Deactivate a user
-
-#### Role Management
-- `GET /api/v1/admin/roles` — List all roles
-- `POST /api/v1/admin/roles` — Create a custom role
-- `GET /api/v1/admin/roles/{role_id}` — Get role details
-- `PUT /api/v1/admin/roles/{role_id}` — Update role permissions
-- `DELETE /api/v1/admin/roles/{role_id}` — Delete a custom role
-
-See [Enterprise Features](features/enterprise.md) for details on the RBAC system.
+See [Enterprise Integration Surface](features/enterprise.md) for the core contracts.
 
 ---
 

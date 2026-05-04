@@ -29,11 +29,8 @@ Welcome to the Taskforce documentation. Taskforce is a production-grade multi-ag
 - **[Generative Dreaming](features/generative-dreaming.md)**: Offline generative consolidation loop (ADR-014).
 - **[Agent Communication Protocol (ACP)](features/acp.md)**: Invoke remote agents over the IBM/Linux Foundation ACP (ADR-018).
 
-### 🏢 Enterprise Features (Optional)
-> Enterprise-Features sind als separates Paket `taskforce-enterprise` verfügbar.
-> Installation: `pip install taskforce-enterprise` - Features werden automatisch aktiviert.
-
-- **[Enterprise Features](features/enterprise.md)**: Multi-tenant identity, RBAC, compliance, and governance.
+### 🏢 Enterprise Extension Model
+- **[Enterprise Integration Surface](features/enterprise.md)**: What remains in core (`pytaskforce`) and how external enterprise packages integrate via interfaces, middleware, and UI manifests.
 
 ### Optional Agent Packages
 Agent-specific capabilities live in separate packages under `agents/` and are
