@@ -246,3 +246,41 @@ class RecipientResolverProtocol(Protocol):
             this as an audited deny).
         """
         ...
+
+
+class AgentLookupProtocol(Protocol):
+    """Resolve an ``@agent_name`` mention to an agent id (ADR-022 §4).
+
+    The gateway parses a leading ``@<name>`` token from inbound chat
+    messages and asks an installed lookup to find the matching agent
+    for the resolved recipient. The lookup is **tenant-scoped by
+    construction**: implementations consult a registry instance that
+    only contains the recipient's own tenant (Pattern A), so a request
+    can never address another tenant's agent through this seam.
+
+    The framework ships no default lookup; when none is installed the
+    ``@<name>`` token is left as plain text in the message body and
+    ``RecipientInfo.default_agent_id`` is used as before. Single-tenant
+    builds therefore behave identically to today.
+    """
+
+    async def find_by_name(
+        self,
+        recipient: RecipientInfo,
+        agent_name: str,
+    ) -> str | None:
+        """Look up ``agent_name`` in the recipient's tenant scope.
+
+        Args:
+            recipient: The recipient resolved from the inbound channel.
+            agent_name: The name extracted from a leading ``@<name>``
+                token (without the ``@`` and without surrounding
+                whitespace). Implementations decide whether the lookup
+                is case-sensitive.
+
+        Returns:
+            The agent id to route to, or ``None`` when the recipient
+            has no agent by that name (the gateway treats this as an
+            audited deny).
+        """
+        ...

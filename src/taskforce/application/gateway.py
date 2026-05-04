@@ -30,6 +30,7 @@ from taskforce.core.domain.gateway import (
 from taskforce.core.domain.models import ExecutionResult
 from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
 from taskforce.core.interfaces.gateway import (
+    AgentLookupProtocol,
     ConversationStoreProtocol,
     OutboundSenderProtocol,
     RecipientInfo,
@@ -42,6 +43,27 @@ if TYPE_CHECKING:
     from taskforce.application.request_queue import RequestQueue
 
 import re
+
+# ADR-022 §4: leading "@name" mention to route a chat message to a specific
+# agent owned by the recipient. The name must start with a letter (or "_")
+# and is followed by at least one whitespace character — so addresses like
+# "@gmail.com" embedded in a sentence are not misinterpreted as routing.
+_AGENT_MENTION_RE = re.compile(r"^\s*@([A-Za-z_][A-Za-z0-9_-]*)\s+(.*)", re.DOTALL)
+
+
+def _extract_agent_mention(text: str) -> tuple[str | None, str]:
+    """Return ``(agent_name, remainder)`` if the message starts with an
+    ``@name`` mention, else ``(None, text)``.
+
+    The mention is stripped from the returned remainder so the agent
+    sees the request without the routing prefix. Whitespace surrounding
+    the mention is consumed.
+    """
+    match = _AGENT_MENTION_RE.match(text)
+    if match is None:
+        return (None, text)
+    return (match.group(1), match.group(2))
+
 
 # Patterns that indicate a status-string response rather than a real answer.
 # These should never be sent to users as the final reply.
@@ -158,6 +180,7 @@ class CommunicationGateway:
         request_queue: RequestQueue | None = None,
         max_conversation_history: int = 30,
         recipient_resolver: RecipientResolverProtocol | None = None,
+        agent_lookup: AgentLookupProtocol | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -170,6 +193,7 @@ class CommunicationGateway:
         self._recipient_resolver: RecipientResolverProtocol = (
             recipient_resolver or _PassthroughRecipientResolver()
         )
+        self._agent_lookup: AgentLookupProtocol | None = agent_lookup
         self._logger = structlog.get_logger()
 
     # ------------------------------------------------------------------
@@ -269,11 +293,55 @@ class CommunicationGateway:
 
         # ------- Normal inbound message flow -------
         resolved_options = options or GatewayOptions()
+        from dataclasses import replace
+
+        # ADR-022 §4: @agent_name routing within the recipient's tenant.
+        # Parsing happens before default-agent fallback so a mention always
+        # wins over the recipient's per-user default. The lookup itself is
+        # tenant-scoped (Pattern A), so a cross-tenant mention can never
+        # resolve.
+        mention, stripped_text = _extract_agent_mention(message.message)
+        if mention is not None:
+            if self._agent_lookup is None:
+                self._logger.info(
+                    "gateway.agent_mention.unconfigured",
+                    channel=message.channel,
+                    sender_id=message.sender_id,
+                    mention=mention,
+                )
+                return GatewayResponse(
+                    session_id="",
+                    status="agent_unresolved",
+                    reply="",
+                    history=[],
+                )
+            resolved_agent_id = await self._agent_lookup.find_by_name(recipient, mention)
+            if resolved_agent_id is None:
+                self._logger.info(
+                    "gateway.agent_mention.unresolved",
+                    channel=message.channel,
+                    sender_id=message.sender_id,
+                    mention=mention,
+                )
+                return GatewayResponse(
+                    session_id="",
+                    status="agent_unresolved",
+                    reply="",
+                    history=[],
+                )
+            self._logger.info(
+                "gateway.agent_mention.resolved",
+                channel=message.channel,
+                sender_id=message.sender_id,
+                mention=mention,
+                agent_id=resolved_agent_id,
+            )
+            resolved_options = replace(resolved_options, agent_id=resolved_agent_id)
+            # Strip the routing prefix so the agent sees a clean request.
+            message = replace(message, message=stripped_text)
 
         # Use resolver-provided default agent when no explicit override is given.
         if resolved_options.agent_id is None and recipient.default_agent_id is not None:
-            from dataclasses import replace
-
             resolved_options = replace(resolved_options, agent_id=recipient.default_agent_id)
 
         session_id = await self._resolve_session_id(

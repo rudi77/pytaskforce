@@ -1096,3 +1096,192 @@ class TestSanitizeReply:
     def test_substantive_reply_with_status_word_passes(self):
         reply = "Der Status deines Pakets: unterwegs. Lieferung morgen erwartet."
         assert _sanitize_reply(reply, "completed") == reply
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §4: @agent_name routing
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.gateway import _extract_agent_mention
+from taskforce.core.interfaces.gateway import RecipientInfo
+
+
+def test_extract_agent_mention_picks_up_leading_at_word() -> None:
+    name, rest = _extract_agent_mention("@accountant please file last month")
+    assert name == "accountant"
+    assert rest == "please file last month"
+
+
+def test_extract_agent_mention_strips_leading_whitespace() -> None:
+    name, rest = _extract_agent_mention("   @scheduler weekly retro?")
+    assert name == "scheduler"
+    assert rest == "weekly retro?"
+
+
+def test_extract_agent_mention_ignores_embedded_email() -> None:
+    name, rest = _extract_agent_mention("ping me at user@gmail.com please")
+    assert name is None
+    assert rest == "ping me at user@gmail.com please"
+
+
+def test_extract_agent_mention_requires_whitespace_after_name() -> None:
+    # Bare "@name" without trailing whitespace is NOT a mention.
+    name, rest = _extract_agent_mention("@accountant")
+    assert name is None
+
+
+class _FakeRecipientResolver:
+    """Resolves every sender to the same recipient for test purposes."""
+
+    def __init__(self, recipient: RecipientInfo) -> None:
+        self._recipient = recipient
+
+    async def resolve(self, channel: str, channel_identity: dict) -> RecipientInfo | None:
+        return self._recipient
+
+
+class _RecordingAgentLookup:
+    """AgentLookup stub that records calls and returns a configured value."""
+
+    def __init__(self, returns: str | None = None) -> None:
+        self.returns = returns
+        self.calls: list[tuple[RecipientInfo, str]] = []
+
+    async def find_by_name(self, recipient: RecipientInfo, agent_name: str) -> str | None:
+        self.calls.append((recipient, agent_name))
+        return self.returns
+
+
+@pytest.mark.asyncio
+async def test_handle_message_with_at_mention_resolves_to_agent() -> None:
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+
+    captured: dict = {}
+
+    class CapturingExecutor:
+        async def execute_mission(self, **kwargs):
+            captured["agent_id"] = kwargs.get("agent_id")
+            captured["mission"] = kwargs.get("mission")
+            return ExecutionResult(
+                session_id=kwargs["session_id"],
+                status="completed",
+                final_message="ok",
+            )
+
+    recipient = RecipientInfo(recipient_id="user-1", default_agent_id="default-agent")
+    lookup = _RecordingAgentLookup(returns="agent-accountant-7")
+
+    gw = CommunicationGateway(
+        executor=CapturingExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=lookup,
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-1",
+        message="@accountant please file last month",
+        sender_id="user-1",
+    )
+    response = await gw.handle_message(msg)
+
+    assert response.status == "completed"
+    assert lookup.calls == [(recipient, "accountant")]
+    assert captured["agent_id"] == "agent-accountant-7"
+    # Routing prefix is stripped before the agent sees the request.
+    assert "@accountant" not in captured["mission"]
+    assert "please file last month" in captured["mission"]
+
+
+@pytest.mark.asyncio
+async def test_handle_message_at_mention_unknown_agent_returns_unresolved() -> None:
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1", default_agent_id="default-agent")
+    lookup = _RecordingAgentLookup(returns=None)
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=lookup,
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-1",
+        message="@nobody do something",
+        sender_id="user-1",
+    )
+    response = await gw.handle_message(msg)
+
+    assert response.status == "agent_unresolved"
+    assert response.session_id == ""
+    assert response.reply == ""
+
+
+@pytest.mark.asyncio
+async def test_handle_message_at_mention_without_lookup_rejects() -> None:
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1", default_agent_id="default-agent")
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        # agent_lookup deliberately omitted
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-1",
+        message="@accountant please file last month",
+        sender_id="user-1",
+    )
+    response = await gw.handle_message(msg)
+
+    assert response.status == "agent_unresolved"
+
+
+@pytest.mark.asyncio
+async def test_handle_message_without_mention_uses_default_agent() -> None:
+    """No @ prefix → recipient.default_agent_id wins as before."""
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1", default_agent_id="default-agent")
+    lookup = _RecordingAgentLookup(returns="should-not-be-called")
+
+    captured: dict = {}
+
+    class CapturingExecutor:
+        async def execute_mission(self, **kwargs):
+            captured["agent_id"] = kwargs.get("agent_id")
+            return ExecutionResult(
+                session_id=kwargs["session_id"], status="completed", final_message="ok"
+            )
+
+    gw = CommunicationGateway(
+        executor=CapturingExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=lookup,
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-1",
+        message="Hi",
+        sender_id="user-1",
+    )
+    await gw.handle_message(msg)
+
+    assert lookup.calls == []  # No mention → no lookup call.
+    assert captured["agent_id"] == "default-agent"
