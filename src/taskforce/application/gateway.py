@@ -13,6 +13,7 @@ cross-session conversations.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -181,6 +182,7 @@ class CommunicationGateway:
         max_conversation_history: int = 30,
         recipient_resolver: RecipientResolverProtocol | None = None,
         agent_lookup: AgentLookupProtocol | None = None,
+        components_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -194,7 +196,43 @@ class CommunicationGateway:
             recipient_resolver or _PassthroughRecipientResolver()
         )
         self._agent_lookup: AgentLookupProtocol | None = agent_lookup
+        # ADR-022 §4 / G1: optional components provider so the gateway
+        # singleton can serve different tenants by re-reading components
+        # per-call. None ⇒ constructor-provided defaults are sticky
+        # (single-tenant behaviour, bit-for-bit unchanged).
+        self._components_provider: Callable[[], Any] | None = components_provider
         self._logger = structlog.get_logger()
+
+    def _resolve_recipient_registry(self) -> RecipientRegistryProtocol:
+        """Return the recipient registry for the current request."""
+        if self._components_provider is None:
+            return self._recipient_registry
+        try:
+            components = self._components_provider()
+        except Exception as exc:  # pragma: no cover — defensive
+            self._logger.warning(
+                "gateway.components_provider_failed",
+                error=str(exc),
+            )
+            return self._recipient_registry
+        return getattr(components, "recipient_registry", self._recipient_registry)
+
+    def _resolve_outbound_senders(self) -> dict[str, OutboundSenderProtocol]:
+        """Return outbound senders for the current request."""
+        if self._components_provider is None:
+            return self._outbound_senders
+        try:
+            components = self._components_provider()
+        except Exception as exc:  # pragma: no cover — defensive
+            self._logger.warning(
+                "gateway.components_provider_failed",
+                error=str(exc),
+            )
+            return self._outbound_senders
+        senders = getattr(components, "outbound_senders", None)
+        if not senders:
+            return self._outbound_senders
+        return dict(senders)
 
     # ------------------------------------------------------------------
     # Inbound message handling
@@ -535,7 +573,9 @@ class CommunicationGateway:
         Returns:
             NotificationResult indicating success or failure.
         """
-        sender = self._outbound_senders.get(request.channel)
+        senders = self._resolve_outbound_senders()
+        registry = self._resolve_recipient_registry()
+        sender = senders.get(request.channel)
         if not sender:
             return NotificationResult(
                 success=False,
@@ -545,7 +585,7 @@ class CommunicationGateway:
                 error=f"No outbound sender configured for channel '{request.channel}'",
             )
 
-        reference = await self._recipient_registry.resolve(
+        reference = await registry.resolve(
             channel=request.channel, user_id=request.recipient_id
         )
         if not reference:
@@ -645,11 +685,12 @@ class CommunicationGateway:
             List of NotificationResult, one per recipient.
         """
         scope_tenant_id = tenant_id or "default"
-        recipients = await self._recipient_registry.list_recipients(channel)
+        registry = self._resolve_recipient_registry()
+        recipients = await registry.list_recipients(channel)
         results: list[NotificationResult] = []
         for user_id in recipients:
             if tenant_id is not None:
-                reference = await self._recipient_registry.resolve(
+                reference = await registry.resolve(
                     channel=channel, user_id=user_id
                 )
                 ref_tenant = (reference or {}).get("tenant_id", "default")
@@ -673,7 +714,7 @@ class CommunicationGateway:
 
     def supported_channels(self) -> set[str]:
         """Return channels that have an outbound sender configured."""
-        return set(self._outbound_senders.keys())
+        return set(self._resolve_outbound_senders().keys())
 
     # ------------------------------------------------------------------
     # Internal helpers

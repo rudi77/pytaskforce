@@ -1355,3 +1355,105 @@ async def test_broadcast_with_unknown_tenant_skips_everyone(gateway_parts) -> No
     results = await gateway.broadcast(channel="telegram", message="hi", tenant_id="other")
 
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# G1 (ADR-022): per-tenant components via components_provider
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class _ComponentsLike:
+    """Minimal stand-in for GatewayComponents in unit tests."""
+
+    recipient_registry: object
+    outbound_senders: dict[str, object]
+
+
+@pytest.mark.asyncio
+async def test_components_provider_swaps_recipient_registry_per_call() -> None:
+    """A provider that returns different components per call must let
+    send_notification land in the matching registry — proving the gateway
+    re-reads on every send rather than capturing once at construction."""
+
+    # Two tenants, two registries. Each pre-registered with a distinct user.
+    reg_a = InMemoryRecipientRegistry()
+    reg_b = InMemoryRecipientRegistry()
+    await reg_a.register(channel="telegram", user_id="alice", reference={"conversation_id": "ca"})
+    await reg_b.register(channel="telegram", user_id="bob", reference={"conversation_id": "cb"})
+
+    sender_a = FakeSender()
+    sender_b = FakeSender()
+    components = {
+        "tenant_a": _ComponentsLike(reg_a, {"telegram": sender_a}),
+        "tenant_b": _ComponentsLike(reg_b, {"telegram": sender_b}),
+    }
+    current_tenant = {"id": "tenant_a"}
+
+    def provider():
+        return components[current_tenant["id"]]
+
+    # Constructor-time defaults are intentionally a third, unrelated set.
+    default_reg = InMemoryRecipientRegistry()
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=InMemoryGatewayConversationStore(),
+        recipient_registry=default_reg,
+        outbound_senders={},
+        components_provider=provider,
+    )
+
+    # tenant_a request: must hit reg_a's "alice"
+    result_a = await gw.send_notification(
+        NotificationRequest(channel="telegram", recipient_id="alice", message="hi a")
+    )
+    assert result_a.success is True
+    assert sender_a.sent and sender_a.sent[0][0] == "ca"
+    assert sender_b.sent == []
+
+    # Switch tenant. Same gateway instance, different registry.
+    current_tenant["id"] = "tenant_b"
+
+    result_b = await gw.send_notification(
+        NotificationRequest(channel="telegram", recipient_id="bob", message="hi b")
+    )
+    assert result_b.success is True
+    assert len(sender_b.sent) == 1
+    assert sender_b.sent[0][0] == "cb"
+
+    # tenant_b cannot reach tenant_a's user — single-process singleton no
+    # longer leaks recipients across tenants.
+    miss = await gw.send_notification(
+        NotificationRequest(channel="telegram", recipient_id="alice", message="cross")
+    )
+    assert miss.success is False
+    assert "not registered" in miss.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_components_provider_failure_falls_back_to_constructor_components() -> None:
+    """A buggy provider must not poison gateway sends."""
+    reg = InMemoryRecipientRegistry()
+    await reg.register(channel="telegram", user_id="u", reference={"conversation_id": "c"})
+    sender = FakeSender()
+
+    def boom():
+        raise RuntimeError("provider broken")
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=InMemoryGatewayConversationStore(),
+        recipient_registry=reg,
+        outbound_senders={"telegram": sender},
+        components_provider=boom,
+    )
+
+    result = await gw.send_notification(
+        NotificationRequest(channel="telegram", recipient_id="u", message="hi")
+    )
+    assert result.success is True
+    assert sender.sent and sender.sent[0][0] == "c"

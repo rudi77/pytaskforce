@@ -15,7 +15,9 @@ and move on.
 
 ## Critical wiring gaps (block end-to-end stories)
 
-### ☐ G1 — Gateway singleton captures only the first tenant's components
+### ☑ G1 — Gateway singleton captures only the first tenant's components
+
+**Closed in:** `feat(adr-022/G1): re-read gateway components per outbound call` — gateway now accepts an optional `components_provider`; outbound + broadcast pull recipient registry and senders fresh from the provider on every call. Single-tenant builds with no provider see bit-for-bit prior behaviour. Provider failure falls back to constructor defaults.
 
 **Where:** `src/taskforce/api/dependencies.py:115` (`@lru_cache(maxsize=1)`)
 

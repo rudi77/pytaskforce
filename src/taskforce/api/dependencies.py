@@ -144,6 +144,20 @@ def get_gateway():
     lookup_provider = get_agent_lookup_override()
     agent_lookup = lookup_provider() if lookup_provider else None
 
+    # ADR-022 §4 / G1: when an enterprise plugin installs a
+    # gateway-components override, the right components are tenant-
+    # scoped per-call. The components_provider is the per-request
+    # gate the gateway consults so its outbound + broadcast paths
+    # always see the *current* tenant's recipient registry and
+    # outbound senders, even though the gateway itself is a process
+    # singleton. With no override installed the provider returns the
+    # same constructor-time GatewayComponents on every call —
+    # bit-for-bit single-tenant behaviour.
+    def _components_provider():
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+        return InfrastructureBuilder().build_gateway_components(work_dir=work_dir)
+
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
@@ -153,6 +167,7 @@ def get_gateway():
         conversation_manager=conversation_manager,
         recipient_resolver=recipient_resolver,
         agent_lookup=agent_lookup,
+        components_provider=_components_provider,
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed
