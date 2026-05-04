@@ -284,3 +284,31 @@ class AgentLookupProtocol(Protocol):
             audited deny).
         """
         ...
+
+
+class WorkflowLookupProtocol(Protocol):
+    """Resolve an ``@workflow_name`` mention to a runnable workflow (G5).
+
+    The gateway consults this AFTER the agent lookup misses, so a
+    user who types ``@daily-report`` in a chat triggers either an
+    agent named ``daily-report`` (if one exists in their tenant) or
+    a workflow with ``trigger: chat`` whose configured match name
+    equals ``daily-report``. Tenant scoping is the implementation's
+    responsibility, mirroring :class:`AgentLookupProtocol`.
+
+    The framework ships no default lookup; without one the
+    ``@<name>`` mention falls through to "no agent by that name"
+    behaviour, identical to today.
+    """
+
+    async def find_by_name(
+        self,
+        recipient: RecipientInfo,
+        workflow_name: str,
+    ) -> str | None:
+        """Return the workflow id whose chat trigger matches ``workflow_name``.
+
+        Returns ``None`` when no chat-triggered workflow with that
+        match name exists for the recipient.
+        """
+        ...

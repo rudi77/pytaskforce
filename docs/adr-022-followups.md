@@ -79,7 +79,9 @@ and move on.
 
 ---
 
-### ☐ G5 — Chat-trigger workflows not addressable by `@workflow_name`
+### ☑ G5 — Chat-trigger workflows not addressable by `@workflow_name`
+
+**Closed in:** `feat(adr-022/G5): resolve @workflow_name mentions in gateway` — added `WorkflowLookupProtocol` + `set_workflow_lookup_override` framework slot. Gateway tries agent lookup first; on miss it consults the workflow lookup. A hit returns a `workflow_dispatched` response carrying `workflow_id` and the stripped message in `metadata` so the channel handler can drive `WorkflowRuntimeService.run_workflow_id`. Service helper `find_chat_workflow(name)` matches against `trigger_config.match` or workflow_id, case-insensitive.
 
 **Where:** `src/taskforce/application/gateway.py` (`_extract_agent_mention` + `agent_lookup`), `WorkflowRuntimeService` (no chat resolver).
 

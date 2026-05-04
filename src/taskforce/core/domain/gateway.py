@@ -65,6 +65,11 @@ class GatewayResponse:
         history: Full conversation history after this exchange.
         conversation_id: The persistent conversation ID (ADR-016).
             ``None`` when the gateway runs without a ConversationManager.
+        metadata: Optional outcome-specific extras. The framework uses
+            this for routing decisions that don't fit the
+            session/conversation model — notably ``workflow_id`` +
+            ``stripped_message`` when an inbound ``@workflow_name``
+            mention dispatches a chat-triggered workflow (ADR-022 §7).
     """
 
     session_id: str
@@ -72,6 +77,7 @@ class GatewayResponse:
     reply: str
     history: list[dict[str, Any]] = field(default_factory=list)
     conversation_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

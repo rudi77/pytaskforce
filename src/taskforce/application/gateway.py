@@ -37,6 +37,7 @@ from taskforce.core.interfaces.gateway import (
     RecipientInfo,
     RecipientRegistryProtocol,
     RecipientResolverProtocol,
+    WorkflowLookupProtocol,
 )
 
 if TYPE_CHECKING:
@@ -182,6 +183,7 @@ class CommunicationGateway:
         max_conversation_history: int = 30,
         recipient_resolver: RecipientResolverProtocol | None = None,
         agent_lookup: AgentLookupProtocol | None = None,
+        workflow_lookup: WorkflowLookupProtocol | None = None,
         components_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._executor = executor
@@ -196,6 +198,7 @@ class CommunicationGateway:
             recipient_resolver or _PassthroughRecipientResolver()
         )
         self._agent_lookup: AgentLookupProtocol | None = agent_lookup
+        self._workflow_lookup: WorkflowLookupProtocol | None = workflow_lookup
         # ADR-022 §4 / G1: optional components provider so the gateway
         # singleton can serve different tenants by re-reading components
         # per-call. None ⇒ constructor-provided defaults are sticky
@@ -333,27 +336,44 @@ class CommunicationGateway:
         resolved_options = options or GatewayOptions()
         from dataclasses import replace
 
-        # ADR-022 §4: @agent_name routing within the recipient's tenant.
-        # Parsing happens before default-agent fallback so a mention always
-        # wins over the recipient's per-user default. The lookup itself is
-        # tenant-scoped (Pattern A), so a cross-tenant mention can never
-        # resolve.
+        # ADR-022 §4 / §7 / G5: @<name> routing within the recipient's
+        # tenant. The gateway tries an agent lookup first, then a
+        # workflow lookup (chat-triggered workflows). Both lookups are
+        # tenant-scoped by their implementations, so a cross-tenant
+        # mention can never resolve. With neither lookup installed the
+        # mention is treated as "no agent by that name" (audited deny).
         mention, stripped_text = _extract_agent_mention(message.message)
         if mention is not None:
-            if self._agent_lookup is None:
-                self._logger.info(
-                    "gateway.agent_mention.unconfigured",
-                    channel=message.channel,
-                    sender_id=message.sender_id,
-                    mention=mention,
+            resolved_agent_id: str | None = None
+            if self._agent_lookup is not None:
+                resolved_agent_id = await self._agent_lookup.find_by_name(
+                    recipient, mention
                 )
-                return GatewayResponse(
-                    session_id="",
-                    status="agent_unresolved",
-                    reply="",
-                    history=[],
+
+            if resolved_agent_id is None and self._workflow_lookup is not None:
+                workflow_id = await self._workflow_lookup.find_by_name(
+                    recipient, mention
                 )
-            resolved_agent_id = await self._agent_lookup.find_by_name(recipient, mention)
+                if workflow_id is not None:
+                    self._logger.info(
+                        "gateway.workflow_mention.resolved",
+                        channel=message.channel,
+                        sender_id=message.sender_id,
+                        mention=mention,
+                        workflow_id=workflow_id,
+                    )
+                    return GatewayResponse(
+                        session_id="",
+                        status="workflow_dispatched",
+                        reply="",
+                        history=[],
+                        conversation_id=None,
+                        metadata={
+                            "workflow_id": workflow_id,
+                            "stripped_message": stripped_text,
+                        },
+                    )
+
             if resolved_agent_id is None:
                 self._logger.info(
                     "gateway.agent_mention.unresolved",
@@ -367,6 +387,7 @@ class CommunicationGateway:
                     reply="",
                     history=[],
                 )
+
             self._logger.info(
                 "gateway.agent_mention.resolved",
                 channel=message.channel,

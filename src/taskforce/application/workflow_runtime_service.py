@@ -225,6 +225,30 @@ class WorkflowRuntimeService:
         ]
         return f"{step.task}\n\nDependency results:\n" + "\n".join(dependency_lines)
 
+    def find_chat_workflow(self, name: str) -> WorkflowDefinition | None:
+        """Return the chat-triggered workflow whose match name equals ``name``.
+
+        Match is case-insensitive on ``trigger_config.match`` (or the
+        workflow_id when no explicit match is configured). Returns
+        ``None`` when no chat-triggered workflow matches; the gateway
+        treats that as "no @-workflow by that name".
+        """
+        if self._definition_store is None:
+            return None
+        normalised = (name or "").strip().lower()
+        if not normalised:
+            return None
+        for definition in self._definition_store.list():
+            if definition.trigger != "chat":
+                continue
+            declared_match = (
+                str((definition.trigger_config or {}).get("match", "")).strip().lower()
+            )
+            workflow_id_match = definition.workflow_id.strip().lower()
+            if declared_match == normalised or workflow_id_match == normalised:
+                return definition
+        return None
+
     def find_webhook_workflow(self, path: str) -> WorkflowDefinition | None:
         """Return the workflow whose webhook trigger matches ``path``.
 

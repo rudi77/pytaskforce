@@ -1457,3 +1457,121 @@ async def test_components_provider_failure_falls_back_to_constructor_components(
     )
     assert result.success is True
     assert sender.sent and sender.sent[0][0] == "c"
+
+
+# ---------------------------------------------------------------------------
+# G5: chat-triggered workflows via @workflow_name
+# ---------------------------------------------------------------------------
+
+
+class _RecordingWorkflowLookup:
+    def __init__(self, returns: str | None = None) -> None:
+        self.returns = returns
+        self.calls: list[tuple[RecipientInfo, str]] = []
+
+    async def find_by_name(self, recipient: RecipientInfo, name: str) -> str | None:
+        self.calls.append((recipient, name))
+        return self.returns
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_lookup_dispatches_workflow_when_agent_misses() -> None:
+    """Agent lookup returns None → workflow lookup hits → response carries workflow id."""
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1", default_agent_id="default-agent")
+
+    agent_lookup = _RecordingAgentLookup(returns=None)  # miss
+    workflow_lookup = _RecordingWorkflowLookup(returns="wf-daily-report")
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=agent_lookup,
+        workflow_lookup=workflow_lookup,
+    )
+
+    msg = InboundMessage(
+        channel="telegram",
+        conversation_id="chat-1",
+        message="@daily-report run it now",
+        sender_id="user-1",
+    )
+    response = await gw.handle_message(msg)
+
+    assert response.status == "workflow_dispatched"
+    assert response.metadata.get("workflow_id") == "wf-daily-report"
+    assert response.metadata.get("stripped_message") == "run it now"
+    assert agent_lookup.calls == [(recipient, "daily-report")]
+    assert workflow_lookup.calls == [(recipient, "daily-report")]
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_lookup_skipped_when_agent_resolves() -> None:
+    """Agent lookup hit → workflow lookup must NOT be consulted."""
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1")
+
+    agent_lookup = _RecordingAgentLookup(returns="agent-7")
+    workflow_lookup = _RecordingWorkflowLookup(returns="wf-x")
+
+    captured: dict = {}
+
+    class _CapturingExecutor:
+        async def execute_mission(self, **kwargs):
+            captured["agent_id"] = kwargs.get("agent_id")
+            return ExecutionResult(
+                session_id=kwargs["session_id"],
+                status="completed",
+                final_message="ok",
+            )
+
+    gw = CommunicationGateway(
+        executor=_CapturingExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=agent_lookup,
+        workflow_lookup=workflow_lookup,
+    )
+
+    response = await gw.handle_message(
+        InboundMessage(
+            channel="telegram",
+            conversation_id="chat-1",
+            message="@accountant please file last month",
+            sender_id="user-1",
+        )
+    )
+
+    assert response.status == "completed"
+    assert workflow_lookup.calls == []
+    assert captured["agent_id"] == "agent-7"
+
+
+@pytest.mark.asyncio
+async def test_no_lookup_at_all_returns_unresolved() -> None:
+    """No agent_lookup, no workflow_lookup → audited deny."""
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    recipient = RecipientInfo(recipient_id="user-1")
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        recipient_resolver=_FakeRecipientResolver(recipient),
+    )
+
+    response = await gw.handle_message(
+        InboundMessage(
+            channel="telegram",
+            conversation_id="chat-1",
+            message="@nobody do something",
+            sender_id="user-1",
+        )
+    )
+    assert response.status == "agent_unresolved"

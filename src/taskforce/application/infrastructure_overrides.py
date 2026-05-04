@@ -65,6 +65,7 @@ _sandboxed_executor: Any | None = None
 _multi_tenant_sandbox_warning_emitted: bool = False
 _recipient_resolver_override: Callable[[], Any] | None = None
 _agent_lookup_override: Callable[[], Any] | None = None
+_workflow_lookup_override: Callable[[], Any] | None = None
 _cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
 
 
@@ -322,6 +323,23 @@ def get_agent_lookup_override() -> Callable[[], Any] | None:
     return _agent_lookup_override
 
 
+def set_workflow_lookup_override(provider: Callable[[], Any] | None) -> None:
+    """Install (or clear) the gateway's @workflow_name lookup (G5).
+
+    Implementations should return an object satisfying
+    :class:`taskforce.core.interfaces.gateway.WorkflowLookupProtocol`.
+    With nothing installed the gateway only resolves @-mentions to
+    agents — no @-workflow routing happens.
+    """
+    global _workflow_lookup_override
+    _workflow_lookup_override = provider
+
+
+def get_workflow_lookup_override() -> Callable[[], Any] | None:
+    """Return the installed workflow-lookup provider, if any."""
+    return _workflow_lookup_override
+
+
 def set_cross_tenant_acp_authorizer(
     authorizer: Callable[[str, str, Any], bool] | None,
 ) -> None:
@@ -416,6 +434,7 @@ def clear_infrastructure_overrides() -> None:
     global _multi_tenant_sandbox_warning_emitted
     global _recipient_resolver_override
     global _agent_lookup_override
+    global _workflow_lookup_override
     global _cross_tenant_acp_authorizer
     _agent_registry_override = None
     _state_manager_override = None
@@ -432,4 +451,5 @@ def clear_infrastructure_overrides() -> None:
     _multi_tenant_sandbox_warning_emitted = False
     _recipient_resolver_override = None
     _agent_lookup_override = None
+    _workflow_lookup_override = None
     _cross_tenant_acp_authorizer = None
