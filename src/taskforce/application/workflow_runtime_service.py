@@ -131,6 +131,50 @@ class WorkflowRuntimeService:
             return False
         return await self._scheduler.remove_job(_schedule_job_id(workflow_id))
 
+    async def run_workflow_id(
+        self,
+        workflow_id: str,
+        executor: Any,
+        *,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a stored workflow's ordered steps via ``executor``.
+
+        Used by the schedule dispatcher (G4) and any other event source
+        that knows a workflow_id but not the steps. Returns the per-step
+        result list in topological order. Raises ``ValueError`` when
+        the workflow_id is unknown or its dependency graph is invalid.
+        """
+        steps = self.ordered_steps(workflow_id)
+        results: dict[str, dict[str, Any]] = {}
+        for step in steps:
+            mission = self._mission_for_step(step, results)
+            execution = await executor.execute_mission(
+                mission=mission,
+                profile=step.agent,
+                session_id=session_id,
+            )
+            results[step.step_id] = {
+                "step_id": step.step_id,
+                "agent": step.agent,
+                "status": getattr(execution, "status", "completed"),
+                "final_message": getattr(execution, "final_message", ""),
+            }
+        return list(results.values())
+
+    @staticmethod
+    def _mission_for_step(
+        step: WorkflowStep, results: dict[str, dict[str, Any]]
+    ) -> str:
+        """Compose the mission text fed to a step's agent."""
+        if not step.depends_on:
+            return step.task
+        dependency_lines = [
+            f"- {dependency_id}: {results[dependency_id].get('final_message', '')}"
+            for dependency_id in step.depends_on
+        ]
+        return f"{step.task}\n\nDependency results:\n" + "\n".join(dependency_lines)
+
     def find_webhook_workflow(self, path: str) -> WorkflowDefinition | None:
         """Return the workflow whose webhook trigger matches ``path``.
 

@@ -116,9 +116,22 @@ async def lifespan(app: FastAPI):
     # definitions actually fire on their cron expressions (ADR-022 §7,
     # G3/G4). Lazy import keeps the framework's startup independent of
     # the scheduler's optional deps.
-    from taskforce.api.dependencies import get_scheduler
+    from taskforce.api.dependencies import (
+        get_executor,
+        get_scheduler,
+        get_workflow_runtime_service,
+    )
+    from taskforce.application.scheduler_dispatcher import (
+        make_scheduler_event_callback,
+    )
 
     scheduler = get_scheduler()
+    # G4: register the workflow dispatcher so EXECUTE_WORKFLOW jobs
+    # actually run their workflow when the cron tick fires.
+    scheduler._event_callback = make_scheduler_event_callback(
+        workflow_runtime=get_workflow_runtime_service(),
+        executor=get_executor(),
+    )
     await scheduler.start()
 
     yield

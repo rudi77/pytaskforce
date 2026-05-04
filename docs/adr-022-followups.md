@@ -61,7 +61,9 @@ and move on.
 
 ---
 
-### ☐ G4 — `EXECUTE_WORKFLOW` schedule action has no dispatcher
+### ☑ G4 — `EXECUTE_WORKFLOW` schedule action has no dispatcher
+
+**Closed in:** `feat(adr-022/G4): dispatch EXECUTE_WORKFLOW schedule events to runtime` — added `WorkflowRuntimeService.run_workflow_id` and `application/scheduler_dispatcher.make_scheduler_event_callback`. The API server's lifespan now installs the callback on the shared `SchedulerService`, so cron-fired `EXECUTE_WORKFLOW` jobs actually run their workflow. Defensive: malformed payloads, unknown workflow ids and dispatcher exceptions don't kill the scheduler event loop.
 
 **Where:** `src/taskforce/infrastructure/scheduler/scheduler_service.py` (fires `SCHEDULE_TRIGGERED` event with action payload), nothing listens for `execute_workflow` action.
 
