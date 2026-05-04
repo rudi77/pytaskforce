@@ -60,6 +60,7 @@ _workflow_checkpoint_store_override: Callable[[str], Any] | None = None
 _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
 _acp_tenant_id_provider: Callable[[], str] | None = None
+_tenant_resolver: Callable[[], str] | None = None
 
 
 def set_agent_registry_override(
@@ -209,6 +210,48 @@ def get_acp_tenant_id_provider() -> Callable[[], str] | None:
     return _acp_tenant_id_provider
 
 
+def set_tenant_resolver(provider: Callable[[], str] | None) -> None:
+    """Install (or clear) the framework-wide tenant-id resolver.
+
+    See ADR-022 §1: the resolver is the single seam the framework uses
+    to ask "what's the current tenant id?" without knowing anything
+    about tenants. An enterprise plugin installs a closure that reads
+    its ``TenantContext`` ContextVar. Single-tenant builds leave it
+    unset; ``get_current_tenant_id()`` then returns ``"default"``.
+
+    In practice the same callable is also passed to
+    :func:`set_acp_tenant_id_provider` — they answer the same question
+    from different call sites. The two slots are kept distinct because
+    the ACP runtime takes its provider as a constructor argument and
+    stores it independently.
+    """
+    global _tenant_resolver
+    _tenant_resolver = provider
+
+
+def get_tenant_resolver() -> Callable[[], str] | None:
+    """Return the currently installed tenant resolver, if any."""
+    return _tenant_resolver
+
+
+def get_current_tenant_id() -> str:
+    """Return the current request's tenant id, or ``"default"``.
+
+    Convenience wrapper that lets call sites stay tenant-agnostic
+    without scattering ``or "default"`` fallbacks. Adapters that need
+    per-tenant scoping read this once at the start of each request /
+    operation; ``"default"`` is the bit-for-bit single-tenant
+    behaviour.
+    """
+    if _tenant_resolver is None:
+        return "default"
+    try:
+        resolved = _tenant_resolver()
+    except Exception:  # Defensive: a buggy plugin must not break the framework
+        return "default"
+    return resolved or "default"
+
+
 def clear_infrastructure_overrides() -> None:
     """Reset all installed overrides.
 
@@ -225,6 +268,7 @@ def clear_infrastructure_overrides() -> None:
     global _gateway_components_override
     global _workspace_context_provider
     global _acp_tenant_id_provider
+    global _tenant_resolver
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -235,3 +279,4 @@ def clear_infrastructure_overrides() -> None:
     _gateway_components_override = None
     _workspace_context_provider = None
     _acp_tenant_id_provider = None
+    _tenant_resolver = None

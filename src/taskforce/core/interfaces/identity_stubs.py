@@ -88,6 +88,25 @@ class IdentityProviderProtocol(Protocol):
 
 
 @runtime_checkable
+class TenantResolverProtocol(Protocol):
+    """Minimal protocol for resolving the current request's tenant id.
+
+    The framework treats tenants as opaque string ids. An enterprise plugin
+    installs a resolver that consults its own ``TenantContext`` ContextVar;
+    the framework default returns ``"default"`` so single-tenant builds
+    behave identically to today.
+
+    This is the single seam the framework reads from when a persistence or
+    runtime adapter needs to scope state to "the current tenant" without
+    importing anything tenant-specific. See ADR-022 §1.
+    """
+
+    def resolve_tenant_id(self) -> str:
+        """Return the current request's tenant id (or ``"default"``)."""
+        ...
+
+
+@runtime_checkable
 class PolicyEngineProtocol(Protocol):
     """Minimal protocol for policy engines.
 

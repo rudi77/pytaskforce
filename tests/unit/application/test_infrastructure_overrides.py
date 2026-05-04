@@ -17,13 +17,16 @@ from taskforce.application.infrastructure_overrides import (
     clear_infrastructure_overrides,
     get_acp_tenant_id_provider,
     get_agent_registry_override,
+    get_current_tenant_id,
     get_gateway_components_override,
     get_state_manager_override,
+    get_tenant_resolver,
     get_workspace_context_provider,
     set_acp_tenant_id_provider,
     set_agent_registry_override,
     set_gateway_components_override,
     set_state_manager_override,
+    set_tenant_resolver,
     set_workspace_context_provider,
 )
 
@@ -48,6 +51,45 @@ def test_defaults_are_unset() -> None:
     assert get_gateway_components_override() is None
     assert get_workspace_context_provider() is None
     assert get_acp_tenant_id_provider() is None
+    assert get_tenant_resolver() is None
+
+
+# ---------------------------------------------------------------------------
+# Tenant resolver (ADR-022 §1)
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_tenant_id_returns_default_without_resolver() -> None:
+    """Single-tenant builds: no resolver installed → ``"default"``."""
+    assert get_current_tenant_id() == "default"
+
+
+def test_get_current_tenant_id_uses_installed_resolver() -> None:
+    """When a resolver is installed, its value is returned."""
+    set_tenant_resolver(lambda: "tenant-a")
+    assert get_current_tenant_id() == "tenant-a"
+
+
+def test_get_current_tenant_id_falls_back_when_resolver_returns_empty() -> None:
+    """An empty / falsy resolver value is treated as the default."""
+    set_tenant_resolver(lambda: "")
+    assert get_current_tenant_id() == "default"
+
+
+def test_get_current_tenant_id_falls_back_when_resolver_raises() -> None:
+    """A buggy resolver must not break the framework — fall back to default."""
+    def boom() -> str:
+        raise RuntimeError("boom")
+
+    set_tenant_resolver(boom)
+    assert get_current_tenant_id() == "default"
+
+
+def test_clear_resets_tenant_resolver() -> None:
+    set_tenant_resolver(lambda: "tenant-a")
+    clear_infrastructure_overrides()
+    assert get_tenant_resolver() is None
+    assert get_current_tenant_id() == "default"
 
 
 def test_default_build_agent_registry_returns_file_registry() -> None:
