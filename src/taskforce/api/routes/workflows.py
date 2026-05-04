@@ -145,6 +145,35 @@ def delete_workflow_definition(
     return {"success": True, "deleted": True}
 
 
+async def _execute_workflow_steps(
+    workflow_id: str,
+    service: WorkflowRuntimeService,
+    executor: AgentExecutor,
+    session_id: str | None,
+) -> list[dict[str, Any]]:
+    """Run a workflow's ordered steps and return per-step results.
+
+    Shared by the explicit ``/run`` endpoint and the webhook-trigger
+    endpoint so both paths produce identical step result shapes.
+    """
+    steps = service.ordered_steps(workflow_id)
+    results: dict[str, dict[str, Any]] = {}
+    for step in steps:
+        mission = _mission_for_step(step, results)
+        execution = await executor.execute_mission(
+            mission=mission,
+            profile=step.agent,
+            session_id=session_id,
+        )
+        results[step.step_id] = {
+            "step_id": step.step_id,
+            "agent": step.agent,
+            "status": getattr(execution, "status", "completed"),
+            "final_message": getattr(execution, "final_message", ""),
+        }
+    return list(results.values())
+
+
 @router.post("/definitions/{workflow_id}/run")
 async def run_workflow_definition(
     workflow_id: str,
@@ -154,29 +183,66 @@ async def run_workflow_definition(
 ) -> dict[str, Any]:
     """Run a first-class workflow definition sequentially by dependency order."""
     try:
-        steps = service.ordered_steps(workflow_id)
+        results = await _execute_workflow_steps(
+            workflow_id, service, executor, request.session_id
+        )
     except ValueError as exc:
         raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
-
-    results: dict[str, dict[str, Any]] = {}
-    for step in steps:
-        mission = _mission_for_step(step, results)
-        execution = await executor.execute_mission(
-            mission=mission,
-            profile=step.agent,
-            session_id=request.session_id,
-        )
-        results[step.step_id] = {
-            "step_id": step.step_id,
-            "agent": step.agent,
-            "status": getattr(execution, "status", "completed"),
-            "final_message": getattr(execution, "final_message", ""),
-        }
 
     return {
         "success": True,
         "workflow_id": workflow_id,
-        "steps": list(results.values()),
+        "steps": results,
+    }
+
+
+@router.post("/webhooks/{trigger_path:path}")
+async def trigger_workflow_webhook(
+    trigger_path: str,
+    payload: dict[str, Any] | None = None,
+    service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
+    executor: AgentExecutor = Depends(get_executor),
+) -> dict[str, Any]:
+    """Run the workflow whose ``webhook`` trigger matches ``trigger_path``.
+
+    ADR-022 §7: a workflow definition with::
+
+        trigger: webhook
+        trigger_config:
+          path: hooks/daily-report
+
+    becomes reachable at ``POST /api/v1/workflows/webhooks/hooks/daily-report``.
+    The request body is forwarded into the run via ``session_id`` (when
+    provided) — the steps themselves are agent missions, not raw HTTP
+    handlers, so any custom payload semantics are the workflow's
+    responsibility to interpret.
+    """
+    definition = service.find_webhook_workflow(trigger_path)
+    if definition is None:
+        raise http_exception(
+            status_code=404,
+            code="webhook_workflow_not_found",
+            message=f"No workflow registered for webhook path: {trigger_path}",
+        )
+
+    session_id = None
+    if isinstance(payload, dict):
+        raw_session = payload.get("session_id")
+        if isinstance(raw_session, str) and raw_session:
+            session_id = raw_session
+
+    try:
+        results = await _execute_workflow_steps(
+            definition.workflow_id, service, executor, session_id
+        )
+    except ValueError as exc:
+        raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
+
+    return {
+        "success": True,
+        "workflow_id": definition.workflow_id,
+        "trigger_path": trigger_path,
+        "steps": results,
     }
 
 

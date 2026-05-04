@@ -131,6 +131,29 @@ class WorkflowRuntimeService:
             return False
         return await self._scheduler.remove_job(_schedule_job_id(workflow_id))
 
+    def find_webhook_workflow(self, path: str) -> WorkflowDefinition | None:
+        """Return the workflow whose webhook trigger matches ``path``.
+
+        The match is exact against ``trigger_config.path`` after
+        stripping the leading slash from both sides — so a definition
+        declared as ``path: hooks/run`` and a request URL ending in
+        ``/hooks/run`` resolve to each other regardless of how the
+        operator wrote them. Returns ``None`` when no definition has a
+        matching webhook trigger; callers translate that to 404.
+        """
+        if self._definition_store is None:
+            return None
+        normalised = (path or "").strip("/").lower()
+        for definition in self._definition_store.list():
+            if definition.trigger != "webhook":
+                continue
+            declared = (
+                str((definition.trigger_config or {}).get("path", "")).strip("/").lower()
+            )
+            if declared and declared == normalised:
+                return definition
+        return None
+
     def get_definition(self, workflow_id: str) -> WorkflowDefinition | None:
         """Get a workflow definition by id."""
         if self._definition_store is None:

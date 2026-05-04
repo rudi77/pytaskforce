@@ -297,3 +297,85 @@ async def test_register_schedule_noop_without_scheduler(tmp_path):
     )
     assert await runtime.register_schedule_for(definition) is None
     assert await runtime.unregister_schedule_for("x") is False
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §7: webhook-trigger lookup
+# ---------------------------------------------------------------------------
+
+
+def test_find_webhook_workflow_matches_declared_path(tmp_path):
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="report",
+            name="Daily",
+            trigger="webhook",
+            trigger_config={"path": "hooks/daily-report"},
+        )
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="manual",
+            name="Manual",
+            trigger="manual",
+        )
+    )
+
+    found = runtime.find_webhook_workflow("hooks/daily-report")
+    assert found is not None
+    assert found.workflow_id == "report"
+
+
+def test_find_webhook_workflow_normalises_leading_slashes(tmp_path):
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="r",
+            name="x",
+            trigger="webhook",
+            trigger_config={"path": "/hooks/run"},
+        )
+    )
+    # Request URL-derived path may or may not have a leading slash —
+    # either form must resolve to the same definition.
+    assert runtime.find_webhook_workflow("hooks/run") is not None
+    assert runtime.find_webhook_workflow("/hooks/run") is not None
+
+
+def test_find_webhook_workflow_returns_none_for_unknown_path(tmp_path):
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="r",
+            name="x",
+            trigger="webhook",
+            trigger_config={"path": "hooks/run"},
+        )
+    )
+    assert runtime.find_webhook_workflow("hooks/different") is None
+
+
+def test_find_webhook_workflow_skips_non_webhook_triggers(tmp_path):
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="m",
+            name="Manual same path",
+            trigger="manual",
+            trigger_config={"path": "hooks/run"},  # ignored — wrong trigger
+        )
+    )
+    assert runtime.find_webhook_workflow("hooks/run") is None
