@@ -125,10 +125,25 @@ def get_gateway():
         FilePendingChannelQuestionStore,
     )
 
+    from taskforce.application.infrastructure_overrides import (
+        get_agent_lookup_override,
+        get_recipient_resolver_override,
+    )
+
     components = get_gateway_components()
     executor = get_executor()
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     conversation_manager = get_conversation_manager()
+
+    # ADR-022 §4: optional plugin-provided recipient resolver and
+    # @agent lookup. With nothing installed the gateway uses its
+    # built-in pass-through resolver and treats @-prefixed messages
+    # as plain text — single-tenant builds are unchanged.
+    resolver_provider = get_recipient_resolver_override()
+    recipient_resolver = resolver_provider() if resolver_provider else None
+    lookup_provider = get_agent_lookup_override()
+    agent_lookup = lookup_provider() if lookup_provider else None
+
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
@@ -136,6 +151,8 @@ def get_gateway():
         outbound_senders=components.outbound_senders,
         pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
         conversation_manager=conversation_manager,
+        recipient_resolver=recipient_resolver,
+        agent_lookup=agent_lookup,
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed

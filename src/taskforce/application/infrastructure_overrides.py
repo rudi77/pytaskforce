@@ -63,6 +63,8 @@ _acp_tenant_id_provider: Callable[[], str] | None = None
 _tenant_resolver: Callable[[], str] | None = None
 _sandboxed_executor: Any | None = None
 _multi_tenant_sandbox_warning_emitted: bool = False
+_recipient_resolver_override: Callable[[], Any] | None = None
+_agent_lookup_override: Callable[[], Any] | None = None
 
 
 def set_agent_registry_override(
@@ -277,6 +279,48 @@ def get_sandboxed_executor() -> Any | None:
     return _sandboxed_executor
 
 
+def set_recipient_resolver_override(provider: Callable[[], Any] | None) -> None:
+    """Install (or clear) a provider that returns the gateway's recipient resolver.
+
+    The provider is consulted once when the lazy ``get_gateway`` builds
+    the ``CommunicationGateway`` singleton. Implementations should
+    return an object satisfying
+    :class:`taskforce.core.interfaces.gateway.RecipientResolverProtocol`.
+
+    The framework default is no override → the gateway uses its built-in
+    pass-through resolver, which makes the legacy single-tenant behaviour
+    unchanged.
+    """
+    global _recipient_resolver_override
+    _recipient_resolver_override = provider
+
+
+def get_recipient_resolver_override() -> Callable[[], Any] | None:
+    """Return the installed recipient-resolver provider, if any."""
+    return _recipient_resolver_override
+
+
+def set_agent_lookup_override(provider: Callable[[], Any] | None) -> None:
+    """Install (or clear) a provider that returns the gateway's ``@agent`` lookup.
+
+    The provider is consulted once when ``get_gateway`` builds the
+    ``CommunicationGateway`` singleton. Implementations should return
+    an object satisfying
+    :class:`taskforce.core.interfaces.gateway.AgentLookupProtocol`.
+
+    With no override installed the gateway leaves a leading ``@name``
+    token as plain text in the message body and falls back to the
+    recipient's default agent — see ADR-022 §4.
+    """
+    global _agent_lookup_override
+    _agent_lookup_override = provider
+
+
+def get_agent_lookup_override() -> Callable[[], Any] | None:
+    """Return the installed agent-lookup provider, if any."""
+    return _agent_lookup_override
+
+
 def warn_if_multi_tenant_without_sandbox() -> bool:
     """Emit a hard one-shot warning when multi-tenant runs without a sandbox.
 
@@ -339,6 +383,8 @@ def clear_infrastructure_overrides() -> None:
     global _tenant_resolver
     global _sandboxed_executor
     global _multi_tenant_sandbox_warning_emitted
+    global _recipient_resolver_override
+    global _agent_lookup_override
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -352,3 +398,5 @@ def clear_infrastructure_overrides() -> None:
     _tenant_resolver = None
     _sandboxed_executor = None
     _multi_tenant_sandbox_warning_emitted = False
+    _recipient_resolver_override = None
+    _agent_lookup_override = None

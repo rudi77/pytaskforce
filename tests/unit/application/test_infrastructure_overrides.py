@@ -428,3 +428,36 @@ def test_warn_fires_once_in_multi_tenant_without_sandbox() -> None:
     assert len(captured) == 1
     assert issubclass(captured[0].category, RuntimeWarning)
     assert "multi-tenant" in str(captured[0].message).lower()
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §4: gateway recipient_resolver + agent_lookup overrides
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    get_agent_lookup_override,
+    get_recipient_resolver_override,
+    set_agent_lookup_override,
+    set_recipient_resolver_override,
+)
+
+
+def test_recipient_resolver_override_round_trip() -> None:
+    sentinel = object()
+    set_recipient_resolver_override(lambda: sentinel)
+    assert get_recipient_resolver_override()() is sentinel
+
+
+def test_agent_lookup_override_round_trip() -> None:
+    sentinel = object()
+    set_agent_lookup_override(lambda: sentinel)
+    assert get_agent_lookup_override()() is sentinel
+
+
+def test_clear_resets_gateway_overrides() -> None:
+    set_recipient_resolver_override(lambda: object())
+    set_agent_lookup_override(lambda: object())
+    clear_infrastructure_overrides()
+    assert get_recipient_resolver_override() is None
+    assert get_agent_lookup_override() is None
