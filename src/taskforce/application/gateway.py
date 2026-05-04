@@ -13,7 +13,7 @@ cross-session conversations.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -179,11 +179,13 @@ class CommunicationGateway:
         outbound_senders: dict[str, OutboundSenderProtocol] | None = None,
         pending_channel_store: PendingChannelQuestionStoreProtocol | None = None,
         conversation_manager: ConversationManager | None = None,
+        conversation_manager_provider: Callable[[], ConversationManager | None] | None = None,
         request_queue: RequestQueue | None = None,
         max_conversation_history: int = 30,
         recipient_resolver: RecipientResolverProtocol | None = None,
         agent_lookup: AgentLookupProtocol | None = None,
         workflow_lookup: WorkflowLookupProtocol | None = None,
+        workflow_runner: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         components_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._executor = executor
@@ -192,6 +194,7 @@ class CommunicationGateway:
         self._outbound_senders = dict(outbound_senders or {})
         self._pending_channel_store = pending_channel_store
         self._conversation_manager = conversation_manager
+        self._conversation_manager_provider = conversation_manager_provider
         self._request_queue = request_queue
         self._max_conversation_history = max_conversation_history
         self._recipient_resolver: RecipientResolverProtocol = (
@@ -199,6 +202,7 @@ class CommunicationGateway:
         )
         self._agent_lookup: AgentLookupProtocol | None = agent_lookup
         self._workflow_lookup: WorkflowLookupProtocol | None = workflow_lookup
+        self._workflow_runner = workflow_runner
         # ADR-022 §4 / G1: optional components provider so the gateway
         # singleton can serve different tenants by re-reading components
         # per-call. None ⇒ constructor-provided defaults are sticky
@@ -236,6 +240,33 @@ class CommunicationGateway:
         if not senders:
             return self._outbound_senders
         return dict(senders)
+
+    def _resolve_conversation_store(self) -> ConversationStoreProtocol:
+        """Return the channel conversation store for the current request."""
+        if self._components_provider is None:
+            return self._conversation_store
+        try:
+            components = self._components_provider()
+        except Exception as exc:  # pragma: no cover — defensive
+            self._logger.warning(
+                "gateway.components_provider_failed",
+                error=str(exc),
+            )
+            return self._conversation_store
+        return getattr(components, "conversation_store", self._conversation_store)
+
+    def _resolve_conversation_manager(self) -> ConversationManager | None:
+        """Return the persistent conversation manager for the current request."""
+        if self._conversation_manager_provider is None:
+            return self._conversation_manager
+        try:
+            return self._conversation_manager_provider()
+        except Exception as exc:  # pragma: no cover — defensive
+            self._logger.warning(
+                "gateway.conversation_manager_provider_failed",
+                error=str(exc),
+            )
+            return self._conversation_manager
 
     # ------------------------------------------------------------------
     # Inbound message handling
@@ -285,7 +316,7 @@ class CommunicationGateway:
                     session_id=resolved_session,
                 )
                 # Send acknowledgment back to the channel
-                sender = self._outbound_senders.get(message.channel)
+                sender = self._resolve_outbound_senders().get(message.channel)
                 if sender:
                     try:
                         await sender.send(
@@ -346,14 +377,10 @@ class CommunicationGateway:
         if mention is not None:
             resolved_agent_id: str | None = None
             if self._agent_lookup is not None:
-                resolved_agent_id = await self._agent_lookup.find_by_name(
-                    recipient, mention
-                )
+                resolved_agent_id = await self._agent_lookup.find_by_name(recipient, mention)
 
             if resolved_agent_id is None and self._workflow_lookup is not None:
-                workflow_id = await self._workflow_lookup.find_by_name(
-                    recipient, mention
-                )
+                workflow_id = await self._workflow_lookup.find_by_name(recipient, mention)
                 if workflow_id is not None:
                     self._logger.info(
                         "gateway.workflow_mention.resolved",
@@ -362,16 +389,10 @@ class CommunicationGateway:
                         mention=mention,
                         workflow_id=workflow_id,
                     )
-                    return GatewayResponse(
-                        session_id="",
-                        status="workflow_dispatched",
-                        reply="",
-                        history=[],
-                        conversation_id=None,
-                        metadata={
-                            "workflow_id": workflow_id,
-                            "stripped_message": stripped_text,
-                        },
+                    return await self._dispatch_workflow(
+                        workflow_id=workflow_id,
+                        message=replace(message, message=stripped_text),
+                        options=resolved_options,
                     )
 
             if resolved_agent_id is None:
@@ -411,7 +432,7 @@ class CommunicationGateway:
 
         # Auto-register sender for future push notifications
         if message.sender_id:
-            await self._recipient_registry.register(
+            await self._resolve_recipient_registry().register(
                 channel=message.channel,
                 user_id=message.sender_id,
                 reference={
@@ -421,25 +442,27 @@ class CommunicationGateway:
             )
 
         # --- ADR-016 Phase 4: queue-based routing ---
-        if self._request_queue and self._conversation_manager:
+        conversation_manager = self._resolve_conversation_manager()
+        if self._request_queue and conversation_manager:
             return await self._handle_via_queue(
                 message=message,
                 session_id=session_id,
                 options=resolved_options,
+                conversation_manager=conversation_manager,
             )
 
         # --- ADR-016 Phase 3: conversation-managed history ---
-        if self._conversation_manager:
+        if conversation_manager:
             return await self._handle_with_conversation_manager(
                 message=message,
                 session_id=session_id,
                 options=resolved_options,
+                conversation_manager=conversation_manager,
             )
 
         # --- Legacy: channel-keyed conversation store ---
-        history = await self._conversation_store.load_history(
-            message.channel, message.conversation_id
-        )
+        store = self._resolve_conversation_store()
+        history = await store.load_history(message.channel, message.conversation_id)
         user_content = _build_multimodal_content(
             message.message, message.metadata.get("attachments")
         )
@@ -606,9 +629,7 @@ class CommunicationGateway:
                 error=f"No outbound sender configured for channel '{request.channel}'",
             )
 
-        reference = await registry.resolve(
-            channel=request.channel, user_id=request.recipient_id
-        )
+        reference = await registry.resolve(channel=request.channel, user_id=request.recipient_id)
         if not reference:
             return NotificationResult(
                 success=False,
@@ -711,9 +732,7 @@ class CommunicationGateway:
         results: list[NotificationResult] = []
         for user_id in recipients:
             if tenant_id is not None:
-                reference = await registry.resolve(
-                    channel=channel, user_id=user_id
-                )
+                reference = await registry.resolve(channel=channel, user_id=user_id)
                 ref_tenant = (reference or {}).get("tenant_id", "default")
                 if ref_tenant != tenant_id:
                     continue
@@ -758,17 +777,18 @@ class CommunicationGateway:
 
         # Delete the entire conversation record (history + session mapping)
         # so that the next message gets a fresh session ID.
-        await self._conversation_store.delete_conversation(message.channel, message.conversation_id)
+        await self._resolve_conversation_store().delete_conversation(
+            message.channel, message.conversation_id
+        )
 
         # Archive current conversation and start fresh (ADR-016).
         conv_id: str | None = None
-        if self._conversation_manager and message.sender_id:
-            conv_id = await self._conversation_manager.create_new(
-                message.channel, message.sender_id
-            )
+        conversation_manager = self._resolve_conversation_manager()
+        if conversation_manager and message.sender_id:
+            conv_id = await conversation_manager.create_new(message.channel, message.sender_id)
 
         # Send welcome message via outbound sender.
-        sender = self._outbound_senders.get(message.channel)
+        sender = self._resolve_outbound_senders().get(message.channel)
         if sender:
             try:
                 await sender.send(
@@ -802,6 +822,7 @@ class CommunicationGateway:
         message: InboundMessage,
         session_id: str,
         options: GatewayOptions,
+        conversation_manager: ConversationManager,
     ) -> GatewayResponse:
         """Handle message by routing through the RequestQueue (ADR-016 Phase 4).
 
@@ -818,7 +839,6 @@ class CommunicationGateway:
         from taskforce.core.domain.request import AgentRequest
 
         assert self._request_queue is not None
-        assert self._conversation_manager is not None
 
         if not self._request_queue.is_running:
             raise RuntimeError(
@@ -826,7 +846,7 @@ class CommunicationGateway:
                 "or PersistentAgentService before routing messages through the queue."
             )
 
-        conv_id = await self._conversation_manager.get_or_create(message.channel, message.sender_id)
+        conv_id = await conversation_manager.get_or_create(message.channel, message.sender_id)
 
         # Build multimodal content for the queue metadata so the processor
         # can pass it through to the conversation history.
@@ -859,8 +879,8 @@ class CommunicationGateway:
         result = await future
 
         # Sync to legacy store for backward compatibility.
-        final_history = await self._conversation_manager.get_messages(conv_id)
-        await self._conversation_store.save_history(
+        final_history = await conversation_manager.get_messages(conv_id)
+        await self._resolve_conversation_store().save_history(
             message.channel, message.conversation_id, final_history
         )
 
@@ -887,27 +907,26 @@ class CommunicationGateway:
         message: InboundMessage,
         session_id: str,
         options: GatewayOptions,
+        conversation_manager: ConversationManager,
     ) -> GatewayResponse:
         """Handle message using ConversationManager (ADR-016 path).
 
         Uses ``ConversationManager`` for history storage and conversation
         lifecycle instead of the legacy ``ConversationStoreProtocol``.
         """
-        assert self._conversation_manager is not None  # guarded by caller
-
-        conv_id = await self._conversation_manager.get_or_create(message.channel, message.sender_id)
+        conv_id = await conversation_manager.get_or_create(message.channel, message.sender_id)
 
         # Append user message to conversation.
         user_content = _build_multimodal_content(
             message.message, message.metadata.get("attachments")
         )
-        await self._conversation_manager.append_message(
+        await conversation_manager.append_message(
             conv_id,
             {"role": MessageRole.USER.value, "content": user_content},
         )
 
         # Load history for agent context (trimmed to limit).
-        history = await self._conversation_manager.get_messages(conv_id)
+        history = await conversation_manager.get_messages(conv_id)
 
         result = await self._execute_agent(
             message=message.message,
@@ -919,14 +938,14 @@ class CommunicationGateway:
         )
 
         # Append assistant reply.
-        await self._conversation_manager.append_message(
+        await conversation_manager.append_message(
             conv_id,
             {"role": MessageRole.ASSISTANT.value, "content": result.final_message},
         )
 
         # Also persist to legacy store for backward compatibility.
-        final_history = await self._conversation_manager.get_messages(conv_id)
-        await self._conversation_store.save_history(
+        final_history = await conversation_manager.get_messages(conv_id)
+        await self._resolve_conversation_store().save_history(
             message.channel, message.conversation_id, final_history
         )
 
@@ -955,7 +974,7 @@ class CommunicationGateway:
         status: str | Any,
     ) -> None:
         """Send outbound reply if a sender is configured for the channel."""
-        sender = self._outbound_senders.get(channel)
+        sender = self._resolve_outbound_senders().get(channel)
         if sender:
             sanitized = _sanitize_reply(reply, status)
             try:
@@ -981,17 +1000,18 @@ class CommunicationGateway:
     ) -> str:
         """Resolve or generate a session ID for this conversation."""
         if explicit_session_id:
-            await self._conversation_store.set_session_id(
+            await self._resolve_conversation_store().set_session_id(
                 channel, conversation_id, explicit_session_id
             )
             return explicit_session_id
 
-        existing = await self._conversation_store.get_session_id(channel, conversation_id)
+        store = self._resolve_conversation_store()
+        existing = await store.get_session_id(channel, conversation_id)
         if existing:
             return existing
 
         generated = str(uuid4())
-        await self._conversation_store.set_session_id(channel, conversation_id, generated)
+        await store.set_session_id(channel, conversation_id, generated)
         return generated
 
     async def _resolve_fallback_recipient_id(
@@ -1006,12 +1026,13 @@ class CommunicationGateway:
         1. Match by stored conversation_id value.
         2. If exactly one recipient is registered on this channel, use it.
         """
-        recipients = await self._recipient_registry.list_recipients(channel)
+        registry = self._resolve_recipient_registry()
+        recipients = await registry.list_recipients(channel)
         if not recipients:
             return None
 
         for user_id in recipients:
-            reference = await self._recipient_registry.resolve(channel=channel, user_id=user_id)
+            reference = await registry.resolve(channel=channel, user_id=user_id)
             conversation_id = str((reference or {}).get("conversation_id", ""))
             if conversation_id and conversation_id == recipient_id:
                 return user_id
@@ -1020,6 +1041,72 @@ class CommunicationGateway:
             return recipients[0]
 
         return None
+
+    async def _dispatch_workflow(
+        self,
+        *,
+        workflow_id: str,
+        message: InboundMessage,
+        options: GatewayOptions,
+    ) -> GatewayResponse:
+        """Run a chat-triggered workflow and return/send its final reply."""
+        metadata = {
+            "workflow_id": workflow_id,
+            "stripped_message": message.message,
+        }
+        if self._workflow_runner is None:
+            return GatewayResponse(
+                session_id="",
+                status="workflow_dispatched",
+                reply="",
+                history=[],
+                conversation_id=None,
+                metadata=metadata,
+            )
+
+        session_id = await self._resolve_session_id(
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            explicit_session_id=options.session_id,
+        )
+        if message.sender_id:
+            await self._resolve_recipient_registry().register(
+                channel=message.channel,
+                user_id=message.sender_id,
+                reference={
+                    "conversation_id": message.conversation_id,
+                    "metadata": message.metadata,
+                },
+            )
+
+        store = self._resolve_conversation_store()
+        history = await store.load_history(message.channel, message.conversation_id)
+        history_with_user = _append_message(
+            history,
+            MessageRole.USER.value,
+            _build_multimodal_content(message.message, message.metadata.get("attachments")),
+        )
+        step_results = await self._workflow_runner(workflow_id, session_id)
+        final_step = step_results[-1] if step_results else {}
+        reply = str(final_step.get("final_message") or "")
+        status = str(final_step.get("status") or "completed")
+
+        final_history = _append_message(history_with_user, MessageRole.ASSISTANT.value, reply)
+        await store.save_history(message.channel, message.conversation_id, final_history)
+        await self._send_outbound_reply(
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            reply=reply,
+            status=status,
+        )
+        return GatewayResponse(
+            session_id=session_id,
+            status=status,
+            reply=reply,
+            history=final_history,
+            conversation_id=None,
+            metadata={**metadata, "steps": step_results},
+        )
 
     async def _execute_agent(
         self,
@@ -1070,24 +1157,16 @@ class CommunicationGateway:
             MessageRole.ASSISTANT.value,
             result.final_message,
         )
-        await self._conversation_store.save_history(channel, conversation_id, final_history)
+        await self._resolve_conversation_store().save_history(
+            channel, conversation_id, final_history
+        )
 
-        # Send outbound reply if sender is configured for this channel
-        sender = self._outbound_senders.get(channel)
-        if sender:
-            try:
-                await sender.send(
-                    recipient_id=conversation_id,
-                    message=result.final_message,
-                    metadata={"status": result.status},
-                )
-            except Exception as exc:
-                self._logger.error(
-                    "gateway.outbound.reply_failed",
-                    channel=channel,
-                    conversation_id=conversation_id,
-                    error=str(exc),
-                )
+        await self._send_outbound_reply(
+            channel=channel,
+            conversation_id=conversation_id,
+            reply=result.final_message,
+            status=result.status,
+        )
 
         return GatewayResponse(
             session_id=session_id,

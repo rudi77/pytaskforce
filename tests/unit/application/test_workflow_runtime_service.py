@@ -555,9 +555,7 @@ async def test_dependency_results_visible_to_join_step(tmp_path) -> None:
             steps=[
                 WorkflowStep(step_id="a", agent="alpha", task="ask alpha"),
                 WorkflowStep(step_id="b", agent="beta", task="ask beta"),
-                WorkflowStep(
-                    step_id="c", agent="gamma", task="merge", depends_on=["a", "b"]
-                ),
+                WorkflowStep(step_id="c", agent="gamma", task="merge", depends_on=["a", "b"]),
             ],
         )
     )
@@ -644,9 +642,7 @@ async def test_acp_step_permission_denied_yields_failed_result(tmp_path) -> None
             workflow_id="acp-denied",
             name="x",
             steps=[
-                WorkflowStep(
-                    step_id="s1", agent="butler", task="ping", acp_peer="other-tenant"
-                )
+                WorkflowStep(step_id="s1", agent="butler", task="ping", acp_peer="other-tenant")
             ],
         )
     )
@@ -661,25 +657,12 @@ async def test_acp_step_permission_denied_yields_failed_result(tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_acp_step_falls_back_to_local_when_no_runtime_wired(tmp_path) -> None:
-    """If acp_peer is set but no AcpRuntime is wired, fall back to local agent.
+async def test_acp_step_fails_closed_when_no_runtime_wired(tmp_path) -> None:
+    """An ACP step without an ACP runtime must not silently run locally."""
 
-    This keeps a workflow with mixed steps loadable in single-tenant
-    builds without an ACP runtime — the step just runs the local
-    profile named in ``agent``.
-    """
-    captured: list[str] = []
-
-    class _CapturingExecutor:
+    class _NoopExecutor:
         async def execute_mission(self, **kwargs):
-            captured.append(kwargs["profile"])
-            from taskforce.core.domain.models import ExecutionResult
-
-            return ExecutionResult(
-                session_id="s",
-                status="completed",
-                final_message="local-reply",
-            )
+            raise AssertionError("acp step must not fall back to local execution")
 
     runtime = WorkflowRuntimeService(
         store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
@@ -701,9 +684,9 @@ async def test_acp_step_falls_back_to_local_when_no_runtime_wired(tmp_path) -> N
         )
     )
 
-    results = await runtime.run_workflow_id("fallback", _CapturingExecutor())
-    assert captured == ["local-butler"]
-    assert results[0]["final_message"] == "local-reply"
+    results = await runtime.run_workflow_id("fallback", _NoopExecutor())
+    assert results[0]["status"] == "failed"
+    assert "ACP runtime is not configured" in results[0]["error"]
 
 
 def test_workflow_step_yaml_round_trip_preserves_acp_peer() -> None:

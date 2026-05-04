@@ -57,6 +57,7 @@ class WorkflowStepRequest(BaseModel):
     task: str = Field(..., min_length=1)
     depends_on: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    acp_peer: str | None = None
 
 
 class WorkflowDefinitionRequest(BaseModel):
@@ -66,6 +67,7 @@ class WorkflowDefinitionRequest(BaseModel):
     name: str = Field(..., min_length=1)
     description: str = ""
     trigger: str = "manual"
+    trigger_config: dict[str, Any] = Field(default_factory=dict)
     steps: list[WorkflowStepRequest] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -77,6 +79,10 @@ class RunWorkflowDefinitionRequest(BaseModel):
 
 
 def _workflow_from_request(request: WorkflowDefinitionRequest) -> WorkflowDefinition:
+    from taskforce.application.infrastructure_overrides import get_current_tenant_id
+
+    metadata = dict(request.metadata)
+    metadata.setdefault("tenant_id", get_current_tenant_id())
     return WorkflowDefinition(
         workflow_id=request.workflow_id,
         name=request.name,
@@ -89,10 +95,12 @@ def _workflow_from_request(request: WorkflowDefinitionRequest) -> WorkflowDefini
                 task=step.task,
                 depends_on=step.depends_on,
                 metadata=step.metadata,
+                acp_peer=step.acp_peer,
             )
             for step in request.steps
         ],
-        metadata=request.metadata,
+        trigger_config=request.trigger_config,
+        metadata=metadata,
     )
 
 
@@ -190,9 +198,7 @@ async def run_workflow_definition(
 ) -> dict[str, Any]:
     """Run a first-class workflow definition sequentially by dependency order."""
     try:
-        results = await _execute_workflow_steps(
-            workflow_id, service, executor, request.session_id
-        )
+        results = await _execute_workflow_steps(workflow_id, service, executor, request.session_id)
     except ValueError as exc:
         raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
 
@@ -307,7 +313,7 @@ async def trigger_workflow_webhook(
         )
 
     raw_body = await request.body()
-    headers = {k: v for k, v in request.headers.items()}
+    headers = dict(request.headers.items())
     if not _verify_webhook_signature(
         body=raw_body,
         trigger_config=dict(definition.trigger_config or {}),

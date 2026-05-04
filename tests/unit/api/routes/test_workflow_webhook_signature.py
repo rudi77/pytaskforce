@@ -8,8 +8,11 @@ import hmac
 import pytest
 
 from taskforce.api.routes.workflows import (
+    WorkflowDefinitionRequest,
+    WorkflowStepRequest,
     _resolve_webhook_secret,
     _verify_webhook_signature,
+    _workflow_from_request,
 )
 
 
@@ -26,12 +29,7 @@ def test_inline_secret_round_trip() -> None:
     body = b'{"event":"push"}'
     secret = "topsecret"
     digest = _sign(body, secret)
-    assert (
-        _verify_webhook_signature(
-            body, {"secret": secret}, {"X-Signature": digest}
-        )
-        is True
-    )
+    assert _verify_webhook_signature(body, {"secret": secret}, {"X-Signature": digest}) is True
 
 
 def test_secret_env_resolves_via_environment(
@@ -41,9 +39,7 @@ def test_secret_env_resolves_via_environment(
     body = b"hello"
     digest = _sign(body, "from-env")
     assert (
-        _verify_webhook_signature(
-            body, {"secret_env": "MY_HOOK_SECRET"}, {"X-Signature": digest}
-        )
+        _verify_webhook_signature(body, {"secret_env": "MY_HOOK_SECRET"}, {"X-Signature": digest})
         is True
     )
 
@@ -66,19 +62,11 @@ def test_inline_secret_takes_precedence_over_env(
 
 
 def test_missing_signature_with_secret_configured_is_rejected() -> None:
-    assert (
-        _verify_webhook_signature(b"hi", {"secret": "x"}, {})
-        is False
-    )
+    assert _verify_webhook_signature(b"hi", {"secret": "x"}, {}) is False
 
 
 def test_wrong_signature_is_rejected() -> None:
-    assert (
-        _verify_webhook_signature(
-            b"hi", {"secret": "x"}, {"X-Signature": "deadbeef"}
-        )
-        is False
-    )
+    assert _verify_webhook_signature(b"hi", {"secret": "x"}, {"X-Signature": "deadbeef"}) is False
 
 
 def test_github_style_prefixed_signature_works() -> None:
@@ -134,3 +122,25 @@ def test_resolve_secret_returns_none_when_env_var_unset(
 ) -> None:
     monkeypatch.delenv("UNDEFINED_HOOK_SECRET", raising=False)
     assert _resolve_webhook_secret({"secret_env": "UNDEFINED_HOOK_SECRET"}) is None
+
+
+def test_workflow_definition_request_preserves_trigger_config_and_acp_peer() -> None:
+    definition = _workflow_from_request(
+        WorkflowDefinitionRequest(
+            workflow_id="wf",
+            name="Workflow",
+            trigger="webhook",
+            trigger_config={"path": "hooks/run"},
+            steps=[
+                WorkflowStepRequest(
+                    step_id="remote",
+                    agent="butler",
+                    task="Run remote step",
+                    acp_peer="peer-1",
+                )
+            ],
+        )
+    )
+
+    assert definition.trigger_config == {"path": "hooks/run"}
+    assert definition.steps[0].acp_peer == "peer-1"

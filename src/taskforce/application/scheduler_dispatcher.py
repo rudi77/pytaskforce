@@ -30,8 +30,9 @@ def make_scheduler_event_callback(
     """Build a scheduler ``event_callback`` that runs scheduled workflows.
 
     Args:
-        workflow_runtime: A ``WorkflowRuntimeService`` instance — must
-            expose ``run_workflow_id(workflow_id, executor, session_id=...)``.
+        workflow_runtime: A ``WorkflowRuntimeService`` instance or a
+            zero-argument provider returning one. Providers let hosted
+            runtimes resolve tenant-scoped stores at dispatch time.
         executor: The ``AgentExecutor`` to drive workflow steps with.
 
     Returns:
@@ -65,9 +66,23 @@ def make_scheduler_event_callback(
                 tenant_id=payload.get("tenant_id"),
             )
             try:
-                results = await workflow_runtime.run_workflow_id(
-                    workflow_id, executor
-                )
+
+                async def _run() -> list[dict[str, Any]]:
+                    runtime = workflow_runtime() if callable(workflow_runtime) else workflow_runtime
+                    return await runtime.run_workflow_id(workflow_id, executor)
+
+                tenant_id = payload.get("tenant_id")
+                if tenant_id:
+                    from taskforce.application.infrastructure_overrides import (
+                        get_tenant_context_runner,
+                    )
+
+                    runner = get_tenant_context_runner()
+                    results = (
+                        await runner(str(tenant_id), _run) if runner is not None else await _run()
+                    )
+                else:
+                    results = await _run()
             except ValueError as exc:
                 logger.warning(
                     "scheduler_dispatcher.execute_workflow_invalid",

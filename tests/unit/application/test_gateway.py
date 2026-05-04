@@ -360,9 +360,7 @@ class FakePendingStore:
         }
         self._index[key] = session_id
 
-    async def resolve(
-        self, *, channel: str, sender_id: str, response: str
-    ) -> str | None:
+    async def resolve(self, *, channel: str, sender_id: str, response: str) -> str | None:
         key = f"{channel}:{sender_id}"
         session_id = self._index.get(key)
         if not session_id or session_id not in self._questions:
@@ -478,9 +476,7 @@ async def test_send_channel_question(gateway_with_pending) -> None:
 
     # Question should be registered as pending
     # (We can verify by resolving it)
-    result = await pending.resolve(
-        channel="telegram", sender_id="user-42", response="2026-01-15"
-    )
+    result = await pending.resolve(channel="telegram", sender_id="user-42", response="2026-01-15")
     assert result == "sess-1"
 
 
@@ -577,9 +573,7 @@ async def test_poll_channel_response(gateway_with_pending) -> None:
     assert result is None
 
     # Resolve the question
-    await pending.resolve(
-        channel="telegram", sender_id="user-42", response="2026-01-15"
-    )
+    await pending.resolve(channel="telegram", sender_id="user-42", response="2026-01-15")
 
     # After resolve: response available
     result = await gateway.poll_channel_response(session_id="sess-1")
@@ -601,9 +595,7 @@ async def test_clear_channel_question(gateway_with_pending) -> None:
     await gateway.clear_channel_question(session_id="sess-1")
 
     # After clearing, resolve should return None
-    result = await pending.resolve(
-        channel="telegram", sender_id="user-42", response="Answer"
-    )
+    result = await pending.resolve(channel="telegram", sender_id="user-42", response="Answer")
     assert result is None
 
 
@@ -639,9 +631,7 @@ async def test_inbound_sends_acknowledgment(gateway_with_pending) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["/start", "/new", "/reset", "/RESET", " /start "])
-async def test_reset_commands_clear_history_and_return_welcome(
-    gateway_parts, command: str
-) -> None:
+async def test_reset_commands_clear_history_and_return_welcome(gateway_parts, command: str) -> None:
     """Reset commands (/start, /new, /reset) wipe history and return welcome."""
     gateway, store, registry, sender = gateway_parts
 
@@ -757,9 +747,7 @@ async def test_trim_history_limits_messages() -> None:
 
     # Seed history beyond the limit (session_id must be set before saving history)
     await store.set_session_id("telegram", "chat-1", "sess-1")
-    big_history = [
-        {"role": "user", "content": f"msg-{i}"} for i in range(10)
-    ]
+    big_history = [{"role": "user", "content": f"msg-{i}"} for i in range(10)]
     await store.save_history("telegram", "chat-1", big_history)
 
     msg = InboundMessage(channel="telegram", conversation_id="chat-1", message="new")
@@ -787,9 +775,7 @@ class TestBuildMultimodalContent:
         assert result == "Hello"
 
     def test_image_attachment_returns_content_array(self) -> None:
-        attachments = [
-            {"type": "image", "data_url": "data:image/png;base64,abc123"}
-        ]
+        attachments = [{"type": "image", "data_url": "data:image/png;base64,abc123"}]
         result = _build_multimodal_content("Look at this", attachments)
         assert isinstance(result, list)
         assert result[0] == {"type": "text", "text": "Look at this"}
@@ -1006,11 +992,7 @@ async def test_handle_message_with_image_attachment(gateway_parts) -> None:
         channel="telegram",
         conversation_id="chat-42",
         message="What is this?",
-        metadata={
-            "attachments": [
-                {"type": "image", "data_url": "data:image/png;base64,abc"}
-            ]
-        },
+        metadata={"attachments": [{"type": "image", "data_url": "data:image/png;base64,abc"}]},
     )
     response = await gateway.handle_message(msg)
     assert response.status == "completed"
@@ -1506,6 +1488,53 @@ async def test_chat_workflow_lookup_dispatches_workflow_when_agent_misses() -> N
     assert response.metadata.get("stripped_message") == "run it now"
     assert agent_lookup.calls == [(recipient, "daily-report")]
     assert workflow_lookup.calls == [(recipient, "daily-report")]
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_lookup_runs_workflow_when_runner_is_wired() -> None:
+    """Gateway executes chat workflows end-to-end when a runner is installed."""
+    store = InMemoryGatewayConversationStore()
+    registry = InMemoryRecipientRegistry()
+    sender = FakeSender()
+    recipient = RecipientInfo(recipient_id="user-1")
+    workflow_lookup = _RecordingWorkflowLookup(returns="wf-daily-report")
+    calls: list[tuple[str, str | None]] = []
+
+    async def workflow_runner(workflow_id: str, session_id: str | None):
+        calls.append((workflow_id, session_id))
+        return [
+            {
+                "step_id": "final",
+                "status": "completed",
+                "final_message": "workflow reply",
+            }
+        ]
+
+    gw = CommunicationGateway(
+        executor=FakeExecutor(),
+        conversation_store=store,
+        recipient_registry=registry,
+        outbound_senders={"telegram": sender},
+        recipient_resolver=_FakeRecipientResolver(recipient),
+        agent_lookup=_RecordingAgentLookup(returns=None),
+        workflow_lookup=workflow_lookup,
+        workflow_runner=workflow_runner,
+    )
+
+    response = await gw.handle_message(
+        InboundMessage(
+            channel="telegram",
+            conversation_id="chat-1",
+            message="@daily-report run it now",
+            sender_id="user-1",
+        )
+    )
+
+    assert response.status == "completed"
+    assert response.reply == "workflow reply"
+    assert response.metadata["workflow_id"] == "wf-daily-report"
+    assert calls == [("wf-daily-report", response.session_id)]
+    assert sender.sent == [("chat-1", "workflow reply", {"status": "completed"})]
 
 
 @pytest.mark.asyncio

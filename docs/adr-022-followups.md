@@ -4,7 +4,9 @@
 **Last verified end-to-end:** 2026-05-04 (browser login + admin nav + tenant tables)
 **Status legend:** ☐ open · ☑ done · ⊘ explicitly out of scope
 
-**Critical-wiring + workflow-runtime gaps (G1–G7, G10, G11): all closed.** Self-service product gaps (G8 agent-create UX, G9 tenant signup) remain open by design — they are real product features that need their own UX iteration. The container-backed sandbox (G12) stays out of scope.
+**Critical-wiring + workflow-runtime gaps (G1–G7, G10, G11): closed after the 2026-05-04 post-review corrections.** Self-service product gaps (G8 agent-create UX, G9 tenant signup) remain open by design — they are real product features that need their own UX iteration. The container-backed sandbox (G12) stays out of scope.
+
+**Post-review correction note:** The first closure pass missed several tenant-aware DI seams: the gateway re-read outbound components but still held sticky inbound conversation stores/managers; `@workflow_name` lookup was implemented but not wired through enterprise/default gateway construction; workflow runtime stores were cached before request tenant context; scheduled workflow callbacks needed an explicit tenant-context runner before resolving tenant-scoped stores; and ACP workflow steps could silently run locally when no ACP runtime was wired. These were corrected before moving on to G8/G9.
 
 This file tracks the gaps that remain between the framework slots
 ADR-022 specified and a real end-to-end story for each slice. Items
@@ -19,7 +21,7 @@ and move on.
 
 ### ☑ G1 — Gateway singleton captures only the first tenant's components
 
-**Closed in:** `feat(adr-022/G1): re-read gateway components per outbound call` — gateway now accepts an optional `components_provider`; outbound + broadcast pull recipient registry and senders fresh from the provider on every call. Single-tenant builds with no provider see bit-for-bit prior behaviour. Provider failure falls back to constructor defaults.
+**Closed in:** `feat(adr-022/G1): re-read gateway components per outbound call` plus post-review gateway DI fixes — gateway now accepts an optional `components_provider`; outbound, broadcast, inbound channel-history/session paths, and persistent conversation manager resolution re-read tenant-scoped components/providers instead of holding only the first tenant's instances. Single-tenant builds with no provider see prior behaviour. Provider failure falls back to constructor defaults.
 
 **Where:** `src/taskforce/api/dependencies.py:115` (`@lru_cache(maxsize=1)`)
 
@@ -35,13 +37,13 @@ and move on.
 
 ### ☑ G2 — Webhook trigger blocked by AuthMiddleware
 
-**Closed in:** `feat(adr-022/G2): exempt webhook prefix + verify HMAC signature` (pytaskforce + taskforce-enterprise). The enterprise auth middleware now supports `exempt_path_prefixes` (default `/api/v1/workflows/webhooks/`) and the framework's webhook route reads the raw body, verifies an HMAC signature carried in a configurable header against a per-workflow secret (inline or via `secret_env`), and supports both plain-hex and GitHub-style `<algo>=<hex>` formats. With no secret configured the webhook is intentionally open — that is the operator's choice.
+**Closed in:** `feat(adr-022/G2): exempt webhook prefix + verify HMAC signature` (pytaskforce + taskforce-enterprise), plus post-review prefix merging. The enterprise auth middleware now supports `exempt_path_prefixes` and always keeps the default `/api/v1/workflows/webhooks/` prefix even when operators add custom prefixes. The framework's webhook route reads the raw body, verifies an HMAC signature carried in a configurable header against a per-workflow secret (inline or via `secret_env`), and supports both plain-hex and GitHub-style `<algo>=<hex>` formats. With no secret configured the webhook is intentionally open — that is the operator's choice.
 
 **Where:** `taskforce-enterprise/src/taskforce_enterprise/api/middleware/auth.py:54-63` (`exempt_paths` default), `pytaskforce/src/taskforce/api/routes/workflows.py` (`/webhooks/{path}`)
 
 **Problem:** `POST /api/v1/workflows/webhooks/{path}` runs through the enterprise auth middleware and gets 401 — webhooks (GitHub, Stripe, Slack, etc.) carry their own signature, not a Bearer JWT. As shipped today the route exists but is unreachable from any third-party webhook source.
 
-**Target:** Add a configurable webhook-exempt path prefix to the auth middleware, plus a per-workflow signature-verification hook that the webhook endpoint applies BEFORE running the workflow. Default: deny (require signature) so opening exempt_paths doesn't expose the endpoint to anonymous callers.
+**Target:** Add a configurable webhook-exempt path prefix to the auth middleware, plus a per-workflow signature-verification hook that the webhook endpoint applies BEFORE running the workflow. Operator choice: a workflow with `trigger_config.secret` or `secret_env` requires a valid signature; a workflow with no secret is intentionally open.
 
 **Touches:** `taskforce-enterprise/api/middleware/auth.py`, `pytaskforce/src/taskforce/api/routes/workflows.py`, `pytaskforce/src/taskforce/core/domain/workflow_definition.py` (signature config in trigger_config?).
 
@@ -67,7 +69,7 @@ and move on.
 
 ### ☑ G4 — `EXECUTE_WORKFLOW` schedule action has no dispatcher
 
-**Closed in:** `feat(adr-022/G4): dispatch EXECUTE_WORKFLOW schedule events to runtime` — added `WorkflowRuntimeService.run_workflow_id` and `application/scheduler_dispatcher.make_scheduler_event_callback`. The API server's lifespan now installs the callback on the shared `SchedulerService`, so cron-fired `EXECUTE_WORKFLOW` jobs actually run their workflow. Defensive: malformed payloads, unknown workflow ids and dispatcher exceptions don't kill the scheduler event loop.
+**Closed in:** `feat(adr-022/G4): dispatch EXECUTE_WORKFLOW schedule events to runtime` plus post-review tenant-context runner — added `WorkflowRuntimeService.run_workflow_id` and `application/scheduler_dispatcher.make_scheduler_event_callback`. The API server's lifespan now installs the callback on the shared `SchedulerService`, so cron-fired `EXECUTE_WORKFLOW` jobs actually run their workflow. For enterprise runtimes, scheduler dispatch uses the event's `tenant_id` through an installable tenant-context runner before resolving tenant-scoped workflow stores. Defensive: malformed payloads, unknown workflow ids and dispatcher exceptions don't kill the scheduler event loop.
 
 **Where:** `src/taskforce/infrastructure/scheduler/scheduler_service.py` (fires `SCHEDULE_TRIGGERED` event with action payload), nothing listens for `execute_workflow` action.
 
@@ -83,7 +85,7 @@ and move on.
 
 ### ☑ G5 — Chat-trigger workflows not addressable by `@workflow_name`
 
-**Closed in:** `feat(adr-022/G5): resolve @workflow_name mentions in gateway` — added `WorkflowLookupProtocol` + `set_workflow_lookup_override` framework slot. Gateway tries agent lookup first; on miss it consults the workflow lookup. A hit returns a `workflow_dispatched` response carrying `workflow_id` and the stripped message in `metadata` so the channel handler can drive `WorkflowRuntimeService.run_workflow_id`. Service helper `find_chat_workflow(name)` matches against `trigger_config.match` or workflow_id, case-insensitive.
+**Closed in:** `feat(adr-022/G5): resolve @workflow_name mentions in gateway` plus post-review runtime wiring — added `WorkflowLookupProtocol` + `set_workflow_lookup_override` framework slot, wired the override into default gateway construction, and installed a tenant-scoped enterprise lookup backed by the current tenant's workflow definition store. Gateway tries agent lookup first; on miss it consults workflow lookup. A hit runs `WorkflowRuntimeService.run_workflow_id` through the gateway's workflow runner and returns/sends the workflow's final reply. Service helper `find_chat_workflow(name)` matches against `trigger_config.match` or workflow_id, case-insensitive.
 
 **Where:** `src/taskforce/application/gateway.py` (`_extract_agent_mention` + `agent_lookup`), `WorkflowRuntimeService` (no chat resolver).
 
@@ -117,7 +119,7 @@ and move on.
 
 ### ☑ G7 — ACP-mediated workflow steps not supported
 
-**Closed in:** `feat(adr-022/G7): support ACP-mediated workflow steps` — `WorkflowStep` gains optional `acp_peer`. When set the runtime calls `AcpRuntime.call(peer, mission)` instead of the local executor; cross-tenant authorization (G4 chain) still gates the call. Fallback to local execution when no AcpRuntime is wired so single-tenant builds load mixed definitions without crashing. YAML round-trip preserves the field; omitted when unset to keep existing definitions byte-identical.
+**Closed in:** `feat(adr-022/G7): support ACP-mediated workflow steps` plus post-review fail-closed behavior — `WorkflowStep` gains optional `acp_peer`. When set the runtime calls `AcpRuntime.call(peer, mission)` instead of the local executor; cross-tenant authorization (G4 chain) still gates the call. If no AcpRuntime is wired, the step now returns a failed result instead of silently running the local agent. YAML/API round-trip preserves the field; omitted when unset to keep existing definitions byte-identical.
 
 **Where:** `core/domain/workflow_definition.py` (`WorkflowStep.agent` is just a profile name).
 

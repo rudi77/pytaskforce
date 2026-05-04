@@ -121,13 +121,13 @@ def get_gateway():
     ``SendNotificationTool`` receives a gateway reference at instantiation).
     """
     from taskforce.application.gateway import CommunicationGateway
-    from taskforce.infrastructure.persistence.pending_channel_store import (
-        FilePendingChannelQuestionStore,
-    )
-
     from taskforce.application.infrastructure_overrides import (
         get_agent_lookup_override,
         get_recipient_resolver_override,
+        get_workflow_lookup_override,
+    )
+    from taskforce.infrastructure.persistence.pending_channel_store import (
+        FilePendingChannelQuestionStore,
     )
 
     components = get_gateway_components()
@@ -143,6 +143,16 @@ def get_gateway():
     recipient_resolver = resolver_provider() if resolver_provider else None
     lookup_provider = get_agent_lookup_override()
     agent_lookup = lookup_provider() if lookup_provider else None
+    workflow_lookup_provider = get_workflow_lookup_override()
+    workflow_lookup = workflow_lookup_provider() if workflow_lookup_provider else None
+
+    async def _workflow_runner(workflow_id: str, session_id: str | None):
+        service = get_workflow_runtime_service()
+        return await service.run_workflow_id(
+            workflow_id,
+            get_executor(),
+            session_id=session_id,
+        )
 
     # ADR-022 §4 / G1: when an enterprise plugin installs a
     # gateway-components override, the right components are tenant-
@@ -165,8 +175,11 @@ def get_gateway():
         outbound_senders=components.outbound_senders,
         pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
         conversation_manager=conversation_manager,
+        conversation_manager_provider=get_conversation_manager,
         recipient_resolver=recipient_resolver,
         agent_lookup=agent_lookup,
+        workflow_lookup=workflow_lookup,
+        workflow_runner=_workflow_runner,
         components_provider=_components_provider,
     )
 
@@ -189,9 +202,8 @@ def get_inbound_adapters() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=1)
 def get_conversation_manager():
-    """Provide a ConversationManager instance backed by file storage."""
+    """Provide a ConversationManager for the current request scope."""
     from taskforce.application.conversation_manager import ConversationManager
     from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
@@ -234,9 +246,14 @@ def get_scheduler():
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=1)
 def get_workflow_runtime_service():
-    """Provide a shared WorkflowRuntimeService instance."""
+    """Provide a WorkflowRuntimeService for the current request scope.
+
+    Store overrides may be tenant-scoped, so the runtime service must be
+    constructed after auth/recipient resolution has populated the current
+    tenant context. The scheduler remains shared; only the workflow stores
+    are resolved per call.
+    """
     from taskforce.application.infrastructure_builder import InfrastructureBuilder
     from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 

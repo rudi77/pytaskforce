@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
     # G4: register the workflow dispatcher so EXECUTE_WORKFLOW jobs
     # actually run their workflow when the cron tick fires.
     scheduler._event_callback = make_scheduler_event_callback(
-        workflow_runtime=get_workflow_runtime_service(),
+        workflow_runtime=get_workflow_runtime_service,
         executor=get_executor(),
     )
     await scheduler.start()

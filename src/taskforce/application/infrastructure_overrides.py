@@ -37,7 +37,7 @@ plugin-init time, before any worker threads start serving requests
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 # Each override is a callable that receives the same arguments as the
@@ -61,6 +61,7 @@ _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
 _acp_tenant_id_provider: Callable[[], str] | None = None
 _tenant_resolver: Callable[[], str] | None = None
+_tenant_context_runner: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]] | None = None
 _sandboxed_executor: Any | None = None
 _multi_tenant_sandbox_warning_emitted: bool = False
 _recipient_resolver_override: Callable[[], Any] | None = None
@@ -258,6 +259,27 @@ def get_current_tenant_id() -> str:
     return resolved or "default"
 
 
+def set_tenant_context_runner(
+    runner: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]] | None,
+) -> None:
+    """Install an async runner that executes work under a tenant context.
+
+    Background callbacks, such as scheduler events, do not pass through
+    HTTP auth middleware. Enterprise runtimes install this hook so
+    those callbacks can resolve tenant-scoped stores for the event's
+    tenant before doing work.
+    """
+    global _tenant_context_runner
+    _tenant_context_runner = runner
+
+
+def get_tenant_context_runner() -> (
+    Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]] | None
+):
+    """Return the installed tenant-context runner, if any."""
+    return _tenant_context_runner
+
+
 def set_sandboxed_executor(executor: Any | None) -> None:
     """Install (or clear) the sandboxed executor for dangerous tools.
 
@@ -430,6 +452,7 @@ def clear_infrastructure_overrides() -> None:
     global _workspace_context_provider
     global _acp_tenant_id_provider
     global _tenant_resolver
+    global _tenant_context_runner
     global _sandboxed_executor
     global _multi_tenant_sandbox_warning_emitted
     global _recipient_resolver_override
@@ -447,6 +470,7 @@ def clear_infrastructure_overrides() -> None:
     _workspace_context_provider = None
     _acp_tenant_id_provider = None
     _tenant_resolver = None
+    _tenant_context_runner = None
     _sandboxed_executor = None
     _multi_tenant_sandbox_warning_emitted = False
     _recipient_resolver_override = None

@@ -188,12 +188,9 @@ class WorkflowRuntimeService:
 
         for level in levels:
             outcomes = await asyncio.gather(
-                *(
-                    self._run_step(step, executor, results, session_id)
-                    for step in level
-                )
+                *(self._run_step(step, executor, results, session_id) for step in level)
             )
-            for step, outcome in zip(level, outcomes):
+            for step, outcome in zip(level, outcomes, strict=True):
                 results[step.step_id] = outcome
                 ordered.append(outcome)
         return ordered
@@ -211,7 +208,17 @@ class WorkflowRuntimeService:
         # ADR-022 §7 / G7: ACP-mediated step. The framework's existing
         # cross-tenant authorizer still gates the call — a remote peer
         # in another tenant requires acp:peer:cross_tenant on the caller.
-        if step.acp_peer and self._acp_runtime is not None:
+        if step.acp_peer and self._acp_runtime is None:
+            return {
+                "step_id": step.step_id,
+                "agent": step.agent,
+                "acp_peer": step.acp_peer,
+                "status": "failed",
+                "final_message": "",
+                "error": "ACP runtime is not configured for this workflow step",
+            }
+
+        if step.acp_peer:
             try:
                 handle = await self._acp_runtime.call(
                     step.acp_peer,
@@ -228,9 +235,7 @@ class WorkflowRuntimeService:
                     "error": str(exc),
                 }
             result = getattr(handle, "result", {}) or {}
-            final_message = (
-                result.get("output_text") if isinstance(result, dict) else ""
-            ) or ""
+            final_message = (result.get("output_text") if isinstance(result, dict) else "") or ""
             return {
                 "step_id": step.step_id,
                 "agent": step.agent,
@@ -252,9 +257,7 @@ class WorkflowRuntimeService:
         }
 
     @staticmethod
-    def _mission_for_step(
-        step: WorkflowStep, results: dict[str, dict[str, Any]]
-    ) -> str:
+    def _mission_for_step(step: WorkflowStep, results: dict[str, dict[str, Any]]) -> str:
         """Compose the mission text fed to a step's agent."""
         if not step.depends_on:
             return step.task
@@ -280,9 +283,7 @@ class WorkflowRuntimeService:
         for definition in self._definition_store.list():
             if definition.trigger != "chat":
                 continue
-            declared_match = (
-                str((definition.trigger_config or {}).get("match", "")).strip().lower()
-            )
+            declared_match = str((definition.trigger_config or {}).get("match", "")).strip().lower()
             workflow_id_match = definition.workflow_id.strip().lower()
             if declared_match == normalised or workflow_id_match == normalised:
                 return definition
@@ -304,9 +305,7 @@ class WorkflowRuntimeService:
         for definition in self._definition_store.list():
             if definition.trigger != "webhook":
                 continue
-            declared = (
-                str((definition.trigger_config or {}).get("path", "")).strip("/").lower()
-            )
+            declared = str((definition.trigger_config or {}).get("path", "")).strip("/").lower()
             if declared and declared == normalised:
                 return definition
         return None
@@ -444,18 +443,12 @@ def _dependency_levels(steps: list[WorkflowStep]) -> list[list[WorkflowStep]]:
     _order_steps(steps)
 
     by_id = {step.step_id: step for step in steps}
-    remaining_deps: dict[str, set[str]] = {
-        step.step_id: set(step.depends_on) for step in steps
-    }
+    remaining_deps: dict[str, set[str]] = {step.step_id: set(step.depends_on) for step in steps}
     levels: list[list[WorkflowStep]] = []
     placed: set[str] = set()
 
     while remaining_deps:
-        ready_ids = [
-            step_id
-            for step_id, deps in remaining_deps.items()
-            if not deps - placed
-        ]
+        ready_ids = [step_id for step_id, deps in remaining_deps.items() if not deps - placed]
         if not ready_ids:
             # _order_steps already rejects cycles, but be defensive.
             raise ValueError("Workflow contains a dependency cycle")

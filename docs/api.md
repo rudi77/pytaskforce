@@ -129,10 +129,9 @@ print(response.json())
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/skills` | List discovered skills |
-| `POST` | `/api/v1/skills` | Create or replace a `SKILL.md` file and refresh discovery |
 | `GET` | `/api/v1/skills/{name}` | Read one skill's metadata and body |
 
-`POST /api/v1/skills` writes under `${TASKFORCE_WORK_DIR}/skills/<name>/SKILL.md` by default. Host integrations can override the writable skill root and discovery directories, which is how enterprise runtimes route skills under the active tenant.
+Framework builds expose skills as read-only API resources. Enterprise builds own the write surface at `POST /api/v1/admin/skills`, where `skill:create` permission and tenant-scoped writable roots apply.
 
 ### Workflow Resume (Human-in-the-Loop)
 
@@ -143,10 +142,31 @@ print(response.json())
 | `GET` | `/api/v1/workflows/definitions/{workflow_id}` | Fetch a workflow definition |
 | `DELETE` | `/api/v1/workflows/definitions/{workflow_id}` | Delete a workflow definition |
 | `POST` | `/api/v1/workflows/definitions/{workflow_id}/run` | Execute a stored workflow definition in dependency order |
+| `POST` | `/api/v1/workflows/webhooks/{trigger_path}` | Execute the workflow whose webhook trigger path matches |
 | `POST` | `/api/v1/workflows/wait` | Persist a waiting checkpoint |
 | `GET` | `/api/v1/workflows/{run_id}` | Fetch checkpoint state |
 | `POST` | `/api/v1/workflows/{run_id}/resume` | Submit resume payload, transition to `resumed` |
 | `POST` | `/api/v1/workflows/{run_id}/resume-and-continue` | Resume and continue via `activate_skill` |
+
+Workflow definition payloads support `trigger_config` for trigger-specific settings and per-step `acp_peer` for ACP-mediated steps:
+```json
+{
+  "workflow_id": "daily-report",
+  "name": "Daily Report",
+  "trigger": "chat",
+  "trigger_config": {
+    "match": "daily-report"
+  },
+  "steps": [
+    {
+      "step_id": "remote-summary",
+      "agent": "reporter",
+      "task": "Summarize today's activity",
+      "acp_peer": "remote-reporter"
+    }
+  ]
+}
+```
 
 **Example resume request:**
 ```json

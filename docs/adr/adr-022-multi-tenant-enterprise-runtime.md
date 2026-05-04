@@ -1,23 +1,25 @@
 # ADR-022: Multi-Tenant Enterprise Runtime
 
-**Status:** Accepted — implementation 7/7 framework slices closed; container sandbox deferred
+**Status:** Accepted — implementation 7/7 framework slices closed after post-review wiring fixes; container sandbox deferred
 **Date:** 2026-05-02 · last verified end-to-end 2026-05-04
 **Related:** ADR-003 (Enterprise Transformation), ADR-009 (Communication Gateway), ADR-011 (Unified Skills), ADR-016 (Persistent Agent Architecture), ADR-018 (ACP Protocol Support), ADR-020 (Wiki-Style Memory), ADR-021 (UI Plugin System)
 
 ## Status (post-iteration)
 
 The original migration plan listed seven slices. Where each one
-landed, with the closing commit references:
+landed, with the closing commit references. The 2026-05-04 post-review
+pass found and corrected additional wiring gaps in gateway/workflow
+runtime DI after the first "all gaps closed" pass:
 
 | Slice | Status | Closing commits (pytaskforce / taskforce-enterprise) |
 |---|---|---|
 | 1 — Tenant plumbing (TenantResolverProtocol + framework-wide `get_current_tenant_id`) | ✅ done | `c0ad93e` / `9f78614` |
 | 2 — Postgres adapters (state, conversation, custom agents, admin routes) | ✅ done | iter-2 (`6081ae8`, `2278f82`, …) |
-| 3 — Tenant-aware Gateway (`RecipientResolverProtocol`, `@agent_name` routing, per-tenant components, outbound `tenant_id`, `@workflow_name` chat trigger) | ✅ done | `a6ac0e9`, `e316ef0`, `38eb5da` (G1), `9397fb7`, `eb77a8c` (G5) / `2cc8642` |
+| 3 — Tenant-aware Gateway (`RecipientResolverProtocol`, `@agent_name` routing, per-tenant components, outbound `tenant_id`, `@workflow_name` chat trigger) | ✅ done after post-review wiring fix | `a6ac0e9`, `e316ef0`, `38eb5da` (G1), `9397fb7`, `eb77a8c` (G5) plus post-review fixes / `2cc8642` plus workflow lookup install |
 | 4 — Workspace-scoping (`WorkspaceContextProtocol` + `tenants/${tid}/agents/${aid}/workspace/`) | ✅ done | iter-3 (`87ee255`, …) |
 | 5 — Sandboxed tool execution (protocol seam + in-process default + multi-tenant warning) | 🟨 seam done, container backend deferred | `f17dcb8` / `d80b2af` (warning trigger) — see G12 below |
 | 6 — Generalised scheduler / skills hot-reload / tenant-scoped ACP peers / cross-tenant authorizer / generalised `schedule` tool / skill write moved to enterprise | ✅ done | `87f846e`, `36fada6` (G4 framework) `25a78f6`, `95dd038` (G10) / `649b52d`, `87ee255`, `32c80d0`, `40017b5` |
-| 7 — Workflow definitions (YAML + structured triggers + schedule auto-register + EXECUTE_WORKFLOW dispatcher + webhook trigger + HMAC verification + fan-out parallel + ACP-mediated steps) | ✅ done | `f407a4b`, `960120a` (G3 schedule), `976771e` (G3b webhook), `4dd6169` (G3 wiring), `68f4e71` (G4 dispatcher), `29f6522` (G2 framework), `fb0df24` (G6 parallel), `719611d` (G7 ACP) / `386de73` (G2 enterprise) |
+| 7 — Workflow definitions (YAML + structured triggers + schedule auto-register + EXECUTE_WORKFLOW dispatcher + webhook trigger + HMAC verification + fan-out parallel + ACP-mediated steps) | ✅ done after post-review wiring fix | `f407a4b`, `960120a` (G3 schedule), `976771e` (G3b webhook), `4dd6169` (G3 wiring), `68f4e71` (G4 dispatcher), `29f6522` (G2 framework), `fb0df24` (G6 parallel), `719611d` (G7 ACP) plus post-review fixes / `386de73` (G2 enterprise) |
 
 The full per-gap working file lives at
 [`docs/adr-022-followups.md`](../adr-022-followups.md). Slice 5's

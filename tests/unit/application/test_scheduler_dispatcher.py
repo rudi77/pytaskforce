@@ -50,6 +50,41 @@ async def test_dispatch_runs_execute_workflow_action() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_runs_under_tenant_context_when_runner_installed() -> None:
+    from taskforce.application.infrastructure_overrides import (
+        clear_infrastructure_overrides,
+        set_tenant_context_runner,
+    )
+
+    runtime = _RecordingRuntime()
+    seen: list[str] = []
+
+    async def runner(tenant_id: str, callback):
+        seen.append(tenant_id)
+        return await callback()
+
+    set_tenant_context_runner(runner)
+    try:
+        callback = make_scheduler_event_callback(runtime, executor=object())
+        await callback(
+            _FakeEvent(
+                payload={
+                    "action": {
+                        "action_type": "execute_workflow",
+                        "params": {"workflow_id": "wf-1"},
+                    },
+                    "tenant_id": "tenant-acme",
+                }
+            )
+        )
+    finally:
+        clear_infrastructure_overrides()
+
+    assert seen == ["tenant-acme"]
+    assert runtime.calls
+
+
+@pytest.mark.asyncio
 async def test_dispatch_ignores_non_workflow_actions() -> None:
     runtime = _RecordingRuntime()
     callback = make_scheduler_event_callback(runtime, executor=object())
