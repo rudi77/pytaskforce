@@ -113,7 +113,9 @@ and move on.
 
 ---
 
-### ☐ G7 — ACP-mediated workflow steps not supported
+### ☑ G7 — ACP-mediated workflow steps not supported
+
+**Closed in:** `feat(adr-022/G7): support ACP-mediated workflow steps` — `WorkflowStep` gains optional `acp_peer`. When set the runtime calls `AcpRuntime.call(peer, mission)` instead of the local executor; cross-tenant authorization (G4 chain) still gates the call. Fallback to local execution when no AcpRuntime is wired so single-tenant builds load mixed definitions without crashing. YAML round-trip preserves the field; omitted when unset to keep existing definitions byte-identical.
 
 **Where:** `core/domain/workflow_definition.py` (`WorkflowStep.agent` is just a profile name).
 

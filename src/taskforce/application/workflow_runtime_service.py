@@ -56,10 +56,17 @@ class WorkflowRuntimeService:
         store: FileWorkflowCheckpointStore,
         definition_store: FileWorkflowDefinitionStore | None = None,
         scheduler: SchedulerProtocol | None = None,
+        acp_runtime: Any | None = None,
     ) -> None:
         self._store = store
         self._definition_store = definition_store
         self._scheduler = scheduler
+        # Optional ACP runtime for ADR-022 §7 / G7 — when a step carries
+        # ``acp_peer`` the runtime invokes the peer instead of a local
+        # agent. With no runtime wired, ACP-mediated steps fall back to
+        # local execution so a single-tenant build can still load the
+        # definition without crashing.
+        self._acp_runtime = acp_runtime
 
     def save_definition(self, definition: WorkflowDefinition) -> WorkflowDefinition:
         """Persist a first-class workflow definition.
@@ -200,6 +207,38 @@ class WorkflowRuntimeService:
     ) -> dict[str, Any]:
         """Execute a single step using ``results`` for dependency context."""
         mission = self._mission_for_step(step, results)
+
+        # ADR-022 §7 / G7: ACP-mediated step. The framework's existing
+        # cross-tenant authorizer still gates the call — a remote peer
+        # in another tenant requires acp:peer:cross_tenant on the caller.
+        if step.acp_peer and self._acp_runtime is not None:
+            try:
+                handle = await self._acp_runtime.call(
+                    step.acp_peer,
+                    mission,
+                    session_id=session_id,
+                )
+            except (KeyError, PermissionError) as exc:
+                return {
+                    "step_id": step.step_id,
+                    "agent": step.agent,
+                    "acp_peer": step.acp_peer,
+                    "status": "failed",
+                    "final_message": "",
+                    "error": str(exc),
+                }
+            result = getattr(handle, "result", {}) or {}
+            final_message = (
+                result.get("output_text") if isinstance(result, dict) else ""
+            ) or ""
+            return {
+                "step_id": step.step_id,
+                "agent": step.agent,
+                "acp_peer": step.acp_peer,
+                "status": getattr(handle, "status", "completed"),
+                "final_message": final_message,
+            }
+
         execution = await executor.execute_mission(
             mission=mission,
             profile=step.agent,

@@ -36,33 +36,46 @@ WORKFLOW_TRIGGER_KINDS: Final[frozenset[str]] = frozenset(
 
 @dataclass(frozen=True)
 class WorkflowStep:
-    """One node in a workflow definition."""
+    """One node in a workflow definition.
+
+    A step normally runs a local agent (``executor.execute_mission``).
+    When ``acp_peer`` is set, the runtime calls that ACP peer instead
+    (ADR-022 §7, G7). The framework's existing cross-tenant authorizer
+    still applies — a remote peer in a different tenant requires the
+    caller to hold ``acp:peer:cross_tenant``.
+    """
 
     step_id: str
     agent: str
     task: str
     depends_on: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    acp_peer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the workflow step."""
-        return {
+        payload: dict[str, Any] = {
             "step_id": self.step_id,
             "agent": self.agent,
             "task": self.task,
             "depends_on": list(self.depends_on),
             "metadata": dict(self.metadata),
         }
+        if self.acp_peer is not None:
+            payload["acp_peer"] = self.acp_peer
+        return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkflowStep:
         """Deserialize a workflow step."""
+        acp_peer = data.get("acp_peer")
         return cls(
             step_id=str(data["step_id"]),
             agent=str(data["agent"]),
             task=str(data["task"]),
             depends_on=[str(item) for item in data.get("depends_on", [])],
             metadata=dict(data.get("metadata", {})),
+            acp_peer=str(acp_peer) if acp_peer else None,
         )
 
 

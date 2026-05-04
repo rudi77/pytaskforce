@@ -566,3 +566,153 @@ async def test_dependency_results_visible_to_join_step(tmp_path) -> None:
     join_mission = next(m for m in captured if "merge" in m)
     assert "reply for alpha" in join_mission
     assert "reply for beta" in join_mission
+
+
+# ---------------------------------------------------------------------------
+# G7: ACP-mediated workflow steps
+# ---------------------------------------------------------------------------
+
+
+class _FakeAcpRunHandle:
+    def __init__(self, output_text: str, status: str = "completed") -> None:
+        self.status = status
+        self.result = {"output_text": output_text}
+
+
+class _FakeAcpRuntime:
+    def __init__(self, output_text: str = "remote-reply") -> None:
+        self.calls: list[tuple[str, str, str | None]] = []
+        self._output_text = output_text
+        self._raise: Exception | None = None
+
+    def fail_with(self, exc: Exception) -> None:
+        self._raise = exc
+
+    async def call(self, peer_name: str, mission: str, *, session_id: str | None = None):
+        self.calls.append((peer_name, mission, session_id))
+        if self._raise is not None:
+            raise self._raise
+        return _FakeAcpRunHandle(self._output_text)
+
+
+@pytest.mark.asyncio
+async def test_step_with_acp_peer_calls_acp_runtime(tmp_path) -> None:
+    acp = _FakeAcpRuntime(output_text="answer-from-remote")
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        acp_runtime=acp,
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="acp-wf",
+            name="x",
+            steps=[
+                WorkflowStep(
+                    step_id="ask-remote",
+                    agent="butler",
+                    task="ping",
+                    acp_peer="remote-butler",
+                ),
+            ],
+        )
+    )
+
+    class _NoopExecutor:
+        async def execute_mission(self, **kwargs):  # pragma: no cover — must not be called
+            raise AssertionError("acp step must not call local executor")
+
+    results = await runtime.run_workflow_id("acp-wf", _NoopExecutor())
+
+    assert acp.calls == [("remote-butler", "ping", None)]
+    assert results[0]["status"] == "completed"
+    assert results[0]["final_message"] == "answer-from-remote"
+    assert results[0]["acp_peer"] == "remote-butler"
+
+
+@pytest.mark.asyncio
+async def test_acp_step_permission_denied_yields_failed_result(tmp_path) -> None:
+    acp = _FakeAcpRuntime()
+    acp.fail_with(PermissionError("cross-tenant ACP denied"))
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        acp_runtime=acp,
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="acp-denied",
+            name="x",
+            steps=[
+                WorkflowStep(
+                    step_id="s1", agent="butler", task="ping", acp_peer="other-tenant"
+                )
+            ],
+        )
+    )
+
+    class _Noop:
+        async def execute_mission(self, **kwargs):
+            raise AssertionError
+
+    results = await runtime.run_workflow_id("acp-denied", _Noop())
+    assert results[0]["status"] == "failed"
+    assert "denied" in results[0]["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_acp_step_falls_back_to_local_when_no_runtime_wired(tmp_path) -> None:
+    """If acp_peer is set but no AcpRuntime is wired, fall back to local agent.
+
+    This keeps a workflow with mixed steps loadable in single-tenant
+    builds without an ACP runtime — the step just runs the local
+    profile named in ``agent``.
+    """
+    captured: list[str] = []
+
+    class _CapturingExecutor:
+        async def execute_mission(self, **kwargs):
+            captured.append(kwargs["profile"])
+            from taskforce.core.domain.models import ExecutionResult
+
+            return ExecutionResult(
+                session_id="s",
+                status="completed",
+                final_message="local-reply",
+            )
+
+    runtime = WorkflowRuntimeService(
+        store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
+        definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
+        # No acp_runtime wired
+    )
+    runtime.save_definition(
+        WorkflowDefinition(
+            workflow_id="fallback",
+            name="x",
+            steps=[
+                WorkflowStep(
+                    step_id="s",
+                    agent="local-butler",
+                    task="t",
+                    acp_peer="remote-but-no-runtime",
+                )
+            ],
+        )
+    )
+
+    results = await runtime.run_workflow_id("fallback", _CapturingExecutor())
+    assert captured == ["local-butler"]
+    assert results[0]["final_message"] == "local-reply"
+
+
+def test_workflow_step_yaml_round_trip_preserves_acp_peer() -> None:
+    step = WorkflowStep(step_id="s", agent="a", task="t", acp_peer="peer-x")
+    parsed = WorkflowStep.from_dict(step.to_dict())
+    assert parsed.acp_peer == "peer-x"
+
+
+def test_workflow_step_dict_omits_acp_peer_when_unset() -> None:
+    step = WorkflowStep(step_id="s", agent="a", task="t")
+    payload = step.to_dict()
+    assert "acp_peer" not in payload
