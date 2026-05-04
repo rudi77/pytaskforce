@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from threading import RLock
 
+from taskforce.application.infrastructure_overrides import get_current_tenant_id
 from taskforce.core.domain.acp import AcpAuth, AcpAuthType, AcpPeer
 
 
@@ -99,6 +100,59 @@ class EnvPeerRegistry(InMemoryPeerRegistry):
         self._inner.register(peer)
 
     def remove(self, name: str) -> None:
+        self._inner.remove(name)
+
+
+class TenantScopedPeerRegistry(InMemoryPeerRegistry):
+    """ACP peer registry that hides peers from other tenants.
+
+    Wraps any inner registry and filters ``get`` / ``list`` results
+    against the current request's tenant id (resolved via
+    :func:`taskforce.application.infrastructure_overrides.get_current_tenant_id`).
+    A peer is visible to the caller when either:
+
+    * ``peer.tenant_id`` matches the current tenant id, or
+    * ``peer.allow_cross_tenant`` is True (operator-marked shared peer).
+
+    On a single-tenant build the resolver returns ``"default"`` and
+    every peer that defaults its ``tenant_id`` to ``"default"`` is
+    visible — bit-for-bit identical to the previous behaviour.
+
+    See ADR-022 §6: "ACP peers. The peer registry is partitioned by
+    tenant. Cross-tenant ACP calls require an explicit
+    acp:peer:cross_tenant permission and are routed through a gateway
+    that re-authenticates on every call."
+    """
+
+    def __init__(self, inner: InMemoryPeerRegistry) -> None:
+        super().__init__()
+        self._inner = inner
+
+    def _is_visible(self, peer: AcpPeer) -> bool:
+        if peer.allow_cross_tenant:
+            return True
+        return peer.tenant_id == get_current_tenant_id()
+
+    def get(self, name: str) -> AcpPeer | None:
+        peer = self._inner.get(name)
+        if peer is None:
+            return None
+        return peer if self._is_visible(peer) else None
+
+    def list(self) -> list[AcpPeer]:
+        return [p for p in self._inner.list() if self._is_visible(p)]
+
+    def register(self, peer: AcpPeer) -> None:
+        # The framework does not enforce that the caller can only register
+        # peers for its own tenant — that policy belongs to the admin
+        # route layer (which has access to permissions). The registry's
+        # job is to scope reads.
+        self._inner.register(peer)
+
+    def remove(self, name: str) -> None:
+        peer = self._inner.get(name)
+        if peer is None or not self._is_visible(peer):
+            return
         self._inner.remove(name)
 
 

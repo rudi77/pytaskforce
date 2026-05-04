@@ -483,3 +483,68 @@ class TestSingleton:
     def teardown_method(self) -> None:
         """Clean up singleton state after each test."""
         reset_skill_service()
+
+
+# ---------------------------------------------------------------------------
+# ADR-022 §6: lightweight skills hot-reload watcher
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshDynamicSkillDirsWatcher:
+    """``refresh_dynamic_skill_dirs`` should detect on-disk changes."""
+
+    def teardown_method(self) -> None:
+        from taskforce.application.skill_service import (
+            clear_extra_skill_dirs,
+            reset_skill_service,
+        )
+
+        reset_skill_service()
+        clear_extra_skill_dirs()
+
+    def test_refresh_triggered_when_skill_file_changes(self, tmp_path) -> None:
+        """A newly written SKILL.md under a registered dir triggers a refresh."""
+        from taskforce.application.skill_service import (
+            clear_extra_skill_dirs,
+            get_skill_service,
+            refresh_dynamic_skill_dirs,
+            register_skill_dir,
+            reset_skill_service,
+        )
+
+        clear_extra_skill_dirs()
+        reset_skill_service()
+        register_skill_dir(tmp_path)
+
+        with patch("taskforce.application.skill_service.create_skill_registry") as mock_create:
+            mock_registry = _make_mock_registry()
+            # The mock registry must track .directories so the watcher walks them.
+            mock_registry.directories = [tmp_path]
+            mock_registry.add_directory.return_value = False  # already added
+            mock_create.return_value = mock_registry
+            service = get_skill_service()
+
+            # No change yet → first call records baseline, registry.refresh()
+            # may be invoked once to absorb the initial mtime.
+            refresh_dynamic_skill_dirs()
+            calls_before = mock_registry.refresh.call_count
+
+            # Write a skill file, advancing the directory's max mtime.
+            skill_dir = tmp_path / "demo"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text("---\nname: demo\n---\n# demo")
+
+            refresh_dynamic_skill_dirs()
+            assert mock_registry.refresh.call_count > calls_before, (
+                "Watcher should have triggered registry.refresh() after the "
+                "SKILL.md was written."
+            )
+
+            # No further changes → no extra refresh.
+            calls_after = mock_registry.refresh.call_count
+            refresh_dynamic_skill_dirs()
+            assert mock_registry.refresh.call_count == calls_after, (
+                "Watcher should be idempotent when nothing changed."
+            )
+
+        assert service is not None

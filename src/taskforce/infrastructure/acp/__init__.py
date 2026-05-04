@@ -10,6 +10,7 @@ from taskforce.infrastructure.acp.peer_registry import (
     EnvPeerRegistry,
     FilePeerRegistry,
     InMemoryPeerRegistry,
+    TenantScopedPeerRegistry,
 )
 from taskforce.infrastructure.acp.runtime import AcpRuntime
 
@@ -18,4 +19,5 @@ __all__ = [
     "EnvPeerRegistry",
     "FilePeerRegistry",
     "InMemoryPeerRegistry",
+    "TenantScopedPeerRegistry",
 ]

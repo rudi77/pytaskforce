@@ -46,6 +46,15 @@ _extra_skill_dirs: list[Path] = []
 _skill_dir_provider: Callable[[], list[Path]] | None = None
 _writable_skill_root_provider: Callable[[], Path] | None = None
 
+# Cache of the highest mtime_ns we have ever seen across all known skill
+# directories. ``refresh_dynamic_skill_dirs`` consults this on every call
+# and triggers a registry reload when something on disk has changed since
+# the previous check — the framework's "lightweight watcher" answer to
+# ADR-022 §6 (skills hot-reload). Polling at call time keeps the
+# framework dependency-free; an explicit ``refresh()`` always still
+# works.
+_last_seen_mtime_ns: int = 0
+
 
 def register_skill_dir(path: str | Path) -> None:
     """Register an additional directory to search for skills.
@@ -109,13 +118,69 @@ def get_extra_skill_dirs() -> list[Path]:
     return list(dict.fromkeys([*_extra_skill_dirs, *dynamic_dirs]))
 
 
+def _max_skill_mtime_ns() -> int:
+    """Return the highest mtime_ns of any ``*.md`` under any registered dir.
+
+    Walks every dir from :func:`get_extra_skill_dirs` and the registry's
+    own dirs, looking for changes that an external process (editor, file
+    mount, ``git pull``) made to skill content. Symlinks are followed.
+    Errors are swallowed — an inaccessible directory cannot trigger a
+    refresh, but it also must not block one for the rest.
+    """
+    highest = 0
+    dirs: list[Path] = list(get_extra_skill_dirs())
+    if _skill_service is not None:
+        try:
+            dirs.extend(Path(d) for d in _skill_service.registry.directories)
+        except Exception:
+            pass
+    seen: set[Path] = set()
+    for directory in dirs:
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if not resolved.is_dir():
+            continue
+        try:
+            for path in resolved.rglob("*.md"):
+                try:
+                    mtime_ns = path.stat().st_mtime_ns
+                except OSError:
+                    continue
+                if mtime_ns > highest:
+                    highest = mtime_ns
+        except OSError:
+            continue
+    return highest
+
+
 def refresh_dynamic_skill_dirs() -> None:
-    """Add dynamic provider directories to the live singleton, then refresh."""
+    """Pick up provider directories and on-disk content changes.
+
+    This is the framework's "lightweight watcher" for ADR-022 §6: every
+    time the API/CLI asks for the current skill list, we (a) make sure
+    every dir reported by the active dynamic provider is registered and
+    (b) re-read the registry when any ``*.md`` mtime under those dirs
+    is newer than the last reload. An explicit ``service.refresh()``
+    call still works for callers that want forced consistency.
+    """
+    global _last_seen_mtime_ns
+
     if _skill_service is None:
         return
     changed = False
     for directory in get_extra_skill_dirs():
         changed = _skill_service.registry.add_directory(directory) or changed
+
+    current_mtime_ns = _max_skill_mtime_ns()
+    if current_mtime_ns and current_mtime_ns != _last_seen_mtime_ns:
+        _last_seen_mtime_ns = current_mtime_ns
+        changed = True
+
     if changed:
         _skill_service.refresh()
 
@@ -129,10 +194,11 @@ def get_writable_skill_root(default_work_dir: str | Path = ".taskforce") -> Path
 
 def clear_extra_skill_dirs() -> None:
     """Remove all registered extra skill directories (testing helper)."""
-    global _skill_dir_provider, _writable_skill_root_provider
+    global _skill_dir_provider, _writable_skill_root_provider, _last_seen_mtime_ns
     _extra_skill_dirs.clear()
     _skill_dir_provider = None
     _writable_skill_root_provider = None
+    _last_seen_mtime_ns = 0
 
 
 class SkillService:
