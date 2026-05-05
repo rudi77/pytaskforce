@@ -224,6 +224,24 @@ async def _react_loop(
                         # tool-call history) loops to max_steps wasting
                         # tokens and time.
                         stream_error_msg = str(chunk.get("message", "Error"))
+                        # Non-retryable provider rejections (e.g. Azure
+                        # content filter) should abort the loop after the
+                        # first failure rather than burning the full
+                        # consecutive-error budget on the same blocked
+                        # request.
+                        if chunk.get("non_retryable"):
+                            error_kind = chunk.get("error_kind") or "non_retryable"
+                            yield StreamEvent(
+                                event_type=EventType.ERROR,
+                                data={
+                                    "message": (
+                                        f"LLM call rejected ({error_kind}): "
+                                        f"{stream_error_msg}. Aborting to "
+                                        "avoid retrying the same blocked request."
+                                    )
+                                },
+                            )
+                            return
                         yield StreamEvent(
                             event_type=EventType.ERROR,
                             data={"message": stream_error_msg},

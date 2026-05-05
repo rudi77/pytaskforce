@@ -596,18 +596,29 @@ class LiteLLMService:
     ) -> dict[str, Any]:
         """Log and trace a stream-level error, returning the error event.
 
+        Tags content-filter and other non-retryable errors so the consumer
+        (e.g. the ReAct loop) can short-circuit instead of blindly retrying
+        the same blocked request.
+
         Returns:
-            An ``error`` event dict.
+            An ``error`` event dict with optional ``non_retryable`` /
+            ``error_kind`` hints.
         """
+        is_content_filter = self._is_content_filter_error(error)
         self.logger.error(
             "llm_stream_failed",
             model=resolved_model,
             error_type=type(error).__name__,
             error=str(error)[:200],
+            content_filter=is_content_filter,
         )
         # Fire-and-forget: trace without blocking the stream consumer
         asyncio.create_task(self._trace_failure(messages, resolved_model, 0, str(error)))
-        return {"type": "error", "message": str(error)}
+        event: dict[str, Any] = {"type": "error", "message": str(error)}
+        if is_content_filter:
+            event["error_kind"] = "content_filter"
+            event["non_retryable"] = True
+        return event
 
     async def complete_stream(
         self,

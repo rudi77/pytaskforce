@@ -123,15 +123,29 @@ Skills can be organised in subdirectories. The full name uses `:` as separator:
 
 ## Quick Start
 
-### Creating a Skill
+### Where to put your skill
 
-Create a directory in `src/taskforce/skills/` with a `SKILL.md` file:
+Skills are discovered from three roots, in this load order:
+
+| Location                              | Scope                                    | When to use |
+|---------------------------------------|------------------------------------------|-------------|
+| `.taskforce/skills/<name>/SKILL.md`   | **Project-level** (current working dir)  | Default for new skills you author for a specific project (e.g. the running Butler) |
+| `~/.taskforce/skills/<name>/SKILL.md` | **User-level** (shared across projects)  | Personal skills you want available everywhere |
+| `src/taskforce/skills/<name>/SKILL.md`| **Bundled with the framework distribution** | Only when contributing to `pytaskforce` itself — these ship with the package |
+
+**Default for new skills:** `.taskforce/skills/<slug>/SKILL.md`. Bundled skills under `src/taskforce/skills/` are part of the framework release and should not be created ad-hoc for a single user/project.
+
+There is also a built-in `skill-creator` skill (bundled and pre-installed in `.taskforce/skills/`) that walks the agent through authoring a valid SKILL.md, plus a small validator at `src/taskforce/skills/skill-creator/scripts/validate_skill.py` that reuses the runtime parser.
+
+### Creating a Skill (project-level)
+
+Create a directory in `.taskforce/skills/` with a `SKILL.md` file:
 
 ```bash
-mkdir -p src/taskforce/skills/my-skill
+mkdir -p .taskforce/skills/my-skill
 ```
 
-Create `src/taskforce/skills/my-skill/SKILL.md`:
+Create `.taskforce/skills/my-skill/SKILL.md`:
 
 ```markdown
 ---

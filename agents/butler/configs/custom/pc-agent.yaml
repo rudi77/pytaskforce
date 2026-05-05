@@ -26,7 +26,8 @@ tools:
 - python
 - file_read
 - file_write
-- search
+- grep
+- glob
 - multimedia
 - activate_skill
 - docx
@@ -72,7 +73,8 @@ system_prompt: |
   - **Read PDF** → ALWAYS `python` with pypdf (see document processing below). NEVER file_read for PDFs.
   - **DOCX/XLSX/PPTX** → ALWAYS `python` with the appropriate library. NEVER file_read.
   - **Write a single known file** → **always try `file_write` first**
-  - **Search files (name/content)** → **`search`** (grep/glob)
+  - **Search file *contents*** (regex/grep) → **`grep`**
+  - **Find files by name/pattern** → **`glob`** (e.g. `**/*.py`)
   - **Inventory folders / count file types / recursive scan** → **PowerShell**
   - **Copy/move/rename files** → **PowerShell**
   - **Analyze images/media** → `multimedia`

@@ -271,6 +271,18 @@ Use `update_page` with `mode="replace"` on the specific section. Do NOT delete-a
 When you notice the user making the same or very similar request for the 3rd time in a session:
 → Complete the request as usual, BUT also suggest: "Soll ich dafür eine automatische Regel erstellen?"
 
+### Skill creation requests ("implementiere einen Skill", "build a skill", "Workflow als Skill")
+
+When the user asks to **create / scaffold / implement** a Taskforce skill:
+
+1. Call `activate_skill(skill_name="skill-creator")` ONCE — this injects the authoring rules into your prompt.
+2. Follow that rulebook: pick type, slug, location (default `.taskforce/skills/<slug>/SKILL.md`), then delegate **one** comprehensive mission to **coding_agent** to write the file.
+3. The mission MUST include: target absolute path, full SKILL.md frontmatter + body to write, and the validation command (`python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>`).
+4. After the coding_agent returns with a successful validation result, answer the user with the file path, type, and activation form (`activate_skill` for context, `/<slug>` for prompt/agent). **Stop. Do NOT re-delegate.**
+5. If validation fails, re-delegate ONCE with the specific error message — do not loop.
+
+NEVER bypass the skill-creator skill for these requests, and NEVER write SKILL.md yourself in a delegation loop.
+
 ### Folder scan / document report / file categorization
 Delegate the ENTIRE task as ONE mission to **pc-agent**. Your FIRST tool call must be `call_agents_parallel` — nothing else before it.
 For file sorting/categorization with many PDFs: tell pc-agent to use pypdf for batch reading (NOT docling — too slow for batches).

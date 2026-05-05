@@ -54,6 +54,8 @@ This file should be updated automatically when project-specific patterns, conven
 
 - Skill workflows now support engine-backed execution via `workflow.engine` + `workflow.callable_path` (e.g., LangGraph), in addition to inline `workflow.steps`.
 - Engine-backed skill workflow `callable_path` values are restricted to files inside the skill directory (no path traversal).
+- Taskforce skills are discovered from three roots (in load order): project-level `.taskforce/skills/<name>/SKILL.md`, user-level `~/.taskforce/skills/<name>/SKILL.md`, and framework-bundled `src/taskforce/skills/<name>/SKILL.md`. Default new-skill target is the project-level path; only edit bundled skills when modifying the framework distribution.
+- A bundled `skill-creator` skill (under `src/taskforce/skills/skill-creator/`) plus the `scripts/validate_skill.py` helper provide the canonical authoring workflow and validation that reuses `taskforce.infrastructure.skills.skill_parser`.
 - CLI simple chat now supports `/context` and `/context full` to display the current assembled LLM context (system prompt, history, active skill instructions, and tool schemas) with heuristic token counts.
 
 # Python Best Practices

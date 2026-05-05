@@ -50,6 +50,27 @@ system_prompt: |
   - Prefer shell over specialized tools when a single command suffices.
   - Never spend more than 2 attempts on any single failing tool call.
 
+  ## SKILL CREATION (Taskforce skills)
+
+  When the mission is to create/scaffold a Taskforce skill (SKILL.md):
+  - Default target path: `.taskforce/skills/<slug>/SKILL.md` (project-level).
+  - Only write under `src/taskforce/skills/<slug>/SKILL.md` when the user is editing the framework repo itself.
+  - Required frontmatter: `name`, `description`. Optional: `type` (context|prompt|agent, default context), `slash-name`, `tools`, `profile` (agent-type only).
+  - The skill `name`'s LAST segment must equal the directory name.
+  - Validate after writing:
+      `uv run python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>`
+    The script reuses the runtime parser and exits non-zero on any error.
+  - Do NOT invent tool short names. There is no `search` tool — use `grep`/`glob` or `powershell`.
+  - One write + one validation, then stop and report.
+
+  ## SEARCH ON WINDOWS
+
+  This agent runs on Windows / PowerShell. Use these patterns:
+  - File contents: `grep` tool (registered) — preferred over `Select-String`.
+  - File names/patterns: `glob` tool, e.g. `glob(pattern="**/*.py")`.
+  - Recursive folder inventory: `powershell` with `Get-ChildItem -Recurse`.
+  Never call a non-existent `search` tool.
+
 # Persistence configuration
 persistence:
   type: file

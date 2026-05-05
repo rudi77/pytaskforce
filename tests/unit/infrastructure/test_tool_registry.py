@@ -2,12 +2,20 @@
 Unit tests for tool registry resolution helpers.
 """
 
+from pathlib import Path
+
+import pytest
+import yaml
+
 from taskforce.infrastructure.tools.registry import (
     get_tool_definition,
     get_tool_definition_by_type,
     get_tool_name_for_type,
+    is_registered,
     resolve_tool_spec,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_get_tool_definition_returns_copy():
@@ -67,3 +75,39 @@ def test_resolve_tool_spec_invalid():
     """Invalid specs should return None."""
     assert resolve_tool_spec("unknown_tool") is None
     assert resolve_tool_spec({"module": "missing.type"}) is None
+
+
+def test_search_short_name_is_not_registered():
+    """`search` is not a real tool — agents must use `grep`/`glob` instead.
+
+    Guards against config regressions like the old pc-agent.yaml that
+    referenced a non-existent ``search`` tool and silently failed at
+    build time.
+    """
+    assert not is_registered("search")
+    assert is_registered("grep")
+    assert is_registered("glob")
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        REPO_ROOT / "agents" / "butler" / "configs" / "custom" / "pc-agent.yaml",
+    ],
+)
+def test_agent_config_tool_names_resolve(config_path: Path):
+    """Every plain string tool name in a shipped agent config must resolve.
+
+    Catches typos / removed tools (the original ``search`` regression) at
+    test time instead of at agent-build time during a real conversation.
+    """
+    if not config_path.is_file():
+        pytest.skip(f"config not present: {config_path}")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    tools = data.get("tools") or []
+    plain_names = [t for t in tools if isinstance(t, str)]
+    unresolved = [name for name in plain_names if not is_registered(name)]
+    assert not unresolved, (
+        f"{config_path.name} references unregistered tool short names: {unresolved}"
+    )

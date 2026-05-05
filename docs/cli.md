@@ -262,6 +262,18 @@ taskforce skills read pdf-processing forms.md
 taskforce skills paths
 ```
 
+#### Authoring a new skill
+
+The bundled `skill-creator` skill walks an agent through creating a valid `SKILL.md` (frontmatter, type selection, naming rules, templates). Project-level skills should land in `.taskforce/skills/<slug>/SKILL.md`; bundled skills (`src/taskforce/skills/`) ship with the framework distribution.
+
+After writing a SKILL.md, validate it with the helper that reuses the runtime parser:
+
+```bash
+uv run python src/taskforce/skills/skill-creator/scripts/validate_skill.py .taskforce/skills/<slug>
+```
+
+The helper exits 0 on success, 1 on a parser/validation error, 2 on IO/argument errors.
+
 Skills are modular capabilities that extend agent functionality with domain-specific expertise. Each skill packages instructions, metadata, and optional resources (scripts, templates, documentation).
 
 **Available Built-in Skills:**

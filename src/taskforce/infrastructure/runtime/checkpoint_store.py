@@ -23,13 +23,41 @@ class FileCheckpointStore(CheckpointStoreProtocol):
 
     async def save(self, record: CheckpointRecord) -> None:
         session_dir = self._base_dir / record.session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
         path = session_dir / f"{record.checkpoint_id}.json"
-        payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2)
         tmp_path = path.with_suffix(".tmp")
-        async with aiofiles.open(tmp_path, "w", encoding="utf-8") as handle:
-            await handle.write(payload)
-        tmp_path.replace(path)
+        payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2)
+
+        # The session/parent directory may have been wiped between checkpoints
+        # (e.g. by a manual cleanup or a session rotation). We recreate the
+        # tree on every save and retry the atomic replace once if the directory
+        # vanishes between the temp-write and the replace — this is what
+        # caused the "checkpoint save failed" loop in long-running sub-agents.
+        for attempt in range(2):
+            try:
+                session_dir.mkdir(parents=True, exist_ok=True)
+                async with aiofiles.open(tmp_path, "w", encoding="utf-8") as handle:
+                    await handle.write(payload)
+                tmp_path.replace(path)
+                break
+            except FileNotFoundError as exc:
+                if attempt == 0:
+                    self._logger.warning(
+                        "checkpoint_save_retry",
+                        session_id=record.session_id,
+                        error=str(exc),
+                    )
+                    # Best-effort cleanup of the dangling temp file before retrying.
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    continue
+                self._logger.error(
+                    "checkpoint_save_failed",
+                    session_id=record.session_id,
+                    error=str(exc),
+                )
+                raise
         self._logger.debug("checkpoint_saved", session_id=record.session_id)
 
     async def latest(self, session_id: str) -> CheckpointRecord | None:

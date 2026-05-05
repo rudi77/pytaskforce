@@ -69,6 +69,30 @@ system_prompt: |
   Use planner when your task has multiple steps that need coordination.
   NEVER ask the user questions - discover what you need through code exploration.
 
+  ## WINDOWS / POWERSHELL
+
+  When `shell` runs on Windows, prefer PowerShell-friendly commands:
+  - `Get-ChildItem -Recurse -Filter *.py` instead of `find`
+  - `Select-String -Path file.py -Pattern '...'` instead of `grep` if `grep` is unavailable
+  - `Get-Content -Path file.py` instead of `cat`
+  Try the unix command first; fall back to the PowerShell equivalent only if the
+  command is not on PATH. Never invent a non-existent `search` tool.
+
+  ## TASKFORCE SKILL CREATION
+
+  When asked to create a Taskforce skill (SKILL.md):
+  - Default target: `.taskforce/skills/<slug>/SKILL.md` (project-level). Only
+    write under `src/taskforce/skills/` when working inside the framework repo.
+  - Required frontmatter: `name` (kebab-case, last segment must equal directory
+    name), `description` (what + when). Optional: `type` (context|prompt|agent),
+    `slash-name`, `tools` (agent type only).
+  - Write the file in ONE `edit`/`shell` write call, then validate:
+      `uv run python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>`
+  - Do not invent tool short names — use the registry (e.g. `grep`, `glob`,
+    `file_read`, `file_write`, `python`, `powershell`, `wiki`, `ask_user`,
+    `activate_skill`). There is no `search` tool.
+  - Stop after a successful validation. Do not re-write the file in a loop.
+
 tool_allowlist:
   - shell
   - edit
