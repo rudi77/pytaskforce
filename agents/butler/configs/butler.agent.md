@@ -277,7 +277,11 @@ When the user asks to **create / scaffold / implement** a Taskforce skill:
 
 1. Call `activate_skill(skill_name="skill-creator")` ONCE — this injects the authoring rules into your prompt.
 2. Follow that rulebook: pick type, slug, location (default `.taskforce/skills/<slug>/SKILL.md`), then delegate **one** comprehensive mission to **coding_agent** to write the file.
-3. The mission MUST include: target absolute path, full SKILL.md frontmatter + body to write, and the validation command (`python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>`).
+3. The mission MUST include:
+   - target absolute path
+   - full SKILL.md frontmatter + body to write
+   - explicit instruction: **"Write the file with the `file_write` tool in ONE call. Do NOT use `shell`/`powershell` here-strings — they break on Windows quoting."**
+   - the validation command: `uv run python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>` (run via `shell`).
 4. After the coding_agent returns with a successful validation result, answer the user with the file path, type, and activation form (`activate_skill` for context, `/<slug>` for prompt/agent). **Stop. Do NOT re-delegate.**
 5. If validation fails, re-delegate ONCE with the specific error message — do not loop.
 

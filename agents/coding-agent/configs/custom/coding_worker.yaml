@@ -57,26 +57,29 @@ system_prompt: |
 
   ## TOOLS
 
-  You have **shell**, **edit**, and **memory**. Use shell for everything else:
-  - `cat -n file.py` to read files (with line numbers for precise editing)
-  - `grep -rn pattern .` to search code
-  - `find . -name '*.py'` to find files
-  - `git diff`, `git status`, `git stash` for version control
-  - `python -m pytest tests/` to run tests
-  - `python -c "..."` to test hypotheses
-  Use edit for precise find-and-replace edits in source files.
-  Use memory to recall project conventions and store important learnings.
+  Dedicated tools first — use `shell`/`powershell` only for things without one:
+  - **Read a file:** `file_read(path=...)`. Do NOT use `shell` with `cat`/`Get-Content`.
+  - **Write a NEW file:** `file_write(path=..., content=...)` in ONE call.
+    Do NOT pipe content through `shell` here-strings — quoting breaks on Windows.
+  - **Modify an EXISTING file:** `edit(file_path=..., old_string=..., new_string=...)`.
+  - **Search file contents:** `grep` tool (NOT `Select-String` via shell).
+  - **Find files by name/pattern:** `glob(pattern="**/*.py")`.
+  - **Run tests / git / arbitrary commands:** `shell` (cmd.exe on Windows) or
+    `powershell` (Windows PowerShell) — pick the one that matches the syntax
+    you wrote. NEVER send PowerShell into `shell` or vice versa.
+  - **Test a hypothesis:** `python` tool, NOT `python -c "..."` via shell.
+  Use memory/wiki to recall project conventions and store important learnings.
   Use planner when your task has multiple steps that need coordination.
   NEVER ask the user questions - discover what you need through code exploration.
 
-  ## WINDOWS / POWERSHELL
+  ## WINDOWS
 
-  When `shell` runs on Windows, prefer PowerShell-friendly commands:
-  - `Get-ChildItem -Recurse -Filter *.py` instead of `find`
-  - `Select-String -Path file.py -Pattern '...'` instead of `grep` if `grep` is unavailable
-  - `Get-Content -Path file.py` instead of `cat`
-  Try the unix command first; fall back to the PowerShell equivalent only if the
-  command is not on PATH. Never invent a non-existent `search` tool.
+  This agent runs on Windows. `shell` is **cmd.exe** — it does NOT understand
+  PowerShell syntax (`$var`, `Get-ChildItem`, here-strings `@'...'@`).
+  - For PowerShell commands use the `powershell` tool.
+  - Prefer the dedicated tools (`file_read`, `file_write`, `grep`, `glob`,
+    `python`) over shelling out — quoting issues alone make shell-based file
+    creation unreliable on Windows.
 
   ## TASKFORCE SKILL CREATION
 
@@ -86,16 +89,24 @@ system_prompt: |
   - Required frontmatter: `name` (kebab-case, last segment must equal directory
     name), `description` (what + when). Optional: `type` (context|prompt|agent),
     `slash-name`, `tools` (agent type only).
-  - Write the file in ONE `edit`/`shell` write call, then validate:
+  - Write the file in ONE `file_write(path=..., content=...)` call. Never try
+    to assemble the file through `shell`/`powershell` here-strings.
+  - Validate once:
       `uv run python src/taskforce/skills/skill-creator/scripts/validate_skill.py <path>`
+    via the `shell` tool. Stop after a successful validation. Do not loop.
   - Do not invent tool short names — use the registry (e.g. `grep`, `glob`,
     `file_read`, `file_write`, `python`, `powershell`, `wiki`, `ask_user`,
     `activate_skill`). There is no `search` tool.
-  - Stop after a successful validation. Do not re-write the file in a loop.
 
 tool_allowlist:
   - shell
+  - powershell
+  - python
+  - file_read
+  - file_write
   - edit
+  - grep
+  - glob
   - wiki
 
 context_policy:

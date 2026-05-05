@@ -191,3 +191,76 @@ class TestToolOverrides:
         assert len(agent._openai_tools) == 2
         tool_names = {t["function"]["name"] for t in agent._openai_tools}
         assert tool_names == {"shell", "edit"}
+
+
+class TestSpecialistResolution:
+    """Verify the spawner refuses to silently fall back to the parent profile.
+
+    Regression: butler delegating to ``coding_agent`` used to recurse into
+    butler-spawning-butler because ``_find_agent_config`` only searched
+    ``custom/`` directories, while ``coding_agent.yaml`` lives at the
+    package's top-level configs/ — causing infinite recursion.
+    """
+
+    @pytest.fixture
+    def fake_factory(self, tmp_path) -> MagicMock:
+        factory = MagicMock()
+        factory.config_dir = str(tmp_path / "configs")
+        (tmp_path / "configs").mkdir()
+        factory.create_agent = AsyncMock(return_value=FakeAgent())
+        return factory
+
+    async def test_unresolvable_specialist_raises_instead_of_using_parent(
+        self, fake_factory: MagicMock
+    ) -> None:
+        """Specialist that cannot be resolved must raise, not silently
+        spawn the parent profile (which causes infinite recursion)."""
+        spawner = SubAgentSpawner(
+            agent_factory=fake_factory,
+            profile="butler",
+        )
+
+        spec = SubAgentSpec(
+            mission="please write a file",
+            parent_session_id="parent-123",
+            specialist="totally_unknown_specialist",
+        )
+
+        result = await spawner.spawn(spec)
+        # Spawn catches the ValueError internally and returns a failed result
+        assert not result.success
+        assert "No agent config found" in (result.error or "")
+        # And critically: agent_factory.create_agent must NOT have been called
+        # with the parent profile as a fallback
+        fake_factory.create_agent.assert_not_called()
+
+    async def test_top_level_package_profile_is_resolved(
+        self, fake_factory: MagicMock
+    ) -> None:
+        """Specialist matching a top-level package profile (e.g. coding_agent.yaml)
+        must be found, not fall through to the parent profile."""
+        with patch(
+            "taskforce.application.sub_agent_spawner.SubAgentSpawner._find_agent_config"
+        ) as mock_find:
+            from pathlib import Path as _P
+
+            mock_find.return_value = _P("/fake/agents/coding-agent/configs/coding_agent.yaml")
+
+            spawner = SubAgentSpawner(
+                agent_factory=fake_factory,
+                profile="butler",
+            )
+
+            spec = SubAgentSpec(
+                mission="write a skill file",
+                parent_session_id="parent-123",
+                specialist="coding_agent",
+            )
+
+            result = await spawner.spawn(spec)
+            assert result.success
+            # Must have used the resolved specialist config, not the parent profile
+            create_kwargs = fake_factory.create_agent.call_args.kwargs
+            assert create_kwargs["config"] == str(
+                _P("/fake/agents/coding-agent/configs/coding_agent.yaml")
+            )

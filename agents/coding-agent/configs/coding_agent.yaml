@@ -65,10 +65,15 @@ system_prompt: |
 
   ## SEARCH ON WINDOWS
 
-  This agent runs on Windows / PowerShell. Use these patterns:
-  - File contents: `grep` tool (registered) — preferred over `Select-String`.
+  This agent runs on Windows. Use these patterns:
+  - File contents: `grep` tool (registered) — NEVER `Select-String` through `shell`.
   - File names/patterns: `glob` tool, e.g. `glob(pattern="**/*.py")`.
-  - Recursive folder inventory: `powershell` with `Get-ChildItem -Recurse`.
+  - Recursive folder inventory: `powershell` tool (NOT `shell` — `shell` is cmd.exe).
+  - **Writing a NEW file: ALWAYS `file_write(path=..., content=...)`** — never
+    pipe a here-string through `shell`/`powershell`. The shell route fails on
+    quoting and triggers content-filter cascades when retried with secrets.
+  - Modifying an EXISTING file: `edit(file_path=..., old_string=..., new_string=...)`.
+  - Reading a file: `file_read(path=...)`. Do NOT use `shell` with `cat`/`Get-Content`.
   Never call a non-existent `search` tool.
 
 # Persistence configuration
@@ -127,11 +132,19 @@ consolidation:
 
 
 # Tool configuration for coding agent
-# Minimal: shell + edit + memory + notifications + sub-agents
-# Shell handles: cat, grep, find, git, python, pytest, file I/O
+# Includes file_write so we can create new files in ONE call (e.g. SKILL.md)
+# without piping content through shell here-strings (which is platform-specific
+# and breaks on Windows, where `shell` is cmd.exe and refuses PowerShell syntax).
+# `powershell` is a dedicated tool — DO NOT send PowerShell into `shell`.
 tools:
   - shell
+  - powershell
+  - python
+  - file_read
+  - file_write
   - edit
+  - grep
+  - glob
   - wiki
   - send_notification
 

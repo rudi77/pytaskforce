@@ -242,6 +242,18 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 planning_strategy=spec.planning_strategy,
                 specialist=custom_definition.get("specialist"),
             )
+        # Refuse to silently fall back to the parent profile when a specialist
+        # was explicitly requested — that path causes infinite recursion when
+        # e.g. butler delegates to ``coding_agent`` and the resolver only finds
+        # the parent profile. Surfacing the error makes the misconfiguration
+        # visible instead of looping until the stream gets cancelled.
+        if spec.specialist and spec.specialist != profile:
+            raise ValueError(
+                f"No agent config found for specialist {spec.specialist!r}. "
+                "Add a profile YAML under agents/<pkg>/configs/, "
+                "agents/<pkg>/configs/custom/, or "
+                f"{Path(self._agent_factory.config_dir) / 'custom'}."
+            )
         # Use profile config
         return await self._agent_factory.create_agent(
             config=profile,
@@ -271,14 +283,24 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
         candidates = [
             config_dir / "custom" / f"{specialist}.yaml",
             config_dir / "custom" / specialist / f"{specialist}.yaml",
+            # Top-level profiles in the parent's own configs/ (e.g. butler.yaml)
+            config_dir / f"{specialist}.yaml",
+            config_dir / f"{specialist}.agent.md",
         ]
-        # Search agent package config directories (agents/*/configs/custom/)
+        # Search agent package config directories (agents/*/configs[/custom]/)
         from taskforce.core.utils.paths import get_base_path
 
         agents_dir = get_base_path() / "agents"
         if agents_dir.is_dir():
             for agent_dir in agents_dir.iterdir():
-                agent_custom = agent_dir / "configs" / "custom"
+                agent_configs = agent_dir / "configs"
+                if not agent_configs.is_dir():
+                    continue
+                # Top-level package profile (e.g. agents/coding-agent/configs/coding_agent.yaml)
+                candidates.append(agent_configs / f"{specialist}.yaml")
+                candidates.append(agent_configs / f"{specialist}.agent.md")
+                # Nested custom/ directory
+                agent_custom = agent_configs / "custom"
                 if agent_custom.is_dir():
                     candidates.append(agent_custom / f"{specialist}.yaml")
                     candidates.append(
