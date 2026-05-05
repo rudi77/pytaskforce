@@ -113,6 +113,14 @@ class AppendMessageRequest(BaseModel):
             "otherwise ``default``)."
         ),
     )
+    agent_id: str | None = Field(
+        default=None,
+        description=(
+            "Registered custom-agent id (from the agent catalog / deployments). "
+            "When set, the agent is loaded via the agent registry and ``profile`` "
+            "is treated as the base profile fallback."
+        ),
+    )
     attachments: list[AttachmentRef] = Field(
         default_factory=list,
         description="File ids of previously uploaded attachments (POST /api/v1/files).",
@@ -323,6 +331,7 @@ async def append_message(
     result = await executor.execute_mission(
         mission=mission,
         profile=resolved_profile,
+        agent_id=request.agent_id,
         conversation_history=history,
     )
 
@@ -398,6 +407,7 @@ async def stream_message(
                 async for update in executor.execute_mission_streaming(
                     mission=mission,
                     profile=request.profile or _default_profile(),
+                    agent_id=request.agent_id,
                     conversation_history=history,
                 ):
                     await queue.put(update)

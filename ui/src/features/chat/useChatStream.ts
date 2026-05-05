@@ -33,6 +33,7 @@ export interface SendStreamingArgs {
   message: string;
   attachments: { file_id: string }[];
   profile?: string;
+  agentId?: string;
 }
 
 const EMPTY_STATE: AssistantStreamState = { text: "", toolCalls: [], completed: false };
@@ -44,7 +45,7 @@ export function useChatStream() {
   const abortRef = useRef<AbortController | null>(null);
 
   const send = useCallback(
-    async ({ conversationId, message, attachments, profile }: SendStreamingArgs) => {
+    async ({ conversationId, message, attachments, profile, agentId }: SendStreamingArgs) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -59,6 +60,7 @@ export function useChatStream() {
             body: {
               message,
               ...(profile ? { profile } : {}),
+              ...(agentId ? { agent_id: agentId } : {}),
               attachments,
             },
           },

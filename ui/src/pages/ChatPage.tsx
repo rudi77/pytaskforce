@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, GitBranch, MessageSquare, MessageSquarePlus, Sparkles } from "lucide-react";
+import { Archive, Bot, GitBranch, MessageSquare, MessageSquarePlus, Sparkles } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -11,12 +11,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import {
   queryKeys,
+  useAgents,
   useArchiveConversation,
   useArchivedConversations,
   useConversationMessages,
   useConversations,
   useCreateConversation,
   useForkConversation,
+  type AgentSummary,
   type ChatMessage as ChatMessageT,
   type FileMetadata,
 } from "@/api/queries";
@@ -178,6 +180,108 @@ function ConversationStarter() {
   );
 }
 
+interface AgentSelection {
+  /** Stable key used for the dropdown value and localStorage. */
+  key: string;
+  label: string;
+  /** Either custom-agent id (sent as `agent_id`) or profile name (sent as `profile`). Empty string = server default. */
+  agentId?: string;
+  profile?: string;
+}
+
+const AGENT_DEFAULT: AgentSelection = { key: "", label: "Default (server)" };
+
+function buildAgentOptions(agents: AgentSummary[] | undefined): AgentSelection[] {
+  if (!agents) return [AGENT_DEFAULT];
+  const custom: AgentSelection[] = [];
+  const profiles: AgentSelection[] = [];
+  const plugins: AgentSelection[] = [];
+  for (const a of agents) {
+    if (a.source === "custom") {
+      custom.push({
+        key: `custom:${a.agent_id}`,
+        label: `${a.name} (${a.agent_id})`,
+        agentId: a.agent_id,
+      });
+    } else if (a.source === "plugin") {
+      plugins.push({
+        key: `plugin:${a.agent_id}`,
+        label: `${a.name} (plugin)`,
+        agentId: a.agent_id,
+      });
+    } else if (a.source === "profile") {
+      profiles.push({
+        key: `profile:${a.profile}`,
+        label: `${a.profile} (profile)`,
+        profile: a.profile,
+      });
+    }
+  }
+  custom.sort((a, b) => a.label.localeCompare(b.label));
+  plugins.sort((a, b) => a.label.localeCompare(b.label));
+  profiles.sort((a, b) => a.label.localeCompare(b.label));
+  return [AGENT_DEFAULT, ...custom, ...plugins, ...profiles];
+}
+
+const AGENT_STORAGE_PREFIX = "taskforce.chat.agent:";
+
+function loadStoredAgentKey(conversationId: string | undefined): string {
+  if (!conversationId) return "";
+  try {
+    return localStorage.getItem(AGENT_STORAGE_PREFIX + conversationId) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function persistAgentKey(conversationId: string | undefined, key: string): void {
+  if (!conversationId) return;
+  try {
+    if (key) localStorage.setItem(AGENT_STORAGE_PREFIX + conversationId, key);
+    else localStorage.removeItem(AGENT_STORAGE_PREFIX + conversationId);
+  } catch {
+    /* storage unavailable — silently ignore */
+  }
+}
+
+function AgentPicker({
+  options,
+  value,
+  onChange,
+  loading,
+  disabled,
+}: {
+  options: AgentSelection[];
+  value: string;
+  onChange: (key: string) => void;
+  loading: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <Bot className="h-4 w-4" />
+      <span className="hidden sm:inline">Agent</span>
+      <select
+        className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled || loading}
+        title="Choose which agent answers this conversation"
+      >
+        {loading ? (
+          <option value="">Loading…</option>
+        ) : (
+          options.map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {opt.label}
+            </option>
+          ))
+        )}
+      </select>
+    </label>
+  );
+}
+
 export default function ChatPage() {
   const params = useParams();
   const conversationId = params.conversationId;
@@ -187,6 +291,27 @@ export default function ChatPage() {
   const stream = useChatStream();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const agentsQuery = useAgents();
+  const agentOptions = useMemo(
+    () => buildAgentOptions(agentsQuery.data?.agents),
+    [agentsQuery.data],
+  );
+  const [agentKey, setAgentKey] = useState<string>(() =>
+    loadStoredAgentKey(conversationId),
+  );
+
+  useEffect(() => {
+    setAgentKey(loadStoredAgentKey(conversationId));
+  }, [conversationId]);
+
+  useEffect(() => {
+    persistAgentKey(conversationId, agentKey);
+  }, [conversationId, agentKey]);
+
+  const selectedAgent = useMemo(
+    () => agentOptions.find((o) => o.key === agentKey) ?? AGENT_DEFAULT,
+    [agentOptions, agentKey],
+  );
 
   const messages = messagesQuery.data ?? [];
   const isStreaming = stream.isStreaming;
@@ -221,6 +346,8 @@ export default function ChatPage() {
       conversationId,
       message: text,
       attachments: attachments.map((a) => ({ file_id: a.file_id })),
+      agentId: selectedAgent.agentId,
+      profile: selectedAgent.profile,
     });
   };
 
@@ -275,6 +402,13 @@ export default function ChatPage() {
           <div className="flex items-center gap-2">
             {conversationId ? (
               <>
+                <AgentPicker
+                  options={agentOptions}
+                  value={agentKey}
+                  onChange={setAgentKey}
+                  loading={agentsQuery.isLoading}
+                  disabled={isStreaming}
+                />
                 <Button
                   variant="outline"
                   size="sm"
