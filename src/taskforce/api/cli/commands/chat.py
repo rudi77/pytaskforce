@@ -76,15 +76,17 @@ def _run_chat(
     profile = profile or global_opts.get("profile", "butler")
     debug = debug if debug is not None else global_opts.get("debug", False)
 
-    # Configure logging: chat REPL needs file-only output so it doesn't
-    # interfere with the console UI. Tool args/results land in butler.log
-    # next to the daemon's log so all sessions write to one place.
+    # Configure logging: the local Rich REPL needs file-only output so the
+    # log stream does not collide with the chat UI. When running in
+    # ``--telegram-polling`` mode the user is driving the bot from outside,
+    # so we mirror logs to the console as well — that is the only practical
+    # way to watch what the agent is doing in real time.
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     log_path = configure_logging(
         log_dir=f"{work_dir}/logs",
         log_name="butler.log",
         debug=debug,
-        console=False,
+        console=telegram_polling,
     )
 
     # Initialize Phoenix OTEL tracing (auto-instruments LiteLLM calls)
