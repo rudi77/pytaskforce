@@ -4,7 +4,7 @@
 **Last verified end-to-end:** 2026-05-04 (browser login + admin nav + tenant tables)
 **Status legend:** ☐ open · ☑ done · ⊘ explicitly out of scope
 
-**Critical-wiring + workflow-runtime gaps (G1–G7, G10, G11): closed after the 2026-05-04 post-review corrections.** Self-service product gaps (G8 agent-create UX, G9 tenant signup) remain open by design — they are real product features that need their own UX iteration. The container-backed sandbox (G12) stays out of scope.
+**Critical-wiring + workflow-runtime gaps (G1–G7, G10, G11): closed after the 2026-05-04 post-review corrections.** Self-service product gaps (G8, G9) are now closed for the MVP; email verification for signup remains deliberately deferred until a real sender is configured. The container-backed sandbox (G12) stays out of scope.
 
 **Post-review correction note:** The first closure pass missed several tenant-aware DI seams: the gateway re-read outbound components but still held sticky inbound conversation stores/managers; `@workflow_name` lookup was implemented but not wired through enterprise/default gateway construction; workflow runtime stores were cached before request tenant context; scheduled workflow callbacks needed an explicit tenant-context runner before resolving tenant-scoped stores; and ACP workflow steps could silently run locally when no ACP runtime was wired. These were corrected before moving on to G8/G9.
 
@@ -135,7 +135,15 @@ and move on.
 
 ## Self-service product gaps
 
-### ☐ G8 — No "Create Agent" UX in the management UI
+### ☑ G8 — No "Create Agent" UX in the management UI
+
+**Closed in:** current G8 implementation — enterprise now exposes RBAC-gated
+`/api/v1/admin/agents` CRUD routes backed by the request tenant's
+agent registry, registers the route through `EnterprisePlugin`, and adds a
+management UI flow at `/admin/agents/new` that creates a tenant-scoped custom
+agent and redirects back to the catalog. The catalog now reads
+`GET /api/v1/admin/agents` and shows custom agents together with shared
+profile/plugin agents.
 
 **Where:** `taskforce-enterprise/web/src/pages/` (no agent creation page).
 
@@ -149,7 +157,13 @@ and move on.
 
 ---
 
-### ☐ G9 — No tenant self-signup flow
+### ☑ G9 — No tenant self-signup flow
+
+**Closed in:** current G9 implementation — enterprise now exposes anonymous
+`POST /api/v1/signup`, exempts it from auth middleware, creates a tenant plus
+first admin user through `SignupService`, and adds a `/signup` UI page. The MVP
+sets `verification_required=false`; the email verification sender remains
+deferred behind the `signup.require_email_verification` configuration note.
 
 **Where:** Enterprise-only. Today bootstrap is via `taskforce_enterprise.cli.admin_bootstrap` or `POST /admin/tenants` with `tenant:manage` perm.
 
