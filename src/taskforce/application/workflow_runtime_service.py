@@ -35,8 +35,15 @@ logger = structlog.get_logger(__name__)
 
 
 def _schedule_job_id(workflow_id: str) -> str:
-    """Deterministic schedule-job id for a workflow's schedule trigger."""
-    return f"workflow:{workflow_id}"
+    """Deterministic schedule-job id for a workflow's schedule trigger.
+
+    Uses ``__`` as the separator instead of ``:`` because the file-backed
+    scheduler store turns the job_id into a filename, and ``:`` is invalid
+    in Windows path components — NTFS interprets it as an alternate-data-
+    stream marker, which makes ``os.replace`` fail with WinError 87 during
+    the atomic temp-file swap.
+    """
+    return f"workflow__{workflow_id}"
 
 
 class WorkflowRuntimeService:
