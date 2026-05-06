@@ -52,6 +52,9 @@ class ButlerDaemon:
         self._running = False
         self._status_task: asyncio.Task[None] | None = None
         self._status_path = Path(work_dir) / "butler" / "status.json"
+        # Proactive layer (Phase 3) — populated by _setup_proactive_layer.
+        self._proactive_evaluator: Any = None
+        self._proactive_task: asyncio.Task[None] | None = None
 
     @property
     def is_running(self) -> bool:
@@ -111,6 +114,11 @@ class ButlerDaemon:
                 pass
             logger.info("butler_daemon.persistent_agent_started")
 
+        # Wire the proactive layer (standing goals + heartbeat) when
+        # configured. Failure is non-fatal — the rest of the daemon
+        # stays useful even without proactive evaluation.
+        await self._setup_proactive_layer(config)
+
         self._running = True
 
         # Start periodic status writer
@@ -127,6 +135,24 @@ class ButlerDaemon:
             try:
                 await self._status_task
             except asyncio.CancelledError:
+                pass
+
+        if self._proactive_task is not None:
+            self._proactive_task.cancel()
+            try:
+                await self._proactive_task
+            except asyncio.CancelledError:
+                pass
+            self._proactive_task = None
+            try:
+                from taskforce.api.dependencies import (
+                    set_goal_evaluator,
+                    set_standing_goal_store,
+                )
+
+                set_goal_evaluator(None)
+                set_standing_goal_store(None)
+            except Exception:  # pragma: no cover
                 pass
 
         # Stop persistent agent service first (drains queue).
@@ -414,6 +440,132 @@ class ButlerDaemon:
                     register_active_event_source(source.source_name, source)
             except Exception:  # pragma: no cover — API package optional
                 pass
+
+    async def _setup_proactive_layer(self, config: dict[str, Any]) -> None:
+        """Wire StandingGoalStore + GoalEvaluatorService + heartbeat task.
+
+        Behaviour is opt-in via the ``proactive`` block in the butler
+        profile YAML — when missing the daemon stays purely reactive
+        (matching the pre-Phase-3 behaviour). When present the daemon:
+
+        * Loads or creates a ``FileStandingGoalStore`` under the work dir.
+        * Builds a ``GoalEvaluatorService`` whose ``submit`` callback
+          enqueues missions on the persistent agent (or directly via the
+          executor when no queue is wired).
+        * Publishes both store + evaluator to the API layer so the REST
+          CRUD and ``evaluate-now`` endpoints work.
+        * Starts a background heartbeat task that calls
+          ``evaluate_due_goals`` every ``heartbeat_minutes``.
+        """
+        proactive_cfg = config.get("proactive") or {}
+        if not proactive_cfg.get("enabled", False):
+            return
+
+        try:
+            from taskforce.application.goal_evaluator_service import (
+                GoalDecision,
+                GoalEvaluatorService,
+            )
+            from taskforce.infrastructure.persistence.file_standing_goal_store import (
+                FileStandingGoalStore,
+            )
+        except Exception as exc:  # pragma: no cover — import-only failures
+            logger.warning("butler_daemon.proactive_import_failed", error=str(exc))
+            return
+
+        store = FileStandingGoalStore(work_dir=self._work_dir)
+
+        async def _submit(request: Any) -> Any:
+            if self._agent_service is not None:
+                return await self._agent_service.submit(request)
+            # Fallback path when no PersistentAgentService is wired —
+            # run the executor directly so single-agent setups still
+            # benefit from proactive behaviour.
+            from taskforce.application.executor import AgentExecutor
+
+            executor = AgentExecutor()
+            return await executor.execute_mission(
+                mission=request.message,
+                profile=self._profile,
+                session_id=request.session_id or request.request_id,
+            )
+
+        async def _decide(goal: Any, now: Any) -> Any:
+            # Default: always act. The mission sent to the queue is the
+            # goal's own evaluation prompt (with ``$NOW`` substitution),
+            # leaving the act-or-not decision to the agent itself —
+            # which has the full conversation+memory context. Adopters
+            # who want a separate cheap decision LLM can replace this
+            # callback before ``daemon.start()`` returns.
+            mission = goal.evaluation_prompt.replace("$NOW", now.isoformat())
+            mission = mission.replace(
+                "$LAST_EVALUATED_AT",
+                goal.last_evaluated_at.isoformat() if goal.last_evaluated_at else "never",
+            )
+            return GoalDecision(act=True, mission=mission, rationale="due-by-cron")
+
+        evaluator = GoalEvaluatorService(
+            store=store,
+            submit=_submit,
+            decide=_decide,
+        )
+
+        # Publish both to the API layer.
+        try:
+            from taskforce.api.dependencies import (
+                set_goal_evaluator,
+                set_standing_goal_store,
+            )
+
+            set_standing_goal_store(store)
+            set_goal_evaluator(evaluator)
+        except Exception:  # pragma: no cover — API optional
+            pass
+
+        # Seed initial goals from YAML (idempotent — duplicates skipped).
+        for raw in proactive_cfg.get("standing_goals", []) or []:
+            try:
+                from taskforce.core.domain.standing_goal import StandingGoal
+
+                goal = StandingGoal.from_dict(raw)
+                existing = await store.get(goal.goal_id)
+                if existing is None:
+                    await store.add(goal)
+            except Exception as exc:
+                logger.warning(
+                    "butler_daemon.standing_goal_seed_failed",
+                    error=str(exc),
+                )
+
+        heartbeat_minutes = float(proactive_cfg.get("heartbeat_minutes", 15.0))
+        self._proactive_evaluator = evaluator
+        self._proactive_task = asyncio.create_task(
+            self._heartbeat_loop(evaluator, heartbeat_minutes),
+            name="butler-proactive-heartbeat",
+        )
+        logger.info(
+            "butler_daemon.proactive_layer_started",
+            heartbeat_minutes=heartbeat_minutes,
+            goals=len(await store.list()),
+        )
+
+    async def _heartbeat_loop(self, evaluator: Any, heartbeat_minutes: float) -> None:
+        """Periodically evaluate every due standing goal.
+
+        The loop sleeps after each tick so heartbeat frequency is the
+        upper bound on goal-evaluation latency. Uses ``asyncio.sleep``
+        and respects cancellation cleanly.
+        """
+        interval = max(1.0, heartbeat_minutes * 60.0)
+        try:
+            while self._running or not self._proactive_task.cancelled():
+                try:
+                    await evaluator.evaluate_due_goals()
+                except Exception:
+                    logger.exception("butler_daemon.proactive_tick_failed")
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            pass
 
     async def _load_rules(self, config: dict[str, Any]) -> None:
         """Load trigger rules from configuration."""

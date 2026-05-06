@@ -645,6 +645,51 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
 
 ---
 
+## Proactive Layer — Standing Goals (ADR-024)
+
+Framework-core opt-in layer that lets the agent revisit recurring
+intentions on its own schedule. Disabled by default; enable via the
+butler profile's `proactive:` block.
+
+- **Domain:** `core/domain/standing_goal.py` — `StandingGoal` dataclass
+  (`description`, `evaluation_prompt`, `frequency` cron, `priority`,
+  `enabled`, `last_evaluated_at`, `last_action_taken`).
+- **Protocol:** `core/interfaces/standing_goals.py`
+  (`StandingGoalStoreProtocol`).
+- **Store:** `infrastructure/persistence/file_standing_goal_store.py`
+  — atomic JSON under `<work_dir>/standing_goals.json`,
+  `asyncio.Lock`-serialized writes.
+- **Evaluator:** `application/goal_evaluator_service.py`
+  (`GoalEvaluatorService`, `GoalDecision`). Cron pre-filter re-uses
+  `_next_cron_occurrence` from the SchedulerService so most ticks
+  perform zero LLM calls.
+- **REST:** `api/routes/standing_goals.py` —
+  `GET/POST/PATCH/DELETE /api/v1/standing-goals` and
+  `POST /api/v1/standing-goals/{id}/evaluate-now`.
+- **CLI:** `taskforce goals list/show/add/disable/enable/remove/run-now`.
+- **Heartbeat:** `agents/butler/src/taskforce_butler/daemon.py`
+  (`_setup_proactive_layer` + `_heartbeat_loop`) spawns a background
+  asyncio task that calls `evaluate_due_goals` every
+  `heartbeat_minutes`.
+
+Sample butler-profile fragment:
+
+```yaml
+proactive:
+  enabled: true
+  heartbeat_minutes: 15
+  standing_goals:
+    - description: Weekly summary
+      evaluation_prompt: |
+        Prepare last week's coding summary using the wiki tool. $NOW
+      frequency: "0 9 * * 1"
+      priority: 4
+```
+
+ADR: `docs/adr/adr-024-standing-goals.md`.
+
+---
+
 ## Butler Agent (Optional Package)
 
 The Butler is a proactive, event-driven agent daemon. It is shipped as a separate
