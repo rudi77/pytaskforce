@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   Settings,
   Sparkles,
+  Workflow,
   Moon,
   Sun,
 } from "lucide-react";
@@ -40,6 +41,7 @@ const BUILTIN_NAV_ITEMS: NavItem[] = [
   { to: "/monitoring", label: "Monitoring", icon: Activity, section: "main", order: 30 },
   { to: "/capabilities", label: "Fähigkeiten", icon: Sparkles, section: "main", order: 40 },
   { to: "/acp", label: "ACP Peers", icon: Network, section: "main", order: 50 },
+  { to: "/workflows", label: "Workflows", icon: Workflow, section: "main", order: 55 },
   { to: "/evals", label: "Evals", icon: Beaker, section: "main", order: 60 },
 ];
 
@@ -49,6 +51,7 @@ const BUILTIN_PAGE_TITLES: Record<string, string> = {
   "/chat": "Chat",
   "/monitoring": "Monitoring",
   "/acp": "ACP Peers",
+  "/workflows": "Workflows",
   "/capabilities": "Fähigkeiten",
   "/evals": "Evals",
   "/settings": "Settings",

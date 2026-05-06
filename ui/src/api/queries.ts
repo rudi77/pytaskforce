@@ -972,6 +972,126 @@ export function useCreateEvalRun() {
   });
 }
 
+// --- Workflows -------------------------------------------------------------
+
+/**
+ * One step in a {@link WorkflowDefinition}. Mirrors `WorkflowStepRequest`
+ * in `src/taskforce/api/routes/workflows.py`.
+ */
+export interface WorkflowStep {
+  step_id: string;
+  agent: string;
+  task: string;
+  depends_on: string[];
+  metadata: Record<string, unknown>;
+  acp_peer?: string | null;
+}
+
+/**
+ * First-class workflow definition (ADR-022 §7). Mirrors
+ * `WorkflowDefinitionRequest` and `WorkflowDefinition.to_dict`.
+ */
+export interface WorkflowDefinition {
+  workflow_id: string;
+  name: string;
+  description: string;
+  trigger: string;
+  trigger_config: Record<string, unknown>;
+  steps: WorkflowStep[];
+  metadata: Record<string, unknown>;
+}
+
+export interface SaveWorkflowResponse {
+  success: boolean;
+  workflow: WorkflowDefinition;
+  scheduled_job_id: string | null;
+}
+
+export interface WorkflowStepResult {
+  step_id: string;
+  agent: string;
+  task: string;
+  status?: string;
+  output?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export interface RunWorkflowResponse {
+  success: boolean;
+  workflow_id: string;
+  steps: WorkflowStepResult[];
+}
+
+export const workflowQueryKeys = {
+  list: ["workflows", "list"] as const,
+  detail: (id: string) => ["workflows", "detail", id] as const,
+};
+
+export function useWorkflowDefinitions() {
+  return useQuery<{ workflows: WorkflowDefinition[] }>({
+    queryKey: workflowQueryKeys.list,
+    queryFn: () =>
+      apiFetch<{ workflows: WorkflowDefinition[] }>("/api/v1/workflows/definitions"),
+  });
+}
+
+export function useWorkflowDefinition(id: string | undefined) {
+  return useQuery<{ workflow: WorkflowDefinition }>({
+    queryKey: workflowQueryKeys.detail(id ?? ""),
+    queryFn: () =>
+      apiFetch<{ workflow: WorkflowDefinition }>(
+        `/api/v1/workflows/definitions/${encodeURIComponent(id!)}`,
+      ),
+    enabled: !!id,
+  });
+}
+
+export function useSaveWorkflowDefinition() {
+  const qc = useQueryClient();
+  return useMutation<SaveWorkflowResponse, Error, WorkflowDefinition>({
+    mutationFn: (payload) =>
+      apiFetch<SaveWorkflowResponse>("/api/v1/workflows/definitions", {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: workflowQueryKeys.list });
+      qc.setQueryData(workflowQueryKeys.detail(data.workflow.workflow_id), {
+        workflow: data.workflow,
+      });
+    },
+  });
+}
+
+export function useDeleteWorkflowDefinition() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (workflowId) =>
+      apiFetch<void>(
+        `/api/v1/workflows/definitions/${encodeURIComponent(workflowId)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: (_data, workflowId) => {
+      qc.invalidateQueries({ queryKey: workflowQueryKeys.list });
+      qc.removeQueries({ queryKey: workflowQueryKeys.detail(workflowId) });
+    },
+  });
+}
+
+export function useRunWorkflowDefinition() {
+  return useMutation<RunWorkflowResponse, Error, { workflowId: string; sessionId?: string }>({
+    mutationFn: ({ workflowId, sessionId }) =>
+      apiFetch<RunWorkflowResponse>(
+        `/api/v1/workflows/definitions/${encodeURIComponent(workflowId)}/run`,
+        {
+          method: "POST",
+          body: { session_id: sessionId ?? null },
+        },
+      ),
+  });
+}
+
 export function useUploadFile() {
   return useMutation<FileMetadata, Error, File>({
     mutationFn: (file) => {

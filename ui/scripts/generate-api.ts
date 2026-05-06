@@ -13,8 +13,9 @@
  * Pass --check to fail when the generated file would change (CI drift gate).
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { dirname, resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import openapiTS, { astToString } from "openapi-typescript";
@@ -34,19 +35,44 @@ async function fetchSpec(): Promise<unknown> {
   } catch (err) {
     console.warn(`Could not reach ${URL} (${(err as Error).message}); trying python fallback.`);
   }
-  const result = spawnSync(
-    "python",
-    [
-      "-c",
-      "import json, sys; from taskforce.api.server import app; sys.stdout.write(json.dumps(app.openapi()))",
-    ],
-    { encoding: "utf-8", cwd: resolve(ROOT, "..") },
-  );
-  if (result.status !== 0) {
-    console.error(result.stderr);
+  const SCRIPT = [
+    "import json, sys",
+    "from taskforce.api.server import app",
+    "sys.stdout.write(json.dumps(app.openapi()))",
+  ].join("\n");
+  const repoRoot = resolve(ROOT, "..");
+  // Write the dump script to a temp file so Windows cmd.exe doesn't mangle
+  // the semicolons / quotes when spawnSync goes through a shell.
+  const scratchDir = mkdtempSync(join(tmpdir(), "tf-openapi-"));
+  const scriptPath = join(scratchDir, "dump_openapi.py");
+  writeFileSync(scriptPath, SCRIPT, "utf-8");
+  try {
+    // Try uv-managed env first (covers a fresh `uv sync` setup), then bare python.
+    const candidates: Array<{ cmd: string; args: string[] }> = [
+      { cmd: "uv", args: ["run", "--quiet", "python", scriptPath] },
+      { cmd: "python", args: [scriptPath] },
+    ];
+    let lastErr = "";
+    for (const { cmd, args } of candidates) {
+      const result = spawnSync(cmd, args, {
+        encoding: "utf-8",
+        cwd: repoRoot,
+        shell: process.platform === "win32",
+      });
+      if (result.error) {
+        lastErr = `${cmd}: ${result.error.message}`;
+        continue;
+      }
+      if (result.status === 0 && result.stdout) {
+        return JSON.parse(result.stdout);
+      }
+      lastErr = result.stderr || `${cmd} exited ${result.status}`;
+    }
+    console.error(lastErr);
     throw new Error("Could not obtain OpenAPI spec via HTTP or Python fallback.");
+  } finally {
+    rmSync(scratchDir, { recursive: true, force: true });
   }
-  return JSON.parse(result.stdout);
 }
 
 async function main() {

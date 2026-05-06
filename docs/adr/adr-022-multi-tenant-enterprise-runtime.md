@@ -292,7 +292,7 @@ existing seams.
 | Tool execution | `SandboxedExecutorProtocol`, in-process default + warning | Container-backed sandboxed executor (Docker/gVisor) |
 | Gateway | Channel adapters, `RecipientResolverProtocol` interface only | Channel auth glue, recipient ↔ user/tenant mapping, `@agent` routing, broadcast policy |
 | Skills/Scheduler/ACP | Hot-reload watcher + per-instance scoping (existing protocols), peer registry interface | Per-tenant skill/job/peer instances, cross-tenant policy, admin UI, audit |
-| Workflows | `WorkflowDefinition` runtime | Workflow authoring UI, audit, role-gated approval steps |
+| Workflows | `WorkflowDefinition` runtime, REST CRUD, run/webhook endpoints, **authoring UI** (list, editor, run, webhook/schedule surfacing) | Tenant-scoping over the same UI, RBAC on CRUD/run, role-gated approval steps, audit |
 
 The plugin does not fork the framework's domain model; it composes
 per-tenant instances of the framework's existing protocols (Pattern A)

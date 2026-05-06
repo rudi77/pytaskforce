@@ -152,6 +152,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agent_id}/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deploy a custom agent
+         * @description Validate and deploy the current definition of a custom agent. On success the agent becomes the active version for the target environment and is immediately available to ``POST /api/v1/execute``.
+         */
+        post: operations["deploy_agent_api_v1_agents__agent_id__deploy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Roll back to a previously deployed version */
+        post: operations["rollback_agent_api_v1_agents__agent_id__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List deployment history (newest first) */
+        get: operations["list_deployments_api_v1_agents__agent_id__deployments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the currently active deployment for an environment */
+        get: operations["get_active_deployment_api_v1_agents__agent_id__active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List agent templates for the wizard
+         * @description Return all wizard templates, filtered to tools the server can resolve.
+         */
+        get: operations["list_agent_templates_api_v1_agent_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single agent template */
+        get: operations["get_agent_template_api_v1_agent_templates__template_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-templates/compose-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compose a system prompt from wizard step 4 inputs
+         * @description Turn the user's tone/language/rules into a ready-to-use system prompt.
+         *
+         *     With ``use_ai=false`` the response is deterministic (no LLM call). With
+         *     ``use_ai=true`` the deterministic draft is sent to the LLM for one
+         *     refinement pass; if the call fails the deterministic version is returned
+         *     so the wizard never blocks on a missing API key. The wizard distinguishes
+         *     "AI ran successfully" (``used_ai=true``) from "AI was attempted but
+         *     failed" (``ai_attempted=true, used_ai=false, ai_error=...``) so the UI
+         *     can show an honest status to the user.
+         */
+        post: operations["compose_prompt_api_v1_agent_templates_compose_prompt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tools": {
         parameters: {
             query?: never;
@@ -484,6 +620,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversation_id}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fork a conversation into a fresh copy
+         * @description Create a new conversation seeded with the source's messages.
+         *
+         *     Use case: replay a past conversation through a different profile or
+         *     LLM model without mutating the original transcript.
+         */
+        post: operations["fork_conversation_api_v1_conversations__conversation_id__fork_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Definitions
+         * @description List first-class workflow definitions.
+         */
+        get: operations["list_workflow_definitions_api_v1_workflows_definitions_get"];
+        put?: never;
+        /**
+         * Save Workflow Definition
+         * @description Create or update a first-class workflow definition.
+         *
+         *     ADR-022 §7 / G3: when the definition's trigger is ``schedule``, the
+         *     runtime mirror-registers the cron job in the framework's scheduler
+         *     so the workflow actually fires on its expression. Re-saving with a
+         *     different cron is idempotent — the prior job is removed first.
+         *     Removing the schedule trigger entirely also removes the registered
+         *     job.
+         */
+        post: operations["save_workflow_definition_api_v1_workflows_definitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/definitions/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow Definition
+         * @description Get a first-class workflow definition.
+         */
+        get: operations["get_workflow_definition_api_v1_workflows_definitions__workflow_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Workflow Definition
+         * @description Delete a first-class workflow definition and its scheduled job.
+         */
+        delete: operations["delete_workflow_definition_api_v1_workflows_definitions__workflow_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/definitions/{workflow_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Workflow Definition
+         * @description Run a first-class workflow definition sequentially by dependency order.
+         */
+        post: operations["run_workflow_definition_api_v1_workflows_definitions__workflow_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/webhooks/{trigger_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Workflow Webhook
+         * @description Run the workflow whose ``webhook`` trigger matches ``trigger_path``.
+         *
+         *     ADR-022 §7: a workflow definition with::
+         *
+         *         trigger: webhook
+         *         trigger_config:
+         *           path: hooks/daily-report
+         *           secret_env: GITHUB_WEBHOOK_SECRET   # or: secret: <inline>
+         *           signature_header: X-Hub-Signature-256
+         *           signature_algo: sha256
+         *
+         *     becomes reachable at ``POST /api/v1/workflows/webhooks/hooks/daily-report``.
+         *     The route bypasses the auth middleware (the path prefix is in
+         *     ``exempt_path_prefixes``) and verifies the per-workflow HMAC
+         *     signature itself before invoking the runtime. With no secret
+         *     configured the webhook is open — that is the operator's choice and
+         *     must be made deliberately.
+         */
+        post: operations["trigger_workflow_webhook_api_v1_workflows_webhooks__trigger_path__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/wait": {
         parameters: {
             query?: never;
@@ -706,6 +976,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/{source}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clone a (read-only) profile into the user-profiles directory
+         * @description Copy ``source`` into the user-profiles directory under ``target_name``.
+         *
+         *     Lets the UI customize butler / coding_agent / rag_agent profiles without
+         *     touching the read-only files shipped by the agent packages.
+         */
+        post: operations["clone_profile_api_v1_profiles__source__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills": {
         parameters: {
             query?: never;
@@ -718,6 +1011,26 @@ export interface paths {
          * @description Return every skill discovered by the global SkillService.
          */
         get: operations["list_skills_api_v1_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a skill (frontmatter + body)
+         * @description Return the parsed skill metadata plus the SKILL.md body.
+         */
+        get: operations["get_skill_api_v1_skills__name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -883,6 +1196,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent runs (active + recently finished, captured by the trace store) */
+        get: operations["list_recent_runs_api_v1_runs_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{session_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the recorded ReAct trace for a run */
+        get: operations["get_run_trace_api_v1_runs__session_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/active/stream": {
         parameters: {
             query?: never;
@@ -894,6 +1241,411 @@ export interface paths {
         get: operations["stream_active_runs_api_v1_runs_active_stream_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe an MCP server and return its tool catalog
+         * @description Connect briefly to an MCP server and list its tools.
+         *
+         *     Used by the agent editor to validate an MCP entry and populate the
+         *     ``mcp_tool_allowlist`` multi-select.
+         */
+        post: operations["probe_mcp_api_v1_mcp_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent eval runs */
+        get: operations["list_eval_runs_api_v1_evals_runs_get"];
+        put?: never;
+        /** Kick off a comparison run */
+        post: operations["create_eval_run_api_v1_evals_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the matrix of results for a single run */
+        get: operations["get_eval_run_api_v1_evals_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ui/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ui Manifest
+         * @description Return UI manifests contributed by all loaded backend plugins.
+         *
+         *     Each loaded plugin may implement
+         *     :py:meth:`PluginProtocol.get_ui_manifest`; plugins without the
+         *     method are silently skipped. Manifests that fail Pydantic
+         *     validation (e.g. missing required fields, empty capabilities) are
+         *     logged and dropped rather than failing the whole endpoint, so one
+         *     misbehaving plugin can never blank out the UI.
+         */
+        get: operations["get_ui_manifest_api_v1_ui_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Verify ``email`` + ``password`` for ``tenant_id``, return a JWT.
+         */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signup
+         * @description Create a tenant and first admin user without prior authentication.
+         */
+        post: operations["signup_api_v1_signup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Me
+         * @description Return the authenticated user's profile.
+         */
+        get: operations["admin_me_api_v1_admin_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tenant-visible agents
+         * @description List custom agents for the caller's tenant plus shared profile/plugin agents.
+         */
+        get: operations["list_agents_api_v1_admin_agents_get"];
+        put?: never;
+        /**
+         * Create a tenant-scoped custom agent
+         * @description Create a custom agent in the caller's tenant-scoped registry.
+         */
+        post: operations["create_agent_api_v1_admin_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a tenant-visible agent
+         * @description Retrieve one custom, profile, or plugin agent visible to the caller.
+         */
+        get: operations["get_agent_api_v1_admin_agents__agent_id__get"];
+        /**
+         * Update a tenant-scoped custom agent
+         * @description Update an existing custom agent in the caller's tenant.
+         */
+        put: operations["update_agent_api_v1_admin_agents__agent_id__put"];
+        post?: never;
+        /**
+         * Delete a tenant-scoped custom agent
+         * @description Delete a custom agent from the caller's tenant.
+         */
+        delete: operations["delete_agent_api_v1_admin_agents__agent_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description List users in the *caller's* tenant.
+         *
+         *     Requires ``USER_MANAGE`` permission. Cross-tenant listing is not
+         *     permitted — the caller's ``tenant_id`` from the JWT scopes the
+         *     query.
+         */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        /**
+         * Create User
+         * @description Create a user in the caller's tenant.
+         *
+         *     Requires ``USER_MANAGE`` permission. The created user inherits
+         *     ``user.tenant_id`` from the caller's JWT — the route never lets a
+         *     caller create users in another tenant.
+         */
+        post: operations["create_user_api_v1_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User
+         * @description Get a user by ID — denies cross-tenant access with 404 (not 403).
+         */
+        get: operations["get_user_api_v1_admin_users__user_id__get"];
+        /**
+         * Update User
+         * @description Update a user. Requires ``USER_MANAGE``. Cross-tenant updates → 404.
+         */
+        put: operations["update_user_api_v1_admin_users__user_id__put"];
+        post?: never;
+        /**
+         * Delete User
+         * @description Soft-delete a user. Requires ``USER_MANAGE``. Cross-tenant → 404.
+         */
+        delete: operations["delete_user_api_v1_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roles
+         * @description List all roles. Requires ``ROLE_MANAGE`` permission.
+         */
+        get: operations["list_roles_api_v1_admin_roles_get"];
+        put?: never;
+        /** Create Role */
+        post: operations["create_role_api_v1_admin_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Permissions
+         * @description List all available ``Permission`` enum values.
+         */
+        get: operations["list_permissions_api_v1_admin_roles_permissions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Role
+         * @description Get a single role by id.
+         */
+        get: operations["get_role_api_v1_admin_roles__role_id__get"];
+        /** Update Role */
+        put: operations["update_role_api_v1_admin_roles__role_id__put"];
+        post?: never;
+        /** Delete Role */
+        delete: operations["delete_role_api_v1_admin_roles__role_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tenants
+         * @description List all tenants. Requires ``TENANT_MANAGE`` permission.
+         */
+        get: operations["list_tenants_api_v1_admin_tenants_get"];
+        put?: never;
+        /**
+         * Create Tenant
+         * @description Create a new tenant. Requires ``TENANT_MANAGE`` permission.
+         */
+        post: operations["create_tenant_api_v1_admin_tenants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tenant
+         * @description Get a tenant by ID. Requires ``TENANT_MANAGE`` permission.
+         */
+        get: operations["get_tenant_api_v1_admin_tenants__tenant_id__get"];
+        /**
+         * Update Tenant
+         * @description Update a tenant. Requires ``TENANT_MANAGE`` permission.
+         */
+        put: operations["update_tenant_api_v1_admin_tenants__tenant_id__put"];
+        post?: never;
+        /**
+         * Delete Tenant
+         * @description Soft-delete a tenant by clearing ``is_active``.
+         *
+         *     Requires ``TENANT_MANAGE`` permission. The on-disk
+         *     ``${WORK_DIR}/tenants/${tenant_id}/`` directory is intentionally
+         *     *not* removed — operators reactivate tenants by re-creating the
+         *     row. Hard delete is a separate operator-only path.
+         */
+        delete: operations["delete_tenant_api_v1_admin_tenants__tenant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or replace a tenant-scoped skill
+         * @description Persist a SKILL.md under the caller's tenant root and refresh the registry.
+         *
+         *     The destination is whatever the framework's
+         *     ``writable_skill_root_provider`` returns — set by
+         *     ``factory_extensions._install_skill_providers`` to a per-tenant
+         *     directory under ``${WORK_DIR}/tenants/${tenant_id}/skills/``. With
+         *     no provider installed (single-tenant build) the skill lands in
+         *     ``${TASKFORCE_WORK_DIR}/skills/`` exactly as the legacy framework
+         *     route used to write.
+         */
+        post: operations["write_skill_api_v1_admin_skills_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1040,6 +1792,59 @@ export interface components {
             /** Runs */
             runs: components["schemas"]["ActiveRunResponse"][];
         };
+        /** AdminMeResponse */
+        AdminMeResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Email */
+            email?: string | null;
+            /** Roles */
+            roles?: string[];
+            /** Permissions */
+            permissions?: string[];
+        };
+        /**
+         * AgentDeploymentListResponse
+         * @description Deployment history response.
+         */
+        AgentDeploymentListResponse: {
+            /** Deployments */
+            deployments: components["schemas"]["AgentDeploymentResponse"][];
+        };
+        /**
+         * AgentDeploymentResponse
+         * @description Single deployment record returned to the management UI.
+         */
+        AgentDeploymentResponse: {
+            /** Agent Id */
+            agent_id: string;
+            /** Version */
+            version: string;
+            status: components["schemas"]["AgentDeploymentStatus"];
+            environment: components["schemas"]["DeploymentEnvironment"];
+            /** Deployed At */
+            deployed_at?: string | null;
+            /** Deployed By */
+            deployed_by?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Rollback From */
+            rollback_from?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Config Snapshot */
+            config_snapshot?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * AgentDeploymentStatus
+         * @description Supported deployment lifecycle states.
+         * @enum {string}
+         */
+        AgentDeploymentStatus: "pending" | "validating" | "deployed" | "failed" | "rolled_back";
         /**
          * AgentListResponse
          * @description Response schema for listing all agents.
@@ -1047,6 +1852,39 @@ export interface components {
         AgentListResponse: {
             /** Agents */
             agents: (components["schemas"]["CustomAgentResponse"] | components["schemas"]["ProfileAgentResponse"] | components["schemas"]["PluginAgentResponse"])[];
+        };
+        /** AgentTemplateListResponse */
+        AgentTemplateListResponse: {
+            /** Templates */
+            templates: components["schemas"]["AgentTemplateResponse"][];
+        };
+        /**
+         * AgentTemplateResponse
+         * @description One curated starting point for the wizard.
+         */
+        AgentTemplateResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Emoji */
+            emoji: string;
+            /** Persona Hint */
+            persona_hint: string;
+            /** Recommended Tools */
+            recommended_tools: string[];
+            /** Recommended Skills */
+            recommended_skills: string[];
+            /** System Prompt Template */
+            system_prompt_template: string;
+            /** Example Prompts */
+            example_prompts: string[];
+            /** Tone Default */
+            tone_default: string;
+            /** Language Default */
+            language_default: string;
         };
         /** AgentUsageEntry */
         AgentUsageEntry: {
@@ -1073,10 +1911,14 @@ export interface components {
             message: string;
             /**
              * Profile
-             * @description Agent profile.
-             * @default butler
+             * @description Agent profile. When omitted, the server falls back to the same profile the unified CLI would pick (``butler`` if installed, otherwise ``default``).
              */
-            profile: string;
+            profile?: string | null;
+            /**
+             * Agent Id
+             * @description Registered custom-agent id (from the agent catalog / deployments). When set, the agent is loaded via the agent registry and ``profile`` is treated as the base profile fallback.
+             */
+            agent_id?: string | null;
             /**
              * Attachments
              * @description File ids of previously uploaded attachments (POST /api/v1/files).
@@ -1168,6 +2010,66 @@ export interface components {
         ChannelsResponseSchema: {
             /** Channels */
             channels: string[];
+        };
+        /**
+         * ComposePromptRequest
+         * @description Inputs from wizard step 4.
+         *
+         *     Free-text fields are size-capped at the schema layer so the deterministic
+         *     compose path stays bounded and ``use_ai=true`` cannot trigger a runaway
+         *     LLM bill.
+         */
+        ComposePromptRequest: {
+            /**
+             * Template Id
+             * @description Template id (the user's starting point) or null for a blank agent.
+             */
+            template_id?: string | null;
+            /**
+             * Description
+             * @description What the user said the agent should do (free text).
+             * @default
+             */
+            description: string;
+            /**
+             * Tone
+             * @description professionell | locker | formell
+             * @default professionell
+             * @enum {string}
+             */
+            tone: "professionell" | "locker" | "formell";
+            /**
+             * Language
+             * @description Output language for the agent.
+             * @default Deutsch
+             */
+            language: string;
+            /**
+             * Rules
+             * @description Additional rules the user typed in (one per line).
+             * @default
+             */
+            rules: string;
+            /**
+             * Use Ai
+             * @description If true, run an LLM call to refine the prompt. Otherwise compose deterministically from template + inputs.
+             * @default false
+             */
+            use_ai: boolean;
+        };
+        /** ComposePromptResponse */
+        ComposePromptResponse: {
+            /** System Prompt */
+            system_prompt: string;
+            /** Used Ai */
+            used_ai: boolean;
+            /**
+             * Ai Attempted
+             * @default false
+             */
+            ai_attempted: boolean;
+            /** Ai Error */
+            ai_error?: string | null;
         };
         /**
          * ConversationInfoResponse
@@ -1347,6 +2249,14 @@ export interface components {
         /**
          * CustomAgentResponse
          * @description Response schema for custom agent (with timestamps).
+         *
+         *     Deployment status is *not* included here — query
+         *     ``GET /api/v1/agents/{agent_id}/active`` for the active deployment
+         *     or ``GET /api/v1/agents/{agent_id}/deployments`` for full history.
+         *     Keeping the agent definition and the deployment lifecycle as
+         *     separate resources mirrors the file layout
+         *     (``configs/custom/`` vs ``deployments/``) and keeps both endpoints
+         *     independently cacheable.
          */
         CustomAgentResponse: {
             /**
@@ -1415,6 +2325,27 @@ export interface components {
             mcp_tool_allowlist?: string[];
         };
         /**
+         * DeployRequest
+         * @description Body for ``POST /agents/{agent_id}/deploy``.
+         *
+         *     All fields are optional. Defaults match the most common case
+         *     (deploy the current agent definition to ``local`` with no message).
+         */
+        DeployRequest: {
+            /** @default local */
+            environment: components["schemas"]["DeploymentEnvironment"];
+            /** Deployed By */
+            deployed_by?: string | null;
+            /** Message */
+            message?: string | null;
+        };
+        /**
+         * DeploymentEnvironment
+         * @description Supported deployment target environments.
+         * @enum {string}
+         */
+        DeploymentEnvironment: "local" | "staging" | "prod";
+        /**
          * ErrorResponse
          * @description Standard error response schema.
          */
@@ -1429,6 +2360,31 @@ export interface components {
             } | null;
             /** Detail */
             detail?: string | null;
+        };
+        /** EvalRunCreated */
+        EvalRunCreated: {
+            /** Run Id */
+            run_id: string;
+            /** Cell Count */
+            cell_count: number;
+        };
+        /** EvalRunRequest */
+        EvalRunRequest: {
+            /** Missions */
+            missions: string[];
+            /** Profiles */
+            profiles: string[];
+            /**
+             * Parallelism
+             * @default 2
+             */
+            parallelism: number;
+            /**
+             * Cell Timeout S
+             * @description Per-cell wall-clock cap in seconds.
+             * @default 120
+             */
+            cell_timeout_s: number;
         };
         /**
          * ExecuteMissionRequest
@@ -1595,6 +2551,31 @@ export interface components {
             created_at: string;
         };
         /**
+         * ForkConversationRequest
+         * @description Body for ``POST /conversations/{id}/fork``.
+         */
+        ForkConversationRequest: {
+            /**
+             * Up To Index
+             * @description Number of messages to copy from the source. ``None`` means copy the full transcript.
+             */
+            up_to_index?: number | null;
+            /**
+             * Channel
+             * @default rest
+             */
+            channel: string;
+        };
+        /** ForkConversationResponse */
+        ForkConversationResponse: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Messages Copied */
+            messages_copied: number;
+        };
+        /**
          * GatewayMessageRequest
          * @description Inbound message payload for the gateway.
          */
@@ -1722,6 +2703,8 @@ export interface components {
             checks?: {
                 [key: string]: string;
             } | null;
+            /** Default Profile */
+            default_profile?: string | null;
         };
         /**
          * InterruptResponse
@@ -1763,6 +2746,87 @@ export interface components {
             default_model: string;
             /** Models */
             models: components["schemas"]["LLMModelEntry"][];
+        };
+        /**
+         * LoginRequest
+         * @description Request body for ``POST /auth/login``.
+         *
+         *     ``tenant_id`` is required because the same email can belong to
+         *     different tenants — the schema's ``UNIQUE (tenant_id, email)``
+         *     enforces uniqueness *per tenant*, not globally.
+         */
+        LoginRequest: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** LoginResponse */
+        LoginResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** McpProbeRequest */
+        McpProbeRequest: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "stdio" | "sse";
+            /**
+             * Command
+             * @description stdio: command to run
+             */
+            command?: string | null;
+            /**
+             * Args
+             * @description stdio: args
+             */
+            args?: string[];
+            /**
+             * Env
+             * @description stdio: env vars
+             */
+            env?: {
+                [key: string]: string;
+            };
+            /**
+             * Url
+             * @description sse: server URL
+             */
+            url?: string | null;
+        };
+        /** McpProbeResponse */
+        McpProbeResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Tools */
+            tools?: components["schemas"]["McpToolEntry"][];
+            /** Error */
+            error?: string | null;
+        };
+        /** McpToolEntry */
+        McpToolEntry: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Input Schema */
+            input_schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * MessageResponse
@@ -1832,6 +2896,22 @@ export interface components {
             recipient_id: string;
             /** Error */
             error?: string | null;
+        };
+        /** PermissionListResponse */
+        PermissionListResponse: {
+            /** Permissions */
+            permissions: components["schemas"]["PermissionResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** PermissionResponse */
+        PermissionResponse: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
+            /** Description */
+            description: string;
         };
         /** PlanningStrategiesResponse */
         PlanningStrategiesResponse: {
@@ -1906,6 +2986,17 @@ export interface components {
             persistence: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ProfileClonePayload
+         * @description Body for ``POST /profiles/{source}/clone``.
+         */
+        ProfileClonePayload: {
+            /**
+             * Target Name
+             * @description Name of the new user-owned profile
+             */
+            target_name: string;
         };
         /**
          * ProfileCreatePayload
@@ -2077,6 +3168,111 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RoleListResponse */
+        RoleListResponse: {
+            /** Roles */
+            roles: components["schemas"]["RoleResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** RoleResponse */
+        RoleResponse: {
+            /** Role Id */
+            role_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Permissions */
+            permissions: string[];
+            /** Is System */
+            is_system: boolean;
+        };
+        /**
+         * RollbackRequest
+         * @description Body for ``POST /agents/{agent_id}/rollback``.
+         */
+        RollbackRequest: {
+            /** To Version */
+            to_version: string;
+            /** @default local */
+            environment: components["schemas"]["DeploymentEnvironment"];
+            /** Deployed By */
+            deployed_by?: string | null;
+            /** Message */
+            message?: string | null;
+        };
+        /**
+         * RunWorkflowDefinitionRequest
+         * @description Payload for running a stored workflow definition.
+         */
+        RunWorkflowDefinitionRequest: {
+            /** Session Id */
+            session_id?: string | null;
+        };
+        /**
+         * SignupRequest
+         * @description Payload for creating a fresh tenant and first admin user.
+         */
+        SignupRequest: {
+            /** Tenant Name */
+            tenant_name: string;
+            /**
+             * Tenant Id
+             * @description Optional tenant slug. Derived from tenant_name when omitted.
+             */
+            tenant_id?: string | null;
+            /** Admin Email */
+            admin_email: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * SignupResponse
+         * @description Response returned after self-signup creates the tenant admin.
+         */
+        SignupResponse: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Verification Required */
+            verification_required: boolean;
+            /** Verification Sent */
+            verification_sent: boolean;
+        };
+        /**
+         * SkillDetail
+         * @description Skill summary plus the SKILL.md body so the UI can preview it.
+         */
+        SkillDetail: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /**
+             * Skill Type
+             * @enum {string}
+             */
+            skill_type: "context" | "prompt" | "agent" | "library" | "integration";
+            /**
+             * Slash Name
+             * @description Slash command name for prompt/agent skills (without leading `/`)
+             */
+            slash_name?: string | null;
+            /** File Path */
+            file_path?: string | null;
+            /** Allowed Tools */
+            allowed_tools?: string[];
+            /**
+             * Body
+             * @description Markdown body of the skill file
+             * @default
+             */
+            body: string;
+        };
         /** SkillListResponse */
         SkillListResponse: {
             /** Skills */
@@ -2105,6 +3301,68 @@ export interface components {
             file_path?: string | null;
             /** Allowed Tools */
             allowed_tools?: string[];
+        };
+        /**
+         * SkillWriteRequest
+         * @description Payload for creating or replacing a tenant-scoped skill.
+         */
+        SkillWriteRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Content
+             * @description Full SKILL.md content
+             */
+            content: string;
+        };
+        /**
+         * TenantCreate
+         * @description Request model for creating a tenant.
+         */
+        TenantCreate: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** Name */
+            name: string;
+        };
+        /** TenantListResponse */
+        TenantListResponse: {
+            /** Tenants */
+            tenants: components["schemas"]["TenantResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * TenantResponse
+         * @description Response model for tenant data.
+         */
+        TenantResponse: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** Name */
+            name: string;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            };
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at?: string | null;
+        };
+        /**
+         * TenantUpdate
+         * @description Request model for updating a tenant.
+         */
+        TenantUpdate: {
+            /** Name */
+            name?: string | null;
         };
         /** TokenUsageBucket */
         TokenUsageBucket: {
@@ -2142,6 +3400,122 @@ export interface components {
             tools: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * UIManifestEntry
+         * @description One plugin's contribution to the UI manifest.
+         */
+        UIManifestEntry: {
+            /**
+             * Id
+             * @description Stable plugin identifier (e.g. 'enterprise')
+             */
+            id: string;
+            /**
+             * Capabilities
+             * @description Capability flags this plugin reports as active. Must be non-empty.
+             */
+            capabilities: string[];
+            /**
+             * Version
+             * @description Plugin version for diagnostics
+             * @default 0.0.0
+             */
+            version: string;
+            /**
+             * Display Name
+             * @description Human-readable plugin name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Npm Package
+             * @description Optional npm package name that ships matching React components
+             */
+            npm_package?: string | null;
+            /**
+             * Min Ui Version
+             * @description Optional semver range for the host UI shell version
+             */
+            min_ui_version?: string | null;
+        };
+        /**
+         * UIManifestResponse
+         * @description Envelope returned by ``GET /api/v1/ui/manifest``.
+         *
+         *     The response is intentionally minimal: it lists which optional UI
+         *     plugins are active so the React shell can decide which sidebar
+         *     entries and routes to mount. We deliberately do **not** include
+         *     the server version here — the endpoint is unauthenticated and
+         *     server-version disclosure is reconnaissance gold for fingerprinting.
+         *     Authenticated callers can use ``GET /health`` for that.
+         */
+        UIManifestResponse: {
+            /**
+             * Plugins
+             * @description UI manifests contributed by loaded backend plugins
+             */
+            plugins?: components["schemas"]["UIManifestEntry"][];
+        };
+        /**
+         * UserCreate
+         * @description Request model for creating a user.
+         *
+         *     ``password`` is mandatory in iter-2; the bcrypt hash lives in
+         *     ``users.password_hash``. ``roles`` are short role ids (``admin``,
+         *     ``operator``, ``viewer``, ``agent_designer``, ``auditor``).
+         */
+        UserCreate: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Roles */
+            roles?: string[];
+        };
+        /** UserListResponse */
+        UserListResponse: {
+            /** Users */
+            users: components["schemas"]["UserResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** UserResponse */
+        UserResponse: {
+            /** User Id */
+            user_id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Username */
+            username: string;
+            /** Email */
+            email?: string | null;
+            /** Roles */
+            roles?: string[];
+            /** Permissions */
+            permissions?: string[];
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * UserUpdate
+         * @description Request model for updating a user.
+         */
+        UserUpdate: {
+            /** Email */
+            email?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Roles */
+            roles?: string[] | null;
+            /** Is Active */
+            is_active?: boolean | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2187,6 +3561,64 @@ export interface components {
             tags: string[];
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * WorkflowDefinitionRequest
+         * @description API payload for saving a workflow definition.
+         */
+        WorkflowDefinitionRequest: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Trigger
+             * @default manual
+             */
+            trigger: string;
+            /** Trigger Config */
+            trigger_config?: {
+                [key: string]: unknown;
+            };
+            /** Steps */
+            steps?: components["schemas"]["WorkflowStepRequest"][];
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * WorkflowStepRequest
+         * @description API payload for one workflow step.
+         */
+        WorkflowStepRequest: {
+            /** Step Id */
+            step_id: string;
+            /** Agent */
+            agent: string;
+            /** Task */
+            task: string;
+            /** Depends On */
+            depends_on?: string[];
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Acp Peer */
+            acp_peer?: string | null;
+        };
+        /** _NotImplementedBody */
+        _NotImplementedBody: {
+            /**
+             * Detail
+             * @default custom roles are not implemented in iter-2
+             */
+            detail: string;
         };
     };
     responses: never;
@@ -2497,6 +3929,278 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deploy_agent_api_v1_agents__agent_id__deploy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeployRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeploymentResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_agent_api_v1_agents__agent_id__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeploymentResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deployments_api_v1_agents__agent_id__deployments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeploymentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_deployment_api_v1_agents__agent_id__active_get: {
+        parameters: {
+            query?: {
+                environment?: components["schemas"]["DeploymentEnvironment"];
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeploymentResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_templates_api_v1_agent_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTemplateListResponse"];
+                };
+            };
+        };
+    };
+    get_agent_template_api_v1_agent_templates__template_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compose_prompt_api_v1_agent_templates_compose_prompt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposePromptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposePromptResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3066,6 +4770,234 @@ export interface operations {
             };
         };
     };
+    fork_conversation_api_v1_conversations__conversation_id__fork_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ForkConversationRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForkConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_definitions_api_v1_workflows_definitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    save_workflow_definition_api_v1_workflows_definitions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDefinitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_definition_api_v1_workflows_definitions__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workflow_definition_api_v1_workflows_definitions__workflow_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_workflow_definition_api_v1_workflows_definitions__workflow_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunWorkflowDefinitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_workflow_webhook_api_v1_workflows_webhooks__trigger_path__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trigger_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_wait_checkpoint_api_v1_workflows_wait_post: {
         parameters: {
             query?: never;
@@ -3556,6 +5488,41 @@ export interface operations {
             };
         };
     };
+    clone_profile_api_v1_profiles__source__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileClonePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_skills_api_v1_skills_get: {
         parameters: {
             query?: never;
@@ -3572,6 +5539,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillListResponse"];
+                };
+            };
+        };
+    };
+    get_skill_api_v1_skills__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3846,6 +5844,61 @@ export interface operations {
             };
         };
     };
+    list_recent_runs_api_v1_runs_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_run_trace_api_v1_runs__session_id__trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_active_runs_api_v1_runs_active_stream_get: {
         parameters: {
             query?: never;
@@ -3863,6 +5916,898 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                     "text/event-stream": unknown;
+                };
+            };
+        };
+    };
+    probe_mcp_api_v1_mcp_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpProbeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_runs_api_v1_evals_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_eval_run_api_v1_evals_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_run_api_v1_evals_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ui_manifest_api_v1_ui_manifest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UIManifestResponse"];
+                };
+            };
+        };
+    };
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signup_api_v1_signup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_me_api_v1_admin_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMeResponse"];
+                };
+            };
+        };
+    };
+    list_agents_api_v1_admin_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentListResponse"];
+                };
+            };
+        };
+    };
+    create_agent_api_v1_admin_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomAgentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomAgentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_api_v1_admin_agents__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomAgentResponse"] | components["schemas"]["ProfileAgentResponse"] | components["schemas"]["PluginAgentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_agent_api_v1_admin_agents__agent_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomAgentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomAgentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_api_v1_admin_agents__agent_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_api_v1_admin_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_api_v1_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_v1_admin_users__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_v1_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roles_api_v1_admin_roles_get: {
+        parameters: {
+            query?: {
+                include_system?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_role_api_v1_admin_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NotImplementedBody"];
+                };
+            };
+        };
+    };
+    list_permissions_api_v1_admin_roles_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionListResponse"];
+                };
+            };
+        };
+    };
+    get_role_api_v1_admin_roles__role_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_role_api_v1_admin_roles__role_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NotImplementedBody"];
+                };
+            };
+        };
+    };
+    delete_role_api_v1_admin_roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_tenants_api_v1_admin_tenants_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_tenant_api_v1_admin_tenants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tenant_api_v1_admin_tenants__tenant_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_tenant_api_v1_admin_tenants__tenant_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tenant_api_v1_admin_tenants__tenant_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_skill_api_v1_admin_skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

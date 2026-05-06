@@ -28,6 +28,7 @@ const RunDetailPage = lazy(() => import("@/pages/RunDetailPage"));
 const AcpPage = lazy(() => import("@/pages/AcpPage"));
 const CapabilitiesPage = lazy(() => import("@/pages/CapabilitiesPage"));
 const EvalsPage = lazy(() => import("@/pages/EvalsPage"));
+const WorkflowsPage = lazy(() => import("@/pages/WorkflowsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
@@ -119,6 +120,7 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
         { path: "monitoring", element: withSuspense(<MonitoringPage />) },
         { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />) },
         { path: "acp", element: withSuspense(<AcpPage />) },
+        { path: "workflows", element: withSuspense(<WorkflowsPage />) },
         { path: "capabilities", element: withSuspense(<CapabilitiesPage />) },
         { path: "tools", element: <Navigate to="/capabilities" replace /> },
         { path: "skills", element: <Navigate to="/capabilities" replace /> },
