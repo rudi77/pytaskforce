@@ -61,17 +61,17 @@ lower-priority item is uncovered along the way — log it, move on.
 | Id     | Severity | Area      | Summary                                                                 |
 |--------|----------|-----------|-------------------------------------------------------------------------|
 | WF-05  | 🟥 Bug    | workflows | Webhook trigger 404s — webhook lookup doesn't see tenant-scoped defs   |
-| WF-06  | 🟥 Bug    | workflows | Scheduler is process-wide while definitions are tenant-scoped — schedule-triggered workflows in non-default tenants never fire across restarts |
 | INT-01 | 🟥 Bug    | tests     | `tests/integration/test_agent_registry_api.py::test_crud_workflow` fails when the enterprise plugin is installed (auth.failed reason=no_credentials). Pre-existing on `f374f68`; unrelated to v0.2.0 work. |
 
 ## Resolved findings
 
 | Id    | Fix commit | Notes                                                                       |
 |-------|-----------|------------------------------------------------------------------------------|
-| WF-01 | (this session) | Cron validated at save via `_next_cron_occurrence`; bad expressions return 400 |
-| WF-02 | (this session) | Dangling `depends_on` rejected at save (was: only at run)                   |
-| WF-03 | (this session) | Dependency cycles rejected at save (was: only at run)                       |
-| WF-04 | (this session) | Empty `steps` rejected at save                                              |
+| WF-01 | c9cf60e   | Cron validated at save via `_next_cron_occurrence`; bad expressions return 400 |
+| WF-02 | c9cf60e   | Dangling `depends_on` rejected at save (was: only at run)                   |
+| WF-03 | c9cf60e   | Dependency cycles rejected at save (was: only at run)                       |
+| WF-04 | c9cf60e   | Empty `steps` rejected at save                                              |
+| WF-06 | (this session, no code change) | **Misdiagnosed.** The dispatcher in `application/scheduler_dispatcher.py` already routes to the right tenant via `get_tenant_context_runner()` — installed by `taskforce-enterprise.factory_extensions`. The user's `daily-orf-news` had no scheduler entry not because the framework was broken, but because the original save predated the v0.2.0 Windows-colon-in-job-id fix. Re-saving via the API now correctly persists the schedule job under `${WORK_DIR}/scheduler/jobs/workflow__daily-orf-news.json` with `tenant_id: browser_tenant`, and the dispatcher will resolve to the right tenant on cron tick. Cleaned up two leftover artefacts: the 0-byte NTFS-stream orphan in `browser-test-runtime/scheduler/jobs/` and the manually-written job in `tenants/browser_tenant/scheduler/jobs/` from my earlier python repro. |
 
 ---
 
