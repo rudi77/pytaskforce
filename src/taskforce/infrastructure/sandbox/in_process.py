@@ -28,6 +28,44 @@ from taskforce.core.interfaces.sandbox import (
     SandboxResult,
 )
 
+# Grace window for SIGTERM before escalating to SIGKILL (or platform
+# equivalents). Two seconds matches typical shell behavior and is short
+# enough to keep cooperative-interrupt latency under control.
+_TERMINATE_GRACE_SECONDS = 2.0
+
+
+async def _terminate_process(process: asyncio.subprocess.Process) -> None:
+    """Best-effort graceful → forceful subprocess termination.
+
+    Sends SIGTERM (Linux/macOS) or TerminateProcess (Windows) first; if
+    the process does not exit within ``_TERMINATE_GRACE_SECONDS``,
+    escalates to SIGKILL. Always awaits the process so no zombies are
+    left behind.
+    """
+    if process.returncode is not None:
+        return
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return
+    except Exception:  # pragma: no cover — best-effort cleanup
+        pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
+        return
+    except TimeoutError:
+        pass
+    try:
+        process.kill()
+    except ProcessLookupError:
+        return
+    except Exception:  # pragma: no cover — best-effort cleanup
+        pass
+    try:
+        await process.wait()
+    except Exception:  # pragma: no cover
+        pass
+
 
 def _interpreter_argv(kind: CommandKind, script: str) -> list[str]:
     if kind == "bash":
@@ -90,17 +128,20 @@ class InProcessSandboxedExecutor(SandboxedExecutorProtocol):
                     timeout=request.timeout_seconds,
                 )
         except TimeoutError:
-            process.kill()
-            try:
-                await process.wait()
-            except Exception:  # pragma: no cover — best-effort cleanup
-                pass
+            await _terminate_process(process)
             return SandboxResult(
                 stdout="",
                 stderr=f"Command timed out after {request.timeout_seconds}s",
                 returncode=-1,
                 timed_out=True,
             )
+        except asyncio.CancelledError:
+            # Cooperative interrupt (ADR-019): tear down the subprocess
+            # before propagating cancellation so it cannot outlive the
+            # caller. Best-effort SIGTERM → SIGKILL escalation; we then
+            # re-raise to honour the asyncio cancellation contract.
+            await _terminate_process(process)
+            raise
 
         return SandboxResult(
             stdout=(stdout or b"").decode("utf-8", errors="replace"),

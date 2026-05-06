@@ -178,11 +178,19 @@ class TestShellToolExecution:
             assert "error" in result
 
     async def test_command_timeout(self, tool):
-        """Test command timeout handling."""
+        """Test command timeout handling.
+
+        Sandbox now escalates SIGTERM → SIGKILL, so ``terminate`` is always
+        invoked. ``kill`` is reached only when the grace period (handled
+        in :func:`_terminate_process`) elapses; for this test the mocked
+        ``wait`` returns immediately so kill is not required.
+        """
         with patch(_SHELL_SUBPROCESS_TARGET) as mock_create:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
+            mock_proc.terminate = MagicMock()
             mock_proc.kill = MagicMock()
+            mock_proc.returncode = None
             mock_create.return_value = mock_proc
 
             result = await tool.execute(command="sleep 100", timeout=5)
@@ -190,7 +198,7 @@ class TestShellToolExecution:
             assert result["success"] is False
             assert "timed out" in result["error"]
             assert "5" in result["error"]
-            mock_proc.kill.assert_called_once()
+            mock_proc.terminate.assert_called_once()
 
     async def test_custom_cwd(self, tool):
         """Test command execution with custom working directory."""

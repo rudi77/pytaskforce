@@ -13,7 +13,7 @@ Key features:
 """
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from taskforce.core.domain.context_builder import ContextBuilder
@@ -242,6 +242,13 @@ class Agent:
         # agent is constructed from sync code).
         self._interrupt_event: asyncio.Event | None = None
 
+        # Hooks invoked synchronously when ``request_interrupt`` is called.
+        # The sub-agent spawner registers a callback per spawned child so a
+        # parent's interrupt propagates to running sub-agents — kept as a
+        # plain callback list to avoid importing application-layer types
+        # into the core (Clean Architecture).
+        self._on_interrupt_callbacks: list[Callable[[], None]] = []
+
         # Sub-agent event forwarding.  When this agent runs as a sub-agent
         # the parent injects an asyncio.Queue here so this agent's tool
         # calls (and nested sub-agent events) get streamed back up the
@@ -264,8 +271,45 @@ class Agent:
         the agent finishes the current in-flight step (LLM call + tool
         calls), persists state via the same mechanism used by ``ask_user``
         and exits gracefully with an ``INTERRUPTED`` event.
+
+        Also fires every registered ``_on_interrupt_callbacks`` hook so
+        spawned sub-agents (registered by the SubAgentSpawner) receive the
+        interrupt and pause at their own loop boundary.
         """
         self._get_interrupt_event().set()
+        # Defensive ``getattr`` so call sites that bypass ``__init__``
+        # (test fixtures using ``Agent.__new__``) still get the legacy
+        # single-flag behaviour without crashing on a missing attribute.
+        callbacks = getattr(self, "_on_interrupt_callbacks", None) or []
+        for callback in list(callbacks):
+            try:
+                callback()
+            except Exception:  # pragma: no cover — best-effort propagation
+                if hasattr(self, "logger"):
+                    self.logger.warning(
+                        "interrupt.callback_failed",
+                        exc_info=True,
+                    )
+
+    def add_interrupt_callback(self, callback: Callable[[], None]) -> None:
+        """Register a hook fired by :meth:`request_interrupt`.
+
+        Used by :class:`SubAgentSpawner` to forward the parent's interrupt
+        signal to children.  Returns nothing; pair every ``add_`` with a
+        matching :meth:`remove_interrupt_callback` in a ``finally`` block.
+        """
+        self._on_interrupt_callbacks.append(callback)
+
+    def remove_interrupt_callback(self, callback: Callable[[], None]) -> None:
+        """Remove a previously registered interrupt callback.
+
+        Silently ignores callbacks that are not registered so callers can
+        deregister unconditionally in ``finally`` blocks.
+        """
+        try:
+            self._on_interrupt_callbacks.remove(callback)
+        except ValueError:
+            pass
 
     def clear_interrupt(self) -> None:
         """Clear a pending interrupt request (called after handling it)."""

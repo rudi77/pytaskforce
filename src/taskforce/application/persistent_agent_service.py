@@ -216,6 +216,79 @@ class PersistentAgentService:
         """The underlying request queue (for direct access if needed)."""
         return self._queue
 
+    def list_missions(self) -> list[dict[str, Any]]:
+        """Return a snapshot of every queued or in-flight request.
+
+        Powers ``GET /api/v1/missions`` and ``taskforce missions running``.
+        Each entry includes ``request_id``, ``session_id``, ``channel``,
+        ``priority`` and ``status`` ('in_flight' vs 'queued').
+        """
+        in_flight = self._processor.in_flight
+        snapshot = self._queue.snapshot()
+        records: list[dict[str, Any]] = []
+        for req in snapshot:
+            session_id = in_flight.get(req.request_id) or req.session_id or req.request_id
+            status = "in_flight" if req.request_id in in_flight else "queued"
+            records.append(
+                {
+                    "request_id": req.request_id,
+                    "session_id": session_id,
+                    "channel": req.channel,
+                    "priority": req.priority,
+                    "conversation_id": req.conversation_id,
+                    "status": status,
+                    "message_preview": req.message[:120],
+                }
+            )
+        return records
+
+    def cancel_request(self, request_id: str) -> dict[str, Any]:
+        """Cancel a queued or in-flight request.
+
+        * **Queued** (not yet picked up by the processor): the queue
+          resolves the caller's Future with ``status="cancelled"`` and the
+          processor skips the item when it pops it.
+        * **In flight**: forwards a cooperative interrupt to the running
+          session via :meth:`AgentExecutor.interrupt` so the agent pauses
+          at the next ReAct boundary.
+
+        Returns a dict describing the action taken so the API/CLI can
+        give honest feedback (e.g. ``{"status": "interrupt_requested",
+        "session_id": "..."}``).
+        """
+        in_flight = self._processor.in_flight
+        if request_id in in_flight:
+            session_id = in_flight[request_id]
+            interrupted = self._executor.interrupt(session_id)
+            self._logger.info(
+                "persistent_agent.cancel_in_flight",
+                request_id=request_id,
+                session_id=session_id,
+                interrupted=interrupted,
+            )
+            return {
+                "request_id": request_id,
+                "session_id": session_id,
+                "status": "interrupt_requested" if interrupted else "no_active_agent",
+            }
+
+        cancelled = self._queue.cancel(request_id)
+        if cancelled:
+            self._logger.info(
+                "persistent_agent.cancel_queued",
+                request_id=request_id,
+            )
+            return {
+                "request_id": request_id,
+                "session_id": None,
+                "status": "cancelled",
+            }
+        return {
+            "request_id": request_id,
+            "session_id": None,
+            "status": "not_found",
+        }
+
     async def status(self) -> AgentStatus:
         """Get a snapshot of the agent's current status."""
         active_convs = await self._conversation_manager.list_active()

@@ -105,6 +105,14 @@ class RequestQueue:
             maxsize=max_size
         )
         self._futures: dict[str, asyncio.Future[RequestResult]] = {}
+        # Snapshot of every request that currently has a Future (i.e. is
+        # queued or in flight). Used to power ``GET /api/v1/missions`` and
+        # to translate ``request_id → session_id`` for cancellation.
+        self._known_requests: dict[str, AgentRequest] = {}
+        # Requests that callers asked to cancel before they were dequeued.
+        # The processor consults this set when it pops items so it can skip
+        # them without ever invoking the executor.
+        self._cancelled: set[str] = set()
         self._running = False
 
     @property
@@ -146,6 +154,7 @@ class RequestQueue:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[RequestResult] = loop.create_future()
         self._futures[request.request_id] = future
+        self._known_requests[request.request_id] = request
         await self._queue.put(_PrioritizedItem(request))
         logger.debug(
             "request_queue.enqueued",
@@ -161,6 +170,72 @@ class RequestQueue:
         item = await self._queue.get()
         return item.request
 
+    def is_cancelled(self, request_id: str) -> bool:
+        """Return True if ``cancel(request_id)`` was called for a queued request.
+
+        The processor calls this right after :meth:`dequeue` so it can drop
+        cancelled items without invoking the executor.
+        """
+        return request_id in self._cancelled
+
+    def cancel(self, request_id: str) -> bool:
+        """Mark a queued request as cancelled.
+
+        Two cases:
+
+        * Request still in the queue (not yet dequeued by the processor):
+          its Future resolves with ``status="cancelled"`` and the
+          processor skips execution when it eventually pops the item.
+        * Request already in flight (dequeued, executor running): this
+          method only flags the cancellation; :class:`PersistentAgentService`
+          additionally calls :meth:`AgentExecutor.interrupt` on the
+          current session.
+
+        Returns True if the request_id was known (queued or in flight),
+        False otherwise.
+        """
+        if request_id not in self._futures and request_id not in self._known_requests:
+            return False
+        self._cancelled.add(request_id)
+        future = self._futures.pop(request_id, None)
+        # Keep the entry in ``_known_requests`` so the still-queued item
+        # can be matched in ``is_cancelled`` when the processor pops it;
+        # the processor's ``task_done`` path will clear it via
+        # :meth:`_purge_cancelled` once dequeued.
+        if future is not None and not future.done():
+            future.set_result(
+                RequestResult(
+                    request_id=request_id,
+                    status="cancelled",
+                    error="Request cancelled before completion",
+                )
+            )
+        logger.info("request_queue.cancelled", request_id=request_id)
+        return True
+
+    def _purge_cancelled(self, request_id: str) -> None:
+        """Drop bookkeeping for a cancelled request after the processor skipped it."""
+        self._known_requests.pop(request_id, None)
+        self._cancelled.discard(request_id)
+
+    def task_done(self) -> None:
+        """Release one slot on the underlying ``asyncio.PriorityQueue``.
+
+        Used by :class:`RequestProcessor` when it dequeues an item that
+        was cancelled before processing — the standard ``complete`` /
+        ``fail`` paths already call ``task_done`` themselves.
+        """
+        self._queue.task_done()
+
+    def snapshot(self) -> list[AgentRequest]:
+        """Return a stable list of every known (queued or in-flight) request.
+
+        Powers ``GET /api/v1/missions`` so the CLI/UI can show what is
+        currently scheduled without having to peek inside the priority
+        queue (which is unordered for arbitrary lookup).
+        """
+        return list(self._known_requests.values())
+
     def complete(self, request_id: str, result: RequestResult) -> None:
         """Mark a request as completed and resolve its Future.
 
@@ -169,6 +244,8 @@ class RequestQueue:
             result: The processing result.
         """
         future = self._futures.pop(request_id, None)
+        self._known_requests.pop(request_id, None)
+        self._cancelled.discard(request_id)
         if future and not future.done():
             future.set_result(result)
         self._queue.task_done()
@@ -182,6 +259,8 @@ class RequestQueue:
         """
         result = RequestResult(request_id=request_id, status="failed", error=error)
         future = self._futures.pop(request_id, None)
+        self._known_requests.pop(request_id, None)
+        self._cancelled.discard(request_id)
         if future and not future.done():
             future.set_result(result)
         self._queue.task_done()
@@ -268,11 +347,21 @@ class RequestProcessor:
         self._conversation_manager = conversation_manager
         self._running = False
         self._logger = structlog.get_logger(__name__)
+        # Map request_id → session_id for the request currently being
+        # executed (at most one entry while the processor runs sequentially).
+        # Consumed by :meth:`PersistentAgentService.cancel_request` to decide
+        # whether to call ``executor.interrupt(session_id)``.
+        self._in_flight: dict[str, str] = {}
 
     @property
     def running(self) -> bool:
         """Whether the processing loop is currently active."""
         return self._running
+
+    @property
+    def in_flight(self) -> dict[str, str]:
+        """Mapping of request_id → session_id for currently executing requests."""
+        return dict(self._in_flight)
 
     async def run(self) -> None:
         """Main processing loop — runs until cancelled.
@@ -287,6 +376,17 @@ class RequestProcessor:
         try:
             while True:
                 request = await self._queue.dequeue()
+                if self._queue.is_cancelled(request.request_id):
+                    # Caller cancelled it before we got to it; the queue
+                    # already resolved the Future, we just need to release
+                    # the slot and purge bookkeeping.
+                    self._logger.info(
+                        "request_processor.skipped_cancelled",
+                        request_id=request.request_id,
+                    )
+                    self._queue._purge_cancelled(request.request_id)
+                    self._queue.task_done()
+                    continue
                 await self._process_request(request)
         except asyncio.CancelledError:
             self._logger.info("request_processor.stopped")
@@ -303,6 +403,8 @@ class RequestProcessor:
             channel=request.channel,
             conversation_id=request.conversation_id,
         )
+        effective_session_id = request.session_id or request.request_id
+        self._in_flight[request.request_id] = effective_session_id
         try:
             result = await self._execute(request)
             self._queue.complete(request.request_id, result)
@@ -313,6 +415,8 @@ class RequestProcessor:
                 error=str(exc),
             )
             self._queue.fail(request.request_id, str(exc))
+        finally:
+            self._in_flight.pop(request.request_id, None)
 
     async def _execute(self, request: AgentRequest) -> RequestResult:
         """Execute the request via the agent executor."""
