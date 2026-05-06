@@ -251,6 +251,39 @@ def get_persistent_agent_service():
 
 
 # ---------------------------------------------------------------------------
+# Active EventSource registry for webhook routing
+# ---------------------------------------------------------------------------
+#
+# The generic ``POST /api/v1/events/{source_name}`` endpoint needs to find
+# the live, started ``WebhookCapableEventSource`` instance (a registered
+# factory is not enough — handle_inbound is method state). The butler
+# daemon registers each started source here; webhook-capable sources
+# created elsewhere can also opt in.
+
+_ACTIVE_EVENT_SOURCES: dict[str, Any] = {}
+
+
+def register_active_event_source(name: str, source: Any) -> None:
+    """Publish a started event source so the events route can reach it."""
+    _ACTIVE_EVENT_SOURCES[name] = source
+
+
+def unregister_active_event_source(name: str) -> None:
+    """Remove a source from the active registry (no-op if absent)."""
+    _ACTIVE_EVENT_SOURCES.pop(name, None)
+
+
+def get_active_event_source(name: str) -> Any | None:
+    """Return the active source for ``name`` or ``None``."""
+    return _ACTIVE_EVENT_SOURCES.get(name)
+
+
+def list_active_event_sources() -> list[str]:
+    """Return the names of currently registered active sources."""
+    return sorted(_ACTIVE_EVENT_SOURCES.keys())
+
+
+# ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
 

@@ -134,6 +134,11 @@ acp = [
     # the last compatible release until acp-sdk catches up.
     "uvicorn>=0.30,<0.36",
 ]
+event-sources-fs = [
+    # File-system watcher backing FileWatcherEventSource. Runs the
+    # observer on a background thread and bridges events into asyncio.
+    "watchdog>=4.0.0",
+]
 
 [dependency-groups]
 dev = [

@@ -105,7 +105,10 @@ src/taskforce/
 │   ├── auth/                  # OAuth2 / token store implementations
 │   ├── cache/                 # Tool result caching
 │   ├── communication/         # Communication Gateway components (adapters, senders, registry)
-│   ├── event_sources/         # Polling event-source base (PollingEventSource)
+│   ├── event_sources/         # Framework-wide event sources: polling base,
+│   │                          # calendar, webhook, file_watcher, imap_email,
+│   │                          # github (HMAC-verified). Auto-registered in
+│   │                          # the application EventSourceRegistry.
 │   ├── llm/                   # LiteLLM service + LLM Router (multi-provider, dynamic routing)
 │   ├── memory/                # File-based memory store
 │   ├── messaging/             # In-memory message bus
@@ -129,6 +132,8 @@ src/taskforce/
 │   ├── tool_registry.py       # Tool catalog, mapping, resolution
 │   ├── tool_builder.py        # Tool instantiation from definitions
 │   ├── agent_registry.py      # Custom agent registration API
+│   ├── event_source_registry.py    # Plugin registry for event sources
+│   │                          # (name → factory, used by butler daemon)
 │   ├── agent_creation_pipeline.py  # Agent build pipeline (definition → agent)
 │   ├── config_schema.py       # Pydantic schema helpers for configs
 │   ├── gateway.py             # Unified Communication Gateway service
@@ -617,6 +622,16 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
   - `POST /api/v1/gateway/notify` - send proactive push notifications
   - `POST /api/v1/gateway/broadcast` - broadcast to all recipients on a channel
   - `GET  /api/v1/gateway/channels` - list configured channels
+- **Generic Webhook & Mission Routes:**
+  - `POST /api/v1/events/{source_name}` - forwards inbound HTTP to a
+    registered ``WebhookCapableEventSource`` (HMAC-verified for
+    GitHub). Returns 401 on signature mismatch, 404 when no source is
+    active, 415 for non-JSON bodies, 202 on accept.
+  - `GET /api/v1/missions` / `POST /api/v1/missions/{request_id}/cancel`
+    - list queued/in-flight missions and cancel by request_id
+    (queued → ``status=cancelled``, in-flight → cooperative interrupt
+    via ``executor.interrupt``). Surfaced through
+    ``taskforce missions running`` and ``taskforce missions cancel``.
 - **Send Notification Tool:** `infrastructure/tools/native/send_notification_tool.py` - allows agents to proactively push messages
 - **Extension Implementations:** `taskforce/infrastructure/communication/`:
   - `gateway_registry.py` - Component wiring and factory
