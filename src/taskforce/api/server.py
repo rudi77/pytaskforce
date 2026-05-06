@@ -69,6 +69,7 @@ from taskforce.api.routes import (
     files,
     gateway,
     missions,
+    standing_goals,
     health,
     llm,
     mcp,
@@ -217,6 +218,9 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(gateway.router, prefix="/api/v1", tags=["gateway"])
     app.include_router(missions.router, prefix="/api/v1", tags=["missions"])
     app.include_router(events.router, prefix="/api/v1", tags=["events"])
+    app.include_router(
+        standing_goals.router, prefix="/api/v1", tags=["standing-goals"]
+    )
     app.include_router(health.router, tags=["health"])
     app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
     app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])

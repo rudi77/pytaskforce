@@ -284,6 +284,49 @@ def list_active_event_sources() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Standing goals — store + evaluator (proactive layer)
+# ---------------------------------------------------------------------------
+
+_STANDING_GOAL_STORE: Any | None = None
+_GOAL_EVALUATOR: Any | None = None
+
+
+def set_standing_goal_store(store: Any | None) -> None:
+    global _STANDING_GOAL_STORE
+    _STANDING_GOAL_STORE = store
+
+
+def get_standing_goal_store():
+    """Return the registered store, lazily building a file-backed default.
+
+    Falls back to a ``FileStandingGoalStore`` rooted at ``TASKFORCE_WORK_DIR``
+    so the REST CRUD routes work without an explicit register step. The
+    butler daemon overrides this on startup so writes from the daemon
+    and from REST land in the same file.
+    """
+    global _STANDING_GOAL_STORE
+    if _STANDING_GOAL_STORE is None:
+        from taskforce.infrastructure.persistence.file_standing_goal_store import (
+            FileStandingGoalStore,
+        )
+
+        work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+        _STANDING_GOAL_STORE = FileStandingGoalStore(work_dir=work_dir)
+    return _STANDING_GOAL_STORE
+
+
+def set_goal_evaluator(evaluator: Any | None) -> None:
+    """Publish a ``GoalEvaluatorService`` so ``evaluate-now`` is reachable."""
+    global _GOAL_EVALUATOR
+    _GOAL_EVALUATOR = evaluator
+
+
+def get_goal_evaluator():
+    """Return the registered evaluator or ``None`` when no daemon is up."""
+    return _GOAL_EVALUATOR
+
+
+# ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
 
