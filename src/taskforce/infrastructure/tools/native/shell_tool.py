@@ -65,12 +65,15 @@ async def _run_via_sandbox(
     except FileNotFoundError as exc:
         return {"success": False, "error": str(exc)}
     except asyncio.CancelledError:
-        # Tools historically returned a dict for cancellation rather than
-        # propagating the exception so the agent loop sees a normal tool
-        # result. Preserve that contract.
+        # The sandbox already SIGTERM/SIGKILL'd the subprocess (see
+        # ``_terminate_process`` in ``infrastructure/sandbox/in_process.py``).
+        # We swallow the cancellation here so the cooperative interrupt
+        # path (ADR-019) sees a normal tool result and the agent can
+        # persist a clean paused-state snapshot at the next ReAct boundary
+        # rather than tearing down the whole task.
         return {
             "success": False,
-            "error": f"Command cancelled after {timeout}s",
+            "error": "Command cancelled",
             "command": command,
         }
     except Exception as exc:  # pragma: no cover — defensive

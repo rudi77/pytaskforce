@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,64 @@ from taskforce.infrastructure.tools.orchestration._event_forwarding import (
 if TYPE_CHECKING:
     from taskforce.application.factory import AgentFactory
     from taskforce.core.domain.agent import Agent
+
+
+# Process-wide registry of running sub-agents keyed by their parent's
+# session_id. Multiple SubAgentSpawner instances exist (one per
+# orchestration tool build), but interrupt propagation is a cross-cutting
+# concern: when the AgentExecutor receives ``interrupt(parent_session_id)``
+# it consults this registry to forward the cooperative-pause signal to
+# every running child.
+_ACTIVE_CHILDREN: dict[str, list[Agent]] = {}
+# Parents whose interrupt has already been requested. Tracked so children
+# spawned *after* the interrupt is signalled still get the pause request.
+# Cleared automatically when the last child of a parent deregisters.
+_INTERRUPTED_PARENTS: set[str] = set()
+_ACTIVE_CHILDREN_LOCK = threading.Lock()
+
+
+def _register_child(parent_session_id: str, child: Agent) -> bool:
+    """Register a child for a parent. Returns True if the parent is already
+    flagged as interrupted (so the caller can immediately signal the child).
+    """
+    with _ACTIVE_CHILDREN_LOCK:
+        _ACTIVE_CHILDREN.setdefault(parent_session_id, []).append(child)
+        return parent_session_id in _INTERRUPTED_PARENTS
+
+
+def _deregister_child(parent_session_id: str, child: Agent) -> None:
+    with _ACTIVE_CHILDREN_LOCK:
+        children = _ACTIVE_CHILDREN.get(parent_session_id)
+        if not children:
+            return
+        try:
+            children.remove(child)
+        except ValueError:
+            pass
+        if not children:
+            _ACTIVE_CHILDREN.pop(parent_session_id, None)
+            _INTERRUPTED_PARENTS.discard(parent_session_id)
+
+
+def request_interrupt_for_parent(parent_session_id: str) -> int:
+    """Forward a cooperative-pause request to every running sub-agent.
+
+    Called by :meth:`AgentExecutor.interrupt` so an interrupt on the root
+    session also pauses any sub-agents spawned by orchestration tools
+    (``call_agent``, ``call_agents_parallel``). Future children spawned
+    while the parent is still flagged also receive the signal.
+
+    Returns the number of children that were signalled.
+    """
+    with _ACTIVE_CHILDREN_LOCK:
+        _INTERRUPTED_PARENTS.add(parent_session_id)
+        children = list(_ACTIVE_CHILDREN.get(parent_session_id, ()))
+    for child in children:
+        try:
+            child.request_interrupt()
+        except Exception:  # pragma: no cover — best-effort propagation
+            pass
+    return len(children)
 
 
 class SubAgentSpawner(SubAgentSpawnerProtocol):
@@ -73,7 +132,17 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
             # Clear stale ask_user state so new missions are not
             # misinterpreted as answers to a previous question.
             await self._clear_stale_pause(agent, session_id, spec.mission)
+            # Register the child so a parent's cooperative interrupt
+            # (ADR-019) propagates to this sub-agent. If the parent is
+            # already interrupted, signal the child immediately so it
+            # pauses at its first ReAct boundary instead of running a
+            # full extra step.
+            parent_already_interrupted = _register_child(
+                spec.parent_session_id, agent
+            )
             try:
+                if parent_already_interrupted:
+                    agent.request_interrupt()
                 outcome = await run_sub_agent_with_forwarding(
                     agent,
                     mission=spec.mission,
@@ -91,6 +160,7 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                         memory_context=getattr(agent, "_memory_context", None),
                     )
             finally:
+                _deregister_child(spec.parent_session_id, agent)
                 await agent.close()
         except Exception as exc:
             import traceback

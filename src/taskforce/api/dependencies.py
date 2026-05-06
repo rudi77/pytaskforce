@@ -221,6 +221,36 @@ def get_request_queue():
 
 
 # ---------------------------------------------------------------------------
+# Persistent Agent Service registry
+# ---------------------------------------------------------------------------
+#
+# The butler daemon and the REST API can run as separate processes, so the
+# API has no automatic handle on the daemon's PersistentAgentService.
+# We expose a process-local register so an embedding host (a daemon that
+# also serves the API, or tests) can publish its instance and the
+# ``/api/v1/missions`` routes can find it via FastAPI ``Depends``.
+# Returns ``None`` when no service is active — routes translate that to
+# HTTP 503.
+
+_PERSISTENT_AGENT_SERVICE: Any | None = None
+
+
+def set_persistent_agent_service(service: Any | None) -> None:
+    """Publish the current ``PersistentAgentService`` to the API layer.
+
+    Called by the embedding host (butler daemon, REST server lifespan)
+    on startup; pass ``None`` on shutdown so routes return 503.
+    """
+    global _PERSISTENT_AGENT_SERVICE
+    _PERSISTENT_AGENT_SERVICE = service
+
+
+def get_persistent_agent_service():
+    """Return the registered ``PersistentAgentService`` or ``None``."""
+    return _PERSISTENT_AGENT_SERVICE
+
+
+# ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
 

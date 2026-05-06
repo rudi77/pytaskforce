@@ -100,6 +100,15 @@ class ButlerDaemon:
         # Start the persistent agent service if wired
         if self._agent_service:
             await self._agent_service.start()
+            # Publish to the API layer so /api/v1/missions can list and
+            # cancel queued/in-flight missions when the daemon embeds the
+            # REST API in the same process.
+            try:
+                from taskforce.api.dependencies import set_persistent_agent_service
+
+                set_persistent_agent_service(self._agent_service)
+            except Exception:  # pragma: no cover — API package optional
+                pass
             logger.info("butler_daemon.persistent_agent_started")
 
         self._running = True
@@ -122,6 +131,12 @@ class ButlerDaemon:
 
         # Stop persistent agent service first (drains queue).
         if self._agent_service:
+            try:
+                from taskforce.api.dependencies import set_persistent_agent_service
+
+                set_persistent_agent_service(None)
+            except Exception:  # pragma: no cover — API package optional
+                pass
             await self._agent_service.stop()
 
         if self._butler:

@@ -219,19 +219,34 @@ class AgentExecutor:
         step (LLM call + tool calls) finishes normally; state is then
         persisted and an ``INTERRUPTED`` event is streamed out.
 
+        Also forwards the interrupt to every running sub-agent spawned
+        by orchestration tools under this session — the registry is
+        managed by :mod:`taskforce.application.sub_agent_spawner`.
+
         Returns:
-            True if an active agent was found and signalled, False if no
-            agent is currently running under the given session_id.
+            True if an active agent or any sub-agent was found and
+            signalled, False if nothing is currently running under the
+            given session_id.
         """
+        from taskforce.application.sub_agent_spawner import (
+            request_interrupt_for_parent,
+        )
+
         agent = self._active_agents.get(session_id)
-        if agent is None:
+        children_signalled = request_interrupt_for_parent(session_id)
+        if agent is None and children_signalled == 0:
             self.logger.warning(
                 "interrupt.no_active_agent",
                 session_id=session_id,
             )
             return False
-        agent.request_interrupt()
-        self.logger.info("interrupt.requested", session_id=session_id)
+        if agent is not None:
+            agent.request_interrupt()
+        self.logger.info(
+            "interrupt.requested",
+            session_id=session_id,
+            children_signalled=children_signalled,
+        )
         return True
 
     def has_active_session(self, session_id: str) -> bool:

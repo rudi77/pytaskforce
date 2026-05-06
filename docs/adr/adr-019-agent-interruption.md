@@ -87,3 +87,39 @@ INTERRUPTED event, keeping stream consumers that already special-case
 - Interrupt handler: `src/taskforce/core/domain/planning/interrupt.py`
 - Resume path: `src/taskforce/core/domain/planning/state.py`
   (`_resume_from_pause`)
+
+## Phase 1 follow-up (2026-05-06)
+
+Three gaps identified after the initial roll-out have been closed:
+
+1. **Subprocess hard-kill.** The default sandbox executor
+   (`infrastructure/sandbox/in_process.py`) now wraps every subprocess
+   in a `try/finally` that escalates SIGTERM → SIGKILL when the caller
+   coroutine is cancelled. Previously a `bash sleep 60` survived the
+   cooperative pause and kept consuming resources until natural exit.
+2. **Sub-agent propagation.** A process-wide registry in
+   `application/sub_agent_spawner.py`
+   (`_register_child` / `_INTERRUPTED_PARENTS` /
+   `request_interrupt_for_parent`) forwards the parent's interrupt to
+   every running spawned child, including children spawned *after* the
+   interrupt has been raised. `AgentExecutor.interrupt(session_id)`
+   consults this registry in addition to `_active_agents` so a single
+   call pauses the whole tree. `LeanAgent.request_interrupt` also fires
+   every callback in `_on_interrupt_callbacks`, providing an extension
+   seam without importing application-layer types into the core.
+3. **Persistent-agent request cancel.** `RequestQueue.cancel(request_id)`
+   and `PersistentAgentService.cancel_request(request_id)` cancel
+   queued and in-flight requests respectively (the latter delegates to
+   `executor.interrupt`). `GET /api/v1/missions` lists every queued or
+   in-flight request; `POST /api/v1/missions/{request_id}/cancel`
+   returns `202 Accepted` with `status="cancelled"` for queued items
+   and `status="interrupt_requested"` for in-flight ones. CLI:
+   `taskforce missions running` and `taskforce missions cancel <id>`.
+
+Files touched in this phase: `infrastructure/sandbox/in_process.py`,
+`infrastructure/tools/native/shell_tool.py`,
+`core/domain/lean_agent.py`, `application/sub_agent_spawner.py`,
+`application/executor.py`, `application/request_queue.py`,
+`application/persistent_agent_service.py`,
+`api/routes/missions.py` (new), `api/dependencies.py`,
+`api/cli/commands/missions.py`, `agents/butler/.../daemon.py`.
