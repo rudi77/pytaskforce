@@ -139,6 +139,19 @@ class ButlerDaemon:
                 pass
             await self._agent_service.stop()
 
+        # Drop active event sources from the API registry so the events
+        # route returns 404 instead of forwarding to a stopped source.
+        try:
+            from taskforce.api.dependencies import (
+                list_active_event_sources,
+                unregister_active_event_source,
+            )
+
+            for name in list(list_active_event_sources()):
+                unregister_active_event_source(name)
+        except Exception:  # pragma: no cover
+            pass
+
         if self._butler:
             await self._butler.stop()
 
@@ -335,46 +348,72 @@ class ButlerDaemon:
             return None
 
     async def _setup_event_sources(self, config: dict[str, Any]) -> None:
-        """Set up event sources from configuration."""
+        """Set up event sources from configuration via the EventSourceRegistry.
+
+        The previous if/elif chain has been replaced by a single
+        ``registry.create(type, config)`` call so adding a new source
+        type only needs an entry in
+        ``taskforce.infrastructure.event_sources.__init__`` (or any
+        agent package that calls ``register_event_source`` at import
+        time). Started sources are also published to the API layer's
+        active-source registry so the generic
+        ``POST /api/v1/events/{source_name}`` route can reach them.
+        """
         if self._butler is None:
             return
 
+        # Triggers framework-side auto-registration.
+        import taskforce.infrastructure.event_sources  # noqa: F401
+        from taskforce.application.event_source_registry import (
+            get_event_source_registry,
+        )
+
+        registry = get_event_source_registry()
         sources_config = config.get("event_sources", [])
 
         for source_cfg in sources_config:
             source_type = source_cfg.get("type", "")
+            if not source_type:
+                logger.warning("butler_daemon.event_source_missing_type", config=source_cfg)
+                continue
+            if not registry.is_registered(source_type):
+                logger.warning(
+                    "butler_daemon.unknown_source_type",
+                    source_type=source_type,
+                    known=registry.list(),
+                )
+                continue
 
-            if source_type == "calendar":
-                try:
-                    from taskforce_butler.infrastructure.event_sources.calendar_source import (
-                        CalendarEventSource,
-                    )
+            cfg = {k: v for k, v in source_cfg.items() if k != "type"}
+            try:
+                source = registry.create(source_type, cfg)
+            except Exception as exc:
+                logger.warning(
+                    "butler_daemon.event_source_build_failed",
+                    source_type=source_type,
+                    error=str(exc),
+                )
+                continue
 
-                    cal_source = CalendarEventSource(
-                        poll_interval_seconds=source_cfg.get("poll_interval_minutes", 5) * 60,
-                        lookahead_minutes=source_cfg.get("lookahead_minutes", 60),
-                        calendar_id=source_cfg.get("calendar_id", "primary"),
-                        credentials_file=source_cfg.get("credentials_file"),
-                    )
-                    self._butler.add_event_source(cal_source)
-                    logger.info("butler_daemon.calendar_source_added")
-                except Exception as exc:
-                    logger.warning("butler_daemon.calendar_source_failed", error=str(exc))
+            self._butler.add_event_source(source)
+            logger.info(
+                "butler_daemon.event_source_added",
+                source_type=source_type,
+                source_name=getattr(source, "source_name", source_type),
+            )
 
-            elif source_type == "webhook":
-                try:
-                    from taskforce_butler.infrastructure.event_sources.webhook_source import (
-                        WebhookEventSource,
-                    )
+            # Publish webhook-capable sources to the API layer so the
+            # generic events route can dispatch HTTP deliveries to them.
+            try:
+                from taskforce.api.dependencies import register_active_event_source
+                from taskforce.core.interfaces.event_source import (
+                    WebhookCapableEventSource,
+                )
 
-                    webhook_source = WebhookEventSource()
-                    self._butler.add_event_source(webhook_source)
-                    logger.info("butler_daemon.webhook_source_added")
-                except Exception as exc:
-                    logger.warning("butler_daemon.webhook_source_failed", error=str(exc))
-
-            else:
-                logger.warning("butler_daemon.unknown_source_type", source_type=source_type)
+                if isinstance(source, WebhookCapableEventSource):
+                    register_active_event_source(source.source_name, source)
+            except Exception:  # pragma: no cover — API package optional
+                pass
 
     async def _load_rules(self, config: dict[str, Any]) -> None:
         """Load trigger rules from configuration."""
