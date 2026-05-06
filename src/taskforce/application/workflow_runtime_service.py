@@ -78,6 +78,11 @@ class WorkflowRuntimeService:
     def save_definition(self, definition: WorkflowDefinition) -> WorkflowDefinition:
         """Persist a first-class workflow definition.
 
+        Validates the definition before writing so a malformed graph or
+        a bad cron expression fails immediately instead of silently
+        landing on disk and exploding at run-time. The route layer
+        translates the resulting ``ValueError`` into a 400 response.
+
         Synchronous so existing FastAPI sync handlers stay unchanged.
         Scheduler integration is exposed separately via
         :meth:`register_schedule_for` so a caller with an event loop
@@ -85,6 +90,7 @@ class WorkflowRuntimeService:
         """
         if self._definition_store is None:
             raise RuntimeError("Workflow definitions are not configured")
+        _validate_definition(definition)
         return self._definition_store.save(definition)
 
     async def register_schedule_for(self, definition: WorkflowDefinition) -> str | None:
@@ -401,6 +407,41 @@ class WorkflowRuntimeService:
     def get(self, run_id: str) -> WorkflowCheckpoint | None:
         """Get checkpoint by run ID."""
         return self._store.get(run_id)
+
+
+def _validate_definition(definition: WorkflowDefinition) -> None:
+    """Reject definitions that are statically invalid before they hit disk.
+
+    Catches the failure modes that would otherwise only surface at
+    cron-tick or run-time:
+
+    * empty step list (a workflow with no steps has no semantics),
+    * duplicate / dangling / cyclic ``depends_on`` references,
+    * malformed cron expressions on ``schedule``-triggered workflows.
+
+    Raises ``ValueError`` with a human-readable reason; the route layer
+    maps that to ``400 invalid_workflow``.
+    """
+    if not definition.steps:
+        raise ValueError("Workflow must declare at least one step")
+    # Reuse the run-path's dependency analysis so save and run agree on
+    # what a valid graph looks like — duplicate ids, dangling depends_on
+    # and cycles all surface here.
+    _order_steps(definition.steps)
+
+    if definition.trigger == WORKFLOW_TRIGGER_SCHEDULE:
+        cron = (definition.trigger_config or {}).get("cron")
+        if cron is not None:
+            from taskforce.core.utils.time import utc_now
+            from taskforce.infrastructure.scheduler.scheduler_service import (
+                _next_cron_occurrence,
+            )
+
+            # _next_cron_occurrence raises ValueError for any malformed
+            # cron expression (wrong field count, non-numeric values,
+            # out-of-range ranges, ...). We don't care about the
+            # returned datetime here.
+            _next_cron_occurrence(str(cron), utc_now())
 
 
 def _order_steps(steps: list[WorkflowStep]) -> list[WorkflowStep]:

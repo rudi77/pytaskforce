@@ -36,7 +36,7 @@ async def test_dispatch_runs_execute_workflow_action() -> None:
 
     event = _FakeEvent(
         payload={
-            "job_id": "workflow:wf-1",
+            "job_id": "workflow__wf-1",
             "action": {
                 "action_type": "execute_workflow",
                 "params": {"workflow_id": "wf-1"},

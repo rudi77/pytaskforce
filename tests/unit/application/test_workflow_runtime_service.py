@@ -114,26 +114,101 @@ def test_workflow_definition_steps_are_dependency_ordered(tmp_path):
     assert [step.step_id for step in ordered] == ["draft", "publish"]
 
 
-def test_workflow_definition_rejects_dependency_cycles(tmp_path):
+def test_save_definition_rejects_dependency_cycles(tmp_path):
     checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
     service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
-    service.save_definition(
-        WorkflowDefinition(
-            workflow_id="cycle",
-            name="Cycle",
-            steps=[
-                WorkflowStep(step_id="a", agent="x", task="A", depends_on=["b"]),
-                WorkflowStep(step_id="b", agent="x", task="B", depends_on=["a"]),
-            ],
-        )
+
+    cycle = WorkflowDefinition(
+        workflow_id="cycle",
+        name="Cycle",
+        steps=[
+            WorkflowStep(step_id="a", agent="x", task="A", depends_on=["b"]),
+            WorkflowStep(step_id="b", agent="x", task="B", depends_on=["a"]),
+        ],
     )
 
     try:
-        service.ordered_steps("cycle")
+        service.save_definition(cycle)
         raise AssertionError("Expected ValueError")
     except ValueError as exc:
         assert "dependency cycle" in str(exc)
+    # The definition must NOT have been written to disk.
+    assert service.get_definition("cycle") is None
+
+
+def test_save_definition_rejects_dangling_depends_on(tmp_path):
+    checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
+    definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
+    service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
+
+    bad = WorkflowDefinition(
+        workflow_id="dangling",
+        name="Dangling",
+        steps=[
+            WorkflowStep(step_id="a", agent="x", task="A", depends_on=["does-not-exist"]),
+        ],
+    )
+
+    try:
+        service.save_definition(bad)
+        raise AssertionError("Expected ValueError")
+    except ValueError as exc:
+        assert "missing steps" in str(exc)
+    assert service.get_definition("dangling") is None
+
+
+def test_save_definition_rejects_empty_steps(tmp_path):
+    checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
+    definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
+    service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
+
+    empty = WorkflowDefinition(workflow_id="nada", name="No steps", steps=[])
+
+    try:
+        service.save_definition(empty)
+        raise AssertionError("Expected ValueError")
+    except ValueError as exc:
+        assert "at least one step" in str(exc)
+    assert service.get_definition("nada") is None
+
+
+def test_save_definition_rejects_malformed_cron(tmp_path):
+    checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
+    definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
+    service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
+
+    bad_cron = WorkflowDefinition(
+        workflow_id="bad-cron",
+        name="Bad Cron",
+        trigger="schedule",
+        trigger_config={"cron": "this is not cron"},
+        steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+    )
+
+    try:
+        service.save_definition(bad_cron)
+        raise AssertionError("Expected ValueError")
+    except ValueError as exc:
+        assert "cron" in str(exc).lower()
+    assert service.get_definition("bad-cron") is None
+
+
+def test_save_definition_accepts_valid_cron(tmp_path):
+    checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
+    definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
+    service = WorkflowRuntimeService(checkpoint_store, definition_store=definition_store)
+
+    good = WorkflowDefinition(
+        workflow_id="good-cron",
+        name="Good Cron",
+        trigger="schedule",
+        trigger_config={"cron": "0 8 * * *"},
+        steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+    )
+
+    service.save_definition(good)
+    assert service.get_definition("good-cron") == good
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +257,7 @@ async def test_register_schedule_creates_execute_workflow_job(tmp_path):
 
     job_id = await runtime.register_schedule_for(definition)
 
-    assert job_id == "workflow:report"
+    assert job_id == "workflow__report"
     assert len(scheduler.add_calls) == 1
     job = scheduler.add_calls[0]
     assert job.action.action_type == ScheduleActionType.EXECUTE_WORKFLOW
@@ -199,27 +274,29 @@ async def test_register_schedule_replaces_previous_job(tmp_path):
         scheduler=scheduler,
     )
     definition = WorkflowDefinition(
-        workflow_id="report",
+            workflow_id="report",
         name="Daily",
         trigger="schedule",
         trigger_config={"cron": "0 8 * * *"},
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
     await runtime.register_schedule_for(definition)
     # Re-register with a different cron — old job must be removed first.
     updated = WorkflowDefinition(
-        workflow_id="report",
+            workflow_id="report",
         name="Daily",
         trigger="schedule",
         trigger_config={"cron": "0 9 * * *"},
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
     await runtime.register_schedule_for(updated)
 
     # Two add_job calls (initial + replacement)
     assert len(scheduler.add_calls) == 2
     # Remove was called twice (once defensive in each register call)
-    assert scheduler.remove_calls.count("workflow:report") == 2
+    assert scheduler.remove_calls.count("workflow__report") == 2
     # Final stored job has the new expression
-    assert scheduler.jobs["workflow:report"].expression == "0 9 * * *"
+    assert scheduler.jobs["workflow__report"].expression == "0 9 * * *"
 
 
 @pytest.mark.asyncio
@@ -231,10 +308,11 @@ async def test_register_schedule_skips_when_trigger_not_schedule(tmp_path):
         scheduler=scheduler,
     )
     definition = WorkflowDefinition(
-        workflow_id="manual-only",
+            workflow_id="manual-only",
         name="x",
         trigger="manual",
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
     job_id = await runtime.register_schedule_for(definition)
     assert job_id is None
     assert scheduler.add_calls == []
@@ -273,13 +351,14 @@ async def test_unregister_schedule_removes_job(tmp_path):
             name="x",
             trigger="schedule",
             trigger_config={"cron": "* * * * *"},
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
-    assert "workflow:x" in scheduler.jobs
+    assert "workflow__x" in scheduler.jobs
 
     removed = await runtime.unregister_schedule_for("x")
     assert removed is True
-    assert "workflow:x" not in scheduler.jobs
+    assert "workflow__x" not in scheduler.jobs
 
 
 @pytest.mark.asyncio
@@ -290,11 +369,12 @@ async def test_register_schedule_noop_without_scheduler(tmp_path):
         definition_store=FileWorkflowDefinitionStore(work_dir=str(tmp_path)),
     )
     definition = WorkflowDefinition(
-        workflow_id="x",
+            workflow_id="x",
         name="x",
         trigger="schedule",
         trigger_config={"cron": "* * * * *"},
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
     assert await runtime.register_schedule_for(definition) is None
     assert await runtime.unregister_schedule_for("x") is False
 
@@ -315,6 +395,7 @@ def test_find_webhook_workflow_matches_declared_path(tmp_path):
             name="Daily",
             trigger="webhook",
             trigger_config={"path": "hooks/daily-report"},
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
     runtime.save_definition(
@@ -322,6 +403,7 @@ def test_find_webhook_workflow_matches_declared_path(tmp_path):
             workflow_id="manual",
             name="Manual",
             trigger="manual",
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
 
@@ -341,6 +423,7 @@ def test_find_webhook_workflow_normalises_leading_slashes(tmp_path):
             name="x",
             trigger="webhook",
             trigger_config={"path": "/hooks/run"},
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
     # Request URL-derived path may or may not have a leading slash —
@@ -360,6 +443,7 @@ def test_find_webhook_workflow_returns_none_for_unknown_path(tmp_path):
             name="x",
             trigger="webhook",
             trigger_config={"path": "hooks/run"},
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
     assert runtime.find_webhook_workflow("hooks/different") is None
@@ -376,6 +460,7 @@ def test_find_webhook_workflow_skips_non_webhook_triggers(tmp_path):
             name="Manual same path",
             trigger="manual",
             trigger_config={"path": "hooks/run"},  # ignored — wrong trigger
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
         )
     )
     assert runtime.find_webhook_workflow("hooks/run") is None
@@ -398,11 +483,12 @@ async def test_save_then_register_schedule_idempotent_round_trip(tmp_path) -> No
         scheduler=scheduler,
     )
     definition = WorkflowDefinition(
-        workflow_id="wf-3",
+            workflow_id="wf-3",
         name="Daily",
         trigger="schedule",
         trigger_config={"cron": "0 8 * * *"},
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
 
     # Simulate the API route's two-step "persist then schedule" flow.
     saved = runtime.save_definition(definition)
@@ -412,11 +498,11 @@ async def test_save_then_register_schedule_idempotent_round_trip(tmp_path) -> No
     saved_again = runtime.save_definition(saved)
     job_id_second = await runtime.register_schedule_for(saved_again)
 
-    assert job_id_first == job_id_second == "workflow:wf-3"
+    assert job_id_first == job_id_second == "workflow__wf-3"
     # Two registers (each removes-then-adds → 2 add_calls total)
     assert len(scheduler.add_calls) == 2
     # Final state has exactly one live job
-    assert "workflow:wf-3" in scheduler.jobs
+    assert "workflow__wf-3" in scheduler.jobs
 
 
 @pytest.mark.asyncio
@@ -428,20 +514,21 @@ async def test_delete_definition_then_unregister_clears_the_schedule(tmp_path) -
         scheduler=scheduler,
     )
     definition = WorkflowDefinition(
-        workflow_id="wf-4",
+            workflow_id="wf-4",
         name="x",
         trigger="schedule",
         trigger_config={"cron": "* * * * *"},
-    )
+            steps=[WorkflowStep(step_id="a", agent="x", task="A")],
+        )
     runtime.save_definition(definition)
     await runtime.register_schedule_for(definition)
-    assert "workflow:wf-4" in scheduler.jobs
+    assert "workflow__wf-4" in scheduler.jobs
 
     runtime.delete_definition("wf-4")
     removed = await runtime.unregister_schedule_for("wf-4")
 
     assert removed is True
-    assert "workflow:wf-4" not in scheduler.jobs
+    assert "workflow__wf-4" not in scheduler.jobs
 
 
 # ---------------------------------------------------------------------------

@@ -129,7 +129,12 @@ async def save_workflow_definition(
     Removing the schedule trigger entirely also removes the registered
     job.
     """
-    definition = service.save_definition(_workflow_from_request(request))
+    try:
+        definition = service.save_definition(_workflow_from_request(request))
+    except ValueError as exc:
+        raise http_exception(
+            status_code=400, code="invalid_workflow", message=str(exc)
+        ) from exc
     job_id = await service.register_schedule_for(definition)
     return {
         "success": True,
