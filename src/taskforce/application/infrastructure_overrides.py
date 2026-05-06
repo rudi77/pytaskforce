@@ -67,6 +67,7 @@ _multi_tenant_sandbox_warning_emitted: bool = False
 _recipient_resolver_override: Callable[[], Any] | None = None
 _agent_lookup_override: Callable[[], Any] | None = None
 _workflow_lookup_override: Callable[[], Any] | None = None
+_webhook_workflow_resolver: Callable[[str], Awaitable[str | None]] | None = None
 _cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
 
 
@@ -362,6 +363,38 @@ def get_workflow_lookup_override() -> Callable[[], Any] | None:
     return _workflow_lookup_override
 
 
+def set_webhook_workflow_resolver(
+    resolver: Callable[[str], Awaitable[str | None]] | None,
+) -> None:
+    """Install (or clear) a global webhook-path → tenant_id resolver.
+
+    The webhook trigger endpoint
+    (``POST /api/v1/workflows/webhooks/{path}``) is auth-exempt so it
+    has no tenant context when a request lands. Without this resolver
+    the route can only see workflows in the framework's *current*
+    (default) tenant — webhooks owned by other tenants 404.
+
+    With a resolver installed the route, on a local miss, asks the
+    resolver "which tenant owns this path?". When the resolver returns
+    a tenant id the route then switches into that tenant via
+    :func:`get_tenant_context_runner` and re-runs the lookup + execute
+    sequence. Single-tenant builds don't need this — leaving it unset
+    is the bit-for-bit-identical behaviour.
+
+    The resolver is async because a Postgres-backed implementation
+    will issue a query.
+    """
+    global _webhook_workflow_resolver
+    _webhook_workflow_resolver = resolver
+
+
+def get_webhook_workflow_resolver() -> (
+    Callable[[str], Awaitable[str | None]] | None
+):
+    """Return the installed webhook resolver, if any."""
+    return _webhook_workflow_resolver
+
+
 def set_cross_tenant_acp_authorizer(
     authorizer: Callable[[str, str, Any], bool] | None,
 ) -> None:
@@ -456,6 +489,7 @@ def clear_infrastructure_overrides() -> None:
     global _sandboxed_executor
     global _multi_tenant_sandbox_warning_emitted
     global _recipient_resolver_override
+    global _webhook_workflow_resolver
     global _agent_lookup_override
     global _workflow_lookup_override
     global _cross_tenant_acp_authorizer
@@ -476,4 +510,5 @@ def clear_infrastructure_overrides() -> None:
     _recipient_resolver_override = None
     _agent_lookup_override = None
     _workflow_lookup_override = None
+    _webhook_workflow_resolver = None
     _cross_tenant_acp_authorizer = None

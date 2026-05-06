@@ -486,3 +486,40 @@ def test_clear_resets_cross_tenant_acp_authorizer() -> None:
     set_cross_tenant_acp_authorizer(lambda c, p, pe: True)
     clear_infrastructure_overrides()
     assert get_cross_tenant_acp_authorizer() is None
+
+
+# ---------------------------------------------------------------------------
+# WF-05: webhook-path → tenant resolver for auth-exempt webhook routes
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    get_webhook_workflow_resolver,
+    set_webhook_workflow_resolver,
+)
+
+
+@pytest.mark.asyncio
+async def test_webhook_workflow_resolver_round_trip() -> None:
+    async def resolver(path: str) -> str | None:
+        return "tenant-acme" if path == "hooks/daily-report" else None
+
+    set_webhook_workflow_resolver(resolver)
+    fetched = get_webhook_workflow_resolver()
+    assert fetched is resolver
+    assert await fetched("hooks/daily-report") == "tenant-acme"
+    assert await fetched("hooks/unknown") is None
+
+
+def test_webhook_workflow_resolver_default_unset() -> None:
+    assert get_webhook_workflow_resolver() is None
+
+
+@pytest.mark.asyncio
+async def test_clear_resets_webhook_workflow_resolver() -> None:
+    async def resolver(path: str) -> str | None:
+        return "x"
+
+    set_webhook_workflow_resolver(resolver)
+    clear_infrastructure_overrides()
+    assert get_webhook_workflow_resolver() is None

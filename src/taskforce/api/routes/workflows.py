@@ -308,54 +308,98 @@ async def trigger_workflow_webhook(
     signature itself before invoking the runtime. With no secret
     configured the webhook is open — that is the operator's choice and
     must be made deliberately.
-    """
-    definition = service.find_webhook_workflow(trigger_path)
-    if definition is None:
-        raise http_exception(
-            status_code=404,
-            code="webhook_workflow_not_found",
-            message=f"No workflow registered for webhook path: {trigger_path}",
-        )
 
+    Tenant routing (WF-05): the route is auth-exempt so it has no
+    tenant in the request context. We first try the framework's
+    current-tenant store; on a miss, we ask
+    :func:`get_webhook_workflow_resolver` which tenant owns the path
+    and re-run the lookup + execute under that tenant via
+    :func:`get_tenant_context_runner`. With no resolver installed
+    (single-tenant builds) behaviour is unchanged.
+    """
     raw_body = await request.body()
     headers = dict(request.headers.items())
-    if not _verify_webhook_signature(
-        body=raw_body,
-        trigger_config=dict(definition.trigger_config or {}),
-        headers=headers,
-    ):
-        raise http_exception(
-            status_code=401,
-            code="invalid_webhook_signature",
-            message="Webhook signature verification failed.",
-        )
 
-    payload: Any = None
-    if raw_body:
+    async def _execute_with(svc: WorkflowRuntimeService, ex: AgentExecutor) -> dict[str, Any]:
+        definition = svc.find_webhook_workflow(trigger_path)
+        if definition is None:
+            raise http_exception(
+                status_code=404,
+                code="webhook_workflow_not_found",
+                message=f"No workflow registered for webhook path: {trigger_path}",
+            )
+        if not _verify_webhook_signature(
+            body=raw_body,
+            trigger_config=dict(definition.trigger_config or {}),
+            headers=headers,
+        ):
+            raise http_exception(
+                status_code=401,
+                code="invalid_webhook_signature",
+                message="Webhook signature verification failed.",
+            )
+
+        payload: Any = None
+        if raw_body:
+            try:
+                payload = json.loads(raw_body)
+            except json.JSONDecodeError:
+                payload = None
+        session_id = None
+        if isinstance(payload, dict):
+            raw_session = payload.get("session_id")
+            if isinstance(raw_session, str) and raw_session:
+                session_id = raw_session
+
         try:
-            payload = json.loads(raw_body)
-        except json.JSONDecodeError:
-            payload = None
+            results = await _execute_workflow_steps(
+                definition.workflow_id, svc, ex, session_id
+            )
+        except ValueError as exc:
+            raise http_exception(
+                status_code=400, code="invalid_workflow", message=str(exc)
+            ) from exc
+        return {
+            "success": True,
+            "workflow_id": definition.workflow_id,
+            "trigger_path": trigger_path,
+            "steps": results,
+        }
 
-    session_id = None
-    if isinstance(payload, dict):
-        raw_session = payload.get("session_id")
-        if isinstance(raw_session, str) and raw_session:
-            session_id = raw_session
+    # Fast path: workflow lives in the current tenant.
+    if service.find_webhook_workflow(trigger_path) is not None:
+        return await _execute_with(service, executor)
 
-    try:
-        results = await _execute_workflow_steps(
-            definition.workflow_id, service, executor, session_id
-        )
-    except ValueError as exc:
-        raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
+    # Cross-tenant fallback: ask the resolver who owns this path, then
+    # re-enter under that tenant's context.
+    from taskforce.application.infrastructure_overrides import (
+        get_tenant_context_runner,
+        get_webhook_workflow_resolver,
+    )
 
-    return {
-        "success": True,
-        "workflow_id": definition.workflow_id,
-        "trigger_path": trigger_path,
-        "steps": results,
-    }
+    resolver = get_webhook_workflow_resolver()
+    runner = get_tenant_context_runner()
+    if resolver is not None and runner is not None:
+        owner_tenant_id = await resolver(trigger_path)
+        if owner_tenant_id:
+
+            async def _within_tenant() -> dict[str, Any]:
+                # Resolve the per-tenant runtime+executor under the new
+                # tenant context. This mirrors how the schedule
+                # dispatcher hands a tenant tick off to the right tenant.
+                fresh_service = get_workflow_runtime_service()
+                fresh_executor = get_executor()
+                return await _execute_with(fresh_service, fresh_executor)
+
+            return await runner(owner_tenant_id, _within_tenant)
+
+    # No resolver installed (single-tenant) or the resolver doesn't
+    # know the path — original 404 behaviour.
+    raise http_exception(
+        status_code=404,
+        code="webhook_workflow_not_found",
+        message=f"No workflow registered for webhook path: {trigger_path}",
+    )
 
 
 @router.post("/wait")
