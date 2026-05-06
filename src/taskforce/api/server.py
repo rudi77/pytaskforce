@@ -118,12 +118,29 @@ async def lifespan(app: FastAPI):
     # the scheduler's optional deps.
     from taskforce.api.dependencies import (
         get_executor,
+        get_gateway,
         get_scheduler,
         get_workflow_runtime_service,
     )
     from taskforce.application.scheduler_dispatcher import (
         make_scheduler_event_callback,
     )
+
+    # Wire the Communication Gateway into the executor and factory at
+    # startup so SendNotificationTool always has a gateway reference,
+    # regardless of whether a request hits a route that depends on
+    # ``get_gateway`` first. Without this, schedule-fired workflows
+    # (and any FastAPI route that doesn't ``Depends(get_gateway)``)
+    # build agents whose send_notification tool returns
+    # "Communication gateway not configured".
+    try:
+        get_gateway()
+    except Exception as exc:  # pragma: no cover — defensive startup wiring
+        await logger.awarning(
+            "fastapi.startup.gateway_unavailable",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     scheduler = get_scheduler()
     # G4: register the workflow dispatcher so EXECUTE_WORKFLOW jobs
