@@ -69,6 +69,8 @@ _agent_lookup_override: Callable[[], Any] | None = None
 _workflow_lookup_override: Callable[[], Any] | None = None
 _webhook_workflow_resolver: Callable[[str], Awaitable[str | None]] | None = None
 _cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
+_mission_lifecycle_hook: Any | None = None
+_approval_service: Any | None = None
 
 
 def set_agent_registry_override(
@@ -425,6 +427,52 @@ def get_cross_tenant_acp_authorizer() -> Callable[[str, str, Any], bool] | None:
     return _cross_tenant_acp_authorizer
 
 
+def set_mission_lifecycle_hook(hook: Any | None) -> None:
+    """Install (or clear) a mission lifecycle hook.
+
+    The hook must satisfy
+    :class:`taskforce.core.interfaces.mission_lifecycle.MissionLifecycleHookProtocol`
+    — its ``on_mission_started`` / ``on_mission_completed`` are called
+    by ``AgentExecutor`` around ``execute_mission_streaming``. Hook
+    failures are logged but never break the calling mission.
+
+    The framework's default is no hook → no-op. The enterprise plugin
+    typically installs a hook that emits AuditEvents.
+    """
+    global _mission_lifecycle_hook
+    _mission_lifecycle_hook = hook
+
+
+def get_mission_lifecycle_hook() -> Any | None:
+    """Return the installed mission-lifecycle hook, if any."""
+    return _mission_lifecycle_hook
+
+
+def set_approval_service(service: Any | None) -> None:
+    """Install (or clear) the tool-approval gate.
+
+    The service must satisfy
+    :class:`taskforce.core.interfaces.approval.ApprovalServiceProtocol`.
+    When installed, ``LeanAgent._execute_tool`` checks each tool's
+    ``requires_approval`` flag and calls
+    ``request_approval(request)`` before invoking the tool. A denied
+    or timed-out decision returns a ``ToolError`` payload from the
+    tool call instead of running the tool.
+
+    With no service installed the framework falls back to legacy
+    behaviour: ``requires_approval`` metadata is exposed in the tool
+    catalog but no gate is applied. This keeps single-user CLI runs
+    unchanged from before Phase 2.
+    """
+    global _approval_service
+    _approval_service = service
+
+
+def get_approval_service() -> Any | None:
+    """Return the installed approval service, if any."""
+    return _approval_service
+
+
 def warn_if_multi_tenant_without_sandbox() -> bool:
     """Emit a hard one-shot warning when multi-tenant runs without a sandbox.
 
@@ -493,6 +541,8 @@ def clear_infrastructure_overrides() -> None:
     global _agent_lookup_override
     global _workflow_lookup_override
     global _cross_tenant_acp_authorizer
+    global _mission_lifecycle_hook
+    global _approval_service
     _agent_registry_override = None
     _state_manager_override = None
     _conversation_store_override = None
@@ -512,3 +562,5 @@ def clear_infrastructure_overrides() -> None:
     _workflow_lookup_override = None
     _webhook_workflow_resolver = None
     _cross_tenant_acp_authorizer = None
+    _mission_lifecycle_hook = None
+    _approval_service = None

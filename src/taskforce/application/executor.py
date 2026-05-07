@@ -358,6 +358,18 @@ class AgentExecutor:
             plugin_path=plugin_path,
         )
 
+        # Notify mission-lifecycle observers (enterprise audit hook).
+        # Failures are logged but never break the mission.
+        import time as _time
+
+        _started_at = _time.monotonic()
+        await self._emit_mission_started(
+            mission=mission,
+            session_id=resolved_session_id,
+            profile=profile,
+            agent_id=agent_id,
+        )
+
         if agent is None:
             agent = await self._agent_pipeline.create_agent(
                 profile,
@@ -389,6 +401,7 @@ class AgentExecutor:
                 _result.close()
 
         execution_failed = False
+        _failure_error: str | None = None
         try:
             with _run_context(
                 session_id=resolved_session_id,
@@ -430,12 +443,14 @@ class AgentExecutor:
 
         except asyncio.CancelledError as e:
             execution_failed = True
+            _failure_error = "cancelled"
             yield self._error_handler.handle_cancellation(
                 e, resolved_session_id, agent_id, plugin_path
             )
 
         except Exception as e:
             execution_failed = True
+            _failure_error = str(e)
             error_update, wrapped_error = self._error_handler.handle_streaming_failure(
                 e, resolved_session_id, agent_id, plugin_path
             )
@@ -443,6 +458,15 @@ class AgentExecutor:
             raise wrapped_error from e
 
         finally:
+            await self._emit_mission_completed(
+                mission=mission,
+                session_id=resolved_session_id,
+                profile=profile,
+                agent_id=agent_id,
+                success=not execution_failed,
+                error=_failure_error,
+                duration_seconds=_time.monotonic() - _started_at,
+            )
             if run_registry is not None:
                 run_registry.unregister(resolved_session_id)
             if trace_store is not None:
@@ -463,6 +487,76 @@ class AgentExecutor:
                     self._deferred_close(agent, delay=2.0),
                     name="agent-close",
                 )
+
+    # ------------------------------------------------------------------
+    # Mission lifecycle hook plumbing
+    # ------------------------------------------------------------------
+
+    async def _emit_mission_started(
+        self,
+        *,
+        mission: str,
+        session_id: str,
+        profile: str,
+        agent_id: str | None,
+    ) -> None:
+        """Best-effort notify of mission start. Hook failures never raise."""
+        from taskforce.application.infrastructure_overrides import (
+            get_mission_lifecycle_hook,
+        )
+
+        hook = get_mission_lifecycle_hook()
+        if hook is None:
+            return
+        try:
+            await hook.on_mission_started(
+                mission=mission,
+                session_id=session_id,
+                profile=profile,
+                agent_id=agent_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "mission.lifecycle_hook.start_failed",
+                error=str(exc),
+                session_id=session_id,
+            )
+
+    async def _emit_mission_completed(
+        self,
+        *,
+        mission: str,
+        session_id: str,
+        profile: str,
+        agent_id: str | None,
+        success: bool,
+        error: str | None,
+        duration_seconds: float | None,
+    ) -> None:
+        """Best-effort notify of mission completion (success or failure)."""
+        from taskforce.application.infrastructure_overrides import (
+            get_mission_lifecycle_hook,
+        )
+
+        hook = get_mission_lifecycle_hook()
+        if hook is None:
+            return
+        try:
+            await hook.on_mission_completed(
+                mission=mission,
+                session_id=session_id,
+                profile=profile,
+                agent_id=agent_id,
+                success=success,
+                error=error,
+                duration_seconds=duration_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "mission.lifecycle_hook.end_failed",
+                error=str(exc),
+                session_id=session_id,
+            )
 
     # ------------------------------------------------------------------
     # Execution helpers

@@ -574,6 +574,21 @@ class Agent:
                 "_parent_agent_path": list(self._agent_path),
             }
 
+        # Approval gate: when an ``ApprovalServiceProtocol`` is
+        # installed and the tool declares ``requires_approval=True``,
+        # block on the service's decision before invoking the tool.
+        # Rejected attempts return a structured error payload with
+        # ``approval_status`` so the LLM sees the denial as a normal
+        # tool result and can react in its next turn.
+        approval_block = await self._maybe_request_approval(
+            tool=tool,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            session_id=session_id,
+        )
+        if approval_block is not None:
+            return approval_block
+
         result = await self.tool_executor.execute(tool_name, tool_args)
 
         # Check for skill switch after tool execution
@@ -588,6 +603,115 @@ class Agent:
                 )
 
         return result
+
+    async def _maybe_request_approval(
+        self,
+        *,
+        tool: Any,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        session_id: str | None,
+    ) -> dict[str, Any] | None:
+        """Run the approval gate for ``tool``. Returns ``None`` to proceed.
+
+        Returns a structured deny/timeout payload (with ``success``
+        flag and ``approval_status``/``decided_by``/``reason`` fields)
+        when the gate refuses to grant. When no service is installed
+        or the tool does not require approval, the gate is skipped
+        and ``None`` is returned.
+        """
+        if tool is None:
+            return None
+        if not getattr(tool, "requires_approval", False):
+            return None
+
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_service,
+        )
+
+        service = get_approval_service()
+        if service is None:
+            # Tool advertised approval-required but no gate is wired —
+            # log and proceed (legacy behaviour). A multi-user
+            # deployment that wants the gate enforced installs a
+            # service explicitly.
+            self.logger.debug(
+                "tool.approval.no_service_installed",
+                tool_name=tool_name,
+            )
+            return None
+
+        from taskforce.core.domain.approval import (
+            ApprovalRequest,
+            ApprovalStatus,
+        )
+        from taskforce.core.interfaces.tools import ApprovalRiskLevel
+
+        risk = getattr(tool, "approval_risk_level", ApprovalRiskLevel.LOW)
+        try:
+            preview_method = getattr(tool, "get_approval_preview", None)
+            preview = preview_method(**tool_args) if callable(preview_method) else tool_name
+        except Exception:  # noqa: BLE001 — preview is best-effort
+            preview = tool_name
+
+        import uuid
+
+        request = ApprovalRequest(
+            request_id=str(uuid.uuid4()),
+            session_id=session_id or "",
+            tool_name=tool_name,
+            tool_params=dict(tool_args),
+            risk_level=risk,
+            preview=str(preview),
+        )
+        try:
+            decision = await service.request_approval(request)
+        except Exception as exc:  # noqa: BLE001 — service must not break the agent
+            self.logger.error(
+                "tool.approval.service_failed",
+                tool_name=tool_name,
+                error=str(exc),
+            )
+            return {
+                "success": False,
+                "tool_name": tool_name,
+                "error": "approval_service_failed",
+                "approval_status": "denied",
+                "approval_reason": str(exc),
+            }
+
+        if decision.granted:
+            self.logger.info(
+                "tool.approval.granted",
+                tool_name=tool_name,
+                request_id=request.request_id,
+                decided_by=decision.decided_by,
+            )
+            return None
+
+        # Denied or timed out — block the tool and surface the reason
+        # to the LLM via the result dict.
+        self.logger.info(
+            "tool.approval.denied",
+            tool_name=tool_name,
+            request_id=request.request_id,
+            status=decision.status.value,
+            decided_by=decision.decided_by,
+            reason=decision.reason,
+        )
+        message = (
+            "User denied execution"
+            if decision.status is ApprovalStatus.DENIED
+            else "Approval timed out"
+        )
+        return {
+            "success": False,
+            "tool_name": tool_name,
+            "error": message,
+            "approval_status": decision.status.value,
+            "approval_decided_by": decision.decided_by,
+            "approval_reason": decision.reason,
+        }
 
     def get_effective_system_prompt(self) -> str:
         """
