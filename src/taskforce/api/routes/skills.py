@@ -17,7 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from taskforce.api.errors import http_exception as _http_exception

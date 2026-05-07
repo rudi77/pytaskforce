@@ -258,7 +258,7 @@ class TestConversationIdSupport:
         """conversation_id loads/stores history via ConversationManager."""
         import asyncio
 
-        from taskforce.api.dependencies import get_conversation_manager, get_executor
+        from taskforce.api.dependencies import get_executor
         from taskforce.application.conversation_manager import ConversationManager
         from taskforce.infrastructure.persistence.file_conversation_store import (
             FileConversationStore,
@@ -271,10 +271,9 @@ class TestConversationIdSupport:
         mock_exec = AsyncMock()
         mock_exec.execute_mission = AsyncMock(return_value=_mock_result())
 
-        # Patch lru_cache so the route's direct call returns our manager.
-        original = get_conversation_manager.__wrapped__
-        get_conversation_manager.cache_clear()
-
+        # ``get_conversation_manager`` is intentionally request-scoped (no
+        # ``@lru_cache``) so tenant overrides resolve per call. We patch
+        # the symbol where the route imports it.
         app = create_app()
         app.dependency_overrides[get_executor] = lambda: mock_exec
 
