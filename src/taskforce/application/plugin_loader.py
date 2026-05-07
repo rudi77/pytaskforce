@@ -819,12 +819,30 @@ def get_plugin_registry() -> PluginRegistry:
 def discover_plugins(group: str = "taskforce.plugins") -> list[PluginInfo]:
     """Discover plugins registered via entry points.
 
+    Honours the ``TASKFORCE_DISABLE_PLUGINS`` env var: when it is set
+    to ``"1"``, ``"true"`` or ``"yes"`` (case-insensitive) the
+    function short-circuits to an empty list. Tests that need a
+    plugin-free framework runtime use this to dodge the global
+    side-effects entry-point loaders cause (auth middleware,
+    factory_extensions overrides, ...).
+
     Args:
         group: The entry point group to search
 
     Returns:
         List of PluginInfo for discovered plugins
     """
+    import os
+
+    disable_flag = os.environ.get("TASKFORCE_DISABLE_PLUGINS", "").strip().lower()
+    if disable_flag in {"1", "true", "yes", "on"}:
+        logger.info(
+            "plugin.discovery_disabled",
+            reason="TASKFORCE_DISABLE_PLUGINS",
+            value=disable_flag,
+        )
+        return []
+
     registry = get_plugin_registry()
     discovered = []
 
