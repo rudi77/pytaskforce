@@ -54,9 +54,16 @@ class CLIApprovalService:
 
 
 def _ask(prompt: str) -> str:
-    """Blocking stdin read — runs in a background thread."""
-    sys.stdout.flush()
-    return input(prompt)
+    """Blocking stdin read — runs in a background thread.
+
+    Writes the prompt to *stderr* (not stdout) so a piped/captured
+    stdout does not swallow it. Tools running under ``pytest -s`` or
+    inside a UI subprocess therefore still see the question. Falls
+    back to ``input("")`` so any TTY hookup still works.
+    """
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    return input("")
 
 
 def new_request_id() -> str:

@@ -614,11 +614,25 @@ class Agent:
     ) -> dict[str, Any] | None:
         """Run the approval gate for ``tool``. Returns ``None`` to proceed.
 
-        Returns a structured deny/timeout payload (with ``success``
-        flag and ``approval_status``/``decided_by``/``reason`` fields)
-        when the gate refuses to grant. When no service is installed
-        or the tool does not require approval, the gate is skipped
-        and ``None`` is returned.
+        Returns a structured deny/timeout/error payload when the gate
+        refuses to grant. The result distinguishes three failure
+        modes via ``approval_status``:
+
+        * ``denied`` — a human said no.
+        * ``timed_out`` — no admin acted in time.
+        * ``error`` — the approval service itself failed (queue full,
+          network, programmer error). Distinct so an LLM / forensic
+          reviewer can tell "user said no" apart from "the pipeline
+          broke".
+
+        All deny/timeout/error payloads carry ``terminal_failure: True``
+        so a planning loop knows the tool will not succeed by retry.
+        Tools whose params fail ``validate_params`` are rejected
+        without bothering the admin (a malformed call cannot be
+        granted meaningfully).
+
+        When no service is installed or the tool does not require
+        approval, the gate is skipped and ``None`` is returned.
         """
         if tool is None:
             return None
@@ -631,15 +645,33 @@ class Agent:
 
         service = get_approval_service()
         if service is None:
-            # Tool advertised approval-required but no gate is wired —
-            # log and proceed (legacy behaviour). A multi-user
-            # deployment that wants the gate enforced installs a
-            # service explicitly.
             self.logger.debug(
                 "tool.approval.no_service_installed",
                 tool_name=tool_name,
             )
             return None
+
+        # Validate params *before* asking the admin. A malformed call
+        # cannot be granted meaningfully — surface the validation
+        # error to the LLM right away so a retry with corrected args
+        # can re-enter the gate cleanly.
+        validate = getattr(tool, "validate_params", None)
+        if callable(validate):
+            try:
+                validate(tool_args)
+            except Exception as exc:  # noqa: BLE001 — surface to LLM
+                self.logger.info(
+                    "tool.approval.params_invalid",
+                    tool_name=tool_name,
+                    error=str(exc),
+                )
+                return {
+                    "success": False,
+                    "tool_name": tool_name,
+                    "error": f"invalid params: {exc}",
+                    "approval_status": "error",
+                    "terminal_failure": False,
+                }
 
         from taskforce.core.domain.approval import (
             ApprovalRequest,
@@ -675,9 +707,10 @@ class Agent:
             return {
                 "success": False,
                 "tool_name": tool_name,
-                "error": "approval_service_failed",
-                "approval_status": "denied",
+                "error": f"approval service failed: {exc}",
+                "approval_status": ApprovalStatus.ERROR.value,
                 "approval_reason": str(exc),
+                "terminal_failure": True,
             }
 
         if decision.granted:
@@ -689,21 +722,26 @@ class Agent:
             )
             return None
 
-        # Denied or timed out — block the tool and surface the reason
-        # to the LLM via the result dict.
+        # Not granted — surface the reason to the LLM via the result
+        # dict and signal terminal failure so the planning loop does
+        # not retry the same forbidden action.
         self.logger.info(
-            "tool.approval.denied",
+            "tool.approval.refused",
             tool_name=tool_name,
             request_id=request.request_id,
             status=decision.status.value,
             decided_by=decision.decided_by,
             reason=decision.reason,
         )
-        message = (
-            "User denied execution"
-            if decision.status is ApprovalStatus.DENIED
-            else "Approval timed out"
-        )
+        if decision.status is ApprovalStatus.DENIED:
+            message = "User denied execution. Do NOT retry the same action — ask the user instead."
+        elif decision.status is ApprovalStatus.TIMED_OUT:
+            message = "Approval timed out. Do NOT retry without explicit user input."
+        else:  # ERROR
+            message = (
+                "Approval pipeline failed. Do NOT retry; surface the failure "
+                "to the user."
+            )
         return {
             "success": False,
             "tool_name": tool_name,
@@ -711,6 +749,7 @@ class Agent:
             "approval_status": decision.status.value,
             "approval_decided_by": decision.decided_by,
             "approval_reason": decision.reason,
+            "terminal_failure": True,
         }
 
     def get_effective_system_prompt(self) -> str:

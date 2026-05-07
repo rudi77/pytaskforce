@@ -27,6 +27,11 @@ class ApprovalStatus(str, Enum):
     GRANTED = "granted"
     DENIED = "denied"
     TIMED_OUT = "timed_out"
+    ERROR = "error"
+    """Service-side failure (queue down, network, etc.). Distinct from
+    ``DENIED`` so the LLM and audit log can tell "user said no" apart
+    from "the approval pipeline broke" — both fail-closed but mean
+    different things to a forensic reviewer."""
 
 
 @dataclass(frozen=True)
