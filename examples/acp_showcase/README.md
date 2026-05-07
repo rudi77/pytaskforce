@@ -43,29 +43,39 @@ briefing back, then delegates the implementation to the `coder` peer
 
 ---
 
-## One-shot: `./run_demo.sh`
+## One-shot
 
-From the repo root:
+### Linux / macOS / WSL
 
 ```bash
 ./examples/acp_showcase/run_demo.sh
 ```
 
-The script:
+### Windows (PowerShell)
 
-1. Starts `researcher` and `coder` peers in the background, redirecting
+```powershell
+.\examples\acp_showcase\run_demo.ps1
+```
+
+Both scripts do the same thing:
+
+1. Start `researcher` and `coder` peers in the background, redirecting
    their stdout/stderr to `examples/acp_showcase/logs/*.log`.
-2. Waits until both ACP HTTP ports accept connections.
-3. Sends the demo mission to the `orchestrator` via `taskforce run
+2. Wait until both ACP HTTP ports (8801, 8802) accept connections.
+3. Send the demo mission to the `orchestrator` via `taskforce run
    mission --profile showcase_orchestrator "…"`.
-4. Prints the orchestrator's final answer and leaves the generated code
+4. Print the orchestrator's final answer and leave the generated code
    in `examples/acp_showcase/out/demo_client.py`.
-5. Shuts down both peer background processes.
+5. Shut down both peer background processes.
 
 Pass a custom mission as the first argument:
 
 ```bash
 ./examples/acp_showcase/run_demo.sh "Compare the top 3 async task queues and build a minimal Celery vs arq benchmark."
+```
+
+```powershell
+.\examples\acp_showcase\run_demo.ps1 "Compare the top 3 async task queues and build a minimal Celery vs arq benchmark."
 ```
 
 ---
