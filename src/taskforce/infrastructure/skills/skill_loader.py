@@ -55,7 +55,10 @@ class SkillLoader:
                 if path.exists() and path.is_dir():
                     self._directories.append(path)
                 else:
-                    logger.warning("skill.directory_not_found", directory=directory)
+                    # Per-user skill dirs are created lazily on first
+                    # write; a missing dir for a user with no skills
+                    # yet is the expected case, not a warning condition.
+                    logger.debug("skill.directory_not_found", directory=directory)
 
     @property
     def directories(self) -> list[Path]:

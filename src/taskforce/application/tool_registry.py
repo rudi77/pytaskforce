@@ -104,10 +104,15 @@ class ToolRegistry:
         """
         Get all registered tool definitions.
 
-        Instantiates each tool from the infrastructure registry and returns
-        its metadata.  Results are cached for the lifetime of this registry
-        instance so repeated calls (e.g. from the ``/api/v1/tools`` endpoint)
-        are effectively free.
+        Reads class-level metadata for BaseTool subclasses
+        (``tool_name``/``tool_description``/``tool_parameters_schema``)
+        without instantiation, so DI-only tools (LLMTool needs an
+        llm_service, ParallelAgentTool needs a sub_agent_spawner)
+        appear in the catalog whenever they expose class-level
+        metadata. For non-BaseTool legacy tools the registry still
+        falls back to instantiation; that may quietly skip the tool
+        when it requires runtime deps. Results are cached for the
+        lifetime of this registry instance.
 
         Returns:
             List of tool definitions with name, description,
@@ -119,24 +124,76 @@ class ToolRegistry:
 
         tools = []
         for tool_name in get_all_tool_names():
-            tool = self._instantiate_tool(tool_name)
-            if tool is None:
+            meta = self._tool_metadata(tool_name)
+            if meta is None:
                 continue
-            risk_level = getattr(tool, "approval_risk_level", None)
-            tools.append(
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters_schema": tool.parameters_schema,
-                    "requires_approval": getattr(tool, "requires_approval", False),
-                    "approval_risk_level": risk_level.value if risk_level else "low",
-                    "supports_parallelism": getattr(tool, "supports_parallelism", False),
-                    "origin": "native",
-                }
-            )
+            tools.append(meta)
 
         self._native_tools_cache = tools
         return tools
+
+    def _tool_metadata(self, tool_name: str) -> dict[str, Any] | None:
+        """Return catalog metadata for ``tool_name`` without requiring DI.
+
+        Tries class-level attributes first (BaseTool convention) so we
+        do not need an LLM service / sub-agent spawner / etc. to list
+        a tool. Falls back to instance-level reads only when the class
+        does not expose them.
+        """
+        spec = resolve_tool_spec(tool_name)
+        if not spec:
+            return None
+        tool_type = spec.get("type")
+        tool_module = spec.get("module")
+        if not isinstance(tool_type, str) or not isinstance(tool_module, str):
+            return None
+
+        try:
+            module = importlib.import_module(tool_module)
+            tool_class = getattr(module, tool_type)
+        except Exception as exc:
+            self._logger.debug(
+                "tool_class_import_failed",
+                tool_name=tool_name,
+                tool_type=tool_type,
+                tool_module=tool_module,
+                error=str(exc),
+            )
+            return None
+
+        # Class-level metadata path (BaseTool subclasses).
+        class_name = getattr(tool_class, "tool_name", None)
+        if isinstance(class_name, str) and class_name:
+            risk = getattr(tool_class, "tool_approval_risk_level", None)
+            risk_value = risk.value if risk is not None and hasattr(risk, "value") else "low"
+            return {
+                "name": class_name,
+                "description": getattr(tool_class, "tool_description", "") or "",
+                "parameters_schema": getattr(tool_class, "tool_parameters_schema", {}) or {},
+                "requires_approval": bool(
+                    getattr(tool_class, "tool_requires_approval", False)
+                ),
+                "approval_risk_level": risk_value,
+                "supports_parallelism": bool(
+                    getattr(tool_class, "tool_supports_parallelism", False)
+                ),
+                "origin": "native",
+            }
+
+        # Instance-level fallback for legacy ToolProtocol implementers.
+        tool = self._instantiate_tool(tool_name)
+        if tool is None:
+            return None
+        risk_level = getattr(tool, "approval_risk_level", None)
+        return {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters_schema": tool.parameters_schema,
+            "requires_approval": getattr(tool, "requires_approval", False),
+            "approval_risk_level": risk_level.value if risk_level else "low",
+            "supports_parallelism": getattr(tool, "supports_parallelism", False),
+            "origin": "native",
+        }
 
     def get_native_tool_names(self) -> set[str]:
         """
@@ -480,12 +537,18 @@ class ToolRegistry:
             return tool_instance
 
         except Exception as e:
-            self._logger.error(
-                "tool_instantiation_failed",
+            # Logged at debug, not error: instantiation failure during
+            # catalog listing is expected for tools that need runtime
+            # dependencies (LLM service, sub-agent spawner) which the
+            # catalog-only registry does not have. The caller already
+            # handles the ``None`` return.
+            self._logger.debug(
+                "tool_instantiation_skipped",
                 tool_type=tool_type,
                 tool_module=tool_module,
                 error=str(e),
                 error_type=type(e).__name__,
+                hint="Likely a tool that requires DI deps not present in catalog mode",
             )
             return None
 
