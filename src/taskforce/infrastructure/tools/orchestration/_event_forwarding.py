@@ -72,6 +72,13 @@ class SubAgentExecutionOutcome:
 
     status: str = ExecutionStatus.COMPLETED.value
     final_message: str = ""
+    # Last ERROR event's message and structured kind (if any). Keeping
+    # these separate from ``final_message`` lets the spawner surface the
+    # real failure cause to the parent even when the agent never produced
+    # a user-facing answer (e.g. an Azure content-filter abort that ends
+    # the loop before any FINAL_ANSWER is emitted).
+    error_message: str = ""
+    error_kind: str = ""
 
     @property
     def success(self) -> bool:
@@ -145,6 +152,12 @@ def _track_outcome(event: StreamEvent, outcome: SubAgentExecutionOutcome) -> Non
             outcome.final_message = content
     elif et == EventType.ERROR:
         outcome.status = ExecutionStatus.FAILED.value
+        msg = event.data.get("message")
+        if isinstance(msg, str) and msg:
+            outcome.error_message = msg
+        kind = event.data.get("error_kind")
+        if isinstance(kind, str) and kind:
+            outcome.error_kind = kind
     elif et == EventType.INTERRUPTED:
         outcome.status = ExecutionStatus.PAUSED.value
         if not outcome.final_message:

@@ -100,10 +100,40 @@ class ReminderTool:
             return {"success": False, "error": "Scheduler not configured."}
 
         try:
-            remind_at = kwargs["remind_at"]
-            message = kwargs["message"]
+            remind_at = kwargs.get("remind_at", "")
+            message = kwargs.get("message", "")
             channel = kwargs.get("channel") or self._default_channel
             recipient_id = kwargs.get("recipient_id") or self._default_recipient_id
+
+            # Defensive guards — the approval gate may bypass validate_params
+            # when no approval service is installed, so we re-check here.
+            # An empty message or unreachable recipient would silently no-op
+            # at fire time (gateway returns success=False with no user
+            # feedback); fail loudly at creation instead.
+            if not isinstance(remind_at, str) or not remind_at.strip():
+                return tool_error_payload(
+                    ToolError(
+                        "remind_at is required (ISO 8601 datetime).",
+                        tool_name=self.name,
+                    )
+                )
+            if not isinstance(message, str) or not message.strip():
+                return tool_error_payload(
+                    ToolError(
+                        "message is required and must be non-empty.",
+                        tool_name=self.name,
+                    )
+                )
+            if not recipient_id:
+                return tool_error_payload(
+                    ToolError(
+                        f"No recipient_id available for channel '{channel}': "
+                        "neither the call nor the butler default supplies one. "
+                        "Configure notifications.default_recipient_id in the "
+                        "butler profile or pass recipient_id explicitly.",
+                        tool_name=self.name,
+                    )
+                )
 
             job = ScheduleJob(
                 name=f"reminder_{remind_at}",

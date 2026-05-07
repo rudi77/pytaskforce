@@ -27,10 +27,46 @@ if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
 
 
+def build_user_message_for_error(error_kind: str, raw_error: str) -> str:
+    """Translate a structured agent failure into a user-facing message.
+
+    The gateway's ``_sanitize_reply`` swaps any blank or status-string
+    reply for a generic "something went wrong" line, which made
+    content-filter aborts look identical to outages and gave the user no
+    actionable hint. By branching on ``error_kind`` here we surface the
+    real cause once and let the gateway pass the message through
+    untouched.
+
+    Args:
+        error_kind: Structured failure category from the LLM stream
+            (``"content_filter"``, ``"non_retryable"``, ``""`` ...).
+        raw_error: Free-form error text, used for non-categorized failures.
+    """
+    if error_kind == "content_filter":
+        return (
+            "Ich kann diese Anfrage in der aktuellen Form leider nicht "
+            "beantworten — der Inhaltsfilter des LLM-Anbieters hat sie "
+            "blockiert. Das passiert manchmal bei harmlosen Themen wie "
+            "Statistiken zu Körpermaßen, BMI oder ähnlichen sensitiven "
+            "Begriffen. Bitte formuliere die Anfrage neutraler oder lass "
+            "einzelne Stichworte weg, dann probiere ich es erneut."
+        )
+    if raw_error:
+        return (
+            f"Ich konnte die Aufgabe leider nicht abschließen: {raw_error}\n"
+            "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
+        )
+    return (
+        "Ich konnte leider keine Antwort generieren. "
+        "Bitte versuche es noch einmal."
+    )
+
+
 async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -> ExecutionResult:
     """Collect events into ExecutionResult."""
     history: list[dict[str, Any]] = []
     final_msg, error = "", ""
+    error_kind = ""
     pending: dict[str, Any] | None = None
     interrupted = False
     usage = TokenUsage()
@@ -58,6 +94,9 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
             final_msg = final_msg or "Execution paused by user."
         elif event_type == EventType.ERROR:
             error = e.data.get("message", "")
+            kind = e.data.get("error_kind")
+            if isinstance(kind, str) and kind:
+                error_kind = kind
         elif event_type == EventType.TOKEN_USAGE:
             usage.prompt_tokens += e.data.get("prompt_tokens", 0)
             usage.completion_tokens += e.data.get("completion_tokens", 0)
@@ -70,18 +109,14 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
     else:
         status = ExecutionStatus.COMPLETED
 
-    # Build a user-facing message: prefer final answer, then wrap error,
-    # then provide a generic fallback.  Never send raw error strings or
-    # empty messages to users.
+    # Build a user-facing message: prefer final answer, then a
+    # category-specific message (content filter etc.), then the wrapped
+    # error string, then a generic fallback. Never send raw error
+    # strings or empty messages to users.
     if final_msg:
         message = final_msg
-    elif error:
-        message = (
-            f"Ich konnte die Aufgabe leider nicht abschließen: {error}\n"
-            "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
-        )
     else:
-        message = "Ich konnte leider keine Antwort generieren. " "Bitte versuche es noch einmal."
+        message = build_user_message_for_error(error_kind, error)
 
     return ExecutionResult(
         session_id=session_id,
@@ -238,7 +273,9 @@ async def _react_loop(
                                         f"LLM call rejected ({error_kind}): "
                                         f"{stream_error_msg}. Aborting to "
                                         "avoid retrying the same blocked request."
-                                    )
+                                    ),
+                                    "error_kind": error_kind,
+                                    "non_retryable": True,
                                 },
                             )
                             return

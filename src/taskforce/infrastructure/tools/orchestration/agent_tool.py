@@ -382,13 +382,23 @@ class AgentTool:
             # Prepare result for parent agent
             result_text = self._maybe_summarize_result_text(outcome.final_message)
 
-            # Return result to parent agent
+            # Return result to parent agent. Prefer outcome.error_message
+            # over final_message for ``error`` because the LLM stream may
+            # abort (content filter, repeated provider errors) without
+            # ever producing a final_message — the structured error event
+            # is the only carrier of the cause in that case.
+            error_text: str | None = None
+            error_kind: str | None = None
+            if not success:
+                error_text = outcome.error_message or outcome.final_message or None
+                error_kind = outcome.error_kind or None
             return {
                 "success": success,
                 "result": result_text,
                 "session_id": sub_session_id,
                 "status": outcome.status,
-                "error": outcome.final_message if not success else None,
+                "error": error_text,
+                "error_kind": error_kind,
             }
 
         except Exception as e:
@@ -467,4 +477,8 @@ class AgentTool:
             "session_id": getattr(result, "session_id", "unknown"),
             "status": getattr(result, "status", "unknown"),
             "error": None if success else getattr(result, "error", None),
+            # Propagate the structured failure category (e.g. "content_filter")
+            # so the parent agent can react intelligently instead of seeing
+            # an opaque "specialist failed" message.
+            "error_kind": None if success else getattr(result, "error_kind", None),
         }

@@ -178,15 +178,30 @@ class SubAgentSpawner(SubAgentSpawnerProtocol):
                 success=False,
                 final_message="",
                 error=str(exc),
+                error_kind="spawn_failed",
             )
 
         success = outcome.success
+        # Prefer the structured ERROR-event message over final_message for
+        # the ``error`` field — when the LLM stream gets aborted (content
+        # filter, repeated provider errors) the agent never produces a
+        # final_message, but the outcome still carries the cause.
+        # Both ``error`` and ``error_kind`` must clear on success, otherwise
+        # a transient mid-run ERROR followed by a recovered FINAL_ANSWER
+        # would still tag the result with a stale error category.
+        if success:
+            error_text: str | None = None
+            error_kind: str | None = None
+        else:
+            error_text = outcome.error_message or outcome.final_message or None
+            error_kind = outcome.error_kind or None
         return SubAgentResult(
             session_id=session_id,
             status=outcome.status,
             success=success,
             final_message=outcome.final_message or "",
-            error=None if success else outcome.final_message,
+            error=error_text,
+            error_kind=error_kind,
             context_snapshot=context_snapshot,
         )
 

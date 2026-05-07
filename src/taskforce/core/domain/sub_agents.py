@@ -66,4 +66,9 @@ class SubAgentResult:
     success: bool
     final_message: str
     error: str | None = None
+    # Structured failure category propagated from the LLM stream so the
+    # parent can react intelligently (e.g. tell the user that Azure
+    # content-filtered the topic instead of a generic "failed").
+    # Common values: "content_filter", "non_retryable", "spawn_failed".
+    error_kind: str | None = None
     context_snapshot: Any | None = None

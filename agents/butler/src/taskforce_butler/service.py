@@ -6,6 +6,7 @@ and learning service into a coherent always-on agent experience.
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any
 
 import structlog
@@ -19,10 +20,17 @@ from taskforce.core.domain.trigger_rule import (
     TriggerCondition,
     TriggerRule,
 )
+from taskforce.core.utils.time import utc_now
 from taskforce.infrastructure.rule_engine import FileRuleEngine
 from taskforce.infrastructure.scheduler.scheduler_service import SchedulerService
 
 logger = structlog.get_logger(__name__)
+
+# How many recent notification failures to keep in memory for diagnostics.
+# Exposed via ``ButlerService.get_status()`` and the daemon's status file
+# so an operator can see "scheduled job fired, gateway rejected delivery"
+# without having to scrape structlog output.
+_NOTIFICATION_FAILURE_BUFFER_SIZE = 20
 
 
 class ButlerService:
@@ -71,6 +79,14 @@ class ButlerService:
         self._executor: Any = None
         self._agent_service: Any = None  # PersistentAgentService (preferred over executor)
         self._wiki_store: Any = None
+
+        # Diagnostics: ring buffer of recent notification dispatch failures.
+        # Surfaced through ``get_status()`` so operators can see why a
+        # scheduled push never reached the user.
+        self._notification_failures: deque[dict[str, Any]] = deque(
+            maxlen=_NOTIFICATION_FAILURE_BUFFER_SIZE
+        )
+        self._notification_failure_count = 0
 
         self._running = False
 
@@ -316,9 +332,26 @@ class ButlerService:
         message: str,
         params: dict[str, Any],
     ) -> None:
-        """Send a notification via the communication gateway."""
+        """Send a notification via the communication gateway.
+
+        Failures (no gateway / unresolved recipient / sender error) used
+        to be only logged to structlog, which made scheduled jobs that
+        silently never reached the user invisible to the operator. We
+        now also push the failure into the diagnostic ring buffer so it
+        surfaces through ``get_status()`` and the butler status file.
+        """
         if not self._gateway:
-            logger.warning("butler_service.no_gateway_configured")
+            logger.warning(
+                "butler_service.no_gateway_configured",
+                channel=channel,
+                recipient_id=recipient_id,
+            )
+            self._record_notification_failure(
+                channel=channel,
+                recipient_id=recipient_id,
+                message=message,
+                error="No communication gateway configured",
+            )
             return
 
         channel = channel or self._default_channel
@@ -338,6 +371,32 @@ class ButlerService:
                 recipient_id=recipient_id,
                 error=result.error,
             )
+            self._record_notification_failure(
+                channel=channel,
+                recipient_id=recipient_id,
+                message=message,
+                error=result.error or "unknown delivery error",
+            )
+
+    def _record_notification_failure(
+        self,
+        *,
+        channel: str,
+        recipient_id: str,
+        message: str,
+        error: str,
+    ) -> None:
+        """Append a notification failure to the diagnostic ring buffer."""
+        self._notification_failure_count += 1
+        self._notification_failures.append(
+            {
+                "timestamp": utc_now().isoformat(),
+                "channel": channel,
+                "recipient_id": recipient_id,
+                "message_preview": (message or "")[:120],
+                "error": error,
+            }
+        )
 
     async def _execute_mission(
         self,
@@ -435,4 +494,8 @@ class ButlerService:
             "actions_dispatched": self._event_router.action_count,
             "gateway_configured": self._gateway is not None,
             "executor_configured": self._executor is not None,
+            "notification_failures": {
+                "total": self._notification_failure_count,
+                "recent": list(self._notification_failures),
+            },
         }

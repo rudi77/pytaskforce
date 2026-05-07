@@ -82,9 +82,71 @@ async def test_add_inherits_current_tenant_from_resolver() -> None:
         name="x",
         schedule_type="cron",
         expression="* * * * *",
+        action_type="execute_mission",
+        action_params={"mission": "do work"},
     )
 
     assert scheduler.added[0].tenant_id == "tenant-acme"
+
+
+@pytest.mark.asyncio
+async def test_send_notification_without_message_is_rejected() -> None:
+    """A send_notification schedule with no message would silently no-op
+    when fired (dispatcher fallback to 'Scheduled notification: <name>'
+    is never what the user wanted). Force the agent to either provide
+    real text or switch to execute_mission for dynamic content."""
+    scheduler = _FakeScheduler()
+    tool = ScheduleTool(scheduler=scheduler)
+
+    result = await tool.execute(
+        action="add",
+        name="status-update",
+        schedule_type="interval",
+        expression="10m",
+        action_type="send_notification",
+        action_params={},
+    )
+
+    assert result["success"] is False
+    assert "message" in result["error"].lower()
+    assert "execute_mission" in result["error"]
+    assert scheduler.added == []
+
+
+@pytest.mark.asyncio
+async def test_send_notification_with_blank_message_is_rejected() -> None:
+    scheduler = _FakeScheduler()
+    tool = ScheduleTool(scheduler=scheduler)
+
+    result = await tool.execute(
+        action="add",
+        name="status-update",
+        schedule_type="interval",
+        expression="10m",
+        action_type="send_notification",
+        action_params={"message": "   "},
+    )
+
+    assert result["success"] is False
+    assert scheduler.added == []
+
+
+@pytest.mark.asyncio
+async def test_send_notification_with_message_is_accepted() -> None:
+    scheduler = _FakeScheduler()
+    tool = ScheduleTool(scheduler=scheduler)
+
+    result = await tool.execute(
+        action="add",
+        name="pill-reminder",
+        schedule_type="cron",
+        expression="0 8 * * *",
+        action_type="send_notification",
+        action_params={"message": "Tabletten nehmen", "recipient_id": "u1"},
+    )
+
+    assert result["success"] is True
+    assert len(scheduler.added) == 1
 
 
 @pytest.mark.asyncio

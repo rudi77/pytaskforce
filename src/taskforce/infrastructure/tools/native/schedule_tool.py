@@ -158,6 +158,28 @@ class ScheduleTool:
             get_current_tenant_id,
         )
 
+        action_type_str = kwargs.get("action_type", "send_notification")
+        action_params: dict[str, Any] = kwargs.get("action_params", {}) or {}
+
+        # Reject `send_notification` jobs without an actual message. The
+        # dispatcher would otherwise fall back to "Scheduled notification:
+        # <name>" which is never what the user actually wanted (e.g. recurring
+        # status updates). Force the agent to either embed real text or use
+        # action_type=execute_mission for dynamic content.
+        if action_type_str == "send_notification":
+            message = action_params.get("message", "")
+            if not isinstance(message, str) or not message.strip():
+                return tool_error_payload(
+                    ToolError(
+                        "send_notification schedule requires a non-empty "
+                        "action_params.message. For recurring dynamic content "
+                        "(e.g. live scores, weather, status checks), use "
+                        "action_type=execute_mission instead and put the work "
+                        "description in action_params.mission.",
+                        tool_name=self.name,
+                    )
+                )
+
         tenant_id = get_current_tenant_id()
 
         job = ScheduleJob(
@@ -165,8 +187,8 @@ class ScheduleTool:
             schedule_type=ScheduleType(kwargs.get("schedule_type", "cron")),
             expression=kwargs.get("expression", ""),
             action=ScheduleAction(
-                action_type=ScheduleActionType(kwargs.get("action_type", "send_notification")),
-                params=kwargs.get("action_params", {}),
+                action_type=ScheduleActionType(action_type_str),
+                params=action_params,
             ),
             tenant_id=tenant_id,
             agent_id=str(kwargs.get("agent_id", "default")),

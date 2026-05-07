@@ -177,6 +177,7 @@ class ParallelAgentTool(BaseTool):
                     "specialist": missions[i].get("specialist"),
                     "success": False,
                     "error": str(raw),
+                    "error_kind": "exception",
                 })
             else:
                 results.append(raw)
@@ -282,6 +283,7 @@ class ParallelAgentTool(BaseTool):
                 "status": result.status,
                 "result": result.final_message,
                 "error": result.error,
+                "error_kind": result.error_kind,
             }
             # Attach context snapshot for parent /tree inspection
             if result.context_snapshot is not None:

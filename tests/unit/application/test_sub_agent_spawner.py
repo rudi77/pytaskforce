@@ -264,3 +264,59 @@ class TestSpecialistResolution:
             assert create_kwargs["config"] == str(
                 _P("/fake/agents/coding-agent/configs/coding_agent.yaml")
             )
+
+
+class _RecoveringAgent(FakeAgent):
+    """Emits a transient ERROR (with content_filter kind) followed by a
+    successful FINAL_ANSWER and COMPLETE.
+
+    Models the "first LLM call blocked, recovery on stripped history
+    succeeded" path. The spawner must not leak the transient error_kind
+    into the SubAgentResult — a successful outcome must report
+    ``error=None, error_kind=None``.
+    """
+
+    async def execute_stream(
+        self, mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        yield StreamEvent(
+            event_type=EventType.ERROR,
+            data={
+                "message": "LLM call rejected (content_filter): ...",
+                "error_kind": "content_filter",
+                "non_retryable": True,
+            },
+        )
+        yield StreamEvent(
+            event_type=EventType.FINAL_ANSWER,
+            data={"content": "recovered answer"},
+        )
+        yield StreamEvent(
+            event_type=EventType.COMPLETE,
+            data={
+                "status": ExecutionStatus.COMPLETED.value,
+                "final_message": "recovered answer",
+                "session_id": session_id,
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_successful_outcome_clears_transient_error_kind() -> None:
+    """A transient mid-run ERROR must not bleed into a successful result."""
+    factory = MagicMock()
+    factory.config_dir = "/tmp/configs"
+    factory.create_agent = AsyncMock(return_value=_RecoveringAgent())
+
+    spawner = SubAgentSpawner(agent_factory=factory)
+    spec = SubAgentSpec(mission="research X", parent_session_id="p")
+
+    result = await spawner.spawn(spec)
+
+    assert result.success is True
+    assert result.final_message == "recovered answer"
+    # Both error fields must be cleared on success — otherwise the
+    # parent agent would see a stale "content_filter" tag and react as
+    # if the specialist had failed.
+    assert result.error is None
+    assert result.error_kind is None

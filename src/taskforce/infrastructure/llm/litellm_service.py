@@ -620,6 +620,122 @@ class LiteLLMService:
             event["non_retryable"] = True
         return event
 
+    async def _run_stream_attempt(
+        self,
+        messages: list[dict[str, Any]],
+        resolved_model: str,
+        litellm_kwargs: dict[str, Any],
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Consume one streaming completion attempt.
+
+        Yields the same event types as :meth:`complete_stream` (``token``,
+        ``tool_call_start``, ``tool_call_delta``, ``tool_call_end``, ``done``)
+        and a single ``error`` event for chunk timeouts. Lets *any other*
+        provider exception propagate so the orchestrating
+        :meth:`complete_stream` can decide whether to retry on stripped
+        history (content-filter recovery) or surface the error.
+        """
+        response = await litellm.acompletion(**litellm_kwargs)
+
+        current_tool_calls: dict[int, dict[str, Any]] = {}
+        content_accumulated = ""
+        start_time = time.time()
+
+        stream_usage: dict[str, Any] = {}
+        stream_actual_model: str | None = None
+
+        # Per-chunk timeout: detect mid-stream hangs where the API
+        # stops sending data. Reuses the connection timeout value so
+        # operators only need a single knob.
+        stream_chunk_timeout = float(self._config.retry_policy.timeout)
+        chunk_iter = response.__aiter__()
+        while True:
+            try:
+                chunk = await asyncio.wait_for(
+                    chunk_iter.__anext__(), timeout=stream_chunk_timeout
+                )
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                latency_ms = int((time.time() - start_time) * 1000)
+                self.logger.warning(
+                    "llm_stream_chunk_timeout",
+                    model=resolved_model,
+                    timeout_seconds=stream_chunk_timeout,
+                    latency_ms=latency_ms,
+                    content_so_far=len(content_accumulated),
+                )
+                yield {
+                    "type": "error",
+                    "message": (
+                        f"Stream timed out after {stream_chunk_timeout}s"
+                        " between chunks"
+                    ),
+                }
+                asyncio.create_task(
+                    self._trace_failure(
+                        messages,
+                        resolved_model,
+                        latency_ms,
+                        "stream_chunk_timeout",
+                    )
+                )
+                return
+
+            chunk_usage = LLMResponseParser.extract_usage(chunk)
+            if chunk_usage:
+                stream_usage = chunk_usage
+
+            if stream_actual_model is None:
+                chunk_model = LLMResponseParser.extract_actual_model_from_chunk(chunk)
+                if chunk_model:
+                    stream_actual_model = chunk_model
+
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+            finish_reason = chunk.choices[0].finish_reason
+
+            if hasattr(delta, "content") and delta.content:
+                content_accumulated += delta.content
+                yield {"type": "token", "content": delta.content}
+
+            if hasattr(delta, "tool_calls") and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    async for evt in self._process_tool_call_delta(tc, current_tool_calls):
+                        yield evt
+
+            if finish_reason:
+                for tc_idx, tc_data in current_tool_calls.items():
+                    yield {
+                        "type": "tool_call_end",
+                        "id": tc_data["id"],
+                        "name": tc_data["name"],
+                        "arguments": tc_data["arguments"],
+                        "index": tc_idx,
+                    }
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        done_event = self._build_stream_done_event(
+            resolved_model,
+            content_accumulated,
+            current_tool_calls,
+            start_time,
+            stream_usage,
+            actual_model=stream_actual_model,
+        )
+        yield done_event
+
+        asyncio.create_task(
+            self._trace_success(
+                messages,
+                {"content": content_accumulated or None, "usage": stream_usage},
+                resolved_model,
+                latency_ms,
+            )
+        )
+
     async def complete_stream(
         self,
         messages: list[dict[str, Any]],
@@ -632,6 +748,15 @@ class LiteLLMService:
 
         Yields normalized events as chunks arrive. Errors are yielded as
         events, NOT raised as exceptions.
+
+        Recovers transparently from Azure content-policy violations by
+        stripping the conversation history (system + last 2 user/assistant
+        messages, no tool messages) and retrying *once*. Mirrors the
+        non-streaming :meth:`complete` recovery path so the streaming
+        consumer benefits from the same protection. If recovery also
+        fails, the original error is surfaced as an ``error`` event with
+        ``error_kind=content_filter`` and ``non_retryable=True`` so the
+        ReAct loop knows to abort.
 
         Args:
             messages: List of message dicts with 'role' and 'content'.
@@ -657,119 +782,63 @@ class LiteLLMService:
         )
 
         try:
-            response = await litellm.acompletion(**litellm_kwargs)
-
-            current_tool_calls: dict[int, dict[str, Any]] = {}
-            content_accumulated = ""
-            start_time = time.time()
-
-            stream_usage: dict[str, Any] = {}
-            stream_actual_model: str | None = None
-
-            # Per-chunk timeout: detect mid-stream hangs where the API
-            # stops sending data.  Reuses the connection timeout value so
-            # operators only need a single knob.
-            stream_chunk_timeout = float(self._config.retry_policy.timeout)
-            chunk_iter = response.__aiter__()
-            while True:
-                try:
-                    chunk = await asyncio.wait_for(
-                        chunk_iter.__anext__(), timeout=stream_chunk_timeout
-                    )
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError:
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    self.logger.warning(
-                        "llm_stream_chunk_timeout",
-                        model=resolved_model,
-                        timeout_seconds=stream_chunk_timeout,
-                        latency_ms=latency_ms,
-                        content_so_far=len(content_accumulated),
-                    )
-                    yield {
-                        "type": "error",
-                        "message": (
-                            f"Stream timed out after {stream_chunk_timeout}s"
-                            " between chunks"
-                        ),
-                    }
-                    asyncio.create_task(
-                        self._trace_failure(
-                            messages,
-                            resolved_model,
-                            latency_ms,
-                            "stream_chunk_timeout",
-                        )
-                    )
-                    return
-
-                # Capture usage from any chunk that carries it.
-                # Some providers send usage on the last content chunk
-                # (with choices), others send a final chunk with empty
-                # choices — we handle both.
-                chunk_usage = LLMResponseParser.extract_usage(chunk)
-                if chunk_usage:
-                    stream_usage = chunk_usage
-
-                # Capture actual model from the first chunk that reports it
-                if stream_actual_model is None:
-                    chunk_model = LLMResponseParser.extract_actual_model_from_chunk(chunk)
-                    if chunk_model:
-                        stream_actual_model = chunk_model
-
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-                finish_reason = chunk.choices[0].finish_reason
-
-                # Yield token content
-                if hasattr(delta, "content") and delta.content:
-                    content_accumulated += delta.content
-                    yield {"type": "token", "content": delta.content}
-
-                # Process tool-call deltas
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        async for evt in self._process_tool_call_delta(tc, current_tool_calls):
-                            yield evt
-
-                # Finish: emit tool_call_end for all accumulated tool calls
-                if finish_reason:
-                    for tc_idx, tc_data in current_tool_calls.items():
-                        yield {
-                            "type": "tool_call_end",
-                            "id": tc_data["id"],
-                            "name": tc_data["name"],
-                            "arguments": tc_data["arguments"],
-                            "index": tc_idx,
-                        }
-
-            latency_ms = int((time.time() - start_time) * 1000)
-            done_event = self._build_stream_done_event(
-                resolved_model,
-                content_accumulated,
-                current_tool_calls,
-                start_time,
-                stream_usage,
-                actual_model=stream_actual_model,
-            )
-            yield done_event
-
-            # Fire-and-forget: trace without blocking the stream consumer
-            asyncio.create_task(
-                self._trace_success(
-                    messages,
-                    {"content": content_accumulated or None, "usage": stream_usage},
-                    resolved_model,
-                    latency_ms,
+            async for event in self._run_stream_attempt(
+                messages, resolved_model, litellm_kwargs
+            ):
+                yield event
+            return
+        except Exception as primary_error:
+            if not self._is_content_filter_error(primary_error):
+                error_event = await self._handle_stream_error(
+                    primary_error, resolved_model, messages
                 )
-            )
+                yield error_event
+                return
 
-        except Exception as e:
-            error_event = await self._handle_stream_error(e, resolved_model, messages)
-            yield error_event
+            # Content-filter recovery: strip the conversation back to
+            # system + last 2 user/assistant turns and re-stream once.
+            # Often the trigger sits in older tool-result chunks (e.g.
+            # web-fetch snippets) rather than in the actual user prompt.
+            stripped = self._strip_messages_for_content_recovery(messages)
+            if len(stripped) >= len(messages):
+                # Nothing to strip — recovery cannot help.
+                error_event = await self._handle_stream_error(
+                    primary_error, resolved_model, messages
+                )
+                yield error_event
+                return
+
+            self.logger.warning(
+                "llm_stream_content_filter_recovery",
+                original_messages=len(messages),
+                stripped_messages=len(stripped),
+                model=resolved_model,
+            )
+            _, recovery_kwargs = self._prepare_stream_request(
+                stripped, model, tools, tool_choice, **kwargs
+            )
+            try:
+                async for event in self._run_stream_attempt(
+                    stripped, resolved_model, recovery_kwargs
+                ):
+                    yield event
+                self.logger.info(
+                    "llm_stream_content_filter_recovery_success",
+                    model=resolved_model,
+                )
+                return
+            except Exception as recovery_error:
+                self.logger.error(
+                    "llm_stream_content_filter_recovery_failed",
+                    model=resolved_model,
+                    error=str(recovery_error)[:200],
+                )
+                # Surface the *recovery* failure so the ReAct loop sees
+                # the same content_filter signal and aborts cleanly.
+                error_event = await self._handle_stream_error(
+                    recovery_error, resolved_model, stripped
+                )
+                yield error_event
 
     async def _process_tool_call_delta(
         self,

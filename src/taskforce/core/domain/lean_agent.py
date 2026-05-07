@@ -483,6 +483,8 @@ class Agent:
         final_message = ""
         status = ExecutionStatus.COMPLETED.value
         interrupt_info: dict[str, Any] | None = None
+        last_error_message: str = ""
+        last_error_kind: str = ""
         stream = self.planning_strategy.execute_stream(self, mission, session_id)
         async for event in stream:  # type: ignore[union-attr]
             yield event
@@ -491,16 +493,38 @@ class Agent:
                 final_message = event.data.get("content", "")
             elif event.event_type == EventType.ERROR:
                 status = ExecutionStatus.FAILED.value
+                msg = event.data.get("message")
+                if isinstance(msg, str) and msg:
+                    last_error_message = msg
+                kind = event.data.get("error_kind")
+                if isinstance(kind, str) and kind:
+                    last_error_kind = kind
             elif event.event_type == EventType.INTERRUPTED:
                 status = ExecutionStatus.PAUSED.value
                 interrupt_info = dict(event.data)
                 final_message = final_message or "Execution paused by user."
+
+        # When the planning strategy errored without producing a
+        # FINAL_ANSWER, build a user-facing message from the structured
+        # error so downstream consumers (gateway → user) see the real
+        # cause instead of falling back to a generic "etwas ist
+        # schiefgelaufen" line.
+        if not final_message and last_error_message:
+            from taskforce.core.domain.planning.react_loop import (
+                build_user_message_for_error,
+            )
+
+            final_message = build_user_message_for_error(
+                last_error_kind, last_error_message
+            )
 
         complete_data: dict[str, Any] = {
             "status": status,
             "session_id": session_id,
             "final_message": final_message,
         }
+        if last_error_kind:
+            complete_data["error_kind"] = last_error_kind
         if interrupt_info is not None:
             complete_data["interrupt"] = interrupt_info
 
@@ -658,7 +682,7 @@ class Agent:
         validate = getattr(tool, "validate_params", None)
         if callable(validate):
             try:
-                validate(tool_args)
+                outcome = validate(**tool_args)
             except Exception as exc:  # noqa: BLE001 — surface to LLM
                 self.logger.info(
                     "tool.approval.params_invalid",
@@ -669,6 +693,27 @@ class Agent:
                     "success": False,
                     "tool_name": tool_name,
                     "error": f"invalid params: {exc}",
+                    "approval_status": "error",
+                    "terminal_failure": False,
+                }
+            # ToolProtocol.validate_params returns (is_valid, error_msg).
+            # Older custom tools may return None / a bool — accept both.
+            valid = True
+            error_msg: str | None = None
+            if isinstance(outcome, tuple) and len(outcome) == 2:
+                valid, error_msg = bool(outcome[0]), outcome[1]
+            elif isinstance(outcome, bool):
+                valid = outcome
+            if not valid:
+                self.logger.info(
+                    "tool.approval.params_invalid",
+                    tool_name=tool_name,
+                    error=error_msg,
+                )
+                return {
+                    "success": False,
+                    "tool_name": tool_name,
+                    "error": f"invalid params: {error_msg or 'validation failed'}",
                     "approval_status": "error",
                     "terminal_failure": False,
                 }
