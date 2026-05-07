@@ -2,6 +2,7 @@ import {
   createBrowserRouter,
   Navigate,
   type RouteObject,
+  useRouteError,
 } from "react-router-dom";
 import {
   createElement,
@@ -45,6 +46,54 @@ function withSuspense(node: React.ReactNode) {
   return <Suspense fallback={<PageFallback />}>{node}</Suspense>;
 }
 
+function getRouteErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "The page could not be loaded.";
+}
+
+function RouteErrorBoundary() {
+  const error = useRouteError();
+  const message = getRouteErrorMessage(error);
+  const isDynamicImportError = message.includes("Failed to fetch dynamically imported module");
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-sm">
+        <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Page error
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold text-foreground">
+          {isDynamicImportError ? "Page update required" : "Something went wrong"}
+        </h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {isDynamicImportError
+            ? "The page module could not be loaded. This usually happens after the development server or app bundle changed."
+            : message}
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            onClick={() => window.location.reload()}
+          >
+            Reload page
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            onClick={() => window.history.back()}
+          >
+            Go back
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const routeErrorElement = <RouteErrorBoundary />;
+
 /** Render a `PluginRoute.element` whether it was passed as a node or a component. */
 function renderPluginElement(element: PluginRoute["element"]): ReactNode {
   if (isValidElement(element)) return element;
@@ -82,6 +131,7 @@ function pluginRouteToRouteObject(plugin: UIPlugin, route: PluginRoute): RouteOb
   return {
     path: normalizeRoutePath(route.path),
     element: withSuspense(body),
+    errorElement: routeErrorElement,
   };
 }
 
@@ -102,6 +152,7 @@ function pluginPublicRouteToRouteObject(
   return {
     path: "/" + normalizeRoutePath(route.path),
     element: withSuspense(body),
+    errorElement: routeErrorElement,
   };
 }
 
@@ -133,7 +184,7 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
     .map(({ plugin, route }) => pluginRouteToRouteObject(plugin, route));
 
   return createBrowserRouter([
-    { path: "/login", element: withSuspense(<LoginPage />) },
+    { path: "/login", element: withSuspense(<LoginPage />), errorElement: routeErrorElement },
     ...publicPluginRoutes,
     {
       path: "/",
@@ -142,27 +193,28 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
           <AppShell />
         </RequireAuth>
       ),
+      errorElement: routeErrorElement,
       children: [
-        { index: true, element: withSuspense(<Dashboard />) },
-        { path: "agents", element: withSuspense(<AgentsList />) },
-        { path: "agents/compare", element: withSuspense(<AgentCompare />) },
-        { path: "agents/new", element: withSuspense(<AgentEditor mode="create" />) },
-        { path: "agents/:agentId", element: withSuspense(<AgentEditor mode="edit" />) },
-        { path: "chat", element: withSuspense(<ChatPage />) },
-        { path: "chat/:conversationId", element: withSuspense(<ChatPage />) },
-        { path: "monitoring", element: withSuspense(<MonitoringPage />) },
-        { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />) },
-        { path: "acp", element: withSuspense(<AcpPage />) },
-        { path: "workflows", element: withSuspense(<WorkflowsPage />) },
-        { path: "capabilities", element: withSuspense(<CapabilitiesPage />) },
+        { index: true, element: withSuspense(<Dashboard />), errorElement: routeErrorElement },
+        { path: "agents", element: withSuspense(<AgentsList />), errorElement: routeErrorElement },
+        { path: "agents/compare", element: withSuspense(<AgentCompare />), errorElement: routeErrorElement },
+        { path: "agents/new", element: withSuspense(<AgentEditor mode="create" />), errorElement: routeErrorElement },
+        { path: "agents/:agentId", element: withSuspense(<AgentEditor mode="edit" />), errorElement: routeErrorElement },
+        { path: "chat", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
+        { path: "chat/:conversationId", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
+        { path: "monitoring", element: withSuspense(<MonitoringPage />), errorElement: routeErrorElement },
+        { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />), errorElement: routeErrorElement },
+        { path: "acp", element: withSuspense(<AcpPage />), errorElement: routeErrorElement },
+        { path: "workflows", element: withSuspense(<WorkflowsPage />), errorElement: routeErrorElement },
+        { path: "capabilities", element: withSuspense(<CapabilitiesPage />), errorElement: routeErrorElement },
         { path: "tools", element: <Navigate to="/capabilities" replace /> },
         { path: "skills", element: <Navigate to="/capabilities" replace /> },
-        { path: "evals", element: withSuspense(<EvalsPage />) },
-        { path: "settings", element: withSuspense(<SettingsPage />) },
+        { path: "evals", element: withSuspense(<EvalsPage />), errorElement: routeErrorElement },
+        { path: "settings", element: withSuspense(<SettingsPage />), errorElement: routeErrorElement },
         ...pluginRoutes,
-        { path: "*", element: withSuspense(<NotFoundPage />) },
+        { path: "*", element: withSuspense(<NotFoundPage />), errorElement: routeErrorElement },
       ],
     },
-    { path: "/index.html", element: <Navigate to="/" replace /> },
+    { path: "/index.html", element: <Navigate to="/" replace />, errorElement: routeErrorElement },
   ]);
 }
