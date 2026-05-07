@@ -213,7 +213,7 @@ class ActivateSkillTool(BaseTool):
 
         if context.switch_to_skill:
             result["switch_to_skill"] = context.switch_to_skill
-            result["message"] = f"Workflow wechselt zu Skill: {context.switch_to_skill}"
+            result["message"] = f"Skill wechselt zu: {context.switch_to_skill}"
 
         return result
 
@@ -230,7 +230,7 @@ class ActivateSkillTool(BaseTool):
                 "success": False,
                 "skill_name": skill.name,
                 "has_workflow": True,
-                "error": "Invalid workflow callable_path. Expected '<file>:<function>'",
+                "error": "Invalid skill callable_path. Expected '<file>:<function>'",
             }
 
         logger.info(
@@ -265,7 +265,7 @@ class ActivateSkillTool(BaseTool):
                 "success": False,
                 "skill_name": skill.name,
                 "has_workflow": True,
-                "error": "External workflow must return a dictionary result",
+                "error": "External skill must return a dictionary result",
             }
 
         outputs = external_result.get("outputs", {})
@@ -284,11 +284,11 @@ class ActivateSkillTool(BaseTool):
         }
 
         if aborted:
-            result["error"] = external_result.get("error", "Workflow aborted")
+            result["error"] = external_result.get("error", "Skill aborted")
 
         if switch_to_skill:
             result["switch_to_skill"] = switch_to_skill
-            result["message"] = f"Workflow wechselt zu Skill: {switch_to_skill}"
+            result["message"] = f"Skill wechselt zu: {switch_to_skill}"
 
         if resumed_checkpoint is not None:
             result["resumed_from_run_id"] = resumed_checkpoint.get("run_id")
@@ -306,7 +306,7 @@ class ActivateSkillTool(BaseTool):
             result["run_id"] = checkpoint.run_id
             result["required_inputs"] = checkpoint.required_inputs
             result["blocking_reason"] = checkpoint.blocking_reason
-            result["message"] = checkpoint.question or "Workflow wartet auf externe Eingabe"
+            result["message"] = checkpoint.question or "Skill wartet auf externe Eingabe"
 
         logger.info(
             "workflow.external.completed",
