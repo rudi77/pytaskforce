@@ -86,6 +86,26 @@ function pluginRouteToRouteObject(plugin: UIPlugin, route: PluginRoute): RouteOb
 }
 
 /**
+ * Build a top-level (pre-auth) route from a public plugin route.
+ *
+ * Public routes skip the plugin's ``wrap()`` because the wrap
+ * typically depends on the authenticated user (e.g. fetches
+ * /admin/me) which is unavailable before login. Capability and role
+ * guards are also skipped — public routes are by definition
+ * unconditional.
+ */
+function pluginPublicRouteToRouteObject(
+  _plugin: UIPlugin,
+  route: PluginRoute,
+): RouteObject {
+  const body = renderPluginElement(route.element);
+  return {
+    path: "/" + normalizeRoutePath(route.path),
+    element: withSuspense(body),
+  };
+}
+
+/**
  * Build the React-Router router. Plugin routes are appended to the
  * AppShell layout so they share its sidebar / header chrome.
  *
@@ -96,12 +116,25 @@ function pluginRouteToRouteObject(plugin: UIPlugin, route: PluginRoute): RouteOb
  * Vite's full-reload on `main.tsx` rebuilds the whole router.
  */
 export function buildRouter(registry: PluginRegistry = defaultRegistry) {
-  const pluginRoutes: RouteObject[] = registry
+  const allPluginRoutes = registry
     .list()
-    .flatMap((plugin) => plugin.routes.map((r) => pluginRouteToRouteObject(plugin, r)));
+    .flatMap((plugin) =>
+      plugin.routes.map((r) => ({ plugin, route: r })),
+    );
+
+  // Routes flagged ``public: true`` are mounted at top level (next to
+  // /login) so they are reachable before the user is authenticated.
+  const publicPluginRoutes: RouteObject[] = allPluginRoutes
+    .filter(({ route }) => route.public === true)
+    .map(({ plugin, route }) => pluginPublicRouteToRouteObject(plugin, route));
+
+  const pluginRoutes: RouteObject[] = allPluginRoutes
+    .filter(({ route }) => route.public !== true)
+    .map(({ plugin, route }) => pluginRouteToRouteObject(plugin, route));
 
   return createBrowserRouter([
     { path: "/login", element: withSuspense(<LoginPage />) },
+    ...publicPluginRoutes,
     {
       path: "/",
       element: (

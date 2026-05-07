@@ -11,6 +11,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/api/client";
+import { useSettings } from "@/lib/settings";
 
 export interface UIManifestEntry {
   id: string;
@@ -30,10 +31,17 @@ export interface UIManifestResponse {
 export const UI_MANIFEST_QUERY_KEY = ["ui-manifest"] as const;
 
 export function useUIManifest() {
+  // Manifest requires auth; firing it without a token returns 401 and
+  // the global onUnauthorized hook would yank the user away from
+  // public pages (signup, login). Gate the query on token presence —
+  // when the user logs in, the LoginPage invalidates this query key
+  // and the manifest fetches as expected.
+  const apiToken = useSettings((s) => s.apiToken);
   return useQuery<UIManifestResponse>({
     queryKey: UI_MANIFEST_QUERY_KEY,
     queryFn: () => apiFetch<UIManifestResponse>("/api/v1/ui/manifest"),
     staleTime: 60_000,
     retry: 1,
+    enabled: !!apiToken,
   });
 }

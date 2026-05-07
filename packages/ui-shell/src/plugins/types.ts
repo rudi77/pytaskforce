@@ -56,6 +56,15 @@ export interface PluginRoute {
    * wrap its element accordingly.
    */
   requireRoles?: string[];
+  /**
+   * When ``true``, the host mounts this route at the *top level* —
+   * outside the ``RequireAuth`` boundary AND outside the plugin's
+   * ``wrap()`` (since auth-dependent providers can't run before the
+   * user has logged in). Use this for pre-auth pages like signup or
+   * password-reset. Default is ``false`` (private route inside
+   * AppShell).
+   */
+  public?: boolean;
 }
 
 /** Bag of host services passed into a plugin's optional `init` callback. */

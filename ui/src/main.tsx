@@ -16,15 +16,22 @@ import "@/app/globals.css";
 // plugin module is imported — plugins read the singleton lazily on
 // first request, but registering early avoids a race in the rare case
 // a plugin fires a request from `register()`.
+// Public routes that must remain reachable without a session — the
+// 401 redirect must NOT yank the user away from them. Keep this list
+// in sync with plugin routes flagged ``public: true`` in router.tsx.
+const PUBLIC_PATHS = new Set(["/login", "/signup"]);
+
 configureApiClient({
   getBaseUrl: () => getApiBaseUrl(),
   getToken: () => getApiToken() || null,
   onUnauthorized: () => {
+    if (PUBLIC_PATHS.has(window.location.pathname)) {
+      // Already on a public route — no token expected, no redirect.
+      return;
+    }
     console.warn("[auth] 401 received, clearing token + redirecting to /login");
     useSettings.getState().setApiToken("");
-    if (window.location.pathname !== "/login") {
-      window.location.assign("/login");
-    }
+    window.location.assign("/login");
   },
 });
 

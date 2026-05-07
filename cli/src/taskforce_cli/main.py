@@ -5,6 +5,7 @@ from rich.console import Console
 
 # Framework commands (always available)
 from taskforce.api.cli.commands import (
+    acp,
     chat,
     config,
     goals,
@@ -40,6 +41,7 @@ app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(memory.app, name="memory", help="Memory management")
 app.add_typer(missions.app, name="missions", help="Mission templates and runtime control")
 app.add_typer(goals.app, name="goals", help="Standing-goal management (proactive layer)")
+app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
 app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
 
 # --- Agent commands (optional, loaded if packages installed) ---
