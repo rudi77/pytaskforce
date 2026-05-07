@@ -639,7 +639,8 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
   - `inbound_adapters.py` - Channel-specific payload normalization
   - `outbound_senders.py` - Channel-specific message dispatch
   - `recipient_registry.py` - Push notification recipient store
-- **Persistence:** Domain conversations in `.taskforce/conversations/` (ADR-016 `FileConversationStore`); gateway session/history records in `.taskforce/gateway_sessions/` (`GatewayConversationStore`)
+- **Persistence:** Domain conversations in `.taskforce/conversations/` (ADR-016 `FileConversationStore`); gateway session/history records in `.taskforce/gateway_sessions/` (`GatewayConversationStore`).
+  When the `taskforce-enterprise` plugin is installed, paths are routed per-tenant + per-user (ADR-022 iter-2): per-user buckets land at `.taskforce/tenants/{tid}/users/{uid}/{state,conversations,gateway_sessions,memory,skills,agent_state.json}`; tenant-shared buckets stay at `.taskforce/tenants/{tid}/{custom,workflows}/`. Stand-alone framework usage continues to write the flat layout above.
 - **ADRs:** `docs/adr/adr-006-communication-providers.md` (original), `docs/adr/adr-009-communication-gateway.md` (current)
 - **Docs:** `docs/integrations.md`
 

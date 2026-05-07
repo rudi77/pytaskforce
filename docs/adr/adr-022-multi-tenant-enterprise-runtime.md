@@ -124,6 +124,34 @@ one `FileWikiStore`, etc. *per tenant*, each rooted at
 instance. Each instance is a plain `ConversationManagerProtocol` from the
 framework's perspective — there is no new protocol surface.
 
+**Iter-2 addendum — per-user buckets within a tenant.**
+Iter-1 made tenants disjoint. Iter-2 splits the per-tenant directory
+into a *shared* part and a *per-user* part:
+
+| Bucket | Scope | Path |
+|---|---|---|
+| State, conversations, gateway sessions, agent state, wiki memory, scheduler jobs, writable skill root | per-user | `${WORK_DIR}/tenants/${tid}/users/${uid}/...` |
+| Custom agent definitions | tenant-shared | `${WORK_DIR}/tenants/${tid}/custom/...` |
+| Workflow definitions + checkpoints | tenant-shared | `${WORK_DIR}/tenants/${tid}/workflows/...` |
+
+The user_id is resolved by a parallel `UserResolverProtocol`
+(`ContextVarUserResolver` reads the same auth ContextVar that
+`UserContext` is written to). When no user is in scope (single-user
+CLI, butler daemon, system jobs), the resolver returns `_default` and
+stores land at `${WORK_DIR}/tenants/${tid}/users/_default/...`.
+
+`migrate_legacy_layout` runs in two passes: pre-tenancy directories
+are first moved under `tenants/default/`, then any per-user buckets
+sitting tenant-flat are moved into `users/_default/`. Both passes are
+idempotent.
+
+**Caveat — Postgres mode.** Postgres runtime stores currently filter
+by `tenant_id` only. Until per-user filtering is added (separate
+follow-up tracked in `docs/adr-022-followups.md`), users within a
+tenant on a Postgres deployment share their runtime data. The factory
+emits a one-shot warning (`enterprise.persistence.postgres_per_user_unsupported`)
+so operators are not caught off guard.
+
 **Pattern B — Tenant-Filtered Multi-Tenant Adapter** (used for SQL/Postgres stores)
 
 For row-level-secure stores (Postgres in Iter ≥ 2), the plugin ships a
