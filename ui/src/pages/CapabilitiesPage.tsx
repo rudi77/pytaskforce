@@ -312,10 +312,10 @@ export default function CapabilitiesPage() {
             Capabilities
           </span>
         </div>
-        <h2 className="text-2xl font-semibold tracking-tight">Was deine Agenten können</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">What your agents can do</h2>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Werkzeuge, Workflows und Verbindungen — gruppiert nach Aufgabe. Klick auf
-          eine Kachel, um Parameter und Details zu sehen.
+          Tools, workflows and connections — grouped by task. Click a tile to see
+          parameters and details.
         </p>
       </div>
 
@@ -326,7 +326,7 @@ export default function CapabilitiesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Suche nach Fähigkeit, Werkzeug oder Workflow…"
+            placeholder="Search capabilities, tools or workflows…"
             className="pl-9"
           />
         </div>

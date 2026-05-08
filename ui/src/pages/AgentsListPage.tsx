@@ -101,12 +101,12 @@ export default function AgentsListPage() {
             {canCreateAgent ? (
               <>
                 <Button asChild variant="outline" size="sm">
-                  <Link to="/agents/new?advanced=1" title="Profi-Editor mit allen Tabs">
-                    Profi-Editor
+                  <Link to="/agents/new?advanced=1" title="Advanced editor with all tabs">
+                    Advanced Editor
                   </Link>
                 </Button>
                 <Button asChild>
-                  <Link to="/agents/new">+ Neuer Agent</Link>
+                  <Link to="/agents/new">+ New Agent</Link>
                 </Button>
               </>
             ) : null}

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Regression test for permission-gated actions on AgentsListPage. Read-only
- * users (operator role) must NOT see the "+ Neuer Agent" / "Profi-Editor"
+ * users (operator role) must NOT see the "+ New Agent" / "Advanced Editor"
  * buttons. With agent:create granted both must reappear.
  */
 import { render, screen } from "@testing-library/react";
@@ -63,8 +63,8 @@ describe("AgentsListPage permissions", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("link", { name: /Neuer Agent/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Profi-Editor/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /New Agent/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Advanced Editor/i })).not.toBeInTheDocument();
     expect(screen.getByText("Writer")).toBeInTheDocument();
   });
 
@@ -73,7 +73,7 @@ describe("AgentsListPage permissions", () => {
 
     renderPage();
 
-    expect(screen.getByRole("link", { name: /Neuer Agent/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Profi-Editor/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /New Agent/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Advanced Editor/i })).toBeInTheDocument();
   });
 });

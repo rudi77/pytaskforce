@@ -32,11 +32,11 @@ import { Step5Test } from "@/features/agents/wizard/steps/Step5Test";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: 1, label: "Vorlage" },
-  { id: 2, label: "Vorstellen" },
-  { id: 3, label: "Fähigkeiten" },
-  { id: 4, label: "Persönlichkeit" },
-  { id: 5, label: "Übersicht" },
+  { id: 1, label: "Template" },
+  { id: 2, label: "Introduce" },
+  { id: 3, label: "Capabilities" },
+  { id: 4, label: "Personality" },
+  { id: 5, label: "Overview" },
 ] as const;
 
 type StepNumber = (typeof STEPS)[number]["id"];
@@ -190,19 +190,19 @@ export function AgentWizard() {
         <Button variant="ghost" size="sm" asChild>
           <Link to="/agents">
             <ChevronLeft className="mr-1 h-4 w-4" />
-            Zurück zur Liste
+            Back to list
           </Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
           <Link to="/agents/new?advanced=1">
             <Settings2 className="mr-2 h-4 w-4" />
-            Direkt in den Profi-Editor
+            Open advanced editor
           </Link>
         </Button>
       </div>
 
       <Card className="p-6">
-        <ol className="mb-6 flex flex-wrap items-center gap-2" aria-label="Wizard-Schritte">
+        <ol className="mb-6 flex flex-wrap items-center gap-2" aria-label="Wizard steps">
           {STEPS.map((s, idx) => {
             const isActive = step === s.id;
             const isDone = step > s.id;

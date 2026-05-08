@@ -235,3 +235,6 @@ shared_files/
 examples/ap_ledger_agent/db/ap-ledger.db
 examples/ap_ledger_agent/reports/
 
+# Playwright MCP test snapshots (transient browser-driven test output)
+.playwright-mcp/
+
