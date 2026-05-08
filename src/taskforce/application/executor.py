@@ -330,14 +330,26 @@ class AgentExecutor:
             run_registry = None
 
         try:
+            from taskforce.application.infrastructure_overrides import (
+                get_current_tenant_id,
+                get_current_user_id,
+                get_user_resolver,
+            )
             from taskforce.application.run_trace_store import get_run_trace_store
 
             trace_store = get_run_trace_store()
+            # Stamp tenant + user so /runs/recent can filter per-user
+            # (ADR-022 iter-2). The user resolver is None on single-tenant
+            # builds and the stamp stays None; the route then skips the
+            # user filter and behaviour is bit-for-bit identical to today.
+            stamp_user = get_current_user_id() if get_user_resolver() else None
             trace_store.start(
                 resolved_session_id,
                 mission=mission,
                 profile=profile,
                 agent_id=agent_id,
+                tenant_id=get_current_tenant_id(),
+                user_id=stamp_user,
             )
         except Exception:  # noqa: BLE001
             trace_store = None
@@ -416,12 +428,25 @@ class AgentExecutor:
                 ):
                     if trace_store is not None:
                         try:
+                            details = getattr(update, "details", None) or {}
+                            evt = update.event_type
+                            evt_str = evt.value if hasattr(evt, "value") else str(evt)
+                            is_usage = evt_str == EventType.TOKEN_USAGE.value
                             trace_store.record(
                                 resolved_session_id,
-                                event_type=update.event_type,
+                                event_type=evt_str,
                                 message=getattr(update, "message", "") or "",
-                                details=getattr(update, "details", None),
+                                details=details or None,
                                 step=getattr(update, "step_number", None),
+                                prompt_tokens=int(details.get("prompt_tokens", 0))
+                                if is_usage
+                                else 0,
+                                completion_tokens=int(details.get("completion_tokens", 0))
+                                if is_usage
+                                else 0,
+                                cost_usd=float(details.get("cost_usd", 0.0))
+                                if is_usage
+                                else 0.0,
                             )
                         except Exception:  # noqa: BLE001
                             pass

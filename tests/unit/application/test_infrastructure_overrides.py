@@ -18,15 +18,18 @@ from taskforce.application.infrastructure_overrides import (
     get_acp_tenant_id_provider,
     get_agent_registry_override,
     get_current_tenant_id,
+    get_current_user_id,
     get_gateway_components_override,
     get_state_manager_override,
     get_tenant_resolver,
+    get_user_resolver,
     get_workspace_context_provider,
     set_acp_tenant_id_provider,
     set_agent_registry_override,
     set_gateway_components_override,
     set_state_manager_override,
     set_tenant_resolver,
+    set_user_resolver,
     set_workspace_context_provider,
 )
 
@@ -52,6 +55,7 @@ def test_defaults_are_unset() -> None:
     assert get_workspace_context_provider() is None
     assert get_acp_tenant_id_provider() is None
     assert get_tenant_resolver() is None
+    assert get_user_resolver() is None
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +94,41 @@ def test_clear_resets_tenant_resolver() -> None:
     clear_infrastructure_overrides()
     assert get_tenant_resolver() is None
     assert get_current_tenant_id() == "default"
+
+
+# ---------------------------------------------------------------------------
+# User resolver (ADR-022 iter-2 — per-user run-trace filter, #169)
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_user_id_returns_none_without_resolver() -> None:
+    """Single-tenant builds: no user resolver installed → ``None``."""
+    assert get_current_user_id() is None
+
+
+def test_get_current_user_id_uses_installed_resolver() -> None:
+    set_user_resolver(lambda: "alice")
+    assert get_current_user_id() == "alice"
+
+
+def test_get_current_user_id_falls_back_when_resolver_returns_empty() -> None:
+    set_user_resolver(lambda: "")
+    assert get_current_user_id() is None
+
+
+def test_get_current_user_id_falls_back_when_resolver_raises() -> None:
+    def boom() -> str:
+        raise RuntimeError("boom")
+
+    set_user_resolver(boom)
+    assert get_current_user_id() is None
+
+
+def test_clear_resets_user_resolver() -> None:
+    set_user_resolver(lambda: "alice")
+    clear_infrastructure_overrides()
+    assert get_user_resolver() is None
+    assert get_current_user_id() is None
 
 
 def test_default_build_agent_registry_returns_file_registry() -> None:

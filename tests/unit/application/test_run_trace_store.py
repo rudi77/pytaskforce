@@ -116,3 +116,63 @@ def test_is_structural_event_helper() -> None:
     assert is_structural_event("final_answer")
     assert not is_structural_event("llm_token")
     assert not is_structural_event("unknown_event")
+
+
+def test_list_sessions_filters_by_user_id() -> None:
+    """Regression for #169: per-user filtering must hide other users' runs."""
+    store = RunTraceStore()
+    store.start("alice-run", tenant_id="t1", user_id="alice")
+    store.start("bob-run", tenant_id="t1", user_id="bob")
+    store.start("legacy-run")  # untagged, pre-fix entry
+
+    # No filter → everything shows (single-tenant, legacy callers).
+    assert {s["session_id"] for s in store.list_sessions()} == {
+        "alice-run",
+        "bob-run",
+        "legacy-run",
+    }
+
+    # Filter to alice → only alice's stamped run, no untagged leak.
+    alice_only = store.list_sessions(tenant_id="t1", user_id="alice")
+    assert {s["session_id"] for s in alice_only} == {"alice-run"}
+
+    # Cross-tenant → nothing.
+    assert store.list_sessions(tenant_id="t2", user_id="alice") == []
+
+
+def test_get_filters_by_user_id() -> None:
+    """Regression for #169: trace drilldown also enforces the filter."""
+    store = RunTraceStore()
+    store.start("alice-run", tenant_id="t1", user_id="alice")
+
+    # Same user → visible.
+    assert store.get("alice-run", tenant_id="t1", user_id="alice") is not None
+    # Different user in same tenant → hidden.
+    assert store.get("alice-run", tenant_id="t1", user_id="bob") is None
+    # Single-tenant fall-through (no filter) → visible.
+    assert store.get("alice-run") is not None
+
+
+def test_record_accumulates_token_usage() -> None:
+    """Regression for #170: per-run totals must accumulate from token_usage."""
+    store = RunTraceStore()
+    store.start("sess-tok")
+    store.record(
+        "sess-tok",
+        event_type="token_usage",
+        prompt_tokens=120,
+        completion_tokens=45,
+        cost_usd=0.0021,
+    )
+    store.record(
+        "sess-tok",
+        event_type="token_usage",
+        prompt_tokens=80,
+        completion_tokens=20,
+        cost_usd=0.0008,
+    )
+    listed = store.list_sessions()
+    assert listed[0]["session_id"] == "sess-tok"
+    assert listed[0]["total_prompt_tokens"] == 200
+    assert listed[0]["total_completion_tokens"] == 65
+    assert listed[0]["total_cost_usd"] == pytest.approx(0.0029)

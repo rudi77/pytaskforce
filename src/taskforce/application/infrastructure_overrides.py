@@ -61,6 +61,7 @@ _gateway_components_override: Callable[[str], Any] | None = None
 _workspace_context_provider: Callable[[], Any] | None = None
 _acp_tenant_id_provider: Callable[[], str] | None = None
 _tenant_resolver: Callable[[], str] | None = None
+_user_resolver: Callable[[], str | None] | None = None
 _tenant_context_runner: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]] | None = None
 _sandboxed_executor: Any | None = None
 _multi_tenant_sandbox_warning_emitted: bool = False
@@ -260,6 +261,43 @@ def get_current_tenant_id() -> str:
     except Exception:  # Defensive: a buggy plugin must not break the framework
         return "default"
     return resolved or "default"
+
+
+def set_user_resolver(provider: Callable[[], str | None] | None) -> None:
+    """Install (or clear) the framework-wide user-id resolver.
+
+    Mirror of ``set_tenant_resolver`` for the user dimension. When the
+    enterprise plugin is installed it registers a closure that reads
+    the current ``UserContext`` ContextVar; without it
+    ``get_current_user_id()`` returns ``None`` so per-user filtering
+    in framework adapters falls open (the single-tenant single-user
+    behaviour).
+    """
+    global _user_resolver
+    _user_resolver = provider
+
+
+def get_user_resolver() -> Callable[[], str | None] | None:
+    """Return the currently installed user resolver, if any."""
+    return _user_resolver
+
+
+def get_current_user_id() -> str | None:
+    """Return the current request's user id, or ``None``.
+
+    Returns ``None`` when no resolver is installed (single-tenant
+    builds) or when the resolver yields no user (background jobs,
+    pre-auth requests). Callers that need per-user scoping should
+    treat ``None`` as "no user filter applies" rather than as an
+    explicit user.
+    """
+    if _user_resolver is None:
+        return None
+    try:
+        resolved = _user_resolver()
+    except Exception:  # Defensive: a buggy plugin must not break the framework
+        return None
+    return resolved or None
 
 
 def set_tenant_context_runner(
@@ -533,6 +571,7 @@ def clear_infrastructure_overrides() -> None:
     global _workspace_context_provider
     global _acp_tenant_id_provider
     global _tenant_resolver
+    global _user_resolver
     global _tenant_context_runner
     global _sandboxed_executor
     global _multi_tenant_sandbox_warning_emitted
@@ -554,6 +593,7 @@ def clear_infrastructure_overrides() -> None:
     _workspace_context_provider = None
     _acp_tenant_id_provider = None
     _tenant_resolver = None
+    _user_resolver = None
     _tenant_context_runner = None
     _sandboxed_executor = None
     _multi_tenant_sandbox_warning_emitted = False

@@ -100,6 +100,11 @@ class _SessionTrace:
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_cost_usd: float = 0.0
+    # ADR-022 iter-2: per-user / per-tenant filtering for /runs/recent.
+    # Both default to None so single-tenant builds with no resolvers see
+    # bit-for-bit identical behaviour.
+    tenant_id: str | None = None
+    user_id: str | None = None
 
 
 class RunTraceStore:
@@ -122,6 +127,8 @@ class RunTraceStore:
         mission: str = "",
         profile: str | None = None,
         agent_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         with self._lock:
             self._sessions[session_id] = _SessionTrace(
@@ -130,6 +137,8 @@ class RunTraceStore:
                 profile=profile,
                 agent_id=agent_id,
                 mission=mission,
+                tenant_id=tenant_id,
+                user_id=user_id,
             )
             self._sessions.move_to_end(session_id)
             self._evict_locked()
@@ -186,10 +195,18 @@ class RunTraceStore:
             trace.final_status = final_status
             self._sessions.move_to_end(session_id)
 
-    def get(self, session_id: str) -> dict[str, Any] | None:
+    def get(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
         with self._lock:
             trace = self._sessions.get(session_id)
             if trace is None:
+                return None
+            if not _trace_visible(trace, tenant_id, user_id):
                 return None
             return {
                 "session_id": trace.session_id,
@@ -205,7 +222,12 @@ class RunTraceStore:
                 "events": [event.to_dict() for event in trace.events],
             }
 
-    def list_sessions(self) -> list[dict[str, Any]]:
+    def list_sessions(
+        self,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         with self._lock:
             return [
                 {
@@ -222,12 +244,36 @@ class RunTraceStore:
                     "total_cost_usd": trace.total_cost_usd,
                 }
                 for trace in reversed(self._sessions.values())
+                if _trace_visible(trace, tenant_id, user_id)
             ]
 
     def _evict_locked(self) -> None:
         while len(self._sessions) > self._max_sessions:
             evicted, _ = self._sessions.popitem(last=False)
             logger.debug("run_trace_evicted", session_id=evicted)
+
+
+def _trace_visible(
+    trace: _SessionTrace,
+    tenant_id: str | None,
+    user_id: str | None,
+) -> bool:
+    """Decide whether a recorded trace is visible to the requested scope.
+
+    Single-tenant builds pass ``tenant_id=None`` and ``user_id=None`` —
+    every trace is visible (the historical behaviour). When a tenant
+    or user filter is applied, only traces stamped with a matching
+    value are returned: an unstamped trace is invisible under a filter,
+    so legacy in-memory entries from before the stamping fix do not
+    leak across users while they age out of the bounded buffer.
+    """
+    if tenant_id is not None:
+        if trace.tenant_id != tenant_id:
+            return False
+    if user_id is not None:
+        if trace.user_id != user_id:
+            return False
+    return True
 
 
 _store: RunTraceStore | None = None

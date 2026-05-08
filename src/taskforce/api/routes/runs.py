@@ -18,8 +18,26 @@ from fastapi.responses import StreamingResponse
 
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.analytics_schemas import ActiveRunResponse, ActiveRunsResponse
+from taskforce.application.infrastructure_overrides import (
+    get_current_tenant_id,
+    get_current_user_id,
+    get_tenant_resolver,
+    get_user_resolver,
+)
 from taskforce.application.run_registry import get_run_registry
 from taskforce.application.run_trace_store import get_run_trace_store
+
+
+def _current_scope() -> tuple[str | None, str | None]:
+    """Resolve the (tenant_id, user_id) scope for the current request.
+
+    Returns ``(None, None)`` when no resolvers are installed
+    (single-tenant builds) so the trace store skips filtering and
+    every recorded run is listed — bit-for-bit historical behaviour.
+    """
+    tenant = get_current_tenant_id() if get_tenant_resolver() else None
+    user = get_current_user_id() if get_user_resolver() else None
+    return tenant, user
 
 router = APIRouter()
 
@@ -46,7 +64,12 @@ def list_active_runs() -> ActiveRunsResponse:
     summary="List recent runs (active + recently finished, captured by the trace store)",
 )
 def list_recent_runs() -> dict:
-    return {"runs": get_run_trace_store().list_sessions()}
+    tenant, user = _current_scope()
+    return {
+        "runs": get_run_trace_store().list_sessions(
+            tenant_id=tenant, user_id=user
+        )
+    }
 
 
 @router.get(
@@ -54,7 +77,8 @@ def list_recent_runs() -> dict:
     summary="Return the recorded ReAct trace for a run",
 )
 def get_run_trace(session_id: str) -> dict:
-    trace = get_run_trace_store().get(session_id)
+    tenant, user = _current_scope()
+    trace = get_run_trace_store().get(session_id, tenant_id=tenant, user_id=user)
     if trace is None:
         raise _http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
