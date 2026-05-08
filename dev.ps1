@@ -1,4 +1,4 @@
-# dev.ps1 - one-shot dev launcher for pytaskforce + UI (enterprise mode)
+﻿# dev.ps1 - one-shot dev launcher for pytaskforce + UI (enterprise mode)
 #
 # Usage:
 #   .\dev.ps1                  # backend (8070) + UI (5173) in this terminal, prefixed logs
@@ -98,7 +98,7 @@ function Invoke-EnterpriseBootstrap {
     Write-Step "applying alembic migrations + bootstrap (idempotent)"
     $bootstrapExe = Join-Path $Venv "Scripts\taskforce-enterprise.exe"
     if (-not (Test-Path $bootstrapExe)) {
-        Write-Warn2 "taskforce-enterprise.exe missing — skipping migrations"
+        Write-Warn2 "taskforce-enterprise.exe missing - skipping migrations"
         return
     }
     $envFile = Join-Path $RepoRoot ".env"
@@ -122,7 +122,7 @@ sys.exit(r.returncode)
 "@
     & $VenvPython -c $script
     if ($LASTEXITCODE -ne 0) {
-        Write-Err "bootstrap failed (exit $LASTEXITCODE) — start anyway, but the DB schema may be out of sync"
+        Write-Err "bootstrap failed (exit $LASTEXITCODE) - start anyway, but the DB schema may be out of sync"
     } else {
         Write-Ok "DB schema up-to-date"
     }
@@ -170,7 +170,7 @@ function Sync-ViteCacheForEnterpriseUi {
     }
     $current = Get-EnterpriseUiFingerprint
     if (-not $current) {
-        Write-Warn2 "enterprise-ui dist not found at $EnterpriseUiDist — skipping Vite cache check"
+        Write-Warn2 "enterprise-ui dist not found at $EnterpriseUiDist - skipping Vite cache check"
         return $false
     }
     $previous = ""
@@ -182,11 +182,11 @@ function Sync-ViteCacheForEnterpriseUi {
         return $false
     }
     if ($previous -and $current -ne $previous) {
-        Write-Step "enterprise-ui dist changed since last run — clearing Vite dep cache"
+        Write-Step "enterprise-ui dist changed since last run - clearing Vite dep cache"
     } elseif (-not (Test-Path $ViteCacheDir)) {
-        Write-Step "no Vite dep cache yet — will optimize on start"
+        Write-Step "no Vite dep cache yet - will optimize on start"
     } else {
-        Write-Step "no fingerprint stored — clearing Vite dep cache"
+        Write-Step "no fingerprint stored - clearing Vite dep cache"
     }
     if (Test-Path $ViteCacheDir) {
         Remove-Item -Recurse -Force $ViteCacheDir
@@ -213,7 +213,7 @@ function Start-BackendForeground {
     $backendUrl = "http://${Host_}:${Port}"
     $env:TASKFORCE_API_URL = $backendUrl
     if (-not (Test-Path $VenvTaskforce)) {
-        Write-Err "taskforce.exe not found at $VenvTaskforce — run 'uv sync' first"
+        Write-Err "taskforce.exe not found at $VenvTaskforce - run 'uv sync' first"
         exit 1
     }
     Write-Step "starting backend on $backendUrl  (taskforce serve --reload)"
