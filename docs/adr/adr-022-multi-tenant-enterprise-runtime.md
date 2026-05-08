@@ -145,12 +145,14 @@ are first moved under `tenants/default/`, then any per-user buckets
 sitting tenant-flat are moved into `users/_default/`. Both passes are
 idempotent.
 
-**Caveat — Postgres mode.** Postgres runtime stores currently filter
-by `tenant_id` only. Until per-user filtering is added (separate
-follow-up tracked in `docs/adr-022-followups.md`), users within a
-tenant on a Postgres deployment share their runtime data. The factory
-emits a one-shot warning (`enterprise.persistence.postgres_per_user_unsupported`)
-so operators are not caught off guard.
+**Caveat — SQL mode.** SQL runtime stores (any SQLAlchemy backend —
+Postgres, SQLite, etc., selected via `runtime_store: "postgres"`)
+currently filter by `tenant_id` only. Until per-user filtering is
+added (separate follow-up tracked in `docs/adr-022-followups.md`),
+users within a tenant on a SQL-backed deployment share their runtime
+data. The factory emits a one-shot warning
+(`enterprise.persistence.sql_per_user_unsupported`) so operators are
+not caught off guard.
 
 **Pattern B — Tenant-Filtered Multi-Tenant Adapter** (used for SQL/Postgres stores)
 
