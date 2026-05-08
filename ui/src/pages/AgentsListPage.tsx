@@ -17,6 +17,7 @@ import {
 } from "@/features/agents/agent-helpers";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 type SourceFilter = "all" | "profile" | "custom" | "plugin";
 
@@ -53,8 +54,10 @@ function CustomAgentDeploymentBadge({ agentId }: { agentId: string }) {
 
 export default function AgentsListPage() {
   const { data, isLoading, error } = useAgents();
+  const permissions = useCurrentPermissions();
   const [filter, setFilter] = useState<SourceFilter>("all");
   const [search, setSearch] = useState("");
+  const canCreateAgent = permissions.can("agent:create");
 
   const items = useMemo(() => {
     if (!data) return [];
@@ -95,14 +98,18 @@ export default function AgentsListPage() {
                 Compare
               </Link>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/agents/new?advanced=1" title="Profi-Editor mit allen Tabs">
-                Profi-Editor
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link to="/agents/new">+ Neuer Agent</Link>
-            </Button>
+            {canCreateAgent ? (
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/agents/new?advanced=1" title="Profi-Editor mit allen Tabs">
+                    Profi-Editor
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/agents/new">+ Neuer Agent</Link>
+                </Button>
+              </>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

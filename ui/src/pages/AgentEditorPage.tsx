@@ -23,9 +23,24 @@ import {
   getAgentTools,
 } from "@/features/agents/agent-helpers";
 import { toast } from "@/components/ui/toast";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface Props {
   mode: "create" | "edit";
+}
+
+function ForbiddenAgentAction() {
+  return (
+    <EmptyState
+      title="Forbidden"
+      description="Your account can use agents, but it cannot create or modify them."
+      action={
+        <Button asChild variant="outline">
+          <Link to="/agents">Back to agents</Link>
+        </Button>
+      }
+    />
+  );
 }
 
 function useAgent(agentId: string | undefined) {
@@ -101,6 +116,8 @@ function CustomOrPluginDetail({ agent }: { agent: AgentSummary }) {
 function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
   const navigate = useNavigate();
   const deleteMutation = useDeleteCustomAgent();
+  const permissions = useCurrentPermissions();
+  const canDeleteAgent = permissions.can("agent:delete");
 
   const onDelete = async () => {
     if (agent.source !== "custom") return;
@@ -126,7 +143,7 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
             All agents
           </Link>
         </Button>
-        {agent.source === "custom" ? (
+        {agent.source === "custom" && canDeleteAgent ? (
           <Button
             type="button"
             variant="outline"
@@ -191,11 +208,20 @@ export default function AgentEditorPage({ mode }: Props) {
   const { agentId } = useParams();
   const [params] = useSearchParams();
   const advanced = params.get("advanced") === "1";
+  const permissions = useCurrentPermissions();
 
   if (mode === "create") {
+    if (permissions.isLoading) return <Skeleton className="h-96 w-full" />;
+    if (!permissions.isLoading && !permissions.can("agent:create")) {
+      return <ForbiddenAgentAction />;
+    }
     return advanced ? <AgentProfileEditor mode="create" /> : <AgentWizard />;
   }
   if (!agentId) {
+    if (permissions.isLoading) return <Skeleton className="h-96 w-full" />;
+    if (!permissions.can("agent:create")) {
+      return <ForbiddenAgentAction />;
+    }
     return advanced ? <AgentProfileEditor mode="create" /> : <AgentWizard />;
   }
   return <EditMode agentId={agentId} />;

@@ -25,6 +25,7 @@ import {
   type WorkflowStepResult,
 } from "@/api/queries";
 import { WorkflowEditor } from "@/features/workflows/WorkflowEditor";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface DialogState {
   open: boolean;
@@ -83,6 +84,7 @@ export default function WorkflowsPage() {
   const saveMutation = useSaveWorkflowDefinition();
   const deleteMutation = useDeleteWorkflowDefinition();
   const runMutation = useRunWorkflowDefinition();
+  const permissions = useCurrentPermissions();
 
   const [dialog, setDialog] = useState<DialogState>({
     open: false,
@@ -93,6 +95,10 @@ export default function WorkflowsPage() {
   const [runPanel, setRunPanel] = useState<RunPanelState | null>(null);
 
   const items = workflows.data?.workflows ?? [];
+  const canCreateOrUpdateWorkflow =
+    permissions.can("agent:create") || permissions.can("agent:update");
+  const canDeleteWorkflow = permissions.can("agent:delete");
+  const canRunWorkflow = permissions.can("agent:execute");
 
   // Sort by name for stable display.
   const sortedItems = useMemo(
@@ -167,14 +173,16 @@ export default function WorkflowsPage() {
               schedule, by webhook, or via <code>@workflow_name</code> in chat.
             </CardDescription>
           </div>
-          <Button
-            onClick={() =>
-              setDialog({ open: true, mode: "create", workflow: null })
-            }
-          >
-            <Plus className="h-4 w-4" />
-            New workflow
-          </Button>
+          {canCreateOrUpdateWorkflow ? (
+            <Button
+              onClick={() =>
+                setDialog({ open: true, mode: "create", workflow: null })
+              }
+            >
+              <Plus className="h-4 w-4" />
+              New workflow
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent>
           {workflows.isLoading ? (
@@ -197,6 +205,7 @@ export default function WorkflowsPage() {
               title="No workflows yet"
               description="Define a workflow to coordinate multiple agents on a recurring or triggered task."
               action={
+                canCreateOrUpdateWorkflow ? (
                 <Button
                   onClick={() =>
                     setDialog({ open: true, mode: "create", workflow: null })
@@ -205,6 +214,7 @@ export default function WorkflowsPage() {
                   <Plus className="h-4 w-4" />
                   New workflow
                 </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -244,41 +254,47 @@ export default function WorkflowsPage() {
                       ) : null}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void onRun(wf)}
-                        disabled={
-                          runMutation.isPending &&
-                          runPanel?.workflowId === wf.workflow_id
-                        }
-                      >
-                        <Play className="h-3.5 w-3.5" />
-                        Run
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setDialog({
-                            open: true,
-                            mode: "edit",
-                            workflow: wf,
-                          })
-                        }
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void onDelete(wf)}
-                        disabled={deleteMutation.isPending}
-                        aria-label="Delete workflow"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {canRunWorkflow ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void onRun(wf)}
+                          disabled={
+                            runMutation.isPending &&
+                            runPanel?.workflowId === wf.workflow_id
+                          }
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                          Run
+                        </Button>
+                      ) : null}
+                      {canCreateOrUpdateWorkflow ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setDialog({
+                              open: true,
+                              mode: "edit",
+                              workflow: wf,
+                            })
+                          }
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      ) : null}
+                      {canDeleteWorkflow ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void onDelete(wf)}
+                          disabled={deleteMutation.isPending}
+                          aria-label="Delete workflow"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </li>

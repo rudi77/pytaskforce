@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, status
 
-from taskforce.api.dependencies import get_agent_deployment_service
+from taskforce.api.dependencies import get_agent_deployment_service, require_permission
 from taskforce.api.errors import http_exception
 from taskforce.api.schemas.agent_deployment_schemas import (
     AgentDeploymentListResponse,
@@ -60,6 +60,7 @@ def _preflight_to_http(exc: DeploymentPreflightError):
 def deploy_agent(
     agent_id: str,
     request: DeployRequest | None = None,
+    _permission: None = Depends(require_permission("agent:update")),
     service: AgentDeploymentService = Depends(get_agent_deployment_service),
 ) -> AgentDeploymentResponse:
     payload = request or DeployRequest()
@@ -84,6 +85,7 @@ def deploy_agent(
 def rollback_agent(
     agent_id: str,
     request: RollbackRequest,
+    _permission: None = Depends(require_permission("agent:update")),
     service: AgentDeploymentService = Depends(get_agent_deployment_service),
 ) -> AgentDeploymentResponse:
     try:
@@ -106,6 +108,7 @@ def rollback_agent(
 )
 def list_deployments(
     agent_id: str,
+    _permission: None = Depends(require_permission("agent:read")),
     service: AgentDeploymentService = Depends(get_agent_deployment_service),
 ) -> AgentDeploymentListResponse:
     history = service.list_history(agent_id)
@@ -123,6 +126,7 @@ def list_deployments(
 def get_active_deployment(
     agent_id: str,
     environment: DeploymentEnvironment = Query(default=DeploymentEnvironment.LOCAL),
+    _permission: None = Depends(require_permission("agent:read")),
     service: AgentDeploymentService = Depends(get_agent_deployment_service),
 ) -> AgentDeploymentResponse:
     deployment = service.get_active(agent_id, environment)

@@ -46,6 +46,7 @@ import {
 } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface Props {
   mode: "create" | "edit";
@@ -70,6 +71,7 @@ const PREVIEW_VISIBLE_KEY = "taskforce.editor.previewVisible";
 
 export function AgentProfileEditor({ mode, profileName }: Props) {
   const navigate = useNavigate();
+  const permissions = useCurrentPermissions();
   const profileQuery = useProfile(mode === "edit" ? profileName : undefined);
   const createMutation = useCreateProfile();
   const updateMutation = useUpdateProfile(profileName ?? "");
@@ -108,7 +110,13 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
     }
   }, [values]);
 
-  const isWritable = mode === "create" || profileQuery.data?.is_writable !== false;
+  const canCreateAgent = permissions.can("agent:create");
+  const canUpdateAgent = permissions.can("agent:update");
+  const canDeleteAgent = permissions.can("agent:delete");
+  const canWriteCurrentMode = mode === "create" ? canCreateAgent : canUpdateAgent;
+  const isReadOnlyProfile = mode === "edit" && profileQuery.data?.is_writable === false;
+  const isWritable =
+    (mode === "create" || profileQuery.data?.is_writable !== false) && canWriteCurrentMode;
   const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   const onSubmit = form.handleSubmit(async (formValues) => {
@@ -179,13 +187,13 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               Saved
             </Badge>
           ) : null}
-          {!isWritable && mode === "edit" ? (
+          {isReadOnlyProfile ? (
             <Badge variant="warning" className="gap-1">
               <AlertTriangle className="h-3 w-3" />
               Read-only
             </Badge>
           ) : null}
-          {mode === "edit" && !isWritable ? (
+          {isReadOnlyProfile && canCreateAgent ? (
             <Button
               type="button"
               variant="outline"
@@ -197,7 +205,7 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               Clone to user profile
             </Button>
           ) : null}
-          {mode === "edit" && isWritable ? (
+          {mode === "edit" && !isReadOnlyProfile && canDeleteAgent ? (
             <Button type="button" variant="outline" size="sm" onClick={onDelete} disabled={isBusy}>
               <Trash2 className="h-4 w-4" />
               Delete
@@ -216,7 +224,7 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
         </Card>
       ) : null}
 
-      {mode === "edit" && !isWritable ? (
+      {isReadOnlyProfile ? (
         <Card className="border-warning/40 bg-warning/5">
           <CardContent className="flex flex-wrap items-center gap-2 py-3 text-sm">
             <AlertTriangle className="h-4 w-4 text-warning" />

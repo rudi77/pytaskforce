@@ -14,6 +14,8 @@ import os
 from functools import lru_cache
 from typing import Any
 
+from fastapi import HTTPException, Request
+
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 
@@ -61,6 +63,30 @@ def get_agent_registry():
 
     builder = InfrastructureBuilder()
     return builder.build_agent_registry()
+
+
+def require_permission(permission: str):
+    """Optionally enforce a permission when auth middleware supplied a user.
+
+    The base framework has no auth provider of its own, so this dependency is a
+    no-op unless a plugin middleware attaches ``request.state.user``. Enterprise
+    users expose permissions as enum values; comparing by ``.value`` keeps this
+    module independent from the enterprise package.
+    """
+
+    def dependency(request: Request) -> None:
+        user = getattr(request.state, "user", None)
+        if user is None:
+            return
+
+        permissions = getattr(user, "permissions", set()) or set()
+        permission_values = {getattr(item, "value", str(item)) for item in permissions}
+        if permission in permission_values:
+            return
+
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    return dependency
 
 
 # ---------------------------------------------------------------------------

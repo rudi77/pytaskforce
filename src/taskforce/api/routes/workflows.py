@@ -8,10 +8,16 @@ import json
 import os
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_executor, get_factory, get_workflow_runtime_service
+from taskforce.api.dependencies import (
+    get_executor,
+    get_factory,
+    get_workflow_runtime_service,
+    require_permission,
+)
 from taskforce.api.errors import http_exception
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
@@ -20,6 +26,7 @@ from taskforce.core.domain.workflow_checkpoint import ResumeEvent
 from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
 
 router = APIRouter(prefix="/workflows")
+logger = structlog.get_logger(__name__)
 
 
 class CreateWaitCheckpointRequest(BaseModel):
@@ -106,6 +113,7 @@ def _workflow_from_request(request: WorkflowDefinitionRequest) -> WorkflowDefini
 
 @router.get("/definitions")
 def list_workflow_definitions(
+    _permission: None = Depends(require_permission("agent:read")),
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
     """List first-class workflow definitions."""
@@ -118,6 +126,7 @@ def list_workflow_definitions(
 @router.post("/definitions")
 async def save_workflow_definition(
     request: WorkflowDefinitionRequest,
+    _permission: None = Depends(require_permission("agent:update")),
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
     """Create or update a first-class workflow definition.
@@ -146,6 +155,7 @@ async def save_workflow_definition(
 @router.get("/definitions/{workflow_id}")
 def get_workflow_definition(
     workflow_id: str,
+    _permission: None = Depends(require_permission("agent:read")),
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
     """Get a first-class workflow definition."""
@@ -162,6 +172,7 @@ def get_workflow_definition(
 @router.delete("/definitions/{workflow_id}")
 async def delete_workflow_definition(
     workflow_id: str,
+    _permission: None = Depends(require_permission("agent:delete")),
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
 ) -> dict[str, Any]:
     """Delete a first-class workflow definition and its scheduled job."""
@@ -198,15 +209,31 @@ async def _execute_workflow_steps(
 async def run_workflow_definition(
     workflow_id: str,
     request: RunWorkflowDefinitionRequest,
+    _permission: None = Depends(require_permission("agent:execute")),
     service: WorkflowRuntimeService = Depends(get_workflow_runtime_service),
     executor: AgentExecutor = Depends(get_executor),
 ) -> dict[str, Any]:
     """Run a first-class workflow definition sequentially by dependency order."""
+    logger.info(
+        "workflow.definition.run_requested",
+        workflow_id=workflow_id,
+        session_id=request.session_id,
+    )
     try:
         results = await _execute_workflow_steps(workflow_id, service, executor, request.session_id)
     except ValueError as exc:
+        logger.warning(
+            "workflow.definition.run_rejected",
+            workflow_id=workflow_id,
+            error=str(exc),
+        )
         raise http_exception(status_code=400, code="invalid_workflow", message=str(exc)) from exc
 
+    logger.info(
+        "workflow.definition.run_completed",
+        workflow_id=workflow_id,
+        step_count=len(results),
+    )
     return {
         "success": True,
         "workflow_id": workflow_id,

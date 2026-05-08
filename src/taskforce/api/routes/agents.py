@@ -23,7 +23,7 @@ Clean Architecture Notes:
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 
-from taskforce.api.dependencies import get_agent_registry
+from taskforce.api.dependencies import get_agent_registry, require_permission
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.agent_schemas import (
     AgentListResponse,
@@ -106,6 +106,7 @@ def _domain_to_response(
 )
 def create_agent(
     agent_def: CustomAgentCreate,
+    _permission: None = Depends(require_permission("agent:create")),
     registry=Depends(get_agent_registry),
 ) -> CustomAgentResponse:
     """
@@ -157,6 +158,7 @@ def create_agent(
     description=("List all agents (custom + profile). Corrupt YAML files are skipped."),
 )
 def list_agents(
+    _permission: None = Depends(require_permission("agent:read")),
     registry=Depends(get_agent_registry),
 ) -> AgentListResponse:
     """
@@ -185,6 +187,7 @@ def list_agents(
 )
 def get_agent(
     agent_id: str,
+    _permission: None = Depends(require_permission("agent:read")),
     registry=Depends(get_agent_registry),
 ) -> CustomAgentResponse | ProfileAgentResponse | PluginAgentResponse:
     """
@@ -221,6 +224,7 @@ def get_agent(
 def update_agent(
     agent_id: str,
     agent_def: CustomAgentUpdate,
+    _permission: None = Depends(require_permission("agent:update")),
     registry=Depends(get_agent_registry),
 ) -> CustomAgentResponse:
     """
@@ -274,6 +278,7 @@ def update_agent(
 )
 def delete_agent(
     agent_id: str,
+    _permission: None = Depends(require_permission("agent:delete")),
     registry=Depends(get_agent_registry),
 ) -> Response:
     """

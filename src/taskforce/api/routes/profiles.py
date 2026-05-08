@@ -16,8 +16,9 @@ Write/update endpoints arrive in Phase 3.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
+from taskforce.api.dependencies import require_permission
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.api.schemas.profile_schemas import (
     ProfileClonePayload,
@@ -56,7 +57,9 @@ def _summary_from_dict(entry: dict) -> ProfileSummary:
     response_model=ProfileListResponse,
     summary="List all profiles",
 )
-def list_profiles() -> ProfileListResponse:
+def list_profiles(
+    _permission: None = Depends(require_permission("agent:read")),
+) -> ProfileListResponse:
     """Discover every profile available to the running server."""
     loader = ProfileLoader()
     summaries = [_summary_from_dict(entry) for entry in loader.list_profiles()]
@@ -73,6 +76,7 @@ def list_subagent_candidates(
         None,
         description="Profile name to exclude (typically the agent being edited)",
     ),
+    _permission: None = Depends(require_permission("agent:read")),
 ) -> ProfileListResponse:
     """Return the same profile catalog minus an optional parent profile."""
     loader = ProfileLoader()
@@ -89,7 +93,10 @@ def list_subagent_candidates(
     response_model=ProfileDetail,
     summary="Get a profile by name",
 )
-def get_profile(name: str) -> ProfileDetail:
+def get_profile(
+    name: str,
+    _permission: None = Depends(require_permission("agent:read")),
+) -> ProfileDetail:
     """Return the parsed config and the original source text for ``name``."""
     loader = ProfileLoader()
     writer = ProfileWriter(loader=loader)
@@ -121,7 +128,10 @@ def get_profile(name: str) -> ProfileDetail:
     status_code=status.HTTP_201_CREATED,
     summary="Create a new user profile",
 )
-def create_profile(payload: ProfileCreatePayload) -> ProfileDetail:
+def create_profile(
+    payload: ProfileCreatePayload,
+    _permission: None = Depends(require_permission("agent:create")),
+) -> ProfileDetail:
     """Persist a new YAML profile to the user-profiles directory."""
     writer = ProfileWriter()
     try:
@@ -147,7 +157,11 @@ def create_profile(payload: ProfileCreatePayload) -> ProfileDetail:
     response_model=ProfileDetail,
     summary="Update a user profile",
 )
-def update_profile(name: str, payload: ProfileDefinitionPayload) -> ProfileDetail:
+def update_profile(
+    name: str,
+    payload: ProfileDefinitionPayload,
+    _permission: None = Depends(require_permission("agent:update")),
+) -> ProfileDetail:
     """Overwrite a user-owned YAML profile while preserving comments."""
     writer = ProfileWriter()
     try:
@@ -200,7 +214,11 @@ _RESERVED_TARGET_NAMES: frozenset[str] = frozenset(
     status_code=status.HTTP_201_CREATED,
     summary="Clone a (read-only) profile into the user-profiles directory",
 )
-def clone_profile(source: str, payload: ProfileClonePayload) -> ProfileDetail:
+def clone_profile(
+    source: str,
+    payload: ProfileClonePayload,
+    _permission: None = Depends(require_permission("agent:create")),
+) -> ProfileDetail:
     """Copy ``source`` into the user-profiles directory under ``target_name``.
 
     Lets the UI customize butler / coding_agent / rag_agent profiles without
@@ -248,7 +266,10 @@ def clone_profile(source: str, payload: ProfileClonePayload) -> ProfileDetail:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a user profile",
 )
-def delete_profile(name: str) -> Response:
+def delete_profile(
+    name: str,
+    _permission: None = Depends(require_permission("agent:delete")),
+) -> Response:
     writer = ProfileWriter()
     try:
         writer.delete(name)

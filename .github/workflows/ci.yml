@@ -25,25 +25,48 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      - name: Validate dev launcher syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\dev.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
   ui-test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          path: pytaskforce
+
+      - name: Check out taskforce-enterprise dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rudi77/taskforce-enterprise
+          path: taskforce-enterprise
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: pytaskforce/ui/package-lock.json
 
       - name: Install UI dependencies
-        working-directory: ui
+        working-directory: pytaskforce/ui
         run: npm ci
 
+      - name: Typecheck UI
+        working-directory: pytaskforce/ui
+        run: npm run typecheck
+
       - name: Run UI tests
-        working-directory: ui
+        working-directory: pytaskforce/ui
         run: npm run test
 
   tag:

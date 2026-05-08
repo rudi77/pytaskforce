@@ -9,6 +9,7 @@
 #   .\dev.ps1 -Migrate         # force-run alembic migrations + bootstrap, then start
 #   .\dev.ps1 -SkipMigrate     # don't run alembic on startup (faster cold start)
 #   .\dev.ps1 -Build           # production build of UI (no dev server), then exit
+#   .\dev.ps1 -SyncPlugins     # rebuild/relink UI plugins before starting
 #   .\dev.ps1 -Port 8080       # override backend port (also re-points UI proxy)
 #   .\dev.ps1 -ForceVite       # always wipe Vite dep cache + start with --force
 #
@@ -31,6 +32,7 @@ param(
     [switch]$Migrate,
     [switch]$SkipMigrate,
     [switch]$Build,
+    [switch]$SyncPlugins,
     [switch]$ForceVite,
     [int]$Port = 8070,
     [string]$Host_ = "127.0.0.1"
@@ -44,6 +46,7 @@ $VenvPython = Join-Path $Venv "Scripts\python.exe"
 $VenvActivate = Join-Path $Venv "Scripts\Activate.ps1"
 $VenvTaskforce = Join-Path $Venv "Scripts\taskforce.exe"
 $UiDir = Join-Path $RepoRoot "ui"
+$SyncPluginsScript = Join-Path $RepoRoot "scripts\sync-plugins.ps1"
 $ViteCacheDir = Join-Path $UiDir "node_modules\.vite"
 $EnterpriseUiDist = Join-Path $UiDir "node_modules\@taskforce\enterprise-ui\dist"
 $ViteFingerprintFile = Join-Path $UiDir ".dev-fingerprint"
@@ -52,6 +55,33 @@ function Write-Step  { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok    { param($msg) Write-Host "    $msg" -ForegroundColor Green }
 function Write-Warn2 { param($msg) Write-Host "    $msg" -ForegroundColor Yellow }
 function Write-Err   { param($msg) Write-Host "    $msg" -ForegroundColor Red }
+
+function Import-DotEnv {
+    $envFile = Join-Path $RepoRoot ".env"
+    if (-not (Test-Path $envFile)) {
+        return
+    }
+
+    foreach ($line in Get-Content $envFile) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#") -or -not $trimmed.Contains("=")) {
+            continue
+        }
+
+        if ($trimmed.StartsWith("export ")) {
+            $trimmed = $trimmed.Substring(7).Trim()
+        }
+
+        $key, $value = $trimmed.Split("=", 2)
+        $key = $key.Trim()
+        if (-not $key) {
+            continue
+        }
+
+        $value = $value.Trim().Trim('"').Trim("'")
+        Set-Item -Path "env:$key" -Value $value
+    }
+}
 
 # ---------------------------------------------------------------- pre-flight
 function Test-Venv {
@@ -138,6 +168,20 @@ function Install-UiDeps {
         Pop-Location
     }
     Write-Ok "UI deps ready"
+}
+
+function Invoke-SyncPlugins {
+    if (-not (Test-Path $SyncPluginsScript)) {
+        Write-Err "sync-plugins.ps1 not found at $SyncPluginsScript"
+        exit 1
+    }
+    Write-Step "syncing UI plugins"
+    & $SyncPluginsScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "sync-plugins.ps1 failed (exit $LASTEXITCODE)"
+        exit $LASTEXITCODE
+    }
+    Write-Ok "UI plugins synced"
 }
 
 # ---------------------------------------- stale-chunk protection (Vite cache)
@@ -274,30 +318,72 @@ function Start-Split {
 
 function Start-Both {
     $backendUrl = "http://${Host_}:${Port}"
-    $env:TASKFORCE_API_URL = $backendUrl   # picked up by ui/vite.config.ts
+    $env:TASKFORCE_API_URL = $backendUrl   # picked up by ui/vite.config.ts and inherited by both children
     $needForce = Sync-ViteCacheForEnterpriseUi
 
-    $jobs = @()
+    # We launch backend + UI as direct child processes (System.Diagnostics.Process)
+    # rather than as PowerShell jobs. PSJobs run in their own runspace and we lose
+    # ownership of grandchildren (cmd -> pnpm -> node -> esbuild, uvicorn watcher
+    # -> worker), so Ctrl+C used to leave orphans behind. With direct children we
+    # know each PID and can kill the whole subtree on shutdown via taskkill /T /F.
+
+    $procs = New-Object System.Collections.ArrayList
+    $subs  = New-Object System.Collections.ArrayList
+
+    # ---------- backend: .venv\Scripts\taskforce.exe serve ... ----------
+    $bePsi = New-Object System.Diagnostics.ProcessStartInfo
+    $bePsi.FileName  = $VenvTaskforce
+    $bePsi.Arguments = "serve --host $Host_ --port $Port --reload"
+    $bePsi.WorkingDirectory        = $RepoRoot
+    $bePsi.UseShellExecute         = $false
+    $bePsi.CreateNoWindow          = $true
+    $bePsi.RedirectStandardOutput  = $true
+    $bePsi.RedirectStandardError   = $true
+    $be = New-Object System.Diagnostics.Process
+    $be.StartInfo = $bePsi
+
+    # ---------- UI: cmd /c pnpm dev [-- --force] -----------------------
+    # cmd.exe wraps the .cmd shim; CreateProcess can't launch .cmd directly
+    # when UseShellExecute=false.
+    $uiArgs = "/c pnpm dev"
+    if ($needForce) { $uiArgs += " -- --force" }
+    $uiPsi = New-Object System.Diagnostics.ProcessStartInfo
+    $uiPsi.FileName  = $env:COMSPEC
+    $uiPsi.Arguments = $uiArgs
+    $uiPsi.WorkingDirectory        = $UiDir
+    $uiPsi.UseShellExecute         = $false
+    $uiPsi.CreateNoWindow          = $true
+    $uiPsi.RedirectStandardOutput  = $true
+    $uiPsi.RedirectStandardError   = $true
+    $ui = New-Object System.Diagnostics.Process
+    $ui.StartInfo = $uiPsi
+
+    $beAction = {
+        if ($null -ne $EventArgs.Data) {
+            Write-Host "[be] $($EventArgs.Data)" -ForegroundColor Magenta
+        }
+    }
+    $uiAction = {
+        if ($null -ne $EventArgs.Data) {
+            Write-Host "[ui] $($EventArgs.Data)" -ForegroundColor Blue
+        }
+    }
 
     Write-Step "starting backend on $backendUrl  (taskforce serve --reload)"
-    $jobs += Start-Job -Name "backend" -ScriptBlock {
-        param($repo, $h, $p)
-        Set-Location $repo
-        & .\.venv\Scripts\Activate.ps1
-        taskforce serve --host $h --port $p --reload 2>&1
-    } -ArgumentList $RepoRoot, $Host_, $Port
+    [void]$subs.Add((Register-ObjectEvent -InputObject $be -EventName OutputDataReceived -Action $beAction))
+    [void]$subs.Add((Register-ObjectEvent -InputObject $be -EventName ErrorDataReceived  -Action $beAction))
+    [void]$be.Start()
+    $be.BeginOutputReadLine()
+    $be.BeginErrorReadLine()
+    [void]$procs.Add($be)
 
     Write-Step "starting UI on http://localhost:5173  (pnpm dev)"
-    $jobs += Start-Job -Name "ui" -ScriptBlock {
-        param($uiDir, $apiUrl, $force)
-        Set-Location $uiDir
-        $env:TASKFORCE_API_URL = $apiUrl
-        if ($force) {
-            & pnpm dev -- --force 2>&1
-        } else {
-            & pnpm dev 2>&1
-        }
-    } -ArgumentList $UiDir, $backendUrl, $needForce
+    [void]$subs.Add((Register-ObjectEvent -InputObject $ui -EventName OutputDataReceived -Action $uiAction))
+    [void]$subs.Add((Register-ObjectEvent -InputObject $ui -EventName ErrorDataReceived  -Action $uiAction))
+    [void]$ui.Start()
+    $ui.BeginOutputReadLine()
+    $ui.BeginErrorReadLine()
+    [void]$procs.Add($ui)
 
     Write-Host ""
     Write-Host "----------------------------------------------------------------"
@@ -308,41 +394,64 @@ function Start-Both {
     Write-Host "----------------------------------------------------------------"
     Write-Host ""
 
+    # Ctrl+C handling: bypass PowerShell's pipeline-stop entirely. .NET fires
+    # CancelKeyPress on its own native signal thread, where no PowerShell
+    # runspace is available -- so a ScriptBlock cast to ConsoleCancelEventHandler
+    # crashes the host with "There is no Runspace available". We compile a real
+    # C# handler via Add-Type once per session; it only touches a static
+    # ManualResetEventSlim and never re-enters the PS engine.
+    if (-not ('TaskforceDevLauncherCancel' -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Threading;
+public static class TaskforceDevLauncherCancel {
+    public static readonly ManualResetEventSlim Signal = new ManualResetEventSlim(false);
+    public static readonly ConsoleCancelEventHandler Handler = new ConsoleCancelEventHandler(OnCancel);
+    private static void OnCancel(object sender, ConsoleCancelEventArgs e) {
+        e.Cancel = true;
+        Signal.Set();
+    }
+    public static void Reset() { Signal.Reset(); }
+}
+"@
+    }
+    [TaskforceDevLauncherCancel]::Reset()
+    [Console]::add_CancelKeyPress([TaskforceDevLauncherCancel]::Handler)
+
     try {
-        while ($true) {
-            foreach ($job in $jobs) {
-                $output = Receive-Job -Job $job -Keep:$false
-                if ($output) {
-                    $prefix = if ($job.Name -eq "backend") { "[be]" } else { "[ui]" }
-                    $color  = if ($job.Name -eq "backend") { "Magenta" } else { "Blue" }
-                    foreach ($line in $output) {
-                        Write-Host "$prefix $line" -ForegroundColor $color
-                    }
-                }
-                if ($job.State -in @("Failed","Completed","Stopped")) {
-                    Write-Warn2 "$($job.Name) job ended with state $($job.State)"
-                    return
-                }
-            }
-            Start-Sleep -Milliseconds 250
+        while (-not [TaskforceDevLauncherCancel]::Signal.IsSet) {
+            if ($be.HasExited) { Write-Warn2 "backend exited (code $($be.ExitCode))"; break }
+            if ($ui.HasExited) { Write-Warn2 "ui exited (code $($ui.ExitCode))"; break }
+            # Returns true if signaled, false on timeout. Either way we re-check the loop guard.
+            [void][TaskforceDevLauncherCancel]::Signal.Wait(250)
         }
     } finally {
+        try { [Console]::remove_CancelKeyPress([TaskforceDevLauncherCancel]::Handler) } catch {}
         Write-Host ""
         Write-Step "shutting down"
-        foreach ($job in $jobs) {
-            Stop-Job -Job $job -ErrorAction SilentlyContinue
-            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            try {
+                if ($p -and -not $p.HasExited) {
+                    # /T = kill subtree (vite -> esbuild, uvicorn watcher -> worker), /F = force.
+                    & taskkill.exe /T /F /PID $p.Id 2>$null | Out-Null
+                }
+            } catch {}
         }
-        # Kill any orphan child processes (uvicorn worker, vite, esbuild)
-        Get-Process -Name "node","python","uvicorn" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -like "$RepoRoot*" -or $_.Path -like "$UiDir*" } |
-            Stop-Process -Force -ErrorAction SilentlyContinue
+        foreach ($s in $subs) {
+            try { Unregister-Event -SubscriptionId $s.Id -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job          -Id $s.Id -Force -ErrorAction SilentlyContinue } catch {}
+        }
         Write-Ok "stopped"
     }
 }
 
 # ---------------------------------------------------------------- main
 Test-Venv
+Import-DotEnv
+
+if ($SyncPlugins) {
+    Invoke-SyncPlugins
+}
 
 if ($Build) {
     if (-not (Test-UiDeps) -or $Install) { Install-UiDeps }

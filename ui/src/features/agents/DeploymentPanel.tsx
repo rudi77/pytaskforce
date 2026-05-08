@@ -30,6 +30,7 @@ import {
   useDeploymentHistory,
   useRollbackAgent,
 } from "@/api/queries";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface Props {
   agentId: string;
@@ -93,6 +94,7 @@ function NoActiveDeployment() {
 }
 
 export function DeploymentPanel({ agentId, environment = "local" }: Props) {
+  const permissions = useCurrentPermissions();
   const active = useActiveDeployment(agentId, environment);
   const history = useDeploymentHistory(agentId);
   const deployMutation = useDeployAgent(agentId);
@@ -100,6 +102,7 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const isBusy = deployMutation.isPending || rollbackMutation.isPending;
+  const canUpdateAgent = permissions.can("agent:update");
 
   const onDeploy = async () => {
     setError(null);
@@ -133,14 +136,16 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
               Preflight checks run automatically before activation.
             </CardDescription>
           </div>
-          <Button onClick={onDeploy} disabled={isBusy} size="sm" data-testid="deploy-button">
-            {deployMutation.isPending ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Rocket className="h-4 w-4" />
-            )}
-            Deploy
-          </Button>
+          {canUpdateAgent ? (
+            <Button onClick={onDeploy} disabled={isBusy} size="sm" data-testid="deploy-button">
+              {deployMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              Deploy
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -188,7 +193,8 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
                       {d.error ? ` · ${d.error}` : ""}
                     </p>
                   </div>
-                  {d.status === "deployed" &&
+                  {canUpdateAgent &&
+                  d.status === "deployed" &&
                   active.data &&
                   d.version !== active.data.version ? (
                     <Button
