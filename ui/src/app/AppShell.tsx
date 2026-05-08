@@ -24,6 +24,7 @@ import { HealthIndicator } from "@/components/HealthIndicator";
 import { useSettings } from "@/lib/settings";
 import { capabilitiesSatisfied, usePluginRegistry } from "@/plugins/registry";
 import type { PluginNavItem } from "@/plugins/types";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface NavItem {
   to: string;
@@ -39,7 +40,7 @@ const BUILTIN_NAV_ITEMS: NavItem[] = [
   { to: "/agents", label: "Agents", icon: Bot, section: "main", order: 10 },
   { to: "/chat", label: "Chat", icon: MessageSquare, section: "main", order: 20 },
   { to: "/monitoring", label: "Monitoring", icon: Activity, section: "main", order: 30 },
-  { to: "/capabilities", label: "Fähigkeiten", icon: Sparkles, section: "main", order: 40 },
+  { to: "/capabilities", label: "Capabilities", icon: Sparkles, section: "main", order: 40 },
   { to: "/acp", label: "ACP Peers", icon: Network, section: "main", order: 50 },
   { to: "/workflows", label: "Workflows", icon: Workflow, section: "main", order: 55 },
   { to: "/evals", label: "Evals", icon: Beaker, section: "main", order: 60 },
@@ -52,12 +53,25 @@ const BUILTIN_PAGE_TITLES: Record<string, string> = {
   "/monitoring": "Monitoring",
   "/acp": "ACP Peers",
   "/workflows": "Workflows",
-  "/capabilities": "Fähigkeiten",
+  "/capabilities": "Capabilities",
   "/evals": "Evals",
   "/settings": "Settings",
 };
 
 const COLLAPSED_KEY = "taskforce.sidebar.collapsed";
+
+// Each built-in admin path requires one of these permissions. The admin
+// section is rendered only when the current user has at least one of
+// them. When permissions are not enforced (single-tenant build, no
+// enterprise auth) `can()` returns true and the section stays visible.
+const ADMIN_PATH_PERMISSIONS: Record<string, string> = {
+  "/admin/tenants": "tenant:manage",
+  "/admin/users": "user:manage",
+  "/admin/audit": "audit:read",
+  "/admin/catalog": "agent:create",
+  "/admin/approvals": "tenant:manage",
+  "/admin/mcp": "system:config",
+};
 
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
@@ -232,6 +246,7 @@ function pluginNavItemToNavItem(
 export function AppShell() {
   const { pathname } = useLocation();
   const { plugins, activeCapabilities } = usePluginRegistry();
+  const permissions = useCurrentPermissions();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
@@ -258,6 +273,10 @@ export function AppShell() {
       .sort(sortByOrder);
     const adminItems = collected
       .filter((it) => it.section === "admin")
+      .filter((it) => {
+        const required = ADMIN_PATH_PERMISSIONS[it.to];
+        return required ? permissions.can(required) : true;
+      })
       .sort(sortByOrder);
 
     const pageTitles: Record<string, string> = { ...BUILTIN_PAGE_TITLES };
@@ -266,7 +285,7 @@ export function AppShell() {
     }
 
     return { mainItems, adminItems, pageTitles };
-  }, [plugins, activeCapabilities]);
+  }, [plugins, activeCapabilities, permissions]);
 
   const title = getPageTitle(pathname, pageTitles);
 

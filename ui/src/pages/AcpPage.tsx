@@ -25,6 +25,7 @@ import {
 import { ApiError } from "@/api/client";
 import { toast } from "@/components/ui/toast";
 import { AcpPeerDialog } from "@/features/acp/AcpPeerDialog";
+import { useCurrentPermissions } from "@/lib/permissions";
 
 interface DialogState {
   open: boolean;
@@ -38,6 +39,8 @@ export default function AcpPage() {
   const updateMutation = useUpdateAcpPeer();
   const deleteMutation = useDeleteAcpPeer();
   const testMutation = useTestAcpPeer();
+  const permissions = useCurrentPermissions();
+  const canManagePeers = permissions.can("system:config");
   const [dialog, setDialog] = useState<DialogState>({
     open: false,
     mode: "create",
@@ -117,10 +120,12 @@ export default function AcpPage() {
               Persisted in <code>.taskforce/acp_peers.json</code>.
             </CardDescription>
           </div>
-          <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
-            <Plus className="h-4 w-4" />
-            Add peer
-          </Button>
+          {canManagePeers ? (
+            <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
+              <Plus className="h-4 w-4" />
+              Add peer
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent>
           {peers.isLoading ? (
@@ -143,10 +148,12 @@ export default function AcpPage() {
               title="No peers registered"
               description="Add a peer so this agent can call remote ACP-enabled agents."
               action={
-                <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
-                  <Plus className="h-4 w-4" />
-                  Add peer
-                </Button>
+                canManagePeers ? (
+                  <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
+                    <Plus className="h-4 w-4" />
+                    Add peer
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -189,25 +196,29 @@ export default function AcpPage() {
                         <PlugZap className="h-3.5 w-3.5" />
                         Test
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setDialog({ open: true, mode: "edit", peer })
-                        }
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onDelete(peer)}
-                        disabled={deleteMutation.isPending}
-                        aria-label="Delete peer"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {canManagePeers ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setDialog({ open: true, mode: "edit", peer })
+                            }
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onDelete(peer)}
+                            disabled={deleteMutation.isPending}
+                            aria-label="Delete peer"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </li>
