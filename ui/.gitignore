@@ -6,4 +6,5 @@ playwright-report/
 *.log
 .DS_Store
 .vite/
+.dev-fingerprint
 *.tsbuildinfo

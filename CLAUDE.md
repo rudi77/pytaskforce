@@ -869,6 +869,29 @@ taskforce epic "Build a REST API for user management" --rounds 3
 uvicorn taskforce.api.server:app --reload
 ```
 
+### Local Dev Launcher (Windows / PowerShell)
+
+`dev.ps1` (repo root) boots backend + UI together for the enterprise dev setup:
+
+```powershell
+.\dev.ps1                  # backend (8070) + UI (5173) in this terminal, prefixed logs
+.\dev.ps1 -Split           # both in two separate terminal windows (independent Ctrl+C)
+.\dev.ps1 -Backend         # backend only, foreground
+.\dev.ps1 -Frontend        # UI only, foreground
+.\dev.ps1 -Install         # force reinstall enterprise plugin + UI deps
+.\dev.ps1 -SkipMigrate     # skip alembic on startup
+.\dev.ps1 -Build           # production build of UI only
+.\dev.ps1 -Port 8080       # override backend port (also re-points UI proxy)
+.\dev.ps1 -ForceVite       # always wipe ui/node_modules/.vite + start Vite with --force
+```
+
+Stale-chunk protection: before starting the UI, the launcher fingerprints
+`ui/node_modules/@taskforce/enterprise-ui/dist/index.js` (+ `index.css`) and
+compares against `ui/.dev-fingerprint`. If the dist changed since the last run,
+`ui/node_modules/.vite` is wiped and Vite is restarted with `--force`, which
+prevents the browser from requesting old hashed chunks (e.g. 404 on
+`CreateUserPage-XXX.js` / "Page update required" fallback).
+
 ---
 
 ## Coding Standards

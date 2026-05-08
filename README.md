@@ -281,6 +281,31 @@ Detailed guides are available in the [docs/](docs/) directory:
 uv sync --group dev
 ```
 
+### Local Dev Launcher (Windows / PowerShell)
+
+`dev.ps1` boots the backend (`taskforce serve --reload`) and the UI (`pnpm dev`)
+together, with the enterprise plugin pre-flight (alembic + bootstrap) and
+stale-chunk protection for the `@taskforce/enterprise-ui` Vite dep.
+
+```powershell
+.\dev.ps1                  # backend (8070) + UI (5173) in this terminal, prefixed logs
+.\dev.ps1 -Split           # both in two separate terminal windows (independent Ctrl+C)
+.\dev.ps1 -Backend         # backend only, foreground
+.\dev.ps1 -Frontend        # UI only, foreground
+.\dev.ps1 -Install         # force reinstall enterprise plugin + UI deps, then start
+.\dev.ps1 -SkipMigrate     # skip alembic on startup (faster cold start)
+.\dev.ps1 -Build           # production build of UI only
+.\dev.ps1 -Port 8080       # override backend port (also re-points UI proxy)
+.\dev.ps1 -ForceVite       # always wipe ui/node_modules/.vite + start with --force
+```
+
+Stale-chunk protection: before starting the UI, the script fingerprints
+`ui/node_modules/@taskforce/enterprise-ui/dist/index.js` (+ `index.css`) and
+compares it with `ui/.dev-fingerprint`. If the dist changed since the last run,
+`ui/node_modules/.vite` is wiped and Vite is started with `--force`, which
+prevents the browser from requesting old chunk hashes (e.g. a 404 on
+`CreateUserPage-XXX.js` and the "Page update required" fallback).
+
 ### Run Tests
 ```bash
 uv run pytest
