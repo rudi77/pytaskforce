@@ -77,6 +77,23 @@ class BaseTool:
     tool_supports_parallelism: bool = False
     """Whether this tool can safely run concurrently with others."""
 
+    tool_auto_approve_for_origins: frozenset[str] = frozenset()
+    """Trigger origins that bypass the approval gate for this tool.
+
+    The approval gate consults
+    ``taskforce.core.domain.trigger_context.get_trigger_origin()`` and,
+    when the active origin matches one of the strings in this set,
+    grants the call without sending it to the human-decision queue. The
+    canonical use case is ``"scheduled_workflow"`` for tools the
+    operator has already vetted at workflow design time
+    (e.g. ``send_notification``); waiting for an interactive approval
+    in the middle of a 06:00 cron run just makes the workflow time out
+    and silently fail.
+
+    Empty (default) means "always go through the gate" — today's
+    behaviour for every existing tool.
+    """
+
     # ------------------------------------------------------------------ #
     # ToolProtocol-compatible properties
     # ------------------------------------------------------------------ #
@@ -110,6 +127,11 @@ class BaseTool:
     def supports_parallelism(self) -> bool:
         """Return whether parallel execution is safe."""
         return self.tool_supports_parallelism
+
+    @property
+    def auto_approve_for_origins(self) -> frozenset[str]:
+        """Return the trigger origins that bypass approval for this tool."""
+        return self.tool_auto_approve_for_origins
 
     # ------------------------------------------------------------------ #
     # Default implementations

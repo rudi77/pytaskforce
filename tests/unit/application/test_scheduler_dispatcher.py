@@ -142,3 +142,40 @@ async def test_dispatch_handles_missing_payload() -> None:
 
     await callback(_Empty())
     assert runtime.calls == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sets_scheduled_workflow_trigger_origin() -> None:
+    """Issue #177: the dispatcher must tag the run as ``scheduled_workflow``
+    so the approval gate can auto-approve workflow-vetted tools without
+    waiting for an interactive admin decision."""
+    from taskforce.core.domain.trigger_context import (
+        SCHEDULED_WORKFLOW_ORIGIN,
+        get_trigger_origin,
+    )
+
+    captured: list[str | None] = []
+
+    class _OriginSnoopingRuntime:
+        async def run_workflow_id(
+            self, workflow_id: str, executor: Any, *, session_id: str | None = None
+        ) -> list[dict[str, Any]]:
+            captured.append(get_trigger_origin())
+            return []
+
+    callback = make_scheduler_event_callback(_OriginSnoopingRuntime(), executor=object())
+    await callback(
+        _FakeEvent(
+            payload={
+                "action": {
+                    "action_type": "execute_workflow",
+                    "params": {"workflow_id": "wf-1"},
+                },
+            }
+        )
+    )
+
+    assert captured == [SCHEDULED_WORKFLOW_ORIGIN]
+    # And the origin is cleared after the dispatcher returns — no
+    # leakage into whatever the event loop schedules next.
+    assert get_trigger_origin() is None
