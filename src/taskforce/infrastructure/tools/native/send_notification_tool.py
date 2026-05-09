@@ -90,6 +90,12 @@ class SendNotificationTool(BaseTool):
     tool_requires_approval = True
     tool_approval_risk_level = ApprovalRiskLevel.MEDIUM
     tool_supports_parallelism = True
+    # Auto-approve when invoked from a scheduler-fired workflow run
+    # (issue #177): the operator already vetted the workflow at design
+    # time, and at 06:00 nobody is at the keyboard to grant interactive
+    # approval — without this opt-in the approval queue silently times
+    # out after 5 minutes and the message is never sent.
+    tool_auto_approve_for_origins = frozenset({"scheduled_workflow"})
 
     def __init__(
         self,

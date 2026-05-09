@@ -161,3 +161,123 @@ async def test_no_approval_service_skips_validation_entirely() -> None:
 
     assert outcome is None
     assert tool.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Issue #177 — auto-approve for scheduled-workflow trigger origin.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingApprover:
+    """Approval service stub that records whether it was consulted."""
+
+    def __init__(self) -> None:
+        self.calls: list[ApprovalRequest] = []
+
+    async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+        self.calls.append(request)
+        return ApprovalDecision(
+            request_id=request.request_id,
+            status=ApprovalStatus.GRANTED,
+            decided_by="test",
+            reason="ok",
+        )
+
+
+class _ScheduledOptInTool:
+    """Tool that opts into auto-approve for the scheduled_workflow origin."""
+
+    requires_approval = True
+    approval_risk_level = ApprovalRiskLevel.MEDIUM
+    name = "scheduled_opt_in"
+    auto_approve_for_origins = frozenset({"scheduled_workflow"})
+
+    def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
+        return (True, None)
+
+    def get_approval_preview(self, **kwargs: Any) -> str:
+        return "preview"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_workflow_origin_auto_approves_opted_in_tool() -> None:
+    """Issue #177: scheduler-fired calls bypass the human-decision queue."""
+    from taskforce.core.domain.trigger_context import (
+        SCHEDULED_WORKFLOW_ORIGIN,
+        trigger_origin,
+    )
+
+    approver = _RecordingApprover()
+    set_approval_service(approver)
+
+    with trigger_origin(SCHEDULED_WORKFLOW_ORIGIN):
+        outcome = await LeanAgent._maybe_request_approval(
+            _StubAgent(),
+            tool=_ScheduledOptInTool(),
+            tool_name="scheduled_opt_in",
+            tool_args={"message": "hi"},
+            session_id="s1",
+        )
+
+    assert outcome is None, "auto-approve must let the call proceed"
+    assert approver.calls == [], (
+        "approval service must not be consulted on the auto-approve path"
+    )
+
+
+@pytest.mark.asyncio
+async def test_interactive_call_still_hits_approval_queue() -> None:
+    """Without a trigger origin, even opted-in tools still go through the queue."""
+    approver = _RecordingApprover()
+    set_approval_service(approver)
+
+    outcome = await LeanAgent._maybe_request_approval(
+        _StubAgent(),
+        tool=_ScheduledOptInTool(),
+        tool_name="scheduled_opt_in",
+        tool_args={"message": "hi"},
+        session_id="s1",
+    )
+
+    assert outcome is None, "approver granted, so the call proceeds"
+    assert len(approver.calls) == 1, "but the human queue WAS consulted"
+    # And the request carries no trigger_origin metadata.
+    assert approver.calls[0].metadata == {}
+
+
+@pytest.mark.asyncio
+async def test_origin_set_but_tool_not_opted_in_still_hits_queue() -> None:
+    """Origin alone is not enough — the tool must opt in explicitly."""
+    from taskforce.core.domain.trigger_context import (
+        SCHEDULED_WORKFLOW_ORIGIN,
+        trigger_origin,
+    )
+
+    class _NotOptedIn:
+        requires_approval = True
+        approval_risk_level = ApprovalRiskLevel.MEDIUM
+        name = "not_opted_in"
+        # No auto_approve_for_origins — the gate must keep waiting.
+
+        def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
+            return (True, None)
+
+        def get_approval_preview(self, **kwargs: Any) -> str:
+            return "preview"
+
+    approver = _RecordingApprover()
+    set_approval_service(approver)
+
+    with trigger_origin(SCHEDULED_WORKFLOW_ORIGIN):
+        outcome = await LeanAgent._maybe_request_approval(
+            _StubAgent(),
+            tool=_NotOptedIn(),
+            tool_name="not_opted_in",
+            tool_args={"x": 1},
+            session_id="s1",
+        )
+
+    assert outcome is None  # approver granted
+    assert len(approver.calls) == 1, "non-opted-in tools always hit the queue"
+    # The origin still rides along in metadata so the audit trail can show it.
+    assert approver.calls[0].metadata == {"trigger_origin": SCHEDULED_WORKFLOW_ORIGIN}

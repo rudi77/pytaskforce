@@ -722,6 +722,7 @@ class Agent:
             ApprovalRequest,
             ApprovalStatus,
         )
+        from taskforce.core.domain.trigger_context import get_trigger_origin
         from taskforce.core.interfaces.tools import ApprovalRiskLevel
 
         risk = getattr(tool, "approval_risk_level", ApprovalRiskLevel.LOW)
@@ -731,7 +732,27 @@ class Agent:
         except Exception:  # noqa: BLE001 — preview is best-effort
             preview = tool_name
 
+        # Auto-approve path (issue #177): when the active execution
+        # carries a trigger origin (typically scheduler-fired workflow)
+        # and the tool opted in via ``auto_approve_for_origins``, skip
+        # the human-decision queue. Interactive flows have no origin
+        # set and continue to hit the queue unchanged.
+        origin = get_trigger_origin()
+        auto_origins = getattr(tool, "auto_approve_for_origins", frozenset()) or frozenset()
+        if origin is not None and origin in auto_origins:
+            self.logger.info(
+                "tool.approval.auto_granted",
+                tool_name=tool_name,
+                trigger_origin=origin,
+                reason="trigger_origin_whitelisted",
+            )
+            return None
+
         import uuid
+
+        metadata: dict[str, Any] = {}
+        if origin is not None:
+            metadata["trigger_origin"] = origin
 
         request = ApprovalRequest(
             request_id=str(uuid.uuid4()),
@@ -740,6 +761,7 @@ class Agent:
             tool_params=dict(tool_args),
             risk_level=risk,
             preview=str(preview),
+            metadata=metadata,
         )
         try:
             decision = await service.request_approval(request)

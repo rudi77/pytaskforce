@@ -66,10 +66,17 @@ def make_scheduler_event_callback(
                 tenant_id=payload.get("tenant_id"),
             )
             try:
+                from taskforce.core.domain.trigger_context import (
+                    SCHEDULED_WORKFLOW_ORIGIN,
+                    trigger_origin,
+                )
 
                 async def _run() -> list[dict[str, Any]]:
                     runtime = workflow_runtime() if callable(workflow_runtime) else workflow_runtime
-                    return await runtime.run_workflow_id(workflow_id, executor)
+                    # Tag the execution so the approval gate can
+                    # auto-approve workflow-vetted tools (issue #177).
+                    with trigger_origin(SCHEDULED_WORKFLOW_ORIGIN):
+                        return await runtime.run_workflow_id(workflow_id, executor)
 
                 tenant_id = payload.get("tenant_id")
                 if tenant_id:
