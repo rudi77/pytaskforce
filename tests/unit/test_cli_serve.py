@@ -23,7 +23,9 @@ def _import_cli_app():
 
 def test_serve_help_lists_options(runner):
     cli_app = _import_cli_app()
-    result = runner.invoke(cli_app, ["serve", "--help"])
+    # Force a wide terminal so Rich/Click does not wrap long flags
+    # (e.g. ``--host`` becoming ``--\nhost``) in narrow CI consoles.
+    result = runner.invoke(cli_app, ["serve", "--help"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     out = result.stdout
     assert "--host" in out
