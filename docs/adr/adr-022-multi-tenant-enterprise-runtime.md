@@ -145,14 +145,20 @@ are first moved under `tenants/default/`, then any per-user buckets
 sitting tenant-flat are moved into `users/_default/`. Both passes are
 idempotent.
 
-**Caveat — SQL mode.** SQL runtime stores (any SQLAlchemy backend —
-Postgres, SQLite, etc., selected via `runtime_store: "postgres"`)
-currently filter by `tenant_id` only. Until per-user filtering is
-added (separate follow-up tracked in `docs/adr-022-followups.md`),
-users within a tenant on a SQL-backed deployment share their runtime
-data. The factory emits a one-shot warning
-(`enterprise.persistence.sql_per_user_unsupported`) so operators are
-not caught off guard.
+**SQL mode parity (issue #160, 2026-05-08).** SQL runtime stores
+(any SQLAlchemy backend — Postgres, SQLite, etc., selected via
+`runtime_store: "postgres"`) now apply the same per-user filter as
+the file adapters. Each runtime table grew a `user_id` column that
+participates in the composite primary key (`agent_session_states`,
+`conversations`, `agent_states`, `wiki_pages`) or a non-nullable
+indexed column (`conversation_messages`); the SQL adapters carry
+`(tenant_id, user_id)` into every WHERE clause via the same
+`UserResolverProtocol` the file factory consults. Pre-existing rows
+are migrated into the `_default` user bucket by Alembic revision
+`0009_runtime_stores_user_id`, which is what the single-user CLI /
+butler-daemon path also writes when no user is in scope. The
+previous `enterprise.persistence.sql_per_user_unsupported` warning
+has been retired.
 
 **Pattern B — Tenant-Filtered Multi-Tenant Adapter** (used for SQL/Postgres stores)
 
