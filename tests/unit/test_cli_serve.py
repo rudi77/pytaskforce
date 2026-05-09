@@ -2,10 +2,27 @@
 
 from __future__ import annotations
 
+import re
 from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _normalise_help_output(text: str) -> str:
+    """Strip ANSI escapes and collapse whitespace.
+
+    Typer renders ``--help`` through Rich, which line-wraps long flag
+    names like ``--host`` to ``--\\nhost`` when the host terminal is
+    narrow (GitHub Actions). Setting ``COLUMNS=200`` sometimes helps
+    but is not load-bearing — Rich's Console can lock its width at
+    module-import time, before the test fixture's env override takes
+    effect. Normalising the captured stdout makes the substring
+    assertions robust regardless of how the line happens to wrap.
+    """
+    return re.sub(r"\s+", " ", _ANSI_RE.sub("", text))
 
 
 @pytest.fixture
@@ -23,9 +40,9 @@ def _import_cli_app():
 
 def test_serve_help_lists_options(runner):
     cli_app = _import_cli_app()
-    result = runner.invoke(cli_app, ["serve", "--help"])
+    result = runner.invoke(cli_app, ["serve", "--help"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    out = result.stdout
+    out = _normalise_help_output(result.stdout)
     assert "--host" in out
     assert "--port" in out
     assert "--reload" in out
