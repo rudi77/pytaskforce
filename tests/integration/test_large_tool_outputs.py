@@ -261,5 +261,7 @@ async def test_backward_compatibility_without_store(integration_setup):
     # Should NOT be a handle-based preview (no JSON handle key)
     assert "handle" not in tool_text
 
-    # Output should be truncated
-    assert "TRUNCATED" in tool_text
+    # Output should be truncated — marker emitted by MessageHistoryManager
+    # is the lowercase form `[truncated N chars …]` (see #188 which renamed
+    # the marker; this assertion was missed in that change).
+    assert "[truncated" in tool_text
