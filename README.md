@@ -52,6 +52,13 @@ uv pip install -e agents/coding-agent
 uv pip install -e agents/rag-agent
 ```
 
+The default deployment surfaces only the Butler family (incl. coding sub-agents),
+`rag_agent`, and the standalone `accounting_agent` in `GET /api/v1/agents` and
+the UI. Showcases and other discoverable agents stay loadable by id but stay
+out of the catalog. To customise, edit `src/taskforce/configs/deployment.yaml`
+or point `TASKFORCE_DEPLOYMENT_MANIFEST` at your own manifest — see
+[`docs/profiles.md`](docs/profiles.md#deployment-manifest-visible-agents-allowlist).
+
 ### 4. Load a Plugin (Optional)
 ```bash
 # CLI: Load plugin directly
