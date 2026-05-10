@@ -27,6 +27,8 @@ This directory contains records of significant technical decisions made during t
 - **[ADR 021: UI Plugin System for the Management UI](adr-021-ui-plugin-system.md)**
 - **[ADR 022: Multi-Tenant Enterprise Runtime](adr-022-multi-tenant-enterprise-runtime.md)**
 - **[ADR 023: Host-App Integration API (`taskforce.host`) and `taskforce serve`](adr-023-host-integration-api.md)**
+- **[ADR 024: Standing Goals](adr-024-standing-goals.md)**
+- **[ADR 025: Cowork-Plugin Compatibility and Managed-Agent-Cookbook Importer](adr-025-cowork-plugin-compatibility.md)**
 
 ---
 *For more information on why we use ADRs, see [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).*
