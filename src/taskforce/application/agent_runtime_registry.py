@@ -120,6 +120,18 @@ async def _taskforce_runtime_factory(profile_dict: dict[str, Any]) -> AgentRunti
     ``execute_stream``, ``close``, ``request_interrupt``, ``clear_interrupt``.
     It does not declare a ``runtime_name`` attribute; we stamp one on the
     instance so registry callers can introspect uniformly.
+
+    .. note::
+
+        The :class:`AgentCreationPipeline` does **not** route the default
+        ``taskforce`` runtime through this factory — it calls
+        ``self._factory.create_agent(...)`` directly so the executor-shared
+        :class:`AgentFactory` (and its wired gateway/scheduler/auth manager)
+        is reused. This factory is only invoked by external callers using
+        :func:`get_runtime` for introspection or programmatic construction;
+        it builds a *fresh* :class:`AgentFactory` and therefore does not
+        share that ambient state. Callers that need shared infrastructure
+        should use :class:`AgentFactory` directly.
     """
     from taskforce.application.factory import AgentFactory
 
