@@ -143,6 +143,7 @@ class LiteLLMService:
 
         self._sanitizer = MessageSanitizer(self.logger)
 
+
     # ------------------------------------------------------------------
     # Config attribute delegation — preserve existing public interface
     # ------------------------------------------------------------------
@@ -936,6 +937,17 @@ class LiteLLMService:
         Initializes the tool-call accumulator on first sight, updates metadata,
         and yields ``tool_call_start`` and ``tool_call_delta`` events.
 
+        ``tool_call_start`` is emitted as soon as we know the tool's ``id`` or
+        ``name``, even if that information arrives in a later delta than the
+        first one for the same ``index`` (issue #155 — Telegram action gap).
+        Without this, a provider that streams a tool call as
+        ``index+arguments`` first and ``id+name`` second would never produce
+        a ``tool_call_start`` event, causing the consumer in
+        :func:`taskforce.core.domain.planning.react_loop._react_loop` to drop
+        every ``tool_call_delta`` / ``tool_call_end`` for that index and the
+        tool would silently never run — the agent would commit to an action
+        in chat without firing the matching tool.
+
         Args:
             tc: A tool-call delta object from the stream.
             current_tool_calls: Mutable accumulator dict (index -> tool data).
@@ -947,23 +959,30 @@ class LiteLLMService:
 
         if idx not in current_tool_calls:
             entry = LLMResponseParser.init_tool_call_entry(tc)
+            entry["start_emitted"] = False
             current_tool_calls[idx] = entry
-            if entry["id"] or entry["name"]:
-                yield {
-                    "type": "tool_call_start",
-                    "id": entry["id"],
-                    "name": entry["name"],
-                    "index": idx,
-                }
 
         LLMResponseParser.update_tool_call_metadata(tc, current_tool_calls[idx])
 
+        # Emit ``tool_call_start`` the first time we have id or name — which
+        # may be on the *first* delta for this index, or on a later one if
+        # the provider front-loaded the arguments.
+        entry = current_tool_calls[idx]
+        if not entry.get("start_emitted") and (entry["id"] or entry["name"]):
+            entry["start_emitted"] = True
+            yield {
+                "type": "tool_call_start",
+                "id": entry["id"],
+                "name": entry["name"],
+                "index": idx,
+            }
+
         args_delta = LLMResponseParser.extract_arguments_delta(tc)
         if args_delta:
-            current_tool_calls[idx]["arguments"] += args_delta
+            entry["arguments"] += args_delta
             yield {
                 "type": "tool_call_delta",
-                "id": current_tool_calls[idx]["id"],
+                "id": entry["id"],
                 "arguments_delta": args_delta,
                 "index": idx,
             }
