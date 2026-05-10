@@ -55,9 +55,28 @@ uv pip install -e agents/rag-agent
 The default deployment surfaces only the Butler family (incl. coding sub-agents),
 `rag_agent`, and the standalone `accounting_agent` in `GET /api/v1/agents` and
 the UI. Showcases and other discoverable agents stay loadable by id but stay
-out of the catalog. To customise, edit `src/taskforce/configs/deployment.yaml`
-or point `TASKFORCE_DEPLOYMENT_MANIFEST` at your own manifest — see
+out of the catalog. To customise, edit `src/taskforce/configs/deployment.yaml`,
+point `TASKFORCE_DEPLOYMENT_MANIFEST` at your own manifest, or toggle agents
+from **Settings → Agents** in the UI — see
 [`docs/profiles.md`](docs/profiles.md#deployment-manifest-visible-agents-allowlist).
+
+### 3b. Configure runtime via the UI
+
+Once the API is running, **Settings** in the UI exposes the runtime config you'd
+otherwise pin via env vars:
+
+- **LLM Providers** — API keys + endpoints for OpenAI, Anthropic, Azure, Google,
+  Ollama. Includes a "Test connection" probe.
+- **Channels** — Telegram bot token, Teams app id/secret. Includes a test-send
+  button.
+- **Agents** — checkbox editor for the visible-agents allowlist (overrides
+  `deployment.yaml`).
+- **Integrations** — list + revoke OAuth connections (Gmail / Calendar / Drive).
+
+Secrets are stored Fernet-encrypted at `<work_dir>/settings.json.enc`. For
+production, set `TASKFORCE_SECRETS_KEY` so the master key lives outside the
+work dir; otherwise it auto-generates at `<work_dir>/.secrets.key` (mode 0600
+on POSIX).
 
 ### 4. Load a Plugin (Optional)
 ```bash

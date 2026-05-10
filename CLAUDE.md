@@ -1143,6 +1143,114 @@ still extend a hidden sub-agent. The default ships Butler + sub-agents,
 the filter with `?include_hidden=true`. See `docs/profiles.md` →
 *Deployment Manifest* for the full reference.
 
+### Settings Store (UI-managed runtime config)
+
+The settings store is the seam through which UI/REST clients mutate
+runtime configuration that doesn't live in profile YAML — LLM provider
+keys, channel credentials, default-agent selection. Each "section" is
+an opaque JSON document keyed by name; well-known names live in
+`core/domain/settings.py` (`LLM_PROVIDERS`, `CHANNELS`, `OAUTH`,
+`DEFAULT_AGENT`, `VISIBLE_AGENTS`).
+
+- **Protocol:** `core/interfaces/settings.py::SettingsStoreProtocol`
+- **Default impl:** `infrastructure/persistence/file_settings_store.py` —
+  Fernet-encrypted JSON document at `<work_dir>/settings.json.enc`,
+  atomic writes
+- **Master key:** `TASKFORCE_SECRETS_KEY` env var (Fernet key, base64 32-byte)
+  preferred. Falls back to auto-generated `<work_dir>/.secrets.key` (mode
+  0600 on POSIX). For production set the env var so the key lives outside
+  `work_dir`.
+- **REST API:** `GET /api/v1/settings`, `GET/PUT/DELETE /api/v1/settings/{section}`
+  — gated by `tenant:manage` permission (the tenant-admin permission;
+  `system:config` is reserved for platform-level superadmin). The
+  framework returns payloads as-is (no server-side redaction); UI clients
+  mask secret fields locally.
+- **Override hook:** `set_settings_store_override` in
+  `application/infrastructure_overrides.py` — enterprise plugins install
+  a tenant-scoped store here.
+- **Builder:** `InfrastructureBuilder.build_settings_store(work_dir)`.
+
+#### Settings → runtime hydration
+
+Two pieces of the framework consume settings sections via env-var side
+effects:
+
+- **`application/settings_hydrator.py`** translates `LLM_PROVIDERS` and
+  `CHANNELS` sections into the env vars LiteLLM and the gateway
+  registry already read (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+  `AZURE_API_*`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`,
+  `TEAMS_APP_*`).
+- **`application/deployment_manifest_resolver.py`** consults the
+  `VISIBLE_AGENTS` section before falling back to the shipped
+  `deployment.yaml`, so the UI's visible-agents editor wins over the
+  YAML default at runtime.
+
+Hydration runs at server startup (`server.py` lifespan) and again
+after every PUT/DELETE on the corresponding section. The settings
+route also clears the gateway/executor caches on `CHANNELS` writes so
+the next request rebuilds with the new credentials.
+
+#### Connection-test endpoints
+
+- `POST /api/v1/settings/llm-providers/{provider}/test` — minimal
+  LiteLLM probe (`max_tokens=1`); returns `{ok, detail}`.
+- `POST /api/v1/settings/channels/{channel}/test` — sends a real
+  outbound message via the configured sender; same response shape.
+
+#### OAuth read/revoke surface
+
+`api/routes/oauth.py` exposes the existing `AuthManager` for the UI:
+`GET /api/v1/oauth/connections` (list with token metadata),
+`DELETE /api/v1/oauth/connections/{provider}` (revoke + delete).
+Initiating fresh OAuth flows from the UI is intentionally deferred —
+operators run the existing `authenticate` tool from chat for the
+device-flow walk-through.
+
+#### Settings UI
+
+`ui/src/pages/SettingsPage.tsx` is a Radix-Tabs container with five
+tabs:
+
+| Tab | What it edits |
+|-----|---------------|
+| General | Theme + API base URL (local zustand `useSettings` store) |
+| LLM Providers | `LLM_PROVIDERS` section — per-provider key + base + version + test |
+| Channels | `CHANNELS` section — Telegram bot token, Teams app id/secret + test send |
+| Agents | `VISIBLE_AGENTS` override on top of `deployment.yaml` (Phase A) |
+| Integrations | OAuth connections (read + revoke) |
+
+The tab components live under `ui/src/features/settings/`. New tabs are
+added by appending to the `TABS` array in `SettingsPage.tsx`.
+
+#### Enterprise overlay (multi-tenant)
+
+The override hooks introduced for Phase A + B0 give an enterprise
+plugin everything it needs to scope settings + visibility per tenant
+*without forking framework code*:
+
+- `set_settings_store_override(work_dir → store)` — return a
+  tenant-scoped `SettingsStoreProtocol` (e.g. backed by Postgres with
+  a `WHERE tenant_id = ?` filter). The framework's REST routes,
+  hydrator, and manifest resolver all go through `get_settings_store`,
+  so swapping the implementation is enough to make every consumer
+  tenant-aware.
+- `set_deployment_manifest_override(() → manifest | None)` — return a
+  per-tenant manifest. When set, this beats both the settings store
+  and the YAML default (see `InfrastructureBuilder.build_agent_registry`
+  for the precedence order).
+- The auth middleware-installed user/tenant context already flows
+  through `require_permission`, so the `system:config` gate naturally
+  becomes "tenant admin only" once a tenant resolver is installed
+  (`set_tenant_resolver`).
+- Implementation lives in the separate `taskforce-enterprise` repo.
+  Enterprise admin pages (`/admin/llm-providers`, `/admin/channels`,
+  `/admin/deployment`) consume the same REST API the framework's UI
+  uses; the only difference is they're scoped to the active tenant.
+
+The framework default (no overrides) is bit-for-bit single-tenant
+behaviour: one global settings document at `<work_dir>/settings.json.enc`,
+one global `deployment.yaml`.
+
 ```yaml
 # Example: src/taskforce/configs/default.yaml
 profile: default

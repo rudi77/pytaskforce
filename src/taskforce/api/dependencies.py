@@ -119,6 +119,43 @@ def get_agent_deployment_service():
 
 
 # ---------------------------------------------------------------------------
+# AuthManager (OAuth2 / token lifecycle)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_auth_manager():
+    """Provide a shared :class:`AuthManager` instance.
+
+    Returns ``None`` when the optional ``cryptography`` dependency is
+    not installed — callers (typically the OAuth route) surface that
+    as an HTTP 503 to the UI.
+    """
+    return get_factory()._ensure_auth_manager()
+
+
+# ---------------------------------------------------------------------------
+# Settings store (UI-managed runtime configuration)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_settings_store():
+    """Provide a shared :class:`SettingsStoreProtocol` instance.
+
+    Routes through ``InfrastructureBuilder`` so plugins can override the
+    default file-based store. The instance is cached for the process —
+    callers that need to rebuild it (e.g. after rotating the master
+    key) should clear ``get_settings_store.cache_clear``.
+    """
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+    builder = InfrastructureBuilder()
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return builder.build_settings_store(work_dir=work_dir)
+
+
+# ---------------------------------------------------------------------------
 # Communication Gateway
 # ---------------------------------------------------------------------------
 
