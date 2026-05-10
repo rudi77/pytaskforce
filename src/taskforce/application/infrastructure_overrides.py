@@ -53,6 +53,7 @@ from typing import Any
 _agent_registry_override: Callable[[], Any] | None = None
 _deployment_manifest_override: Callable[[], Any] | None = None
 _settings_store_override: Callable[[str], Any] | None = None
+_token_store_override: Callable[[], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
 _conversation_store_override: Callable[[str], Any] | None = None
 _agent_state_override: Callable[[str], Any] | None = None
@@ -133,6 +134,36 @@ def set_settings_store_override(
 def get_settings_store_override() -> Callable[[str], Any] | None:
     """Return the currently installed settings-store override, if any."""
     return _settings_store_override
+
+
+def set_token_store_override(provider: Callable[[], Any] | None) -> None:
+    """Install (or clear) an override for ``build_token_store``.
+
+    The provider is a zero-argument callable returning an object
+    satisfying :class:`taskforce.core.interfaces.auth.TokenStoreProtocol`.
+
+    Use this to back the token store with a per-(tenant, user) store
+    (e.g. an encrypted bucket under ``tenants/<tid>/users/<uid>/auth/``)
+    from an enterprise plugin. With nothing installed the framework
+    falls back to its process-global ``EncryptedTokenStore`` rooted at
+    ``~/.taskforce/auth/`` — the legacy single-user behaviour.
+
+    Note: zero-argument by design. Per-user resolution happens inside
+    the enterprise factory by reading tenant + user ContextVars; the
+    framework call site has no useful argument to pass. The provider
+    is consulted on every ``build_token_store`` call, so plugins that
+    need per-request scoping typically return a thin dispatcher
+    wrapper that re-resolves on each ``save_token`` / ``load_token``
+    call (the framework's ``AuthManager`` is built once per process
+    via ``lru_cache``).
+    """
+    global _token_store_override
+    _token_store_override = provider
+
+
+def get_token_store_override() -> Callable[[], Any] | None:
+    """Return the currently installed token-store override, if any."""
+    return _token_store_override
 
 
 def set_state_manager_override(
@@ -476,9 +507,7 @@ def set_webhook_workflow_resolver(
     _webhook_workflow_resolver = resolver
 
 
-def get_webhook_workflow_resolver() -> (
-    Callable[[str], Awaitable[str | None]] | None
-):
+def get_webhook_workflow_resolver() -> Callable[[str], Awaitable[str | None]] | None:
     """Return the installed webhook resolver, if any."""
     return _webhook_workflow_resolver
 
@@ -611,6 +640,7 @@ def clear_infrastructure_overrides() -> None:
     global _agent_registry_override
     global _deployment_manifest_override
     global _settings_store_override
+    global _token_store_override
     global _state_manager_override
     global _conversation_store_override
     global _agent_state_override
@@ -635,6 +665,7 @@ def clear_infrastructure_overrides() -> None:
     _agent_registry_override = None
     _deployment_manifest_override = None
     _settings_store_override = None
+    _token_store_override = None
     _state_manager_override = None
     _conversation_store_override = None
     _agent_state_override = None

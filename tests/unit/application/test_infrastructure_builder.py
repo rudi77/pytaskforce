@@ -15,7 +15,6 @@ from taskforce.application.infrastructure_overrides import (
 )
 from taskforce.core.domain.context_policy import ContextPolicy
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -612,9 +611,7 @@ class TestSimpleBuilders:
             mock_cls.assert_called_once()
             assert result is mock_cls.return_value
 
-    def test_build_wiki_store_default_work_dir(
-        self, builder: InfrastructureBuilder
-    ) -> None:
+    def test_build_wiki_store_default_work_dir(self, builder: InfrastructureBuilder) -> None:
         from pathlib import Path
 
         from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
@@ -715,6 +712,104 @@ class TestSimpleBuilders:
                 mock_load.assert_not_called()
                 kwargs = mock_cls.call_args.kwargs
                 assert kwargs["deployment_manifest"] is override_manifest
+        finally:
+            clear_infrastructure_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Token Store
+# ---------------------------------------------------------------------------
+
+
+class TestBuildTokenStore:
+    """Tests for build_token_store and the override hook (issue #195)."""
+
+    def test_default_returns_encrypted_token_store(self, builder: InfrastructureBuilder) -> None:
+        """With no override installed the framework default ships."""
+        from taskforce.infrastructure.auth.encrypted_token_store import (
+            EncryptedTokenStore,
+        )
+
+        store = builder.build_token_store()
+        assert isinstance(store, EncryptedTokenStore)
+
+    def test_override_returns_provider_result(self, builder: InfrastructureBuilder) -> None:
+        """An installed override is consulted on every call."""
+        from taskforce.application.infrastructure_overrides import (
+            clear_infrastructure_overrides,
+            set_token_store_override,
+        )
+
+        sentinel = MagicMock(name="custom_token_store")
+        set_token_store_override(lambda: sentinel)
+        try:
+            store = builder.build_token_store()
+            assert store is sentinel
+        finally:
+            clear_infrastructure_overrides()
+
+    def test_clear_overrides_restores_default(self, builder: InfrastructureBuilder) -> None:
+        """``clear_infrastructure_overrides`` resets the token-store slot."""
+        from taskforce.application.infrastructure_overrides import (
+            clear_infrastructure_overrides,
+            set_token_store_override,
+        )
+        from taskforce.infrastructure.auth.encrypted_token_store import (
+            EncryptedTokenStore,
+        )
+
+        set_token_store_override(lambda: MagicMock(name="x"))
+        clear_infrastructure_overrides()
+        store = builder.build_token_store()
+        assert isinstance(store, EncryptedTokenStore)
+
+    def test_override_consulted_on_each_call(self, builder: InfrastructureBuilder) -> None:
+        """The override is invoked every time, supporting per-request scoping."""
+        from taskforce.application.infrastructure_overrides import (
+            clear_infrastructure_overrides,
+            set_token_store_override,
+        )
+
+        provider = MagicMock(side_effect=lambda: MagicMock())
+        set_token_store_override(provider)
+        try:
+            builder.build_token_store()
+            builder.build_token_store()
+            builder.build_token_store()
+            assert provider.call_count == 3
+        finally:
+            clear_infrastructure_overrides()
+
+
+# ---------------------------------------------------------------------------
+# AgentFactory wiring (issue #195)
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryUsesBuildTokenStore:
+    """``AgentFactory._ensure_auth_manager`` must consult the builder hook."""
+
+    def test_factory_routes_token_store_through_builder(self, tmp_path: Path) -> None:
+        """When an override is installed, the factory wires its result into AuthManager."""
+        from taskforce.application.factory import AgentFactory
+        from taskforce.application.infrastructure_overrides import (
+            clear_infrastructure_overrides,
+            set_token_store_override,
+        )
+
+        sentinel_store = MagicMock(name="recording_token_store")
+        set_token_store_override(lambda: sentinel_store)
+        try:
+            # Use tmp_path for config_dir so we don't depend on repo layout.
+            (tmp_path / "dev.yaml").write_text("profile: dev\n")
+            factory = AgentFactory(config_dir=str(tmp_path))
+            auth_manager = factory._ensure_auth_manager()
+            # When ``cryptography`` isn't installed the factory returns None
+            # and logs ``auth_manager.auto_create_skipped`` — skip in that case.
+            if auth_manager is None:
+                pytest.skip("auth manager could not be created (missing deps)")
+            # The AuthManager stores the injected token store as ``_token_store``.
+            assert auth_manager._token_store is sentinel_store
         finally:
             clear_infrastructure_overrides()
 
