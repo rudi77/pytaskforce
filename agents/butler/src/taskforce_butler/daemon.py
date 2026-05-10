@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,10 @@ class ButlerDaemon:
         # Proactive layer (Phase 3) — populated by _setup_proactive_layer.
         self._proactive_evaluator: Any = None
         self._proactive_task: asyncio.Task[None] | None = None
+        # Watchdog support (issue #156): every status-loop tick refreshes
+        # ``_last_heartbeat`` so a supervising ``DaemonSupervisor`` can
+        # detect a stalled main loop without poking at internals.
+        self._last_heartbeat: datetime = utc_now()
 
     @property
     def is_running(self) -> bool:
@@ -65,6 +70,20 @@ class ButlerDaemon:
     def agent_service(self) -> Any:
         """The PersistentAgentService, if active."""
         return self._agent_service
+
+    @property
+    def last_heartbeat(self) -> datetime:
+        """Timestamp of the most recent main-loop heartbeat.
+
+        Refreshed on every iteration of :meth:`_write_status_loop` and
+        also at the end of :meth:`start`. Used by ``DaemonSupervisor``
+        to detect stalled loops (see issue #156).
+        """
+        return self._last_heartbeat
+
+    def touch_heartbeat(self) -> None:
+        """Refresh the heartbeat timestamp from any internal task."""
+        self._last_heartbeat = utc_now()
 
     async def start(self) -> None:
         """Start the butler daemon with full component initialization."""
@@ -120,6 +139,7 @@ class ButlerDaemon:
         await self._setup_proactive_layer(config)
 
         self._running = True
+        self._last_heartbeat = utc_now()
 
         # Start periodic status writer
         self._status_task = asyncio.create_task(self._write_status_loop(), name="butler-status")
@@ -584,9 +604,15 @@ class ButlerDaemon:
                 )
 
     async def _write_status_loop(self) -> None:
-        """Periodically write butler status to disk."""
+        """Periodically write butler status to disk.
+
+        Each iteration also refreshes :attr:`last_heartbeat` so a
+        supervising ``DaemonSupervisor`` can detect when the asyncio
+        event loop itself has stalled (see issue #156).
+        """
         try:
             while self._running:
+                self._last_heartbeat = utc_now()
                 await self._write_status()
                 await asyncio.sleep(30)
         except asyncio.CancelledError:

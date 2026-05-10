@@ -415,3 +415,39 @@ tools:
 ```
 
 The `butler.yaml` profile includes all three tools by default.
+
+### Butler daemon hardening (24/7 operation)
+
+`taskforce butler start` wraps the daemon in a
+``DaemonSupervisor`` (see
+`agents/butler/src/taskforce_butler/daemon_supervisor.py`) that adds
+the runtime guarantees needed for unattended operation (issue #156):
+
+- **Watchdog**: every supervisor tick checks
+  ``ButlerDaemon.last_heartbeat`` (refreshed by the status-writer
+  loop). If the heartbeat falls behind ``stall_threshold_seconds``
+  (default 120s), the supervisor logs
+  ``event="butler.daemon.stall_detected"`` and restarts the daemon.
+- **Auto-restart on crash**: uncaught exceptions are logged via
+  ``logger.exception("butler.daemon.crash", ...)`` with
+  ``iteration_count``, ``restart_count``, ``backoff_seconds`` and the
+  error type. The supervisor sleeps for an exponential backoff (1s,
+  2s, 4s … capped at 60s) before restarting. ``KeyboardInterrupt``,
+  ``SystemExit`` and ``asyncio.CancelledError`` propagate, so manual
+  shutdown is never converted into a restart.
+- **Graceful shutdown on signals**: ``SIGINT`` is handled on every
+  platform; ``SIGTERM`` is handled on POSIX, ``SIGBREAK`` on Windows.
+  The handler flips an asyncio event so the supervisor stops the
+  inner daemon (which drains in-flight scheduler jobs and persistent
+  agent requests via the existing ``ButlerService.stop`` /
+  ``PersistentAgentService.stop`` paths) and exits cleanly.
+- **Transient LLM-failure retries**: ``LiteLLMService`` already
+  retries 429/502/503/timeouts via
+  ``retry.max_attempts``/``retry.backoff_multiplier`` in
+  ``llm_config.yaml``. Auth/quota errors (401/403, ``insufficient_quota``,
+  ``billing``) are now classified as non-retryable so a rotated API
+  key doesn't burn through retry budget every tick.
+
+Disable supervision with ``taskforce butler start --no-supervisor``
+when running under an external init system (systemd, Docker, k8s) that
+already provides its own restart policy.
