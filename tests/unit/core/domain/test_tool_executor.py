@@ -169,9 +169,7 @@ class TestToolExecutorExecute:
     async def test_execution_logs_completion_with_result(self) -> None:
         """execute logs tool_complete with full result dict on success."""
         logger = _StubLogger()
-        tool = _make_mock_tool(
-            "my_tool", result={"success": True, "output": "done", "bytes": 42}
-        )
+        tool = _make_mock_tool("my_tool", result={"success": True, "output": "done", "bytes": 42})
         executor = ToolExecutor(tools={"my_tool": tool}, logger=logger)
 
         await executor.execute("my_tool", {"input": "test"})
@@ -497,3 +495,68 @@ class TestToolResultMessageFactoryBuildMessage:
         ]
         assert len(file_logs) == 1
         assert file_logs[0][1]["file"] == "/tmp/results/logged-handle.json"
+
+
+# ---------------------------------------------------------------------------
+# Per-tool result_store_threshold override
+# ---------------------------------------------------------------------------
+
+
+class TestToolResultMessageFactoryPerToolThreshold:
+    """A tool exposing ``tool_result_store_threshold`` overrides the global default."""
+
+    async def test_per_tool_override_triggers_storage_below_global(self) -> None:
+        """Tool with low threshold stores results that the global default would inline."""
+        handle = _make_handle("handle-pertool-1", "web_search")
+        store = AsyncMock()
+        store.put = AsyncMock(return_value=handle)
+        store._result_path = MagicMock(return_value="/tmp/results/handle-pertool-1.json")
+
+        # Tool exposes a threshold of 200 chars; global default is 5000.
+        web_tool = MagicMock()
+        web_tool.name = "web_search"
+        web_tool.tool_result_store_threshold = 200
+
+        factory = ToolResultMessageFactory(
+            tool_result_store=store,
+            result_store_threshold=5000,  # Global default — would inline a 1k payload.
+            logger=_StubLogger(),
+            tools={"web_search": web_tool},
+        )
+
+        result = await factory.build_message(
+            tool_call_id="call_pt_1",
+            tool_name="web_search",
+            tool_result={"success": True, "results": [{"title": "x" * 800, "url": "u"}]},
+            session_id="s1",
+            step=1,
+        )
+
+        store.put.assert_awaited_once()
+        content = json.loads(result["content"])
+        assert "result_file" in content
+
+    async def test_no_override_falls_back_to_global_default(self) -> None:
+        """Tool without ``tool_result_store_threshold`` uses the global value."""
+        store = AsyncMock()
+        store.put = AsyncMock()
+
+        plain_tool = MagicMock(spec=[])  # No tool_result_store_threshold attribute
+        plain_tool.name = "plain"
+
+        factory = ToolResultMessageFactory(
+            tool_result_store=store,
+            result_store_threshold=5000,
+            logger=_StubLogger(),
+            tools={"plain": plain_tool},
+        )
+
+        await factory.build_message(
+            tool_call_id="call_plain",
+            tool_name="plain",
+            tool_result={"success": True, "output": "small"},
+            session_id="s1",
+            step=1,
+        )
+
+        store.put.assert_not_awaited()

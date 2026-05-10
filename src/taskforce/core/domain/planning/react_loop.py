@@ -44,22 +44,21 @@ def build_user_message_for_error(error_kind: str, raw_error: str) -> str:
     """
     if error_kind == "content_filter":
         return (
-            "Ich kann diese Anfrage in der aktuellen Form leider nicht "
-            "beantworten — der Inhaltsfilter des LLM-Anbieters hat sie "
-            "blockiert. Das passiert manchmal bei harmlosen Themen wie "
-            "Statistiken zu Körpermaßen, BMI oder ähnlichen sensitiven "
-            "Begriffen. Bitte formuliere die Anfrage neutraler oder lass "
-            "einzelne Stichworte weg, dann probiere ich es erneut."
+            "Der Inhaltsfilter des LLM-Anbieters hat den Prompt-Kontext "
+            "blockiert. Auslöser ist meist nicht die aktuelle Frage selbst, "
+            "sondern der angesammelte Recherche-Kontext aus den vorherigen "
+            "Schritten (Suchsnippets, geladene Artikel-Texte, "
+            "Tool-Ausgaben). Bitte starte die Aufgabe in einer neuen "
+            "Konversation oder reduziere die Suchtiefe — z. B. weniger "
+            "Suchrunden, gezieltere Queries oder eine neutralere "
+            "Formulierung der Mission."
         )
     if raw_error:
         return (
             f"Ich konnte die Aufgabe leider nicht abschließen: {raw_error}\n"
             "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
         )
-    return (
-        "Ich konnte leider keine Antwort generieren. "
-        "Bitte versuche es noch einmal."
-    )
+    return "Ich konnte leider keine Antwort generieren. Bitte versuche es noch einmal."
 
 
 async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -> ExecutionResult:

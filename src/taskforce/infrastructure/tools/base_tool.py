@@ -77,6 +77,17 @@ class BaseTool:
     tool_supports_parallelism: bool = False
     """Whether this tool can safely run concurrently with others."""
 
+    tool_result_store_threshold: int | None = None
+    """Per-tool override for the result-store threshold (chars).
+
+    When set, results larger than this value are written to the
+    ``ToolResultStore`` and replaced in the message history with a
+    short file reference. ``None`` means "use the framework default"
+    (configured on the agent). Set to a low value (e.g. ``500``) for
+    tools whose raw output is large or contains text that may trip
+    LLM content filters (web search snippets, fetched HTML, etc.).
+    """
+
     tool_auto_approve_for_origins: frozenset[str] = frozenset()
     """Trigger origins that bypass the approval gate for this tool.
 
@@ -242,9 +253,7 @@ class BaseTool:
             Any exception -- will be caught by ``_execute_safe`` and
             converted to a standardised error payload.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement _execute()"
-        )
+        raise NotImplementedError(f"{type(self).__name__} must implement _execute()")
 
     async def _execute_safe(self, **kwargs: Any) -> dict[str, Any]:
         """Call ``_execute`` and convert unexpected exceptions to error payloads.

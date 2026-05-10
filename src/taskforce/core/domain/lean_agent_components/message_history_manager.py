@@ -16,6 +16,9 @@ from taskforce.core.interfaces.logging import LoggerProtocol
 class MessageHistoryManager:
     """Manage Agent message history, compression, and budget enforcement."""
 
+    DEFAULT_TOOL_MESSAGE_MAX_CHARS = 1500
+    DEFAULT_ASSISTANT_MESSAGE_MAX_CHARS = 4000
+
     def __init__(
         self,
         *,
@@ -25,6 +28,8 @@ class MessageHistoryManager:
         model_alias: str,
         summary_threshold: int,
         logger: LoggerProtocol,
+        tool_message_max_chars: int | None = None,
+        assistant_message_max_chars: int | None = None,
     ) -> None:
         self._token_budgeter = token_budgeter
         self._openai_tools = openai_tools
@@ -33,6 +38,16 @@ class MessageHistoryManager:
         self._summary_threshold = summary_threshold
         self._logger = logger
         self._sanitizer = MessageSanitizer(logger)
+        self._tool_message_max_chars = (
+            tool_message_max_chars
+            if tool_message_max_chars is not None
+            else self.DEFAULT_TOOL_MESSAGE_MAX_CHARS
+        )
+        self._assistant_message_max_chars = (
+            assistant_message_max_chars
+            if assistant_message_max_chars is not None
+            else self.DEFAULT_ASSISTANT_MESSAGE_MAX_CHARS
+        )
 
     def build_initial_messages(
         self,
@@ -120,17 +135,75 @@ class MessageHistoryManager:
         )
         return any(keyword in mission_lower for keyword in coding_keywords)
 
+    def cap_oversized_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Hard-cap tool/assistant message sizes role-by-role.
+
+        Pre-compression deterministic step: long tool-role messages
+        (raw search snippets, fetched HTML, command outputs) and
+        oversized assistant reasoning blocks are truncated to their
+        per-role char limit and tagged with a ``[truncated …]``
+        marker. This shrinks the message log before the more
+        expensive LLM-based summarisation runs and prevents single
+        large messages from dominating the budget.
+
+        The original messages list is not mutated; a new list with
+        shallow-copied dicts is returned.
+        """
+        tool_cap = self._tool_message_max_chars
+        assistant_cap = self._assistant_message_max_chars
+        capped: list[dict[str, Any]] = []
+        truncated_tool = 0
+        truncated_assistant = 0
+
+        for msg in messages:
+            role = msg.get("role")
+            if role == "tool" and tool_cap > 0:
+                content = msg.get("content")
+                if isinstance(content, str) and len(content) > tool_cap:
+                    new_msg = dict(msg)
+                    dropped = len(content) - tool_cap
+                    new_msg["content"] = (
+                        content[:tool_cap]
+                        + f"\n[truncated {dropped} chars — original size {len(content)}]"
+                    )
+                    capped.append(new_msg)
+                    truncated_tool += 1
+                    continue
+            if role == "assistant" and assistant_cap > 0:
+                content = msg.get("content")
+                if isinstance(content, str) and len(content) > assistant_cap:
+                    new_msg = dict(msg)
+                    dropped = len(content) - assistant_cap
+                    new_msg["content"] = content[:assistant_cap] + f"\n[truncated {dropped} chars]"
+                    capped.append(new_msg)
+                    truncated_assistant += 1
+                    continue
+            capped.append(msg)
+
+        if truncated_tool or truncated_assistant:
+            self._logger.info(
+                "message_history_role_capped",
+                tool_messages_truncated=truncated_tool,
+                assistant_messages_truncated=truncated_assistant,
+                tool_cap=tool_cap,
+                assistant_cap=assistant_cap,
+            )
+        return capped
+
     async def compress_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Compress message history using safe LLM-based summarization.
 
         Strategy (Story 9.3 - Safe Compression):
+        0. Role-aware hard cap on individual tool/assistant messages
+           (cheap, deterministic — runs every call).
         1. Trigger based on token budget (primary) or message count (fallback)
         2. Build safe summary input from sanitized message previews (NO raw dumps)
         3. Use LLM to summarize old messages (skip system prompt)
         4. Replace old messages with summary + keep recent messages
         5. Fallback: Simple truncation if LLM summarization fails
         """
+        messages = self.cap_oversized_messages(messages)
         message_count = len(messages)
 
         # Estimate once and reuse — avoids a duplicate estimate_tokens() call
@@ -334,9 +407,7 @@ Keep it factual and concise."""
 
         return "\n\n".join(summary_parts)
 
-    def preflight_budget_check(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def preflight_budget_check(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Preflight budget check before LLM call.
 
@@ -347,6 +418,10 @@ Keep it factual and concise."""
         immediately after compress_messages() on the same message list the
         token budgeter's own logging will show one entry instead of two.
         """
+        # Cheap deterministic role-aware cap first; same operation as the
+        # one at the start of compress_messages, but runs unconditionally
+        # in case preflight is reached without prior compression.
+        messages = self.cap_oversized_messages(messages)
         estimated = self._token_budgeter.estimate_tokens(
             messages=messages,
             tools=self._openai_tools,

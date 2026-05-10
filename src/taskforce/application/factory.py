@@ -415,17 +415,13 @@ class AgentFactory:
         if "wiki" not in tool_names:
             return None, None
 
-        store_dir = ToolBuilder.resolve_wiki_store_dir(
-            config, work_dir_override=work_dir_override
-        )
+        store_dir = ToolBuilder.resolve_wiki_store_dir(config, work_dir_override=work_dir_override)
         from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
         wiki_store = FileWikiStore(store_dir)
         injection_cfg = config.get("wiki", {}).get("context_injection")
         wiki_context_config = (
-            WikiContextConfig.from_dict(injection_cfg)
-            if injection_cfg
-            else WikiContextConfig()
+            WikiContextConfig.from_dict(injection_cfg) if injection_cfg else WikiContextConfig()
         )
         return wiki_store, wiki_context_config
 
@@ -531,6 +527,9 @@ class AgentFactory:
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
             "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
             "model_alias": config.get("llm", {}).get("default_model", "main"),
+            "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
+            "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
+            "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
         }
 
     def _instantiate_agent(
@@ -570,6 +569,9 @@ class AgentFactory:
             wiki_store=infra.get("wiki_store"),
             wiki_context_config=infra.get("wiki_context_config"),
             tool_result_store=infra.get("tool_result_store"),
+            tool_result_store_threshold=settings.get("tool_result_store_threshold"),
+            tool_message_max_chars=settings.get("tool_message_max_chars"),
+            assistant_message_max_chars=settings.get("assistant_message_max_chars"),
         )
 
     async def _load_plugin_tools_for_definition(
@@ -1135,6 +1137,13 @@ class AgentFactory:
                 "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
                 "planning_strategy": planning_strategy,
                 "planning_strategy_params": planning_strategy_params,
+                # Carry context-engineering caps from defaults so
+                # programmatic ``create_agent(...)`` callers inherit
+                # the same behaviour as profile-based agents (and
+                # operators can tune the defaults globally).
+                "tool_result_store_threshold": agent_defaults.get("tool_result_store_threshold"),
+                "tool_message_max_chars": agent_defaults.get("tool_message_max_chars"),
+                "assistant_message_max_chars": agent_defaults.get("assistant_message_max_chars"),
             },
         }
 
@@ -1243,6 +1252,9 @@ class AgentFactory:
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
             "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
             "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
+            "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
+            "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
+            "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
         }
         plugin_work_dir = merged_config.get("persistence", {}).get("work_dir")
         plugin_wiki_store, plugin_wiki_cfg = self._build_wiki_injection(
