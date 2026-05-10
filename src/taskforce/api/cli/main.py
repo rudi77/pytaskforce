@@ -24,6 +24,7 @@ except ImportError:
         memory,
         missions,
         run,
+        runtimes,
         skills,
         tools,
     )
@@ -48,16 +49,13 @@ except ImportError:
     app.add_typer(missions.app, name="missions", help="Mission templates and runtime control")
     app.add_typer(goals.app, name="goals", help="Standing-goal management (proactive layer)")
     app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
+    app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
 
     @app.callback()
     def main(
         ctx: typer.Context,
-        profile: str = typer.Option(
-            "dev", "--profile", "-p", help="Configuration profile"
-        ),
-        debug: bool = typer.Option(
-            False, "--debug", "-d", help="Enable debug output"
-        ),
+        profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
+        debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug output"),
     ):
         """Taskforce Agent CLI."""
         ctx.obj = {"profile": profile, "debug": debug}

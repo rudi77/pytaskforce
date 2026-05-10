@@ -353,6 +353,21 @@ class ProfileConfigSchema(BaseModel):
         description="ACP (Agent Communication Protocol) configuration",
     )
 
+    # Agent-runtime selector (multi-runtime support).
+    # Default ``"taskforce"`` keeps existing profiles unchanged. Foreign
+    # runtimes (Hermes, OpenClaw, …) ship their own adapter and register
+    # themselves with ``agent_runtime_registry`` at import time; profiles
+    # then opt in via ``runtime: hermes`` (etc.).
+    runtime: str = Field(
+        "taskforce",
+        description="Top-level agent runtime selector (taskforce, hermes, openclaw, ...)",
+        pattern="^[a-zA-Z0-9_:-]+$",
+    )
+    runtime_config: dict[str, Any] | None = Field(
+        None,
+        description="Adapter-specific configuration passed verbatim to the runtime factory",
+    )
+
     # Raw technical block (used by .agent.md files before the loader flattens
     # it onto the top level). Retained so Pydantic doesn't reject it during
     # post-flattening validation of mid-pipeline configs.

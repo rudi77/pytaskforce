@@ -241,7 +241,9 @@ class AgentExecutor:
             )
             return False
         if agent is not None:
-            agent.request_interrupt()
+            request_interrupt = getattr(agent, "request_interrupt", None)
+            if callable(request_interrupt):
+                request_interrupt()
         self.logger.info(
             "interrupt.requested",
             session_id=session_id,
@@ -438,15 +440,13 @@ class AgentExecutor:
                                 message=getattr(update, "message", "") or "",
                                 details=details or None,
                                 step=getattr(update, "step_number", None),
-                                prompt_tokens=int(details.get("prompt_tokens", 0))
-                                if is_usage
-                                else 0,
-                                completion_tokens=int(details.get("completion_tokens", 0))
-                                if is_usage
-                                else 0,
-                                cost_usd=float(details.get("cost_usd", 0.0))
-                                if is_usage
-                                else 0.0,
+                                prompt_tokens=(
+                                    int(details.get("prompt_tokens", 0)) if is_usage else 0
+                                ),
+                                completion_tokens=(
+                                    int(details.get("completion_tokens", 0)) if is_usage else 0
+                                ),
+                                cost_usd=float(details.get("cost_usd", 0.0)) if is_usage else 0.0,
                             )
                         except Exception:  # noqa: BLE001
                             pass
@@ -713,13 +713,21 @@ class AgentExecutor:
         session_id: str,
         conversation_history: list[dict[str, Any]] | None,
     ) -> None:
-        """Store conversation history in agent state when provided."""
+        """Store conversation history in agent state when provided.
+
+        No-op for stateless foreign-runtime adapters that do not expose a
+        ``state_manager`` attribute.
+        """
         if not conversation_history:
             return
 
-        state = await agent.state_manager.load_state(session_id) or {}
+        state_manager = getattr(agent, "state_manager", None)
+        if state_manager is None:
+            return
+
+        state = await state_manager.load_state(session_id) or {}
         state["conversation_history"] = conversation_history
-        await agent.state_manager.save_state(session_id, state)
+        await state_manager.save_state(session_id, state)
 
     @staticmethod
     async def _deferred_close(agent: Agent, delay: float = 2.0) -> None:
@@ -753,9 +761,7 @@ class AgentExecutor:
             if not learning_cfg.get("enabled"):
                 return
 
-            wiki_store = getattr(agent, "_wiki_store", None) or getattr(
-                agent, "wiki_store", None
-            )
+            wiki_store = getattr(agent, "_wiki_store", None) or getattr(agent, "wiki_store", None)
             llm_service = getattr(agent, "llm_provider", None)
             if wiki_store is None or llm_service is None:
                 return
