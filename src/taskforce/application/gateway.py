@@ -13,14 +13,21 @@ cross-session conversations.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import structlog
 
-from taskforce.application.executor import AgentExecutor
-from taskforce.core.domain.enums import MessageRole
+from taskforce.application.executor import AgentExecutor, ProgressUpdate
+from taskforce.core.domain.action_log import (
+    ActionLog,
+    TurnRecorder,
+    format_action_log,
+    format_footer,
+)
+from taskforce.core.domain.enums import EventType, MessageRole
 from taskforce.core.domain.gateway import (
     GatewayOptions,
     GatewayResponse,
@@ -165,6 +172,14 @@ class CommunicationGateway:
     # Commands that reset the conversation (Telegram /start, etc.).
     RESET_COMMANDS = frozenset({"/start", "/new", "/reset"})
 
+    # Slash command that returns the tool-call summary for the previous turn
+    # (issue #157).  Always available, regardless of ``actions_summary_mode``.
+    ACTIONS_COMMAND = "/actions"
+
+    # Allowed values for ``actions_summary_mode``.
+    ACTIONS_SUMMARY_DISABLED = "disabled"
+    ACTIONS_SUMMARY_FOOTER = "footer"
+
     # Default welcome message sent after a conversation reset.
     _WELCOME_MESSAGE = (
         "👋 Willkommen! Die Konversation wurde zurückgesetzt. " "Wie kann ich Ihnen helfen?"
@@ -187,6 +202,8 @@ class CommunicationGateway:
         workflow_lookup: WorkflowLookupProtocol | None = None,
         workflow_runner: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         components_provider: Callable[[], Any] | None = None,
+        actions_summary_mode: str = "disabled",
+        max_action_logs: int = 10,
     ) -> None:
         self._executor = executor
         self._conversation_store = conversation_store
@@ -208,6 +225,26 @@ class CommunicationGateway:
         # per-call. None ⇒ constructor-provided defaults are sticky
         # (single-tenant behaviour, bit-for-bit unchanged).
         self._components_provider: Callable[[], Any] | None = components_provider
+        # --- Action transparency (issue #157) -----------------------------
+        # ``actions_summary_mode`` controls the always-on footer behaviour;
+        # ``/actions`` itself works in every mode.  ``max_action_logs`` caps
+        # the per-conversation history so the in-memory store stays bounded.
+        if actions_summary_mode not in (
+            self.ACTIONS_SUMMARY_DISABLED,
+            self.ACTIONS_SUMMARY_FOOTER,
+        ):
+            raise ValueError(
+                f"actions_summary_mode must be 'disabled' or 'footer', got "
+                f"{actions_summary_mode!r}"
+            )
+        self._actions_summary_mode = actions_summary_mode
+        self._max_action_logs = max(1, int(max_action_logs))
+        # Per-conversation rolling action-log storage.  Keyed by
+        # ``(channel, conversation_id)`` so different chats don't collide.
+        self._action_logs: dict[tuple[str, str], deque[ActionLog]] = {}
+        # Counter for assigning monotonically-increasing turn indices per
+        # conversation, independent of how many logs we keep on disk.
+        self._turn_counters: dict[tuple[str, str], int] = {}
         self._logger = structlog.get_logger()
 
     def _resolve_recipient_registry(self) -> RecipientRegistryProtocol:
@@ -332,8 +369,16 @@ class CommunicationGateway:
                     history=[],
                 )
 
-        # ------- Reset commands (/start, /new, /reset) -------
+        # ------- /actions slash command (issue #157) -------
+        # Handled before reset so /actions never accidentally clears the
+        # conversation history.  We accept either the bare command or the
+        # command with trailing whitespace/arguments (currently ignored).
         stripped = message.message.strip().lower()
+        first_token = stripped.split(maxsplit=1)[0] if stripped else ""
+        if first_token == self.ACTIONS_COMMAND:
+            return await self._handle_actions_command(message)
+
+        # ------- Reset commands (/start, /new, /reset) -------
         if stripped in self.RESET_COMMANDS:
             return await self._handle_reset(message)
 
@@ -757,6 +802,98 @@ class CommunicationGateway:
         return set(self._resolve_outbound_senders().keys())
 
     # ------------------------------------------------------------------
+    # Action transparency (issue #157)
+    # ------------------------------------------------------------------
+
+    @property
+    def actions_summary_mode(self) -> str:
+        """Return the configured outbound-footer mode (`disabled` or `footer`)."""
+        return self._actions_summary_mode
+
+    def get_action_logs(self, channel: str, conversation_id: str) -> list[ActionLog]:
+        """Return the stored action logs for a conversation (oldest first).
+
+        Used by tests and tooling — the gateway itself drives the
+        ``/actions`` command via :meth:`_format_actions_reply`.
+        """
+        return list(self._action_logs.get((channel, conversation_id), ()))
+
+    def _store_action_log(self, *, channel: str, conversation_id: str, log: ActionLog) -> None:
+        """Append ``log`` to the rolling per-conversation deque."""
+        key = (channel, conversation_id)
+        bucket = self._action_logs.get(key)
+        if bucket is None:
+            bucket = deque(maxlen=self._max_action_logs)
+            self._action_logs[key] = bucket
+        bucket.append(log)
+
+    def _next_turn_index(self, *, channel: str, conversation_id: str) -> int:
+        """Return + bump the next turn index for this conversation."""
+        key = (channel, conversation_id)
+        idx = self._turn_counters.get(key, 0)
+        self._turn_counters[key] = idx + 1
+        return idx
+
+    def _build_recorder(
+        self, *, channel: str, conversation_id: str, user_message: str
+    ) -> TurnRecorder:
+        """Construct a fresh :class:`TurnRecorder` for one user turn."""
+        return TurnRecorder(
+            turn_index=self._next_turn_index(channel=channel, conversation_id=conversation_id),
+            user_message=user_message,
+        )
+
+    def _format_actions_reply(self, channel: str, conversation_id: str) -> str:
+        """Render the most recent action log for the ``/actions`` command."""
+        logs = self._action_logs.get((channel, conversation_id))
+        latest: ActionLog | None = logs[-1] if logs else None
+        return format_action_log(latest)
+
+    def _maybe_append_footer(self, reply: str, channel: str, conversation_id: str) -> str:
+        """Append the actions-summary footer when footer mode is active.
+
+        Always returns the (possibly modified) reply string. Has no
+        effect when ``actions_summary_mode`` is ``"disabled"`` or no
+        action log was recorded for the latest turn.
+        """
+        if self._actions_summary_mode != self.ACTIONS_SUMMARY_FOOTER:
+            return reply
+        logs = self._action_logs.get((channel, conversation_id))
+        if not logs:
+            return reply
+        return reply + format_footer(logs[-1])
+
+    async def _handle_actions_command(self, message: InboundMessage) -> GatewayResponse:
+        """Handle a ``/actions`` slash command without invoking the agent."""
+        reply = self._format_actions_reply(message.channel, message.conversation_id)
+        sender = self._resolve_outbound_senders().get(message.channel)
+        if sender:
+            try:
+                await sender.send(
+                    recipient_id=message.conversation_id,
+                    message=reply,
+                    metadata={"status": "actions_summary"},
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "gateway.actions_command.send_failed",
+                    channel=message.channel,
+                    error=str(exc),
+                )
+        self._logger.info(
+            "gateway.actions_command",
+            channel=message.channel,
+            conversation_id=message.conversation_id,
+            sender_id=message.sender_id,
+        )
+        return GatewayResponse(
+            session_id="",
+            status="actions_summary",
+            reply=reply,
+            history=[],
+        )
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -973,10 +1110,16 @@ class CommunicationGateway:
         reply: str,
         status: str | Any,
     ) -> None:
-        """Send outbound reply if a sender is configured for the channel."""
+        """Send outbound reply if a sender is configured for the channel.
+
+        When ``actions_summary_mode`` is ``"footer"``, a one-line summary
+        of the last turn's tool-call activity is appended to the reply
+        before dispatch (issue #157).
+        """
         sender = self._resolve_outbound_senders().get(channel)
         if sender:
             sanitized = _sanitize_reply(reply, status)
+            sanitized = self._maybe_append_footer(sanitized, channel, conversation_id)
             try:
                 await sender.send(
                     recipient_id=conversation_id,
@@ -1123,6 +1266,11 @@ class CommunicationGateway:
         When *source_channel* is provided, it is injected into the user
         context so that the executor can automatically route non-channel-
         targeted ``ask_user`` calls back to the originating channel.
+
+        Issue #157: if ``source_channel`` and ``source_conversation_id``
+        are both provided, a :class:`TurnRecorder` is wired into the
+        ``progress_callback`` of ``execute_mission`` so each turn's
+        tool-call activity is captured into ``self._action_logs``.
         """
         user_context = dict(options.user_context) if options.user_context else {}
         if source_channel:
@@ -1130,17 +1278,36 @@ class CommunicationGateway:
         if source_conversation_id:
             user_context.setdefault("source_conversation_id", source_conversation_id)
 
-        return await self._executor.execute_mission(
-            mission=message,
-            profile=options.profile,
-            session_id=session_id,
-            conversation_history=conversation_history,
-            user_context=user_context or None,
-            agent_id=options.agent_id,
-            planning_strategy=options.planning_strategy,
-            planning_strategy_params=options.planning_strategy_params,
-            plugin_path=options.plugin_path,
-        )
+        recorder: TurnRecorder | None = None
+        progress_callback: Callable[[ProgressUpdate], None] | None = None
+        if source_channel and source_conversation_id:
+            recorder = self._build_recorder(
+                channel=source_channel,
+                conversation_id=source_conversation_id,
+                user_message=message,
+            )
+            progress_callback = _make_recorder_callback(recorder)
+
+        try:
+            return await self._executor.execute_mission(
+                mission=message,
+                profile=options.profile,
+                session_id=session_id,
+                conversation_history=conversation_history,
+                progress_callback=progress_callback,
+                user_context=user_context or None,
+                agent_id=options.agent_id,
+                planning_strategy=options.planning_strategy,
+                planning_strategy_params=options.planning_strategy_params,
+                plugin_path=options.plugin_path,
+            )
+        finally:
+            if recorder is not None and source_channel and source_conversation_id:
+                self._store_action_log(
+                    channel=source_channel,
+                    conversation_id=source_conversation_id,
+                    log=recorder.finalize(),
+                )
 
     async def _finalize_response(
         self,
@@ -1174,6 +1341,32 @@ class CommunicationGateway:
             reply=result.final_message,
             history=final_history,
         )
+
+
+def _make_recorder_callback(
+    recorder: TurnRecorder,
+) -> Callable[[ProgressUpdate], None]:
+    """Build a synchronous progress callback that drives ``recorder``.
+
+    The callback only forwards ``tool_call`` and ``tool_result`` events
+    to the recorder; other event types are ignored.  Exceptions raised
+    by the recorder are swallowed so a buggy log entry can never abort
+    a live agent execution.
+    """
+
+    interesting = {EventType.TOOL_CALL.value, EventType.TOOL_RESULT.value}
+
+    def _on_progress(update: ProgressUpdate) -> None:
+        evt = update.event_type
+        evt_str = evt.value if hasattr(evt, "value") else str(evt)
+        if evt_str not in interesting:
+            return
+        try:
+            recorder.observe(evt_str, update.details)
+        except Exception:  # noqa: BLE001 — recorder must never crash a run
+            pass
+
+    return _on_progress
 
 
 def _append_message(

@@ -247,6 +247,56 @@ Content-Type: application/json
 
 ---
 
+## Telegram Action Transparency (`/actions`)
+
+Per [issue #157](https://github.com/rudi77/pytaskforce/issues/157), the Communication Gateway records the tool-call activity of every user turn so that channel users can see *what* the agent did, not just the final answer.
+
+Two complementary surfaces are provided:
+
+### `/actions` slash command
+
+Send `/actions` in any chat (Telegram, REST, etc.) to receive a compact, ASCII-formatted summary of the **previous** user turn:
+
+```
+Actions for previous turn (3 tools, 2 ok, 1 fail):
+1. [ok] file_read {"path": "expenses.csv"} (12 ms)
+2. [ok] python {"code": "df = pd.read_csv..."} (240 ms)
+3. [fail] send_notification {"recipient_id": "u-1"} (5 ms) — 401 Unauthorized
+```
+
+If no prior turn has been recorded for this conversation the gateway replies with:
+
+```
+No prior actions in this conversation.
+```
+
+The slash command is **always available**, regardless of `actions_summary_mode`. It does not invoke the agent and never resets conversation history (so it is safe to chain after `/start`).
+
+### Optional `actions_summary: footer` mode
+
+Set the env var `TASKFORCE_ACTIONS_SUMMARY=footer` (default `disabled`) to have a one-line summary appended to **every** outbound channel reply:
+
+```
+… <agent's normal reply> …
+
+— Actions: 3 tools (2 ok, 1 fail)
+```
+
+The footer is opt-in to avoid spamming users who don't want it. When no tools fired during a turn, no footer is appended. The `/actions` command works in either mode; the env var only controls the always-on footer.
+
+### Storage and retention
+
+- Logs live in process memory and are capped per conversation (default 10 turns; set via the `max_action_logs` constructor argument).
+- Each record includes the tool name, a truncated args summary, success/failure, optional error message, and duration in milliseconds.
+- Markers are intentionally ASCII (`[ok]` / `[fail]`) rather than emoji to comply with the project's emoji-only-on-request rule.
+
+### Limitations
+
+- Recording is wired into the legacy gateway path and the ADR-016 ConversationManager path. The optional `request_queue` (ADR-016 Phase 4) routes execution outside the gateway and currently records nothing — fixable in a future iteration once the queue surfaces tool events.
+- Logs are not persisted across restarts; they live in process memory only.
+
+---
+
 ## Channel Comparison
 
 | Channel | Proactive Push | Webhook Support | Signature Verification |
