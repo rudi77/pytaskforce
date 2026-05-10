@@ -231,6 +231,24 @@ def get_gateway():
 
         return InfrastructureBuilder().build_gateway_components(work_dir=work_dir)
 
+    # Issue #157: optional always-on action-summary footer.  Read from
+    # ``TASKFORCE_ACTIONS_SUMMARY`` env var; profile YAML can set this
+    # via the same env var (CLI/api boot does not yet thread the
+    # gateway: section through).  Invalid values fall back to disabled.
+    actions_summary_mode = (
+        os.getenv(
+            "TASKFORCE_ACTIONS_SUMMARY",
+            CommunicationGateway.ACTIONS_SUMMARY_DISABLED,
+        )
+        .strip()
+        .lower()
+    )
+    if actions_summary_mode not in (
+        CommunicationGateway.ACTIONS_SUMMARY_DISABLED,
+        CommunicationGateway.ACTIONS_SUMMARY_FOOTER,
+    ):
+        actions_summary_mode = CommunicationGateway.ACTIONS_SUMMARY_DISABLED
+
     gw = CommunicationGateway(
         executor=executor,
         conversation_store=components.conversation_store,
@@ -244,6 +262,7 @@ def get_gateway():
         workflow_lookup=workflow_lookup,
         workflow_runner=_workflow_runner,
         components_provider=_components_provider,
+        actions_summary_mode=actions_summary_mode,
     )
 
     # Inject gateway into executor so channel-targeted ask_user is routed
