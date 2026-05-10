@@ -284,7 +284,21 @@ notifications:
 scheduler:
   enabled: true
   store: file
+  default_timezone: Europe/Vienna   # IANA name, used when a job omits timezone
 ```
+
+Per-job fields on `ScheduleJob` (issue #158 edge cases):
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `timezone` | IANA name (e.g. `Europe/Vienna`) | scheduler `default_timezone` (then `UTC`) | Cron expressions and naive ISO datetimes are evaluated in this zone. The same `0 8 * * *` therefore stays at 08:00 local across DST transitions. |
+| `coalesce` | `skip` \| `run_once` | `skip` | Catch-up policy when the scheduler has been down. `skip` (default) ignores missed firings and waits for the next upcoming occurrence. `run_once` fires exactly one catch-up at startup if any occurrence was missed — useful for "make sure this happened today" jobs but **not** for high-frequency intervals where dozens of catch-ups are undesirable. |
+| `last_fired_at` | ISO datetime, internal | `null` | Set by the scheduler **before** the action runs, so a crash mid-fire cannot cause a duplicate firing on restart. One-shot jobs whose `last_fired_at` is non-null are dropped on startup. |
+
+DST handling is automatic: cron candidates that fall in a non-existent
+local hour (forward jump) are skipped to the next valid match;
+ambiguous local times (backward jump) resolve to the first occurrence
+(`fold=0`) so the slot fires exactly once.
 
 ### Event Sources (Butler)
 
