@@ -173,8 +173,10 @@ class InfrastructureBuilder:
         if override is not None:
             return override()
 
+        from taskforce.application.deployment_manifest_resolver import (
+            resolve_deployment_manifest,
+        )
         from taskforce.application.profile_loader import get_extra_config_dirs
-        from taskforce.core.domain.deployment import load_deployment_manifest
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
         )
@@ -188,7 +190,13 @@ class InfrastructureBuilder:
                 self._logger.warning("deployment_manifest.override_failed", exc_info=True)
                 manifest = None
         if manifest is None:
-            manifest = load_deployment_manifest()
+            # Settings-store-first resolution: when the operator has set
+            # ``visible_agents`` via the UI, that wins over the shipped YAML.
+            try:
+                store = self.build_settings_store()
+            except Exception:  # noqa: BLE001 — store unavailable is not fatal here
+                store = None
+            manifest = resolve_deployment_manifest(store)
 
         return FileAgentRegistry(
             tool_mapper=get_tool_registry(),
@@ -576,6 +584,32 @@ class InfrastructureBuilder:
         )
 
         return FileWorkflowDefinitionStore(work_dir=work_dir)
+
+    def build_settings_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build the UI-managed runtime settings store.
+
+        Defaults to the framework's file-based, Fernet-encrypted
+        :class:`FileSettingsStore`. Plugins (e.g. ``taskforce-enterprise``)
+        can substitute a tenant-scoped backend via
+        ``set_settings_store_override``.
+
+        Returns:
+            Object satisfying
+            :class:`taskforce.core.interfaces.settings.SettingsStoreProtocol`.
+        """
+        from taskforce.application.infrastructure_overrides import (
+            get_settings_store_override,
+        )
+
+        override = get_settings_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.file_settings_store import (
+            FileSettingsStore,
+        )
+
+        return FileSettingsStore(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
     # Combined Infrastructure

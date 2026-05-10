@@ -176,6 +176,9 @@ export const queryKeys = {
   conversations: ["conversations", "list"] as const,
   archivedConversations: ["conversations", "archived"] as const,
   conversationMessages: (id: string) => ["conversations", "messages", id] as const,
+  settings: ["settings", "list"] as const,
+  settingsSection: (section: string) => ["settings", "section", section] as const,
+  oauthConnections: ["oauth", "connections"] as const,
 };
 
 // --- Agent deployments -----------------------------------------------------
@@ -1102,5 +1105,154 @@ export function useUploadFile() {
         body: data,
       });
     },
+  });
+}
+
+// ----- Settings (UI-managed runtime config) --------------------------------
+
+export interface SettingsListResponse {
+  sections: string[];
+  known_sections: string[];
+}
+
+export interface SettingsSectionResponse<T = Record<string, unknown>> {
+  name: string;
+  data: T;
+  is_known: boolean;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  detail: string;
+}
+
+export function useSettingsIndex() {
+  return useQuery<SettingsListResponse>({
+    queryKey: queryKeys.settings,
+    queryFn: () => apiFetch<SettingsListResponse>("/api/v1/settings"),
+  });
+}
+
+export function useSettingsSection<T = Record<string, unknown>>(section: string | undefined) {
+  return useQuery<SettingsSectionResponse<T> | null>({
+    queryKey: section ? queryKeys.settingsSection(section) : ["settings", "section", "__none__"],
+    enabled: Boolean(section),
+    queryFn: async () => {
+      try {
+        return await apiFetch<SettingsSectionResponse<T>>(
+          `/api/v1/settings/${encodeURIComponent(section!)}`,
+        );
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return null;
+        }
+        throw err;
+      }
+    },
+  });
+}
+
+export function useUpdateSettingsSection<T = Record<string, unknown>>() {
+  const qc = useQueryClient();
+  return useMutation<SettingsSectionResponse<T>, Error, { section: string; data: T }>({
+    mutationFn: ({ section, data }) =>
+      apiFetch<SettingsSectionResponse<T>>(
+        `/api/v1/settings/${encodeURIComponent(section)}`,
+        {
+          method: "PUT",
+          body: { data },
+        },
+      ),
+    onSuccess: (resp) => {
+      qc.setQueryData(queryKeys.settingsSection(resp.name), resp);
+      qc.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
+
+export function useDeleteSettingsSection() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (section) =>
+      apiFetch<void>(`/api/v1/settings/${encodeURIComponent(section)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: (_void, section) => {
+      qc.removeQueries({ queryKey: queryKeys.settingsSection(section) });
+      qc.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
+
+export function useTestLLMProvider() {
+  return useMutation<ConnectionTestResult, Error, string>({
+    mutationFn: (provider) =>
+      apiFetch<ConnectionTestResult>(
+        `/api/v1/settings/llm-providers/${encodeURIComponent(provider)}/test`,
+        { method: "POST" },
+      ),
+  });
+}
+
+export function useTestChannel() {
+  return useMutation<
+    ConnectionTestResult,
+    Error,
+    { channel: string; recipient: string; message?: string }
+  >({
+    mutationFn: ({ channel, recipient, message }) =>
+      apiFetch<ConnectionTestResult>(
+        `/api/v1/settings/channels/${encodeURIComponent(channel)}/test`,
+        {
+          method: "POST",
+          body: { recipient, message: message ?? "Taskforce test message — channel is wired up." },
+        },
+      ),
+  });
+}
+
+// ----- OAuth connections ---------------------------------------------------
+
+export interface OAuthConnection {
+  provider: string;
+  status: string;
+  scopes: string[];
+  has_refresh_token: boolean;
+  expires_at: string | null;
+  is_expired: boolean;
+}
+
+export interface OAuthConnectionsResponse {
+  connections: OAuthConnection[];
+  auth_manager_available: boolean;
+}
+
+export function useOAuthConnections() {
+  return useQuery<OAuthConnectionsResponse>({
+    queryKey: queryKeys.oauthConnections,
+    queryFn: () => apiFetch<OAuthConnectionsResponse>("/api/v1/oauth/connections"),
+  });
+}
+
+export function useRevokeOAuthConnection() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (provider) =>
+      apiFetch<void>(`/api/v1/oauth/connections/${encodeURIComponent(provider)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.oauthConnections });
+    },
+  });
+}
+
+// ----- Visible-agents helper (consumes existing /agents endpoint) ----------
+
+export function useAllAgentsForVisibility() {
+  return useQuery<AgentListResponse>({
+    queryKey: ["agents", "list", "include_hidden"] as const,
+    queryFn: () =>
+      apiFetch<AgentListResponse>("/api/v1/agents?include_hidden=true"),
   });
 }

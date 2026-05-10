@@ -69,6 +69,7 @@ from taskforce.api.routes import (
     files,
     gateway,
     missions,
+    oauth,
     standing_goals,
     health,
     llm,
@@ -77,6 +78,7 @@ from taskforce.api.routes import (
     planning_strategies,
     profiles,
     runs,
+    settings as settings_route,
     skills,
     tools,
     ui,
@@ -99,6 +101,22 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI startup/shutdown events."""
     # Initialize tracing first (before any LLM calls)
     init_tracing()
+
+    # Hydrate UI-managed settings into env vars BEFORE LiteLLM /
+    # gateway components are first built; their constructors snapshot
+    # env state, so reading the settings store after startup would
+    # otherwise miss settings-supplied keys until the next restart.
+    try:
+        from taskforce.api.dependencies import get_settings_store as _get_settings_store
+        from taskforce.application.settings_hydrator import hydrate_all as _hydrate_all
+
+        _hydrate_all(_get_settings_store())
+    except Exception as exc:  # pragma: no cover — defensive
+        await logger.awarning(
+            "fastapi.startup.settings_hydrate_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     # Register agent-package config directories so /api/v1/profiles can
     # discover butler / coding-agent / rag-agent profiles regardless of
@@ -234,6 +252,8 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
     app.include_router(mcp.router, prefix="/api/v1", tags=["mcp"])
+    app.include_router(settings_route.router, prefix="/api/v1", tags=["settings"])
+    app.include_router(oauth.router, prefix="/api/v1", tags=["oauth"])
     app.include_router(evals.router, prefix="/api/v1", tags=["evals"])
     app.include_router(ui.router, prefix="/api/v1", tags=["ui"])
 
