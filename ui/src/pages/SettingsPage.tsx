@@ -2,10 +2,15 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/app/theme-provider";
 import { useSettings } from "@/lib/settings";
+import LLMProvidersTab from "@/features/settings/LLMProvidersTab";
+import ChannelsTab from "@/features/settings/ChannelsTab";
+import AgentVisibilityTab from "@/features/settings/AgentVisibilityTab";
+import IntegrationsTab from "@/features/settings/IntegrationsTab";
 
-export default function SettingsPage() {
+function GeneralTab() {
   const { preference, setPreference } = useTheme();
   const apiBaseUrl = useSettings((s) => s.apiBaseUrl);
   const apiToken = useSettings((s) => s.apiToken);
@@ -89,5 +94,32 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+const TABS: Array<{ value: string; label: string; render: () => JSX.Element }> = [
+  { value: "general", label: "General", render: () => <GeneralTab /> },
+  { value: "llm", label: "LLM Providers", render: () => <LLMProvidersTab /> },
+  { value: "channels", label: "Channels", render: () => <ChannelsTab /> },
+  { value: "agents", label: "Agents", render: () => <AgentVisibilityTab /> },
+  { value: "integrations", label: "Integrations", render: () => <IntegrationsTab /> },
+];
+
+export default function SettingsPage() {
+  return (
+    <Tabs defaultValue="general" className="space-y-4">
+      <TabsList className="h-auto flex-wrap">
+        {TABS.map((t) => (
+          <TabsTrigger key={t.value} value={t.value}>
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {TABS.map((t) => (
+        <TabsContent key={t.value} value={t.value}>
+          {t.render()}
+        </TabsContent>
+      ))}
+    </Tabs>
   );
 }

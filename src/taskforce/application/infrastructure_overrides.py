@@ -52,6 +52,7 @@ from typing import Any
 # through ``InfrastructureBuilder`` consistently.
 _agent_registry_override: Callable[[], Any] | None = None
 _deployment_manifest_override: Callable[[], Any] | None = None
+_settings_store_override: Callable[[str], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
 _conversation_store_override: Callable[[str], Any] | None = None
 _agent_state_override: Callable[[str], Any] | None = None
@@ -110,6 +111,28 @@ def set_deployment_manifest_override(
 def get_deployment_manifest_override() -> Callable[[], Any] | None:
     """Return the currently installed deployment-manifest override, if any."""
     return _deployment_manifest_override
+
+
+def set_settings_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_settings_store``.
+
+    The provider receives the same ``work_dir`` argument as the builder
+    method and must return an object satisfying
+    :class:`taskforce.core.interfaces.settings.SettingsStoreProtocol`.
+    Use this to back the settings store with a tenant-scoped store
+    (e.g. database-backed) from an enterprise plugin. With nothing
+    installed the framework's default file-based, Fernet-encrypted
+    store is used — bit-for-bit single-tenant behaviour.
+    """
+    global _settings_store_override
+    _settings_store_override = provider
+
+
+def get_settings_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed settings-store override, if any."""
+    return _settings_store_override
 
 
 def set_state_manager_override(
@@ -587,6 +610,7 @@ def clear_infrastructure_overrides() -> None:
     """
     global _agent_registry_override
     global _deployment_manifest_override
+    global _settings_store_override
     global _state_manager_override
     global _conversation_store_override
     global _agent_state_override
@@ -610,6 +634,7 @@ def clear_infrastructure_overrides() -> None:
     global _approval_service
     _agent_registry_override = None
     _deployment_manifest_override = None
+    _settings_store_override = None
     _state_manager_override = None
     _conversation_store_override = None
     _agent_state_override = None
