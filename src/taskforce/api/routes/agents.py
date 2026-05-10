@@ -20,7 +20,9 @@ Clean Architecture Notes:
 - No direct infrastructure imports (registry provided via dependencies.py)
 """
 
-from fastapi import APIRouter, Depends, status
+import inspect
+
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 
 from taskforce.api.dependencies import get_agent_registry, require_permission
@@ -155,25 +157,54 @@ def create_agent(
     "/agents",
     response_model=AgentListResponse,
     summary="List all agents",
-    description=("List all agents (custom + profile). Corrupt YAML files are skipped."),
+    description=(
+        "List visible agents (custom + profile + plugin). The visible set is "
+        "controlled by the deployment manifest; pass `include_hidden=true` to "
+        "list every discovered agent, including showcases and plugin examples."
+    ),
 )
 def list_agents(
+    include_hidden: bool = Query(
+        False,
+        description=(
+            "When true, bypass the deployment-manifest filter and return every "
+            "discovered agent. Useful for power users editing the manifest."
+        ),
+    ),
     _permission: None = Depends(require_permission("agent:read")),
     registry=Depends(get_agent_registry),
 ) -> AgentListResponse:
     """
-    List all available agents.
+    List available agents.
 
     Returns custom agents from configs/custom/*.yaml and profile agents
-    from configs/*.yaml (excluding llm_config.yaml).
+    from configs/*.yaml (excluding llm_config.yaml). Filtered by the
+    active deployment manifest unless ``include_hidden`` is true.
 
     Args:
-        registry: Injected agent registry
+        include_hidden: When True, ignore the deployment manifest.
+        registry: Injected agent registry.
 
     Returns:
-        List of all agent definitions with discriminator field 'source'
+        List of agent definitions with discriminator field 'source'.
     """
-    domain_agents = registry.list_agents()
+    # Plugin-installed registries (e.g. the enterprise PostgresAgentRegistry)
+    # may not know about ``include_hidden`` — they typically apply their own
+    # tenant-scoped filtering and don't care about the framework's deployment
+    # manifest. Detect whether the registry's ``list_agents`` accepts the
+    # kwarg and gracefully fall back to a positional call when it doesn't.
+    list_method = registry.list_agents
+    try:
+        accepts_include_hidden = (
+            "include_hidden" in inspect.signature(list_method).parameters
+        )
+    except (TypeError, ValueError):  # builtins / C-impls without inspectable signatures
+        accepts_include_hidden = False
+
+    if accepts_include_hidden:
+        domain_agents = list_method(include_hidden=include_hidden)
+    else:
+        domain_agents = list_method()
     # Convert domain models to API responses
     api_agents = [_domain_to_response(agent) for agent in domain_agents]
     return AgentListResponse(agents=api_agents)

@@ -150,6 +150,14 @@ class InfrastructureBuilder:
         object compatible with ``FileAgentRegistry``'s public
         interface.
 
+        The deployment manifest controls which agents surface in
+        listings. It is resolved from (in order): the
+        ``set_deployment_manifest_override`` hook, the
+        ``TASKFORCE_DEPLOYMENT_MANIFEST`` env var, and the framework's
+        shipped ``src/taskforce/configs/deployment.yaml``. When none
+        of these resolve to a manifest the registry falls back to its
+        legacy "list everything discoverable" behaviour.
+
         Returns:
             FileAgentRegistry wired with the tool registry, base path,
             and the runtime list of extra agent-package config dirs
@@ -158,6 +166,7 @@ class InfrastructureBuilder:
         """
         from taskforce.application.infrastructure_overrides import (
             get_agent_registry_override,
+            get_deployment_manifest_override,
         )
 
         override = get_agent_registry_override()
@@ -165,14 +174,27 @@ class InfrastructureBuilder:
             return override()
 
         from taskforce.application.profile_loader import get_extra_config_dirs
+        from taskforce.core.domain.deployment import load_deployment_manifest
         from taskforce.infrastructure.persistence.file_agent_registry import (
             FileAgentRegistry,
         )
+
+        manifest = None
+        manifest_provider = get_deployment_manifest_override()
+        if manifest_provider is not None:
+            try:
+                manifest = manifest_provider()
+            except Exception:  # pragma: no cover — defensive
+                self._logger.warning("deployment_manifest.override_failed", exc_info=True)
+                manifest = None
+        if manifest is None:
+            manifest = load_deployment_manifest()
 
         return FileAgentRegistry(
             tool_mapper=get_tool_registry(),
             base_path=get_base_path(),
             extra_dirs_provider=get_extra_config_dirs,
+            deployment_manifest=manifest,
         )
 
     # -------------------------------------------------------------------------

@@ -1128,6 +1128,21 @@ is importable, otherwise falls back to `dev`. The framework-only fallback CLI
 (`src/taskforce/api/cli/main.py`) always defaults to `dev`. Override with
 `--profile <name>` or `TASKFORCE_PROFILE`.
 
+### Deployment Manifest (visible-agents allowlist)
+
+`src/taskforce/configs/deployment.yaml` is an allowlist of agent ids
+that surface in user-facing listings (`GET /api/v1/agents`, the UI
+Agents page, `taskforce config profiles`). Hidden agents stay
+loadable by id — `get_agent(...)` always works — so a master agent can
+still extend a hidden sub-agent. The default ships Butler + sub-agents,
+`rag_agent`, and `accounting_agent`. Override the path via
+`TASKFORCE_DEPLOYMENT_MANIFEST=/path/to/your.yaml`. Plugins (e.g.
+`taskforce-enterprise`) install per-tenant manifests via
+`set_deployment_manifest_override` in
+`taskforce.application.infrastructure_overrides`. Power-users bypass
+the filter with `?include_hidden=true`. See `docs/profiles.md` →
+*Deployment Manifest* for the full reference.
+
 ```yaml
 # Example: src/taskforce/configs/default.yaml
 profile: default

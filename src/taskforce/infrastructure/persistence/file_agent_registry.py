@@ -29,6 +29,7 @@ from taskforce.core.domain.agent_models import (
     PluginAgentDefinition,
     ProfileAgentDefinition,
 )
+from taskforce.core.domain.deployment import DeploymentManifest
 from taskforce.core.interfaces.tool_mapping import ToolMapperProtocol
 from taskforce.core.utils.paths import get_base_path
 from taskforce.infrastructure.persistence.agent_serializer import (
@@ -47,6 +48,20 @@ from taskforce.infrastructure.persistence.yaml_io import (
 )
 
 logger = structlog.get_logger()
+
+
+# YAML files in ``configs/`` that are *not* agent profiles. The
+# registry skips these during scan + lookup so they don't surface as
+# fake "profile" entries. Add new framework-managed config files here
+# rather than introducing further special cases at the call sites.
+_NON_PROFILE_STEMS = frozenset(
+    {
+        "llm_config",
+        "pricing",
+        "defaults",
+        "deployment",
+    }
+)
 
 
 class FileAgentRegistry:
@@ -83,6 +98,7 @@ class FileAgentRegistry:
         base_path: Path | None = None,
         extra_dirs_provider: "object | None" = None,
         custom_dir_subpath: str = "custom",
+        deployment_manifest: DeploymentManifest | None = None,
     ):
         """
         Initialize the agent registry.
@@ -107,6 +123,12 @@ class FileAgentRegistry:
                 forking this class. The subpath is resolved relative to
                 ``configs_dir``; callers are responsible for ensuring any
                 interpolated segments are sanitised against path traversal.
+            deployment_manifest: Optional allowlist of visible agent ids.
+                When set, ``list_agents`` filters to agents whose identifier
+                appears in ``manifest.visible_agents``. ``get_agent`` is
+                unaffected — sub-agent resolution by id always works. When
+                ``None`` (default), ``list_agents`` returns every discovered
+                agent (legacy behaviour).
         """
         if configs_dir is None:
             detected_base = get_base_path()
@@ -127,6 +149,7 @@ class FileAgentRegistry:
         self._tool_mapper = tool_mapper
         self.base_path = base_path or self.configs_dir.parent
         self._extra_dirs_provider = extra_dirs_provider
+        self._deployment_manifest = deployment_manifest
         self.logger = logger.bind(component="file_agent_registry")
 
     def _extra_dirs(self) -> list[Path]:
@@ -246,13 +269,13 @@ class FileAgentRegistry:
 
         # Try profile agents (agent_id matches profile name)
         profile_path = self.configs_dir / f"{agent_id}.yaml"
-        if profile_path.exists() and agent_id != "llm_config":
+        if profile_path.exists() and agent_id not in _NON_PROFILE_STEMS:
             return parse_profile_agent_yaml(profile_path)
 
         # Try profile agents in extra dirs (agent packages)
         for extra in self._extra_dirs():
             yaml_candidate = extra / f"{agent_id}.yaml"
-            if yaml_candidate.exists() and agent_id != "llm_config":
+            if yaml_candidate.exists() and agent_id not in _NON_PROFILE_STEMS:
                 profile = parse_profile_agent_yaml(yaml_candidate)
                 if profile:
                     return profile
@@ -269,8 +292,24 @@ class FileAgentRegistry:
 
         return None
 
+    @staticmethod
+    def _agent_identifier(
+        agent: CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition,
+    ) -> str:
+        """Return the listing identifier used for deployment-manifest filtering.
+
+        ``ProfileAgentDefinition`` exposes its identity via ``profile`` while
+        custom and plugin definitions use ``agent_id``. The manifest treats
+        both kinds of identifiers as equivalent — operators write a flat
+        list of names without caring about the source.
+        """
+        if isinstance(agent, ProfileAgentDefinition):
+            return agent.profile
+        return agent.agent_id
+
     def list_agents(
         self,
+        include_hidden: bool = False,
     ) -> list[CustomAgentDefinition | ProfileAgentDefinition | PluginAgentDefinition]:
         """
         List all agents (custom + profile + plugin).
@@ -281,6 +320,14 @@ class FileAgentRegistry:
         - examples/*/ and plugins/*/ (plugin agents)
 
         Corrupt YAML files are skipped with warning logged.
+
+        Args:
+            include_hidden: When True, return every discovered agent and
+                ignore the deployment manifest. Defaults to False, which
+                filters the result to agents whose identifier appears in
+                the configured :class:`DeploymentManifest`. With no
+                manifest installed the parameter has no effect (legacy
+                behaviour).
 
         Returns:
             List of all valid agent definitions
@@ -299,12 +346,8 @@ class FileAgentRegistry:
         seen_profiles: set[str] = set()
         if self.configs_dir.exists():
             for yaml_file in self.configs_dir.glob("*.yaml"):
-                # Skip llm_config.yaml, pricing.yaml, defaults.yaml and custom dir
-                if yaml_file.name in {
-                    "llm_config.yaml",
-                    "pricing.yaml",
-                    "defaults.yaml",
-                }:
+                # Skip framework-managed non-profile config files and custom dir
+                if yaml_file.stem in _NON_PROFILE_STEMS:
                     continue
                 if yaml_file.parent.name == "custom":
                     continue
@@ -319,11 +362,7 @@ class FileAgentRegistry:
             if not extra.exists():
                 continue
             for yaml_file in extra.glob("*.yaml"):
-                if yaml_file.name in {
-                    "llm_config.yaml",
-                    "pricing.yaml",
-                    "defaults.yaml",
-                }:
+                if yaml_file.stem in _NON_PROFILE_STEMS:
                     continue
                 profile = parse_profile_agent_yaml(yaml_file)
                 if profile and profile.profile not in seen_profiles:
@@ -339,7 +378,18 @@ class FileAgentRegistry:
         plugin_agents = discover_plugin_agents(self.base_path)
         agents.extend(plugin_agents)
 
-        self.logger.debug("agents.listed", count=len(agents))
+        if not include_hidden and self._deployment_manifest is not None:
+            allowed = self._deployment_manifest.visible_agents
+            before = len(agents)
+            agents = [a for a in agents if self._agent_identifier(a) in allowed]
+            self.logger.debug(
+                "agents.listed",
+                count=len(agents),
+                hidden=before - len(agents),
+                manifest=True,
+            )
+        else:
+            self.logger.debug("agents.listed", count=len(agents), manifest=False)
         return agents
 
     def update_agent(

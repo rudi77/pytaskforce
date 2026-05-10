@@ -238,3 +238,6 @@ examples/ap_ledger_agent/reports/
 # Playwright MCP test snapshots (transient browser-driven test output)
 .playwright-mcp/
 
+# Claude Code transient state
+.claude/scheduled_tasks.lock
+

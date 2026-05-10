@@ -1,0 +1,41 @@
+# Default deployment manifest.
+#
+# Lists agents that should appear in user-facing listings — `GET
+# /api/v1/agents`, the UI Agents page, `taskforce config profiles`.
+# Agents NOT listed here remain fully loadable by id (sub-agent
+# resolution via `get_agent` is unaffected); they just don't surface
+# in the catalog.
+#
+# Override at runtime via the `TASKFORCE_DEPLOYMENT_MANIFEST` env var
+# or — for per-tenant control — by installing a manifest provider via
+# `taskforce.application.infrastructure_overrides.set_deployment_manifest_override`.
+#
+# See: docs/profiles.md ("Deployment Manifest"), CLAUDE.md.
+
+version: 1
+visible_agents:
+  # Personal assistant family --------------------------------------
+  - butler
+  - accountant         # agents/butler/configs/custom (butler-role)
+  - research_agent     # agents/butler/configs/custom
+  - pc-agent           # agents/butler/configs/custom
+  - vision_ocr         # agents/butler/configs/custom
+  - personal_assistant # agents/butler/configs/roles
+
+  # Coding pipeline (butler delegates here) ------------------------
+  - coding_agent
+  - coding_analysis
+  - coding_planner
+  - coding_worker
+  - coding_reviewer
+  - code_reviewer
+  - test_engineer
+  - doc_writer
+  - swe_analyzer
+  - swe_coder
+
+  # RAG ------------------------------------------------------------
+  - rag_agent
+
+  # Standalone accounting agent (example-derived, shipped product) -
+  - accounting_agent

@@ -10,12 +10,30 @@ import pytest
 import yaml
 
 from taskforce.application.infrastructure_builder import InfrastructureBuilder
+from taskforce.application.infrastructure_overrides import (
+    clear_infrastructure_overrides,
+)
 from taskforce.core.domain.context_policy import ContextPolicy
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_infrastructure_overrides():
+    """Reset infrastructure overrides around every test in this module.
+
+    The ``taskforce-enterprise`` factory extension installs overrides
+    (e.g. ``set_agent_registry_override``) when its plugin entry point
+    runs. Without this reset, those installed overrides shadow the
+    builder's default behaviour and the assertions below — which patch
+    the default classes — see zero invocations.
+    """
+    clear_infrastructure_overrides()
+    yield
+    clear_infrastructure_overrides()
 
 
 @pytest.fixture
@@ -627,17 +645,78 @@ class TestSimpleBuilders:
             ) as mock_cls,
             patch("taskforce.application.infrastructure_builder.get_tool_registry") as mock_get_tr,
             patch("taskforce.application.infrastructure_builder.get_base_path") as mock_bp,
+            patch(
+                "taskforce.core.domain.deployment.load_deployment_manifest",
+                return_value=None,
+            ) as mock_load_manifest,
         ):
             mock_cls.return_value = MagicMock()
             mock_get_tr.return_value = MagicMock()
             mock_bp.return_value = Path("/base")
             result = builder.build_agent_registry()
+            mock_load_manifest.assert_called_once_with()
             mock_cls.assert_called_once_with(
                 tool_mapper=mock_get_tr.return_value,
                 base_path=Path("/base"),
                 extra_dirs_provider=get_extra_config_dirs,
+                deployment_manifest=None,
             )
             assert result is mock_cls.return_value
+
+    def test_build_agent_registry_loads_default_manifest(
+        self, builder: InfrastructureBuilder
+    ) -> None:
+        """The builder hands the loaded default manifest to FileAgentRegistry."""
+        from taskforce.core.domain.deployment import DeploymentManifest
+
+        sentinel_manifest = DeploymentManifest(visible_agents=frozenset({"butler"}))
+
+        with (
+            patch(
+                "taskforce.infrastructure.persistence.file_agent_registry.FileAgentRegistry"
+            ) as mock_cls,
+            patch("taskforce.application.infrastructure_builder.get_tool_registry"),
+            patch("taskforce.application.infrastructure_builder.get_base_path"),
+            patch(
+                "taskforce.core.domain.deployment.load_deployment_manifest",
+                return_value=sentinel_manifest,
+            ),
+        ):
+            mock_cls.return_value = MagicMock()
+            builder.build_agent_registry()
+            kwargs = mock_cls.call_args.kwargs
+            assert kwargs["deployment_manifest"] is sentinel_manifest
+
+    def test_build_agent_registry_uses_manifest_override(
+        self, builder: InfrastructureBuilder
+    ) -> None:
+        """An installed override beats the shipped default manifest."""
+        from taskforce.application.infrastructure_overrides import (
+            clear_infrastructure_overrides,
+            set_deployment_manifest_override,
+        )
+        from taskforce.core.domain.deployment import DeploymentManifest
+
+        override_manifest = DeploymentManifest(visible_agents=frozenset({"only_one"}))
+        set_deployment_manifest_override(lambda: override_manifest)
+        try:
+            with (
+                patch(
+                    "taskforce.infrastructure.persistence.file_agent_registry.FileAgentRegistry"
+                ) as mock_cls,
+                patch("taskforce.application.infrastructure_builder.get_tool_registry"),
+                patch("taskforce.application.infrastructure_builder.get_base_path"),
+                patch(
+                    "taskforce.core.domain.deployment.load_deployment_manifest",
+                ) as mock_load,
+            ):
+                mock_cls.return_value = MagicMock()
+                builder.build_agent_registry()
+                mock_load.assert_not_called()
+                kwargs = mock_cls.call_args.kwargs
+                assert kwargs["deployment_manifest"] is override_manifest
+        finally:
+            clear_infrastructure_overrides()
 
 
 # ---------------------------------------------------------------------------

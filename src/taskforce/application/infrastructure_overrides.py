@@ -51,6 +51,7 @@ from typing import Any
 # later iterations as required, once their call sites are routed
 # through ``InfrastructureBuilder`` consistently.
 _agent_registry_override: Callable[[], Any] | None = None
+_deployment_manifest_override: Callable[[], Any] | None = None
 _state_manager_override: Callable[[dict[str, Any], str | None], Any] | None = None
 _conversation_store_override: Callable[[str], Any] | None = None
 _agent_state_override: Callable[[str], Any] | None = None
@@ -85,6 +86,30 @@ def set_agent_registry_override(
 def get_agent_registry_override() -> Callable[[], Any] | None:
     """Return the currently installed agent-registry override, if any."""
     return _agent_registry_override
+
+
+def set_deployment_manifest_override(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) an override for deployment-manifest resolution.
+
+    The provider is a zero-argument callable returning either a
+    :class:`taskforce.core.domain.deployment.DeploymentManifest` instance
+    or ``None``. Returning ``None`` keeps the framework's legacy
+    "show every discovered agent" behaviour.
+
+    Use this seam to scope the visible-agents allowlist per tenant
+    from an enterprise plugin (e.g. read the manifest from a tenant-
+    specific store). The framework default is no override → the
+    builder loads the shipped ``deployment.yaml``.
+    """
+    global _deployment_manifest_override
+    _deployment_manifest_override = provider
+
+
+def get_deployment_manifest_override() -> Callable[[], Any] | None:
+    """Return the currently installed deployment-manifest override, if any."""
+    return _deployment_manifest_override
 
 
 def set_state_manager_override(
@@ -561,6 +586,7 @@ def clear_infrastructure_overrides() -> None:
     into another.
     """
     global _agent_registry_override
+    global _deployment_manifest_override
     global _state_manager_override
     global _conversation_store_override
     global _agent_state_override
@@ -583,6 +609,7 @@ def clear_infrastructure_overrides() -> None:
     global _mission_lifecycle_hook
     global _approval_service
     _agent_registry_override = None
+    _deployment_manifest_override = None
     _state_manager_override = None
     _conversation_store_override = None
     _agent_state_override = None

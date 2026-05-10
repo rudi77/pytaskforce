@@ -122,35 +122,23 @@ function Test-UiDeps {
 }
 
 function Invoke-EnterpriseBootstrap {
-    # Runs `taskforce-enterprise admin bootstrap` from the enterprise repo root
-    # with .env injected. Idempotent: applies any pending alembic migrations
-    # and creates the bootstrap tenant/admin if missing.
+    # Runs `taskforce-enterprise admin bootstrap` from the enterprise repo root.
+    # Idempotent: applies any pending alembic migrations and creates the
+    # bootstrap tenant/admin if missing. Env vars (DATABASE_URL,
+    # TASKFORCE_BOOTSTRAP_*) come from .env via Import-DotEnv at startup and
+    # are inherited by the child process.
     Write-Step "applying alembic migrations + bootstrap (idempotent)"
     $bootstrapExe = Join-Path $Venv "Scripts\taskforce-enterprise.exe"
     if (-not (Test-Path $bootstrapExe)) {
         Write-Warn2 "taskforce-enterprise.exe missing - skipping migrations"
         return
     }
-    $envFile = Join-Path $RepoRoot ".env"
-    $script = @"
-import os, subprocess, sys
-from pathlib import Path
-envfile = Path(r'$envFile')
-if envfile.exists():
-    for line in envfile.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        k, v = line.split('=', 1)
-        os.environ[k.strip()] = v.strip().strip('"').strip("'")
-r = subprocess.run(
-    [r'$bootstrapExe', 'admin', 'bootstrap'],
-    env=os.environ,
-    cwd=r'$EnterpriseRoot',
-)
-sys.exit(r.returncode)
-"@
-    & $VenvPython -c $script
+    Push-Location $EnterpriseRoot
+    try {
+        & $bootstrapExe admin bootstrap
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Err "bootstrap failed (exit $LASTEXITCODE) - start anyway, but the DB schema may be out of sync"
     } else {

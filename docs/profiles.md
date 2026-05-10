@@ -70,6 +70,46 @@ Install the matching package to unlock these profiles.
 is importable, otherwise falls back to `dev`. The framework-only fallback CLI
 always defaults to `dev`. Override any time with `--profile`.
 
+## Deployment Manifest (visible-agents allowlist)
+
+A *deployment manifest* controls which agents surface in user-facing
+listings — `GET /api/v1/agents`, the UI Agents page, and
+`taskforce config profiles`. Agents that are not on the manifest stay
+**fully loadable by id** so master agents can still extend them as
+sub-agents; they simply don't appear in the catalog.
+
+The framework ships a default manifest at
+`src/taskforce/configs/deployment.yaml` that lists Butler + its
+sub-agents (coding pipeline, research, accountant, …), `rag_agent`,
+and the standalone `accounting_agent`.
+
+```yaml
+# src/taskforce/configs/deployment.yaml
+version: 1
+visible_agents:
+  - butler
+  - coding_agent
+  - rag_agent
+  - accounting_agent
+  # …see file for the full default list
+```
+
+**Override at runtime:**
+
+| Mechanism | Use case |
+|-----------|----------|
+| `TASKFORCE_DEPLOYMENT_MANIFEST=/path/to/your.yaml` | Self-hosted operator picks a different shipping list |
+| `set_deployment_manifest_override(...)` (`taskforce.application.infrastructure_overrides`) | Plugin code (e.g. `taskforce-enterprise`) supplies a per-tenant manifest |
+| Edit `deployment.yaml` directly | Permanent change in this checkout |
+
+**Bypass for power users:** `GET /api/v1/agents?include_hidden=true`
+returns every discovered agent including the hidden ones. The UI uses
+this for the upcoming visible-agents editor.
+
+When no manifest can be resolved, the registry falls back to its
+legacy unfiltered behaviour, so embedded users that don't ship a
+manifest are unaffected.
+
 ## Planning Strategies
 
 Configure how the agent plans its tasks in the profile YAML:
