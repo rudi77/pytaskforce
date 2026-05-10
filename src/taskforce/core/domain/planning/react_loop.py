@@ -227,23 +227,61 @@ async def _react_loop(
                         )
                         content_acc += chunk["content"]
                     elif t == LLMStreamEventType.TOOL_CALL_START.value:
-                        tc_acc[chunk.get("index", 0)] = {
-                            "id": chunk.get("id", ""),
-                            "name": chunk.get("name", ""),
-                            "arguments": "",
-                        }
-                    elif (
-                        t == LLMStreamEventType.TOOL_CALL_DELTA.value
-                        and chunk.get("index", 0) in tc_acc
-                    ):
-                        tc_acc[chunk["index"]]["arguments"] += chunk.get("arguments_delta", "")
-                    elif (
-                        t == LLMStreamEventType.TOOL_CALL_END.value
-                        and chunk.get("index", 0) in tc_acc
-                    ):
-                        tc_acc[chunk["index"]]["arguments"] = chunk.get(
+                        idx = chunk.get("index", 0)
+                        existing = tc_acc.get(idx)
+                        if existing is None:
+                            tc_acc[idx] = {
+                                "id": chunk.get("id", ""),
+                                "name": chunk.get("name", ""),
+                                "arguments": "",
+                            }
+                        else:
+                            # A late ``tool_call_start`` (after we already
+                            # lazy-initialised the entry from a delta — see
+                            # below) may carry the previously-missing id /
+                            # name. Don't blow away accumulated arguments.
+                            if chunk.get("id"):
+                                existing["id"] = chunk["id"]
+                            if chunk.get("name"):
+                                existing["name"] = chunk["name"]
+                    elif t == LLMStreamEventType.TOOL_CALL_DELTA.value:
+                        # Issue #155 — Telegram action gap: be tolerant of
+                        # providers / wrappers that emit ``tool_call_delta``
+                        # before any ``tool_call_start`` (or skip start
+                        # entirely when id/name are still empty). Lazy-init
+                        # the accumulator so later metadata or the
+                        # ``tool_call_end`` event still wires up a real
+                        # tool call.
+                        idx = chunk.get("index", 0)
+                        if idx not in tc_acc:
+                            tc_acc[idx] = {
+                                "id": chunk.get("id", "") or "",
+                                "name": "",
+                                "arguments": "",
+                            }
+                        elif chunk.get("id") and not tc_acc[idx]["id"]:
+                            tc_acc[idx]["id"] = chunk["id"]
+                        tc_acc[idx]["arguments"] += chunk.get("arguments_delta", "")
+                    elif t == LLMStreamEventType.TOOL_CALL_END.value:
+                        idx = chunk.get("index", 0)
+                        if idx not in tc_acc:
+                            # End without start — keep the call instead of
+                            # dropping it (issue #155). Without this the
+                            # agent would say "I will do X" in chat but
+                            # the matching tool would never execute.
+                            tc_acc[idx] = {
+                                "id": chunk.get("id", "") or "",
+                                "name": chunk.get("name", "") or "",
+                                "arguments": "",
+                            }
+                        else:
+                            if chunk.get("id") and not tc_acc[idx]["id"]:
+                                tc_acc[idx]["id"] = chunk["id"]
+                            if chunk.get("name") and not tc_acc[idx]["name"]:
+                                tc_acc[idx]["name"] = chunk["name"]
+                        tc_acc[idx]["arguments"] = chunk.get(
                             "arguments",
-                            tc_acc[chunk["index"]]["arguments"],
+                            tc_acc[idx]["arguments"],
                         )
                     elif t == LLMStreamEventType.DONE.value and chunk.get("usage"):
                         yield StreamEvent(
