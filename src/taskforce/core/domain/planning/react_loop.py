@@ -58,7 +58,7 @@ def build_user_message_for_error(error_kind: str, raw_error: str) -> str:
             f"Ich konnte die Aufgabe leider nicht abschließen: {raw_error}\n"
             "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
         )
-    return "Ich konnte leider keine Antwort generieren. " "Bitte versuche es noch einmal."
+    return "Ich konnte leider keine Antwort generieren. Bitte versuche es noch einmal."
 
 
 async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -> ExecutionResult:

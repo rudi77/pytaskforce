@@ -817,7 +817,7 @@ class Agent:
         elif decision.status is ApprovalStatus.TIMED_OUT:
             message = "Approval timed out. Do NOT retry without explicit user input."
         else:  # ERROR
-            message = "Approval pipeline failed. Do NOT retry; surface the failure " "to the user."
+            message = "Approval pipeline failed. Do NOT retry; surface the failure to the user."
         return {
             "success": False,
             "tool_name": tool_name,

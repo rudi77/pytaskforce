@@ -134,6 +134,14 @@ class LiteLLMService:
         # also fails. The rephrase costs one extra small LLM call.
         self._recover_via_rephrase = recover_via_rephrase
         self._recovery_keep_last_n = max(1, recovery_keep_last_n)
+        # Local sanitizer for the recovery path — keeps the LLM-side
+        # strip aware of tool-call/tool-reply pairing without leaking
+        # MessageHistoryManager into this layer.
+        from taskforce.core.domain.lean_agent_components.message_sanitizer import (
+            MessageSanitizer,
+        )
+
+        self._sanitizer = MessageSanitizer(self.logger)
 
     # ------------------------------------------------------------------
     # Config attribute delegation — preserve existing public interface
@@ -1026,7 +1034,16 @@ class LiteLLMService:
                     # be an orphaned tool_call, so drop it too.
                     continue
                 kept.append(msg)
-            return kept
+            # Defensive: if the input had pre-existing orphans (e.g. a
+            # ``role="tool"`` message whose matching assistant turn was
+            # dropped earlier), they could survive this strip in
+            # principle. We don't keep tool messages here, so the only
+            # remaining failure mode is an assistant message whose
+            # ``tool_calls`` reference IDs that no longer have replies
+            # — which we just guaranteed by dropping every tool reply.
+            # ``drop_orphan_tool_messages`` covers the symmetric case
+            # for callers that pass us already-stripped histories.
+            return self._sanitizer.drop_orphan_tool_messages(kept)
 
         system = [m for m in messages if m.get("role") == "system"]
         non_system = [
@@ -1070,11 +1087,17 @@ class LiteLLMService:
             f"Request:\n{original.strip()}"
         )
         try:
+            # Explicit phase metadata so observability hooks (and the
+            # test suite) can recognise this as the recovery rephrase
+            # call rather than a normal completion. The dynamic-LLM
+            # router can also key on ``phase=filter_recovery_rephrase``
+            # to route this to a cheap model in future.
             response = await litellm.acompletion(
                 model=resolved_model,
                 messages=[{"role": "user", "content": rephrase_prompt}],
                 max_tokens=200,
                 temperature=0.0,
+                metadata={"phase": "filter_recovery_rephrase"},
             )
             new_text = response.choices[0].message.content
         except Exception as exc:  # noqa: BLE001

@@ -1137,6 +1137,13 @@ class AgentFactory:
                 "max_parallel_tools": agent_defaults.get("max_parallel_tools"),
                 "planning_strategy": planning_strategy,
                 "planning_strategy_params": planning_strategy_params,
+                # Carry context-engineering caps from defaults so
+                # programmatic ``create_agent(...)`` callers inherit
+                # the same behaviour as profile-based agents (and
+                # operators can tune the defaults globally).
+                "tool_result_store_threshold": agent_defaults.get("tool_result_store_threshold"),
+                "tool_message_max_chars": agent_defaults.get("tool_message_max_chars"),
+                "assistant_message_max_chars": agent_defaults.get("assistant_message_max_chars"),
             },
         }
 

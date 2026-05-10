@@ -215,6 +215,15 @@ class WebSearchTool(ToolProtocol):
             return False, "Missing required parameter: query"
         if not isinstance(kwargs["query"], str):
             return False, "Parameter 'query' must be a string"
+        if "num_results" in kwargs and not isinstance(kwargs["num_results"], int):
+            return False, "Parameter 'num_results' must be an integer"
+        if "snippet_max_chars" in kwargs:
+            value = kwargs["snippet_max_chars"]
+            # ``bool`` is a subclass of ``int``; reject it explicitly.
+            if isinstance(value, bool) or not isinstance(value, int):
+                return False, "Parameter 'snippet_max_chars' must be an integer"
+            if value < 0:
+                return False, "Parameter 'snippet_max_chars' must be >= 0"
         return True, None
 
 

@@ -218,9 +218,11 @@ async def test_rephrase_stage_runs_when_enabled(temp_config_file: str) -> None:
     rephrase_response.choices = [rephrase_choice]
 
     async def fake_acompletion(**kwargs: Any) -> Any:
-        # The rephrase call is non-streaming and uses tools=None +
-        # max_tokens=200 — distinguish via kwargs.
-        if kwargs.get("max_tokens") == 200 and "tools" not in kwargs:
+        # The production rephrase call carries an explicit
+        # ``metadata={"phase": "filter_recovery_rephrase"}`` sentinel
+        # — assert on that instead of sniffing kwargs heuristics.
+        metadata = kwargs.get("metadata") or {}
+        if metadata.get("phase") == "filter_recovery_rephrase":
             call_count["rephrase"] += 1
             return rephrase_response
         call_count["streams"] += 1
@@ -238,6 +240,37 @@ async def test_rephrase_stage_runs_when_enabled(temp_config_file: str) -> None:
     assert call_count["rephrase"] == 1
     assert call_count["streams"] == 4
     assert any(e.get("type") == "done" for e in events)
+
+
+def test_tool_results_only_strip_drops_pre_existing_orphan_tool_messages(
+    temp_config_file: str,
+) -> None:
+    """The ``tool_results_only`` strip mode must not leave behind an
+    orphan ``role="tool"`` message whose matching assistant turn was
+    already missing in the input. Regression for an upstream 400 we
+    would otherwise hit on the recovery retry."""
+    service = LiteLLMService(config_path=temp_config_file)
+
+    # Input is malformed on purpose: a tool reply with no preceding
+    # assistant ``tool_calls`` carrying its id. Today the strip mode
+    # drops every tool message (so this case also collapses) — the
+    # regression we're pinning is that the defensive sanitiser pass
+    # is in place and would catch any future variant where the strip
+    # decided to keep an orphan.
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "tool", "content": "orphan", "tool_call_id": "missing", "name": "x"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    stripped = service._strip_messages_for_content_recovery(messages, mode="tool_results_only")
+
+    assert all(m.get("role") != "tool" for m in stripped), stripped
+    # No assistant orphan tool_call should remain either.
+    for m in stripped:
+        if m.get("role") == "assistant":
+            assert not m.get("tool_calls")
 
 
 @pytest.mark.asyncio
