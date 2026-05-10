@@ -32,6 +32,19 @@ class ScheduleActionType(str, Enum):
     EXECUTE_WORKFLOW = "execute_workflow"
 
 
+class CoalescePolicy(str, Enum):
+    """Catch-up behaviour for jobs whose firing time was missed during downtime.
+
+    - ``SKIP``: ignore missed runs entirely; only fire at the next upcoming
+      occurrence after the scheduler comes back up. Default.
+    - ``RUN_ONCE``: if any occurrence was missed while the scheduler was
+      down, fire exactly once on startup as a single catch-up.
+    """
+
+    SKIP = "skip"
+    RUN_ONCE = "run_once"
+
+
 @dataclass
 class ScheduleAction:
     """Action to perform when a schedule triggers.
@@ -74,8 +87,16 @@ class ScheduleJob:
         tenant_id: Tenant scope for enterprise runtimes (defaults to "default").
         agent_id: Agent scope that owns the job (defaults to "default").
         enabled: Whether the job is active.
+        timezone: IANA timezone name used to evaluate cron expressions and
+            naive ISO datetimes (e.g. ``"Europe/Vienna"``). Defaults to ``"UTC"``.
+            Empty string is treated as ``"UTC"``.
+        coalesce: Catch-up policy for missed runs. ``"skip"`` (default) ignores
+            missed firings; ``"run_once"`` fires a single catch-up at startup.
         created_at: When the job was created.
         last_run: When the job last executed (None if never).
+        last_fired_at: Timestamp at which the scheduler began the most recent
+            firing of this job. Persisted **before** the action runs so a crash
+            mid-fire does not cause a duplicate firing on restart.
         next_run: When the job will next execute (None if unknown).
     """
 
@@ -89,8 +110,11 @@ class ScheduleJob:
     tenant_id: str = "default"
     agent_id: str = "default"
     enabled: bool = True
+    timezone: str = "UTC"
+    coalesce: CoalescePolicy = CoalescePolicy.SKIP
     created_at: datetime = field(default_factory=utc_now)
     last_run: datetime | None = None
+    last_fired_at: datetime | None = None
     next_run: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,8 +128,11 @@ class ScheduleJob:
             "tenant_id": self.tenant_id,
             "agent_id": self.agent_id,
             "enabled": self.enabled,
+            "timezone": self.timezone or "UTC",
+            "coalesce": self.coalesce.value,
             "created_at": self.created_at.isoformat(),
             "last_run": self.last_run.isoformat() if self.last_run else None,
+            "last_fired_at": self.last_fired_at.isoformat() if self.last_fired_at else None,
             "next_run": self.next_run.isoformat() if self.next_run else None,
         }
 
@@ -114,7 +141,14 @@ class ScheduleJob:
         """Deserialize from stored dict."""
         created_raw = data.get("created_at")
         last_raw = data.get("last_run")
+        last_fired_raw = data.get("last_fired_at")
         next_raw = data.get("next_run")
+        tz_raw = str(data.get("timezone", "UTC") or "UTC")
+        coalesce_raw = str(data.get("coalesce", CoalescePolicy.SKIP.value))
+        try:
+            coalesce_value = CoalescePolicy(coalesce_raw)
+        except ValueError:
+            coalesce_value = CoalescePolicy.SKIP
 
         return cls(
             job_id=str(data.get("job_id", uuid4().hex)),
@@ -125,7 +159,10 @@ class ScheduleJob:
             tenant_id=str(data.get("tenant_id", "default")),
             agent_id=str(data.get("agent_id", "default")),
             enabled=bool(data.get("enabled", True)),
+            timezone=tz_raw,
+            coalesce=coalesce_value,
             created_at=datetime.fromisoformat(created_raw) if created_raw else utc_now(),
             last_run=datetime.fromisoformat(last_raw) if last_raw else None,
+            last_fired_at=(datetime.fromisoformat(last_fired_raw) if last_fired_raw else None),
             next_run=datetime.fromisoformat(next_raw) if next_raw else None,
         )
