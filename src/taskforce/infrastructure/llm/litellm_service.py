@@ -85,13 +85,22 @@ _RETRYABLE_ERROR_TYPES = frozenset(
 # Keywords in error messages that indicate transient failures
 _RETRYABLE_KEYWORDS = ("rate limit", "timeout", "503", "502", "429", "overloaded")
 
-# Keywords that indicate permanent failures (never retry)
+# Keywords that indicate permanent failures (never retry).
+# Auth + quota errors (401/403/insufficient_quota) won't recover by retrying
+# and burn through retry budget on a Butler daemon running 24/7 (issue #156),
+# so they're hard-classified as non-retryable here.
 _NON_RETRYABLE_KEYWORDS = (
     "invalid api key",
     "authentication",
+    "unauthorized",
+    "forbidden",
+    "permission denied",
     "not found",
     "invalid model",
     "invalid request",
+    "insufficient_quota",
+    "quota exceeded",
+    "billing",
 )
 
 # Keywords that indicate content filter — recoverable by stripping history
@@ -673,7 +682,7 @@ class LiteLLMService:
                 chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=stream_chunk_timeout)
             except StopAsyncIteration:
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 latency_ms = int((time.time() - start_time) * 1000)
                 self.logger.warning(
                     "llm_stream_chunk_timeout",

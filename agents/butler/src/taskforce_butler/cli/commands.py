@@ -21,6 +21,11 @@ def butler_start(
     work_dir: str = typer.Option(
         ".taskforce", "--work-dir", help="Working directory for state and logs"
     ),
+    no_supervisor: bool = typer.Option(
+        False,
+        "--no-supervisor",
+        help="Disable the watchdog/auto-restart supervisor (issue #156).",
+    ),
 ) -> None:
     """Start the butler daemon."""
     from taskforce.infrastructure.logging import configure_logging
@@ -40,25 +45,58 @@ def butler_start(
         f"[bold green]Starting butler daemon[/bold green] (profile: {profile}{role_info})"
     )
     console.print(f"[dim]Logs: {log_path}[/dim]")
-    asyncio.run(_run_butler(profile, role_name))
+    asyncio.run(_run_butler(profile, role_name, work_dir, supervised=not no_supervisor))
 
 
-async def _run_butler(profile: str, role: str | None = None) -> None:
-    """Initialize and run the butler daemon."""
+async def _run_butler(
+    profile: str,
+    role: str | None = None,
+    work_dir: str = ".taskforce",
+    *,
+    supervised: bool = True,
+) -> None:
+    """Initialize and run the butler daemon.
+
+    When ``supervised`` is true (the default) the daemon is wrapped in
+    a :class:`taskforce_butler.daemon_supervisor.DaemonSupervisor` which
+    provides watchdog, auto-restart on crash, structured crash logs and
+    graceful signal handling for 24/7 unattended operation (issue #156).
+    """
     from taskforce_butler.daemon import ButlerDaemon
 
-    daemon = ButlerDaemon(profile=profile, role=role)
+    if not supervised:
+        daemon = ButlerDaemon(profile=profile, role=role, work_dir=work_dir)
+        try:
+            await daemon.start()
+            console.print(
+                "[bold green]Butler daemon is running.[/bold green] Press Ctrl+C to stop."
+            )
+            while daemon.is_running:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Shutting down butler daemon...[/yellow]")
+        finally:
+            await daemon.stop()
+            console.print("[green]Butler daemon stopped.[/green]")
+        return
+
+    from taskforce_butler.daemon_supervisor import DaemonSupervisor
+
+    supervisor = DaemonSupervisor(
+        daemon_factory=lambda: ButlerDaemon(profile=profile, role=role, work_dir=work_dir),
+    )
+    supervisor.install_signal_handlers()
+    console.print(
+        "[bold green]Butler daemon supervisor is running.[/bold green] Press Ctrl+C to stop."
+    )
     try:
-        await daemon.start()
-        console.print("[bold green]Butler daemon is running.[/bold green] Press Ctrl+C to stop.")
-        # Keep running until interrupted
-        while daemon.is_running:
-            await asyncio.sleep(1)
+        await supervisor.run()
     except KeyboardInterrupt:
-        console.print("\n[yellow]Shutting down butler daemon...[/yellow]")
-    finally:
-        await daemon.stop()
-        console.print("[green]Butler daemon stopped.[/green]")
+        # Belt-and-braces: on Windows ProactorEventLoop SIGINT can land
+        # here instead of the loop.add_signal_handler path.
+        supervisor.request_shutdown()
+        await supervisor.run()
+    console.print("[green]Butler daemon stopped.[/green]")
 
 
 @app.command("status")
@@ -309,7 +347,6 @@ app.add_typer(roles_app, name="roles")
 def roles_list(ctx: typer.Context) -> None:
     """List available butler roles."""
     from taskforce.application.factory import AgentFactory
-
     from taskforce_butler.role_loader import ButlerRoleLoader
 
     factory = AgentFactory()
@@ -341,7 +378,6 @@ def roles_show(
 ) -> None:
     """Show details of a butler role."""
     from taskforce.application.factory import AgentFactory
-
     from taskforce_butler.role_loader import ButlerRoleLoader
 
     factory = AgentFactory()
