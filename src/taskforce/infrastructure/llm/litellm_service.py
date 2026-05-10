@@ -119,11 +119,21 @@ class LiteLLMService:
         ValueError: If config is invalid (empty or missing models section).
     """
 
-    def __init__(self, config_path: str = "src/taskforce/configs/llm_config.yaml") -> None:
+    def __init__(
+        self,
+        config_path: str = "src/taskforce/configs/llm_config.yaml",
+        *,
+        recover_via_rephrase: bool = False,
+        recovery_keep_last_n: int = 2,
+    ) -> None:
         self.logger = structlog.get_logger(__name__)
         self._config = LLMConfigLoader(config_path)
         self._parser = LLMResponseParser()
-
+        # Off by default: when True, content-filter recovery escalates
+        # to a neutral-rephrase stage if straight history-stripping
+        # also fails. The rephrase costs one extra small LLM call.
+        self._recover_via_rephrase = recover_via_rephrase
+        self._recovery_keep_last_n = max(1, recovery_keep_last_n)
 
     # ------------------------------------------------------------------
     # Config attribute delegation — preserve existing public interface
@@ -651,9 +661,7 @@ class LiteLLMService:
         chunk_iter = response.__aiter__()
         while True:
             try:
-                chunk = await asyncio.wait_for(
-                    chunk_iter.__anext__(), timeout=stream_chunk_timeout
-                )
+                chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=stream_chunk_timeout)
             except StopAsyncIteration:
                 break
             except asyncio.TimeoutError:
@@ -668,8 +676,7 @@ class LiteLLMService:
                 yield {
                     "type": "error",
                     "message": (
-                        f"Stream timed out after {stream_chunk_timeout}s"
-                        " between chunks"
+                        f"Stream timed out after {stream_chunk_timeout}s" " between chunks"
                     ),
                 }
                 asyncio.create_task(
@@ -782,9 +789,7 @@ class LiteLLMService:
         )
 
         try:
-            async for event in self._run_stream_attempt(
-                messages, resolved_model, litellm_kwargs
-            ):
+            async for event in self._run_stream_attempt(messages, resolved_model, litellm_kwargs):
                 yield event
             return
         except Exception as primary_error:
@@ -795,50 +800,123 @@ class LiteLLMService:
                 yield error_event
                 return
 
-            # Content-filter recovery: strip the conversation back to
-            # system + last 2 user/assistant turns and re-stream once.
-            # Often the trigger sits in older tool-result chunks (e.g.
-            # web-fetch snippets) rather than in the actual user prompt.
-            stripped = self._strip_messages_for_content_recovery(messages)
-            if len(stripped) >= len(messages):
-                # Nothing to strip — recovery cannot help.
+            # Multi-stage content-filter recovery. Each stage rebuilds
+            # the message list with progressively more aggressive
+            # context stripping and re-streams once. The trigger
+            # usually sits in older tool-result chunks (e.g. web-fetch
+            # snippets), not the latest user turn — so the cheaper
+            # stages run first.
+            stages: list[tuple[str, list[dict[str, Any]]]] = []
+
+            tool_only = self._strip_messages_for_content_recovery(
+                messages, mode="tool_results_only"
+            )
+            if len(tool_only) < len(messages):
+                stages.append(("tool_results_only", tool_only))
+
+            aggressive = self._strip_messages_for_content_recovery(messages, mode="aggressive")
+            if len(aggressive) < len(messages) and (
+                not stages or len(aggressive) < len(stages[-1][1])
+            ):
+                stages.append(("aggressive", aggressive))
+
+            if not stages:
                 error_event = await self._handle_stream_error(
                     primary_error, resolved_model, messages
                 )
                 yield error_event
                 return
 
-            self.logger.warning(
-                "llm_stream_content_filter_recovery",
-                original_messages=len(messages),
-                stripped_messages=len(stripped),
+            last_recovery_error: Exception | None = None
+            for stage_name, candidate in stages:
+                self.logger.warning(
+                    "llm_stream_content_filter_recovery",
+                    stage=stage_name,
+                    original_messages=len(messages),
+                    stripped_messages=len(candidate),
+                    model=resolved_model,
+                )
+                _, recovery_kwargs = self._prepare_stream_request(
+                    candidate, model, tools, tool_choice, **kwargs
+                )
+                try:
+                    async for event in self._run_stream_attempt(
+                        candidate, resolved_model, recovery_kwargs
+                    ):
+                        yield event
+                    self.logger.info(
+                        "llm_stream_content_filter_recovery_success",
+                        stage=stage_name,
+                        model=resolved_model,
+                    )
+                    return
+                except Exception as recovery_error:
+                    last_recovery_error = recovery_error
+                    self.logger.warning(
+                        "llm_stream_content_filter_recovery_stage_failed",
+                        stage=stage_name,
+                        model=resolved_model,
+                        error=str(recovery_error)[:200],
+                    )
+                    if not self._is_content_filter_error(recovery_error):
+                        # A non-filter error means recovery itself
+                        # broke; do not keep escalating.
+                        error_event = await self._handle_stream_error(
+                            recovery_error, resolved_model, candidate
+                        )
+                        yield error_event
+                        return
+
+            # Optional final stage: rephrase the user turn neutrally
+            # and try once more. Off by default — costs one extra
+            # small LLM call and changes the user's wording.
+            if self._recover_via_rephrase and stages:
+                base = stages[-1][1]
+                rephrased = await self._rephrase_user_message_for_recovery(base, resolved_model)
+                if rephrased is not None:
+                    self.logger.warning(
+                        "llm_stream_content_filter_recovery",
+                        stage="rephrase",
+                        original_messages=len(messages),
+                        stripped_messages=len(rephrased),
+                        model=resolved_model,
+                    )
+                    _, recovery_kwargs = self._prepare_stream_request(
+                        rephrased, model, tools, tool_choice, **kwargs
+                    )
+                    try:
+                        async for event in self._run_stream_attempt(
+                            rephrased, resolved_model, recovery_kwargs
+                        ):
+                            yield event
+                        self.logger.info(
+                            "llm_stream_content_filter_recovery_success",
+                            stage="rephrase",
+                            model=resolved_model,
+                        )
+                        return
+                    except Exception as recovery_error:
+                        last_recovery_error = recovery_error
+                        self.logger.warning(
+                            "llm_stream_content_filter_recovery_stage_failed",
+                            stage="rephrase",
+                            model=resolved_model,
+                            error=str(recovery_error)[:200],
+                        )
+
+            self.logger.error(
+                "llm_stream_content_filter_recovery_failed",
                 model=resolved_model,
+                error=str(last_recovery_error or primary_error)[:200],
             )
-            _, recovery_kwargs = self._prepare_stream_request(
-                stripped, model, tools, tool_choice, **kwargs
+            # Surface the *recovery* failure so the ReAct loop sees
+            # the same content_filter signal and aborts cleanly.
+            error_event = await self._handle_stream_error(
+                last_recovery_error or primary_error,
+                resolved_model,
+                stages[-1][1],
             )
-            try:
-                async for event in self._run_stream_attempt(
-                    stripped, resolved_model, recovery_kwargs
-                ):
-                    yield event
-                self.logger.info(
-                    "llm_stream_content_filter_recovery_success",
-                    model=resolved_model,
-                )
-                return
-            except Exception as recovery_error:
-                self.logger.error(
-                    "llm_stream_content_filter_recovery_failed",
-                    model=resolved_model,
-                    error=str(recovery_error)[:200],
-                )
-                # Surface the *recovery* failure so the ReAct loop sees
-                # the same content_filter signal and aborts cleanly.
-                error_event = await self._handle_stream_error(
-                    recovery_error, resolved_model, stripped
-                )
-                yield error_event
+            yield error_event
 
     async def _process_tool_call_delta(
         self,
@@ -915,29 +993,103 @@ class LiteLLMService:
         error_msg = str(error).lower()
         return any(kw in error_msg for kw in _CONTENT_FILTER_KEYWORDS)
 
-    @staticmethod
     def _strip_messages_for_content_recovery(
+        self,
         messages: list[dict[str, Any]],
+        *,
+        mode: str = "aggressive",
     ) -> list[dict[str, Any]]:
         """Strip conversation history to recover from content-filter blocks.
 
         Azure's content filter often triggers on accumulated tool results
         or long conversation histories — not on the latest user message.
-        Keep only system prompt + last 2 user/assistant messages.
-        Drop all tool-role messages (these contain raw data that often
-        triggers the filter).
+
+        Modes:
+          * ``"tool_results_only"`` — drop only ``role="tool"`` messages
+            and assistant messages that carry ``tool_calls``. Cheaper
+            first attempt that preserves multi-turn conversation flow.
+          * ``"aggressive"`` (default) — keep system prompt plus the
+            last ``recovery_keep_last_n`` plain user/assistant turns.
         """
         if not messages:
             return messages
 
+        if mode == "tool_results_only":
+            kept: list[dict[str, Any]] = []
+            for msg in messages:
+                role = msg.get("role")
+                if role == "tool":
+                    continue
+                if role == "assistant" and msg.get("tool_calls"):
+                    # An assistant turn whose only purpose was to call
+                    # tools — without the matching tool replies it would
+                    # be an orphaned tool_call, so drop it too.
+                    continue
+                kept.append(msg)
+            return kept
+
         system = [m for m in messages if m.get("role") == "system"]
         non_system = [
-            m for m in messages
+            m
+            for m in messages
             if m.get("role") in ("user", "assistant") and not m.get("tool_calls")
         ]
-        # Keep at most the last 2 non-system messages
-        recent = non_system[-2:] if len(non_system) > 2 else non_system
+        keep = max(1, self._recovery_keep_last_n)
+        recent = non_system[-keep:] if len(non_system) > keep else non_system
         return system + recent
+
+    async def _rephrase_user_message_for_recovery(
+        self,
+        messages: list[dict[str, Any]],
+        resolved_model: str,
+    ) -> list[dict[str, Any]] | None:
+        """Replace the latest user turn with a neutralised paraphrase.
+
+        Final fallback when straight history-stripping cannot pass the
+        content filter — typically because the user's mission text
+        itself carries trigger language. Costs one small no-tools LLM
+        call. Returns ``None`` when rephrasing is not possible (no
+        user turn) or the rephrase call itself fails.
+        """
+        last_user_idx = next(
+            (i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user"),
+            None,
+        )
+        if last_user_idx is None:
+            return None
+        original = messages[last_user_idx].get("content")
+        if not isinstance(original, str) or not original.strip():
+            return None
+
+        rephrase_prompt = (
+            "Reformulate the following user request in neutral, "
+            "factual language suitable for downstream processing. "
+            "Strip any politically loaded, violent, or weapons-related "
+            "framing. Preserve the actual information goal. Reply "
+            "with only the reformulated text, no preamble.\n\n"
+            f"Request:\n{original.strip()}"
+        )
+        try:
+            response = await litellm.acompletion(
+                model=resolved_model,
+                messages=[{"role": "user", "content": rephrase_prompt}],
+                max_tokens=200,
+                temperature=0.0,
+            )
+            new_text = response.choices[0].message.content
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "llm_content_filter_rephrase_failed",
+                error=str(exc)[:200],
+            )
+            return None
+
+        if not isinstance(new_text, str) or not new_text.strip():
+            return None
+
+        rebuilt = list(messages)
+        rebuilt[last_user_idx] = {**messages[last_user_idx], "content": new_text.strip()}
+        return rebuilt
 
     async def _recover_from_content_filter(
         self,
@@ -954,7 +1106,7 @@ class LiteLLMService:
         retries once.  Returns the LLM result on success, or None if
         recovery also fails.
         """
-        stripped = self._strip_messages_for_content_recovery(messages)
+        stripped = self._strip_messages_for_content_recovery(messages, mode="aggressive")
         if len(stripped) >= len(messages):
             return None  # Nothing to strip — can't recover
 
@@ -965,9 +1117,7 @@ class LiteLLMService:
             model=resolved_model,
         )
 
-        _, _, litellm_kwargs = self._prepare_request(
-            stripped, model, tools, tool_choice, **kwargs
-        )
+        _, _, litellm_kwargs = self._prepare_request(stripped, model, tools, tool_choice, **kwargs)
 
         try:
             result = await self._attempt_completion(

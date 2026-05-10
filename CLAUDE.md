@@ -607,6 +607,86 @@ Multi-agent pipeline for complex, multi-step tasks using planner/worker/judge ro
 
 ---
 
+## Context Engineering — Tool Results & Filter Recovery (ADR-025)
+
+The framework keeps freeform tool output (web snippets, fetched HTML,
+shell stdout) out of the LLM message log to avoid token bloat and
+provider content-filter triggers across multi-step research sessions.
+
+**Tool result handling**
+
+- Default: results larger than `LeanAgent.TOOL_RESULT_STORE_THRESHOLD`
+  (2000 chars) are written to the `ToolResultStore` and replaced in
+  the message log with a short file reference. The agent retrieves
+  full content on demand via `fetch_result` / `file_read`.
+- **Per-tool override:** any tool may declare a class-level
+  `tool_result_store_threshold: int | None = N`. `BaseTool` exposes
+  this as `0` for "always store" or a small positive int for
+  snippet-heavy tools. Built-in overrides:
+  - `web_search` → 800 chars
+  - `web_fetch` → 1500 chars
+- **Profile-level override:** `agent.tool_result_store_threshold`
+  in profile YAML overrides the default for an entire agent.
+
+**Role-aware message-log caps** (`MessageHistoryManager`)
+
+`cap_oversized_messages` runs as a deterministic pre-step before
+LLM-based summarisation. Tool and assistant messages are independently
+hard-capped:
+
+| YAML key | Default | Applies to |
+|----------|---------|------------|
+| `agent.tool_message_max_chars` | 1500 | `role="tool"` |
+| `agent.assistant_message_max_chars` | 4000 | `role="assistant"` |
+
+Truncated messages get a `[truncated N chars …]` marker. Set the cap
+to `0` to disable for that role.
+
+**Content-filter recovery** (`LiteLLMService.complete_stream`)
+
+When Azure / OpenAI returns a `ContentPolicyViolationError`, recovery
+runs progressively more aggressive stripping stages and retries once
+per stage:
+
+1. `tool_results_only` — drop all `role="tool"` and tool-call-only
+   assistant turns (cheapest, preserves conversation flow).
+2. `aggressive` — keep system prompt + last `recovery_keep_last_n`
+   plain user/assistant turns.
+3. `rephrase` *(opt-in)* — `LiteLLMService(recover_via_rephrase=True)`
+   adds a small no-tools LLM call that rewrites the latest user turn
+   neutrally, then retries once. Off by default.
+
+The agent surfaces a factual German user message naming the real
+cause (accumulated research context) instead of a hallucinated
+fallback.
+
+**Research/Writer separation**
+
+`agents/butler/configs/custom/research_specialist.yaml` is a context-
+isolated research sub-agent with a strict JSON output contract
+(`{summary, findings: [{date,title,url,fact}], stored_handles}`).
+Master agents (Butler, Coding-Agent, custom orchestrators) reference
+it as a `specialist:` and synthesise from the structured payload —
+raw snippets stay inside the specialist's session and the
+`ToolResultStore`.
+
+**Key files**
+
+- `src/taskforce/core/domain/lean_agent_components/tool_executor.py`
+  (`ToolResultMessageFactory._threshold_for`)
+- `src/taskforce/core/domain/lean_agent_components/message_history_manager.py`
+  (`cap_oversized_messages`)
+- `src/taskforce/infrastructure/tools/native/web_tools.py`
+- `src/taskforce/infrastructure/llm/litellm_service.py`
+  (`_strip_messages_for_content_recovery`,
+  `_rephrase_user_message_for_recovery`)
+- `src/taskforce/core/domain/planning/react_loop.py`
+  (`build_user_message_for_error`)
+
+ADR: `docs/adr/adr-025-tool-result-context-isolation.md`.
+
+---
+
 ## Communication Gateway
 
 The unified Communication Gateway replaces the earlier per-provider communication model. It provides a single entry point for all channel-based agent communication (Telegram, Teams, Slack, REST, etc.).

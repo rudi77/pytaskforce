@@ -72,8 +72,11 @@ class Agent:
     # Message history management (inspired by agent_v2 MessageHistory)
     MAX_MESSAGES = 50  # Hard limit on message count
     DEFAULT_SUMMARY_THRESHOLD = 20  # Compress when exceeding this message count (legacy fallback)
-    # Tool result storage thresholds
-    TOOL_RESULT_STORE_THRESHOLD = 10000  # Store results larger than 10k chars (~2500 tokens)
+    # Tool result storage thresholds.
+    # 2000 chars (~500 tokens) keeps web_search/web_fetch snippets out of the
+    # LLM message log by default. Tools can override per-tool by setting
+    # ``tool_result_store_threshold`` (see BaseTool).
+    TOOL_RESULT_STORE_THRESHOLD = 2000
     DEFAULT_MAX_PARALLEL_TOOLS = 4  # Conservative parallelism limit for tool execution
     # Token budget defaults
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
@@ -99,6 +102,9 @@ class Agent:
         summary_threshold: int | None = None,
         wiki_store: WikiStoreProtocol | None = None,
         wiki_context_config: WikiContextConfig | None = None,
+        tool_result_store_threshold: int | None = None,
+        tool_message_max_chars: int | None = None,
+        assistant_message_max_chars: int | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -154,6 +160,11 @@ class Agent:
         self.max_steps = max_steps or self.DEFAULT_MAX_STEPS
         self.max_parallel_tools = max_parallel_tools or self.DEFAULT_MAX_PARALLEL_TOOLS
         self.planning_strategy = planning_strategy or NativeReActStrategy()
+        self._tool_result_store_threshold = (
+            tool_result_store_threshold
+            if tool_result_store_threshold is not None
+            else self.TOOL_RESULT_STORE_THRESHOLD
+        )
 
         # Context pack configuration (Story 9.2)
         self.context_policy = context_policy or ContextPolicy.conservative_default()
@@ -203,6 +214,8 @@ class Agent:
             model_alias=self.model_alias,
             summary_threshold=self.summary_threshold,
             logger=self.logger,
+            tool_message_max_chars=tool_message_max_chars,
+            assistant_message_max_chars=assistant_message_max_chars,
         )
 
         # Context manager — single source of truth for the LLM context
@@ -221,8 +234,9 @@ class Agent:
         )
         self.tool_result_message_factory = ToolResultMessageFactory(
             tool_result_store=self.tool_result_store,
-            result_store_threshold=self.TOOL_RESULT_STORE_THRESHOLD,
+            result_store_threshold=self._tool_result_store_threshold,
             logger=self.logger,
+            tools=self.tools,
         )
 
         # State persistence helper
@@ -514,9 +528,7 @@ class Agent:
                 build_user_message_for_error,
             )
 
-            final_message = build_user_message_for_error(
-                last_error_kind, last_error_message
-            )
+            final_message = build_user_message_for_error(last_error_kind, last_error_message)
 
         complete_data: dict[str, Any] = {
             "status": status,
@@ -805,10 +817,7 @@ class Agent:
         elif decision.status is ApprovalStatus.TIMED_OUT:
             message = "Approval timed out. Do NOT retry without explicit user input."
         else:  # ERROR
-            message = (
-                "Approval pipeline failed. Do NOT retry; surface the failure "
-                "to the user."
-            )
+            message = "Approval pipeline failed. Do NOT retry; surface the failure " "to the user."
         return {
             "success": False,
             "tool_name": tool_name,

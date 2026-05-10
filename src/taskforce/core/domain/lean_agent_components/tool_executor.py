@@ -104,10 +104,26 @@ class ToolResultMessageFactory:
         tool_result_store: ToolResultStoreProtocol | None,
         result_store_threshold: int,
         logger: LoggerProtocol | structlog.stdlib.BoundLogger,
+        tools: dict[str, ToolProtocol] | None = None,
     ) -> None:
         self._tool_result_store = tool_result_store
         self._result_store_threshold = result_store_threshold
         self._logger = logger
+        self._tools = tools or {}
+
+    def _threshold_for(self, tool_name: str) -> int:
+        """Resolve the result-store threshold for ``tool_name``.
+
+        Per-tool override wins: any tool exposing a non-None
+        ``tool_result_store_threshold`` attribute (e.g. via ``BaseTool``)
+        sets its own cap. Otherwise the framework default is used.
+        """
+        tool = self._tools.get(tool_name)
+        if tool is not None:
+            override = getattr(tool, "tool_result_store_threshold", None)
+            if isinstance(override, int) and override >= 0:
+                return override
+        return self._result_store_threshold
 
     async def build_message(
         self,
@@ -135,8 +151,9 @@ class ToolResultMessageFactory:
         # Storing it again would create an infinite loop (read file → too large → store
         # to new file → agent reads new file → too large → ...).
         is_read_tool = tool_name in ("file_read", "fetch_result")
+        threshold = self._threshold_for(tool_name)
 
-        if self._tool_result_store and result_size > self._result_store_threshold and not is_read_tool:
+        if self._tool_result_store and result_size > threshold and not is_read_tool:
             handle = await self._tool_result_store.put(
                 tool_name=tool_name,
                 result=tool_result,
