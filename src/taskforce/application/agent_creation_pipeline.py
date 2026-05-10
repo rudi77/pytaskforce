@@ -339,7 +339,12 @@ class AgentCreationPipeline:
         planning_strategy: str | None,
         planning_strategy_params: dict[str, Any] | None,
     ) -> Agent:
-        """Create agent from a profile, checking for plugin match first."""
+        """Create agent from a profile, checking for plugin match first.
+
+        Multi-runtime: if the profile carries a non-default ``runtime``
+        field (``hermes``, ``openclaw``, …), dispatch to the registered
+        runtime factory instead of building a native Taskforce agent.
+        """
         agent_response = self._lookup_agent_definition(profile)
 
         if isinstance(agent_response, PluginAgentDefinition):
@@ -351,12 +356,86 @@ class AgentCreationPipeline:
                 planning_strategy_params,
             )
 
+        runtime_name = self._peek_runtime(profile)
+        if runtime_name and runtime_name != "taskforce":
+            return await self._from_foreign_runtime(
+                runtime_name=runtime_name,
+                profile=profile,
+                user_context=user_context,
+                planning_strategy=planning_strategy,
+                planning_strategy_params=planning_strategy_params,
+            )
+
         return await self._factory.create_agent(
             config=profile,
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
         )
+
+    def _peek_runtime(self, profile: str) -> str | None:
+        """Return the ``runtime`` field of the profile, or ``None`` if unknown.
+
+        Falls back to ``None`` (i.e. native taskforce path) on any load
+        error — the actual factory will raise the proper user-facing
+        FileNotFoundError downstream. Also returns ``None`` when the
+        factory has no ``profile_loader`` (some unit tests pass a
+        spec-constrained mock).
+        """
+        loader = getattr(self._factory, "profile_loader", None)
+        if loader is None:
+            return None
+        try:
+            config = loader.load(profile)
+        except (FileNotFoundError, ValueError, AttributeError):
+            return None
+        if not isinstance(config, dict):
+            return None
+        runtime = config.get("runtime")
+        if not isinstance(runtime, str) or not runtime.strip():
+            return None
+        return runtime.strip().lower()
+
+    async def _from_foreign_runtime(
+        self,
+        runtime_name: str,
+        profile: str,
+        user_context: dict[str, Any] | None,
+        planning_strategy: str | None,
+        planning_strategy_params: dict[str, Any] | None,
+    ) -> Agent:
+        """Build an agent via a non-Taskforce runtime adapter."""
+        from taskforce.application.agent_runtime_registry import get_runtime
+
+        try:
+            factory_callable = get_runtime(runtime_name)
+        except KeyError as exc:
+            raise ValidationError(
+                str(exc),
+                details={"runtime": runtime_name, "profile": profile},
+            ) from exc
+
+        profile_dict = dict(self._factory.profile_loader.load(profile))
+        profile_dict["__profile_name__"] = profile
+        profile_dict["__user_context__"] = user_context
+        profile_dict["__planning_strategy__"] = planning_strategy
+        profile_dict["__planning_strategy_params__"] = planning_strategy_params
+
+        self._logger.info(
+            "creating_foreign_runtime_agent",
+            profile=profile,
+            runtime=runtime_name,
+        )
+        runtime_agent = await factory_callable(profile_dict)
+
+        # Stamp runtime_name for introspection if the adapter forgot to.
+        if not getattr(runtime_agent, "runtime_name", None):
+            try:
+                runtime_agent.runtime_name = runtime_name  # type: ignore[attr-defined]
+            except (AttributeError, TypeError):
+                pass
+
+        return runtime_agent  # type: ignore[return-value]
 
     async def _from_plugin_via_profile_name(
         self,
