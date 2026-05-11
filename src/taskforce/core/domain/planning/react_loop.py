@@ -461,6 +461,7 @@ async def _react_loop(
             tool_result_events = 0
             no_progress_tool_results = 0
             failed_tool_names: list[str] = []
+            failure_error_kinds: dict[str, str] = {}
             tool_signature = "|".join(
                 f"{tc.get('function', {}).get('name', '')}:{tc.get('function', {}).get('arguments', '')}"
                 for tc in tool_calls
@@ -485,6 +486,9 @@ async def _react_loop(
                         no_progress_tool_results += 1
                         failed_tool_names.append(tool_name)
                         tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                        kind = evt.data.get("error_kind")
+                        if isinstance(kind, str):
+                            failure_error_kinds[tool_name] = kind
                     else:
                         tool_failure_counts[tool_name] = 0  # reset on success
                         if _is_no_progress_tool_output(output):
@@ -539,6 +543,7 @@ async def _react_loop(
                     _build_retry_nudge(
                         failed_tool_names,
                         attempt=consecutive_no_progress_steps,
+                        error_kinds=failure_error_kinds,
                     )
                 )
 
@@ -654,6 +659,7 @@ async def _llm_call_and_process(
     if result.get("tool_calls"):
         paused = False
         failed_tool_names: list[str] = []
+        failure_error_kinds: dict[str, str] = {}
         async for e in _process_tool_calls(
             agent,
             result["tool_calls"],
@@ -675,11 +681,18 @@ async def _llm_call_and_process(
                 if not e.data.get("success", False):
                     failed_tool_names.append(tool_name)
                     tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                    kind = e.data.get("error_kind")
+                    if isinstance(kind, str):
+                        failure_error_kinds[tool_name] = kind
                 else:
                     tool_failure_counts[tool_name] = 0  # reset on success
             events.append(e)
         if not paused and failed_tool_names:
-            agent.context.append_message(_build_retry_nudge(failed_tool_names))
+            agent.context.append_message(
+                _build_retry_nudge(
+                    failed_tool_names, error_kinds=failure_error_kinds
+                )
+            )
         yield ("paused" if paused else "tool_calls", events)
         return
 

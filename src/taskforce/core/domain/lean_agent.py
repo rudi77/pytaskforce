@@ -32,6 +32,10 @@ from taskforce.core.domain.lean_agent_components.tool_executor import (
     ToolExecutor,
     ToolResultMessageFactory,
 )
+from taskforce.core.domain.lean_agent_components.wiki_context_loader import (
+    WikiContextConfig,
+    WikiContextLoader,
+)
 from taskforce.core.domain.models import ExecutionResult, StreamEvent
 from taskforce.core.domain.planning_strategy import (
     NativeReActStrategy,
@@ -39,16 +43,12 @@ from taskforce.core.domain.planning_strategy import (
 )
 from taskforce.core.domain.token_budgeter import TokenBudgeter
 from taskforce.core.interfaces.llm import LLMProviderProtocol
-from taskforce.core.domain.lean_agent_components.wiki_context_loader import (
-    WikiContextConfig,
-    WikiContextLoader,
-)
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.runtime import AgentRuntimeTrackerProtocol
-from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
 from taskforce.core.interfaces.state import StateManagerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
+from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
 from taskforce.core.prompts.autonomous_prompts import LEAN_KERNEL_PROMPT
 from taskforce.core.tools.planner_tool import PlannerTool
 from taskforce.core.tools.tool_converter import tools_to_openai_format
@@ -706,6 +706,7 @@ class Agent:
                     "tool_name": tool_name,
                     "error": f"invalid params: {exc}",
                     "approval_status": "error",
+                    "error_kind": "approval_error",
                     "terminal_failure": False,
                 }
             # ToolProtocol.validate_params returns (is_valid, error_msg).
@@ -727,6 +728,7 @@ class Agent:
                     "tool_name": tool_name,
                     "error": f"invalid params: {error_msg or 'validation failed'}",
                     "approval_status": "error",
+                    "error_kind": "approval_error",
                     "terminal_failure": False,
                 }
 
@@ -788,6 +790,7 @@ class Agent:
                 "tool_name": tool_name,
                 "error": f"approval service failed: {exc}",
                 "approval_status": ApprovalStatus.ERROR.value,
+                "error_kind": "approval_error",
                 "approval_reason": str(exc),
                 "terminal_failure": True,
             }
@@ -814,15 +817,19 @@ class Agent:
         )
         if decision.status is ApprovalStatus.DENIED:
             message = "User denied execution. Do NOT retry the same action — ask the user instead."
+            error_kind = "approval_denied"
         elif decision.status is ApprovalStatus.TIMED_OUT:
             message = "Approval timed out. Do NOT retry without explicit user input."
+            error_kind = "approval_timeout"
         else:  # ERROR
             message = "Approval pipeline failed. Do NOT retry; surface the failure to the user."
+            error_kind = "approval_error"
         return {
             "success": False,
             "tool_name": tool_name,
             "error": message,
             "approval_status": decision.status.value,
+            "error_kind": error_kind,
             "approval_decided_by": decision.decided_by,
             "approval_reason": decision.reason,
             "terminal_failure": True,

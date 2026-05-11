@@ -451,3 +451,33 @@ the runtime guarantees needed for unattended operation (issue #156):
 Disable supervision with ``taskforce butler start --no-supervisor``
 when running under an external init system (systemd, Docker, k8s) that
 already provides its own restart policy.
+
+### Approval-gate failure surfacing (issue #190 sub-item a)
+
+When a tool that declares ``requires_approval=True`` is blocked by the
+human-approval gate, the resulting tool_result carries a structured
+``error_kind`` so downstream consumers (UI, react loop, learning
+service) can react appropriately instead of treating the block as a
+generic tool failure.
+
+| Gate outcome | ``approval_status`` | ``error_kind`` | ``terminal_failure`` |
+|---|---|---|---|
+| User said no | ``denied`` | ``approval_denied`` | ``true`` |
+| No admin response in time | ``timed_out`` | ``approval_timeout`` | ``true`` |
+| Approval pipeline crashed | ``error`` | ``approval_error`` | ``true`` |
+| Pre-gate ``validate_params`` rejected | ``error`` | ``approval_error`` | ``false`` (retry with corrected args is fine) |
+
+The react loop reads ``error_kind`` from the ``tool_result`` event and,
+when at least one failed tool was approval-blocked, injects a
+different retry nudge:
+
+```
+[System: Approval was denied for <tool>. Do NOT retry this action,
+NOR any tool that would have the same effect. In your next reply,
+tell the user in plain language that the action was not permitted
+and ask what they would prefer instead.]
+```
+
+This closes the action-gap path where the LLM saw a generic
+"calendar_create failed" message, fell back to ``shell``/``python``,
+and silently re-attempted the same forbidden side-effect.
