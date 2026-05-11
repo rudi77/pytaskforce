@@ -146,9 +146,6 @@ class AgentFactory:
 
         try:
             from taskforce.application.auth_manager import AuthManager
-            from taskforce.infrastructure.auth.encrypted_token_store import (
-                EncryptedTokenStore,
-            )
             from taskforce.infrastructure.auth.oauth2_device_flow import (
                 OAuth2DeviceFlow,
             )
@@ -167,8 +164,13 @@ class AgentFactory:
             # so the authenticate tool can run device flows.
             provider_configs = self._load_google_provider_config()
 
+            # Route token-store construction through the InfrastructureBuilder
+            # so plugins (e.g. taskforce-enterprise) can install a
+            # per-(tenant, user) backend via set_token_store_override.
+            # Defaults to the legacy ``~/.taskforce/auth`` EncryptedTokenStore
+            # when no override is installed.
             self._auth_manager = AuthManager(
-                token_store=EncryptedTokenStore(),
+                token_store=self.infra_builder.build_token_store(),
                 auth_flows=auth_flows,
                 gateway=self._gateway,
                 provider_configs=provider_configs,

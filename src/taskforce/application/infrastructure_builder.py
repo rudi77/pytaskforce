@@ -612,6 +612,42 @@ class InfrastructureBuilder:
         return FileSettingsStore(work_dir=work_dir)
 
     # -------------------------------------------------------------------------
+    # OAuth Token Store
+    # -------------------------------------------------------------------------
+
+    def build_token_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build the OAuth token store.
+
+        Defaults to the framework's file-based, Fernet-encrypted
+        :class:`EncryptedTokenStore` rooted at ``~/.taskforce/auth/``
+        (the historic location). Plugins (e.g. ``taskforce-enterprise``)
+        can substitute a per-(tenant, user) backend via
+        :func:`taskforce.application.infrastructure_overrides.set_token_store_override`.
+
+        Args:
+            work_dir: Reserved for future per-profile auth dirs. The
+                default ``EncryptedTokenStore`` ignores it (uses
+                ``~/.taskforce/auth``).
+
+        Returns:
+            Object satisfying
+            :class:`taskforce.core.interfaces.auth.TokenStoreProtocol`.
+        """
+        from taskforce.application.infrastructure_overrides import (
+            get_token_store_override,
+        )
+
+        override = get_token_store_override()
+        if override is not None:
+            return override()
+
+        from taskforce.infrastructure.auth.encrypted_token_store import (
+            EncryptedTokenStore,
+        )
+
+        return EncryptedTokenStore()
+
+    # -------------------------------------------------------------------------
     # Combined Infrastructure
     # -------------------------------------------------------------------------
 
