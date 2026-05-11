@@ -35,6 +35,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -85,22 +86,40 @@ _RETRYABLE_ERROR_TYPES = frozenset(
 # Keywords in error messages that indicate transient failures
 _RETRYABLE_KEYWORDS = ("rate limit", "timeout", "503", "502", "429", "overloaded")
 
-# Keywords that indicate permanent failures (never retry).
-# Auth + quota errors (401/403/insufficient_quota) won't recover by retrying
-# and burn through retry budget on a Butler daemon running 24/7 (issue #156),
-# so they're hard-classified as non-retryable here.
-_NON_RETRYABLE_KEYWORDS = (
+# HTTP status codes that indicate permanent failures, matched with
+# word boundaries so a transient 503 carrying e.g. "billing service
+# degraded, retry in 30s" in the body does NOT trip the non-retryable
+# branch (issue #191 sub-item c).
+_NON_RETRYABLE_STATUS_PATTERN = re.compile(r"\b(401|402|403|404|410)\b")
+
+# Specific phrases (substring match) that indicate permanent failures.
+# Each phrase must be distinctive enough that no plausible retryable
+# 5xx error body would contain it.
+#
+# Deliberately REMOVED in #191 sub-item (c) compared to the original
+# _NON_RETRYABLE_KEYWORDS list:
+#   - "billing"   — false-positive on "billing service degraded, retry
+#     in 30s" (transient 503); 402 status code via the regex above
+#     covers the real billing-rejection case.
+#   - "forbidden" — false-positive on "forbidden character in stream,
+#     retrying" (transient stream glitch); 403 via the regex covers
+#     the real "forbidden by ACL" case.
+#   - "not found" — too generic, false-positives on "tool 'X' not
+#     found in registry" and similar; 404 via the regex covers the
+#     real "model/endpoint not found" case.
+#
+# Auth + quota errors won't recover by retrying and burn through retry
+# budget on a Butler daemon running 24/7 (issue #156), so they stay
+# hard-classified as non-retryable here.
+_NON_RETRYABLE_PHRASES = (
     "invalid api key",
     "authentication",
     "unauthorized",
-    "forbidden",
     "permission denied",
-    "not found",
     "invalid model",
     "invalid request",
     "insufficient_quota",
     "quota exceeded",
-    "billing",
 )
 
 # Keywords that indicate content filter — recoverable by stripping history
@@ -1117,8 +1136,16 @@ class LiteLLMService:
         """
         error_msg = str(error).lower()
 
-        # Non-retryable errors take priority
-        if any(kw in error_msg for kw in _NON_RETRYABLE_KEYWORDS):
+        # Non-retryable status codes take priority — word-boundary
+        # regex so a transient 503 carrying a 4xx-mentioning body
+        # (e.g. log lines, retry advice) doesn't false-positive.
+        if _NON_RETRYABLE_STATUS_PATTERN.search(error_msg):
+            return False
+
+        # Non-retryable phrase fallback — distinctive auth / quota
+        # wording. Kept narrow on purpose (see _NON_RETRYABLE_PHRASES
+        # comment) so spurious-keyword 5xx bodies stay retryable.
+        if any(phrase in error_msg for phrase in _NON_RETRYABLE_PHRASES):
             return False
 
         # Check error type name
