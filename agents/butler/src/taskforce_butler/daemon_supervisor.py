@@ -134,12 +134,25 @@ class DaemonSupervisor:
         ``loop.add_signal_handler`` (the recommended asyncio path). On
         Windows the asyncio ProactorEventLoop does not implement
         ``add_signal_handler`` so we fall back to ``signal.signal`` with
-        ``SIGINT`` and the Windows-specific ``SIGBREAK`` (Ctrl+Break).
-        ``SIGTERM`` is intentionally not handled on Windows because the
-        platform delivers it as an immediate process kill — there is
-        nothing for us to drain.
+        ``SIGINT`` and the Windows-specific ``SIGBREAK`` (Ctrl+Break,
+        also raised by ``taskkill`` without ``/F`` when the target is a
+        console-attached process). ``SIGTERM`` is intentionally not
+        handled on Windows: native termination paths (``taskkill /F`` →
+        ``TerminateProcess``, WM_CLOSE) bypass Python signal handlers
+        entirely, so installing one would be a no-op except for the
+        narrow case where someone calls ``os.kill(pid, signal.SIGTERM)``
+        from another Python process. Operators relying on Windows
+        Service / NSSM stop semantics should use Ctrl+Break instead.
         """
-        loop = loop or asyncio.get_event_loop()
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # No running loop — caller is in a sync context. Fall
+                # straight through to the signal.signal fallback path
+                # below by leaving ``loop`` None and relying on the
+                # except branch to skip ``loop.add_signal_handler``.
+                loop = None
         signals_to_install: list[Any] = [signal.SIGINT]
 
         if sys.platform != "win32":
@@ -151,6 +164,9 @@ class DaemonSupervisor:
 
         for sig in signals_to_install:
             try:
+                if loop is None:
+                    # No running loop — go straight to signal.signal.
+                    raise NotImplementedError
                 loop.add_signal_handler(sig, self._handle_signal, sig)
                 self._installed_signals.append(sig)
             except (NotImplementedError, RuntimeError):
@@ -191,8 +207,12 @@ class DaemonSupervisor:
             iteration_count=self._iteration_count,
         )
         # Best-effort: schedule the event flip on the running loop.
+        # ``get_running_loop`` raises RuntimeError when called outside
+        # async context, which is exactly the fall-through condition we
+        # want here. (``get_event_loop`` emits a DeprecationWarning on
+        # Python 3.12+ in this case.)
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             loop.call_soon_threadsafe(self._shutdown.set)
         except RuntimeError:
             # No running loop — fall back to direct set. On the main

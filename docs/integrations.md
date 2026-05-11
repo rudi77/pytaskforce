@@ -481,3 +481,33 @@ and ask what they would prefer instead.]
 This closes the action-gap path where the LLM saw a generic
 "calendar_create failed" message, fell back to ``shell``/``python``,
 and silently re-attempted the same forbidden side-effect.
+
+### Watchdog known limitation (issue #191 sub-item a)
+
+The supervisor's watchdog runs as an ``asyncio.create_task`` on the
+**same event loop** as the daemon. If the daemon hangs in a blocking
+call that never releases the GIL (e.g. a non-async LiteLLM dependency
+performing a synchronous network call without a timeout, or a
+``requests``-style library on a code path we don't control), the
+watchdog's ``asyncio.sleep(...)`` between heartbeat checks never
+resumes — and ``DaemonStalled`` cannot fire. Net effect: silent hang
+until something else (TCP keepalive, OS process limit) kills the
+process.
+
+What the watchdog **does** catch:
+- The daemon stops updating ``last_heartbeat`` while the event loop
+  is still alive (stuck async coroutine, infinite ``async`` retry
+  loop without ``await``, deadlocked ``asyncio.Lock``).
+- The daemon raises an uncaught exception out of its main loop.
+
+What the watchdog **does NOT** catch:
+- The event loop itself blocked by a sync C-extension call.
+- The Python process blocked by a kernel-level wait (e.g. a stuck
+  ``fork``+``waitpid`` in a child library).
+
+For true 24/7 production use behind a watchdog that survives those
+cases, run the daemon under an OS-level supervisor (systemd
+``WatchdogSec=``, Docker ``HEALTHCHECK`` with a restart policy, k8s
+``livenessProbe``) and disable the in-process watchdog via
+``--no-supervisor``. Moving the watchdog to a separate OS thread is
+tracked as a follow-up.
