@@ -652,7 +652,13 @@ per stage:
    assistant turns (cheapest, preserves conversation flow).
 2. `aggressive` — keep system prompt + last `recovery_keep_last_n`
    plain user/assistant turns.
-3. `rephrase` *(opt-in)* — `LiteLLMService(recover_via_rephrase=True)`
+3. `no_tools` — re-streams with `tools=None` / `tool_choice=None`.
+   Covers the case where the policy trigger sits in the LLM's
+   *output* (tool_call arguments — e.g. a flagged shell command or
+   web-search query). Only runs when tools were originally provided
+   AND at least one strip stage was attempted (so we know the
+   primary error is content-filter, not a malformed request).
+4. `rephrase` *(opt-in)* — `LiteLLMService(recover_via_rephrase=True)`
    adds a small no-tools LLM call that rewrites the latest user turn
    neutrally, then retries once. Off by default.
 

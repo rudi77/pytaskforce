@@ -898,6 +898,58 @@ class LiteLLMService:
                         yield error_event
                         return
 
+            # Fallback for *output*-side filter triggers: the LLM may
+            # be producing a tool_call whose arguments hit the content
+            # policy (e.g. a shell command, web-search query, or
+            # generated text inside tool args). History-stripping
+            # cannot fix that — but disabling tools forces a text-only
+            # response that cannot carry policy-flagged tool payloads.
+            # Only run when tools were originally provided AND at
+            # least one strip stage was attempted (so we know the
+            # primary error is genuinely content-filter).
+            if tools and stages:
+                base = stages[-1][1]
+                _, no_tools_kwargs = self._prepare_stream_request(
+                    base, model, None, None, **kwargs
+                )
+                self.logger.warning(
+                    "llm_stream_content_filter_recovery",
+                    stage="no_tools",
+                    original_messages=len(messages),
+                    stripped_messages=len(base),
+                    model=resolved_model,
+                )
+                yield {
+                    "type": "stream_restart",
+                    "reason": "content_filter",
+                    "stage": "no_tools",
+                }
+                try:
+                    async for event in self._run_stream_attempt(
+                        base, resolved_model, no_tools_kwargs
+                    ):
+                        yield event
+                    self.logger.info(
+                        "llm_stream_content_filter_recovery_success",
+                        stage="no_tools",
+                        model=resolved_model,
+                    )
+                    return
+                except Exception as recovery_error:
+                    last_recovery_error = recovery_error
+                    self.logger.warning(
+                        "llm_stream_content_filter_recovery_stage_failed",
+                        stage="no_tools",
+                        model=resolved_model,
+                        error=str(recovery_error)[:200],
+                    )
+                    if not self._is_content_filter_error(recovery_error):
+                        error_event = await self._handle_stream_error(
+                            recovery_error, resolved_model, base
+                        )
+                        yield error_event
+                        return
+
             # Optional final stage: rephrase the user turn neutrally
             # and try once more. Off by default — costs one extra
             # small LLM call and changes the user's wording.

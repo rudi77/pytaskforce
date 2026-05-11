@@ -517,3 +517,161 @@ async def test_stream_restart_emitted_for_rephrase_stage(temp_config_file: str) 
         e["stage"] for e in events if e.get("type") == "stream_restart"
     ]
     assert stages == ["tool_results_only", "aggressive", "rephrase"]
+
+
+_TOOLS_FIXTURE = [
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "Run a shell command",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+]
+
+
+@pytest.mark.asyncio
+async def test_no_tools_recovery_succeeds_after_strip_stages_fail(
+    temp_config_file: str,
+) -> None:
+    """Issue #159 sub-item (b): when the content filter trips on the
+    LLM's OUTPUT (tool_call args), stripping input history doesn't
+    help — the model keeps producing the same policy-flagged tool
+    payload. A final ``no_tools`` retry disables tools so the model
+    can only emit text, which lets the recovery succeed instead of
+    surfacing a hard error to the user.
+    """
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw tool"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    call_count = {"n": 0}
+    last_kwargs: dict[str, Any] = {}
+
+    async def fake_acompletion(**kwargs: Any) -> Any:
+        call_count["n"] += 1
+        last_kwargs.clear()
+        last_kwargs.update(kwargs)
+        # Primary + tool_results_only + aggressive all hit the filter
+        # because the policy trigger is in the OUTPUT, not the input.
+        if call_count["n"] <= 3:
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        # The no_tools retry succeeds — text-only response.
+        return _stream_of(_content_chunk("Sorry, can't run that.", finish_reason="stop"))
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [
+            evt
+            async for evt in service.complete_stream(
+                messages=messages,
+                tools=_TOOLS_FIXTURE,
+                tool_choice="auto",
+            )
+        ]
+
+    assert call_count["n"] == 4
+    # Final acompletion call (the no_tools retry) must have NO tools and
+    # no tool_choice — otherwise the same policy violation recurs.
+    assert "tools" not in last_kwargs or last_kwargs.get("tools") is None
+    assert "tool_choice" not in last_kwargs or last_kwargs.get("tool_choice") is None
+
+    restart_stages = [
+        e["stage"] for e in events if e.get("type") == "stream_restart"
+    ]
+    assert restart_stages == ["tool_results_only", "aggressive", "no_tools"]
+    types = [e["type"] for e in events]
+    assert "done" in types
+    assert "error" not in types
+
+
+@pytest.mark.asyncio
+async def test_no_tools_recovery_skipped_when_no_tools_originally(
+    temp_config_file: str,
+) -> None:
+    """Without tools in the original request the ``no_tools`` stage is
+    a no-op (nothing to disable). The recovery should match pre-fix
+    behaviour: primary + 2 strip stages, then error."""
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    call_count = {"n": 0}
+
+    async def fake_acompletion(**_kwargs: Any) -> Any:
+        call_count["n"] += 1
+        raise RuntimeError(_CONTENT_FILTER_MSG)
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    # Primary + tool_results_only + aggressive — no extra no_tools call.
+    assert call_count["n"] == 3
+    types = [e["type"] for e in events]
+    assert "no_tools" not in [
+        e.get("stage", "") for e in events if e.get("type") == "stream_restart"
+    ]
+    assert types[-1] == "error"
+
+
+@pytest.mark.asyncio
+async def test_no_tools_recovery_skipped_when_strip_stage_succeeds(
+    temp_config_file: str,
+) -> None:
+    """If a strip stage recovers, no_tools must NOT be tried — the
+    cheaper path already worked."""
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    call_count = {"n": 0}
+
+    async def fake_acompletion(**_kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        return _stream_of(_content_chunk("ok", finish_reason="stop"))
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [
+            evt
+            async for evt in service.complete_stream(
+                messages=messages,
+                tools=_TOOLS_FIXTURE,
+                tool_choice="auto",
+            )
+        ]
+
+    # Primary + tool_results_only succeed — no aggressive, no no_tools.
+    assert call_count["n"] == 2
+    restart_stages = [
+        e["stage"] for e in events if e.get("type") == "stream_restart"
+    ]
+    assert restart_stages == ["tool_results_only"]
