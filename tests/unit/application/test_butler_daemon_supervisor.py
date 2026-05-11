@@ -234,3 +234,54 @@ async def test_supervisor_install_signal_handlers_is_safe() -> None:
     if sys.platform != "win32":
         # POSIX: SIGTERM must also be installed.
         assert signal.SIGTERM in supervisor._installed_signals
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="ProactorEventLoop is Windows-only")
+def test_install_signal_handlers_under_proactor_event_loop() -> None:
+    """Issue #191 sub-item (b): the Windows ProactorEventLoop fallback
+    path (``signal.signal`` instead of ``loop.add_signal_handler``)
+    must be exercised end-to-end, not just smoke-tested for absence
+    of exceptions.
+
+    The existing ``test_supervisor_install_signal_handlers_is_safe``
+    relies on whatever event loop pytest-asyncio happens to provide,
+    which on Windows is often the Selector loop. This test pins the
+    real ProactorEventLoop path so a future refactor that breaks the
+    fallback would actually fail the suite.
+    """
+    daemon = _FakeDaemon()
+    supervisor = DaemonSupervisor(daemon_factory=lambda: daemon)
+
+    loop = asyncio.ProactorEventLoop()  # type: ignore[attr-defined]
+    try:
+
+        async def _install() -> None:
+            supervisor.install_signal_handlers()
+
+        loop.run_until_complete(_install())
+    finally:
+        loop.close()
+
+    # The fallback path stores the same signals; assert it actually
+    # registered something rather than silently dropping them.
+    assert signal.SIGINT in supervisor._installed_signals
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        assert sigbreak in supervisor._installed_signals
+
+
+def test_install_signal_handlers_without_running_loop_uses_signal_signal() -> None:
+    """When called from sync context with no running loop and no
+    explicit ``loop=`` argument, ``install_signal_handlers`` must fall
+    back to ``signal.signal`` instead of crashing on the deprecated
+    ``get_event_loop`` path.
+
+    This pins the behaviour the issue #191 sub-item (b) cleanup
+    introduced: no implicit loop creation, no DeprecationWarning, no
+    silent skip on platforms where the fallback IS available.
+    """
+    daemon = _FakeDaemon()
+    supervisor = DaemonSupervisor(daemon_factory=lambda: daemon)
+    # No asyncio.run / event loop — pure sync call.
+    supervisor.install_signal_handlers()
+    assert signal.SIGINT in supervisor._installed_signals
