@@ -849,6 +849,23 @@ class SimpleChatRunner:
                     self.console.file.flush()
                     final_tokens.append(token)
 
+            elif event_type == EventType.LLM_STREAM_RESTART.value:
+                # The provider is re-streaming this turn after a
+                # content-filter recovery. Already-printed tokens cannot
+                # be unprinted in a terminal — surface a clear marker
+                # so the user knows the next tokens replace the previous
+                # ones, and reset the accumulator so the final answer
+                # only carries the clean retry content.
+                stage = update.details.get("stage") or "recovery"
+                if started_output:
+                    self.console.print()
+                self.console.print(
+                    f"[yellow]⚠️  Antwort wegen Sicherheitsfilter neu "
+                    f"generiert ({stage})[/yellow]"
+                )
+                final_tokens.clear()
+                started_output = False
+
             elif event_type == EventType.FINAL_ANSWER.value:
                 if not final_tokens:
                     content = update.details.get("content", "")

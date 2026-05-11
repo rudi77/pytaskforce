@@ -40,6 +40,10 @@ class EventType(str, Enum):
     ERROR = "error"
     # Emitted when execution pauses cooperatively in response to a user interrupt.
     INTERRUPTED = "interrupted"
+    # Emitted when the current LLM stream is restarted (e.g. after a
+    # content-filter recovery). UI consumers should discard partial
+    # tokens received since the previous restart marker.
+    LLM_STREAM_RESTART = "llm_stream_restart"
     # Skill-related events
     SKILL_AUTO_ACTIVATED = "skill_auto_activated"
     # Communication gateway events
@@ -65,6 +69,11 @@ class LLMStreamEventType(str, Enum):
     TOOL_CALL_DELTA = "tool_call_delta"
     TOOL_CALL_END = "tool_call_end"
     DONE = "done"
+    # Emitted when a streaming attempt is being restarted (e.g. after a
+    # content-filter block). Consumers that accumulate streamed content
+    # should drop everything received since the previous restart/start
+    # marker; tokens that follow belong to a fresh attempt.
+    STREAM_RESTART = "stream_restart"
 
 
 class PlannerAction(str, Enum):

@@ -365,3 +365,70 @@ async def test_role_user_after_tool_failure_is_unchanged() -> None:
         and "failed" in str(m.get("content", ""))
     ]
     assert nudges, "expected a retry nudge after tool failure"
+
+
+@pytest.mark.asyncio
+async def test_stream_restart_resets_accumulators_and_yields_downstream_event() -> None:
+    """Issue #159 sub-item (a): when the LLM provider yields a
+    ``stream_restart`` (content-filter recovery), the react loop must
+    drop everything accumulated from the failed attempt AND surface a
+    matching downstream event so UI consumers can clear their partial
+    render.
+
+    Without this the final assistant message ends up as
+    "partial-attempt-tokens + recovered-attempt-tokens" concatenated.
+    """
+    agent = _make_agent(max_steps=3)
+    logger = _make_logger()
+
+    def stream_factory(**_kwargs: Any):
+        # Single stream that emits partial content, then a restart, then
+        # the clean retry tokens. Mirrors what LiteLLMService.complete_stream
+        # yields when the first attempt content-filters mid-stream.
+        return _make_stream(
+            [
+                {"type": "token", "content": "Hier sind die "},
+                {"type": "token", "content": "halb"},
+                {
+                    "type": "stream_restart",
+                    "reason": "content_filter",
+                    "stage": "tool_results_only",
+                },
+                {"type": "token", "content": "Saubere Antwort."},
+                {"type": "done", "usage": {}},
+            ]
+        )
+
+    agent.llm_provider = MagicMock()
+    agent.llm_provider.complete_stream = MagicMock(side_effect=stream_factory)
+
+    messages = agent.context.messages
+    messages.extend(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "summarise"},
+        ]
+    )
+
+    events: list[StreamEvent] = []
+    async for evt in _react_loop(
+        agent, "summarise", "sess-159a", messages, {}, 0, logger
+    ):
+        events.append(evt)
+
+    restart_events = [
+        e for e in events if e.event_type == EventType.LLM_STREAM_RESTART
+    ]
+    assert len(restart_events) == 1
+    assert restart_events[0].data == {
+        "reason": "content_filter",
+        "stage": "tool_results_only",
+    }
+
+    # The final assistant message appended after the stream ends must
+    # only contain the clean retry content — not the partial pre-restart
+    # tokens.
+    assistant_msgs = [m for m in messages if m.get("role") == "assistant"]
+    assert assistant_msgs, "expected an assistant message after stream end"
+    final_assistant = assistant_msgs[-1]
+    assert final_assistant.get("content") == "Saubere Antwort.", final_assistant
