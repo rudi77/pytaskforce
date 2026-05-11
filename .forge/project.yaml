@@ -1,0 +1,195 @@
+# pytaskforce — forge project specification
+# Erstmaliger Setup für `forge board-loop` gegen GitHub Project #3.
+# Bevor du an dieser Datei änderst: forge-spec-v0.4.md Teil 5 + 6 lesen.
+
+spec_version: "1.0"
+name: pytaskforce
+language_stack: [python]
+frameworks: [fastapi, pydantic, typer, litellm, structlog, pytest]
+
+# === SURFACES — was forge editieren darf ===
+# Konservativer Erst-Schnitt. Clean-Architecture-Layer-Grenzen respektieren:
+# core/interfaces und core/domain bleiben Mensch-only.
+surfaces:
+  tools:
+    # Komplettes tools/-Verzeichnis (native + wrappers + filters + registry +
+    # base_tool). MCP/orchestration bleiben drin — eng verbundene Logik.
+    paths:
+      - "src/taskforce/infrastructure/tools/"
+    type: code
+    guardrails:
+      - "uv run black --check src/taskforce/infrastructure/tools"
+      - "uv run ruff check src/taskforce/infrastructure/tools"
+
+  llm:
+    # LiteLLM-Service, Router, Config-Loader, Response-Parser.
+    paths:
+      - "src/taskforce/infrastructure/llm/"
+    type: code
+    guardrails:
+      - "uv run black --check src/taskforce/infrastructure/llm"
+      - "uv run ruff check src/taskforce/infrastructure/llm"
+
+  application:
+    paths:
+      - "src/taskforce/application/"
+    type: code
+    guardrails:
+      - "uv run black --check src/taskforce/application"
+      - "uv run ruff check src/taskforce/application"
+
+  unit_tests:
+    paths:
+      - "tests/unit/"
+    type: code
+    guardrails:
+      - "uv run ruff check tests/unit"
+
+  docs:
+    paths:
+      - "docs/"
+    type: code
+    guardrails: []
+
+# === FORBIDDEN — Pfade, die forge NIE editiert ===
+# Wenn ein Pfad sowohl in einer Surface als auch hier ist, gewinnt forbidden.
+forbidden:
+  # Architektur-kritisch: Domain + Interfaces sind Mensch-only
+  - "src/taskforce/core/interfaces/**"
+  - "src/taskforce/core/domain/**"
+
+  # ADRs sind Entscheidungs-Dokumente — Mensch
+  - "docs/adr/**"
+
+  # Build / Packaging / Config — Mensch
+  - "pyproject.toml"
+  - "uv.lock"
+  - "Dockerfile*"
+  - "docker-compose*.yml"
+  - ".env*"
+
+  # CI / Workflows — Mensch
+  - ".github/workflows/**"
+
+  # Doku / Konventionen — Mensch entscheidet
+  - "CLAUDE.md"
+  - "README.md"
+  - "CHANGELOG.md"
+
+  # Agent-Package-Profile sind sensible Konfigurationen — Mensch
+  - "agents/**/configs/**"
+  - "src/taskforce/configs/**"
+
+  # forge selbst (Spec Teil 7.4)
+  - ".forge/**"
+
+# === CAPABILITIES — was forge als Aktion tun darf ===
+capabilities:
+  read: ["**/*"]
+  edit: ["{surfaces}"]
+  run:
+    - "uv run pytest *"
+    - "uv run black *"
+    - "uv run ruff *"
+    - "uv run mypy *"
+    - "uv run python *"
+    - "uv sync *"
+    - "python *"
+    - "pytest *"
+  commit: true
+  open_pr: true
+  merge_pr: false           # hardcoded v1
+  push_to_main: false       # hardcoded v1
+  push_force: false
+  network_egress:
+    - "api.anthropic.com"
+    - "api.github.com"
+    - "pypi.org"
+    - "files.pythonhosted.org"
+
+# === EVAL-SUITEN ===
+eval_suites:
+  # Schneller Sanity-Lauf: nur unit tests, no-header, gezieltes Budget.
+  quick:
+    cmd: |
+      uv run pytest tests/unit --no-header -q --tb=no
+    budget_s: 300
+    parses: pytest_json
+
+  # Volltest, einschließlich Integration. Teurer.
+  full:
+    cmd: |
+      uv run pytest --no-header -q --tb=no
+    budget_s: 900
+    parses: pytest_json
+
+# === GATES — harte Pass/Fail, blocken Generation ===
+gates:
+  - {kind: pytest_pass_rate, threshold: 1.0, source: quick}
+
+# === SCORES — kontinuierliche Metriken ===
+# Leer in v1 — KEEP triggert nur auf rot→grün-Übergängen.
+scores: []
+
+# === DIAGNOSTICS — geloggt, nicht in Composite ===
+diagnostics: []
+
+# === COST-CAPS — Smoke-konservativ für die ersten Runs ===
+cost_caps:
+  per_generation_usd: 0.50
+  per_run_usd: 2.00
+  per_project_per_day_usd: 10.00
+  per_project_per_month_usd: 75.00
+
+# === TRIGGERS ===
+# `bug` ist das Label, das auf Project #3 die board-loop-Auswahl steuert
+# (siehe board.filter_labels). Der Trigger-Block hier definiert, wie ein
+# dispatched Run aussieht.
+triggers:
+  on_issue_label:
+    bug:
+      strategy: sequential
+      model: sonnet
+      max_iterations: 5
+    enhancement:
+      strategy: sequential
+      model: sonnet
+      max_iterations: 5
+      requires_human_review: true
+    documentation:
+      strategy: sequential
+      model: sonnet
+      max_iterations: 3
+
+  on_pr_opened:
+    strategy: review_only
+    model: sonnet
+
+  on_ci_failure:
+    strategy: sequential
+    model: sonnet
+    max_iterations: 3
+
+# === RELEASE ===
+release:
+  conventional_commits: true
+  on_main_green: "off"     # Erst Tag, wenn die ersten Auto-PRs sauber durch sind
+  changelog: "CHANGELOG.md"
+
+# === BOARD (v0.4 — `forge board-loop`) ===
+# GitHub Project #3 "@rudi77's PyTaskforce". board-loop zieht aktiv Issues
+# mit Status=Todo UND Label=bug und dispatcht sie über den issue_label-Trigger.
+board:
+  provider: github
+  owner: rudi77
+  project_number: 3
+  filter_status: "Todo"
+  filter_labels: ["bug"]
+  default_focus_template: "issue-{number}"
+  default_template_id: "board_loop_v1"
+
+# === TRIAGE (v0.4, optional) ===
+# Erst mal aus — wir wollen den Plain-Dispatch verstehen, bevor wir eine
+# LLM-Triage-Schicht davor schalten. Kann später opt-in werden.
+triage:
+  enabled: false
