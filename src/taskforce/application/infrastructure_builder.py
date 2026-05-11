@@ -453,6 +453,26 @@ class InfrastructureBuilder:
         )
         store_type = runtime_config.get("store", "file")
 
+        # Issue #196: enterprise plugins can route the checkpoint store
+        # per-(tenant, user) via set_runtime_checkpoint_store_override.
+        # When installed, the override wins regardless of the configured
+        # store_type — the plugin already knows how to scope it.
+        from taskforce.application.infrastructure_overrides import (
+            get_runtime_checkpoint_store_override,
+        )
+
+        checkpoint_override = get_runtime_checkpoint_store_override()
+        if checkpoint_override is not None:
+            from taskforce.infrastructure.runtime import (
+                AgentRuntimeTracker,
+                InMemoryHeartbeatStore,
+            )
+
+            return AgentRuntimeTracker(
+                heartbeat_store=InMemoryHeartbeatStore(),
+                checkpoint_store=checkpoint_override(runtime_work_dir),
+            )
+
         if store_type == "memory":
             from taskforce.infrastructure.runtime import (
                 AgentRuntimeTracker,
@@ -522,6 +542,80 @@ class InfrastructureBuilder:
         from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
 
         return FileWikiStore(Path(work_dir) / "memory" / "wiki")
+
+    # -------------------------------------------------------------------------
+    # Per-user stores (issue #196). Each goes through an override hook so
+    # enterprise plugins can route writes per-(tenant, user). The default
+    # (no override installed) is the historic flat ``<work_dir>/...`` path
+    # — bit-for-bit single-tenant behaviour.
+    # -------------------------------------------------------------------------
+
+    def build_experience_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileExperienceStore rooted at ``<work_dir>/experiences``."""
+        from taskforce.application.infrastructure_overrides import (
+            get_experience_store_override,
+        )
+
+        override = get_experience_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from pathlib import Path
+
+        from taskforce.infrastructure.memory.file_experience_store import (
+            FileExperienceStore,
+        )
+
+        return FileExperienceStore(Path(work_dir) / "experiences")
+
+    def build_standing_goal_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileStandingGoalStore rooted at ``<work_dir>/standing_goals.json``."""
+        from taskforce.application.infrastructure_overrides import (
+            get_standing_goal_store_override,
+        )
+
+        override = get_standing_goal_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.file_standing_goal_store import (
+            FileStandingGoalStore,
+        )
+
+        return FileStandingGoalStore(work_dir=work_dir)
+
+    def build_pending_channel_question_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FilePendingChannelQuestionStore rooted at
+        ``<work_dir>/pending_channel_questions``."""
+        from taskforce.application.infrastructure_overrides import (
+            get_pending_channel_question_store_override,
+        )
+
+        override = get_pending_channel_question_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.pending_channel_store import (
+            FilePendingChannelQuestionStore,
+        )
+
+        return FilePendingChannelQuestionStore(work_dir=work_dir)
+
+    def build_tool_result_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build a FileToolResultStore rooted at ``<work_dir>/tool_results``."""
+        from taskforce.application.infrastructure_overrides import (
+            get_tool_result_store_override,
+        )
+
+        override = get_tool_result_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from pathlib import Path
+
+        from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
+
+        return FileToolResultStore(store_dir=str(Path(work_dir) / "tool_results"))
 
     def build_conversation_store(self, work_dir: str = ".taskforce") -> Any:
         """Build a conversation store for persistent conversations."""

@@ -184,13 +184,11 @@ def get_gateway():
     ``SendNotificationTool`` receives a gateway reference at instantiation).
     """
     from taskforce.application.gateway import CommunicationGateway
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
     from taskforce.application.infrastructure_overrides import (
         get_agent_lookup_override,
         get_recipient_resolver_override,
         get_workflow_lookup_override,
-    )
-    from taskforce.infrastructure.persistence.pending_channel_store import (
-        FilePendingChannelQuestionStore,
     )
 
     components = get_gateway_components()
@@ -254,7 +252,9 @@ def get_gateway():
         conversation_store=components.conversation_store,
         recipient_registry=components.recipient_registry,
         outbound_senders=components.outbound_senders,
-        pending_channel_store=FilePendingChannelQuestionStore(work_dir=work_dir),
+        pending_channel_store=InfrastructureBuilder().build_pending_channel_question_store(
+            work_dir=work_dir
+        ),
         conversation_manager=conversation_manager,
         conversation_manager_provider=get_conversation_manager,
         recipient_resolver=recipient_resolver,
@@ -388,12 +388,12 @@ def get_standing_goal_store():
     """
     global _STANDING_GOAL_STORE
     if _STANDING_GOAL_STORE is None:
-        from taskforce.infrastructure.persistence.file_standing_goal_store import (
-            FileStandingGoalStore,
-        )
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
         work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-        _STANDING_GOAL_STORE = FileStandingGoalStore(work_dir=work_dir)
+        _STANDING_GOAL_STORE = InfrastructureBuilder().build_standing_goal_store(
+            work_dir=work_dir
+        )
     return _STANDING_GOAL_STORE
 
 
