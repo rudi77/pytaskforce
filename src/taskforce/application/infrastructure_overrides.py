@@ -75,6 +75,15 @@ _webhook_workflow_resolver: Callable[[str], Awaitable[str | None]] | None = None
 _cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
 _mission_lifecycle_hook: Any | None = None
 _approval_service: Any | None = None
+# Issue #196 — per-user override hooks for stores that were previously
+# hard-wired to ``<work_dir>/...`` flat paths. Enterprise plugins use
+# these seams to route writes per-(tenant, user) so no per-user data
+# leaks across users.
+_experience_store_override: Callable[[str], Any] | None = None
+_standing_goal_store_override: Callable[[str], Any] | None = None
+_runtime_checkpoint_store_override: Callable[[str], Any] | None = None
+_pending_channel_question_store_override: Callable[[str], Any] | None = None
+_tool_result_store_override: Callable[[str], Any] | None = None
 
 
 def set_agent_registry_override(
@@ -220,6 +229,105 @@ def set_wiki_store_override(
 def get_wiki_store_override() -> Callable[[str], Any] | None:
     """Return the currently installed wiki-store override, if any."""
     return _wiki_store_override
+
+
+# Issue #196 — per-user override hooks. All five accept the same
+# work_dir argument as their respective ``InfrastructureBuilder``
+# build method and must return an object satisfying the matching
+# protocol. Default framework behaviour (no override installed) is
+# the flat ``<work_dir>/...`` file store, preserving single-tenant
+# semantics bit-for-bit.
+
+
+def set_experience_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_experience_store``.
+
+    Use this to back the experience store with a per-(tenant, user)
+    backend (e.g. ``tenants/<tid>/users/<uid>/experiences/``) from an
+    enterprise plugin — without it, session experience traces from
+    different users mix in the same flat directory.
+    """
+    global _experience_store_override
+    _experience_store_override = provider
+
+
+def get_experience_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed experience-store override, if any."""
+    return _experience_store_override
+
+
+def set_standing_goal_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_standing_goal_store``.
+
+    Standing goals (ADR-024 proactive layer) are inherently per-user
+    — a weekly summary goal would fire for someone else if shared.
+    Use this to route the store per user.
+    """
+    global _standing_goal_store_override
+    _standing_goal_store_override = provider
+
+
+def get_standing_goal_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed standing-goal-store override, if any."""
+    return _standing_goal_store_override
+
+
+def set_runtime_checkpoint_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for the ``CheckpointStore`` used
+    inside ``build_runtime_tracker``.
+
+    Per-session checkpoints power resumable HITL workflows; sharing
+    them across users would leak in-flight plan state.
+    """
+    global _runtime_checkpoint_store_override
+    _runtime_checkpoint_store_override = provider
+
+
+def get_runtime_checkpoint_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed runtime-checkpoint-store override, if any."""
+    return _runtime_checkpoint_store_override
+
+
+def set_pending_channel_question_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_pending_channel_question_store``.
+
+    Outstanding ``ask_user`` questions waiting on a user reply are
+    inherently per-user — routing them per user is correctness, not
+    a feature.
+    """
+    global _pending_channel_question_store_override
+    _pending_channel_question_store_override = provider
+
+
+def get_pending_channel_question_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed pending-channel-question-store override, if any."""
+    return _pending_channel_question_store_override
+
+
+def set_tool_result_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_tool_result_store``.
+
+    Tool-call output caching keyed on (tool, args) is unsafe across
+    users — caching A's ``python`` result and serving it to B is a
+    privacy leak even if the args look identical.
+    """
+    global _tool_result_store_override
+    _tool_result_store_override = provider
+
+
+def get_tool_result_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed tool-result-store override, if any."""
+    return _tool_result_store_override
 
 
 def set_workflow_definition_store_override(
@@ -662,6 +770,11 @@ def clear_infrastructure_overrides() -> None:
     global _cross_tenant_acp_authorizer
     global _mission_lifecycle_hook
     global _approval_service
+    global _experience_store_override
+    global _standing_goal_store_override
+    global _runtime_checkpoint_store_override
+    global _pending_channel_question_store_override
+    global _tool_result_store_override
     _agent_registry_override = None
     _deployment_manifest_override = None
     _settings_store_override = None
@@ -687,3 +800,8 @@ def clear_infrastructure_overrides() -> None:
     _cross_tenant_acp_authorizer = None
     _mission_lifecycle_hook = None
     _approval_service = None
+    _experience_store_override = None
+    _standing_goal_store_override = None
+    _runtime_checkpoint_store_override = None
+    _pending_channel_question_store_override = None
+    _tool_result_store_override = None

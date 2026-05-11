@@ -412,19 +412,21 @@ class SimpleChatRunner:
 
         try:
             from taskforce.application.gateway import CommunicationGateway
+            from taskforce.application.infrastructure_builder import (
+                InfrastructureBuilder,
+            )
             from taskforce.infrastructure.communication.gateway_registry import (
                 build_gateway_components,
             )
             from taskforce.infrastructure.communication.telegram_poller import (
                 TelegramPoller,
             )
-            from taskforce.infrastructure.persistence.pending_channel_store import (
-                FilePendingChannelQuestionStore,
-            )
 
             work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
             components = build_gateway_components(work_dir=work_dir)
-            pending_store = FilePendingChannelQuestionStore(work_dir=work_dir)
+            pending_store = InfrastructureBuilder().build_pending_channel_question_store(
+                work_dir=work_dir
+            )
 
             gateway = CommunicationGateway(
                 executor=self.executor,

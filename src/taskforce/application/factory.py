@@ -427,13 +427,16 @@ class AgentFactory:
         )
         return wiki_store, wiki_context_config
 
-    @staticmethod
-    def _build_tool_result_store(work_dir: str) -> Any:
-        """Build a FileToolResultStore for caching large tool outputs."""
-        from taskforce.infrastructure.cache.tool_result_store import FileToolResultStore
+    def _build_tool_result_store(self, work_dir: str) -> Any:
+        """Build a FileToolResultStore for caching large tool outputs.
 
-        store_path = Path(work_dir) / "tool_results"
-        return FileToolResultStore(store_dir=str(store_path))
+        Routed through ``InfrastructureBuilder`` so enterprise plugins
+        can install a per-(tenant, user) override via
+        ``set_tool_result_store_override`` (issue #196). Caching
+        across users is a privacy leak — A's ``python`` result must
+        not be served to B even if the args look identical.
+        """
+        return self.infra_builder.build_tool_result_store(work_dir=work_dir)
 
     async def _collect_tools_for_definition(
         self,
