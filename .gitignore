@@ -241,3 +241,9 @@ examples/ap_ledger_agent/reports/
 # Claude Code transient state
 .claude/scheduled_tasks.lock
 
+# forge runtime artifacts — .forge/project.yaml is tracked, the rest is local
+.forge/worktrees/
+.forge/blobs/
+.forge/events.duckdb
+.forge/*.log
+
