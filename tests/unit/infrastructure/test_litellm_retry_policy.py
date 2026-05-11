@@ -62,12 +62,14 @@ def test_transient_errors_are_retryable(exc: Exception) -> None:
         _FakeProviderError("Authentication failed: missing bearer token"),
         _FakeProviderError("401 Unauthorized"),
         _FakeProviderError("403 Forbidden: permission denied"),
-        _FakeProviderError("model not found: gpt-99-turbo"),
+        # Status-code-driven classification (issue #191 sub-item c):
+        # provider errors typically include both a status and a body.
+        _FakeProviderError("404 model not found: gpt-99-turbo"),
         _FakeProviderError("invalid model: claude-doesnt-exist"),
         _FakeProviderError("invalid request: messages must be non-empty"),
         _FakeProviderError("insufficient_quota: please add billing"),
         _FakeProviderError("quota exceeded for organisation"),
-        _FakeProviderError("billing hard-limit reached"),
+        _FakeProviderError("402 billing hard-limit reached"),
     ],
 )
 def test_permanent_errors_are_not_retryable(exc: Exception) -> None:
@@ -83,4 +85,62 @@ def test_non_retryable_keywords_take_priority_over_retryable_signal() -> None:
     things worse. The classifier must let the non-retryable keyword win.
     """
     err = _FakeProviderError("Authentication failed: rate limit handler error")
+    assert LiteLLMService._should_retry(err) is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #191 sub-item (c) — spurious-keyword 5xx bodies must stay retryable.
+# Plain substring matching on "billing" / "forbidden" / "not found" used to
+# trip the non-retryable branch on 5xx errors that merely *mention* those
+# words in their body (operator advice strings, log lines, etc.).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        # Real-world Azure 503 with a billing-related retry hint in the body.
+        _FakeProviderError(
+            "503 service unavailable: billing service degraded, retry in 30s"
+        ),
+        # Transient stream-decoder hiccup that mentions "forbidden" in its
+        # diagnostic — used to trip the keyword filter.
+        _FakeProviderError(
+            "502 bad gateway: forbidden character in stream chunk, retrying"
+        ),
+        # A 5xx whose body just happens to include the word "not found"
+        # (operator log line, not the real cause). Must remain retryable.
+        _FakeProviderError(
+            "503 service unavailable: upstream pod not found, scheduling restart"
+        ),
+        # 429 with a billing-related message — the rate-limit status must
+        # win over the "billing" substring.
+        _FakeProviderError(
+            "429 too many requests for billing tier free"
+        ),
+    ],
+)
+def test_spurious_keyword_in_5xx_body_stays_retryable(exc: Exception) -> None:
+    """5xx errors whose body merely *mentions* a previously-classified
+    non-retryable keyword must stay retryable. Pinning the fix from
+    #191 sub-item (c)."""
+    assert LiteLLMService._should_retry(exc) is True
+
+
+def test_402_billing_status_still_non_retryable() -> None:
+    """The status-code regex catches genuine billing rejections (402)."""
+    err = _FakeProviderError("402 payment required: billing limit exceeded")
+    assert LiteLLMService._should_retry(err) is False
+
+
+def test_403_forbidden_status_still_non_retryable_without_keyword() -> None:
+    """A 403 with no extra keyword body still hits the status regex."""
+    err = _FakeProviderError("403 access denied by api gateway policy")
+    assert LiteLLMService._should_retry(err) is False
+
+
+def test_404_status_still_non_retryable_without_keyword() -> None:
+    """A 404 stays permanent via the status code, even though the
+    'not found' keyword was removed."""
+    err = _FakeProviderError("404 the requested model does not exist")
     assert LiteLLMService._should_retry(err) is False
