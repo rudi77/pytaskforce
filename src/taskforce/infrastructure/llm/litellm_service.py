@@ -621,6 +621,8 @@ class LiteLLMService:
         error: Exception,
         resolved_model: str,
         messages: list[dict[str, Any]],
+        *,
+        force_content_filter: bool = False,
     ) -> dict[str, Any]:
         """Log and trace a stream-level error, returning the error event.
 
@@ -628,17 +630,27 @@ class LiteLLMService:
         (e.g. the ReAct loop) can short-circuit instead of blindly retrying
         the same blocked request.
 
+        Args:
+            force_content_filter: When True, mark the event with
+                ``error_kind="content_filter"`` even when ``error`` itself
+                is not a content-filter exception. Used by the recovery
+                code-path so that a transient secondary failure mid-recovery
+                still surfaces the content-filter root cause to the user
+                instead of a bare "etwas ging schief" fallback
+                (issue #190 sub-item b).
+
         Returns:
             An ``error`` event dict with optional ``non_retryable`` /
             ``error_kind`` hints.
         """
-        is_content_filter = self._is_content_filter_error(error)
+        is_content_filter = force_content_filter or self._is_content_filter_error(error)
         self.logger.error(
             "llm_stream_failed",
             model=resolved_model,
             error_type=type(error).__name__,
             error=str(error)[:200],
             content_filter=is_content_filter,
+            forced_content_filter=force_content_filter and not self._is_content_filter_error(error),
         )
         # Fire-and-forget: trace without blocking the stream consumer
         asyncio.create_task(self._trace_failure(messages, resolved_model, 0, str(error)))
@@ -891,9 +903,20 @@ class LiteLLMService:
                     )
                     if not self._is_content_filter_error(recovery_error):
                         # A non-filter error means recovery itself
-                        # broke; do not keep escalating.
+                        # broke; do not keep escalating. The user-visible
+                        # root cause is still content_filter — we entered
+                        # this loop because the primary attempt got
+                        # filtered — so flag it as such even though the
+                        # proximate exception is e.g. a TimeoutError.
+                        # Without ``force_content_filter`` the consumer
+                        # would render the generic "etwas ging schief"
+                        # fallback instead of the actionable filter
+                        # message (issue #190 sub-item b).
                         error_event = await self._handle_stream_error(
-                            recovery_error, resolved_model, candidate
+                            recovery_error,
+                            resolved_model,
+                            candidate,
+                            force_content_filter=True,
                         )
                         yield error_event
                         return
@@ -944,8 +967,14 @@ class LiteLLMService:
                         error=str(recovery_error)[:200],
                     )
                     if not self._is_content_filter_error(recovery_error):
+                        # Same reasoning as the strip-stage branch: keep
+                        # the content_filter classification even when the
+                        # proximate failure is something else.
                         error_event = await self._handle_stream_error(
-                            recovery_error, resolved_model, base
+                            recovery_error,
+                            resolved_model,
+                            base,
+                            force_content_filter=True,
                         )
                         yield error_event
                         return
@@ -998,11 +1027,17 @@ class LiteLLMService:
                 error=str(last_recovery_error or primary_error)[:200],
             )
             # Surface the *recovery* failure so the ReAct loop sees
-            # the same content_filter signal and aborts cleanly.
+            # the same content_filter signal and aborts cleanly. Force
+            # the content_filter classification — even if rephrase
+            # blew up with a non-filter error (e.g. transient timeout),
+            # the user-visible root cause is content_filter and we want
+            # the actionable filter message, not the generic fallback
+            # (issue #190 sub-item b).
             error_event = await self._handle_stream_error(
                 last_recovery_error or primary_error,
                 resolved_model,
                 stages[-1][1],
+                force_content_filter=True,
             )
             yield error_event
 

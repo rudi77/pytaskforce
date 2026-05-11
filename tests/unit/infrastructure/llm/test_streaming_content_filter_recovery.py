@@ -675,3 +675,109 @@ async def test_no_tools_recovery_skipped_when_strip_stage_succeeds(
         e["stage"] for e in events if e.get("type") == "stream_restart"
     ]
     assert restart_stages == ["tool_results_only"]
+
+
+@pytest.mark.asyncio
+async def test_recovery_non_filter_secondary_error_still_surfaces_content_filter(
+    temp_config_file: str,
+) -> None:
+    """Issue #190 sub-item (b): when the primary attempt hits the
+    content filter and a recovery stage subsequently blows up with a
+    *different* error class (e.g. a transient TimeoutError), the
+    emitted error event must still carry ``error_kind=content_filter``.
+
+    Previously this branch surfaced a bare error with no kind, so the
+    react loop's user-facing message rendered as the generic 'etwas
+    ging schief' fallback instead of the actionable content-filter
+    text — hiding the real root cause from the user.
+    """
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    call_count = {"n": 0}
+
+    async def fake_acompletion(**_kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Primary: real content filter
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        # Recovery stage: transient network blip, NOT content_filter
+        raise TimeoutError("upstream connection reset")
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    error_events = [e for e in events if e.get("type") == "error"]
+    assert len(error_events) == 1
+    err = error_events[0]
+    # The proximate exception was a TimeoutError — but the user's root
+    # cause is still content_filter. The recovery wrapper must surface
+    # it as such so build_user_message_for_error renders the actionable
+    # filter message.
+    assert err.get("error_kind") == "content_filter"
+    assert err.get("non_retryable") is True
+    # The original timeout message is preserved in the error payload
+    # so the operator-side log/trace still has the proximate cause.
+    assert "upstream connection reset" in err.get("message", "")
+
+
+@pytest.mark.asyncio
+async def test_rephrase_non_filter_secondary_error_still_surfaces_content_filter(
+    temp_config_file: str,
+) -> None:
+    """Same as above, but for the optional rephrase final stage —
+    the rephrase exception path used to skip the content_filter
+    classification entirely.
+    """
+    service = LiteLLMService(
+        config_path=temp_config_file,
+        recover_via_rephrase=True,
+    )
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    rephrase_choice = MagicMock()
+    rephrase_choice.message = MagicMock(content="Bitte zähle Artikel.")
+    rephrase_response = MagicMock()
+    rephrase_response.choices = [rephrase_choice]
+
+    call_count = {"streams": 0}
+
+    async def fake_acompletion(**kwargs: Any) -> Any:
+        metadata = kwargs.get("metadata") or {}
+        if metadata.get("phase") == "filter_recovery_rephrase":
+            return rephrase_response
+        call_count["streams"] += 1
+        # primary + tool_results_only + aggressive: all hit the filter
+        if call_count["streams"] <= 3:
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        # rephrase stream attempt: transient non-filter failure
+        raise TimeoutError("network glitch")
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    error_events = [e for e in events if e.get("type") == "error"]
+    assert len(error_events) == 1
+    err = error_events[0]
+    assert err.get("error_kind") == "content_filter"
+    assert err.get("non_retryable") is True
