@@ -223,15 +223,26 @@ async def _emit_tool_result(
     agent: Agent, req: ToolCallRequest, result: dict[str, Any]
 ) -> AsyncIterator[StreamEvent]:
     """Emit tool result event."""
+    data: dict[str, Any] = {
+        "tool": req.tool_name,
+        "id": req.tool_call_id,
+        "success": result.get("success", False),
+        "output": agent._truncate_output(_extract_tool_output(result)),
+        "args": req.tool_args,
+    }
+    # Propagate the structured failure classifier so the react loop /
+    # downstream UI can distinguish "approval denied" from "tool
+    # crashed" and pick the right user-facing message. Approval-denied
+    # / approval-timeout failures are TERMINAL — the LLM must not be
+    # nudged into retrying them.
+    error_kind = result.get("error_kind")
+    if error_kind:
+        data["error_kind"] = error_kind
+    if result.get("terminal_failure"):
+        data["terminal_failure"] = True
     yield StreamEvent(
         event_type=EventType.TOOL_RESULT,
-        data={
-            "tool": req.tool_name,
-            "id": req.tool_call_id,
-            "success": result.get("success", False),
-            "output": agent._truncate_output(_extract_tool_output(result)),
-            "args": req.tool_args,
-        },
+        data=data,
     )
     if req.tool_name in ("planner", "manage_plan") and result.get("success"):
         plan = result.get("output") or (

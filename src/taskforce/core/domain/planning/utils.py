@@ -89,17 +89,63 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
     return steps
 
 
-def _build_retry_nudge(failed_tool_names: list[str], attempt: int = 1) -> dict[str, Any]:
-    """Build a user-role message nudging the agent to retry after tool failures.
+_TERMINAL_APPROVAL_ERROR_KINDS = frozenset({"approval_denied", "approval_timeout"})
+
+
+def _build_retry_nudge(
+    failed_tool_names: list[str],
+    attempt: int = 1,
+    *,
+    error_kinds: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a user-role message nudging the agent after tool failures.
 
     Args:
         failed_tool_names: Names of tools that failed in the current step.
         attempt: How many times this tool has already failed (1 = first failure).
+        error_kinds: Optional map of ``tool_name → error_kind`` for the
+            failed tools. When present, an approval-denied / approval-timeout
+            failure switches the nudge from "retry differently" to "tell
+            the user the action wasn't permitted" — retrying the same or
+            a similar forbidden action after the user has explicitly said
+            no is the bug that issue #190 sub-item (a) calls out.
 
     Returns:
         A message dict with role ``user`` containing retry instructions.
     """
     tools_str = ", ".join(dict.fromkeys(failed_tool_names))  # deduplicate, preserve order
+
+    # Approval-denied / approval-timeout means the user has refused (or
+    # the request expired without consent). The LLM must NOT retry the
+    # same action with different args, NOR fall back to a tool that
+    # would achieve the same forbidden outcome. Tell it to surface the
+    # refusal to the user instead. Applies whenever at least one
+    # failed tool was approval-blocked — even if mixed with other
+    # failures we want the LLM to lead with the refusal.
+    error_kinds = error_kinds or {}
+    approval_blocked = [
+        t
+        for t in dict.fromkeys(failed_tool_names)
+        if error_kinds.get(t) in _TERMINAL_APPROVAL_ERROR_KINDS
+    ]
+    if approval_blocked:
+        approval_str = ", ".join(approval_blocked)
+        kind_label = (
+            "denied"
+            if any(error_kinds.get(t) == "approval_denied" for t in approval_blocked)
+            else "timed out"
+        )
+        return {
+            "role": MessageRole.USER.value,
+            "content": (
+                f"[System: Approval was {kind_label} for {approval_str}. "
+                "Do NOT retry this action, NOR any tool that would have "
+                "the same effect. In your next reply, tell the user in "
+                "plain language that the action was not permitted and "
+                "ask what they would prefer instead.]"
+            ),
+        }
+
     if attempt >= 2:
         return {
             "role": MessageRole.USER.value,

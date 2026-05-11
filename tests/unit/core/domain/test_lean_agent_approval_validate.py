@@ -281,3 +281,132 @@ async def test_origin_set_but_tool_not_opted_in_still_hits_queue() -> None:
     assert len(approver.calls) == 1, "non-opted-in tools always hit the queue"
     # The origin still rides along in metadata so the audit trail can show it.
     assert approver.calls[0].metadata == {"trigger_origin": SCHEDULED_WORKFLOW_ORIGIN}
+
+
+# ---------------------------------------------------------------------------
+# Issue #190 sub-item (a) — structured error_kind on every approval failure.
+# ---------------------------------------------------------------------------
+
+
+class _DenyingApprover:
+    """Approval service that always denies."""
+
+    async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+        return ApprovalDecision(
+            request_id=request.request_id,
+            status=ApprovalStatus.DENIED,
+            decided_by="admin",
+            reason="not allowed",
+        )
+
+
+class _TimingOutApprover:
+    """Approval service that times out."""
+
+    async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+        return ApprovalDecision(
+            request_id=request.request_id,
+            status=ApprovalStatus.TIMED_OUT,
+            decided_by="system",
+            reason="no admin response",
+        )
+
+
+class _CrashingApprover:
+    """Approval service that itself fails — distinguishes pipeline
+    breakage from a deliberate user decision."""
+
+    async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+        raise RuntimeError("queue offline")
+
+
+class _SimpleApprovalTool:
+    requires_approval = True
+    approval_risk_level = ApprovalRiskLevel.LOW
+    name = "simple_approval_tool"
+
+    def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
+        return (True, None)
+
+    def get_approval_preview(self, **kwargs: Any) -> str:
+        return "preview"
+
+
+@pytest.mark.asyncio
+async def test_denied_approval_payload_carries_error_kind() -> None:
+    set_approval_service(_DenyingApprover())
+
+    outcome = await LeanAgent._maybe_request_approval(
+        _StubAgent(),
+        tool=_SimpleApprovalTool(),
+        tool_name="simple_approval_tool",
+        tool_args={"x": 1},
+        session_id="s1",
+    )
+
+    assert outcome is not None
+    assert outcome["success"] is False
+    assert outcome["terminal_failure"] is True
+    assert outcome["approval_status"] == "denied"
+    # New contract — react loop / UI read error_kind to pick the
+    # user-facing message and skip the retry nudge.
+    assert outcome["error_kind"] == "approval_denied"
+
+
+@pytest.mark.asyncio
+async def test_timed_out_approval_payload_carries_error_kind() -> None:
+    set_approval_service(_TimingOutApprover())
+
+    outcome = await LeanAgent._maybe_request_approval(
+        _StubAgent(),
+        tool=_SimpleApprovalTool(),
+        tool_name="simple_approval_tool",
+        tool_args={"x": 1},
+        session_id="s1",
+    )
+
+    assert outcome is not None
+    assert outcome["approval_status"] == "timed_out"
+    assert outcome["error_kind"] == "approval_timeout"
+    assert outcome["terminal_failure"] is True
+
+
+@pytest.mark.asyncio
+async def test_service_crash_payload_carries_error_kind() -> None:
+    set_approval_service(_CrashingApprover())
+
+    outcome = await LeanAgent._maybe_request_approval(
+        _StubAgent(),
+        tool=_SimpleApprovalTool(),
+        tool_name="simple_approval_tool",
+        tool_args={"x": 1},
+        session_id="s1",
+    )
+
+    assert outcome is not None
+    assert outcome["approval_status"] == "error"
+    assert outcome["error_kind"] == "approval_error"
+    assert outcome["terminal_failure"] is True
+
+
+@pytest.mark.asyncio
+async def test_validate_fail_payload_carries_error_kind() -> None:
+    """Even the early validation-fail path (before the admin is asked)
+    must surface error_kind so the loop classifies it consistently."""
+    set_approval_service(_AlwaysGrantApprover())
+
+    outcome = await LeanAgent._maybe_request_approval(
+        _StubAgent(),
+        tool=_RecordingValidator(valid=False, error="missing field"),
+        tool_name="recording_validator",
+        tool_args={"x": 1},
+        session_id="s1",
+    )
+
+    assert outcome is not None
+    assert outcome["approval_status"] == "error"
+    assert outcome["error_kind"] == "approval_error"
+    # Validation failures are RETRYABLE — re-issuing with corrected
+    # args is fine, hence terminal_failure=False here. The error_kind
+    # still marks the gate-level classification.
+    assert outcome["terminal_failure"] is False
