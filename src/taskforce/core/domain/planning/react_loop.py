@@ -226,6 +226,21 @@ async def _react_loop(
                             data={"content": chunk["content"]},
                         )
                         content_acc += chunk["content"]
+                    elif t == LLMStreamEventType.STREAM_RESTART.value:
+                        # Content-filter (or other) recovery is about to
+                        # re-stream. Drop anything accumulated from the
+                        # aborted attempt so the final assistant message
+                        # only carries clean retry output, and signal
+                        # downstream consumers (UI) to do the same.
+                        content_acc = ""
+                        tc_acc = {}
+                        yield StreamEvent(
+                            event_type=EventType.LLM_STREAM_RESTART,
+                            data={
+                                "reason": chunk.get("reason", "unknown"),
+                                "stage": chunk.get("stage", ""),
+                            },
+                        )
                     elif t == LLMStreamEventType.TOOL_CALL_START.value:
                         idx = chunk.get("index", 0)
                         existing = tc_acc.get(idx)

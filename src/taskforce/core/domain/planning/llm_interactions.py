@@ -114,6 +114,20 @@ async def _stream_final_response(
                         )
                         final += chunk["content"]
                     elif (
+                        chunk.get("type") == LLMStreamEventType.STREAM_RESTART.value
+                    ):
+                        # Content-filter recovery is re-streaming this
+                        # summary; drop the partial output and signal
+                        # downstream so any UI rendering is reset.
+                        final = ""
+                        yield StreamEvent(
+                            event_type=EventType.LLM_STREAM_RESTART,
+                            data={
+                                "reason": chunk.get("reason", "unknown"),
+                                "stage": chunk.get("stage", ""),
+                            },
+                        )
+                    elif (
                         chunk.get("type") == LLMStreamEventType.DONE.value
                         and chunk.get("usage")
                     ):

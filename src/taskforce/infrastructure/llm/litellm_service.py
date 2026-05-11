@@ -792,7 +792,11 @@ class LiteLLMService:
 
         Yields:
             Event dicts: token, tool_call_start, tool_call_delta,
-            tool_call_end, done, error.
+            tool_call_end, done, error, stream_restart. A
+            ``stream_restart`` event is emitted before each
+            content-filter recovery retry so consumers that accumulate
+            tokens can discard the partial output from the failed
+            attempt and only retain tokens from the successful retry.
         """
         await self._ensure_config_loaded()
         resolved_model, litellm_kwargs = self._prepare_stream_request(
@@ -857,6 +861,15 @@ class LiteLLMService:
                 _, recovery_kwargs = self._prepare_stream_request(
                     candidate, model, tools, tool_choice, **kwargs
                 )
+                # Signal consumers (UI / ReAct loop) to discard any
+                # tokens accumulated from the failed attempt before the
+                # retry tokens land. Without this, half-completion
+                # fragments and the fresh response get concatenated.
+                yield {
+                    "type": "stream_restart",
+                    "reason": "content_filter",
+                    "stage": stage_name,
+                }
                 try:
                     async for event in self._run_stream_attempt(
                         candidate, resolved_model, recovery_kwargs
@@ -902,6 +915,11 @@ class LiteLLMService:
                     _, recovery_kwargs = self._prepare_stream_request(
                         rephrased, model, tools, tool_choice, **kwargs
                     )
+                    yield {
+                        "type": "stream_restart",
+                        "reason": "content_filter",
+                        "stage": "rephrase",
+                    }
                     try:
                         async for event in self._run_stream_attempt(
                             rephrased, resolved_model, recovery_kwargs

@@ -660,6 +660,14 @@ The agent surfaces a factual German user message naming the real
 cause (accumulated research context) instead of a hallucinated
 fallback.
 
+Before each recovery retry the stream emits a `stream_restart` event
+(`{type, reason, stage}`) so consumers that accumulate tokens (react
+loop, summarizing loop, UI) can drop the partial output from the
+failed attempt instead of concatenating it with the retry. The react
+loop translates this into a downstream `EventType.LLM_STREAM_RESTART`
+and resets `content_acc` / `tc_acc`; `simple_chat` prints a yellow
+"Antwort wegen Sicherheitsfilter neu generiert" marker.
+
 **Research/Writer separation**
 
 `agents/butler/configs/custom/research_specialist.yaml` is a context-

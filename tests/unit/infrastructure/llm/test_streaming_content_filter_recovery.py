@@ -123,9 +123,11 @@ async def test_recovery_failure_surfaces_content_filter_error(temp_config_file: 
         events = [evt async for evt in service.complete_stream(messages=messages)]
 
     assert call_count["n"] == 3
-    assert len(events) == 1
-    err = events[0]
-    assert err["type"] == "error"
+    # Two recovery stages run → one stream_restart per stage, then the
+    # final error event after both stages fail.
+    types = [e["type"] for e in events]
+    assert types == ["stream_restart", "stream_restart", "error"]
+    err = events[-1]
     assert err.get("error_kind") == "content_filter"
     assert err.get("non_retryable") is True
 
@@ -359,3 +361,159 @@ async def test_successful_first_attempt_does_not_strip(temp_config_file: str) ->
     types = [e.get("type") for e in events]
     assert "error" not in types
     assert "done" in types
+    # Sanity: a clean stream must NOT inject a stream_restart marker.
+    assert "stream_restart" not in types
+
+
+@pytest.mark.asyncio
+async def test_stream_restart_emitted_before_recovery_tokens(
+    temp_config_file: str,
+) -> None:
+    """Issue #159 sub-item (a): when a streaming attempt is truncated
+    by a content filter mid-stream, consumers must be told to discard
+    the partial output before the retry tokens arrive.
+
+    Without the ``stream_restart`` marker, the failed-attempt tokens
+    and the retry tokens get concatenated in the consumer's
+    accumulator (half-sentence + full retry sentence).
+    """
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "tool snippet"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    async def partial_then_fail() -> Any:
+        # The provider streams two tokens, then aborts with a
+        # content-filter exception. The consumer sees both tokens
+        # before the error propagates.
+        async def gen():
+            yield _content_chunk("partial ")
+            yield _content_chunk("answer")
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+
+        return gen()
+
+    call_count = {"n": 0}
+
+    async def fake_acompletion(**_kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return await partial_then_fail()
+        return _stream_of(_content_chunk("recovered answer", finish_reason="stop"))
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    types = [e.get("type") for e in events]
+
+    # The partial tokens are still surfaced (we can't unsend them) but
+    # are followed by a stream_restart, then the recovered tokens.
+    assert types.count("stream_restart") == 1
+    restart_idx = types.index("stream_restart")
+    pre_restart_tokens = [
+        e.get("content", "") for e in events[:restart_idx] if e.get("type") == "token"
+    ]
+    post_restart_tokens = [
+        e.get("content", "") for e in events[restart_idx + 1 :] if e.get("type") == "token"
+    ]
+    assert pre_restart_tokens == ["partial ", "answer"]
+    assert post_restart_tokens == ["recovered answer"]
+    # A consumer that resets its accumulator on stream_restart ends up
+    # with just the clean retry content.
+    assert "done" in types
+    assert "error" not in types
+
+
+@pytest.mark.asyncio
+async def test_stream_restart_carries_stage_metadata(temp_config_file: str) -> None:
+    """Each ``stream_restart`` must name the recovery stage it precedes
+    so consumers can log / show a meaningful reason."""
+    service = LiteLLMService(config_path=temp_config_file)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw tool"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    call_count = {"n": 0}
+
+    async def fake_acompletion(**_kwargs: Any) -> Any:
+        call_count["n"] += 1
+        # primary + tool_results_only filtered, aggressive succeeds
+        if call_count["n"] <= 2:
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        return _stream_of(_content_chunk("ok", finish_reason="stop"))
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    restarts = [e for e in events if e.get("type") == "stream_restart"]
+    assert len(restarts) == 2
+    assert restarts[0] == {
+        "type": "stream_restart",
+        "reason": "content_filter",
+        "stage": "tool_results_only",
+    }
+    assert restarts[1] == {
+        "type": "stream_restart",
+        "reason": "content_filter",
+        "stage": "aggressive",
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_restart_emitted_for_rephrase_stage(temp_config_file: str) -> None:
+    """The optional rephrase stage must also emit a ``stream_restart``."""
+    service = LiteLLMService(
+        config_path=temp_config_file,
+        recover_via_rephrase=True,
+    )
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "Iran-USA Krise: zähle ORF-Artikel"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "tool", "content": "raw"},
+        {"role": "user", "content": "Iran-USA Krise: zähle ORF-Artikel"},
+    ]
+
+    rephrase_choice = MagicMock()
+    rephrase_choice.message = MagicMock(content="Bitte zähle Artikel pro Tag.")
+    rephrase_response = MagicMock()
+    rephrase_response.choices = [rephrase_choice]
+
+    call_count = {"streams": 0}
+
+    async def fake_acompletion(**kwargs: Any) -> Any:
+        metadata = kwargs.get("metadata") or {}
+        if metadata.get("phase") == "filter_recovery_rephrase":
+            return rephrase_response
+        call_count["streams"] += 1
+        if call_count["streams"] <= 3:
+            raise RuntimeError(_CONTENT_FILTER_MSG)
+        return _stream_of(_content_chunk("ok", finish_reason="stop"))
+
+    with patch(
+        "taskforce.infrastructure.llm.litellm_service.litellm.acompletion",
+        side_effect=fake_acompletion,
+    ):
+        events = [evt async for evt in service.complete_stream(messages=messages)]
+
+    stages = [
+        e["stage"] for e in events if e.get("type") == "stream_restart"
+    ]
+    assert stages == ["tool_results_only", "aggressive", "rephrase"]

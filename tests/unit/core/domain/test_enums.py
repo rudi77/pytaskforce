@@ -87,6 +87,9 @@ class TestEventType:
         assert EventType.THOUGHT.value == "thought"
         assert EventType.OBSERVATION.value == "observation"
 
+    def test_llm_stream_restart_value(self) -> None:
+        assert EventType.LLM_STREAM_RESTART.value == "llm_stream_restart"
+
     def test_is_str_enum(self) -> None:
         assert isinstance(EventType.STARTED, str)
         assert EventType.STARTED == "started"
@@ -105,9 +108,10 @@ class TestLLMStreamEventType:
         assert LLMStreamEventType.TOOL_CALL_DELTA.value == "tool_call_delta"
         assert LLMStreamEventType.TOOL_CALL_END.value == "tool_call_end"
         assert LLMStreamEventType.DONE.value == "done"
+        assert LLMStreamEventType.STREAM_RESTART.value == "stream_restart"
 
     def test_member_count(self) -> None:
-        assert len(LLMStreamEventType) == 5
+        assert len(LLMStreamEventType) == 6
 
     def test_is_str_enum(self) -> None:
         assert isinstance(LLMStreamEventType.TOKEN, str)
