@@ -49,6 +49,16 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
+      # The framework UI imports types + runtime from
+      # ``@taskforce/ui-shell``, declared as a file: dependency on
+      # ``packages/ui-shell``. The shell's ``"types"`` / ``"main"``
+      # both point at ``./dist/`` which is gitignored — so we have to
+      # build it before TypeScript / Vitest start resolving imports
+      # against it.
+      - name: Build ui-shell
+        working-directory: packages/ui-shell
+        run: npm ci && npm run build
+
       # The optional ``@taskforce/enterprise-ui`` dependency resolves
       # to ``packages/enterprise-ui-reference/`` inside this repo, so
       # the workflow no longer needs cross-repo access to the private
