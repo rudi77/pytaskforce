@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -146,3 +147,55 @@ async def test_file_registry_persists_across_instances(tmp_path) -> None:
     link = await second.lookup(channel="telegram", sender_id="42")
     assert link is not None
     assert link.user_id == "uid"
+
+
+async def test_file_registry_read_raises_on_corrupt_json(tmp_path) -> None:
+    """Codex P2: a corrupt JSON file must not silently degrade to empty
+    state — that would cause the next mutation to overwrite the damaged
+    file with an empty document, dropping every existing link."""
+    reg = FileChannelLinkRegistry(work_dir=str(tmp_path))
+    code = await reg.create_pending_code(
+        channel="telegram", tenant_id="tid", user_id="uid"
+    )
+    await reg.consume_code(channel="telegram", code=code.code, sender_id="42")
+
+    # Corrupt the on-disk file.
+    path = reg._path_for("telegram")
+    path.write_text("{ not valid json", encoding="utf-8")
+
+    fresh = FileChannelLinkRegistry(work_dir=str(tmp_path))
+    with pytest.raises(json.JSONDecodeError):
+        await fresh.lookup(channel="telegram", sender_id="42")
+
+    # And critically: a follow-up mutation must also refuse to write
+    # over the corrupt file.
+    with pytest.raises(json.JSONDecodeError):
+        await fresh.create_pending_code(
+            channel="telegram", tenant_id="tid", user_id="other"
+        )
+
+
+async def test_file_registry_write_raises_on_oserror(tmp_path, monkeypatch) -> None:
+    """Codex P1: a failed write must surface — otherwise mutating
+    operations would return success even though nothing was persisted."""
+    reg = FileChannelLinkRegistry(work_dir=str(tmp_path))
+
+    import aiofiles as _aiofiles
+
+    real_open = _aiofiles.open
+
+    def failing_open(*args, **kwargs):
+        path = args[0] if args else kwargs.get("file")
+        if str(path).endswith(".json.tmp"):
+            raise OSError("disk full (simulated)")
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "taskforce.infrastructure.communication.channel_link_registry.aiofiles.open",
+        failing_open,
+    )
+
+    with pytest.raises(OSError):
+        await reg.create_pending_code(
+            channel="telegram", tenant_id="tid", user_id="uid"
+        )

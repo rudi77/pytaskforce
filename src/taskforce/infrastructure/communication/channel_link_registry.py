@@ -243,6 +243,14 @@ class FileChannelLinkRegistry:
         return channel.replace("/", "_").replace("\\", "_")
 
     async def _read(self, channel: str) -> dict[str, Any]:
+        """Read the channel's JSON document.
+
+        Returns a fresh empty structure for a *missing* file — that's a
+        legitimate "no codes, no links yet" state. Any other error
+        (permission denied, JSON corruption, …) is logged and
+        re-raised so callers do not silently overwrite a damaged
+        file with empty state on the next mutation (Codex P2).
+        """
         path = self._path_for(channel)
         if not path.exists():
             return {"pending": {}, "links": {}}
@@ -255,13 +263,20 @@ class FileChannelLinkRegistry:
                 channel=channel,
                 error=str(exc),
             )
-            return {"pending": {}, "links": {}}
+            raise
         data: dict[str, Any] = payload if isinstance(payload, dict) else {}
         data.setdefault("pending", {})
         data.setdefault("links", {})
         return data
 
     async def _write(self, channel: str, data: dict[str, Any]) -> None:
+        """Atomically rewrite the channel's JSON document.
+
+        A failed write is propagated so callers do *not* return success
+        on a mutation that never reached disk (Codex P1). The tmp file
+        is best-effort cleaned up before the exception escapes so the
+        next attempt does not trip over a stale ``.json.tmp``.
+        """
         path = self._path_for(channel)
         temp_path = path.with_suffix(".json.tmp")
         try:
@@ -274,6 +289,11 @@ class FileChannelLinkRegistry:
                 channel=channel,
                 error=str(exc),
             )
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def _prune_expired(data: dict[str, Any]) -> None:
