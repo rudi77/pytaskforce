@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 
 import { buildRouter } from "./router";
@@ -52,10 +53,26 @@ describe("buildRouter", () => {
   });
 
   it("shows the custom route error page when AgentEditorPage fails to load", async () => {
+    // ``buildRouter`` mounts pages that read from React Query
+    // immediately (``RequireAuth`` etc.). Without a QueryClientProvider
+    // the *first* render error is ``No QueryClient set`` from React
+    // Query, not the dynamic-import TypeError we mocked above — so the
+    // error boundary's "Page update required" branch is never reached.
+    // Wrap in a real client with retries off so the test stays
+    // deterministic.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
     render(
-      <ThemeProvider>
-        <RouterProvider router={buildRouter(emptyRegistry)} future={{ v7_startTransition: true }} />
-      </ThemeProvider>,
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <RouterProvider
+            router={buildRouter(emptyRegistry)}
+            future={{ v7_startTransition: true }}
+          />
+        </ThemeProvider>
+      </QueryClientProvider>,
     );
 
     expect(
