@@ -41,32 +41,39 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          path: pytaskforce
-
-      - name: Check out taskforce-enterprise dependency
-        uses: actions/checkout@v4
-        with:
-          repository: rudi77/taskforce-enterprise
-          path: taskforce-enterprise
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: pytaskforce/ui/package-lock.json
+          cache-dependency-path: ui/package-lock.json
 
+      # The framework UI imports types + runtime from
+      # ``@taskforce/ui-shell``, declared as a file: dependency on
+      # ``packages/ui-shell``. The shell's ``"types"`` / ``"main"``
+      # both point at ``./dist/`` which is gitignored — so we have to
+      # build it before TypeScript / Vitest start resolving imports
+      # against it.
+      - name: Build ui-shell
+        working-directory: packages/ui-shell
+        run: npm ci && npm run build
+
+      # The optional ``@taskforce/enterprise-ui`` dependency resolves
+      # to ``packages/enterprise-ui-reference/`` inside this repo, so
+      # the workflow no longer needs cross-repo access to the private
+      # ``taskforce-enterprise`` repository (which the default
+      # GITHUB_TOKEN cannot read).
       - name: Install UI dependencies
-        working-directory: pytaskforce/ui
+        working-directory: ui
         run: npm ci
 
       - name: Typecheck UI
-        working-directory: pytaskforce/ui
+        working-directory: ui
         run: npm run typecheck
 
       - name: Run UI tests
-        working-directory: pytaskforce/ui
+        working-directory: ui
         run: npm run test
 
   tag:
