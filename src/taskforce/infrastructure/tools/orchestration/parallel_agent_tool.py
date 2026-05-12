@@ -9,7 +9,6 @@ and returned as a batch.
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
@@ -205,6 +204,40 @@ class ParallelAgentTool(BaseTool):
             "results": compact_results,
         }
 
+    def _resolve_result_dir(self) -> Path:
+        """Resolve the directory where oversized sub-agent results land.
+
+        Consults
+        :func:`taskforce.application.infrastructure_overrides.get_sub_agent_result_dir_override`
+        at *write-time* (not at tool construction) so a process-
+        shared tool instance can still route per-(tenant, user) when
+        the enterprise plugin is loaded. Falls back to
+        ``<self._work_dir or ".taskforce">/sub_agent_results`` when
+        no override is installed — bit-for-bit pre-#212 behaviour.
+
+        The override may raise — for example when no tenant context
+        is bound. We swallow the error and fall back so a routine
+        parallel-agent dispatch doesn't crash because of a resolver
+        misconfiguration; the override implementation logs its own
+        signal.
+        """
+        try:
+            from taskforce.application.infrastructure_overrides import (
+                get_sub_agent_result_dir_override,
+            )
+
+            override = get_sub_agent_result_dir_override()
+            if override is not None:
+                resolved = override()
+                if resolved is not None:
+                    return Path(resolved)
+        except Exception:  # pragma: no cover — defensive
+            self._logger.warning(
+                "parallel_agent_tool.result_dir_override_failed",
+                exc_info=True,
+            )
+        return Path(self._work_dir or ".taskforce") / "sub_agent_results"
+
     def _compact_result(
         self, result: dict[str, Any], parent_session: str
     ) -> dict[str, Any]:
@@ -222,8 +255,7 @@ class ParallelAgentTool(BaseTool):
         # Persist full result to disk
         specialist = result.get("specialist") or "agent"
         session_id = result.get("session_id") or "unknown"
-        work_dir = self._work_dir or ".taskforce"
-        result_dir = Path(work_dir) / "sub_agent_results"
+        result_dir = self._resolve_result_dir()
         result_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"{specialist}_{session_id[-8:]}.md"

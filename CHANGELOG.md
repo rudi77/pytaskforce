@@ -12,6 +12,25 @@ and test coverage only. New features are deferred.
 
 ### Fixed
 
+- **Per-user routing for `ParallelAgentTool` results + `FileStorage`
+  uploads (#212).** Two new framework override hooks let plugins
+  route the tool-side persistence paths per request scope without
+  forking framework code:
+  - ``set_sub_agent_result_dir_override`` — ``ParallelAgentTool``
+    consults the override at write-time (inside ``_compact_result``)
+    so process-shared tool instances still route per-(tenant, user).
+    Falls back to ``<work_dir>/sub_agent_results`` when no override
+    is installed.
+  - ``set_upload_storage_dir_override`` — ``get_file_storage()`` now
+    caches one ``FileStorage`` instance per resolved root, so each
+    scope keeps its own SQLite index. The env-var ``TASKFORCE_UPLOADS_DIR``
+    keeps working for single-tenant ops; the override always wins
+    over it so per-user routing cannot be silently overridden.
+  Standalone single-tenant behaviour is bit-for-bit unchanged
+  (override unset → singleton cache); paired with the enterprise
+  plugin's wiring PR every per-(tenant, user) deployment gets clean
+  upload + sub-agent-result separation.
+
 - **Butler `gmail_seen.json` per-user routing (#213).** The butler
   Gmail tool previously kept a single ``.taskforce/gmail_seen.json``
   shared across every user in every tenant — fine for single-user
