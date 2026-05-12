@@ -7,6 +7,7 @@ outbound notifications, gateway responses, and configuration options.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -129,3 +130,54 @@ class NotificationResult:
     recipient_id: str
     error: str | None = None
     tenant_id: str = "default"
+
+
+@dataclass(frozen=True)
+class ChannelLinkCode:
+    """A pending one-time code for linking a channel sender to a user.
+
+    Minted by the web UI / mint endpoint when a logged-in user wants to
+    connect a channel (Telegram, Teams, ...) to their account; redeemed
+    by that user via the channel-specific ``/link <code>`` command (see
+    gateway webhook interception in ``api/routes/gateway.py``). Each
+    code is single-use and expires after a short TTL.
+
+    Attributes:
+        code: The code displayed to the user (numeric string, typically
+            six digits).
+        channel: Channel the code is bound to (e.g. ``"telegram"``).
+        tenant_id: Tenant the future link will belong to.
+        user_id: Logical user the future link will resolve to.
+        expires_at: UTC timestamp after which the code can no longer be
+            redeemed. Expired codes are garbage-collected lazily.
+    """
+
+    code: str
+    channel: str
+    tenant_id: str
+    user_id: str
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class ChannelLink:
+    """A persistent mapping from a channel sender to a ``(tenant, user)``.
+
+    Produced by :class:`ChannelLinkRegistryProtocol.consume_code` after a
+    user redeems a pending code; consumed by the resolver to convert an
+    inbound channel-identity payload into a logical recipient.
+
+    Attributes:
+        channel: Channel the link is for (e.g. ``"telegram"``).
+        sender_id: Channel-specific sender identifier (e.g. the Telegram
+            user id from ``message.from.id``).
+        tenant_id: Resolved tenant for inbound messages from this sender.
+        user_id: Resolved logical user.
+        linked_at: UTC timestamp when the link was created.
+    """
+
+    channel: str
+    sender_id: str
+    tenant_id: str
+    user_id: str
+    linked_at: datetime

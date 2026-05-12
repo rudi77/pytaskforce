@@ -82,6 +82,7 @@ def test_get_current_tenant_id_falls_back_when_resolver_returns_empty() -> None:
 
 def test_get_current_tenant_id_falls_back_when_resolver_raises() -> None:
     """A buggy resolver must not break the framework — fall back to default."""
+
     def boom() -> str:
         raise RuntimeError("boom")
 
@@ -562,3 +563,33 @@ async def test_clear_resets_webhook_workflow_resolver() -> None:
     set_webhook_workflow_resolver(resolver)
     clear_infrastructure_overrides()
     assert get_webhook_workflow_resolver() is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #162: channel-link registry override
+# ---------------------------------------------------------------------------
+
+
+from taskforce.application.infrastructure_overrides import (
+    get_channel_link_registry_override,
+    set_channel_link_registry_override,
+)
+
+
+def test_channel_link_registry_override_round_trip() -> None:
+    sentinel = object()
+    set_channel_link_registry_override(lambda work_dir: sentinel)
+    provider = get_channel_link_registry_override()
+    assert provider is not None
+    assert provider(".taskforce") is sentinel
+
+
+def test_channel_link_registry_default_unset() -> None:
+    clear_infrastructure_overrides()
+    assert get_channel_link_registry_override() is None
+
+
+def test_clear_resets_channel_link_registry_override() -> None:
+    set_channel_link_registry_override(lambda work_dir: object())
+    clear_infrastructure_overrides()
+    assert get_channel_link_registry_override() is None

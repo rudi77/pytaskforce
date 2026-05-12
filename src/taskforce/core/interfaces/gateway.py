@@ -7,12 +7,16 @@ Separates concerns that were previously mixed in CommunicationProviderProtocol:
 - RecipientRegistryProtocol: managing push-notification recipients
 - RecipientResolverProtocol: mapping a channel-specific identity to a
   logical recipient (extension point for external auth/identity layers)
+- ChannelLinkRegistryProtocol: pairing channel senders to (tenant, user)
+  via short-lived one-time codes (issue #162)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from taskforce.core.domain.gateway import ChannelLink, ChannelLinkCode
 
 
 class OutboundSenderProtocol(Protocol):
@@ -244,6 +248,106 @@ class RecipientResolverProtocol(Protocol):
             ``RecipientInfo`` for a successful mapping, or ``None``
             when the identity cannot be resolved (the gateway treats
             this as an audited deny).
+        """
+        ...
+
+
+class ChannelLinkRegistryProtocol(Protocol):
+    """Channel sender ↔ ``(tenant, user)`` link table (issue #162).
+
+    Backs the framework's ``/link <code>`` pairing flow: a web UI mints
+    a short-lived code via :meth:`create_pending_code`, the user pastes
+    it into the channel (Telegram, Teams, ...) where the gateway
+    webhook intercepts the command and calls :meth:`consume_code` to
+    record the persistent link. Subsequent inbound messages from that
+    sender are routed by consulting :meth:`lookup`.
+
+    The framework ships a file-based default
+    (``FileChannelLinkRegistry``). Enterprise plugins replace it with a
+    tenant-scoped, postgres-backed registry via
+    :func:`taskforce.application.infrastructure_overrides.set_channel_link_registry_override`.
+    """
+
+    async def create_pending_code(
+        self,
+        *,
+        channel: str,
+        tenant_id: str,
+        user_id: str,
+        ttl_seconds: int = 600,
+    ) -> ChannelLinkCode:
+        """Mint a new single-use code bound to ``(tenant_id, user_id)``.
+
+        Args:
+            channel: Channel the code is for (e.g. ``"telegram"``).
+            tenant_id: Tenant the resulting link will belong to.
+            user_id: Logical user the resulting link will resolve to.
+            ttl_seconds: Code lifetime in seconds (default 600 = 10 min).
+
+        Returns:
+            The freshly minted ``ChannelLinkCode``. Implementations must
+            guarantee that the code does not collide with another
+            unexpired pending code for the same channel.
+        """
+        ...
+
+    async def consume_code(
+        self,
+        *,
+        channel: str,
+        code: str,
+        sender_id: str,
+    ) -> ChannelLink | None:
+        """Redeem a pending code and create the persistent link.
+
+        Args:
+            channel: Channel the code is bound to.
+            code: The code as entered by the user.
+            sender_id: Channel-specific sender id (e.g. Telegram user id).
+
+        Returns:
+            The newly created ``ChannelLink`` on success, or ``None`` if
+            the code is unknown, expired, or already consumed. On
+            success the code itself is invalidated so a replay returns
+            ``None``. If the sender already had a different link, the
+            implementation is free to overwrite it (operator intent: a
+            new ``/link`` always wins).
+        """
+        ...
+
+    async def lookup(
+        self,
+        *,
+        channel: str,
+        sender_id: str,
+    ) -> ChannelLink | None:
+        """Return the link for ``(channel, sender_id)`` or ``None``."""
+        ...
+
+    async def remove_link(
+        self,
+        *,
+        channel: str,
+        sender_id: str,
+    ) -> bool:
+        """Drop the link for ``(channel, sender_id)``.
+
+        Returns:
+            True if a link existed and was removed, False otherwise.
+        """
+        ...
+
+    async def list_links(
+        self,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[ChannelLink]:
+        """List links, optionally filtered by tenant and/or user.
+
+        Both filters combine with AND when supplied; passing neither
+        returns every link in the registry. Order is implementation-
+        defined (the file default returns links sorted by ``linked_at``).
         """
         ...
 

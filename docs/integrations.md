@@ -35,6 +35,8 @@ The gateway provides a unified interface for:
 | `/api/v1/gateway/notify` | POST | Send proactive push notification |
 | `/api/v1/gateway/broadcast` | POST | Broadcast to all recipients on a channel |
 | `/api/v1/gateway/channels` | GET | List configured channels |
+| `/api/v1/gateway/{channel}/link-codes` | POST | Mint a one-time pairing code (issue #162) |
+| `/api/v1/gateway/{channel}/links/me` | DELETE | Drop every link on the channel owned by the caller |
 
 ---
 
@@ -94,6 +96,63 @@ The gateway will:
   "history_length": 4
 }
 ```
+
+---
+
+## Pairing a Channel User to a Tenant/User (`/link`)
+
+Before this seam existed, multi-tenant deployments had to hard-code
+the Telegram → user mapping in `enterprise.yaml`. The
+**ChannelLinkRegistry** (issue #162) replaces that with a self-service
+pairing flow:
+
+1. A logged-in user calls `POST /api/v1/gateway/telegram/link-codes`
+   (typically from the Settings page in the web UI). The framework
+   reads the caller's tenant + user from the installed tenant/user
+   resolvers and mints a 6-digit single-use code with a 10-minute TTL.
+2. The user pastes the code into the channel:
+
+   ```
+   /link 123456
+   ```
+
+3. The gateway intercepts ``/link`` **before** the recipient
+   resolver runs (the sender is by definition unlinked at this
+   point). It calls
+   ``ChannelLinkRegistry.consume_code(channel, code, sender_id)``;
+   on success the persistent link is recorded and the user gets
+   a confirmation message via the outbound sender. On failure
+   (unknown / expired / replayed code) the user gets an error
+   message and the link table is unchanged.
+4. From that point inbound messages from the same channel sender
+   resolve through the link table — the gateway's
+   ``_PassthroughRecipientResolver`` consults
+   ``link_registry.lookup(channel, sender_id)`` and surfaces the
+   linked ``tenant_id`` / ``user_id`` in
+   ``RecipientInfo.attributes`` (plus the linked ``user_id`` as the
+   ``recipient_id`` itself).
+
+To revoke a pairing the same user calls
+``DELETE /api/v1/gateway/telegram/links/me`` — every link on that
+channel resolving to the caller is dropped.
+
+### Override seam
+
+The framework default writes JSON files under
+``<work_dir>/channel_links/<channel>.json``. Enterprise plugins (or
+any custom infrastructure) replace it with a tenant-scoped backend
+by calling
+``taskforce.application.infrastructure_overrides.set_channel_link_registry_override``.
+The provider receives ``work_dir`` and must return an object
+satisfying ``ChannelLinkRegistryProtocol``.
+
+The seam is intentionally separate from the
+``RecipientResolverProtocol`` override: the resolver decides *who*
+the sender is for any given message, while the link registry is the
+*store* the resolver consults. Custom resolvers can therefore reuse
+the framework's pairing flow without re-implementing storage, and
+plugins that want a different storage backend without a different
+resolver can swap the registry alone.
 
 ---
 

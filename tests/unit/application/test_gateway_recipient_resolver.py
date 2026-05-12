@@ -241,3 +241,44 @@ async def test_resolver_called_with_inbound_identity_payload() -> None:
     assert received["identity"]["sender_id"] == "user-a"
     assert received["identity"]["conversation_id"] == "c-1"
     assert received["identity"]["metadata"] == {"k": "v"}
+
+
+# ---------------------------------------------------------------------------
+# Issue #162: pass-through resolver consults the channel-link registry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_passthrough_with_link_registry_returns_linked_user() -> None:
+    from taskforce.infrastructure.communication.channel_link_registry import (
+        InMemoryChannelLinkRegistry,
+    )
+
+    link_registry = InMemoryChannelLinkRegistry()
+    code = await link_registry.create_pending_code(
+        channel="telegram", tenant_id="tid-a", user_id="rudi"
+    )
+    await link_registry.consume_code(channel="telegram", code=code.code, sender_id="tg-12345")
+
+    resolver = _PassthroughRecipientResolver(link_registry=link_registry)
+    info = await resolver.resolve("telegram", {"sender_id": "tg-12345"})
+
+    assert info is not None
+    assert info.recipient_id == "rudi"
+    assert info.attributes["tenant_id"] == "tid-a"
+    assert info.attributes["user_id"] == "rudi"
+    assert info.attributes["channel_sender_id"] == "tg-12345"
+
+
+@pytest.mark.asyncio
+async def test_passthrough_with_link_registry_falls_through_for_unlinked() -> None:
+    from taskforce.infrastructure.communication.channel_link_registry import (
+        InMemoryChannelLinkRegistry,
+    )
+
+    resolver = _PassthroughRecipientResolver(link_registry=InMemoryChannelLinkRegistry())
+    info = await resolver.resolve("telegram", {"sender_id": "tg-unlinked"})
+
+    assert info is not None
+    assert info.recipient_id == "tg-unlinked"
+    assert info.attributes == {}

@@ -24,6 +24,7 @@ Usage:
 """
 
 from taskforce.core.interfaces.gateway import (
+    ChannelLinkRegistryProtocol,
     ConversationStoreProtocol,
     InboundAdapterProtocol,
     OutboundSenderProtocol,
@@ -53,6 +54,7 @@ __all__ = [
     "InboundAdapterProtocol",
     "ConversationStoreProtocol",
     "RecipientRegistryProtocol",
+    "ChannelLinkRegistryProtocol",
     "ToolProtocol",
     "ApprovalRiskLevel",
     "HeartbeatStoreProtocol",

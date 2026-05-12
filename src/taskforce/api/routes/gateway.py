@@ -16,10 +16,14 @@ import os
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_gateway, get_inbound_adapters
+from taskforce.api.dependencies import (
+    get_channel_link_registry,
+    get_gateway,
+    get_inbound_adapters,
+)
 from taskforce.api.errors import http_exception as _error_response
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.core.domain.gateway import (
@@ -162,6 +166,33 @@ class ChannelsResponseSchema(BaseModel):
     """List of configured channels."""
 
     channels: list[str]
+
+
+class LinkCodeRequest(BaseModel):
+    """Optional body for the link-code mint endpoint (issue #162)."""
+
+    ttl_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=3600,
+        description="Code lifetime in seconds (60–3600). Defaults to 600 (10 minutes).",
+    )
+
+
+class LinkCodeResponse(BaseModel):
+    """Mint response carrying the code the user must enter on the channel."""
+
+    code: str = Field(..., description="Code the user enters via ``/link <code>``.")
+    channel: str = Field(..., description="Channel the code is bound to.")
+    expires_at: str = Field(..., description="UTC ISO-8601 timestamp when the code expires.")
+    ttl_seconds: int = Field(..., description="Effective TTL in seconds.")
+
+
+class LinkDeleteResponse(BaseModel):
+    """Result of removing the caller's links on a channel."""
+
+    channel: str
+    removed: int
 
 
 # ------------------------------------------------------------------
@@ -413,6 +444,83 @@ async def list_channels(
     return ChannelsResponseSchema(
         channels=sorted(gateway.supported_channels()),
     )
+
+
+@router.post(
+    "/{channel}/link-codes",
+    response_model=LinkCodeResponse,
+    responses={400: {"model": ErrorResponse}},
+)
+async def mint_link_code(
+    channel: str,
+    body: LinkCodeRequest = Body(default_factory=LinkCodeRequest),
+    link_registry=Depends(get_channel_link_registry),
+) -> LinkCodeResponse:
+    """Mint a one-time pairing code for the authenticated user (issue #162).
+
+    The caller's identity is read from the framework's tenant/user
+    resolvers — i.e. whatever auth middleware populated. Single-tenant
+    builds without auth fall back to ``(tenant="default", user="default")``;
+    enterprise builds resolve to the JWT-authenticated user. The
+    returned code is shown to the user, who pastes it to the channel
+    via ``/link <code>`` to complete pairing.
+    """
+    from taskforce.application.infrastructure_overrides import (
+        get_current_tenant_id,
+        get_current_user_id,
+    )
+
+    tenant_id = get_current_tenant_id()
+    user_id = get_current_user_id() or "default"
+    ttl_seconds = body.ttl_seconds or 600
+
+    pending = await link_registry.create_pending_code(
+        channel=channel,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        ttl_seconds=ttl_seconds,
+    )
+
+    return LinkCodeResponse(
+        code=pending.code,
+        channel=pending.channel,
+        expires_at=pending.expires_at.isoformat(),
+        ttl_seconds=ttl_seconds,
+    )
+
+
+@router.delete(
+    "/{channel}/links/me",
+    response_model=LinkDeleteResponse,
+)
+async def delete_my_links(
+    channel: str,
+    link_registry=Depends(get_channel_link_registry),
+) -> LinkDeleteResponse:
+    """Remove every link on ``channel`` that resolves to the caller (issue #162).
+
+    Lets a user disconnect their channel pairing from the web UI. The
+    registry is keyed by ``sender_id``, so we walk the caller's tenant +
+    user scope to find the senders to drop. Returns the count of links
+    removed (typically 0 or 1, but a user that paired the same channel
+    from multiple devices may have several).
+    """
+    from taskforce.application.infrastructure_overrides import (
+        get_current_tenant_id,
+        get_current_user_id,
+    )
+
+    tenant_id = get_current_tenant_id()
+    user_id = get_current_user_id() or "default"
+
+    links = await link_registry.list_links(tenant_id=tenant_id, user_id=user_id)
+    removed = 0
+    for link in links:
+        if link.channel != channel:
+            continue
+        if await link_registry.remove_link(channel=link.channel, sender_id=link.sender_id):
+            removed += 1
+    return LinkDeleteResponse(channel=channel, removed=removed)
 
 
 # ------------------------------------------------------------------

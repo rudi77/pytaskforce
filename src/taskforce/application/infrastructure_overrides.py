@@ -101,6 +101,13 @@ _sub_agent_result_dir_override: Callable[[], Any] | None = None
 # override's returned path.
 _upload_storage_dir_override: Callable[[], Any] | None = None
 
+# Issue #162 — channel-link registry override hook.
+# Backs the framework's ``/link <code>`` pairing flow; the default is
+# a file-based registry under ``<work_dir>/channel_links/``. Enterprise
+# plugins replace this with a tenant-scoped, postgres-backed registry
+# so per-tenant deployments don't share a single link table.
+_channel_link_registry_override: Callable[[str], Any] | None = None
+
 
 def set_agent_registry_override(
     provider: Callable[[], Any] | None,
@@ -427,6 +434,37 @@ def set_upload_storage_dir_override(
 def get_upload_storage_dir_override() -> Callable[[], Any] | None:
     """Return the currently installed upload-storage-dir override, if any."""
     return _upload_storage_dir_override
+
+
+def set_channel_link_registry_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for the channel-link registry
+    (issue #162).
+
+    The provider receives the same ``work_dir`` argument as the
+    framework default and must return an object satisfying
+    :class:`taskforce.core.interfaces.gateway.ChannelLinkRegistryProtocol`.
+    Use this to back the registry with a tenant-scoped store (e.g.
+    postgres-backed) from an enterprise plugin. With nothing installed
+    the framework falls back to its file-based default
+    (``<work_dir>/channel_links/<channel>.json``).
+
+    Why this is its own seam (instead of folding into the
+    recipient-resolver override): the ``/link <code>`` flow needs three
+    distinct components to agree on the underlying store — the
+    resolver (to read the link on inbound), the webhook route (to
+    consume a code on ``/link``), and the mint endpoint (to create a
+    pending code). Sharing the registry across all three keeps them
+    coherent without coupling the resolver to the route layer.
+    """
+    global _channel_link_registry_override
+    _channel_link_registry_override = provider
+
+
+def get_channel_link_registry_override() -> Callable[[str], Any] | None:
+    """Return the currently installed channel-link-registry override, if any."""
+    return _channel_link_registry_override
 
 
 def set_workflow_definition_store_override(
@@ -877,6 +915,7 @@ def clear_infrastructure_overrides() -> None:
     global _butler_state_dir_override
     global _sub_agent_result_dir_override
     global _upload_storage_dir_override
+    global _channel_link_registry_override
     _agent_registry_override = None
     _deployment_manifest_override = None
     _settings_store_override = None
@@ -910,3 +949,4 @@ def clear_infrastructure_overrides() -> None:
     _butler_state_dir_override = None
     _sub_agent_result_dir_override = None
     _upload_storage_dir_override = None
+    _channel_link_registry_override = None

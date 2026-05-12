@@ -176,6 +176,37 @@ def get_gateway_components():
 
 
 @lru_cache(maxsize=1)
+def get_channel_link_registry():
+    """Provide the channel-link registry (issue #162).
+
+    The registry powers the ``/link <code>`` pairing flow: the mint
+    endpoint creates pending codes, the webhook handler consumes them,
+    and the gateway's recipient resolver consults the resulting links
+    to map a Telegram (or Teams, etc.) sender to a logical
+    ``(tenant, user)``.
+
+    Consults
+    :func:`taskforce.application.infrastructure_overrides.get_channel_link_registry_override`
+    first; falls back to the file-based default rooted at
+    ``<work_dir>/channel_links/`` when no override is installed.
+    """
+    from taskforce.application.infrastructure_overrides import (
+        get_channel_link_registry_override,
+    )
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    override = get_channel_link_registry_override()
+    if override is not None:
+        return override(work_dir)
+
+    from taskforce.infrastructure.communication.channel_link_registry import (
+        FileChannelLinkRegistry,
+    )
+
+    return FileChannelLinkRegistry(work_dir=work_dir)
+
+
+@lru_cache(maxsize=1)
 def get_gateway():
     """Provide a CommunicationGateway instance.
 
@@ -202,6 +233,16 @@ def get_gateway():
     # as plain text — single-tenant builds are unchanged.
     resolver_provider = get_recipient_resolver_override()
     recipient_resolver = resolver_provider() if resolver_provider else None
+    # Issue #162: when no custom resolver is installed, hand the
+    # pass-through the channel-link registry so /link-paired senders
+    # resolve to their linked (tenant, user). With a custom resolver
+    # the plugin owns lookup semantics — we don't second-guess it.
+    if recipient_resolver is None:
+        from taskforce.application.gateway import _PassthroughRecipientResolver
+
+        recipient_resolver = _PassthroughRecipientResolver(
+            link_registry=get_channel_link_registry(),
+        )
     lookup_provider = get_agent_lookup_override()
     agent_lookup = lookup_provider() if lookup_provider else None
     workflow_lookup_provider = get_workflow_lookup_override()
@@ -260,6 +301,7 @@ def get_gateway():
         recipient_resolver=recipient_resolver,
         agent_lookup=agent_lookup,
         workflow_lookup=workflow_lookup,
+        link_registry=get_channel_link_registry(),
         workflow_runner=_workflow_runner,
         components_provider=_components_provider,
         actions_summary_mode=actions_summary_mode,
@@ -391,9 +433,7 @@ def get_standing_goal_store():
         from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
         work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
-        _STANDING_GOAL_STORE = InfrastructureBuilder().build_standing_goal_store(
-            work_dir=work_dir
-        )
+        _STANDING_GOAL_STORE = InfrastructureBuilder().build_standing_goal_store(work_dir=work_dir)
     return _STANDING_GOAL_STORE
 
 
