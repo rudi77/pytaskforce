@@ -1242,6 +1242,13 @@ export function useChannelBots() {
   });
 }
 
+const BOT_POLLERS_KEY = ["settings", "channels", "bot-pollers"] as const;
+
+function invalidateBotsAndPollers(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: channelBotKeys.list });
+  qc.invalidateQueries({ queryKey: BOT_POLLERS_KEY });
+}
+
 export function useCreateChannelBot() {
   const qc = useQueryClient();
   return useMutation<BotConfig, Error, BotConfig>({
@@ -1250,7 +1257,7 @@ export function useCreateChannelBot() {
         method: "POST",
         body: bot,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+    onSuccess: () => invalidateBotsAndPollers(qc),
   });
 }
 
@@ -1265,7 +1272,7 @@ export function useUpdateChannelBot() {
           body: bot,
         },
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+    onSuccess: () => invalidateBotsAndPollers(qc),
   });
 }
 
@@ -1276,7 +1283,7 @@ export function useDeleteChannelBot() {
       apiFetch<void>(`/api/v1/settings/channels/bots/${encodeURIComponent(botId)}`, {
         method: "DELETE",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+    onSuccess: () => invalidateBotsAndPollers(qc),
   });
 }
 
@@ -1297,6 +1304,21 @@ export function useTestChannelBot() {
           },
         },
       ),
+  });
+}
+
+export interface BotPollerStatusResponse {
+  running_bot_ids: string[];
+}
+
+export function useBotPollerStatus() {
+  return useQuery<BotPollerStatusResponse>({
+    queryKey: ["settings", "channels", "bot-pollers"] as const,
+    queryFn: () =>
+      apiFetch<BotPollerStatusResponse>("/api/v1/settings/channels/bot-pollers"),
+    // Refetch after mutations and on a short interval so the UI reflects
+    // hot-reconcile results within a couple of seconds.
+    refetchInterval: 5_000,
   });
 }
 
