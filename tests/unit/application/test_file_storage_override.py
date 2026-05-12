@@ -61,16 +61,29 @@ def test_override_wins_over_env_var(
     assert _default_root() == override_dir
 
 
-def test_override_swallows_provider_exception(tmp_path: Path):
+def test_override_swallows_provider_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """A misbehaving provider (no tenant scope yet) falls through to
     the env var / default so uploads keep working during early-init
-    paths instead of crashing the route."""
+    paths instead of crashing the route. After #222 the failure is
+    logged at ERROR so a rename regression doesn't hide behind a
+    silent fall-back. We spy on the module logger directly because
+    structlog bypasses the stdlib root logger that ``caplog`` hooks.
+    """
     def _broken():
         raise RuntimeError("no tenant scope")
 
+    error_calls: list[str] = []
+    monkeypatch.setattr(
+        fs_module.logger,
+        "error",
+        lambda event, **_: error_calls.append(event),
+    )
     infrastructure_overrides.set_upload_storage_dir_override(_broken)
-    # Should fall back rather than raise.
     assert _default_root() == Path(".taskforce") / "uploads"
+    assert "file_storage.upload_root_override_failed" in error_calls
 
 
 def test_get_file_storage_caches_per_resolved_root(tmp_path: Path):

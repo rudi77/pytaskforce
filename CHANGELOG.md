@@ -12,6 +12,27 @@ and test coverage only. New features are deferred.
 
 ### Fixed
 
+- **Narrow broad `except Exception` in 3 override consumers (#222).**
+  ``parallel_agent_tool._resolve_result_dir``,
+  ``file_storage._default_root`` + ``get_file_storage``, and the
+  butler ``email_tool._resolve_seen_path`` previously caught every
+  exception from the override lookup and logged at WARNING. A
+  rename regression inside the framework would therefore silently
+  revert per-(tenant, user) routing to flat buckets, with only a
+  per-call warning that operators are unlikely to spot. Each
+  consumer now separates ``ImportError`` (older framework lacking
+  the hook — fall back silently) from any other exception (logged
+  at ERROR with traceback, then fall back). New unit tests pin both
+  branches.
+
+- **Documented unbounded per-scope FileStorage cache (#218).** The
+  module header of ``src/taskforce/application/file_storage.py``
+  now explicitly states that ``_storage_by_root`` has no eviction
+  policy and that ``reset_file_storage()`` is the sanctioned drop
+  path. Matches the existing wording in
+  ``TenantScopedStoreFactory``; LRU eviction is tracked as a
+  framework-wide follow-up.
+
 - **Per-user routing for `ParallelAgentTool` results + `FileStorage`
   uploads (#212).** Two new framework override hooks let plugins
   route the tool-side persistence paths per request scope without
