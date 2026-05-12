@@ -383,6 +383,29 @@ def _save_bots(store, bots: list[BotConfig]) -> None:
     _rehydrate_for_section(CHANNELS, store)
 
 
+async def _reconcile_bot_pollers() -> None:
+    """Trigger the BotPollerManager to diff settings → running pollers.
+
+    Called after every bot CRUD so changes take effect without restart.
+    Defensive: a missing / unavailable manager is logged but never
+    surfaces an HTTP error — the settings write succeeded.
+    """
+    from taskforce.api.dependencies import get_bot_poller_manager
+
+    try:
+        manager = get_bot_poller_manager()
+    except Exception:  # noqa: BLE001
+        manager = None
+    if manager is None:
+        return
+    try:
+        await manager.reconcile()
+    except Exception:  # noqa: BLE001 — manager logs internally; don't leak to client
+        import structlog
+
+        structlog.get_logger().warning("bot_poller.reconcile_failed", exc_info=True)
+
+
 def _validate_payload(payload: BotConfigPayload, *, request: Request) -> BotConfig:
     """Convert a payload into a validated BotConfig.
 
@@ -459,7 +482,7 @@ def list_bots(
     status_code=status.HTTP_201_CREATED,
     summary="Add a channel bot",
 )
-def create_bot(
+async def create_bot(
     payload: BotConfigPayload,
     request: Request,
     store=Depends(get_settings_store),
@@ -474,6 +497,7 @@ def create_bot(
         )
     bots.append(new_bot)
     _save_bots(store, bots)
+    await _reconcile_bot_pollers()
     return _bot_to_payload(new_bot, mask_token=False)
 
 
@@ -482,7 +506,7 @@ def create_bot(
     response_model=BotConfigPayload,
     summary="Update a channel bot",
 )
-def update_bot(
+async def update_bot(
     bot_id: str,
     payload: BotConfigPayload,
     request: Request,
@@ -511,6 +535,7 @@ def update_bot(
     updated = _validate_payload(payload, request=request)
     bots = [updated if b.id == bot_id else b for b in bots]
     _save_bots(store, bots)
+    await _reconcile_bot_pollers()
     return _bot_to_payload(updated, mask_token=False)
 
 
@@ -519,7 +544,7 @@ def update_bot(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a channel bot",
 )
-def delete_bot(
+async def delete_bot(
     bot_id: str,
     request: Request,
     store=Depends(get_settings_store),
@@ -536,6 +561,36 @@ def delete_bot(
         )
     bots = [b for b in bots if b.id != bot_id]
     _save_bots(store, bots)
+    await _reconcile_bot_pollers()
+
+
+class BotPollerStatusResponse(BaseModel):
+    """Which bot pollers are currently running."""
+
+    running_bot_ids: list[str]
+
+
+@router.get(
+    "/settings/channels/bot-pollers",
+    response_model=BotPollerStatusResponse,
+    summary="List currently running bot pollers",
+    description=(
+        "Returns the bot ids whose Telegram polling task is currently "
+        "active in the backend. Useful for the UI to render a 'running' "
+        "badge after add/edit/delete operations (which trigger hot "
+        "reconcile)."
+    ),
+)
+def get_bot_poller_status() -> BotPollerStatusResponse:
+    from taskforce.api.dependencies import get_bot_poller_manager
+
+    try:
+        manager = get_bot_poller_manager()
+    except Exception:  # noqa: BLE001
+        manager = None
+    if manager is None:
+        return BotPollerStatusResponse(running_bot_ids=[])
+    return BotPollerStatusResponse(running_bot_ids=manager.running_bot_ids())
 
 
 @router.post(

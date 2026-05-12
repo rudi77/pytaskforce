@@ -172,8 +172,34 @@ async def lifespan(app: FastAPI):
     )
     await scheduler.start()
 
+    # Start per-bot Telegram pollers (multi-bot hot-reload, issue #227
+    # follow-up). The manager owns one ``getUpdates`` task per enabled
+    # Telegram bot config and is also consulted by the settings routes
+    # after every bot CRUD so changes take effect without restart.
+    try:
+        from taskforce.api.dependencies import get_bot_poller_manager
+
+        bot_poller_manager = get_bot_poller_manager()
+        if bot_poller_manager is not None:
+            await bot_poller_manager.start()
+    except Exception as exc:  # pragma: no cover — defensive
+        bot_poller_manager = None
+        await logger.awarning(
+            "fastapi.startup.bot_poller_manager_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+
     yield
     await logger.ainfo("fastapi.shutdown", message="Taskforce API shutting down...")
+
+    # Stop pollers before the rest so in-flight gateway dispatches see
+    # a still-live executor.
+    if bot_poller_manager is not None:
+        try:
+            await bot_poller_manager.stop()
+        except Exception:  # pragma: no cover — defensive
+            pass
 
     # Stop the scheduler before shutting down plugins so any in-flight
     # job that calls into a plugin sees it still loaded.

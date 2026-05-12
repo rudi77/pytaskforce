@@ -185,6 +185,50 @@ def get_settings_store():
 
 
 # ---------------------------------------------------------------------------
+# BotPollerManager — hot-reload of per-bot Telegram polling loops
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_bot_poller_manager():
+    """Provide a shared :class:`BotPollerManager` instance.
+
+    The manager owns one long-polling task per enabled Telegram bot
+    config. It is started in the FastAPI lifespan and consulted by the
+    settings routes after every bot CRUD so changes take effect
+    without a backend restart.
+
+    Returns ``None`` when the gateway is unavailable (defensive — keeps
+    the route layer working in test contexts).
+    """
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
+    from taskforce.infrastructure.communication.bot_poller_manager import (
+        BotPollerManager,
+    )
+
+    try:
+        gateway = get_gateway()
+    except Exception:
+        return None
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    builder = InfrastructureBuilder()
+    pending_store = builder.build_pending_channel_question_store(work_dir=work_dir)
+
+    def _components_provider():
+        # Rebuilt every call so reconcile sees the latest bot list.
+        # The settings routes clear ``get_gateway_components.cache_clear``
+        # before calling reconcile, which in turn invalidates this.
+        return get_gateway_components()
+
+    return BotPollerManager(
+        gateway=gateway,
+        components_provider=_components_provider,
+        pending_store=pending_store,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Communication Gateway
 # ---------------------------------------------------------------------------
 

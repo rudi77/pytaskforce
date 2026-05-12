@@ -10,6 +10,7 @@ import {
   useUpdateChannelBot,
   useDeleteChannelBot,
   useTestChannelBot,
+  useBotPollerStatus,
   type BotConfig,
   type BotOwnerKind,
   type PairingMode,
@@ -83,6 +84,7 @@ function BotRow({
   bot,
   currentUserId,
   canManage,
+  running,
   onEdit,
   onDelete,
   onTest,
@@ -90,6 +92,7 @@ function BotRow({
   bot: BotConfig;
   currentUserId: string | null;
   canManage: boolean;
+  running: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onTest: (recipient: string) => Promise<ConnectionTestResult>;
@@ -135,7 +138,13 @@ function BotRow({
             {bot.pairing_mode ? (
               <Badge variant="secondary">pairing: {bot.pairing_mode}</Badge>
             ) : null}
-            {!bot.enabled ? <Badge variant="warning">disabled</Badge> : null}
+            {!bot.enabled ? (
+              <Badge variant="warning">disabled</Badge>
+            ) : running ? (
+              <Badge variant="success">running</Badge>
+            ) : (
+              <Badge variant="warning">not running</Badge>
+            )}
           </div>
           <CardDescription>
             {bot.default_agent ? `Default agent: ${bot.default_agent}` : "Default agent: tenant default"}
@@ -342,6 +351,7 @@ function BotForm({
 
 export default function ChannelsTab() {
   const botsQuery = useChannelBots();
+  const pollerStatus = useBotPollerStatus();
   const permissions = useCurrentPermissions();
   const createBot = useCreateChannelBot();
   const updateBot = useUpdateChannelBot();
@@ -363,6 +373,7 @@ export default function ChannelsTab() {
   }
 
   const bots = botsQuery.data?.bots ?? [];
+  const runningSet = new Set(pollerStatus.data?.running_bot_ids ?? []);
   const myBots = bots.filter((b) => b.owner_kind === "user" && b.owner_user_id === currentUserId);
   const sharedBots = bots.filter((b) => b.owner_kind === "tenant");
   const otherUserBots = bots.filter(
@@ -417,8 +428,8 @@ export default function ChannelsTab() {
           <CardDescription>
             Configure bots for Telegram and (later) Teams. Personal bots only deliver
             messages to you. Tenant-shared bots can be used by every user in the tenant via
-            the <code>/link</code> pairing flow. After adding or removing a bot, restart the
-            backend so the new polling loops attach.
+            the <code>/link</code> pairing flow. Add, edit, or remove bots without restarting
+            — the backend reconciles polling loops on save (badge below shows the live state).
           </CardDescription>
         </CardHeader>
       </Card>
@@ -459,6 +470,7 @@ export default function ChannelsTab() {
                 bot={bot}
                 currentUserId={currentUserId}
                 canManage
+                running={runningSet.has(bot.id)}
                 onEdit={() => startEdit(bot)}
                 onDelete={() => handleDelete(bot.id)}
                 onTest={handleTest(bot.id)}
@@ -490,6 +502,7 @@ export default function ChannelsTab() {
                 bot={bot}
                 currentUserId={currentUserId}
                 canManage={isAdmin}
+                running={runningSet.has(bot.id)}
                 onEdit={() => startEdit(bot)}
                 onDelete={() => handleDelete(bot.id)}
                 onTest={handleTest(bot.id)}
@@ -515,6 +528,7 @@ export default function ChannelsTab() {
                 bot={bot}
                 currentUserId={currentUserId}
                 canManage={isAdmin}
+                running={runningSet.has(bot.id)}
                 onEdit={() => startEdit(bot)}
                 onDelete={() => handleDelete(bot.id)}
                 onTest={handleTest(bot.id)}
