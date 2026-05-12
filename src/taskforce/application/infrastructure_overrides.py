@@ -90,6 +90,17 @@ _tool_result_store_override: Callable[[str], Any] | None = None
 # ``set_butler_state_dir_override`` for the contract.
 _butler_state_dir_override: Callable[[], Any] | None = None
 
+# Directory where ``ParallelAgentTool`` persists oversized sub-agent
+# results. Consulted at write-time so a process-shared tool instance
+# can still route per-(tenant, user).
+_sub_agent_result_dir_override: Callable[[], Any] | None = None
+
+# Root directory for the framework's ``FileStorage`` (file uploads).
+# Consulted by ``get_file_storage()`` so per-(tenant, user) routing
+# yields one cached ``FileStorage`` per scope, each rooted under the
+# override's returned path.
+_upload_storage_dir_override: Callable[[], Any] | None = None
+
 
 def set_agent_registry_override(
     provider: Callable[[], Any] | None,
@@ -363,6 +374,59 @@ def set_butler_state_dir_override(
 def get_butler_state_dir_override() -> Callable[[], Any] | None:
     """Return the currently installed butler-state-dir override, if any."""
     return _butler_state_dir_override
+
+
+def set_sub_agent_result_dir_override(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``ParallelAgentTool``'s
+    result directory.
+
+    The tool persists oversized sub-agent results to a directory
+    named ``sub_agent_results/`` so the parent agent's context isn't
+    flooded with multi-megabyte sub-agent output. Pre-#212 this was
+    hardcoded to ``<work_dir>/sub_agent_results/`` — a per-(tenant,
+    user) deployment therefore mixed every user's sub-agent runs in
+    one directory.
+
+    Returns a callable returning the per-scope directory ``Path``;
+    consulted at write-time inside ``_compact_result`` so a process-
+    shared tool instance can still route per-user.
+    """
+    global _sub_agent_result_dir_override
+    _sub_agent_result_dir_override = provider
+
+
+def get_sub_agent_result_dir_override() -> Callable[[], Any] | None:
+    """Return the currently installed sub-agent-result-dir override, if any."""
+    return _sub_agent_result_dir_override
+
+
+def set_upload_storage_dir_override(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) an override for the framework
+    ``FileStorage`` root.
+
+    ``FileStorage`` keeps sharded blobs + a SQLite index under one
+    root directory; before this hook, the singleton was rooted at
+    ``.taskforce/uploads/`` (or wherever ``TASKFORCE_UPLOADS_DIR``
+    pointed) for *every* user. Per-(tenant, user) routing requires
+    each scope to land under its own root — and, because each root
+    has its own SQLite index, each scope therefore gets its own
+    ``FileStorage`` instance cached by the resolver.
+
+    The override callable returns the ``Path`` for the current
+    scope. Plugins install it; the framework's ``get_file_storage``
+    consults it before falling through to env var / default.
+    """
+    global _upload_storage_dir_override
+    _upload_storage_dir_override = provider
+
+
+def get_upload_storage_dir_override() -> Callable[[], Any] | None:
+    """Return the currently installed upload-storage-dir override, if any."""
+    return _upload_storage_dir_override
 
 
 def set_workflow_definition_store_override(
@@ -811,6 +875,8 @@ def clear_infrastructure_overrides() -> None:
     global _pending_channel_question_store_override
     global _tool_result_store_override
     global _butler_state_dir_override
+    global _sub_agent_result_dir_override
+    global _upload_storage_dir_override
     _agent_registry_override = None
     _deployment_manifest_override = None
     _settings_store_override = None
@@ -842,3 +908,5 @@ def clear_infrastructure_overrides() -> None:
     _pending_channel_question_store_override = None
     _tool_result_store_override = None
     _butler_state_dir_override = None
+    _sub_agent_result_dir_override = None
+    _upload_storage_dir_override = None

@@ -27,14 +27,14 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
-import shutil
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 import structlog
 
@@ -44,9 +44,37 @@ DEFAULT_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
 def _default_root() -> Path:
-    override = os.environ.get("TASKFORCE_UPLOADS_DIR")
-    if override:
-        return Path(override).expanduser()
+    """Resolve the FileStorage root for the current request scope.
+
+    Precedence (#212):
+
+    1. ``set_upload_storage_dir_override`` — installed by plugins that
+       route uploads per-(tenant, user). Always wins so the tenant
+       admin can't accidentally override the per-user split with an
+       env var.
+    2. ``TASKFORCE_UPLOADS_DIR`` env var — operator override for
+       moving the bucket out of the work dir (existing behaviour).
+    3. ``.taskforce/uploads`` — single-tenant default.
+    """
+    try:
+        from taskforce.application.infrastructure_overrides import (
+            get_upload_storage_dir_override,
+        )
+
+        override_provider = get_upload_storage_dir_override()
+        if override_provider is not None:
+            resolved = override_provider()
+            if resolved is not None:
+                return Path(resolved)
+    except Exception:  # pragma: no cover — defensive
+        logger.warning(
+            "file_storage.upload_root_override_failed",
+            exc_info=True,
+        )
+
+    env_override = os.environ.get("TASKFORCE_UPLOADS_DIR")
+    if env_override:
+        return Path(env_override).expanduser()
     return Path(".taskforce") / "uploads"
 
 
@@ -285,11 +313,48 @@ def _row_to_metadata(row: sqlite3.Row) -> FileMetadata:
 # Singleton accessor
 # ------------------------------------------------------------------
 
+# Module-level cache. Single instance when there is no scope-aware
+# override (single-tenant default), one instance per root path when an
+# override is installed (per-(tenant, user) deployments). Keyed by
+# resolved-root path so two scopes pointing at the same root share an
+# instance — important because each FileStorage owns a SQLite handle.
 _storage: FileStorage | None = None
+_storage_by_root: dict[Path, FileStorage] = {}
 
 
 def get_file_storage() -> FileStorage:
+    """Return the FileStorage for the *current* request scope.
+
+    When ``set_upload_storage_dir_override`` is installed, the
+    resolved root is looked up per call and a per-root instance is
+    cached. When no override is installed, the historic singleton
+    behaviour is preserved.
+    """
     global _storage
+    try:
+        from taskforce.application.infrastructure_overrides import (
+            get_upload_storage_dir_override,
+        )
+
+        override = get_upload_storage_dir_override()
+    except Exception:  # pragma: no cover — defensive
+        override = None
+
+    if override is not None:
+        # Per-scope routing. Resolve the root, then cache by it.
+        try:
+            resolved = override()
+        except Exception:  # pragma: no cover — defensive
+            resolved = None
+        if resolved is not None:
+            root = Path(resolved).resolve()
+            cached = _storage_by_root.get(root)
+            if cached is None:
+                cached = FileStorage(root=root)
+                _storage_by_root[root] = cached
+            return cached
+
+    # No override → historic singleton.
     if _storage is None:
         _storage = FileStorage()
     return _storage
@@ -299,6 +364,7 @@ def reset_file_storage() -> None:
     """Reset the cached storage (test helper)."""
     global _storage
     _storage = None
+    _storage_by_root.clear()
 
 
 def reset_root_for_tests(root: Path) -> FileStorage:
