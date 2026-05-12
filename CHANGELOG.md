@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 After v0.2.0 the project is in a stabilization phase: bug fixes, hardening,
 and test coverage only. New features are deferred.
 
+### Fixed
+
+- **Butler `gmail_seen.json` per-user routing (#213).** The butler
+  Gmail tool previously kept a single ``.taskforce/gmail_seen.json``
+  shared across every user in every tenant — fine for single-user
+  dev, a privacy gap in multi-user butler deployments. New framework
+  override hook
+  ``taskforce.application.infrastructure_overrides.set_butler_state_dir_override``
+  lets plugins route the butler agent-package state directory per
+  request scope; the enterprise plugin wires it to
+  ``tenants/{tid}/users/{uid}/butler/``. Standalone default moved
+  from top-level ``.taskforce/gmail_seen.json`` to grouped
+  ``.taskforce/butler/gmail_seen.json`` so a future
+  ``calendar_last_check.json`` etc. sits alongside. Legacy top-level
+  ``gmail_seen.json`` files are abandoned (no migration); the seen-id
+  tracking simply restarts.
+
 ## [0.2.0] - 2026-05-06
 
 This release closes ADR-022 (Multi-Tenant Enterprise Runtime). All seven
