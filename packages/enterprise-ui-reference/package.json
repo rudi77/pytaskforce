@@ -1,0 +1,12 @@
+{
+  "name": "@taskforce/enterprise-ui",
+  "version": "0.0.0-reference",
+  "description": "No-op reference stub that satisfies the framework UI's optional dependency on @taskforce/enterprise-ui. Exists so pytaskforce's CI never needs to clone the private taskforce-enterprise repo. The real plugin is shipped from taskforce-enterprise/web/ and replaces this stub in deployments that install the enterprise package.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["index.js", "README.md"]
+}
