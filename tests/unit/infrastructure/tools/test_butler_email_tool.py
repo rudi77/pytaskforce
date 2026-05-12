@@ -59,18 +59,35 @@ def test_override_routes_seen_path_into_provided_dir(tmp_path: Path):
     assert path == user_root / "gmail_seen.json"
 
 
-def test_override_swallows_provider_exception(tmp_path: Path):
+def test_override_swallows_provider_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """A misbehaving override (e.g. tenant context not bound) must
     not crash the email check — we fall back to the default and the
-    next list call continues working."""
+    next list call continues working. After #222 the failure is
+    logged at ERROR (not warning) so a rename regression doesn't
+    hide silently. structlog goes through its own renderer so we
+    spy on the module logger directly instead of using caplog.
+    """
+    from taskforce_butler.infrastructure.tools import email_tool
+
     def _broken():
         raise RuntimeError("no tenant scope")
 
+    error_calls: list[str] = []
+    monkeypatch.setattr(
+        email_tool.logger,
+        "error",
+        lambda event, **_: error_calls.append(event),
+    )
     infrastructure_overrides.set_butler_state_dir_override(_broken)
 
     path = _resolve_seen_path()
     # Fell back to the default rather than propagating the exception.
     assert path == _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
+    # And the failure was logged at ERROR (was WARNING before #222).
+    assert "butler.email.seen_path_override_failed" in error_calls
 
 
 def test_load_and_save_round_trip_through_override(tmp_path: Path):

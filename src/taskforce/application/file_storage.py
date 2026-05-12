@@ -20,6 +20,28 @@ Layout::
 The service is intentionally process-local: callers acquire a fresh
 SQLite connection per operation so it works under FastAPI's threadpool
 without further locking.
+
+Per-scope caching (#215, #218)
+-----------------------------
+
+When ``set_upload_storage_dir_override`` is installed, ``get_file_storage``
+caches one ``FileStorage`` instance per resolved root path in the
+module-level ``_storage_by_root`` dict. Each instance owns its own
+SQLite handle. **The cache has no eviction policy** — every unique
+``(tenant, user)`` combination that ever resolves through
+``get_file_storage`` keeps a permanent entry until the process exits
+or ``reset_file_storage()`` is called explicitly.
+
+This matches the shape of the per-user caches in
+``taskforce_enterprise.infrastructure.persistence.tenant_scoped_store_factory``
+(state, conversation, wiki, agent-state, …) which the iter-2 docstring
+explicitly calls out as "small deployments only — LRU can come later".
+Both trade-offs are documented; the LRU follow-up is tracked as a
+single framework-wide concern rather than per-cache.
+
+The sanctioned drop path is ``reset_file_storage()`` — invoked by the
+enterprise plugin's ``reset_tenant_scoped_providers`` on teardown so a
+plugin re-install in the same process gets a clean slate.
 """
 
 from __future__ import annotations
@@ -56,21 +78,29 @@ def _default_root() -> Path:
        moving the bucket out of the work dir (existing behaviour).
     3. ``.taskforce/uploads`` — single-tenant default.
     """
+    # #222: separate the ``ImportError`` path (older framework that
+    # genuinely lacks the override hook — fall back silently) from
+    # any other exception (provider misbehaviour or rename regression
+    # — log at ERROR so the operator sees it).
     try:
         from taskforce.application.infrastructure_overrides import (
             get_upload_storage_dir_override,
         )
+    except ImportError:
+        get_upload_storage_dir_override = None  # type: ignore[assignment]
 
-        override_provider = get_upload_storage_dir_override()
-        if override_provider is not None:
-            resolved = override_provider()
-            if resolved is not None:
-                return Path(resolved)
-    except Exception:  # pragma: no cover — defensive
-        logger.warning(
-            "file_storage.upload_root_override_failed",
-            exc_info=True,
-        )
+    if get_upload_storage_dir_override is not None:
+        try:
+            override_provider = get_upload_storage_dir_override()
+            if override_provider is not None:
+                resolved = override_provider()
+                if resolved is not None:
+                    return Path(resolved)
+        except Exception:
+            logger.error(
+                "file_storage.upload_root_override_failed",
+                exc_info=True,
+            )
 
     env_override = os.environ.get("TASKFORCE_UPLOADS_DIR")
     if env_override:
@@ -331,20 +361,38 @@ def get_file_storage() -> FileStorage:
     behaviour is preserved.
     """
     global _storage
+
+    # #222: ``ImportError`` here means an older framework that does
+    # not expose the hook at all — fall through to the singleton.
+    # Any other exception during the override call is loud (ERROR)
+    # so a rename regression doesn't silently revert uploads to one
+    # shared bucket.
     try:
         from taskforce.application.infrastructure_overrides import (
             get_upload_storage_dir_override,
         )
+    except ImportError:
+        get_upload_storage_dir_override = None  # type: ignore[assignment]
 
-        override = get_upload_storage_dir_override()
-    except Exception:  # pragma: no cover — defensive
-        override = None
+    override = None
+    if get_upload_storage_dir_override is not None:
+        try:
+            override = get_upload_storage_dir_override()
+        except Exception:
+            logger.error(
+                "file_storage.upload_root_override_failed",
+                exc_info=True,
+            )
 
     if override is not None:
         # Per-scope routing. Resolve the root, then cache by it.
         try:
             resolved = override()
-        except Exception:  # pragma: no cover — defensive
+        except Exception:
+            logger.error(
+                "file_storage.upload_root_provider_failed",
+                exc_info=True,
+            )
             resolved = None
         if resolved is not None:
             root = Path(resolved).resolve()

@@ -51,24 +51,32 @@ def _resolve_seen_path() -> Path:
     per-(tenant, user). Falls back to ``.taskforce/butler/gmail_seen.json``
     when no override is installed (single-user dev / standalone).
 
-    The override may raise — for example when the resolver runs
-    before tenant context is bound. We swallow the error and fall
-    back to the default rather than corrupting the dedup state with
-    an exception during a routine email check; the override emits
-    its own log line in that case.
+    Error handling (#222) separates two cases:
+
+    * ``ImportError`` from the framework module — an older framework
+      genuinely lacks the hook; fall back silently so the email tool
+      still works.
+    * Any other exception from the provider call — log at ERROR with
+      traceback and fall back. ERROR (not warning) because a
+      misbehaving provider in production is a real bug an operator
+      must see; the previous warning-and-shrug masked rename
+      regressions.
     """
     try:
         from taskforce.application.infrastructure_overrides import (
             get_butler_state_dir_override,
         )
+    except ImportError:
+        return _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
 
+    try:
         override = get_butler_state_dir_override()
         if override is not None:
             base = override()
             if base is not None:
                 return Path(base) / _SEEN_FILE_NAME
-    except Exception:  # pragma: no cover — defensive
-        logger.warning(
+    except Exception:
+        logger.error(
             "butler.email.seen_path_override_failed",
             exc_info=True,
         )

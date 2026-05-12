@@ -215,24 +215,33 @@ class ParallelAgentTool(BaseTool):
         ``<self._work_dir or ".taskforce">/sub_agent_results`` when
         no override is installed — bit-for-bit pre-#212 behaviour.
 
-        The override may raise — for example when no tenant context
-        is bound. We swallow the error and fall back so a routine
-        parallel-agent dispatch doesn't crash because of a resolver
-        misconfiguration; the override implementation logs its own
-        signal.
+        Error handling (#222) separates two cases:
+
+        * ``ImportError`` from the framework module — an older
+          framework genuinely lacks the hook; fall back silently so
+          the tool still works.
+        * Any other exception from the provider call — log at ERROR
+          level with the traceback and fall back. ERROR (not warning)
+          because a misbehaving provider in production is a real bug
+          a operator must see in a log scan; the previous
+          warning-and-shrug masked rename regressions inside the
+          framework.
         """
         try:
             from taskforce.application.infrastructure_overrides import (
                 get_sub_agent_result_dir_override,
             )
+        except ImportError:
+            return Path(self._work_dir or ".taskforce") / "sub_agent_results"
 
+        try:
             override = get_sub_agent_result_dir_override()
             if override is not None:
                 resolved = override()
                 if resolved is not None:
                     return Path(resolved)
-        except Exception:  # pragma: no cover — defensive
-            self._logger.warning(
+        except Exception:
+            self._logger.error(
                 "parallel_agent_tool.result_dir_override_failed",
                 exc_info=True,
             )

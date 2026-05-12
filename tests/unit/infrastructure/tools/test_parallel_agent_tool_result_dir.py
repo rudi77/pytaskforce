@@ -75,13 +75,30 @@ def test_resolve_result_dir_consults_override_per_call(tmp_path: Path):
     assert tool._resolve_result_dir() == tmp_path / "bob" / "sub_agent_results"
 
 
-def test_resolve_result_dir_swallows_override_exception():
+def test_resolve_result_dir_swallows_override_exception(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """A misbehaving override (no tenant scope yet) must not crash a
     routine parallel-dispatch — we fall back to the work_dir default
-    so the parent agent's mission can still complete."""
+    AND log at ERROR (#222) so the operator sees the misbehaviour.
+
+    structlog bypasses stdlib root logger, so we spy on the tool's
+    bound logger directly instead of using caplog.
+    """
     def _broken():
         raise RuntimeError("no tenant scope")
 
     infrastructure_overrides.set_sub_agent_result_dir_override(_broken)
     tool = _make_tool(work_dir=".dev")
+
+    error_calls: list[str] = []
+    monkeypatch.setattr(
+        tool._logger,
+        "error",
+        lambda event, **_: error_calls.append(event),
+    )
+
     assert tool._resolve_result_dir() == Path(".dev") / "sub_agent_results"
+    # ERROR-level log (was WARNING pre-#222) so a rename regression
+    # in the framework can't hide behind a warning-and-shrug.
+    assert "parallel_agent_tool.result_dir_override_failed" in error_calls
