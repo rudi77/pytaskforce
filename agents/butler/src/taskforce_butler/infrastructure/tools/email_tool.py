@@ -29,9 +29,50 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # Default location for the seen-message-IDs state file.
-_DEFAULT_SEEN_PATH = Path(".taskforce") / "gmail_seen.json"
+#
+# Pre-#213 this was ``.taskforce/gmail_seen.json`` (single top-level
+# file shared across every user). The new default groups butler-
+# specific state under ``.taskforce/butler/`` so a future
+# ``calendar_last_check.json`` etc. can sit alongside without
+# cluttering the top level. Enterprise plugins route this directory
+# per-(tenant, user) via ``set_butler_state_dir_override`` so
+# multi-user deployments don't share seen-id tracking across users.
+_DEFAULT_BUTLER_DIR = Path(".taskforce") / "butler"
+_SEEN_FILE_NAME = "gmail_seen.json"
 # Cap the persisted set so the file doesn't grow unbounded.
 _MAX_SEEN_IDS = 500
+
+
+def _resolve_seen_path() -> Path:
+    """Resolve the gmail_seen.json path for the *current* request scope.
+
+    Consults :func:`taskforce.application.infrastructure_overrides.get_butler_state_dir_override`
+    at write-time so a process-shared tool instance can still route
+    per-(tenant, user). Falls back to ``.taskforce/butler/gmail_seen.json``
+    when no override is installed (single-user dev / standalone).
+
+    The override may raise — for example when the resolver runs
+    before tenant context is bound. We swallow the error and fall
+    back to the default rather than corrupting the dedup state with
+    an exception during a routine email check; the override emits
+    its own log line in that case.
+    """
+    try:
+        from taskforce.application.infrastructure_overrides import (
+            get_butler_state_dir_override,
+        )
+
+        override = get_butler_state_dir_override()
+        if override is not None:
+            base = override()
+            if base is not None:
+                return Path(base) / _SEEN_FILE_NAME
+    except Exception:  # pragma: no cover — defensive
+        logger.warning(
+            "butler.email.seen_path_override_failed",
+            exc_info=True,
+        )
+    return _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
 
 
 class GmailTool(BaseTool):
@@ -320,8 +361,14 @@ async def _list_messages(service: Any, kwargs: dict[str, Any]) -> dict[str, Any]
 
 
 def _load_seen_ids(path: Path | None = None) -> set[str]:
-    """Load previously seen message IDs from disk."""
-    p = path or _DEFAULT_SEEN_PATH
+    """Load previously seen message IDs from disk.
+
+    When ``path`` is ``None`` the active per-scope path is resolved
+    via :func:`_resolve_seen_path` (enterprise plugins route this
+    per-(tenant, user); standalone falls back to ``.taskforce/butler/``).
+    Tests can still pass an explicit path to pin the location.
+    """
+    p = path or _resolve_seen_path()
     if not p.exists():
         return set()
     try:
@@ -333,7 +380,7 @@ def _load_seen_ids(path: Path | None = None) -> set[str]:
 
 def _save_seen_ids(ids: set[str], path: Path | None = None) -> None:
     """Persist seen message IDs to disk, pruning if necessary."""
-    p = path or _DEFAULT_SEEN_PATH
+    p = path or _resolve_seen_path()
     # Prune to cap — keep the most recent IDs (arbitrary, but bounded).
     id_list = list(ids)
     if len(id_list) > _MAX_SEEN_IDS:

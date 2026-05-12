@@ -84,6 +84,11 @@ _standing_goal_store_override: Callable[[str], Any] | None = None
 _runtime_checkpoint_store_override: Callable[[str], Any] | None = None
 _pending_channel_question_store_override: Callable[[str], Any] | None = None
 _tool_result_store_override: Callable[[str], Any] | None = None
+# Butler agent-package state directory (gmail seen ids, future butler
+# per-tool state). Override-hook callable returning the directory the
+# butler tools should write to for the current request scope. See
+# ``set_butler_state_dir_override`` for the contract.
+_butler_state_dir_override: Callable[[], Any] | None = None
 
 
 def set_agent_registry_override(
@@ -328,6 +333,36 @@ def set_tool_result_store_override(
 def get_tool_result_store_override() -> Callable[[str], Any] | None:
     """Return the currently installed tool-result-store override, if any."""
     return _tool_result_store_override
+
+
+def set_butler_state_dir_override(
+    provider: Callable[[], Any] | None,
+) -> None:
+    """Install (or clear) an override for the butler agent's state
+    directory.
+
+    The butler agent package's tools (``GmailTool`` today; calendar
+    last-check, reminder bookkeeping, ... in the future) persist
+    small JSON files alongside one another. The framework default
+    keeps them at ``${WORK_DIR}/butler/`` so a standalone install
+    sees a single flat directory. Enterprise plugins route the
+    directory per-(tenant, user) so each user's butler runs against
+    its own seen-ids / last-check state.
+
+    The override is a callable returning the directory ``Path`` for
+    the *current* request scope — consulted at write-time, not at
+    tool construction, so a process-shared tool instance can still
+    route per-user. The path must already be safe to use as a
+    filesystem location; the resolver does not re-validate the
+    segments (defence in depth lives at the resolver layer).
+    """
+    global _butler_state_dir_override
+    _butler_state_dir_override = provider
+
+
+def get_butler_state_dir_override() -> Callable[[], Any] | None:
+    """Return the currently installed butler-state-dir override, if any."""
+    return _butler_state_dir_override
 
 
 def set_workflow_definition_store_override(
@@ -775,6 +810,7 @@ def clear_infrastructure_overrides() -> None:
     global _runtime_checkpoint_store_override
     global _pending_channel_question_store_override
     global _tool_result_store_override
+    global _butler_state_dir_override
     _agent_registry_override = None
     _deployment_manifest_override = None
     _settings_store_override = None
@@ -805,3 +841,4 @@ def clear_infrastructure_overrides() -> None:
     _runtime_checkpoint_store_override = None
     _pending_channel_question_store_override = None
     _tool_result_store_override = None
+    _butler_state_dir_override = None
