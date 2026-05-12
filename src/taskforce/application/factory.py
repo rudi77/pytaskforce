@@ -417,10 +417,15 @@ class AgentFactory:
         if "wiki" not in tool_names:
             return None, None
 
-        store_dir = ToolBuilder.resolve_wiki_store_dir(config, work_dir_override=work_dir_override)
-        from taskforce.infrastructure.memory.file_wiki_store import FileWikiStore
-
-        wiki_store = FileWikiStore(store_dir)
+        # Route through InfrastructureBuilder so the wiki store override
+        # (installed by enterprise plugin for per-tenant/user scoping) is
+        # consulted. Without an override this falls back to a flat
+        # FileWikiStore at ``<work_dir>/memory/wiki`` — bit-for-bit
+        # single-tenant behaviour.
+        work_dir = work_dir_override or config.get("persistence", {}).get(
+            "work_dir", ".taskforce"
+        )
+        wiki_store = self.infra_builder.build_wiki_store(work_dir=work_dir)
         injection_cfg = config.get("wiki", {}).get("context_injection")
         wiki_context_config = (
             WikiContextConfig.from_dict(injection_cfg) if injection_cfg else WikiContextConfig()

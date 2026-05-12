@@ -477,10 +477,34 @@ class ToolRegistry:
             if tool_type == "FetchResultTool" and self._tool_result_store:
                 tool_params["tool_result_store"] = self._tool_result_store
 
-            # Special handling for WikiTool - inject store_dir so the tool
-            # builds its FileWikiStore against the configured root.
-            if tool_type == "WikiTool" and self._wiki_store_dir:
-                tool_params.setdefault("store_dir", self._wiki_store_dir)
+            # Special handling for WikiTool — pick a store implementation that
+            # respects per-tenant/user scoping when a plugin (typically
+            # ``taskforce-enterprise``) has installed ``set_wiki_store_override``.
+            # Falling back to the plain ``store_dir`` injection keeps single-
+            # tenant deployments unchanged.
+            if tool_type == "WikiTool":
+                from taskforce.application.infrastructure_overrides import (
+                    get_wiki_store_override,
+                )
+
+                wiki_override = get_wiki_store_override()
+                if wiki_override is not None:
+                    # Enterprise providers ignore the work_dir arg and read the
+                    # current (tenant, user) from ContextVars; pass the
+                    # configured root anyway for any non-tenant-scoped
+                    # overrides that *do* honour it.
+                    fallback_work_dir = self._wiki_store_dir or ".taskforce"
+                    try:
+                        tool_params.setdefault("store", wiki_override(fallback_work_dir))
+                    except Exception:  # pragma: no cover — defensive: bad override mustn't break tool build
+                        self._logger.warning(
+                            "wiki_store.override_failed",
+                            exc_info=True,
+                        )
+                        if self._wiki_store_dir:
+                            tool_params.setdefault("store_dir", self._wiki_store_dir)
+                elif self._wiki_store_dir:
+                    tool_params.setdefault("store_dir", self._wiki_store_dir)
 
             # Special handling for SendNotificationTool - inject gateway + defaults
             if tool_type == "SendNotificationTool":
