@@ -1211,6 +1211,95 @@ export function useTestChannel() {
   });
 }
 
+// ----- Channel bots (multi-bot per channel) --------------------------------
+
+export type BotOwnerKind = "tenant" | "user";
+export type PairingMode = "implicit" | "paired" | "anonymous";
+
+export interface BotConfig {
+  id: string;
+  channel_type: string;
+  bot_token: string;
+  owner_kind: BotOwnerKind;
+  owner_user_id: string | null;
+  default_agent: string | null;
+  pairing_mode: PairingMode | null;
+  enabled: boolean;
+}
+
+export interface BotListResponse {
+  bots: BotConfig[];
+}
+
+export const channelBotKeys = {
+  list: ["settings", "channels", "bots"] as const,
+};
+
+export function useChannelBots() {
+  return useQuery<BotListResponse>({
+    queryKey: channelBotKeys.list,
+    queryFn: () => apiFetch<BotListResponse>("/api/v1/settings/channels/bots"),
+  });
+}
+
+export function useCreateChannelBot() {
+  const qc = useQueryClient();
+  return useMutation<BotConfig, Error, BotConfig>({
+    mutationFn: (bot) =>
+      apiFetch<BotConfig>("/api/v1/settings/channels/bots", {
+        method: "POST",
+        body: bot,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+  });
+}
+
+export function useUpdateChannelBot() {
+  const qc = useQueryClient();
+  return useMutation<BotConfig, Error, BotConfig>({
+    mutationFn: (bot) =>
+      apiFetch<BotConfig>(
+        `/api/v1/settings/channels/bots/${encodeURIComponent(bot.id)}`,
+        {
+          method: "PATCH",
+          body: bot,
+        },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+  });
+}
+
+export function useDeleteChannelBot() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (botId) =>
+      apiFetch<void>(`/api/v1/settings/channels/bots/${encodeURIComponent(botId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: channelBotKeys.list }),
+  });
+}
+
+export function useTestChannelBot() {
+  return useMutation<
+    ConnectionTestResult,
+    Error,
+    { botId: string; recipient: string; message?: string }
+  >({
+    mutationFn: ({ botId, recipient, message }) =>
+      apiFetch<ConnectionTestResult>(
+        `/api/v1/settings/channels/bots/${encodeURIComponent(botId)}/test`,
+        {
+          method: "POST",
+          body: {
+            recipient,
+            message: message ?? "Taskforce test message — bot is wired up.",
+          },
+        },
+      ),
+  });
+}
+
 // ----- OAuth connections ---------------------------------------------------
 
 export interface OAuthConnection {

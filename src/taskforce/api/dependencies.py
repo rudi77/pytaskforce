@@ -89,6 +89,35 @@ def require_permission(permission: str):
     return dependency
 
 
+def request_user_id(request: Request) -> str | None:
+    """Return the calling user's id from ``request.state.user``.
+
+    Returns ``None`` when no auth middleware has attached a user (the
+    framework-only / single-user case). Used by route handlers that
+    need owner-aware authorization (e.g. per-user bot configs).
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return None
+    user_id = getattr(user, "user_id", None)
+    return str(user_id) if user_id is not None else None
+
+
+def request_has_permission(request: Request, permission: str) -> bool:
+    """Return True when the calling user holds ``permission``.
+
+    Mirrors :func:`require_permission` but returns a bool instead of
+    raising. With no auth middleware (single-user mode) every check
+    passes — same fail-open default ``require_permission`` uses.
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return True
+    perms = getattr(user, "permissions", set()) or set()
+    perm_values = {getattr(item, "value", str(item)) for item in perms}
+    return permission in perm_values
+
+
 # ---------------------------------------------------------------------------
 # Agent Deployment (registry + lifecycle service)
 # ---------------------------------------------------------------------------

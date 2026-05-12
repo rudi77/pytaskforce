@@ -1,132 +1,413 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useSettingsSection,
-  useUpdateSettingsSection,
-  useTestChannel,
+  useChannelBots,
+  useCreateChannelBot,
+  useUpdateChannelBot,
+  useDeleteChannelBot,
+  useTestChannelBot,
+  type BotConfig,
+  type BotOwnerKind,
+  type PairingMode,
   type ConnectionTestResult,
 } from "@/api/queries";
+import { useCurrentPermissions } from "@/lib/permissions";
 import ForbiddenNotice, { isForbiddenError } from "@/features/settings/ForbiddenNotice";
 
-interface ChannelConfig {
-  enabled?: boolean;
-  bot_token?: string;
-  app_id?: string;
-  app_password?: string;
-}
-
-type ChannelsData = Record<string, ChannelConfig>;
-
-interface ChannelDef {
-  id: string;
-  label: string;
-  description: string;
-  fields: Array<{
-    name: keyof ChannelConfig;
-    label: string;
-    placeholder: string;
-    secret?: boolean;
-  }>;
-  testHint: string;
-}
-
-const CHANNELS: ChannelDef[] = [
-  {
-    id: "telegram",
-    label: "Telegram",
-    description: "Long-poll-based bot connector (no public webhook needed).",
-    fields: [
-      {
-        name: "bot_token",
-        label: "Bot token",
-        placeholder: "123456:ABC-…",
-        secret: true,
-      },
-    ],
-    testHint: "Recipient is the chat_id of your bot (DM your bot once to get it).",
-  },
-  {
-    id: "teams",
-    label: "Microsoft Teams",
-    description: "Bot Framework outbound. Inbound requires the webhook config in Azure.",
-    fields: [
-      { name: "app_id", label: "App ID", placeholder: "00000000-0000-…" },
-      {
-        name: "app_password",
-        label: "App secret",
-        placeholder: "client secret",
-        secret: true,
-      },
-    ],
-    testHint: "Recipient is the Teams conversation reference.",
-  },
+const CHANNEL_TYPES = [
+  { id: "telegram", label: "Telegram" },
+  { id: "teams", label: "Microsoft Teams" },
 ];
 
+const PAIRING_HINTS: Record<PairingMode, string> = {
+  implicit: "Bot belongs to one user — every message routes to that user, no /link needed.",
+  paired: "Each chat must run /link <code> once to claim its user.",
+  anonymous: "No per-user routing — all messages handled by default_agent without user context.",
+};
+
+interface BotDraft {
+  id: string;
+  channel_type: string;
+  bot_token: string;
+  owner_kind: BotOwnerKind;
+  owner_user_id: string | null;
+  default_agent: string;
+  pairing_mode: PairingMode | "";
+  enabled: boolean;
+}
+
+function emptyDraft(currentUserId: string | null): BotDraft {
+  return {
+    id: "",
+    channel_type: "telegram",
+    bot_token: "",
+    owner_kind: "user",
+    owner_user_id: currentUserId,
+    default_agent: "",
+    pairing_mode: "",
+    enabled: true,
+  };
+}
+
+function draftToConfig(draft: BotDraft): BotConfig {
+  return {
+    id: draft.id.trim(),
+    channel_type: draft.channel_type,
+    bot_token: draft.bot_token,
+    owner_kind: draft.owner_kind,
+    owner_user_id: draft.owner_kind === "user" ? draft.owner_user_id : null,
+    default_agent: draft.default_agent.trim() || null,
+    pairing_mode: (draft.pairing_mode || null) as PairingMode | null,
+    enabled: draft.enabled,
+  };
+}
+
+function configToDraft(bot: BotConfig): BotDraft {
+  return {
+    id: bot.id,
+    channel_type: bot.channel_type,
+    bot_token: bot.bot_token ?? "",
+    owner_kind: bot.owner_kind,
+    owner_user_id: bot.owner_user_id,
+    default_agent: bot.default_agent ?? "",
+    pairing_mode: bot.pairing_mode ?? "",
+    enabled: bot.enabled,
+  };
+}
+
+function BotRow({
+  bot,
+  currentUserId,
+  canManage,
+  onEdit,
+  onDelete,
+  onTest,
+}: {
+  bot: BotConfig;
+  currentUserId: string | null;
+  canManage: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onTest: (recipient: string) => Promise<ConnectionTestResult>;
+}) {
+  const [recipient, setRecipient] = useState("");
+  const [result, setResult] = useState<ConnectionTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const isOwn = bot.owner_kind === "user" && bot.owner_user_id === currentUserId;
+  const ownerBadge =
+    bot.owner_kind === "tenant" ? (
+      <Badge variant="default">Tenant-shared</Badge>
+    ) : isOwn ? (
+      <Badge variant="success">Mine</Badge>
+    ) : (
+      <Badge variant="secondary">User: {bot.owner_user_id?.slice(0, 8)}…</Badge>
+    );
+
+  const handleTest = async () => {
+    if (!recipient) return;
+    setTesting(true);
+    setResult(null);
+    try {
+      setResult(await onTest(recipient));
+    } catch (err) {
+      setResult({
+        ok: false,
+        detail: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">{bot.id}</CardTitle>
+            {ownerBadge}
+            <Badge variant="outline">{bot.channel_type}</Badge>
+            {bot.pairing_mode ? (
+              <Badge variant="secondary">pairing: {bot.pairing_mode}</Badge>
+            ) : null}
+            {!bot.enabled ? <Badge variant="warning">disabled</Badge> : null}
+          </div>
+          <CardDescription>
+            {bot.default_agent ? `Default agent: ${bot.default_agent}` : "Default agent: tenant default"}
+            {bot.pairing_mode ? ` · ${PAIRING_HINTS[bot.pairing_mode]}` : ""}
+          </CardDescription>
+          <div className="text-xs text-muted-foreground">
+            Token: <code>{bot.bot_token || "—"}</code>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {canManage ? (
+            <>
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                Edit
+              </Button>
+              <Button variant="outline" size="sm" onClick={onDelete}>
+                Delete
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 border-t pt-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder="recipient id (e.g. Telegram chat_id)"
+            className="max-w-xs"
+          />
+          <Button variant="outline" onClick={handleTest} disabled={testing || !recipient}>
+            {testing ? "Sending…" : "Send test"}
+          </Button>
+          {result ? (
+            <span className={result.ok ? "text-xs text-success" : "text-xs text-destructive"}>
+              {result.detail}
+            </span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BotForm({
+  draft,
+  setDraft,
+  onSave,
+  onCancel,
+  saving,
+  isEdit,
+  isAdmin,
+  currentUserId,
+}: {
+  draft: BotDraft;
+  setDraft: (d: BotDraft) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  isEdit: boolean;
+  isAdmin: boolean;
+  currentUserId: string | null;
+}) {
+  return (
+    <Card className="border-primary">
+      <CardHeader>
+        <CardTitle className="text-base">{isEdit ? `Edit bot: ${draft.id}` : "Add bot"}</CardTitle>
+        <CardDescription>
+          Personal bots are private to you. Tenant-shared bots require admin
+          permission and are visible to everyone in the tenant.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="bot-id">
+            Bot id (slug)
+          </label>
+          <Input
+            id="bot-id"
+            value={draft.id}
+            onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+            placeholder="rudi-butler"
+            disabled={isEdit}
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Channel type</label>
+          <select
+            value={draft.channel_type}
+            onChange={(e) => setDraft({ ...draft, channel_type: e.target.value })}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            {CHANNEL_TYPES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="bot-token">
+            Bot token
+          </label>
+          <Input
+            id="bot-token"
+            type="password"
+            value={draft.bot_token}
+            onChange={(e) => setDraft({ ...draft, bot_token: e.target.value })}
+            placeholder="123456:ABC-…"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Owner</label>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={draft.owner_kind === "user"}
+                onChange={() =>
+                  setDraft({ ...draft, owner_kind: "user", owner_user_id: currentUserId })
+                }
+              />
+              Just me (personal bot)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={draft.owner_kind === "tenant"}
+                disabled={!isAdmin}
+                onChange={() => setDraft({ ...draft, owner_kind: "tenant", owner_user_id: null })}
+              />
+              Tenant-shared
+              {!isAdmin ? (
+                <span className="text-xs text-muted-foreground">(admin only)</span>
+              ) : null}
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium" htmlFor="bot-default-agent">
+            Default agent (optional)
+          </label>
+          <Input
+            id="bot-default-agent"
+            value={draft.default_agent}
+            onChange={(e) => setDraft({ ...draft, default_agent: e.target.value })}
+            placeholder="butler"
+            autoComplete="off"
+          />
+          <p className="text-xs text-muted-foreground">
+            Which agent answers messages on this bot. Empty = tenant default.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Pairing mode</label>
+          <select
+            value={draft.pairing_mode}
+            onChange={(e) =>
+              setDraft({ ...draft, pairing_mode: e.target.value as PairingMode | "" })
+            }
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="">
+              auto (
+              {draft.owner_kind === "user" ? "implicit" : "paired"})
+            </option>
+            <option value="implicit">implicit — owner only, no /link</option>
+            <option value="paired">paired — /link required</option>
+            <option value="anonymous">anonymous — no per-user routing</option>
+          </select>
+          {draft.pairing_mode ? (
+            <p className="text-xs text-muted-foreground">{PAIRING_HINTS[draft.pairing_mode]}</p>
+          ) : null}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+          />
+          Enabled
+        </label>
+
+        <div className="flex items-center gap-2 border-t pt-3">
+          <Button onClick={onSave} disabled={saving || !draft.id || !draft.bot_token}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Add bot"}
+          </Button>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ChannelsTab() {
-  const sectionQuery = useSettingsSection<ChannelsData>("channels");
-  const update = useUpdateSettingsSection<ChannelsData>();
-  const probe = useTestChannel();
+  const botsQuery = useChannelBots();
+  const permissions = useCurrentPermissions();
+  const createBot = useCreateChannelBot();
+  const updateBot = useUpdateChannelBot();
+  const deleteBot = useDeleteChannelBot();
+  const testBot = useTestChannelBot();
 
-  const stored: ChannelsData = sectionQuery.data?.data ?? {};
-  const [drafts, setDrafts] = useState<ChannelsData>({});
-  const [recipients, setRecipients] = useState<Record<string, string>>({});
-  const [results, setResults] = useState<Record<string, ConnectionTestResult>>({});
+  const currentUserId = permissions.data?.userId ?? null;
+  const isAdmin = permissions.can("tenant:manage");
 
-  useEffect(() => {
-    setDrafts({});
-  }, [sectionQuery.data]);
+  const [draft, setDraft] = useState<BotDraft | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  if (isForbiddenError(sectionQuery.error)) {
-    return <ForbiddenNotice error={sectionQuery.error} area="channel settings" />;
+  if (isForbiddenError(botsQuery.error)) {
+    return <ForbiddenNotice error={botsQuery.error} area="channel bot settings" />;
   }
 
-  const setField = (channel: string, field: keyof ChannelConfig, value: string | boolean) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [channel]: { ...(prev[channel] ?? stored[channel] ?? {}), [field]: value },
-    }));
+  if (botsQuery.isLoading) {
+    return <Skeleton className="h-32 w-full" />;
+  }
+
+  const bots = botsQuery.data?.bots ?? [];
+  const myBots = bots.filter((b) => b.owner_kind === "user" && b.owner_user_id === currentUserId);
+  const sharedBots = bots.filter((b) => b.owner_kind === "tenant");
+  const otherUserBots = bots.filter(
+    (b) => b.owner_kind === "user" && b.owner_user_id !== currentUserId,
+  );
+
+  const startAdd = (ownerKind: BotOwnerKind) =>
+    setDraft({ ...emptyDraft(currentUserId), owner_kind: ownerKind, owner_user_id: ownerKind === "user" ? currentUserId : null });
+
+  const startEdit = (bot: BotConfig) => {
+    setEditingId(bot.id);
+    setDraft(configToDraft(bot));
   };
 
-  const saveChannel = (channel: string) => {
-    const merged: ChannelsData = { ...stored };
-    const next = drafts[channel];
-    if (next) merged[channel] = { ...(merged[channel] ?? {}), ...next };
-    update.mutate(
-      { section: "channels", data: merged },
-      {
-        onSuccess: () => {
-          setDrafts((prev) => {
-            const { [channel]: _omit, ...rest } = prev;
-            return rest;
-          });
-        },
-      },
-    );
-  };
-
-  const testChannel = async (channel: string) => {
-    const recipient = recipients[channel];
-    if (!recipient) {
-      setResults((prev) => ({
-        ...prev,
-        [channel]: { ok: false, detail: "Recipient is required." },
-      }));
-      return;
-    }
-    setResults((prev) => ({ ...prev, [channel]: { ok: false, detail: "Sending…" } }));
+  const handleSave = async () => {
+    if (!draft) return;
+    const config = draftToConfig(draft);
     try {
-      const result = await probe.mutateAsync({ channel, recipient });
-      setResults((prev) => ({ ...prev, [channel]: result }));
+      if (editingId) {
+        await updateBot.mutateAsync(config);
+      } else {
+        await createBot.mutateAsync(config);
+      }
+      setDraft(null);
+      setEditingId(null);
     } catch (err) {
-      setResults((prev) => ({
-        ...prev,
-        [channel]: { ok: false, detail: err instanceof Error ? err.message : "Unknown error" },
-      }));
+      const msg = err instanceof Error ? err.message : "Save failed";
+      alert(msg);
     }
   };
+
+  const handleDelete = async (botId: string) => {
+    if (!confirm(`Delete bot "${botId}"? This cannot be undone.`)) return;
+    try {
+      await deleteBot.mutateAsync(botId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Delete failed";
+      alert(msg);
+    }
+  };
+
+  const handleTest = (botId: string) => async (recipient: string) =>
+    testBot.mutateAsync({ botId, recipient });
+
+  const saving = createBot.isPending || updateBot.isPending;
 
   return (
     <div className="space-y-4">
@@ -134,97 +415,114 @@ export default function ChannelsTab() {
         <CardHeader>
           <CardTitle>Communication Channels</CardTitle>
           <CardDescription>
-            Configure how the agent reaches you proactively. Credentials are encrypted at rest;
-            the gateway picks up new values on the next request.
+            Configure bots for Telegram and (later) Teams. Personal bots only deliver
+            messages to you. Tenant-shared bots can be used by every user in the tenant via
+            the <code>/link</code> pairing flow. After adding or removing a bot, restart the
+            backend so the new polling loops attach.
           </CardDescription>
         </CardHeader>
       </Card>
 
-      {CHANNELS.map((c) => {
-        const current: ChannelConfig = { ...(stored[c.id] ?? {}), ...(drafts[c.id] ?? {}) };
-        const dirty = Boolean(drafts[c.id]);
-        const result = results[c.id];
-        const isEnabled = current.enabled !== false;
-        return (
-          <Card key={c.id}>
-            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-              <div>
-                <CardTitle className="text-base">{c.label}</CardTitle>
-                <CardDescription>{c.description}</CardDescription>
-              </div>
-              {Object.keys(stored[c.id] ?? {}).length > 0 ? (
-                <Badge variant={isEnabled ? "success" : "secondary"}>
-                  {isEnabled ? "Configured" : "Disabled"}
-                </Badge>
-              ) : (
-                <Badge variant="secondary">Not configured</Badge>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {c.fields.map((field) => (
-                <div key={field.name} className="space-y-1.5">
-                  <label className="text-sm font-medium" htmlFor={`${c.id}-${field.name}`}>
-                    {field.label}
-                  </label>
-                  <Input
-                    id={`${c.id}-${field.name}`}
-                    type={field.secret ? "password" : "text"}
-                    autoComplete="off"
-                    placeholder={field.placeholder}
-                    value={(current[field.name] as string | undefined) ?? ""}
-                    onChange={(e) => setField(c.id, field.name, e.target.value)}
-                  />
-                </div>
-              ))}
+      {draft ? (
+        <BotForm
+          draft={draft}
+          setDraft={setDraft}
+          onSave={handleSave}
+          onCancel={() => {
+            setDraft(null);
+            setEditingId(null);
+          }}
+          saving={saving}
+          isEdit={editingId !== null}
+          isAdmin={isAdmin}
+          currentUserId={currentUserId}
+        />
+      ) : null}
 
-              <label className="flex items-center gap-2 pt-1 text-sm">
-                <input
-                  type="checkbox"
-                  checked={isEnabled}
-                  onChange={(e) => setField(c.id, "enabled", e.target.checked)}
-                />
-                Enabled
-              </label>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">My personal bots</CardTitle>
+            <CardDescription>Only delivered to your user account.</CardDescription>
+          </div>
+          {!draft ? (
+            <Button onClick={() => startAdd("user")}>Add personal bot</Button>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {myBots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No personal bots yet.</p>
+          ) : (
+            myBots.map((bot) => (
+              <BotRow
+                key={bot.id}
+                bot={bot}
+                currentUserId={currentUserId}
+                canManage
+                onEdit={() => startEdit(bot)}
+                onDelete={() => handleDelete(bot.id)}
+                onTest={handleTest(bot.id)}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
 
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button onClick={() => saveChannel(c.id)} disabled={!dirty || update.isPending}>
-                  {update.isPending ? "Saving…" : "Save"}
-                </Button>
-              </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">Tenant-shared bots</CardTitle>
+            <CardDescription>
+              Visible to every user in the tenant. Editable only by admins.
+            </CardDescription>
+          </div>
+          {!draft && isAdmin ? (
+            <Button onClick={() => startAdd("tenant")}>Add shared bot</Button>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {sharedBots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No tenant-shared bots yet.</p>
+          ) : (
+            sharedBots.map((bot) => (
+              <BotRow
+                key={bot.id}
+                bot={bot}
+                currentUserId={currentUserId}
+                canManage={isAdmin}
+                onEdit={() => startEdit(bot)}
+                onDelete={() => handleDelete(bot.id)}
+                onTest={handleTest(bot.id)}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
 
-              <div className="space-y-1.5 border-t pt-3">
-                <p className="text-xs text-muted-foreground">{c.testHint}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    value={recipients[c.id] ?? ""}
-                    onChange={(e) =>
-                      setRecipients((prev) => ({ ...prev, [c.id]: e.target.value }))
-                    }
-                    placeholder="recipient id"
-                    className="max-w-xs"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => testChannel(c.id)}
-                    disabled={probe.isPending}
-                  >
-                    Send test
-                  </Button>
-                  {result ? (
-                    <span
-                      className={
-                        result.ok ? "text-xs text-success" : "text-xs text-destructive"
-                      }
-                    >
-                      {result.detail}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
+      {isAdmin && otherUserBots.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Other users' personal bots</CardTitle>
+            <CardDescription>
+              Visible to admins for inventory; tokens are masked. Use these to revoke when
+              a user can no longer manage their bot themselves.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {otherUserBots.map((bot) => (
+              <BotRow
+                key={bot.id}
+                bot={bot}
+                currentUserId={currentUserId}
+                canManage={isAdmin}
+                onEdit={() => startEdit(bot)}
+                onDelete={() => handleDelete(bot.id)}
+                onTest={handleTest(bot.id)}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

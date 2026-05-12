@@ -412,11 +412,24 @@ class InfrastructureBuilder:
         if override is not None:
             return override(work_dir)
 
+        from taskforce.core.domain.settings import CHANNELS, parse_channels_section
         from taskforce.infrastructure.communication.gateway_registry import (
             build_gateway_components,
         )
 
-        return build_gateway_components(work_dir=work_dir)
+        # Pull bot configs from the settings store. Falls back to env-var
+        # legacy mode when the store is empty or unavailable.
+        bot_configs = []
+        try:
+            store = self.build_settings_store(work_dir=work_dir)
+            bot_configs = parse_channels_section(store.get(CHANNELS))
+        except Exception:  # noqa: BLE001 — settings store unavailable shouldn't break gateway
+            self._logger.warning(
+                "gateway.settings_store_unavailable",
+                exc_info=True,
+            )
+
+        return build_gateway_components(work_dir=work_dir, bot_configs=bot_configs)
 
     # -------------------------------------------------------------------------
     # Runtime Tracker
