@@ -6,6 +6,8 @@ import pytest
 
 pytest.importorskip("fastapi")
 
+from datetime import UTC
+
 from fastapi.testclient import TestClient
 
 from taskforce.api.server import create_app
@@ -230,7 +232,6 @@ class TestHandleWebhook:
             adapter.verify_signature = MagicMock(return_value=False)
             return {"telegram": adapter}
 
-
         app = client.app
         app.dependency_overrides[get_inbound_adapters] = bad_adapters
 
@@ -313,3 +314,95 @@ class TestListChannels:
         body = response.json()
         assert "channels" in body
         assert sorted(body["channels"]) == ["teams", "telegram"]
+
+
+class TestLinkCodeEndpoints:
+    """Tests for the issue #162 link-code mint + revoke endpoints."""
+
+    @pytest.fixture
+    def link_client(self):
+        from taskforce.api.dependencies import get_channel_link_registry
+        from taskforce.infrastructure.communication.channel_link_registry import (
+            InMemoryChannelLinkRegistry,
+        )
+
+        registry = InMemoryChannelLinkRegistry()
+        app = create_app()
+        app.dependency_overrides[get_channel_link_registry] = lambda: registry
+        yield TestClient(app), registry
+        app.dependency_overrides.clear()
+
+    def test_mint_link_code_default_ttl(self, link_client):
+        client, _registry = link_client
+        response = client.post("/api/v1/gateway/telegram/link-codes", json={})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["channel"] == "telegram"
+        assert body["code"].isdigit()
+        assert len(body["code"]) == 6
+        assert body["ttl_seconds"] == 600
+        assert body["expires_at"]
+
+    def test_mint_link_code_custom_ttl(self, link_client):
+        client, _registry = link_client
+        response = client.post(
+            "/api/v1/gateway/telegram/link-codes",
+            json={"ttl_seconds": 90},
+        )
+        assert response.status_code == 200
+        assert response.json()["ttl_seconds"] == 90
+
+    def test_mint_link_code_rejects_invalid_ttl(self, link_client):
+        client, _registry = link_client
+        response = client.post(
+            "/api/v1/gateway/telegram/link-codes",
+            json={"ttl_seconds": 10},
+        )
+        assert response.status_code == 422
+
+    def test_mint_then_consume_writes_to_registry(self, link_client):
+        client, registry = link_client
+        mint = client.post("/api/v1/gateway/telegram/link-codes", json={}).json()
+
+        # Mint endpoint should have populated the pending bucket.
+        assert mint["code"] in registry._pending["telegram"]
+        record = registry._pending["telegram"][mint["code"]]
+        assert record["tenant_id"] == "default"
+        assert record["user_id"] == "default"
+
+    def test_delete_my_links_with_no_links(self, link_client):
+        client, _registry = link_client
+        response = client.delete("/api/v1/gateway/telegram/links/me")
+        assert response.status_code == 200
+        assert response.json() == {"channel": "telegram", "removed": 0}
+
+    def test_delete_my_links_removes_caller_links(self, link_client):
+        from datetime import datetime
+
+        client, registry = link_client
+        # Pre-seed two links directly so we don't need cross-loop async calls.
+        now = datetime.now(UTC)
+        registry._links["telegram"] = {
+            "tg-1": {
+                "tenant_id": "default",
+                "user_id": "default",
+                "linked_at": now,
+            },
+            "tg-2": {
+                "tenant_id": "default",
+                "user_id": "default",
+                "linked_at": now,
+            },
+        }
+        # And one link owned by a different user that must be left alone.
+        registry._links.setdefault("telegram", {})["tg-3"] = {
+            "tenant_id": "default",
+            "user_id": "someone-else",
+            "linked_at": now,
+        }
+
+        response = client.delete("/api/v1/gateway/telegram/links/me")
+        assert response.status_code == 200
+        assert response.json() == {"channel": "telegram", "removed": 2}
+        # tg-3 must still be present.
+        assert "tg-3" in registry._links["telegram"]

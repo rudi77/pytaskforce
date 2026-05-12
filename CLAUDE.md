@@ -283,7 +283,7 @@ them. The `ButlerProtocol` and butler-only contracts remain inside the
 | `LLMProviderProtocol` | `llm.py` | LLM provider abstraction |
 | `ToolProtocol` | `tools.py` | Tool execution interface (also defines `ApprovalRiskLevel` enum) |
 | `WikiStoreProtocol` | `wiki_store.py` | Wiki-style long-term memory storage (ADR-020) |
-| `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol` | `gateway.py` | Communication Gateway contracts (incl. opaque-recipient resolution extension point) |
+| `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol`, `ChannelLinkRegistryProtocol` | `gateway.py` | Communication Gateway contracts (incl. opaque-recipient resolution extension point and channel sender → tenant/user link registry for issue #162) |
 | `MessageBusProtocol` | `messaging.py` | Inter-agent messaging |
 | `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` | `runtime.py` | Runtime tracking |
 | `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` | `skills.py` | Skill interface and lifecycle (context/prompt/agent types) |
@@ -716,6 +716,13 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
   - `POST /api/v1/gateway/notify` - send proactive push notifications
   - `POST /api/v1/gateway/broadcast` - broadcast to all recipients on a channel
   - `GET  /api/v1/gateway/channels` - list configured channels
+  - `POST /api/v1/gateway/{channel}/link-codes` - mint a one-time pairing code for the
+    authenticated caller (issue #162). The user enters the code via ``/link <code>``
+    on the channel; the gateway intercepts the command **before** the recipient
+    resolver, records the link via the ``ChannelLinkRegistry``, and from then on
+    ``_PassthroughRecipientResolver.lookup`` returns the linked ``user_id``.
+  - `DELETE /api/v1/gateway/{channel}/links/me` - drop every link on the channel
+    that resolves to the caller's tenant + user (channel pairing revoke).
 - **Generic Webhook & Mission Routes:**
   - `POST /api/v1/events/{source_name}` - forwards inbound HTTP to a
     registered ``WebhookCapableEventSource`` (HMAC-verified for
@@ -733,6 +740,11 @@ The unified Communication Gateway replaces the earlier per-provider communicatio
   - `inbound_adapters.py` - Channel-specific payload normalization
   - `outbound_senders.py` - Channel-specific message dispatch
   - `recipient_registry.py` - Push notification recipient store
+  - `channel_link_registry.py` - Channel sender → ``(tenant, user)`` link table backing
+    the ``/link <code>`` pairing flow (issue #162). Default writes JSON files under
+    ``<work_dir>/channel_links/``; enterprise plugins override via
+    ``set_channel_link_registry_override`` to back the registry with a tenant-scoped
+    postgres store.
 - **Persistence:** Domain conversations in `.taskforce/conversations/` (ADR-016 `FileConversationStore`); gateway session/history records in `.taskforce/gateway_sessions/` (`GatewayConversationStore`).
   When the `taskforce-enterprise` plugin is installed, paths are routed per-tenant + per-user (ADR-022 iter-2): per-user buckets land at `.taskforce/tenants/{tid}/users/{uid}/{state,conversations,gateway_sessions,memory,skills,agent_state.json}`; tenant-shared buckets stay at `.taskforce/tenants/{tid}/{custom,workflows}/`. Stand-alone framework usage continues to write the flat layout above.
 - **ADRs:** `docs/adr/adr-006-communication-providers.md` (original), `docs/adr/adr-009-communication-gateway.md` (current)
@@ -1752,7 +1764,7 @@ See `docs/architecture/section-10-deployment.md` for:
 - `llm.py` - `LLMProviderProtocol` - LLM provider abstraction
 - `tools.py` - `ToolProtocol`, `ApprovalRiskLevel` - tool execution interface
 - `memory_store.py` - `MemoryStoreProtocol` - memory storage
-- `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol` (+ `RecipientInfo` value object) - Communication Gateway
+- `gateway.py` - `OutboundSenderProtocol`, `InboundAdapterProtocol`, `ConversationStoreProtocol`, `RecipientRegistryProtocol`, `RecipientResolverProtocol`, `ChannelLinkRegistryProtocol` (+ `RecipientInfo`, `ChannelLink`, `ChannelLinkCode` value objects) - Communication Gateway
 - `messaging.py` - `MessageBusProtocol` - inter-agent messaging
 - `runtime.py` - `HeartbeatStoreProtocol`, `CheckpointStoreProtocol`, `AgentRuntimeTrackerProtocol` - runtime tracking
 - `skills.py` - `SkillProtocol`, `SkillMetadata`, `SkillRegistryProtocol`, `SkillContextProtocol` - skill lifecycle

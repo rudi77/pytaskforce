@@ -39,6 +39,7 @@ from taskforce.core.domain.models import ExecutionResult
 from taskforce.core.interfaces.channel_ask import PendingChannelQuestionStoreProtocol
 from taskforce.core.interfaces.gateway import (
     AgentLookupProtocol,
+    ChannelLinkRegistryProtocol,
     ConversationStoreProtocol,
     OutboundSenderProtocol,
     RecipientInfo,
@@ -95,30 +96,58 @@ _FALLBACK_MESSAGES = {
 
 
 class _PassthroughRecipientResolver:
-    """Default resolver: treats ``channel_identity['sender_id']`` as the recipient.
+    """Default resolver with optional channel-link awareness.
 
-    Preserves the gateway's pre-resolver behaviour exactly — every
-    inbound message resolves to a recipient with ``recipient_id``
-    derived from (in order) ``sender_id``, ``conversation_id``, or
-    the literal ``"anonymous"``. The pass-through never produces a
-    ``None`` result, so legacy callers never see the gateway's
-    deny path.
+    Without a ``link_registry`` the resolver preserves the gateway's
+    pre-resolver behaviour exactly — every inbound message resolves to a
+    recipient with ``recipient_id`` derived from (in order)
+    ``sender_id``, ``conversation_id``, or the literal ``"anonymous"``.
+    The pass-through never produces a ``None`` result, so legacy
+    callers never see the gateway's deny path.
 
-    Custom resolvers replace this implementation and may return
-    ``None`` to refuse a message.
+    When a ``link_registry`` is supplied (issue #162) the resolver
+    consults it first via ``lookup(channel, sender_id)``. If a link
+    exists, the linked ``user_id`` becomes the ``recipient_id`` and the
+    ``tenant_id`` plus the original ``channel_sender_id`` are exposed
+    via ``RecipientInfo.attributes`` so per-user / per-tenant routing
+    downstream can pick them up. On a miss the resolver falls through
+    to the legacy pass-through — i.e. installing a registry never
+    *narrows* who can talk to the bot; it only *enriches* known
+    senders.
+
+    Custom resolvers replace this implementation entirely and may
+    return ``None`` to refuse a message.
     """
+
+    def __init__(
+        self,
+        link_registry: ChannelLinkRegistryProtocol | None = None,
+    ) -> None:
+        self._link_registry = link_registry
 
     async def resolve(
         self,
         channel: str,
         channel_identity: dict[str, Any],
     ) -> RecipientInfo | None:
-        sender_id = (
-            channel_identity.get("sender_id")
-            or channel_identity.get("conversation_id")
-            or "anonymous"
-        )
-        return RecipientInfo(recipient_id=str(sender_id))
+        sender_id = channel_identity.get("sender_id")
+        if self._link_registry is not None and sender_id is not None:
+            link = await self._link_registry.lookup(
+                channel=channel,
+                sender_id=str(sender_id),
+            )
+            if link is not None:
+                return RecipientInfo(
+                    recipient_id=link.user_id,
+                    attributes={
+                        "tenant_id": link.tenant_id,
+                        "user_id": link.user_id,
+                        "channel_sender_id": link.sender_id,
+                        "linked_at": link.linked_at.isoformat(),
+                    },
+                )
+        fallback = sender_id or channel_identity.get("conversation_id") or "anonymous"
+        return RecipientInfo(recipient_id=str(fallback))
 
 
 def _sanitize_reply(reply: str, status: str | Any) -> str:
@@ -176,6 +205,10 @@ class CommunicationGateway:
     # (issue #157).  Always available, regardless of ``actions_summary_mode``.
     ACTIONS_COMMAND = "/actions"
 
+    # Slash command that pairs a channel sender to a (tenant, user) via a
+    # short-lived one-time code minted from the web UI (issue #162).
+    LINK_COMMAND = "/link"
+
     # Allowed values for ``actions_summary_mode``.
     ACTIONS_SUMMARY_DISABLED = "disabled"
     ACTIONS_SUMMARY_FOOTER = "footer"
@@ -200,6 +233,7 @@ class CommunicationGateway:
         recipient_resolver: RecipientResolverProtocol | None = None,
         agent_lookup: AgentLookupProtocol | None = None,
         workflow_lookup: WorkflowLookupProtocol | None = None,
+        link_registry: ChannelLinkRegistryProtocol | None = None,
         workflow_runner: Callable[[str, str | None], Awaitable[list[dict[str, Any]]]] | None = None,
         components_provider: Callable[[], Any] | None = None,
         actions_summary_mode: str = "disabled",
@@ -214,8 +248,9 @@ class CommunicationGateway:
         self._conversation_manager_provider = conversation_manager_provider
         self._request_queue = request_queue
         self._max_conversation_history = max_conversation_history
+        self._link_registry: ChannelLinkRegistryProtocol | None = link_registry
         self._recipient_resolver: RecipientResolverProtocol = (
-            recipient_resolver or _PassthroughRecipientResolver()
+            recipient_resolver or _PassthroughRecipientResolver(link_registry=link_registry)
         )
         self._agent_lookup: AgentLookupProtocol | None = agent_lookup
         self._workflow_lookup: WorkflowLookupProtocol | None = workflow_lookup
@@ -377,6 +412,13 @@ class CommunicationGateway:
         first_token = stripped.split(maxsplit=1)[0] if stripped else ""
         if first_token == self.ACTIONS_COMMAND:
             return await self._handle_actions_command(message)
+
+        # ------- /link slash command (issue #162) -------
+        # Intercepted before the recipient resolver: the sender is by
+        # definition unlinked at this point so the resolver has nothing
+        # useful to say, and the message must never reach an agent.
+        if first_token == self.LINK_COMMAND:
+            return await self._handle_link_command(message)
 
         # ------- Reset commands (/start, /new, /reset) -------
         if stripped in self.RESET_COMMANDS:
@@ -896,6 +938,88 @@ class CommunicationGateway:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _handle_link_command(self, message: InboundMessage) -> GatewayResponse:
+        """Handle a ``/link <code>`` slash command (issue #162).
+
+        Redeems a one-time code minted from the web UI and records a
+        persistent ``(channel, sender_id) → (tenant, user)`` link. Replies
+        via the outbound sender and never reaches the agent layer — the
+        sender is by definition unlinked at this point, so there is no
+        valid recipient to dispatch to yet.
+        """
+        parts = message.message.strip().split(maxsplit=1)
+        code = parts[1].strip() if len(parts) > 1 else ""
+
+        if not code:
+            reply = (
+                "Bitte gib einen Code an: /link <code>. "
+                "Den Code findest du in der Web-UI unter Settings → Channels."
+            )
+            await self._send_link_reply(message, reply)
+            return GatewayResponse(session_id="", status="link_usage", reply=reply, history=[])
+
+        if self._link_registry is None:
+            reply = "Channel-Linking ist auf diesem Server nicht aktiviert."
+            await self._send_link_reply(message, reply)
+            return GatewayResponse(session_id="", status="link_disabled", reply=reply, history=[])
+
+        if not message.sender_id:
+            reply = "Linking benötigt eine Absender-ID; dieser Channel liefert keine."
+            await self._send_link_reply(message, reply)
+            return GatewayResponse(session_id="", status="link_no_sender", reply=reply, history=[])
+
+        link = await self._link_registry.consume_code(
+            channel=message.channel,
+            code=code,
+            sender_id=str(message.sender_id),
+        )
+
+        if link is None:
+            self._logger.info(
+                "gateway.link_command.invalid",
+                channel=message.channel,
+                sender_id=message.sender_id,
+            )
+            reply = "Code ungültig oder abgelaufen. " "Bitte erzeuge in der Web-UI einen neuen."
+            await self._send_link_reply(message, reply)
+            return GatewayResponse(session_id="", status="link_invalid", reply=reply, history=[])
+
+        self._logger.info(
+            "gateway.link_command.linked",
+            channel=message.channel,
+            sender_id=message.sender_id,
+            tenant_id=link.tenant_id,
+            user_id=link.user_id,
+        )
+        reply = "✅ Verknüpfung erfolgreich. Du bist jetzt eingeloggt."
+        await self._send_link_reply(message, reply)
+        return GatewayResponse(
+            session_id="",
+            status="link_created",
+            reply=reply,
+            history=[],
+            metadata={
+                "channel": message.channel,
+                "sender_id": str(message.sender_id),
+                "tenant_id": link.tenant_id,
+                "user_id": link.user_id,
+            },
+        )
+
+    async def _send_link_reply(self, message: InboundMessage, reply: str) -> None:
+        """Best-effort outbound reply for ``/link`` command results."""
+        sender = self._resolve_outbound_senders().get(message.channel)
+        if not sender:
+            return
+        try:
+            await sender.send(recipient_id=message.conversation_id, message=reply)
+        except Exception as exc:
+            self._logger.warning(
+                "gateway.link_command.send_failed",
+                channel=message.channel,
+                error=str(exc),
+            )
 
     async def _handle_reset(self, message: InboundMessage) -> GatewayResponse:
         """Clear conversation history and send a welcome message.

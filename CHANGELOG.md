@@ -12,6 +12,24 @@ and test coverage only. New features are deferred.
 
 ### Fixed
 
+- **Telegram inbound resolves per-(tenant, user) instead of one
+  hard-coded recipient (#162).** Adds a ``ChannelLinkRegistryProtocol``
+  seam, a file-based default
+  (``<work_dir>/channel_links/<channel>.json``), and a
+  ``/link <code>`` command intercepted by the gateway before the
+  recipient resolver. New
+  ``POST /api/v1/gateway/{channel}/link-codes`` mints a short-lived
+  single-use code for the authenticated caller; the user pastes it
+  into the channel, the gateway records the persistent link, and
+  from then on ``_PassthroughRecipientResolver`` surfaces the
+  linked ``user_id`` as the recipient (plus ``tenant_id`` in
+  ``RecipientInfo.attributes``). ``DELETE
+  /api/v1/gateway/{channel}/links/me`` revokes a pairing.
+  ``set_channel_link_registry_override`` lets enterprise plugins
+  back the registry with a tenant-scoped postgres store without
+  touching the resolver. Single-tenant builds are bit-for-bit
+  unchanged when no code is ever minted.
+
 - **Narrow broad `except Exception` in 3 override consumers (#222).**
   ``parallel_agent_tool._resolve_result_dir``,
   ``file_storage._default_root`` + ``get_file_storage``, and the
