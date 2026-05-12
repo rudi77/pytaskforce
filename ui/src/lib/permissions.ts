@@ -5,11 +5,17 @@ import { ApiError, apiFetch } from "@/api/client";
 interface AdminMeResponse {
   roles?: string[];
   permissions?: string[];
+  user_id?: string;
+  tenant_id?: string;
+  email?: string;
 }
 
 interface CurrentPermissions {
   enforced: boolean;
   permissions: Set<string>;
+  userId: string | null;
+  tenantId: string | null;
+  email: string | null;
 }
 
 async function fetchCurrentPermissions(): Promise<CurrentPermissions> {
@@ -18,10 +24,19 @@ async function fetchCurrentPermissions(): Promise<CurrentPermissions> {
     return {
       enforced: true,
       permissions: new Set(me.permissions ?? []),
+      userId: me.user_id ?? null,
+      tenantId: me.tenant_id ?? null,
+      email: me.email ?? null,
     };
   } catch (error) {
     if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
-      return { enforced: false, permissions: new Set() };
+      return {
+        enforced: false,
+        permissions: new Set(),
+        userId: null,
+        tenantId: null,
+        email: null,
+      };
     }
     throw error;
   }

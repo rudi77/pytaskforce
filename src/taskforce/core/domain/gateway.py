@@ -23,6 +23,11 @@ class InboundMessage:
         message: The user's message text.
         sender_id: Optional user identifier from the channel.
         metadata: Channel-specific extras (update_id, activity type, etc.).
+        bot_id: When the channel runs multiple bots (multi-bot channels,
+            e.g. a tenant-shared support bot AND a user-private Butler bot
+            on Telegram), this is the id of the specific bot that
+            received the message. ``None`` for single-bot deployments and
+            for non-bot channels (REST).
     """
 
     channel: str
@@ -30,6 +35,7 @@ class InboundMessage:
     message: str
     sender_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    bot_id: str | None = None
 
 
 @dataclass(frozen=True)
