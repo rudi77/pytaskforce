@@ -185,6 +185,19 @@ function Sync-EnterpriseUiDist {
         Write-Warn2 "@taskforce/enterprise-ui not installed yet at $stubRoot - skipping overlay"
         return
     }
+    # pnpm uses a content-addressable store and links package roots into
+    # node_modules as junctions/symlinks. Writing through that link would
+    # corrupt the source `packages/enterprise-ui-reference/` stub (the file
+    # the CI test job depends on). Detect a junction/symlink, remove the
+    # link (not its target), and replace it with a real directory before
+    # overlaying.
+    $stubItem = Get-Item -LiteralPath $stubRoot
+    $isLink = ($stubItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+    if ($isLink) {
+        Write-Step "stub is a pnpm junction - replacing with a real directory before overlay"
+        [IO.Directory]::Delete($stubRoot, $false)
+        New-Item -ItemType Directory -Path $stubRoot | Out-Null
+    }
     Write-Step "overlaying real enterprise-ui (dist + package.json) over the CI stub"
     if (Test-Path $stubInstalledDist) {
         Remove-Item -Recurse -Force $stubInstalledDist -ErrorAction SilentlyContinue

@@ -42,12 +42,7 @@ export function MessageBubble({ message, pending, toolCalls, onWidgetEvent }: Me
           <span className="font-semibold text-foreground">
             {isUser ? "You" : "Assistant"}
           </span>
-          {pending ? (
-            <span className="inline-flex items-center gap-1 text-primary">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-              streaming
-            </span>
-          ) : null}
+          {pending ? <StreamingDots /> : null}
         </header>
 
         {toolCalls && toolCalls.length > 0 ? <ToolCallList calls={toolCalls} /> : null}
@@ -59,6 +54,24 @@ export function MessageBubble({ message, pending, toolCalls, onWidgetEvent }: Me
         ) : null}
       </div>
     </div>
+  );
+}
+
+function StreamingDots() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-primary"
+      role="status"
+      aria-live="polite"
+      aria-label="Streaming response"
+    >
+      <span className="flex items-center gap-1">
+        <span className="h-1.5 w-1.5 animate-streaming-dot rounded-full bg-primary [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-streaming-dot rounded-full bg-primary [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-streaming-dot rounded-full bg-primary [animation-delay:300ms]" />
+      </span>
+      <span className="text-[10px] uppercase tracking-wide">streaming</span>
+    </span>
   );
 }
 
