@@ -4,6 +4,10 @@
   "description": "Shared design system, API client and plugin contract for the Taskforce management UI and its plugins.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@11.1.1",
+  "engines": {
+    "pnpm": ">=11.0.0"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
