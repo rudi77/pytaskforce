@@ -1203,6 +1203,7 @@ packages:
 
   '@taskforce/ui-shell@file:../packages/ui-shell':
     resolution: {directory: ../packages/ui-shell, type: directory}
+    engines: {pnpm: '>=11.0.0'}
     peerDependencies:
       '@tanstack/react-query': ^5.59.0
       lucide-react: ^0.453.0

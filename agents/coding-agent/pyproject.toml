@@ -7,6 +7,12 @@ dependencies = [
     "taskforce",
 ]
 
+# Discovered by taskforce.application.agent_plugin_registry.
+# Coding agent contributes only config files today — no CLI sub-app, no
+# package-specific tools (call_agents_parallel is a framework-native tool).
+[project.entry-points."taskforce.config_dirs"]
+coding_agent = "taskforce_coding_agent:configs"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

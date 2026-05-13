@@ -7,7 +7,11 @@ in `src/taskforce/api/`.
 ## Prerequisites
 
 - Node 20+
-- pnpm (or npm/yarn — but lockfile assumes pnpm)
+- **pnpm 11+** (the workspace config uses pnpm 11's `allowBuilds` key and
+  `pnpm approve-builds --all`, both of which are unknown to pnpm 10). The
+  version is pinned via `packageManager` in `package.json`, so with Corepack
+  enabled (`corepack enable`) the right pnpm is picked up automatically.
+  Otherwise install globally: `npm install -g pnpm@latest`.
 - A running Taskforce backend on `http://127.0.0.1:8070` for development
 
 ## Getting started

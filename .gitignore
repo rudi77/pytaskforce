@@ -3,6 +3,14 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Ad-hoc UI/test screenshots at repo root (debug artifacts, not repo content).
+# Legitimate PNG assets live under ui/, packages/, docs/ etc. and stay tracked.
+/*.png
+
+# Vite-generated config timestamps (build artifact, rewritten on every dev run)
+**/vite.config.ts.timestamp-*.mjs
+**/vite.config.js.timestamp-*.mjs
+
 # C extensions
 *.so
 

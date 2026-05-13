@@ -214,13 +214,21 @@ tool-build time, keeping the framework usable standalone.
 `cli/src/taskforce_cli/main.py` is the top-level CLI:
 
 - Registers framework commands (`run`, `chat`, `tools`, `skills`, `config`, `memory`, `acp`).
-- Dynamically adds `taskforce butler`, `taskforce epic`, and `taskforce rag` when the
-  corresponding agent packages are importable.
+- Discovers agent-package contributions via Python entry-points (see
+  [ADR-026](docs/adr/adr-026-entry-point-plugin-discovery.md)). Three groups are read by
+  `taskforce.application.agent_plugin_registry`:
+  - `taskforce.cli_apps` — `name = "module:typer_app"` → adds `taskforce <name>` subcommand.
+  - `taskforce.tools` — `name = "module:ClassName"` → merged into the framework tool
+    registry, overriding hardcoded entries on overlap.
+  - `taskforce.config_dirs` — `name = "package_module:relpath"` → registered with the
+    profile loader's search path, so `--profile butler`, `--profile coding_agent`, etc.
+    resolve transparently.
+- During the Phase-1 transition (ADR-026), packages not yet declaring entry-points fall
+  back to a hardcoded probe and emit `event="hardcoded_agent_fallback"` warnings.
 - `_detect_default_profile()` returns `"butler"` if `taskforce_butler` is installed,
   otherwise `"dev"`. This is why "default profile" depends on what is installed.
-- `agent_discovery.register_agent_config_dirs()` adds the agent packages' `configs/`
-  directories to the profile loader's search path, so `--profile butler`,
-  `--profile coding_agent`, `--profile rag_agent`, etc. resolve across packages.
+- `agent_discovery.register_agent_config_dirs()` adds discovered config directories
+  (entry-point + fallback) to the profile loader's search path.
 
 The fallback framework-only CLI in `src/taskforce/api/cli/main.py` is used when
 `taskforce_cli` is not installed. It defaults to `--profile dev`.
@@ -504,11 +512,11 @@ corresponding package is installed.
 | `edit` | EditTool | `edit_tool` | Targeted file editing (search/replace) |
 | `fetch_result` | FetchResultTool | `fetch_result_tool` | Retrieve previously stored tool results |
 | `wiki` | WikiTool | `wiki_tool` | Wiki-style long-term memory (markdown pages; see ADR-020) |
-| `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (`uv sync --extra browser && playwright install chromium`) |
+| `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (bundled; run `playwright install chromium` once for the browser binary) |
 | `multimedia` | MultimediaTool | `multimedia_tool` | Image/media handling |
-| `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (`uv sync --extra office`) |
-| `pptx` | PptxTool | `pptx_tool` | Microsoft PowerPoint handling (`uv sync --extra office`) |
-| `excel` | ExcelTool | `excel_tool` | Microsoft Excel handling (`uv sync --extra office`) |
+| `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (bundled) |
+| `pptx` | PptxTool | `pptx_tool` | Microsoft PowerPoint handling (bundled) |
+| `excel` | ExcelTool | `excel_tool` | Microsoft Excel handling (bundled) |
 | `accounting_validate` | AccountingValidateTool | `accounting_validate_tool` | Invoice/compliance validation helper |
 | `accounting_audit` | AccountingAuditTool | `accounting_audit_tool` | Accounting audit checks |
 | `send_notification` | SendNotificationTool | `send_notification_tool` | Proactive push notifications via the Communication Gateway |
@@ -883,16 +891,18 @@ transparently.
 # Clone and navigate
 cd /home/user/pytaskforce
 
-# Install dependencies (MUST use uv)
+# Install dependencies (MUST use uv) — installs every tool/runtime dependency
+# the agent uses by default (LLM stack, Playwright, python-docx/pptx/openpyxl,
+# tiktoken, cryptography, watchdog, ...).
 uv sync
 
 # Install optional dependency groups as needed
-uv sync --extra browser       # Playwright browser automation
 uv sync --extra rag            # Azure AI Search
-uv sync --extra office         # docx/pptx/excel tools
 uv sync --extra acp            # Agent Communication Protocol SDK
+uv sync --extra postgres       # PostgreSQL persistence
+uv sync --extra tracing        # Arize Phoenix observability
 
-# For browser tool: also install Playwright browsers
+# For browser tool: download the Chromium binary once
 playwright install chromium
 
 # To use butler / coding-agent / rag-agent features, install the matching
@@ -1406,20 +1416,25 @@ tools:
   - llm
 ```
 
-### Optional Dependency Groups
+### Core vs. Optional Dependencies
 
-Defined in `pyproject.toml` under `[project.optional-dependencies]`:
+Browser automation (Playwright), the Office tools (`python-docx`,
+`python-pptx`, `openpyxl`), token counting (`tiktoken`), encryption
+(`cryptography`) and the file-watcher event source (`watchdog`) ship
+**as core dependencies**. `uv sync` installs them all by default — no
+extras needed for the default agent setup. The matching extras
+(`browser`, `office`, `tokenizer`, `auth`, `event-sources-fs`, `pdf`)
+remain defined as empty groups so legacy `uv sync --extra <name>`
+invocations keep working.
+
+The remaining `[project.optional-dependencies]` groups are genuine
+opt-ins:
 
 | Group | Purpose | Install Command |
 |-------|---------|-----------------|
-| `browser` | Playwright headless browser automation | `uv sync --extra browser` |
 | `rag` | Azure AI Search integration | `uv sync --extra rag` |
-| `pdf` | Kept for backwards compatibility — core already includes `pypdf`, `pdfplumber`, `docling` | `uv sync --extra pdf` |
-| `office` | python-docx, python-pptx, openpyxl (for the `docx`/`pptx`/`excel` tools) | `uv sync --extra office` |
 | `postgres` | PostgreSQL persistence (SQLAlchemy, Alembic, AsyncPG) | `uv sync --extra postgres` |
-| `tokenizer` | Tiktoken token counting | `uv sync --extra tokenizer` |
 | `tracing` | Arize Phoenix OTEL + LiteLLM instrumentation | `uv sync --extra tracing` |
-| `auth` | Cryptography for authentication / OAuth2 | `uv sync --extra auth` |
 | `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
 | `acp` | Agent Communication Protocol (IBM/Linux Foundation) SDK | `uv sync --extra acp` |

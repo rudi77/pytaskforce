@@ -32,10 +32,10 @@ export default function IntegrationsTab() {
         <CardHeader>
           <CardTitle>OAuth Integrations</CardTitle>
           <CardDescription>
-            The auth manager is unavailable on this instance. Install the
-            <code className="mx-1">auth</code>extra
-            (<code>uv sync --extra auth</code>) and restart to enable Gmail / Calendar / Drive
-            connections.
+            The auth manager is unavailable on this instance. The
+            <code className="mx-1">cryptography</code>
+            package ships in the core install — run <code>uv sync</code> and restart to enable
+            Gmail / Calendar / Drive connections.
           </CardDescription>
         </CardHeader>
       </Card>

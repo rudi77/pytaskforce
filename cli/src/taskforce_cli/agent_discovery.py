@@ -3,13 +3,20 @@
 This module provides two capabilities:
 
 1. **Config directory discovery** — finds YAML config directories shipped by
-   agent packages (``taskforce_butler``, ``taskforce_coding_agent``,
-   ``taskforce_rag_agent``) and registers them with the framework's
+   agent packages and registers them with the framework's
    ``ProfileLoader`` so that ``--profile`` flags work seamlessly.
 
 2. **Tool registration** — returns a mapping of short tool names to lazy
    import descriptors so the framework ``ToolRegistry`` can resolve tools
    contributed by agent packages without hard-coding them.
+
+Both lookups read Python entry-points first (groups ``taskforce.tools``
+and ``taskforce.config_dirs`` — see
+:mod:`taskforce.application.agent_plugin_registry`), then merge in any
+legacy hardcoded entries from ``_AGENT_PACKAGES`` for packages that
+haven't migrated yet. Fallback hits are logged as
+``hardcoded_agent_fallback`` so they can be grepped out once every
+agent has shipped entry-points.
 """
 
 from __future__ import annotations
@@ -20,10 +27,16 @@ from typing import Any
 
 import structlog
 
+from taskforce.application.agent_plugin_registry import (
+    load_config_dirs,
+    load_tool_descriptors,
+)
+
 logger = structlog.get_logger(__name__)
 
-# Known agent packages and the expected relative path (from the package
-# ``__init__.py``) to their configs directory.
+# Legacy hardcoded fallback table. Used only for packages that don't yet
+# declare entry-points. Removed in Phase 4 once every agent ships its own
+# ``taskforce.config_dirs`` / ``taskforce.tools`` entries.
 _AGENT_PACKAGES: list[tuple[str, str]] = [
     ("taskforce_butler", "configs"),
     ("taskforce_coding_agent", "configs"),
@@ -36,44 +49,70 @@ _AGENT_PACKAGES: list[tuple[str, str]] = [
 # ------------------------------------------------------------------
 
 
-def get_agent_config_dirs() -> list[Path]:
-    """Return config directories from all installed agent packages.
+def _legacy_config_dirs() -> dict[str, Path]:
+    """Probe ``_AGENT_PACKAGES`` for installed packages without entry-points.
 
-    For each known agent package the function attempts to import it and
-    locate a ``configs/`` directory relative to the package root.  Only
-    directories that actually exist on disk are returned.
-
-    Returns:
-        List of absolute ``Path`` objects pointing to config directories.
+    Mirrors the original probe sequence (package_dir/, parent/, parent.parent/)
+    so editable installs keep resolving. Logged at ``hardcoded_agent_fallback``
+    level so the noise points at deletion candidates.
     """
-    dirs: list[Path] = []
+    dirs: dict[str, Path] = {}
     for package_name, config_rel in _AGENT_PACKAGES:
         try:
             mod = importlib.import_module(package_name)
-            if mod.__file__ is None:
-                continue
-            package_dir = Path(mod.__file__).resolve().parent
-            config_dir = package_dir / config_rel
-            if config_dir.is_dir():
-                dirs.append(config_dir)
-                logger.debug(
-                    "agent_config_dir_found",
-                    package=package_name,
-                    path=str(config_dir),
-                )
-            else:
-                # Try one level up (src/taskforce_xxx/../configs)
-                alt_config_dir = package_dir.parent / config_rel
-                if alt_config_dir.is_dir():
-                    dirs.append(alt_config_dir)
-                    logger.debug(
-                        "agent_config_dir_found",
-                        package=package_name,
-                        path=str(alt_config_dir),
-                    )
         except ImportError:
             logger.debug("agent_package_not_installed", package=package_name)
+            continue
+        if getattr(mod, "__file__", None) is None:
+            continue
+        package_dir = Path(mod.__file__).resolve().parent
+        candidates = [
+            package_dir / config_rel,
+            package_dir.parent / config_rel,
+            package_dir.parent.parent / config_rel,
+        ]
+        for candidate in candidates:
+            if candidate.is_dir():
+                dirs[package_name] = candidate
+                logger.warning(
+                    "hardcoded_agent_fallback",
+                    component="config_dirs",
+                    package=package_name,
+                    path=str(candidate),
+                    hint="declare [project.entry-points.\"taskforce.config_dirs\"] in this package's pyproject.toml",
+                )
+                break
     return dirs
+
+
+def get_agent_config_dirs() -> list[Path]:
+    """Return config directories discovered from all installed agent packages.
+
+    Entry-point contributions (``taskforce.config_dirs``) take priority; any
+    legacy ``_AGENT_PACKAGES`` entry not covered by an entry-point is added
+    as a fallback (with a warning).
+
+    Returns:
+        Deduplicated list of absolute ``Path`` objects.
+    """
+    entry_point_dirs = load_config_dirs()  # {agent_name: Path}
+    fallback_dirs = _legacy_config_dirs()  # {pkg_name: Path}
+
+    # Build the deduplicated path list. Entry-points first (preferred);
+    # then any fallback path not already in the set.
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in entry_point_dirs.values():
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            result.append(path)
+    for path in fallback_dirs.values():
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            result.append(path)
+    return result
 
 
 _NESTED_SUBDIRS = ("custom", "roles")
@@ -83,7 +122,7 @@ def register_agent_config_dirs() -> None:
     """Discover agent config dirs and register them with the ProfileLoader.
 
     This is the main integration point called during CLI startup. For
-    every installed agent package it registers:
+    every discovered agent package it registers:
 
     - The top-level ``configs/`` dir (the agent's main profile lives here)
     - ``configs/custom/`` — Butler/coding sub-agents and butler custom roles
@@ -115,23 +154,15 @@ def register_agent_config_dirs() -> None:
 # ------------------------------------------------------------------
 
 
-def get_agent_tool_registrations() -> dict[str, dict[str, Any]]:
-    """Return tool registrations from installed agent packages.
+def _legacy_tool_registrations() -> dict[str, dict[str, Any]]:
+    """Hardcoded tool descriptors for packages that don't yet declare entry-points.
 
-    Each entry maps a short tool name to a descriptor dict with keys:
-
-    * ``type`` — class name of the tool implementation
-    * ``module`` — fully-qualified module path for lazy import
-    * ``params`` — default constructor kwargs (usually empty)
-
-    Only tools whose parent package is importable are included.
-
-    Returns:
-        Mapping of ``{short_name: descriptor}``.
+    Each block is gated on a package import so it disappears cleanly when
+    the package is uninstalled. Logged at ``hardcoded_agent_fallback``
+    level so the noise points at deletion candidates.
     """
     tools: dict[str, dict[str, Any]] = {}
 
-    # Butler tools
     try:
         import taskforce_butler  # noqa: F401
 
@@ -164,11 +195,16 @@ def get_agent_tool_registrations() -> dict[str, dict[str, Any]]:
                 },
             }
         )
-        logger.debug("agent_tools_registered", package="taskforce_butler", count=5)
+        logger.warning(
+            "hardcoded_agent_fallback",
+            component="tools",
+            package="taskforce_butler",
+            count=5,
+            hint="declare [project.entry-points.\"taskforce.tools\"] in agents/butler/pyproject.toml",
+        )
     except ImportError:
         pass
 
-    # Coding agent tools
     try:
         import taskforce_coding_agent  # noqa: F401
 
@@ -181,11 +217,16 @@ def get_agent_tool_registrations() -> dict[str, dict[str, Any]]:
                 },
             }
         )
-        logger.debug("agent_tools_registered", package="taskforce_coding_agent", count=1)
+        logger.warning(
+            "hardcoded_agent_fallback",
+            component="tools",
+            package="taskforce_coding_agent",
+            count=1,
+            hint="declare [project.entry-points.\"taskforce.tools\"] in agents/coding-agent/pyproject.toml",
+        )
     except ImportError:
         pass
 
-    # RAG agent tools
     try:
         import taskforce_rag_agent  # noqa: F401
 
@@ -213,8 +254,28 @@ def get_agent_tool_registrations() -> dict[str, dict[str, Any]]:
                 },
             }
         )
-        logger.debug("agent_tools_registered", package="taskforce_rag_agent", count=4)
+        logger.warning(
+            "hardcoded_agent_fallback",
+            component="tools",
+            package="taskforce_rag_agent",
+            count=4,
+            hint="declare [project.entry-points.\"taskforce.tools\"] in agents/rag-agent/pyproject.toml",
+        )
     except ImportError:
         pass
 
     return tools
+
+
+def get_agent_tool_registrations() -> dict[str, dict[str, Any]]:
+    """Return tool registrations from all installed agent packages.
+
+    Entry-point contributions (``taskforce.tools``) win on name collision;
+    any legacy hardcoded entry for a tool name not covered by an entry-point
+    is merged in as a fallback (with a warning).
+    """
+    entry_point_tools = load_tool_descriptors()
+    fallback_tools = _legacy_tool_registrations()
+    merged: dict[str, dict[str, Any]] = dict(fallback_tools)
+    merged.update(entry_point_tools)  # entry-points win on overlap
+    return merged

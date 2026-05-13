@@ -1,8 +1,7 @@
 """DOCX document manipulation tool.
 
 Provides reading, writing, and editing capabilities for Microsoft Word
-(.docx) files.  Requires the ``python-docx`` library (install via
-``uv sync --extra office``).
+(.docx) files. ``python-docx`` ships as a core dependency.
 """
 
 from __future__ import annotations
@@ -26,8 +25,8 @@ def _require_docx() -> Any:
         return docx
     except ImportError:
         raise ImportError(
-            "python-docx is required for DOCX operations. "
-            "Install with: uv sync --extra office"
+            "python-docx is part of the core install but the import failed. "
+            "Run 'uv sync' to repair the venv."
         )
 
 

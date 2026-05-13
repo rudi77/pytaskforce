@@ -290,7 +290,7 @@ class ButlerDaemon:
             logger.warning(
                 "butler_daemon.auth_manager_unavailable",
                 error=str(exc),
-                hint="Install 'auth' extra: uv sync --extra auth",
+                hint="cryptography ships in the core install — run 'uv sync' to repair the venv",
             )
             return None
 
