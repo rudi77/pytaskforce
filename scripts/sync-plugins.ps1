@@ -42,18 +42,21 @@ function Step([string]$label, [scriptblock]$body) {
 
 Step 'Build @taskforce/ui-shell' {
     Set-Location $uiShell
+    pnpm approve-builds --all
     pnpm build
 }
 
 Step 'Re-link + build @taskforce/enterprise-ui' {
     Set-Location $enterprise
     pnpm install --force
+    pnpm approve-builds --all
     pnpm build
 }
 
 Step 'Re-link plugin into host UI' {
     Set-Location $hostUi
     pnpm install --force
+    pnpm approve-builds --all
 }
 
 Step 'Wipe Vite pre-bundled dep cache' {

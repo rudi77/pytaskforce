@@ -108,8 +108,11 @@ function Install-EnterprisePlugin {
         Write-Err "Clone it next to pytaskforce, or set `$EnterpriseRoot in this script."
         exit 1
     }
-    Write-Step "installing taskforce-enterprise (editable) into .venv"
-    & uv pip install -e $EnterpriseRoot
+    Write-Step "installing taskforce-enterprise[postgres] (editable) into .venv"
+    # [postgres] pulls sqlalchemy + alembic + asyncpg + bcrypt — required for
+    # the signup router, account lifecycle service, and tenant-scoped persistence.
+    # Without it the enterprise plugin loads but skips its routers (404s on /api/v1/signup).
+    & uv pip install -e "$EnterpriseRoot[postgres]"
     if ($LASTEXITCODE -ne 0) {
         Write-Err "uv pip install failed (exit $LASTEXITCODE)"
         exit 1
@@ -152,6 +155,9 @@ function Install-UiDeps {
     try {
         & pnpm install
         if ($LASTEXITCODE -ne 0) { throw "pnpm install failed (exit $LASTEXITCODE)" }
+        # pnpm 11 requires explicit approval for build scripts (e.g. esbuild postinstall).
+        # Auto-approve so re-runs (and --force installs from sync-plugins.ps1) don't error.
+        & pnpm approve-builds --all
     } finally {
         Pop-Location
     }
