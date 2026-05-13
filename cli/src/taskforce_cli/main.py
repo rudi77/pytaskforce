@@ -51,17 +51,15 @@ app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice"
 # --- Agent commands (optional, loaded if packages installed) ---
 #
 # Discovery is driven by the ``taskforce.cli_apps`` entry-point group
-# (see :mod:`taskforce.application.agent_plugin_registry`). The
-# hardcoded fallback below covers packages that don't yet declare an
-# entry-point and emits ``hardcoded_agent_fallback`` warnings so the
-# migration target is grep-able. Removed in Phase 4 once every agent
-# ships its own entry-point.
+# (see :mod:`taskforce.application.agent_plugin_registry`). The Butler
+# no longer ships a CLI sub-app (Phase 4 / ADR-028) — use
+# ``taskforce daemon start --profile butler`` instead. The legacy
+# hardcoded fallback below covers any other agent package that doesn't
+# yet declare a ``taskforce.cli_apps`` entry-point.
 
 from taskforce.application.agent_plugin_registry import load_cli_apps as _load_cli_apps
 
-# Help text per known agent — used for both entry-point and fallback paths.
 _AGENT_CLI_HELP: dict[str, str] = {
-    "butler": "Butler agent daemon",
     "epic": "Epic orchestration (multi-agent)",
     "rag": "RAG agent operations",
 }
@@ -96,7 +94,6 @@ def _register_fallback_cli(name: str, import_path: str) -> None:
     _registered_agent_cli.add(name)
 
 
-_register_fallback_cli("butler", "taskforce_butler.cli.commands:app")
 _register_fallback_cli("epic", "taskforce_coding_agent.cli:app")
 _register_fallback_cli("rag", "taskforce_rag_agent.cli:app")
 
@@ -104,16 +101,20 @@ _register_fallback_cli("rag", "taskforce_rag_agent.cli:app")
 def _detect_default_profile() -> str:
     """Return the best default profile based on installed agent packages.
 
-    If ``taskforce_butler`` is installed the default is ``"butler"``
-    (matching the current framework default). Otherwise fall back to
-    ``"dev"``.
-    """
-    try:
-        import taskforce_butler  # noqa: F401
+    Looks for a ``taskforce.config_dirs`` entry-point named ``butler``
+    (registered by the ``taskforce-butler`` data package) and returns
+    ``"butler"`` if present. Falls back to ``"dev"`` otherwise.
 
+    Pre-ADR-028 this imported ``taskforce_butler`` directly — Butler is
+    now a YAML-only data package without an importable surface beyond a
+    bare ``__init__.py`` shim, so the discovery happens through the
+    entry-point group instead.
+    """
+    from taskforce.application.agent_plugin_registry import load_config_dirs
+
+    if "butler" in load_config_dirs():
         return "butler"
-    except ImportError:
-        return "dev"
+    return "dev"
 
 
 @app.callback()
@@ -164,6 +165,7 @@ def _print_agent_packages() -> None:
         ("taskforce-butler", "taskforce_butler"),
         ("taskforce-coding-agent", "taskforce_coding_agent"),
         ("taskforce-rag-agent", "taskforce_rag_agent"),
+        ("taskforce-google-workspace", "taskforce_google_workspace"),
     ]
     installed = []
     for display_name, import_name in agents:

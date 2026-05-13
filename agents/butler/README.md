@@ -1,55 +1,52 @@
-# Taskforce Butler Agent
+# Taskforce Butler — YAML-only configuration package
 
-Event-driven personal assistant — Google Workspace integration and
-butler-specific configs.
+Butler is a personal-assistant agent profile distributed as **pure
+YAML**. All Python implementation lives elsewhere now:
 
-After [ADR-027](../../docs/adr/adr-027-generic-agent-daemon.md) the
-event-driven daemon, scheduler, rule-engine, supervisor, and role-loader
-all live in `taskforce.*` (framework core). Phase 3 (#246) then moved
-Gmail / Drive / Calendar into the sibling
-[`taskforce-google-workspace`](../google-workspace/README.md) package,
-and the provider-agnostic `authenticate` tool joined the framework
-native tools. This package now ships:
+- The event-driven daemon / supervisor / role-loader / service +
+  ``schedule`` / ``reminder`` / ``rule_manager`` tools → ``taskforce.*``
+  framework core ([ADR-027](../../docs/adr/adr-027-generic-agent-daemon.md)).
+- Gmail / Drive / Calendar tools → sibling package
+  [`taskforce-google-workspace`](../google-workspace/README.md)
+  ([ADR-027](../../docs/adr/adr-027-generic-agent-daemon.md)).
+- Provider-agnostic ``authenticate`` tool → framework native.
+- CLI commands → framework's generic
+  ``taskforce daemon start --profile <name>``
+  ([ADR-028](../../docs/adr/adr-028-butler-as-config-only-package.md)).
 
-- `learning_service.py` — post-conversation knowledge extraction.
-- A thin CLI shim (`taskforce butler ...`) that delegates to the
-  framework's `taskforce daemon ...` command.
-- Butler profile + role configs (`configs/butler.agent.md`,
-  `configs/custom/*.yaml`, `configs/roles/*.{agent.md,yaml}`).
+This package now ships only:
 
-Phase 4 (#247) reduces this further to a data-only package.
+- `configs/butler.agent.md` — main Butler profile
+- `configs/custom/*.yaml` — sub-agent configs (accountant, research-agent, ...)
+- `configs/roles/*.{agent.md,yaml}` — role overlays (accountant, personal_assistant)
+- `src/taskforce_butler/__init__.py` — 5-line shim required by the
+  Python entry-point that points the framework at this configs/ dir.
 
 ## Installation
 
 ```bash
-cd agents/butler
-uv sync
+uv sync                # adds the workspace member to the venv
+# or, from a published wheel:
+uv pip install taskforce-butler
 ```
 
 ## Usage
 
-Canonical (framework command, profile-agnostic):
-
 ```bash
 taskforce daemon start --profile butler
 taskforce daemon status --profile butler
+
+# With a role overlay
+taskforce daemon start --profile butler --role accountant
 ```
 
-Legacy shortcuts (still work — wrap the framework command):
+The former ``taskforce butler ...`` and ``taskforce-butler`` script
+entry-points are gone — use ``taskforce daemon ...`` instead.
 
-```bash
-taskforce butler start --profile butler
-taskforce butler status
-taskforce butler rules list
-taskforce butler schedules list
-taskforce butler roles list
-```
+## Why a Python package at all
 
-## Note
-
-The Butler is being refactored to a YAML-only configuration package
-(plan: `~/.claude/plans/ich-will-dass-wir-composed-hanrahan.md`,
-phases #244-#247). Phase 2 (this milestone) moved all generic
-plumbing into the framework; subsequent phases move Google Workspace
-into `taskforce-google-workspace` and finally reduce
-`agents/butler/src/` to zero LoC.
+The Python entry-point convention
+(``[project.entry-points."taskforce.config_dirs"]``) requires a
+real importable module so the framework can locate the ``configs/``
+directory at runtime. The 5-line ``__init__.py`` does exactly that;
+no business logic.

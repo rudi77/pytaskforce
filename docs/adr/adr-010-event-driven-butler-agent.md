@@ -1,11 +1,14 @@
 # ADR 010: Event-Driven Butler Agent Architecture
 
 ## Status
-Partially superseded by [ADR-027](adr-027-generic-agent-daemon.md), which
-generalises ``ButlerDaemon`` / ``ButlerService`` / ``ButlerRoleLoader`` into
-framework primitives (``AgentDaemon`` / ``AgentService`` / ``AgentRoleLoader``).
-The event-driven primitives (``EventSource``, ``Scheduler``, ``RuleEngine``,
-``EventRouter``) described here remain the canonical reference.
+Superseded by [ADR-027](adr-027-generic-agent-daemon.md) (generic
+``AgentDaemon`` / ``AgentService`` / ``AgentRoleLoader`` framework
+primitives) and [ADR-028](adr-028-butler-as-config-only-package.md)
+(Butler reduced to a YAML-only configuration package). The
+event-driven primitives (``EventSource``, ``Scheduler``,
+``RuleEngine``, ``EventRouter``) described here remain the canonical
+reference; their implementations now live in the framework, not in
+``taskforce_butler``.
 
 ## Context
 
