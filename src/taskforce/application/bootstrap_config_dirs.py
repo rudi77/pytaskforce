@@ -34,6 +34,14 @@ _KNOWN_AGENT_PACKAGES: tuple[tuple[str, str], ...] = (
     ("taskforce_rag_agent", "configs"),
 )
 
+# Subdirs of each agent-package ``configs/`` dir that also hold YAML
+# profiles. Without registering these the framework's FileAgentRegistry
+# only scans top-level YAMLs and silently hides every sub-agent (issue
+# #235): butler's accountant / pc-agent / research_agent / vision_ocr
+# (custom), butler's accountant / personal_assistant role files
+# (roles), and the entire coding sub-agent suite (custom).
+_NESTED_PROFILE_SUBDIRS: tuple[str, ...] = ("custom", "roles")
+
 _initialized = False
 
 
@@ -76,6 +84,16 @@ def _discover_agent_config_dirs() -> list[Path]:
                 package=package_name,
                 path=str(found),
             )
+            for subdir_name in _NESTED_PROFILE_SUBDIRS:
+                subdir = found / subdir_name
+                if subdir.is_dir():
+                    dirs.append(subdir)
+                    logger.debug(
+                        "agent_config_dir_found",
+                        package=package_name,
+                        path=str(subdir),
+                        parent=str(found),
+                    )
     return dirs
 
 

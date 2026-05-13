@@ -76,19 +76,38 @@ def get_agent_config_dirs() -> list[Path]:
     return dirs
 
 
+_NESTED_SUBDIRS = ("custom", "roles")
+
+
 def register_agent_config_dirs() -> None:
     """Discover agent config dirs and register them with the ProfileLoader.
 
-    This is the main integration point called during CLI startup.  It uses
-    :func:`get_agent_config_dirs` to find directories and then calls
-    :func:`taskforce.application.profile_loader.register_config_dir` for
-    each one so that profile resolution includes agent-shipped configs.
+    This is the main integration point called during CLI startup. For
+    every installed agent package it registers:
+
+    - The top-level ``configs/`` dir (the agent's main profile lives here)
+    - ``configs/custom/`` — Butler/coding sub-agents and butler custom roles
+    - ``configs/roles/`` — Butler role specializations (accountant, …)
+
+    Without the nested-subdir registration the framework's
+    ``FileAgentRegistry`` scans only top-level YAMLs in extra dirs, which
+    silently hides every sub-agent the user expects to see in
+    ``GET /api/v1/agents`` (issue #235).
     """
     from taskforce.application.profile_loader import register_config_dir
 
     for config_dir in get_agent_config_dirs():
         register_config_dir(config_dir)
         logger.debug("registered_agent_config_dir", path=str(config_dir))
+        for subdir_name in _NESTED_SUBDIRS:
+            subdir = config_dir / subdir_name
+            if subdir.is_dir():
+                register_config_dir(subdir)
+                logger.debug(
+                    "registered_agent_config_dir",
+                    path=str(subdir),
+                    parent=str(config_dir),
+                )
 
 
 # ------------------------------------------------------------------
