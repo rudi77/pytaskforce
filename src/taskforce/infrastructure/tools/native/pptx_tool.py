@@ -1,8 +1,7 @@
 """PPTX presentation manipulation tool.
 
 Provides reading, writing, and editing capabilities for Microsoft PowerPoint
-(.pptx) files.  Requires the ``python-pptx`` library (install via
-``uv sync --extra office``).
+(.pptx) files. ``python-pptx`` ships as a core dependency.
 """
 
 from __future__ import annotations
@@ -26,8 +25,8 @@ def _require_pptx() -> Any:
         return pptx
     except ImportError:
         raise ImportError(
-            "python-pptx is required for PPTX operations. "
-            "Install with: uv sync --extra office"
+            "python-pptx is part of the core install but the import failed. "
+            "Run 'uv sync' to repair the venv."
         )
 
 

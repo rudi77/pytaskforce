@@ -1,11 +1,9 @@
 """
 Tiktoken-based Token Estimator - Accurate token counting.
 
-Uses the tiktoken library for precise token counting. Requires the
-optional ``tokenizer`` dependency group (``uv sync --extra tokenizer``).
-
-Falls back gracefully if tiktoken is not installed — callers should
-catch ``ImportError`` and use the heuristic estimator instead.
+Uses the tiktoken library for precise token counting. ``tiktoken`` ships
+as a core dependency. Callers may still catch ``ImportError`` and fall
+back to the heuristic estimator if the venv is misconfigured.
 """
 
 

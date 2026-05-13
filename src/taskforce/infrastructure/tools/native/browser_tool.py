@@ -5,9 +5,8 @@ Provides browser automation capabilities using Playwright.
 Supports navigating pages, clicking elements, filling forms,
 taking screenshots, and extracting content from web pages.
 
-Requires the optional 'browser' dependency group:
-    uv sync --extra browser
-    playwright install chromium
+Playwright ships as a core dependency. Chromium binaries still need
+to be downloaded once via ``playwright install chromium``.
 """
 
 from __future__ import annotations
@@ -176,8 +175,9 @@ class BrowserTool(ToolProtocol):
         close             – Close the browser session.
 
     Installation:
-        uv sync --extra browser
-        playwright install chromium
+        Playwright is bundled with the core ``taskforce`` install.
+        After ``uv sync`` you still need ``playwright install chromium``
+        once so the browser binary is downloaded.
     """
 
     @property
@@ -336,8 +336,9 @@ class BrowserTool(ToolProtocol):
             return {
                 "success": False,
                 "error": (
-                    "Playwright is not installed. "
-                    "Install with: uv sync --extra browser && playwright install chromium"
+                    "Playwright is part of the core install but the import failed. "
+                    "Run 'uv sync' to repair the venv, then "
+                    "'playwright install chromium' to download the browser binary."
                 ),
             }
         except Exception as e:

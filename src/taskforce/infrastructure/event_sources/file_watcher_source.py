@@ -10,9 +10,9 @@ schedules the (async) ``event_callback`` onto the loop captured at
 ``EventSourceProtocol`` implementations — the daemon does not have to
 know that a thread exists.
 
-Optional dependency: install with ``uv sync --extra event-sources-fs``.
-The factory raises :class:`ModuleNotFoundError` with a helpful hint when
-``watchdog`` is missing so misconfiguration shows up at daemon start
+``watchdog`` ships as a core dependency. The factory still raises
+:class:`ModuleNotFoundError` with a helpful hint if the package is
+missing (broken venv) so the misconfiguration shows up at daemon start
 instead of at first inotify event.
 """
 
@@ -72,8 +72,8 @@ class FileWatcherEventSource:
             from watchdog.observers import Observer
         except ModuleNotFoundError as exc:  # pragma: no cover — surfaced by daemon
             raise ModuleNotFoundError(
-                "FileWatcherEventSource requires the 'watchdog' package. "
-                "Install with: uv sync --extra event-sources-fs"
+                "FileWatcherEventSource requires the 'watchdog' package, "
+                "which ships in the core install. Run 'uv sync' to repair the venv."
             ) from exc
 
         self._loop = asyncio.get_running_loop()

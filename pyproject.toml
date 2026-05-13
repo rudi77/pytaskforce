@@ -64,6 +64,19 @@ dependencies = [
     "reportlab>=4.0.0",
     "pillow>=10.0.0",
     "docling>=2.0.0",
+    # Browser automation (browser tool) — playwright runtime ships by default;
+    # browser binaries still need ``playwright install chromium`` once.
+    "playwright>=1.40.0",
+    # Office documents (docx/pptx/excel tools)
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "openpyxl>=3.1.0",
+    # Token counting (TokenEstimator)
+    "tiktoken>=0.5.0",
+    # Encryption for settings store + encrypted token store
+    "cryptography>=41.0.0",
+    # FileWatcher event source
+    "watchdog>=4.0.0",
 ]
 
 [project.urls]
@@ -93,19 +106,19 @@ taskforce = "taskforce.api.cli.main:app"
 rag = [
     "azure-search-documents>=11.4.0",
 ]
-browser = [
-    "playwright>=1.40.0",
-]
-pdf = [
-    # Kept for backwards compatibility — these are now in core dependencies
-]
+# Browser / office / tokenizer / auth / event-sources-fs are now part of the
+# core dependencies. The empty extras are kept so existing
+# ``uv sync --extra <name>`` invocations and downstream docs keep working.
+browser = []
+pdf = []
+tokenizer = []
+auth = []
+office = []
+event-sources-fs = []
 postgres = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "asyncpg>=0.29",
-]
-tokenizer = [
-    "tiktoken>=0.5.0",
 ]
 tracing = [
     "arize-phoenix-otel>=0.6.0",
@@ -119,25 +132,12 @@ evals = [
     "inspect-ai>=0.3.130",
     "inspect-evals[swe_bench]>=0.3.0",
 ]
-auth = [
-    "cryptography>=41.0.0",
-]
-office = [
-    "python-docx>=1.1.0",
-    "python-pptx>=1.0.0",
-    "openpyxl>=3.1.0",
-]
 acp = [
     "acp-sdk>=1.0.0,<2.0.0",
     # acp-sdk 1.0.x still references ``uvicorn.config.LoopSetupType``,
     # which was renamed to ``LoopFactoryType`` around uvicorn 0.36. Pin to
     # the last compatible release until acp-sdk catches up.
     "uvicorn>=0.30,<0.36",
-]
-event-sources-fs = [
-    # File-system watcher backing FileWatcherEventSource. Runs the
-    # observer on a background thread and bridges events into asyncio.
-    "watchdog>=4.0.0",
 ]
 
 [dependency-groups]

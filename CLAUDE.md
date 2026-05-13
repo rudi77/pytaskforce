@@ -504,11 +504,11 @@ corresponding package is installed.
 | `edit` | EditTool | `edit_tool` | Targeted file editing (search/replace) |
 | `fetch_result` | FetchResultTool | `fetch_result_tool` | Retrieve previously stored tool results |
 | `wiki` | WikiTool | `wiki_tool` | Wiki-style long-term memory (markdown pages; see ADR-020) |
-| `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (`uv sync --extra browser && playwright install chromium`) |
+| `browser` | BrowserTool | `browser_tool` | Headless browser via Playwright (bundled; run `playwright install chromium` once for the browser binary) |
 | `multimedia` | MultimediaTool | `multimedia_tool` | Image/media handling |
-| `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (`uv sync --extra office`) |
-| `pptx` | PptxTool | `pptx_tool` | Microsoft PowerPoint handling (`uv sync --extra office`) |
-| `excel` | ExcelTool | `excel_tool` | Microsoft Excel handling (`uv sync --extra office`) |
+| `docx` | DocxTool | `docx_tool` | Microsoft Word document handling (bundled) |
+| `pptx` | PptxTool | `pptx_tool` | Microsoft PowerPoint handling (bundled) |
+| `excel` | ExcelTool | `excel_tool` | Microsoft Excel handling (bundled) |
 | `accounting_validate` | AccountingValidateTool | `accounting_validate_tool` | Invoice/compliance validation helper |
 | `accounting_audit` | AccountingAuditTool | `accounting_audit_tool` | Accounting audit checks |
 | `send_notification` | SendNotificationTool | `send_notification_tool` | Proactive push notifications via the Communication Gateway |
@@ -883,16 +883,18 @@ transparently.
 # Clone and navigate
 cd /home/user/pytaskforce
 
-# Install dependencies (MUST use uv)
+# Install dependencies (MUST use uv) — installs every tool/runtime dependency
+# the agent uses by default (LLM stack, Playwright, python-docx/pptx/openpyxl,
+# tiktoken, cryptography, watchdog, ...).
 uv sync
 
 # Install optional dependency groups as needed
-uv sync --extra browser       # Playwright browser automation
 uv sync --extra rag            # Azure AI Search
-uv sync --extra office         # docx/pptx/excel tools
 uv sync --extra acp            # Agent Communication Protocol SDK
+uv sync --extra postgres       # PostgreSQL persistence
+uv sync --extra tracing        # Arize Phoenix observability
 
-# For browser tool: also install Playwright browsers
+# For browser tool: download the Chromium binary once
 playwright install chromium
 
 # To use butler / coding-agent / rag-agent features, install the matching
@@ -1406,20 +1408,25 @@ tools:
   - llm
 ```
 
-### Optional Dependency Groups
+### Core vs. Optional Dependencies
 
-Defined in `pyproject.toml` under `[project.optional-dependencies]`:
+Browser automation (Playwright), the Office tools (`python-docx`,
+`python-pptx`, `openpyxl`), token counting (`tiktoken`), encryption
+(`cryptography`) and the file-watcher event source (`watchdog`) ship
+**as core dependencies**. `uv sync` installs them all by default — no
+extras needed for the default agent setup. The matching extras
+(`browser`, `office`, `tokenizer`, `auth`, `event-sources-fs`, `pdf`)
+remain defined as empty groups so legacy `uv sync --extra <name>`
+invocations keep working.
+
+The remaining `[project.optional-dependencies]` groups are genuine
+opt-ins:
 
 | Group | Purpose | Install Command |
 |-------|---------|-----------------|
-| `browser` | Playwright headless browser automation | `uv sync --extra browser` |
 | `rag` | Azure AI Search integration | `uv sync --extra rag` |
-| `pdf` | Kept for backwards compatibility — core already includes `pypdf`, `pdfplumber`, `docling` | `uv sync --extra pdf` |
-| `office` | python-docx, python-pptx, openpyxl (for the `docx`/`pptx`/`excel` tools) | `uv sync --extra office` |
 | `postgres` | PostgreSQL persistence (SQLAlchemy, Alembic, AsyncPG) | `uv sync --extra postgres` |
-| `tokenizer` | Tiktoken token counting | `uv sync --extra tokenizer` |
 | `tracing` | Arize Phoenix OTEL + LiteLLM instrumentation | `uv sync --extra tracing` |
-| `auth` | Cryptography for authentication / OAuth2 | `uv sync --extra auth` |
 | `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
 | `acp` | Agent Communication Protocol (IBM/Linux Foundation) SDK | `uv sync --extra acp` |

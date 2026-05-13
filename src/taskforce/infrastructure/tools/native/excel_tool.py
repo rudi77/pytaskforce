@@ -1,8 +1,7 @@
 """Excel spreadsheet manipulation tool.
 
 Provides reading, writing, and editing capabilities for Microsoft Excel
-(.xlsx) files.  Requires the ``openpyxl`` library (install via
-``uv sync --extra office``).
+(.xlsx) files. ``openpyxl`` ships as a core dependency.
 """
 
 from __future__ import annotations
@@ -26,8 +25,8 @@ def _require_openpyxl() -> Any:
         return openpyxl
     except ImportError:
         raise ImportError(
-            "openpyxl is required for Excel operations. "
-            "Install with: uv sync --extra office"
+            "openpyxl is part of the core install but the import failed. "
+            "Run 'uv sync' to repair the venv."
         )
 
 

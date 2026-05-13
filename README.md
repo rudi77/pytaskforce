@@ -313,6 +313,14 @@ uv sync --group dev
 together, with the enterprise plugin pre-flight (alembic + bootstrap) and
 stale-chunk protection for the `@taskforce/enterprise-ui` Vite dep.
 
+> **Requires pnpm 11+.** The launcher and `scripts/sync-plugins.ps1` call
+> `pnpm approve-builds --all` after every install (pnpm 11's `esbuild`
+> postinstall is treated as a hard install failure unless explicitly
+> approved). On pnpm 10 this fails with `Unknown option: 'all'`. Either
+> enable Corepack (`corepack enable` — picks up the version pinned in
+> `ui/package.json`'s `packageManager` field) or install globally:
+> `npm install -g pnpm@latest`.
+
 ```powershell
 .\dev.ps1                  # backend (8070) + UI (5173) in this terminal, prefixed logs
 .\dev.ps1 -Split           # both in two separate terminal windows (independent Ctrl+C)
@@ -349,15 +357,25 @@ uv run ruff check src/taskforce tests
 uv run mypy src/taskforce
 ```
 
+### Core Tool Dependencies
+
+`uv sync` already installs every dependency the default agent needs at
+runtime — including Playwright (browser tool), `python-docx` /
+`python-pptx` / `openpyxl` (office tools), `tiktoken`, `cryptography`
+and `watchdog`. The matching `--extra` groups (`browser`, `office`,
+`tokenizer`, `auth`, `event-sources-fs`, `pdf`) remain accepted as
+no-op extras so legacy install scripts keep working.
+
+For the `browser` tool, download the Chromium binary once:
+```bash
+playwright install chromium
+```
+
 ### Optional Dependency Groups
 ```bash
-uv sync --extra browser            # Playwright browser automation
 uv sync --extra rag                # Azure AI Search
-uv sync --extra office             # docx/pptx/excel tools
 uv sync --extra postgres           # PostgreSQL persistence
-uv sync --extra tokenizer          # Tiktoken token counting
 uv sync --extra tracing            # Arize Phoenix OTEL tracing
-uv sync --extra auth               # Cryptography / OAuth2
 uv sync --extra acp                # Agent Communication Protocol SDK
 uv sync --extra evals              # Inspect AI + SWE-Bench evaluation
 ```
