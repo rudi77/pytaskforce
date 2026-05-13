@@ -33,6 +33,24 @@ from taskforce.application.factory import AgentFactory
 from taskforce.application.token_analytics_facade import get_execution_token_summary
 from taskforce.core.domain.enums import EventType
 
+# Register agent-package config dirs so the framework profile loader can
+# find 'butler' (and other agent-package profiles) after the package split.
+# Without this, AgentFactory only sees src/taskforce/configs/ and fails with
+# "Profile 'butler' not found".
+try:
+    from taskforce_cli.agent_discovery import register_agent_config_dirs
+
+    register_agent_config_dirs()
+except ImportError:
+    # taskforce_cli not installed — agent-package profiles unavailable.
+    # eval_butler.py requires taskforce-butler, so this is fatal.
+    print(
+        "ERROR: taskforce_cli not importable — agent-package profiles cannot be "
+        "registered. Install with: uv pip install -e cli/",
+        file=sys.stderr,
+    )
+    raise
+
 if TYPE_CHECKING:
     from taskforce.core.domain.lean_agent import Agent
 
