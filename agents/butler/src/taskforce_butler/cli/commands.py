@@ -55,17 +55,17 @@ async def _run_butler(
     *,
     supervised: bool = True,
 ) -> None:
-    """Initialize and run the butler daemon.
+    """Initialise and run the butler daemon.
 
-    When ``supervised`` is true (the default) the daemon is wrapped in
-    a :class:`taskforce_butler.daemon_supervisor.DaemonSupervisor` which
-    provides watchdog, auto-restart on crash, structured crash logs and
-    graceful signal handling for 24/7 unattended operation (issue #156).
+    This is a thin wrapper around the framework's ``AgentDaemon`` and
+    ``AgentDaemonSupervisor`` (ADR-027). ``taskforce daemon start
+    --profile butler`` is the canonical entry-point; ``taskforce butler
+    start`` is kept as a shortcut for now.
     """
-    from taskforce_butler.daemon import ButlerDaemon
+    from taskforce.application.agent_daemon import AgentDaemon
 
     if not supervised:
-        daemon = ButlerDaemon(profile=profile, role=role, work_dir=work_dir)
+        daemon = AgentDaemon(profile=profile, role=role, work_dir=work_dir)
         try:
             await daemon.start()
             console.print(
@@ -80,10 +80,10 @@ async def _run_butler(
             console.print("[green]Butler daemon stopped.[/green]")
         return
 
-    from taskforce_butler.daemon_supervisor import DaemonSupervisor
+    from taskforce.application.daemon_supervisor import AgentDaemonSupervisor
 
-    supervisor = DaemonSupervisor(
-        daemon_factory=lambda: ButlerDaemon(profile=profile, role=role, work_dir=work_dir),
+    supervisor = AgentDaemonSupervisor(
+        daemon_factory=lambda: AgentDaemon(profile=profile, role=role, work_dir=work_dir),
     )
     supervisor.install_signal_handlers()
     console.print(
@@ -346,11 +346,17 @@ app.add_typer(roles_app, name="roles")
 @roles_app.command("list")
 def roles_list(ctx: typer.Context) -> None:
     """List available butler roles."""
-    from taskforce.application.factory import AgentFactory
-    from taskforce_butler.role_loader import ButlerRoleLoader
+    from pathlib import Path
 
-    factory = AgentFactory()
-    loader = ButlerRoleLoader(config_dir=factory.config_dir)
+    from taskforce.application.agent_plugin_registry import load_config_dirs
+    from taskforce.application.agent_role_loader import AgentRoleLoader
+
+    search_dirs: list[Path] = []
+    for agent_config_dir in load_config_dirs().values():
+        roles_dir = agent_config_dir / "roles"
+        if roles_dir.is_dir():
+            search_dirs.append(roles_dir)
+    loader = AgentRoleLoader(search_dirs=search_dirs)
     roles = loader.list_available()
 
     if not roles:
@@ -377,11 +383,17 @@ def roles_show(
     name: str = typer.Argument(help="Role name to show"),
 ) -> None:
     """Show details of a butler role."""
-    from taskforce.application.factory import AgentFactory
-    from taskforce_butler.role_loader import ButlerRoleLoader
+    from pathlib import Path
 
-    factory = AgentFactory()
-    loader = ButlerRoleLoader(config_dir=factory.config_dir)
+    from taskforce.application.agent_plugin_registry import load_config_dirs
+    from taskforce.application.agent_role_loader import AgentRoleLoader
+
+    search_dirs: list[Path] = []
+    for agent_config_dir in load_config_dirs().values():
+        roles_dir = agent_config_dir / "roles"
+        if roles_dir.is_dir():
+            search_dirs.append(roles_dir)
+    loader = AgentRoleLoader(search_dirs=search_dirs)
 
     try:
         role = loader.load(name)

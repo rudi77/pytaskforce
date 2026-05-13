@@ -1,14 +1,20 @@
 # Taskforce Butler Agent
 
-Event-driven personal assistant daemon with scheduling, trigger rules, and Google Workspace integration.
+Event-driven personal assistant — Google Workspace integration and
+butler-specific configs.
 
-## Features
+After [ADR-027](../../docs/adr/adr-027-generic-agent-daemon.md) the
+event-driven daemon, scheduler, rule-engine, supervisor, and role-loader
+all live in `taskforce.*` (framework core). This package now ships:
 
-- Scheduler with cron/interval/one-shot jobs
-- Trigger rules (event-to-action automation)
-- Google Calendar, Gmail, Drive integration
-- Communication Gateway (Telegram, Teams, Slack)
-- Butler role specialization (accountant, personal assistant)
+- Google Workspace tools (`gmail`, `google_drive`, `calendar`, plus
+  `authenticate`) — these move to a dedicated
+  `taskforce-google-workspace` package in Phase 3 (#246).
+- `learning_service.py` — post-conversation knowledge extraction.
+- A thin CLI shim (`taskforce butler ...`) that delegates to the
+  framework's `taskforce daemon ...` command.
+- Butler profile + role configs (`configs/butler.agent.md`,
+  `configs/custom/*.yaml`, `configs/roles/*.{agent.md,yaml}`).
 
 ## Installation
 
@@ -19,14 +25,28 @@ uv sync
 
 ## Usage
 
+Canonical (framework command, profile-agnostic):
+
 ```bash
-taskforce-butler start --profile butler
-taskforce-butler status
-taskforce-butler rules list
+taskforce daemon start --profile butler
+taskforce daemon status --profile butler
+```
+
+Legacy shortcuts (still work — wrap the framework command):
+
+```bash
+taskforce butler start --profile butler
+taskforce butler status
+taskforce butler rules list
+taskforce butler schedules list
+taskforce butler roles list
 ```
 
 ## Note
 
-This is a pre-built agent that depends on the `taskforce` core framework.
-The Butler-specific infrastructure (scheduler, event sources, communication gateway)
-lives in this package, not in the framework core.
+The Butler is being refactored to a YAML-only configuration package
+(plan: `~/.claude/plans/ich-will-dass-wir-composed-hanrahan.md`,
+phases #244-#247). Phase 2 (this milestone) moved all generic
+plumbing into the framework; subsequent phases move Google Workspace
+into `taskforce-google-workspace` and finally reduce
+`agents/butler/src/` to zero LoC.

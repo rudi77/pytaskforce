@@ -1,0 +1,81 @@
+"""Integration test for the generic AgentDaemon (#245 / ADR-027).
+
+Boots an :class:`AgentDaemon` against the butler profile in a temporary
+work directory, waits for its ``status.json`` to be written, then stops
+it cleanly. Verifies that:
+
+* The daemon's lifecycle (start → status writer → stop) works end-to-end
+  using only framework primitives (no ``taskforce_butler`` imports).
+* The status file lands at ``{work_dir}/{profile}/status.json`` — proving
+  the profile-aware status path (Phase 2 / ADR-027).
+* The clean-break import contract holds: ``taskforce_butler.daemon``
+  module is gone after the move.
+
+This test is hermetic in spirit but it does load the real butler profile
+(via ``ProfileLoader``) to exercise the actual code paths. The Telegram
+gateway / executor / persistent-agent-service all fall back to "not
+configured" when their dependencies are missing — that's the expected
+"degraded" daemon behaviour in CI.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+import pytest
+
+from taskforce.application.agent_daemon import AgentDaemon
+
+
+@pytest.mark.asyncio
+async def test_agent_daemon_writes_status_under_profile_subdir(
+    tmp_path: Path,
+) -> None:
+    """status.json must land at {work_dir}/{profile}/status.json."""
+    daemon = AgentDaemon(
+        profile="butler",
+        work_dir=str(tmp_path),
+        persistent_agent=False,  # avoid spinning up the queue service
+    )
+    try:
+        await daemon.start()
+        status_path = tmp_path / "butler" / "status.json"
+        # Status loop runs at 30s cadence but writes once on start();
+        # poll for up to 10s with backoff so the assertion is robust.
+        for _ in range(50):
+            if status_path.is_file():
+                break
+            await asyncio.sleep(0.2)
+        assert status_path.is_file(), f"status.json not written at {status_path}"
+
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+        assert data["running"] is True
+        assert data["profile"] == "butler"
+    finally:
+        await daemon.stop()
+
+
+def test_butler_daemon_legacy_import_is_gone() -> None:
+    """Phase 2 clean break: the old module path raises ModuleNotFoundError."""
+    with pytest.raises(ModuleNotFoundError):
+        import taskforce_butler.daemon  # noqa: F401
+
+
+def test_butler_service_legacy_import_is_gone() -> None:
+    """Phase 2 clean break: ButlerService is gone."""
+    with pytest.raises(ModuleNotFoundError):
+        import taskforce_butler.service  # noqa: F401
+
+
+def test_butler_role_loader_legacy_import_is_gone() -> None:
+    """Phase 2 clean break: ButlerRoleLoader is gone."""
+    with pytest.raises(ModuleNotFoundError):
+        import taskforce_butler.role_loader  # noqa: F401
+
+
+def test_daemon_supervisor_legacy_import_is_gone() -> None:
+    """Phase 2 clean break: old supervisor path is gone."""
+    with pytest.raises(ModuleNotFoundError):
+        import taskforce_butler.daemon_supervisor  # noqa: F401
