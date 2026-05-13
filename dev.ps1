@@ -166,20 +166,34 @@ function Install-UiDeps {
 # pnpm install so the bundler resolves to the production component
 # bundle without us having to fork package.json per environment.
 function Sync-EnterpriseUiDist {
-    $realDist = Join-Path $EnterpriseRoot "web\dist"
-    $stubInstalled = Join-Path $UiDir "node_modules\@taskforce\enterprise-ui\dist"
+    # The CI stub's package.json declares main/module/exports = ./index.js
+    # (a no-op file). The real enterprise package declares them as
+    # ./dist/index.js. Just copying dist/ over the stub leaves the stub
+    # package.json in place, so the bundler still resolves to the no-op
+    # entry and admin pages render blank. We must overlay package.json too.
+    $realPkgRoot = Join-Path $EnterpriseRoot "web"
+    $realDist = Join-Path $realPkgRoot "dist"
+    $realPkgJson = Join-Path $realPkgRoot "package.json"
+    $stubRoot = Join-Path $UiDir "node_modules\@taskforce\enterprise-ui"
+    $stubInstalledDist = Join-Path $stubRoot "dist"
+    $stubPkgJson = Join-Path $stubRoot "package.json"
     if (-not (Test-Path $realDist)) {
         Write-Warn2 "real enterprise-ui dist not found at $realDist - admin pages will be blank (run 'pnpm build' in taskforce-enterprise/web first)"
         return
     }
-    if (-not (Test-Path $stubInstalled)) {
-        Write-Warn2 "@taskforce/enterprise-ui not installed yet at $stubInstalled - skipping overlay"
+    if (-not (Test-Path $stubRoot)) {
+        Write-Warn2 "@taskforce/enterprise-ui not installed yet at $stubRoot - skipping overlay"
         return
     }
-    Write-Step "overlaying real enterprise-ui dist over the CI stub"
-    Remove-Item -Recurse -Force $stubInstalled -ErrorAction SilentlyContinue
-    Copy-Item -Recurse -Force $realDist $stubInstalled
-    Write-Ok "enterprise-ui dist linked to $realDist"
+    Write-Step "overlaying real enterprise-ui (dist + package.json) over the CI stub"
+    if (Test-Path $stubInstalledDist) {
+        Remove-Item -Recurse -Force $stubInstalledDist -ErrorAction SilentlyContinue
+    }
+    Copy-Item -Recurse -Force $realDist $stubInstalledDist
+    if (Test-Path $realPkgJson) {
+        Copy-Item -Force $realPkgJson $stubPkgJson
+    }
+    Write-Ok "enterprise-ui linked to $realPkgRoot (dist + package.json)"
 }
 
 function Invoke-SyncPlugins {
