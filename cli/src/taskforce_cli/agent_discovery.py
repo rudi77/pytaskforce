@@ -35,10 +35,11 @@ from taskforce.application.agent_plugin_registry import (
 logger = structlog.get_logger(__name__)
 
 # Legacy hardcoded fallback table. Used only for packages that don't yet
-# declare entry-points. Removed in Phase 4 once every agent ships its own
-# ``taskforce.config_dirs`` / ``taskforce.tools`` entries.
+# declare entry-points. Butler was removed in Phase 4 (#247) once the
+# ``taskforce.config_dirs`` entry-point in its data-only pyproject took
+# over discovery. coding-agent and rag-agent still rely on the fallback
+# for their ``configs/`` directories.
 _AGENT_PACKAGES: list[tuple[str, str]] = [
-    ("taskforce_butler", "configs"),
     ("taskforce_coding_agent", "configs"),
     ("taskforce_rag_agent", "configs"),
 ]
