@@ -76,6 +76,15 @@ const config: Config = {
           "monospace",
         ],
       },
+      keyframes: {
+        "streaming-dot": {
+          "0%, 80%, 100%": { opacity: "0.3", transform: "scale(0.85)" },
+          "40%": { opacity: "1", transform: "scale(1)" },
+        },
+      },
+      animation: {
+        "streaming-dot": "streaming-dot 1.2s ease-in-out infinite",
+      },
     },
   },
   plugins: [animate],

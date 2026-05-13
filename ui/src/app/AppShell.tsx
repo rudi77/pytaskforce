@@ -310,7 +310,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-          <div className="mx-auto w-full max-w-[1600px] p-6">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col p-6">
             <Outlet />
           </div>
         </main>
