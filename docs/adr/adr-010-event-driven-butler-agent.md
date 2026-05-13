@@ -1,7 +1,11 @@
 # ADR 010: Event-Driven Butler Agent Architecture
 
 ## Status
-Proposed
+Partially superseded by [ADR-027](adr-027-generic-agent-daemon.md), which
+generalises ``ButlerDaemon`` / ``ButlerService`` / ``ButlerRoleLoader`` into
+framework primitives (``AgentDaemon`` / ``AgentService`` / ``AgentRoleLoader``).
+The event-driven primitives (``EventSource``, ``Scheduler``, ``RuleEngine``,
+``EventRouter``) described here remain the canonical reference.
 
 ## Context
 

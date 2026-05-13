@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from taskforce.core.domain.schedule import ScheduleJob
-from taskforce_butler.infrastructure.tools.reminder_tool import ReminderTool
+from taskforce.infrastructure.tools.native.reminder_tool import ReminderTool
 
 
 class _FakeScheduler:

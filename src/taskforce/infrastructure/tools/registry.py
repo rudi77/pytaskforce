@@ -243,12 +243,12 @@ _BUILTIN_REGISTRY: dict[str, ToolSpec] = {
     },
     "reminder": {
         "type": "ReminderTool",
-        "module": "taskforce_butler.infrastructure.tools.reminder_tool",
+        "module": "taskforce.infrastructure.tools.native.reminder_tool",
         "params": {},
     },
     "rule_manager": {
         "type": "RuleManagerTool",
-        "module": "taskforce_butler.infrastructure.tools.rule_manager_tool",
+        "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
         "params": {},
     },
     "authenticate": {

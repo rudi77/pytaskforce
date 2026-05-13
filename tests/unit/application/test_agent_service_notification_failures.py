@@ -1,4 +1,4 @@
-"""Verify ButlerService surfaces notification dispatch failures.
+"""Verify AgentService surfaces notification dispatch failures.
 
 A scheduled push that the gateway rejects (e.g. recipient_id not
 registered, or no gateway configured at all) used to be only logged
@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from taskforce_butler.service import ButlerService
+from taskforce.application.agent_service import AgentService
 
 
 @dataclass
@@ -42,7 +42,7 @@ class _RejectingGateway:
 
 @pytest.mark.asyncio
 async def test_failure_recorded_in_status(tmp_path) -> None:
-    butler = ButlerService(
+    butler = AgentService(
         work_dir=str(tmp_path),
         default_notification_channel="telegram",
         default_recipient_id="",
@@ -70,7 +70,7 @@ async def test_failure_recorded_in_status(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_no_gateway_is_recorded_as_failure(tmp_path) -> None:
-    butler = ButlerService(work_dir=str(tmp_path))
+    butler = AgentService(work_dir=str(tmp_path))
     # Intentionally no set_gateway call.
 
     await butler._send_notification(
@@ -88,7 +88,7 @@ async def test_no_gateway_is_recorded_as_failure(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_ring_buffer_caps_at_max(tmp_path) -> None:
-    butler = ButlerService(work_dir=str(tmp_path))
+    butler = AgentService(work_dir=str(tmp_path))
     butler.set_gateway(_RejectingGateway())
 
     for i in range(25):
@@ -114,7 +114,7 @@ async def test_successful_dispatch_does_not_record(tmp_path) -> None:
         async def send_notification(self, request: Any) -> _Result:
             return _Result(success=True, channel=request.channel, recipient_id=request.recipient_id)
 
-    butler = ButlerService(work_dir=str(tmp_path))
+    butler = AgentService(work_dir=str(tmp_path))
     butler.set_gateway(_OkGateway())
 
     await butler._send_notification(

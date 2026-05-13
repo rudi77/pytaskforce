@@ -813,28 +813,30 @@ installed. When installed, the unified CLI auto-registers `taskforce butler ...`
 and switches the default profile from `dev` to `butler`.
 
 See **[ADR-010](docs/adr/adr-010-event-driven-butler-agent.md)** and
-**[ADR-017](docs/adr/adr-017-butler-role-specialization.md)** for design details.
+**[ADR-017](docs/adr/adr-017-butler-role-specialization.md)** for the
+original design; **[ADR-027](docs/adr/adr-027-generic-agent-daemon.md)**
+documents the Phase-2 generalisation that moved the daemon, service,
+supervisor, role-loader and three generic tools into the framework.
 
 ### Package Layout
+
+After Phase 2 (#245), Butler only ships its CLI shim, Google Workspace
+tools, configs, and a small handful of Butler-specific helpers. Phases
+3 and 4 will further shrink this to data-only.
 
 ```
 agents/butler/
 ├── src/taskforce_butler/
 │   ├── __init__.py
-│   ├── daemon.py             # ButlerDaemon — top-level daemon process
-│   ├── service.py            # ButlerService — lifecycle orchestration
 │   ├── learning_service.py   # Auto-extraction from conversations
-│   ├── role_loader.py        # Butler role specialization loader
-│   ├── cli/commands.py       # Typer app registered as `taskforce butler`
-│   ├── domain/               # butler_role.py
+│   ├── cli/commands.py       # Thin Typer app — delegates to
+│   │                         # taskforce.application.agent_daemon.AgentDaemon
 │   └── infrastructure/
-│       ├── event_sources/    # CalendarEventSource, WebhookEventSource
-│       │                     # (extend taskforce.infrastructure.event_sources.polling_base)
-│       └── tools/            # gmail, google_drive, calendar, schedule,
-│                             # reminder, rule_manager, auth tools
+│       └── tools/            # gmail, google_drive, calendar, auth (Phase 3
+│                             # moves these into taskforce-google-workspace)
 └── configs/
-    ├── butler.yaml           # Main butler profile
-    ├── custom/               # Custom role configs (accountant, pc-agent, …)
+    ├── butler.agent.md       # Main butler profile
+    ├── custom/               # Sub-agent configs (accountant, pc-agent, …)
     └── roles/                # accountant.yaml, personal_assistant.yaml
 ```
 
@@ -855,11 +857,12 @@ Framework-side helpers that Butler consumes:
 # Install the package
 uv pip install taskforce-butler          # or via workspace install
 
-# Start the butler daemon
-taskforce butler start --profile butler
-taskforce start                          # shortcut: equivalent to 'butler start'
+# Start the butler daemon — generic framework command (canonical)
+taskforce daemon start --profile butler
+taskforce daemon status --profile butler
 
-# Check status
+# Equivalent shortcuts kept during the Butler→YAML refactor:
+taskforce butler start --profile butler  # delegates to AgentDaemon
 taskforce butler status
 
 # Manage trigger rules

@@ -1,7 +1,13 @@
-"""Butler service orchestrating the event-driven agent lifecycle.
+"""Generic agent service orchestrating the event-driven agent lifecycle.
 
 Coordinates the scheduler, event sources, rule engine, event router,
-and learning service into a coherent always-on agent experience.
+and notification gateway into a coherent always-on agent experience.
+
+This service was originally the ``ButlerService`` (ADR-010) and was
+generalised to the framework in ADR-027. It composes only framework
+primitives (``SchedulerService``, ``FileRuleEngine``, ``EventRouter``)
+plus injectable callbacks for execution / notification / memory. No
+Butler-specific knowledge remains.
 """
 
 from __future__ import annotations
@@ -27,14 +33,14 @@ from taskforce.infrastructure.scheduler.scheduler_service import SchedulerServic
 logger = structlog.get_logger(__name__)
 
 # How many recent notification failures to keep in memory for diagnostics.
-# Exposed via ``ButlerService.get_status()`` and the daemon's status file
+# Exposed via ``AgentService.get_status()`` and the daemon's status file
 # so an operator can see "scheduled job fired, gateway rejected delivery"
 # without having to scrape structlog output.
 _NOTIFICATION_FAILURE_BUFFER_SIZE = 20
 
 
-class ButlerService:
-    """Orchestrates the butler's event-driven lifecycle.
+class AgentService:
+    """Orchestrates an event-driven agent's runtime lifecycle.
 
     Wires together:
     - SchedulerService for time-based triggers
@@ -42,7 +48,11 @@ class ButlerService:
     - RuleEngine for event-to-action mapping
     - EventRouter for action dispatch
     - CommunicationGateway for notifications
-    - AgentExecutor for mission execution
+    - AgentExecutor / PersistentAgentService for mission execution
+
+    The ``rules_filename`` defaults to ``"<profile>/rules.json"`` (relative
+    to ``work_dir``) when a profile is provided, otherwise ``"rules.json"``.
+    Callers can override explicitly for backward compatibility.
     """
 
     def __init__(
@@ -51,13 +61,18 @@ class ButlerService:
         default_notification_channel: str = "telegram",
         default_recipient_id: str = "",
         llm_fallback: bool = False,
+        profile: str | None = None,
+        rules_filename: str | None = None,
     ) -> None:
         self._work_dir = work_dir
         self._default_channel = default_notification_channel
         self._default_recipient_id = default_recipient_id
+        self._profile = profile
 
         # Core components
-        self._rule_engine = FileRuleEngine(work_dir=work_dir, rules_filename="butler/rules.json")
+        if rules_filename is None:
+            rules_filename = f"{profile}/rules.json" if profile else "rules.json"
+        self._rule_engine = FileRuleEngine(work_dir=work_dir, rules_filename=rules_filename)
         self._scheduler = SchedulerService(
             work_dir=work_dir,
             event_callback=self._on_event,
@@ -146,7 +161,7 @@ class ButlerService:
         if self._running:
             return
 
-        logger.info("butler_service.starting")
+        logger.info("agent_service.starting")
 
         # Load persisted rules
         await self._rule_engine.load()
@@ -160,7 +175,7 @@ class ButlerService:
 
         self._running = True
         logger.info(
-            "butler_service.started",
+            "agent_service.started",
             event_sources=len(self._event_sources),
             rules=len(await self._rule_engine.list_rules()),
             jobs=len(await self._scheduler.list_jobs()),
@@ -171,7 +186,7 @@ class ButlerService:
         if not self._running:
             return
 
-        logger.info("butler_service.stopping")
+        logger.info("agent_service.stopping")
 
         # Stop event sources
         for source in self._event_sources:
@@ -182,7 +197,7 @@ class ButlerService:
 
         self._running = False
         logger.info(
-            "butler_service.stopped",
+            "agent_service.stopped",
             events_processed=self._event_router.event_count,
             actions_dispatched=self._event_router.action_count,
         )
@@ -233,7 +248,7 @@ class ButlerService:
         from taskforce.core.domain.agent_event import AgentEventType
 
         logger.info(
-            "butler_service.event_received",
+            "agent_service.event_received",
             event_type=event.event_type.value,
             source=event.source,
         )
@@ -254,7 +269,7 @@ class ButlerService:
             await self._dispatch_schedule_action(event)
         except Exception as exc:
             logger.error(
-                "butler_service.schedule_dispatch_failed",
+                "agent_service.schedule_dispatch_failed",
                 event_id=event.event_id,
                 error=str(exc),
                 exc_info=True,
@@ -273,7 +288,7 @@ class ButlerService:
         action_data = event.payload.get("action")
         if not action_data:
             logger.warning(
-                "butler_service.schedule_event_missing_action",
+                "agent_service.schedule_event_missing_action",
                 event_id=event.event_id,
             )
             return
@@ -286,14 +301,14 @@ class ButlerService:
             action_type = ScheduleActionType(action_type_str)
         except ValueError:
             logger.warning(
-                "butler_service.unknown_schedule_action",
+                "agent_service.unknown_schedule_action",
                 action_type=action_type_str,
                 event_id=event.event_id,
             )
             return
 
         logger.info(
-            "butler_service.dispatching_schedule_action",
+            "agent_service.dispatching_schedule_action",
             job_name=job_name,
             action_type=action_type_str,
         )
@@ -342,7 +357,7 @@ class ButlerService:
         """
         if not self._gateway:
             logger.warning(
-                "butler_service.no_gateway_configured",
+                "agent_service.no_gateway_configured",
                 channel=channel,
                 recipient_id=recipient_id,
             )
@@ -366,7 +381,7 @@ class ButlerService:
         result = await self._gateway.send_notification(request)
         if not result.success:
             logger.error(
-                "butler_service.notification_failed",
+                "agent_service.notification_failed",
                 channel=channel,
                 recipient_id=recipient_id,
                 error=result.error,
@@ -425,7 +440,7 @@ class ButlerService:
                 )
                 result = await self._agent_service.submit(request)
                 logger.info(
-                    "butler_service.mission_completed",
+                    "agent_service.mission_completed",
                     status=result.status,
                     mission_preview=mission[:100],
                     via="queue",
@@ -433,7 +448,7 @@ class ButlerService:
                 return
             except Exception as exc:
                 logger.error(
-                    "butler_service.queue_mission_failed",
+                    "agent_service.queue_mission_failed",
                     mission_preview=mission[:100],
                     error=str(exc),
                 )
@@ -441,7 +456,7 @@ class ButlerService:
 
         # Fallback: direct executor call (no PersistentAgentService wired).
         if not self._executor:
-            logger.warning("butler_service.no_executor_configured")
+            logger.warning("agent_service.no_executor_configured")
             return
 
         try:
@@ -450,14 +465,14 @@ class ButlerService:
                 profile=profile,
             )
             logger.info(
-                "butler_service.mission_completed",
+                "agent_service.mission_completed",
                 status=result.status,
                 mission_preview=mission[:100],
                 via="direct",
             )
         except Exception as exc:
             logger.error(
-                "butler_service.mission_failed",
+                "agent_service.mission_failed",
                 mission_preview=mission[:100],
                 error=str(exc),
             )
@@ -469,10 +484,10 @@ class ButlerService:
     ) -> None:
         """Append content to the wiki log."""
         if not self._wiki_store:
-            logger.warning("butler_service.no_wiki_store_configured")
+            logger.warning("agent_service.no_wiki_store_configured")
             return
         await self._wiki_store.append_log(content)
-        logger.info("butler_service.wiki_log_appended", content_preview=content[:100])
+        logger.info("agent_service.wiki_log_appended", content_preview=content[:100])
 
     async def get_status(self) -> dict[str, Any]:
         """Get the current butler service status."""

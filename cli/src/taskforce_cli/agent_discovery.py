@@ -166,6 +166,11 @@ def _legacy_tool_registrations() -> dict[str, dict[str, Any]]:
     try:
         import taskforce_butler  # noqa: F401
 
+        # Phase 2 (#245 / ADR-027) moved reminder, rule_manager, schedule
+        # into framework native — they're resolved via _BUILTIN_REGISTRY and
+        # no longer need a fallback here. The two Google Workspace tools
+        # still need this until Phase 3 (#246) moves them to
+        # taskforce-google-workspace.
         tools.update(
             {
                 "calendar": {
@@ -178,28 +183,13 @@ def _legacy_tool_registrations() -> dict[str, dict[str, Any]]:
                     "module": "taskforce_butler.infrastructure.tools.email_tool",
                     "params": {},
                 },
-                "schedule": {
-                    "type": "ScheduleTool",
-                    "module": "taskforce_butler.infrastructure.tools.schedule_tool",
-                    "params": {},
-                },
-                "reminder": {
-                    "type": "ReminderTool",
-                    "module": "taskforce_butler.infrastructure.tools.reminder_tool",
-                    "params": {},
-                },
-                "rule_manager": {
-                    "type": "RuleManagerTool",
-                    "module": "taskforce_butler.infrastructure.tools.rule_manager_tool",
-                    "params": {},
-                },
             }
         )
         logger.warning(
             "hardcoded_agent_fallback",
             component="tools",
             package="taskforce_butler",
-            count=5,
+            count=2,
             hint="declare [project.entry-points.\"taskforce.tools\"] in agents/butler/pyproject.toml",
         )
     except ImportError:

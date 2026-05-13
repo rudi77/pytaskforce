@@ -8,6 +8,7 @@ from taskforce.api.cli.commands import (
     acp,
     chat,
     config,
+    daemon,
     goals,
     memory,
     missions,
@@ -44,6 +45,7 @@ app.add_typer(missions.app, name="missions", help="Mission templates and runtime
 app.add_typer(goals.app, name="goals", help="Standing-goal management (proactive layer)")
 app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
 app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
+app.add_typer(daemon.app, name="daemon", help="Generic agent daemon management")
 app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
 
 # --- Agent commands (optional, loaded if packages installed) ---

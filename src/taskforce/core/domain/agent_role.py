@@ -1,14 +1,16 @@
-"""Butler role domain model.
+"""Agent role domain model.
 
-A ButlerRole defines WHAT the butler is (persona, sub-agents, tools)
-while the butler profile YAML defines HOW it runs (persistence, LLM,
+An :class:`AgentRole` defines WHAT an agent is (persona, sub-agents, tools)
+while the agent profile YAML defines HOW it runs (persistence, LLM,
 scheduler, security).
 
-Roles are loaded from YAML files in ``configs/butler_roles/`` or
-``.taskforce/butler_roles/`` and merged into the butler configuration
-at startup.
+Roles are loaded from YAML or ``.agent.md`` files via
+:class:`taskforce.application.agent_role_loader.AgentRoleLoader` and
+merged into the agent configuration at startup.
 
-See ADR-013 for design rationale.
+The pattern was originally developed for the Butler agent (ADR-013, ADR-017)
+and generalised to the framework in ADR-027 so any agent-package can ship
+role overlays.
 """
 
 from __future__ import annotations
@@ -18,21 +20,21 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class ButlerRole:
-    """Defines a Butler role — persona, capabilities, and behavior.
+class AgentRole:
+    """Defines an agent role — persona, capabilities, and behaviour.
 
     Attributes:
-        name: Short identifier for the role (e.g. "accountant").
+        name: Short identifier for the role (e.g. ``"accountant"``).
         description: Human-readable description of the role.
-        persona_prompt: System prompt text that defines the butler's persona.
+        persona_prompt: System prompt text that defines the agent's persona.
             May contain ``{{SUB_AGENTS_SECTION}}`` placeholder for dynamic
             sub-agent list injection.
         sub_agents: Sub-agent specifications with ``specialist`` and
             ``description`` keys.
         tools: Tool short names (strings) or tool config dicts.
-        event_sources: Event source configurations specific to this role.
-        rules: Trigger rule configurations specific to this role.
-        mcp_servers: MCP server configurations specific to this role.
+        event_sources: Event-source configurations specific to this role.
+        rules: Trigger-rule configurations specific to this role.
+        mcp_servers: MCP-server configurations specific to this role.
     """
 
     name: str
@@ -45,7 +47,7 @@ class ButlerRole:
     mcp_servers: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the role for storage or transport."""
+        """Serialise the role for storage or transport."""
         return {
             "name": self.name,
             "description": self.description,
@@ -58,8 +60,8 @@ class ButlerRole:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ButlerRole:
-        """Deserialize a role from a stored dict (e.g. parsed YAML)."""
+    def from_dict(cls, data: dict[str, Any]) -> AgentRole:
+        """Deserialise a role from a stored dict (e.g. parsed YAML)."""
         return cls(
             name=str(data.get("name", "")),
             description=str(data.get("description", "")),

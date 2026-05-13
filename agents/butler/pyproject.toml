@@ -26,11 +26,12 @@ butler = "taskforce_butler.cli.commands:app"
 butler = "taskforce_butler:configs"
 
 [project.entry-points."taskforce.tools"]
+# reminder, rule_manager, schedule moved to framework native (ADR-027) and
+# no longer need a butler-side entry-point. Butler still owns Google
+# Workspace tools until Phase 3 (#246) moves them to taskforce-google-workspace.
 gmail = "taskforce_butler.infrastructure.tools.email_tool:GmailTool"
 google_drive = "taskforce_butler.infrastructure.tools.google_drive_tool:GoogleDriveTool"
 calendar = "taskforce_butler.infrastructure.tools.calendar_tool:CalendarTool"
-reminder = "taskforce_butler.infrastructure.tools.reminder_tool:ReminderTool"
-rule_manager = "taskforce_butler.infrastructure.tools.rule_manager_tool:RuleManagerTool"
 authenticate = "taskforce_butler.infrastructure.tools.auth_tool:AuthTool"
 
 [build-system]
