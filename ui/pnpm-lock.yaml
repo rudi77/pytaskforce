@@ -146,8 +146,8 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(jsdom@25.0.1)
     optionalDependencies:
       '@taskforce/enterprise-ui':
-        specifier: file:../../taskforce-enterprise/web
-        version: file:../../taskforce-enterprise/web(@tanstack/react-query@5.100.9(react@18.3.1))(@taskforce/ui-shell@file:../packages/ui-shell(@tanstack/react-query@5.100.9(react@18.3.1))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0))(zustand@5.0.12(@types/react@18.3.28)(immer@11.1.4)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))))(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)
+        specifier: file:../packages/enterprise-ui-reference
+        version: file:../packages/enterprise-ui-reference
 
 packages:
 
@@ -1185,15 +1185,8 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
-  '@taskforce/enterprise-ui@file:../../taskforce-enterprise/web':
-    resolution: {directory: ../../taskforce-enterprise/web, type: directory}
-    peerDependencies:
-      '@tanstack/react-query': ^5.59.0
-      '@taskforce/ui-shell': ^0.1.0
-      lucide-react: ^0.453.0
-      react: ^18.3.1
-      react-dom: ^18.3.1
-      react-router-dom: ^6.27.0
+  '@taskforce/enterprise-ui@file:../packages/enterprise-ui-reference':
+    resolution: {directory: ../packages/enterprise-ui-reference, type: directory}
 
   '@taskforce/ui-shell@file:../packages/ui-shell':
     resolution: {directory: ../packages/ui-shell, type: directory}
@@ -3812,14 +3805,7 @@ snapshots:
       '@tanstack/query-core': 5.100.9
       react: 18.3.1
 
-  '@taskforce/enterprise-ui@file:../../taskforce-enterprise/web(@tanstack/react-query@5.100.9(react@18.3.1))(@taskforce/ui-shell@file:../packages/ui-shell(@tanstack/react-query@5.100.9(react@18.3.1))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0))(zustand@5.0.12(@types/react@18.3.28)(immer@11.1.4)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))))(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)':
-    dependencies:
-      '@tanstack/react-query': 5.100.9(react@18.3.1)
-      '@taskforce/ui-shell': file:../packages/ui-shell(@tanstack/react-query@5.100.9(react@18.3.1))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0))(zustand@5.0.12(@types/react@18.3.28)(immer@11.1.4)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)))
-      lucide-react: 0.453.0(react@18.3.1)
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      react-router-dom: 6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+  '@taskforce/enterprise-ui@file:../packages/enterprise-ui-reference':
     optional: true
 
   '@taskforce/ui-shell@file:../packages/ui-shell(@tanstack/react-query@5.100.9(react@18.3.1))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(lucide-react@0.453.0(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tailwindcss@3.4.19(tsx@4.21.0))(zustand@5.0.12(@types/react@18.3.28)(immer@11.1.4)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)))':
