@@ -31,13 +31,16 @@ logger = structlog.get_logger(__name__)
 # Default location for the seen-message-IDs state file.
 #
 # Pre-#213 this was ``.taskforce/gmail_seen.json`` (single top-level
-# file shared across every user). The new default groups butler-
-# specific state under ``.taskforce/butler/`` so a future
-# ``calendar_last_check.json`` etc. can sit alongside without
-# cluttering the top level. Enterprise plugins route this directory
-# per-(tenant, user) via ``set_butler_state_dir_override`` so
-# multi-user deployments don't share seen-id tracking across users.
-_DEFAULT_BUTLER_DIR = Path(".taskforce") / "butler"
+# file shared across every user). The default groups Google-Workspace
+# state under ``.taskforce/google_workspace/`` so future calendar /
+# drive state files can sit alongside without cluttering the top
+# level. Enterprise plugins route this directory per-(tenant, user)
+# via the existing ``set_butler_state_dir_override`` hook so
+# multi-user deployments don't share seen-id tracking across users
+# (the hook name predates the package move — keeping it for
+# compatibility with deployed enterprise installations).
+_DEFAULT_STATE_DIR = Path(".taskforce") / "google_workspace"
+_LEGACY_STATE_DIR = Path(".taskforce") / "butler"
 _SEEN_FILE_NAME = "gmail_seen.json"
 # Cap the persisted set so the file doesn't grow unbounded.
 _MAX_SEEN_IDS = 500
@@ -48,8 +51,11 @@ def _resolve_seen_path() -> Path:
 
     Consults :func:`taskforce.application.infrastructure_overrides.get_butler_state_dir_override`
     at write-time so a process-shared tool instance can still route
-    per-(tenant, user). Falls back to ``.taskforce/butler/gmail_seen.json``
-    when no override is installed (single-user dev / standalone).
+    per-(tenant, user). Falls back to
+    ``.taskforce/google_workspace/gmail_seen.json`` when no override
+    is installed; an older ``.taskforce/butler/gmail_seen.json`` file
+    is still honoured if present to preserve seen-ids across the
+    package migration.
 
     Error handling (#222) separates two cases:
 
@@ -67,7 +73,7 @@ def _resolve_seen_path() -> Path:
             get_butler_state_dir_override,
         )
     except ImportError:
-        return _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
+        return _select_default_state_path()
 
     try:
         override = get_butler_state_dir_override()
@@ -77,10 +83,20 @@ def _resolve_seen_path() -> Path:
                 return Path(base) / _SEEN_FILE_NAME
     except Exception:
         logger.error(
-            "butler.email.seen_path_override_failed",
+            "google_workspace.gmail.seen_path_override_failed",
             exc_info=True,
         )
-    return _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
+    return _select_default_state_path()
+
+
+def _select_default_state_path() -> Path:
+    """Prefer the new ``google_workspace/`` location, fall back to legacy."""
+    legacy = _LEGACY_STATE_DIR / _SEEN_FILE_NAME
+    if legacy.is_file() and not (_DEFAULT_STATE_DIR / _SEEN_FILE_NAME).is_file():
+        # Older install with seen-ids under .taskforce/butler/ — keep
+        # using that path so we don't lose history.
+        return legacy
+    return _DEFAULT_STATE_DIR / _SEEN_FILE_NAME
 
 
 class GmailTool(BaseTool):
@@ -373,7 +389,9 @@ def _load_seen_ids(path: Path | None = None) -> set[str]:
 
     When ``path`` is ``None`` the active per-scope path is resolved
     via :func:`_resolve_seen_path` (enterprise plugins route this
-    per-(tenant, user); standalone falls back to ``.taskforce/butler/``).
+    per-(tenant, user); standalone falls back to
+    ``.taskforce/google_workspace/`` with legacy
+    ``.taskforce/butler/`` fallback).
     Tests can still pass an explicit path to pin the location.
     """
     p = path or _resolve_seen_path()

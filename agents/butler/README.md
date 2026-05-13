@@ -5,16 +5,19 @@ butler-specific configs.
 
 After [ADR-027](../../docs/adr/adr-027-generic-agent-daemon.md) the
 event-driven daemon, scheduler, rule-engine, supervisor, and role-loader
-all live in `taskforce.*` (framework core). This package now ships:
+all live in `taskforce.*` (framework core). Phase 3 (#246) then moved
+Gmail / Drive / Calendar into the sibling
+[`taskforce-google-workspace`](../google-workspace/README.md) package,
+and the provider-agnostic `authenticate` tool joined the framework
+native tools. This package now ships:
 
-- Google Workspace tools (`gmail`, `google_drive`, `calendar`, plus
-  `authenticate`) — these move to a dedicated
-  `taskforce-google-workspace` package in Phase 3 (#246).
 - `learning_service.py` — post-conversation knowledge extraction.
 - A thin CLI shim (`taskforce butler ...`) that delegates to the
   framework's `taskforce daemon ...` command.
 - Butler profile + role configs (`configs/butler.agent.md`,
   `configs/custom/*.yaml`, `configs/roles/*.{agent.md,yaml}`).
+
+Phase 4 (#247) reduces this further to a data-only package.
 
 ## Installation
 

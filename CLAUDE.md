@@ -205,7 +205,7 @@ agents/
 
 Each agent package ships its own `pyproject.toml`, optional CLI (`taskforce_<name>.cli`)
 and, where applicable, tool implementations that the core tool registry references via
-their fully-qualified module paths (e.g. `taskforce_butler.infrastructure.tools.calendar_tool`).
+their fully-qualified module paths (e.g. `taskforce_google_workspace.calendar`).
 Without the package installed the corresponding registry entry simply fails to resolve at
 tool-build time, keeping the framework usable standalone.
 
@@ -533,7 +533,14 @@ corresponding package is installed.
 > short name — sub-agent invocation is typically configured via YAML or wired by
 > `sub_agent_spawner`.
 
-### Agent-package tools (registered by short name, resolved from optional packages)
+### Agent-package tools (registered by short name, resolved via entry-points)
+
+Each tool ships in an installable agent package and is discovered through
+the `taskforce.tools` entry-point group (ADR-026). The short names below
+are stable — the modules behind them moved during the Butler → YAML
+refactor (Phases 2 + 3, ADR-027). `reminder`, `rule_manager`, `schedule`
+and `authenticate` are framework-native and resolve from the built-in
+registry without any agent package installed.
 
 | Short Name | Class | Fully-qualified module | Required package |
 |------------|-------|------------------------|------------------|
@@ -541,13 +548,9 @@ corresponding package is installed.
 | `rag_list_documents` | ListDocumentsTool | `taskforce_rag_agent.tools.list_documents_tool` | `taskforce-rag-agent` |
 | `rag_get_document` | GetDocumentTool | `taskforce_rag_agent.tools.get_document_tool` | `taskforce-rag-agent` |
 | `global_document_analysis` | GlobalDocumentAnalysisTool | `taskforce_rag_agent.tools.global_document_analysis_tool` | `taskforce-rag-agent` |
-| `gmail` | GmailTool | `taskforce_butler.infrastructure.tools.email_tool` | `taskforce-butler` |
-| `google_drive` | GoogleDriveTool | `taskforce_butler.infrastructure.tools.google_drive_tool` | `taskforce-butler` |
-| `calendar` | CalendarTool | `taskforce_butler.infrastructure.tools.calendar_tool` | `taskforce-butler` |
-| `schedule` | ScheduleTool | `taskforce_butler.infrastructure.tools.schedule_tool` | `taskforce-butler` |
-| `reminder` | ReminderTool | `taskforce_butler.infrastructure.tools.reminder_tool` | `taskforce-butler` |
-| `rule_manager` | RuleManagerTool | `taskforce_butler.infrastructure.tools.rule_manager_tool` | `taskforce-butler` |
-| `authenticate` | AuthTool | `taskforce_butler.infrastructure.tools.auth_tool` | `taskforce-butler` |
+| `gmail` | GmailTool | `taskforce_google_workspace.gmail` | `taskforce-google-workspace` |
+| `google_drive` | GoogleDriveTool | `taskforce_google_workspace.drive` | `taskforce-google-workspace` |
+| `calendar` | CalendarTool | `taskforce_google_workspace.calendar` | `taskforce-google-workspace` |
 
 ### Tool categories reference
 

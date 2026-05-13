@@ -1,10 +1,10 @@
-"""Per-user routing for the butler Gmail tool's seen-IDs file (#213).
+"""Per-scope routing for the Gmail tool's seen-IDs file (#213).
 
-The legacy default kept a single ``.taskforce/gmail_seen.json`` at
-the top level — shared by every user in every tenant. After #213
-the default lives under ``.taskforce/butler/gmail_seen.json`` and
-enterprise plugins route it per-(tenant, user) via the
-``set_butler_state_dir_override`` framework hook.
+The standalone default lives under ``.taskforce/google_workspace/gmail_seen.json``
+(Phase 3 / #246; pre-Phase-3 it was ``.taskforce/butler/gmail_seen.json``).
+Enterprise plugins route the directory per-(tenant, user) via the
+``set_butler_state_dir_override`` framework hook — the name predates the
+package move and is kept stable for deployed enterprise installations.
 
 These tests pin both halves: the standalone default and the
 override-driven per-scope path.
@@ -16,8 +16,8 @@ import json
 from pathlib import Path
 
 import pytest
-from taskforce_butler.infrastructure.tools.email_tool import (
-    _DEFAULT_BUTLER_DIR,
+from taskforce_google_workspace.gmail import (
+    _DEFAULT_STATE_DIR,
     _SEEN_FILE_NAME,
     _load_seen_ids,
     _resolve_seen_path,
@@ -29,29 +29,46 @@ from taskforce.application import infrastructure_overrides
 
 @pytest.fixture(autouse=True)
 def _reset_overrides():
-    """Drop any installed butler-state-dir override between tests so
-    the standalone-default assertions stay deterministic."""
+    """Drop any installed state-dir override between tests so the
+    standalone-default assertions stay deterministic."""
     infrastructure_overrides.set_butler_state_dir_override(None)
     yield
     infrastructure_overrides.set_butler_state_dir_override(None)
 
 
-def test_default_path_lives_under_butler_dir():
-    """Standalone default: ``.taskforce/butler/gmail_seen.json``.
+def test_default_path_lives_under_google_workspace_dir(tmp_path: Path, monkeypatch):
+    """Standalone default: ``.taskforce/google_workspace/gmail_seen.json``.
 
-    Pre-#213 was ``.taskforce/gmail_seen.json`` at the top level.
+    Pre-Phase-3 the default was ``.taskforce/butler/gmail_seen.json``.
     """
+    # cd into tmp_path so the relative ``.taskforce`` resolution is
+    # hermetic — otherwise an existing project-local file would alter
+    # the fallback path.
+    monkeypatch.chdir(tmp_path)
     path = _resolve_seen_path()
-    assert path == _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
+    assert path == _DEFAULT_STATE_DIR / _SEEN_FILE_NAME
     assert path.name == "gmail_seen.json"
-    assert path.parent.name == "butler"
+    assert path.parent.name == "google_workspace"
+
+
+def test_default_path_honours_legacy_butler_dir(tmp_path: Path, monkeypatch):
+    """When only the legacy ``.taskforce/butler/gmail_seen.json`` exists,
+    the resolver keeps using it so an upgrade doesn't lose seen-ids."""
+    monkeypatch.chdir(tmp_path)
+    legacy_dir = tmp_path / ".taskforce" / "butler"
+    legacy_dir.mkdir(parents=True)
+    legacy_file = legacy_dir / "gmail_seen.json"
+    legacy_file.write_text('{"seen_ids": ["legacy-1"]}', encoding="utf-8")
+
+    path = _resolve_seen_path()
+    assert path == Path(".taskforce") / "butler" / "gmail_seen.json"
 
 
 def test_override_routes_seen_path_into_provided_dir(tmp_path: Path):
     """The override callable returns a directory; the seen file lands
     directly inside it. Mirrors the per-(tenant, user) routing the
     enterprise plugin installs."""
-    user_root = tmp_path / "tenants" / "acme" / "users" / "alice" / "butler"
+    user_root = tmp_path / "tenants" / "acme" / "users" / "alice" / "google_workspace"
 
     infrastructure_overrides.set_butler_state_dir_override(lambda: user_root)
 
@@ -70,14 +87,15 @@ def test_override_swallows_provider_exception(
     hide silently. structlog goes through its own renderer so we
     spy on the module logger directly instead of using caplog.
     """
-    from taskforce_butler.infrastructure.tools import email_tool
+    monkeypatch.chdir(tmp_path)
+    from taskforce_google_workspace import gmail as gmail_mod
 
     def _broken():
         raise RuntimeError("no tenant scope")
 
     error_calls: list[str] = []
     monkeypatch.setattr(
-        email_tool.logger,
+        gmail_mod.logger,
         "error",
         lambda event, **_: error_calls.append(event),
     )
@@ -85,15 +103,15 @@ def test_override_swallows_provider_exception(
 
     path = _resolve_seen_path()
     # Fell back to the default rather than propagating the exception.
-    assert path == _DEFAULT_BUTLER_DIR / _SEEN_FILE_NAME
+    assert path == _DEFAULT_STATE_DIR / _SEEN_FILE_NAME
     # And the failure was logged at ERROR (was WARNING before #222).
-    assert "butler.email.seen_path_override_failed" in error_calls
+    assert "google_workspace.gmail.seen_path_override_failed" in error_calls
 
 
 def test_load_and_save_round_trip_through_override(tmp_path: Path):
     """End-to-end: load_seen / save_seen consult the override and
     round-trip the persisted set correctly."""
-    user_root = tmp_path / "tenants" / "acme" / "users" / "alice" / "butler"
+    user_root = tmp_path / "tenants" / "acme" / "users" / "alice" / "google_workspace"
     infrastructure_overrides.set_butler_state_dir_override(lambda: user_root)
 
     # No data yet → empty set.
@@ -114,8 +132,8 @@ def test_two_scopes_keep_disjoint_seen_files(tmp_path: Path):
     """Pin the regression for #213: two users in the same tenant get
     distinct ``gmail_seen.json`` files. Switching the override mid-
     run is what a per-request scope binding does."""
-    alice_dir = tmp_path / "tenants" / "acme" / "users" / "alice" / "butler"
-    bob_dir = tmp_path / "tenants" / "acme" / "users" / "bob" / "butler"
+    alice_dir = tmp_path / "tenants" / "acme" / "users" / "alice" / "google_workspace"
+    bob_dir = tmp_path / "tenants" / "acme" / "users" / "bob" / "google_workspace"
 
     infrastructure_overrides.set_butler_state_dir_override(lambda: alice_dir)
     _save_seen_ids({"alice-1", "alice-2"})
