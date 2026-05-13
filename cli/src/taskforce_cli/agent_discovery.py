@@ -163,37 +163,10 @@ def _legacy_tool_registrations() -> dict[str, dict[str, Any]]:
     """
     tools: dict[str, dict[str, Any]] = {}
 
-    try:
-        import taskforce_butler  # noqa: F401
-
-        # Phase 2 (#245 / ADR-027) moved reminder, rule_manager, schedule
-        # into framework native — they're resolved via _BUILTIN_REGISTRY and
-        # no longer need a fallback here. The two Google Workspace tools
-        # still need this until Phase 3 (#246) moves them to
-        # taskforce-google-workspace.
-        tools.update(
-            {
-                "calendar": {
-                    "type": "CalendarTool",
-                    "module": "taskforce_butler.infrastructure.tools.calendar_tool",
-                    "params": {},
-                },
-                "gmail": {
-                    "type": "GmailTool",
-                    "module": "taskforce_butler.infrastructure.tools.email_tool",
-                    "params": {},
-                },
-            }
-        )
-        logger.warning(
-            "hardcoded_agent_fallback",
-            component="tools",
-            package="taskforce_butler",
-            count=2,
-            hint="declare [project.entry-points.\"taskforce.tools\"] in agents/butler/pyproject.toml",
-        )
-    except ImportError:
-        pass
+    # Phase 3 (#246) moved gmail, google_drive, calendar to
+    # taskforce-google-workspace, and authenticate / reminder /
+    # rule_manager / schedule are framework-native. No taskforce_butler
+    # fallback is needed any more — entry-points handle everything.
 
     try:
         import taskforce_coding_agent  # noqa: F401

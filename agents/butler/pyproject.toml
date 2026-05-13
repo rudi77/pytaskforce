@@ -1,14 +1,14 @@
 [project]
 name = "taskforce-butler"
-version = "0.1.0"
-description = "Butler agent - event-driven personal assistant with scheduling and Google Workspace"
+version = "0.2.0"
+description = "Butler agent — event-driven personal assistant (configs + thin CLI shim)"
 requires-python = ">=3.11"
 dependencies = [
     "taskforce",
-    "google-api-python-client>=2.0.0",
-    "google-auth>=2.0.0",
-    "google-auth-httplib2>=0.2.0",
-    "google-auth-oauthlib>=1.0.0",
+    # Google Workspace tools live in their own package now (#246, ADR-027).
+    # Butler depends on them as a transition bridge so existing profiles
+    # keep working — Phase 4 (#247) reduces this further to data-only.
+    "taskforce-google-workspace",
 ]
 
 [project.scripts]
@@ -25,14 +25,10 @@ butler = "taskforce_butler.cli.commands:app"
 [project.entry-points."taskforce.config_dirs"]
 butler = "taskforce_butler:configs"
 
-[project.entry-points."taskforce.tools"]
-# reminder, rule_manager, schedule moved to framework native (ADR-027) and
-# no longer need a butler-side entry-point. Butler still owns Google
-# Workspace tools until Phase 3 (#246) moves them to taskforce-google-workspace.
-gmail = "taskforce_butler.infrastructure.tools.email_tool:GmailTool"
-google_drive = "taskforce_butler.infrastructure.tools.google_drive_tool:GoogleDriveTool"
-calendar = "taskforce_butler.infrastructure.tools.calendar_tool:CalendarTool"
-authenticate = "taskforce_butler.infrastructure.tools.auth_tool:AuthTool"
+# No taskforce.tools entry-points in the butler package any more:
+#  - reminder, rule_manager, schedule moved to framework native in Phase 2 (#245)
+#  - gmail, google_drive, calendar moved to taskforce-google-workspace in Phase 3 (#246)
+#  - authenticate moved to framework native in Phase 3 (provider-agnostic OAuth gateway)
 
 [build-system]
 requires = ["hatchling"]

@@ -219,23 +219,7 @@ _BUILTIN_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.send_notification_tool",
         "params": {},
     },
-    # Butler agent tools
-
-    "gmail": {
-        "type": "GmailTool",
-        "module": "taskforce_butler.infrastructure.tools.email_tool",
-        "params": {},
-    },
-    "google_drive": {
-        "type": "GoogleDriveTool",
-        "module": "taskforce_butler.infrastructure.tools.google_drive_tool",
-        "params": {},
-    },
-    "calendar": {
-        "type": "CalendarTool",
-        "module": "taskforce_butler.infrastructure.tools.calendar_tool",
-        "params": {},
-    },
+    # Framework-native event-driven tools (Phase 2 / ADR-027)
     "schedule": {
         "type": "ScheduleTool",
         "module": "taskforce.infrastructure.tools.native.schedule_tool",
@@ -251,11 +235,15 @@ _BUILTIN_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.native.rule_manager_tool",
         "params": {},
     },
+    # OAuth gateway (provider-agnostic — actual providers configured via
+    # auth_manager). Phase 3 / ADR-027.
     "authenticate": {
         "type": "AuthTool",
-        "module": "taskforce_butler.infrastructure.tools.auth_tool",
+        "module": "taskforce.infrastructure.tools.native.auth_tool",
         "params": {},
     },
+    # gmail / google_drive / calendar live in taskforce-google-workspace and
+    # are discovered via the taskforce.tools entry-point group (ADR-026).
 }
 
 @functools.lru_cache(maxsize=1)

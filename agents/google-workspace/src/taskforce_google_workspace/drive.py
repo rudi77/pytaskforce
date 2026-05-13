@@ -1,8 +1,15 @@
 """Google Drive tool for file operations.
 
 Provides list, get, download, upload, update, delete, create_folder,
-and search operations for Google Drive. Uses the same OAuth token as
-the calendar and gmail tools (~/.taskforce/google_token.json).
+and search operations for Google Drive. Reads the OAuth token from
+``~/.taskforce/google_token.json`` shared with the calendar and gmail
+tools.
+
+Note: unlike Gmail/Calendar, this tool does not yet accept an
+``auth_manager`` parameter — it talks to the legacy file directly.
+The framework's ``AuthManager`` integration is tracked as a follow-up
+to Phase 3 (#246) so the drive tool can participate in the
+device-flow / push re-auth path the other Google tools already use.
 """
 
 from __future__ import annotations

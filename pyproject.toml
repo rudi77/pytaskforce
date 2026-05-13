@@ -156,6 +156,7 @@ dev = [
     "taskforce-butler",
     "taskforce-coding-agent",
     "taskforce-rag-agent",
+    "taskforce-google-workspace",
     "taskforce-cli",
 ]
 
@@ -176,6 +177,7 @@ members = [
     "agents/butler",
     "agents/coding-agent",
     "agents/rag-agent",
+    "agents/google-workspace",
 ]
 
 # Each agent package depends on the published "taskforce" name. Route those
@@ -186,6 +188,7 @@ taskforce-cli = { workspace = true }
 taskforce-butler = { workspace = true }
 taskforce-coding-agent = { workspace = true }
 taskforce-rag-agent = { workspace = true }
+taskforce-google-workspace = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
