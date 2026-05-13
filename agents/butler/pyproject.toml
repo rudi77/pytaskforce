@@ -1,38 +1,30 @@
 [project]
 name = "taskforce-butler"
-version = "0.2.0"
-description = "Butler agent — event-driven personal assistant (configs + thin CLI shim)"
+version = "0.3.0"
+description = "Butler agent — YAML-only configuration package (ADR-028)"
 requires-python = ">=3.11"
 dependencies = [
     "taskforce",
-    # Google Workspace tools live in their own package now (#246, ADR-027).
-    # Butler depends on them as a transition bridge so existing profiles
-    # keep working — Phase 4 (#247) reduces this further to data-only.
+    # The butler profile uses Google Workspace tools by default; their
+    # implementation lives in the sibling package.
     "taskforce-google-workspace",
 ]
 
-[project.scripts]
-taskforce-butler = "taskforce_butler.cli.commands:app"
-
 # Discovered by the unified taskforce CLI via
-# taskforce.application.agent_plugin_registry. Entry-point values are
-# "module:attribute" — for cli_apps the attribute is the Typer app; for
-# tools the attribute is the Tool class; for config_dirs the value is
-# "package_module:relpath" resolved to a filesystem path.
-[project.entry-points."taskforce.cli_apps"]
-butler = "taskforce_butler.cli.commands:app"
-
+# taskforce.application.agent_plugin_registry. Only ``taskforce.config_dirs``
+# is declared now — Butler ships no Python tool or CLI app any more
+# (Phases 1-4 of the Butler → YAML refactor, ADR-026 / ADR-027 / ADR-028).
 [project.entry-points."taskforce.config_dirs"]
 butler = "taskforce_butler:configs"
-
-# No taskforce.tools entry-points in the butler package any more:
-#  - reminder, rule_manager, schedule moved to framework native in Phase 2 (#245)
-#  - gmail, google_drive, calendar moved to taskforce-google-workspace in Phase 3 (#246)
-#  - authenticate moved to framework native in Phase 3 (provider-agnostic OAuth gateway)
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Data-only wheel: ships the minimal ``taskforce_butler`` shim package
+# (just ``__init__.py``) plus the YAML configs/ tree, rewired so the
+# entry-point value ``taskforce_butler:configs`` resolves to a real
+# filesystem path inside the wheel.
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskforce_butler"]
+force-include = { "configs" = "taskforce_butler/configs" }

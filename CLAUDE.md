@@ -810,37 +810,39 @@ ADR: `docs/adr/adr-024-standing-goals.md`.
 
 ## Butler Agent (Optional Package)
 
-The Butler is a proactive, event-driven agent daemon. It is shipped as a separate
-package (`taskforce-butler`) under `agents/butler/` and becomes available once
-installed. When installed, the unified CLI auto-registers `taskforce butler ...`
-and switches the default profile from `dev` to `butler`.
+The Butler is a proactive, event-driven agent **profile** shipped as a
+YAML-only data package (`taskforce-butler`) under `agents/butler/`. When
+installed, the framework's profile loader picks it up via the
+`taskforce.config_dirs` entry-point and the default profile flips from
+`dev` to `butler`. The Butler's runtime — daemon, scheduler, rule engine,
+role loader — lives in the framework core (ADR-027); only the
+YAML configs ship in this package.
 
 See **[ADR-010](docs/adr/adr-010-event-driven-butler-agent.md)** and
 **[ADR-017](docs/adr/adr-017-butler-role-specialization.md)** for the
-original design; **[ADR-027](docs/adr/adr-027-generic-agent-daemon.md)**
-documents the Phase-2 generalisation that moved the daemon, service,
-supervisor, role-loader and three generic tools into the framework.
+original design.
+**[ADR-027](docs/adr/adr-027-generic-agent-daemon.md)** generalised
+the daemon, service, supervisor, role-loader and three generic tools
+into the framework.
+**[ADR-028](docs/adr/adr-028-butler-as-config-only-package.md)**
+reduced the package to YAML-only after Phases 3 + 4.
 
 ### Package Layout
 
-After Phase 2 (#245), Butler only ships its CLI shim, Google Workspace
-tools, configs, and a small handful of Butler-specific helpers. Phases
-3 and 4 will further shrink this to data-only.
+After Phase 4 (#247), Butler is a **YAML-only configuration package**.
+The only Python file is a 5-line ``__init__.py`` shim required by the
+``taskforce.config_dirs`` entry-point.
 
 ```
 agents/butler/
+├── pyproject.toml            # data-only package (only taskforce.config_dirs entry-point)
+├── README.md
 ├── src/taskforce_butler/
-│   ├── __init__.py
-│   ├── learning_service.py   # Auto-extraction from conversations
-│   ├── cli/commands.py       # Thin Typer app — delegates to
-│   │                         # taskforce.application.agent_daemon.AgentDaemon
-│   └── infrastructure/
-│       └── tools/            # gmail, google_drive, calendar, auth (Phase 3
-│                             # moves these into taskforce-google-workspace)
+│   └── __init__.py           # 5-line shim (just __version__ + docstring)
 └── configs/
     ├── butler.agent.md       # Main butler profile
     ├── custom/               # Sub-agent configs (accountant, pc-agent, …)
-    └── roles/                # accountant.yaml, personal_assistant.yaml
+    └── roles/                # accountant.{agent.md,yaml}, personal_assistant.{agent.md,yaml}
 ```
 
 Framework-side helpers that Butler consumes:
@@ -860,31 +862,26 @@ Framework-side helpers that Butler consumes:
 # Install the package
 uv pip install taskforce-butler          # or via workspace install
 
-# Start the butler daemon — generic framework command (canonical)
+# Start the butler daemon — generic framework command (canonical and only)
 taskforce daemon start --profile butler
 taskforce daemon status --profile butler
 
-# Equivalent shortcuts kept during the Butler→YAML refactor:
-taskforce butler start --profile butler  # delegates to AgentDaemon
-taskforce butler status
-
-# Manage trigger rules
-taskforce butler rules list
-taskforce butler rules add --name "calendar_reminder" --source calendar --type calendar.upcoming
-
-# View scheduled jobs
-taskforce butler schedules list
-
-# Butler roles
-taskforce butler roles list
-taskforce butler roles show accountant
+# With a role overlay
+taskforce daemon start --profile butler --role accountant
 ```
+
+The former butler-specific subcommands (`taskforce butler rules`,
+`schedules`, `roles`) are gone as of Phase 4 (ADR-028). Trigger rules
+are managed through the `rule_manager` tool from a chat session;
+scheduled jobs through the `schedule` tool; role overlays are picked
+up by `taskforce daemon start --profile butler --role <name>`.
 
 ### Butler Profile
 
-The butler profile (`agents/butler/configs/butler.yaml`) configures event sources,
-trigger rules, scheduler, and notification defaults. The unified CLI adds the
-package's `configs/` directory to the profile loader so `--profile butler` resolves
+The butler profile (`agents/butler/configs/butler.agent.md`) configures
+event sources, trigger rules, scheduler, and notification defaults. The
+framework picks up the package's `configs/` directory via the
+`taskforce.config_dirs` entry-point so `--profile butler` resolves
 transparently.
 
 ---
