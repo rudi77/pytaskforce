@@ -83,23 +83,53 @@ Analyze the baseline results to find the weakest area for this objective:
 
 Design a **Teacher mission** (or select eval mode missions) that targets this weakness.
 
-### Step 3: PROPOSER — Design 3 Mutations
+### Step 3: PROPOSER — Design 3 Mutations (trace-driven)
 
-Design exactly 3 mutation variants. Each changes **ONE variable** to isolate effects.
+**Before designing mutations, extract trace diagnostics from the baseline run.**
+The baseline eval already wrote `.autooptim/last_eval_trace.md`. Run the
+extractor to turn it into objective-specific diagnostic anchors:
+
+```bash
+python tests/benchmarks/autooptim/extract_trace_diagnostics.py \
+  --objective <objective> --top-n 3 --out .autooptim/last_diagnostics.md
+```
+
+Then Read `.autooptim/last_diagnostics.md`. It contains for the chosen
+objective:
+
+- Cross-mission patterns (failing tools, auth issues, hot tools, delegation pattern)
+- Top-3 worst missions with: metrics, repeated-call loops, errors,
+  per-mission tool histogram, first N tool calls, answer snippet
+- An explicit `auth_token_issues` line flagging infra-not-agent failures
+
+**Rules for designing the 3 mutations:**
+
+1. Each variant MUST cite at least one **diagnostic anchor** from the report —
+   a concrete failure mode, repeated-call loop, errors line, or answer-quality
+   finding. Generic mutations like "shorten the prompt" or "improve delegation"
+   are rejected.
+2. Auth-related failures (`invalid_grant`, `Token has been expired`, `401`)
+   are infrastructure, NOT agent targets. Do not propose agent-side mutations
+   against them. If most failures are auth-related, surface that and ask the
+   user whether to re-run after re-auth instead of mutating.
+3. Each variant still changes **ONE variable** to isolate effects.
 
 **Mutation targets** (in order of effectiveness):
 1. **Prompt changes** — Butler prompt, sub-agent prompts (most effective)
 2. **Config changes** — YAML parameters (planning strategy, context policy)
 3. **Code changes** — only when prompt/config insufficient
 
-Present as table:
+Present as table — the **Diagnostic Anchor** column is required:
 ```
-| Variant | Target File | Change | Hypothesis |
-|---------|-------------|--------|------------|
-| A | ... | ... | ... |
-| B | ... | ... | ... |
-| C | ... | ... | ... |
+| Variant | Target File | Change | Diagnostic Anchor | Hypothesis |
+|---------|-------------|--------|-------------------|------------|
+| A | ... | ... | ... | ... |
+| B | ... | ... | ... | ... |
+| C | ... | ... | ... | ... |
 ```
+
+A good anchor cites the worst-mission name + the specific finding, e.g.
+`"Memory Search: 6× consecutive memory(action=search) calls before stall"`.
 
 ### Step 4: WORKTREE + MUTATE
 
