@@ -155,7 +155,31 @@ function Install-UiDeps {
     } finally {
         Pop-Location
     }
+    Sync-EnterpriseUiDist
     Write-Ok "UI deps ready"
+}
+
+# Issue #233: ui/package.json points @taskforce/enterprise-ui at the
+# CI reference-stub (ui/packages/enterprise-ui-reference) so the UI test
+# job is self-contained. Local dev needs the *real* enterprise-ui dist
+# (admin pages, auth boundary, etc.) — copy it into node_modules after
+# pnpm install so the bundler resolves to the production component
+# bundle without us having to fork package.json per environment.
+function Sync-EnterpriseUiDist {
+    $realDist = Join-Path $EnterpriseRoot "web\dist"
+    $stubInstalled = Join-Path $UiDir "node_modules\@taskforce\enterprise-ui\dist"
+    if (-not (Test-Path $realDist)) {
+        Write-Warn2 "real enterprise-ui dist not found at $realDist - admin pages will be blank (run 'pnpm build' in taskforce-enterprise/web first)"
+        return
+    }
+    if (-not (Test-Path $stubInstalled)) {
+        Write-Warn2 "@taskforce/enterprise-ui not installed yet at $stubInstalled - skipping overlay"
+        return
+    }
+    Write-Step "overlaying real enterprise-ui dist over the CI stub"
+    Remove-Item -Recurse -Force $stubInstalled -ErrorAction SilentlyContinue
+    Copy-Item -Recurse -Force $realDist $stubInstalled
+    Write-Ok "enterprise-ui dist linked to $realDist"
 }
 
 function Invoke-SyncPlugins {

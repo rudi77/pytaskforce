@@ -90,6 +90,25 @@ def _build_adapter_for_bot(bot: BotConfig) -> InboundAdapterProtocol | None:
     return None
 
 
+def _load_bot_configs_from_settings(work_dir: str) -> list[BotConfig]:
+    """Read ``CHANNELS.bots`` from the settings store rooted at ``work_dir``.
+
+    Returns ``[]`` on any failure so the gateway-build path stays robust
+    when the store is missing, locked, or corrupt — env-var fallback then
+    takes over.
+    """
+    try:
+        from taskforce.core.domain.settings import CHANNELS, parse_channels_section
+        from taskforce.infrastructure.persistence.file_settings_store import (
+            FileSettingsStore,
+        )
+
+        store = FileSettingsStore(work_dir=work_dir)
+        return parse_channels_section(store.get(CHANNELS))
+    except Exception:  # noqa: BLE001 — defensive: store unavailable shouldn't block gateway
+        return []
+
+
 def build_gateway_components(
     *,
     work_dir: str = ".taskforce",
@@ -102,8 +121,12 @@ def build_gateway_components(
     Bot configs come from two sources, merged:
 
     1. ``bot_configs`` argument — typically loaded from the settings
-       store's ``channels.bots`` list by the caller. Each entry produces
-       one inbound adapter + one outbound sender keyed by its ``id``.
+       store's ``channels.bots`` list by the caller. When ``None``, the
+       function *auto-reads* from ``<work_dir>/settings.json.enc`` so
+       callers that don't know about multi-bot config (notably plugin
+       gateway-component overrides) still pick up the per-(tenant) bot
+       list. Each enabled entry produces one inbound adapter + one
+       outbound sender keyed by its ``id``.
     2. Legacy env vars (``TELEGRAM_BOT_TOKEN``, ``TEAMS_APP_ID`` /
        ``TEAMS_APP_PASSWORD``) — synthesized into a single tenant-owned
        paired bot with id ``env:<channel>`` when no equivalent bot
@@ -116,16 +139,23 @@ def build_gateway_components(
     pick up a sensible default.
 
     Args:
-        work_dir: Base directory for file-based stores.
+        work_dir: Base directory for file-based stores. When
+            ``bot_configs is None``, also the directory the settings
+            store is read from.
         extra_senders: Additional outbound senders to register
             (channel-name keyed; legacy injection point for tests).
         extra_adapters: Additional inbound adapters to register.
-        bot_configs: Bot configs from the settings store.
+        bot_configs: Bot configs from the settings store. Pass
+            ``None`` to let this function auto-read them; pass an
+            empty list to suppress reading and run env-var only.
 
     Returns:
         Fully wired :class:`GatewayComponents`.
     """
     logger = structlog.get_logger()
+
+    if bot_configs is None:
+        bot_configs = _load_bot_configs_from_settings(work_dir)
 
     conversation_store = GatewayConversationStore(work_dir=work_dir)
     recipient_registry = FileRecipientRegistry(work_dir=work_dir)
