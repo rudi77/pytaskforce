@@ -19,6 +19,7 @@ members = [
     "taskforce-butler",
     "taskforce-cli",
     "taskforce-coding-agent",
+    "taskforce-google-workspace",
     "taskforce-rag-agent",
 ]
 
@@ -6287,6 +6288,7 @@ dev = [
     { name = "taskforce-butler" },
     { name = "taskforce-cli" },
     { name = "taskforce-coding-agent" },
+    { name = "taskforce-google-workspace" },
     { name = "taskforce-rag-agent" },
     { name = "types-pyyaml" },
 ]
@@ -6349,29 +6351,24 @@ dev = [
     { name = "taskforce-butler", editable = "agents/butler" },
     { name = "taskforce-cli", editable = "cli" },
     { name = "taskforce-coding-agent", editable = "agents/coding-agent" },
+    { name = "taskforce-google-workspace", editable = "agents/google-workspace" },
     { name = "taskforce-rag-agent", editable = "agents/rag-agent" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
 name = "taskforce-butler"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "agents/butler" }
 dependencies = [
-    { name = "google-api-python-client" },
-    { name = "google-auth" },
-    { name = "google-auth-httplib2" },
-    { name = "google-auth-oauthlib" },
     { name = "taskforce" },
+    { name = "taskforce-google-workspace" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "google-api-python-client", specifier = ">=2.0.0" },
-    { name = "google-auth", specifier = ">=2.0.0" },
-    { name = "google-auth-httplib2", specifier = ">=0.2.0" },
-    { name = "google-auth-oauthlib", specifier = ">=1.0.0" },
     { name = "taskforce", editable = "." },
+    { name = "taskforce-google-workspace", editable = "agents/google-workspace" },
 ]
 
 [[package]]
@@ -6420,6 +6417,27 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "taskforce", editable = "." }]
+
+[[package]]
+name = "taskforce-google-workspace"
+version = "0.1.0"
+source = { editable = "agents/google-workspace" }
+dependencies = [
+    { name = "google-api-python-client" },
+    { name = "google-auth" },
+    { name = "google-auth-httplib2" },
+    { name = "google-auth-oauthlib" },
+    { name = "taskforce" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "google-api-python-client", specifier = ">=2.0.0" },
+    { name = "google-auth", specifier = ">=2.0.0" },
+    { name = "google-auth-httplib2", specifier = ">=0.2.0" },
+    { name = "google-auth-oauthlib", specifier = ">=1.0.0" },
+    { name = "taskforce", editable = "." },
+]
 
 [[package]]
 name = "taskforce-rag-agent"
