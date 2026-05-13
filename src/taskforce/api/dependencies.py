@@ -168,20 +168,39 @@ def get_auth_manager():
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=1)
 def get_settings_store():
-    """Provide a shared :class:`SettingsStoreProtocol` instance.
+    """Provide a :class:`SettingsStoreProtocol` instance for the current request.
 
-    Routes through ``InfrastructureBuilder`` so plugins can override the
-    default file-based store. The instance is cached for the process —
-    callers that need to rebuild it (e.g. after rotating the master
-    key) should clear ``get_settings_store.cache_clear``.
+    **Not** lru_cached: when a plugin (e.g. ``taskforce-enterprise``)
+    installs ``set_settings_store_override`` to scope the store per
+    tenant, the override reads the current tenant from a ContextVar at
+    call time. A process-wide lru_cache here would freeze the *first*
+    tenant resolved (typically ``"default"`` at lifespan startup before
+    any auth middleware runs) and route every subsequent request's
+    settings to the wrong on-disk store. Per-tenant caching is the
+    override implementation's responsibility; this seam stays
+    transparent.
     """
     from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
     builder = InfrastructureBuilder()
     work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
     return builder.build_settings_store(work_dir=work_dir)
+
+
+def _settings_store_cache_clear_noop() -> None:
+    """Compat shim for callers that used to invoke ``cache_clear()``.
+
+    ``get_settings_store`` is no longer ``lru_cache``-decorated (see
+    docstring on the function), but a handful of internal call sites
+    still call ``cache_clear()`` after settings writes. Their intent
+    was to force a re-resolution against the latest tenant context —
+    which now happens automatically on every call. The shim keeps
+    those callers working without each having to learn the new shape.
+    """
+
+
+get_settings_store.cache_clear = _settings_store_cache_clear_noop  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
