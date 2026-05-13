@@ -214,13 +214,21 @@ tool-build time, keeping the framework usable standalone.
 `cli/src/taskforce_cli/main.py` is the top-level CLI:
 
 - Registers framework commands (`run`, `chat`, `tools`, `skills`, `config`, `memory`, `acp`).
-- Dynamically adds `taskforce butler`, `taskforce epic`, and `taskforce rag` when the
-  corresponding agent packages are importable.
+- Discovers agent-package contributions via Python entry-points (see
+  [ADR-026](docs/adr/adr-026-entry-point-plugin-discovery.md)). Three groups are read by
+  `taskforce.application.agent_plugin_registry`:
+  - `taskforce.cli_apps` — `name = "module:typer_app"` → adds `taskforce <name>` subcommand.
+  - `taskforce.tools` — `name = "module:ClassName"` → merged into the framework tool
+    registry, overriding hardcoded entries on overlap.
+  - `taskforce.config_dirs` — `name = "package_module:relpath"` → registered with the
+    profile loader's search path, so `--profile butler`, `--profile coding_agent`, etc.
+    resolve transparently.
+- During the Phase-1 transition (ADR-026), packages not yet declaring entry-points fall
+  back to a hardcoded probe and emit `event="hardcoded_agent_fallback"` warnings.
 - `_detect_default_profile()` returns `"butler"` if `taskforce_butler` is installed,
   otherwise `"dev"`. This is why "default profile" depends on what is installed.
-- `agent_discovery.register_agent_config_dirs()` adds the agent packages' `configs/`
-  directories to the profile loader's search path, so `--profile butler`,
-  `--profile coding_agent`, `--profile rag_agent`, etc. resolve across packages.
+- `agent_discovery.register_agent_config_dirs()` adds discovered config directories
+  (entry-point + fallback) to the profile loader's search path.
 
 The fallback framework-only CLI in `src/taskforce/api/cli/main.py` is used when
 `taskforce_cli` is not installed. It defaults to `--profile dev`.

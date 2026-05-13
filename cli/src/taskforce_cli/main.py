@@ -47,30 +47,56 @@ app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
 app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
 
 # --- Agent commands (optional, loaded if packages installed) ---
+#
+# Discovery is driven by the ``taskforce.cli_apps`` entry-point group
+# (see :mod:`taskforce.application.agent_plugin_registry`). The
+# hardcoded fallback below covers packages that don't yet declare an
+# entry-point and emits ``hardcoded_agent_fallback`` warnings so the
+# migration target is grep-able. Removed in Phase 4 once every agent
+# ships its own entry-point.
 
-# Butler agent
-try:
-    from taskforce_butler.cli.commands import app as butler_app
+from taskforce.application.agent_plugin_registry import load_cli_apps as _load_cli_apps
 
-    app.add_typer(butler_app, name="butler", help="Butler agent daemon")
-except ImportError:
-    pass
+# Help text per known agent — used for both entry-point and fallback paths.
+_AGENT_CLI_HELP: dict[str, str] = {
+    "butler": "Butler agent daemon",
+    "epic": "Epic orchestration (multi-agent)",
+    "rag": "RAG agent operations",
+}
 
-# Coding agent (epic orchestration)
-try:
-    from taskforce_coding_agent.cli import app as epic_app
+_registered_agent_cli: set[str] = set()
 
-    app.add_typer(epic_app, name="epic", help="Epic orchestration (multi-agent)")
-except ImportError:
-    pass
+for _name, _cli_app in _load_cli_apps().items():
+    app.add_typer(_cli_app, name=_name, help=_AGENT_CLI_HELP.get(_name, ""))
+    _registered_agent_cli.add(_name)
 
-# RAG agent
-try:
-    from taskforce_rag_agent.cli import app as rag_app
 
-    app.add_typer(rag_app, name="rag", help="RAG agent operations")
-except ImportError:
-    pass
+def _register_fallback_cli(name: str, import_path: str) -> None:
+    """Import a CLI app the legacy way and warn — used only if no entry-point."""
+    if name in _registered_agent_cli:
+        return
+    try:
+        module_path, _, attr = import_path.partition(":")
+        mod = __import__(module_path, fromlist=[attr])
+        cli_app = getattr(mod, attr)
+    except (ImportError, AttributeError):
+        return
+    import structlog
+
+    structlog.get_logger(__name__).warning(
+        "hardcoded_agent_fallback",
+        component="cli_apps",
+        name=name,
+        import_path=import_path,
+        hint=f'declare [project.entry-points."taskforce.cli_apps"] in the {name} package pyproject.toml',
+    )
+    app.add_typer(cli_app, name=name, help=_AGENT_CLI_HELP.get(name, ""))
+    _registered_agent_cli.add(name)
+
+
+_register_fallback_cli("butler", "taskforce_butler.cli.commands:app")
+_register_fallback_cli("epic", "taskforce_coding_agent.cli:app")
+_register_fallback_cli("rag", "taskforce_rag_agent.cli:app")
 
 
 def _detect_default_profile() -> str:

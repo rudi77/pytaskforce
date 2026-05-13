@@ -8,6 +8,16 @@ dependencies = [
     "azure-search-documents>=11.4.0",
 ]
 
+# Discovered by taskforce.application.agent_plugin_registry.
+[project.entry-points."taskforce.config_dirs"]
+rag_agent = "taskforce_rag_agent:configs"
+
+[project.entry-points."taskforce.tools"]
+rag_semantic_search = "taskforce_rag_agent.tools.semantic_search_tool:SemanticSearchTool"
+rag_list_documents = "taskforce_rag_agent.tools.list_documents_tool:ListDocumentsTool"
+rag_get_document = "taskforce_rag_agent.tools.get_document_tool:GetDocumentTool"
+global_document_analysis = "taskforce_rag_agent.tools.global_document_analysis_tool:GlobalDocumentAnalysisTool"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

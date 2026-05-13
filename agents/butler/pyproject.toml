@@ -14,6 +14,25 @@ dependencies = [
 [project.scripts]
 taskforce-butler = "taskforce_butler.cli.commands:app"
 
+# Discovered by the unified taskforce CLI via
+# taskforce.application.agent_plugin_registry. Entry-point values are
+# "module:attribute" — for cli_apps the attribute is the Typer app; for
+# tools the attribute is the Tool class; for config_dirs the value is
+# "package_module:relpath" resolved to a filesystem path.
+[project.entry-points."taskforce.cli_apps"]
+butler = "taskforce_butler.cli.commands:app"
+
+[project.entry-points."taskforce.config_dirs"]
+butler = "taskforce_butler:configs"
+
+[project.entry-points."taskforce.tools"]
+gmail = "taskforce_butler.infrastructure.tools.email_tool:GmailTool"
+google_drive = "taskforce_butler.infrastructure.tools.google_drive_tool:GoogleDriveTool"
+calendar = "taskforce_butler.infrastructure.tools.calendar_tool:CalendarTool"
+reminder = "taskforce_butler.infrastructure.tools.reminder_tool:ReminderTool"
+rule_manager = "taskforce_butler.infrastructure.tools.rule_manager_tool:RuleManagerTool"
+authenticate = "taskforce_butler.infrastructure.tools.auth_tool:AuthTool"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
