@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import logging.handlers
 import os
 import uuid
 
@@ -88,6 +89,17 @@ def _run_chat(
         debug=debug,
         console=telegram_polling,
     )
+
+    # In the CLI chat we default the file + root level to INFO (DEBUG only when
+    # the operator explicitly passes --debug). configure_logging keeps the file
+    # handler at DEBUG by design for daemons/server; the interactive chat does
+    # not need that volume in butler.log.
+    if not debug:
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        for handler in root.handlers:
+            if isinstance(handler, logging.handlers.RotatingFileHandler):
+                handler.setLevel(logging.INFO)
 
     # Initialize Phoenix OTEL tracing (auto-instruments LiteLLM calls)
     with log_path.open("a", encoding="utf-8") as log_file:
