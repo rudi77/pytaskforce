@@ -120,9 +120,8 @@ Files:
   - Konstruktor: `mailbox`, `auth_mode`, `tenant_id`, Referenz auf `AuthManager` (für Token-Refresh).
   - `send(recipient_id, content, conversation_id, …)`:
     1. Token holen: `auth_manager.get_token("microsoft", scope_preset=...)` (delegated) oder Client-Credentials-Flow (Schritt 3.1).
-    2. `POST https://graph.microsoft.com/v1.0/me/sendMail` (delegated) bzw. `/users/{mailbox}/sendMail` (app).
-    3. Body: `{message:{subject, body:{contentType:"Text", content}, toRecipients:[{emailAddress:{address: recipient_id}}], conversationId? }, saveToSentItems:true}`.
-    4. Falls `conversation_id` (Mail-Thread) bekannt: `internetMessageHeaders` mit `In-Reply-To` + `References` setzen, oder `replyTo` Endpoint nutzen (`/messages/{id}/reply`).
+    2. **Neue Threads:** `POST https://graph.microsoft.com/v1.0/me/sendMail` (delegated) bzw. `/users/{mailbox}/sendMail` (app) mit Body `{message:{subject, body:{contentType:"Text", content}, toRecipients:[{emailAddress:{address: recipient_id}}]}, saveToSentItems:true}`. `conversationId` ist in Graph read-only und wird **nicht** im Payload gesetzt — Microsoft leitet ihn server-seitig aus den `internetMessageHeaders` ab.
+    3. **Replies in bestehende Threads** (wenn `conversation_id` bekannt): bevorzugt `POST /me/messages/{originalMessageId}/reply` (oder `/replyAll`) — Microsoft Graph setzt `In-Reply-To`/`References` und den `conversationId` automatisch. Fallback bei reinem Mail-Thread ohne bekannte Source-Message-ID: `sendMail` mit manuell gesetzten `internetMessageHeaders` (`In-Reply-To` + `References`) im `message`-Objekt.
   - `send_file(...)`: `attachments` Array.
 
 > **Designentscheidung:** Mail-Transport läuft über Microsoft Graph, nicht über
