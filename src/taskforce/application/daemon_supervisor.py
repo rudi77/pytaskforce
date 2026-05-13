@@ -1,6 +1,6 @@
-"""Supervisor for unattended Butler daemon operation (issue #156).
+"""Supervisor for unattended agent daemon operation (issue #156).
 
-The supervisor wraps the bare ``ButlerDaemon`` lifecycle with the four
+The supervisor wraps the bare ``AgentDaemon`` lifecycle with the four
 runtime-hardening primitives required for 24/7 use on a developer
 machine:
 
@@ -9,7 +9,7 @@ machine:
    ``stall_threshold_seconds``. A stalled loop is logged with
    ``event="butler.daemon.stall_detected"`` and the daemon is
    restarted.
-2. **Auto-restart on crash** — wraps :py:meth:`ButlerDaemon.start` in a
+2. **Auto-restart on crash** — wraps :py:meth:`AgentDaemon.start` in a
    loop that catches *unexpected* exceptions, logs them with full
    structured context, sleeps for an exponentially-growing backoff
    (capped at ``max_backoff_seconds``), and resumes. Cancellation and
@@ -26,7 +26,7 @@ machine:
    daemon, drain in-flight work, and exit cleanly.
 
 The supervisor is intentionally minimal: it does not own daemon
-construction, it only manages restart + watchdog policy. ``ButlerDaemon``
+construction, it only manages restart + watchdog policy. ``AgentDaemon``
 remains responsible for component wiring; it just exposes a
 ``last_heartbeat`` timestamp the supervisor can poll.
 """
@@ -56,8 +56,8 @@ _DEFAULT_MAX_BACKOFF = 60.0
 _DEFAULT_BACKOFF_FACTOR = 2.0
 
 
-class DaemonSupervisor:
-    """Supervises a :class:`ButlerDaemon` instance for unattended operation.
+class AgentDaemonSupervisor:
+    """Supervises a :class:`AgentDaemon` instance for unattended operation.
 
     The supervisor takes a ``daemon_factory`` (zero-arg callable) so it
     can build a fresh daemon for every restart cycle — this avoids
@@ -65,7 +65,7 @@ class DaemonSupervisor:
     init systems treat services.
 
     Args:
-        daemon_factory: Zero-arg callable returning a fresh ``ButlerDaemon``.
+        daemon_factory: Zero-arg callable returning a fresh ``AgentDaemon``.
         watchdog_interval_seconds: How often the watchdog wakes up.
         stall_threshold_seconds: Heartbeat-age threshold past which the
             main loop is considered stalled.

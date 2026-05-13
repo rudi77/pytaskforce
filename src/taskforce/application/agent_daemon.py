@@ -1,12 +1,21 @@
-"""Butler daemon that orchestrates the event-driven agent lifecycle.
+"""Generic event-driven agent daemon.
 
 The daemon is the top-level process that:
-1. Loads butler profile configuration
-2. Builds all infrastructure components
-3. Starts the ButlerService with event sources, scheduler, and rules
-4. Optionally starts a PersistentAgentService for queue-based execution
-5. Writes periodic status files for the CLI to read
-6. Handles graceful shutdown
+1. Loads the agent profile configuration (via :class:`ProfileLoader`).
+2. Builds all infrastructure components (gateway, executor,
+   persistent agent service, auth manager).
+3. Starts an :class:`AgentService` with event sources, scheduler,
+   and rules from the profile.
+4. Optionally starts a :class:`PersistentAgentService` for queue-based
+   execution (ADR-016).
+5. Optionally wires the proactive layer (standing goals, ADR-024).
+6. Writes periodic ``status.json`` files for the CLI to read.
+7. Handles graceful shutdown.
+
+This was the ``ButlerDaemon`` (ADR-010) until ADR-027 generalised it
+to the framework. ``profile`` is now a constructor argument and the
+status file is written under ``{work_dir}/{profile}/status.json`` so
+several daemons can coexist on the same work directory.
 """
 
 from __future__ import annotations
@@ -19,17 +28,17 @@ from typing import Any
 
 import structlog
 
+from taskforce.application.agent_service import AgentService
 from taskforce.core.utils.time import utc_now
-from taskforce_butler.service import ButlerService
 
 logger = structlog.get_logger(__name__)
 
 
-class ButlerDaemon:
-    """Top-level butler daemon process.
+class AgentDaemon:
+    """Top-level event-driven agent daemon process.
 
-    Initializes and manages all butler components based on
-    the butler profile YAML configuration.
+    Initialises and manages all agent components based on the supplied
+    profile YAML configuration.
 
     When ``persistent_agent=True`` (default), the daemon creates a
     ``PersistentAgentService`` that processes all mission-execution
@@ -48,11 +57,11 @@ class ButlerDaemon:
         self._work_dir = work_dir
         self._persistent_agent_enabled = persistent_agent
         self._role_override = role
-        self._butler: ButlerService | None = None
+        self._service: AgentService | None = None
         self._agent_service: Any = None  # PersistentAgentService | None
         self._running = False
         self._status_task: asyncio.Task[None] | None = None
-        self._status_path = Path(work_dir) / "butler" / "status.json"
+        self._status_path = Path(work_dir) / profile / "status.json"
         # Proactive layer (Phase 3) — populated by _setup_proactive_layer.
         self._proactive_evaluator: Any = None
         self._proactive_task: asyncio.Task[None] | None = None
@@ -86,19 +95,20 @@ class ButlerDaemon:
         self._last_heartbeat = utc_now()
 
     async def start(self) -> None:
-        """Start the butler daemon with full component initialization."""
-        logger.info("butler_daemon.starting", profile=self._profile)
+        """Start the agent daemon with full component initialisation."""
+        logger.info("agent_daemon.starting", profile=self._profile)
 
         config = self._load_config()
 
-        # Build butler service
-        self._butler = ButlerService(
+        # Build agent service
+        self._service = AgentService(
             work_dir=self._work_dir,
             default_notification_channel=config.get("notifications", {}).get(
                 "default_channel", "telegram"
             ),
             default_recipient_id=config.get("notifications", {}).get("default_recipient_id", ""),
             llm_fallback=config.get("agent", {}).get("llm_fallback", False),
+            profile=self._profile,
         )
 
         # Build shared AuthManager for Google/Microsoft tools
@@ -116,8 +126,8 @@ class ButlerDaemon:
         # Load rules from config
         await self._load_rules(config)
 
-        # Start the butler service
-        await self._butler.start()
+        # Start the agent service
+        await self._service.start()
 
         # Start the persistent agent service if wired
         if self._agent_service:
@@ -131,7 +141,7 @@ class ButlerDaemon:
                 set_persistent_agent_service(self._agent_service)
             except Exception:  # pragma: no cover — API package optional
                 pass
-            logger.info("butler_daemon.persistent_agent_started")
+            logger.info("agent_daemon.persistent_agent_started")
 
         # Wire the proactive layer (standing goals + heartbeat) when
         # configured. Failure is non-fatal — the rest of the daemon
@@ -142,13 +152,13 @@ class ButlerDaemon:
         self._last_heartbeat = utc_now()
 
         # Start periodic status writer
-        self._status_task = asyncio.create_task(self._write_status_loop(), name="butler-status")
+        self._status_task = asyncio.create_task(self._write_status_loop(), name=f"{self._profile}-status")
 
-        logger.info("butler_daemon.started", profile=self._profile)
+        logger.info("agent_daemon.started", profile=self._profile)
 
     async def stop(self) -> None:
-        """Gracefully stop the butler daemon."""
-        logger.info("butler_daemon.stopping")
+        """Gracefully stop the agent daemon."""
+        logger.info("agent_daemon.stopping")
 
         if self._status_task:
             self._status_task.cancel()
@@ -198,18 +208,18 @@ class ButlerDaemon:
         except Exception:  # pragma: no cover
             pass
 
-        if self._butler:
-            await self._butler.stop()
+        if self._service:
+            await self._service.stop()
 
         self._running = False
 
         # Write final status
         await self._write_status()
 
-        logger.info("butler_daemon.stopped")
+        logger.info("agent_daemon.stopped")
 
     def _load_config(self) -> dict[str, Any]:
-        """Load butler profile configuration and apply role overlay if set."""
+        """Load the agent profile configuration and apply role overlay if set."""
         from taskforce.application.factory import AgentFactory
         from taskforce.application.profile_loader import ProfileLoader
 
@@ -219,32 +229,49 @@ class ButlerDaemon:
             config = profile_loader.load(self._profile)
         except FileNotFoundError as exc:
             logger.warning(
-                "butler_daemon.config_not_found",
+                "agent_daemon.config_not_found",
                 profile=self._profile,
                 error=str(exc),
             )
             config = {}
 
-        # Resolve and apply butler role overlay
+        # Resolve and apply role overlay if any. Role files live under
+        # ``<agent_config_dir>/roles/`` for each registered agent-package
+        # plus ``{work_dir}/roles/`` for project-local overrides.
         role_name = self._role_override or config.get("role")
         if role_name:
-            from taskforce_butler.role_loader import ButlerRoleLoader
+            from taskforce.application.agent_plugin_registry import load_config_dirs
+            from taskforce.application.agent_role_loader import AgentRoleLoader
 
-            role_loader = ButlerRoleLoader(
-                config_dir=factory.config_dir,
-                project_dir=Path(self._work_dir),
-            )
+            search_dirs: list[Path] = []
+            for agent_config_dir in load_config_dirs().values():
+                roles_dir = agent_config_dir / "roles"
+                if roles_dir.is_dir():
+                    search_dirs.append(roles_dir)
+                # Legacy butler-specific name kept for backwards compat
+                legacy_dir = agent_config_dir / "butler_roles"
+                if legacy_dir.is_dir():
+                    search_dirs.append(legacy_dir)
+            project_roles = Path(self._work_dir) / "roles"
+            if project_roles.is_dir():
+                search_dirs.append(project_roles)
+            project_legacy = Path(self._work_dir) / "butler_roles"
+            if project_legacy.is_dir():
+                search_dirs.append(project_legacy)
+
+            role_loader = AgentRoleLoader(search_dirs=search_dirs)
             try:
                 role = role_loader.load(role_name)
                 config = role_loader.merge_into_config(config, role)
                 logger.info(
-                    "butler_daemon.role_applied",
+                    "agent_daemon.role_applied",
                     role=role_name,
                 )
             except FileNotFoundError:
                 logger.error(
-                    "butler_daemon.role_not_found",
+                    "agent_daemon.role_not_found",
                     role=role_name,
+                    searched=[str(d) for d in search_dirs],
                 )
 
         return config
@@ -262,7 +289,7 @@ class ButlerDaemon:
 
             token_store = EncryptedTokenStore()
 
-            # Provider configs from butler profile or sensible defaults.
+            # Provider configs from the agent profile or sensible defaults.
             auth_cfg = config.get("auth", {})
             provider_configs = auth_cfg.get("providers", {})
 
@@ -283,12 +310,12 @@ class ButlerDaemon:
                 auth_flows=auth_flows,
                 provider_configs=provider_configs,
             )
-            logger.info("butler_daemon.auth_manager_configured")
+            logger.info("agent_daemon.auth_manager_configured")
             return manager
 
         except ImportError as exc:
             logger.warning(
-                "butler_daemon.auth_manager_unavailable",
+                "agent_daemon.auth_manager_unavailable",
                 error=str(exc),
                 hint="cryptography ships in the core install — run 'uv sync' to repair the venv",
             )
@@ -296,7 +323,7 @@ class ButlerDaemon:
 
     async def _setup_gateway(self, config: dict[str, Any], *, auth_manager: Any = None) -> None:
         """Set up the communication gateway if configured."""
-        if self._butler is None:
+        if self._service is None:
             return
 
         try:
@@ -308,7 +335,7 @@ class ButlerDaemon:
             components = InfrastructureBuilder().build_gateway_components(work_dir=self._work_dir)
             if components.outbound_senders:
                 factory = AgentFactory()
-                factory.set_scheduler(self._butler.scheduler)
+                factory.set_scheduler(self._service.scheduler)
                 if auth_manager:
                     factory.set_auth_manager(auth_manager)
                 executor = AgentExecutor(factory=factory)
@@ -319,7 +346,7 @@ class ButlerDaemon:
                     outbound_senders=components.outbound_senders,
                     max_conversation_history=30,
                 )
-                self._butler.set_gateway(gateway)
+                self._service.set_gateway(gateway)
 
                 # Give auth_manager access to gateway for sending
                 # verification links via Telegram/Teams during re-auth.
@@ -327,15 +354,15 @@ class ButlerDaemon:
                     auth_manager._gateway = gateway
 
                 logger.info(
-                    "butler_daemon.gateway_configured",
+                    "agent_daemon.gateway_configured",
                     channels=list(components.outbound_senders.keys()),
                 )
         except Exception as exc:
-            logger.warning("butler_daemon.gateway_setup_failed", error=str(exc))
+            logger.warning("agent_daemon.gateway_setup_failed", error=str(exc))
 
     async def _setup_executor(self, config: dict[str, Any], *, auth_manager: Any = None) -> None:
         """Set up the agent executor and optionally the PersistentAgentService."""
-        if self._butler is None:
+        if self._service is None:
             return
 
         try:
@@ -343,21 +370,21 @@ class ButlerDaemon:
             from taskforce.application.factory import AgentFactory
 
             factory = AgentFactory()
-            factory.set_scheduler(self._butler.scheduler)
+            factory.set_scheduler(self._service.scheduler)
             if auth_manager:
                 factory.set_auth_manager(auth_manager)
             executor = AgentExecutor(factory=factory)
-            self._butler.set_executor(executor)
-            logger.info("butler_daemon.executor_configured")
+            self._service.set_executor(executor)
+            logger.info("agent_daemon.executor_configured")
 
             # Wire PersistentAgentService when enabled.
             if self._persistent_agent_enabled:
                 self._agent_service = self._build_persistent_agent_service(executor, config)
                 if self._agent_service:
-                    self._butler.set_agent_service(self._agent_service)
-                    logger.info("butler_daemon.persistent_agent_configured")
+                    self._service.set_agent_service(self._agent_service)
+                    logger.info("agent_daemon.persistent_agent_configured")
         except Exception as exc:
-            logger.warning("butler_daemon.executor_setup_failed", error=str(exc))
+            logger.warning("agent_daemon.executor_setup_failed", error=str(exc))
 
     def _build_persistent_agent_service(
         self,
@@ -390,7 +417,7 @@ class ButlerDaemon:
                 drain_timeout=queue_cfg.get("drain_timeout", 30.0),
             )
         except Exception as exc:
-            logger.warning("butler_daemon.persistent_agent_build_failed", error=str(exc))
+            logger.warning("agent_daemon.persistent_agent_build_failed", error=str(exc))
             return None
 
     async def _setup_event_sources(self, config: dict[str, Any]) -> None:
@@ -405,7 +432,7 @@ class ButlerDaemon:
         active-source registry so the generic
         ``POST /api/v1/events/{source_name}`` route can reach them.
         """
-        if self._butler is None:
+        if self._service is None:
             return
 
         # Triggers framework-side auto-registration.
@@ -420,11 +447,11 @@ class ButlerDaemon:
         for source_cfg in sources_config:
             source_type = source_cfg.get("type", "")
             if not source_type:
-                logger.warning("butler_daemon.event_source_missing_type", config=source_cfg)
+                logger.warning("agent_daemon.event_source_missing_type", config=source_cfg)
                 continue
             if not registry.is_registered(source_type):
                 logger.warning(
-                    "butler_daemon.unknown_source_type",
+                    "agent_daemon.unknown_source_type",
                     source_type=source_type,
                     known=registry.list(),
                 )
@@ -435,15 +462,15 @@ class ButlerDaemon:
                 source = registry.create(source_type, cfg)
             except Exception as exc:
                 logger.warning(
-                    "butler_daemon.event_source_build_failed",
+                    "agent_daemon.event_source_build_failed",
                     source_type=source_type,
                     error=str(exc),
                 )
                 continue
 
-            self._butler.add_event_source(source)
+            self._service.add_event_source(source)
             logger.info(
-                "butler_daemon.event_source_added",
+                "agent_daemon.event_source_added",
                 source_type=source_type,
                 source_name=getattr(source, "source_name", source_type),
             )
@@ -464,7 +491,7 @@ class ButlerDaemon:
     async def _setup_proactive_layer(self, config: dict[str, Any]) -> None:
         """Wire StandingGoalStore + GoalEvaluatorService + heartbeat task.
 
-        Behaviour is opt-in via the ``proactive`` block in the butler
+        Behaviour is opt-in via the ``proactive`` block in the agent
         profile YAML — when missing the daemon stays purely reactive
         (matching the pre-Phase-3 behaviour). When present the daemon:
 
@@ -490,7 +517,7 @@ class ButlerDaemon:
                 FileStandingGoalStore,
             )
         except Exception as exc:  # pragma: no cover — import-only failures
-            logger.warning("butler_daemon.proactive_import_failed", error=str(exc))
+            logger.warning("agent_daemon.proactive_import_failed", error=str(exc))
             return
 
         store = FileStandingGoalStore(work_dir=self._work_dir)
@@ -553,7 +580,7 @@ class ButlerDaemon:
                     await store.add(goal)
             except Exception as exc:
                 logger.warning(
-                    "butler_daemon.standing_goal_seed_failed",
+                    "agent_daemon.standing_goal_seed_failed",
                     error=str(exc),
                 )
 
@@ -561,10 +588,10 @@ class ButlerDaemon:
         self._proactive_evaluator = evaluator
         self._proactive_task = asyncio.create_task(
             self._heartbeat_loop(evaluator, heartbeat_minutes),
-            name="butler-proactive-heartbeat",
+            name=f"{self._profile}-proactive-heartbeat",
         )
         logger.info(
-            "butler_daemon.proactive_layer_started",
+            "agent_daemon.proactive_layer_started",
             heartbeat_minutes=heartbeat_minutes,
             goals=len(await store.list()),
         )
@@ -582,29 +609,29 @@ class ButlerDaemon:
                 try:
                     await evaluator.evaluate_due_goals()
                 except Exception:
-                    logger.exception("butler_daemon.proactive_tick_failed")
+                    logger.exception("agent_daemon.proactive_tick_failed")
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
             pass
 
     async def _load_rules(self, config: dict[str, Any]) -> None:
         """Load trigger rules from configuration."""
-        if self._butler is None:
+        if self._service is None:
             return
 
         rules_config = config.get("rules", [])
         for rule_cfg in rules_config:
             try:
-                await self._butler.add_rule_from_config(rule_cfg)
+                await self._service.add_rule_from_config(rule_cfg)
             except Exception as exc:
                 logger.warning(
-                    "butler_daemon.rule_load_failed",
+                    "agent_daemon.rule_load_failed",
                     rule_name=rule_cfg.get("name", "?"),
                     error=str(exc),
                 )
 
     async def _write_status_loop(self) -> None:
-        """Periodically write butler status to disk.
+        """Periodically write the agent's status to disk.
 
         Each iteration also refreshes :attr:`last_heartbeat` so a
         supervising ``DaemonSupervisor`` can detect when the asyncio
@@ -620,11 +647,11 @@ class ButlerDaemon:
 
     async def _write_status(self) -> None:
         """Write current status to a JSON file."""
-        if not self._butler:
+        if not self._service:
             return
 
         try:
-            status = await self._butler.get_status()
+            status = await self._service.get_status()
             status["updated_at"] = utc_now().isoformat()
             status["profile"] = self._profile
             if self._role_override:
@@ -649,4 +676,4 @@ class ButlerDaemon:
             tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
             tmp.rename(self._status_path)
         except Exception as exc:
-            logger.warning("butler_daemon.status_write_failed", error=str(exc))
+            logger.warning("agent_daemon.status_write_failed", error=str(exc))

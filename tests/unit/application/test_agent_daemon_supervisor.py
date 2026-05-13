@@ -1,4 +1,4 @@
-"""Tests for the ButlerDaemon supervisor (issue #156).
+"""Tests for the AgentDaemonSupervisor (issue #156, ADR-027).
 
 The supervisor wraps the bare daemon with watchdog, auto-restart,
 structured crash logging and graceful signal handling so the butler
@@ -15,7 +15,7 @@ import sys
 from datetime import timedelta
 
 import pytest
-from taskforce_butler.daemon_supervisor import DaemonStalled, DaemonSupervisor
+from taskforce.application.daemon_supervisor import AgentDaemonSupervisor, DaemonStalled
 
 from taskforce.core.utils.time import utc_now
 
@@ -78,7 +78,7 @@ async def test_supervisor_catches_crash_logs_restarts_with_backoff() -> None:
         daemons.append(d)
         return d
 
-    supervisor = DaemonSupervisor(
+    supervisor = AgentDaemonSupervisor(
         daemon_factory=factory,
         watchdog_interval_seconds=10.0,
         stall_threshold_seconds=60.0,
@@ -120,7 +120,7 @@ async def test_supervisor_does_not_restart_on_cancelled_error() -> None:
         built.append(d)
         return d
 
-    supervisor = DaemonSupervisor(
+    supervisor = AgentDaemonSupervisor(
         daemon_factory=factory,
         initial_backoff_seconds=0.0,
     )
@@ -135,7 +135,7 @@ async def test_supervisor_signal_handler_triggers_graceful_shutdown() -> None:
     """Invoking the signal handler must flip the shutdown event and stop the daemon."""
     daemon = _FakeDaemon(idle_seconds=3600.0)
 
-    supervisor = DaemonSupervisor(
+    supervisor = AgentDaemonSupervisor(
         daemon_factory=lambda: daemon,
         watchdog_interval_seconds=60.0,
         stall_threshold_seconds=3600.0,
@@ -173,7 +173,7 @@ async def test_watchdog_detects_stalled_heartbeat_and_restarts() -> None:
         daemons.append(d)
         return d
 
-    supervisor = DaemonSupervisor(
+    supervisor = AgentDaemonSupervisor(
         daemon_factory=factory,
         watchdog_interval_seconds=0.05,
         stall_threshold_seconds=0.5,
@@ -204,7 +204,7 @@ async def test_watchdog_raises_daemonstalled_directly() -> None:
     daemon = _FakeDaemon(last_heartbeat_offset_seconds=10.0)
     daemon.is_running = True
 
-    supervisor = DaemonSupervisor(
+    supervisor = AgentDaemonSupervisor(
         daemon_factory=lambda: daemon,
         watchdog_interval_seconds=0.01,
         stall_threshold_seconds=0.05,
@@ -226,7 +226,7 @@ async def test_supervisor_install_signal_handlers_is_safe() -> None:
     leaks back to the caller.
     """
     daemon = _FakeDaemon()
-    supervisor = DaemonSupervisor(daemon_factory=lambda: daemon)
+    supervisor = AgentDaemonSupervisor(daemon_factory=lambda: daemon)
     supervisor.install_signal_handlers()
     assert supervisor._installed_signals, "At least SIGINT should be installed"
     # SIGINT is universally available.
@@ -250,7 +250,7 @@ def test_install_signal_handlers_under_proactor_event_loop() -> None:
     fallback would actually fail the suite.
     """
     daemon = _FakeDaemon()
-    supervisor = DaemonSupervisor(daemon_factory=lambda: daemon)
+    supervisor = AgentDaemonSupervisor(daemon_factory=lambda: daemon)
 
     loop = asyncio.ProactorEventLoop()  # type: ignore[attr-defined]
     try:
@@ -281,7 +281,7 @@ def test_install_signal_handlers_without_running_loop_uses_signal_signal() -> No
     silent skip on platforms where the fallback IS available.
     """
     daemon = _FakeDaemon()
-    supervisor = DaemonSupervisor(daemon_factory=lambda: daemon)
+    supervisor = AgentDaemonSupervisor(daemon_factory=lambda: daemon)
     # No asyncio.run / event loop — pure sync call.
     supervisor.install_signal_handlers()
     assert signal.SIGINT in supervisor._installed_signals
