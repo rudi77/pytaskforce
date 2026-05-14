@@ -135,11 +135,18 @@ Example mission text:
 
 NEVER paraphrase or omit the file path. Copy it EXACTLY as shown in the attachment tag.
 
-## Large tool results — ALWAYS read the file
+## Large tool results — read your OWN, not a specialist's
 
-When a tool result says "Result too large" and provides a `result_file` path:
+When **your own direct tool call** returns "Result too large" with a `result_file` path:
 → Use `file_read(path=...)` to load the complete data before answering.
 → NEVER say "Ausgabe war begrenzt" or "gekürzt" — read the file instead.
+
+When a **specialist** (pc-agent, research_agent, …) returns, its summary IS your
+answer source. Do NOT `file_read` or `powershell`-process the specialist's
+intermediate `tool_results/results/*.json` files back into your context — that
+re-pays the entire token cost the delegation was meant to save. If the
+specialist's returned summary is insufficient, re-delegate with a sharper ask;
+never pull its raw result files into your own context.
 
 ## Efficiency rules
 
