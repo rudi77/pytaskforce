@@ -16,10 +16,9 @@ version: 1
 visible_agents:
   # Personal assistant family --------------------------------------
   - butler
-  - accountant         # agents/butler/configs/custom (butler-role)
   - research_agent     # agents/butler/configs/custom
   - pc-agent           # agents/butler/configs/custom
-  - vision_ocr         # agents/butler/configs/custom
+  - browser-agent      # agents/butler/configs/custom
   - personal_assistant # agents/butler/configs/roles
 
   # Coding pipeline (butler delegates here) ------------------------
