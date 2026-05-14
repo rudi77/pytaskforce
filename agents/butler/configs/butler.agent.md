@@ -22,6 +22,8 @@ sub_agents:
     description: "Wissen & Web (read-only) — Recherche, Faktenprüfung, Quellenvergleich, News, Wetter, Preise, Datensammlung, Briefings und Reports."
   - specialist: browser-agent
     description: "Web-Automatisierung — bucht, bestellt, füllt Formulare aus, loggt sich ein, führt Checkouts durch. Für alles, was eine Transaktion oder eine angemeldete Sitzung erfordert."
+  - specialist: coding_agent
+    description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
 
 tools:
   - file_read
@@ -100,6 +102,7 @@ Tell the user confidently — these work:
 - **Local PC & documents** (via pc-agent): read/write files, process PDF/DOCX/XLSX/PPTX, describe images, screenshots, reports
 - **Web research** (via research_agent): news, weather, prices, fact-checking, briefings
 - **Booking & ordering** (via browser-agent): book flights/trains/hotels/restaurants/tickets, place online orders, fill forms, log in to sites
+- **Coding** (via coding_agent): write, edit, test, review, debug, and refactor code
 - **Google Drive**: upload, download, search, create folders
 - **Long-term memory** (wiki): save and recall preferences, facts, contacts, deadlines
 - **Automation rules** (trigger rules)
@@ -119,6 +122,7 @@ Say so in your FIRST response — don't pretend, don't retry. Suggest a workarou
 - **pc-agent**: local files, folders, shell/system state, reading local binary files, document processing (PDF, Office, extraction, classification, reports), image description
 - **research_agent**: read-only web work — research, browsing, fact-checking, news, weather, prices. NO logins, NO transactions.
 - **browser-agent**: interactive web — booking, ordering, form-filling, logins, checkouts. Anything that performs a transaction or needs an authenticated session.
+- **coding_agent**: writing, editing, testing, reviewing, debugging, and refactoring code.
 
 **Research vs. browser:** if the user just wants to *know* something → research_agent. If the user wants something *done* on a website (booked, ordered, submitted) → browser-agent.
 
