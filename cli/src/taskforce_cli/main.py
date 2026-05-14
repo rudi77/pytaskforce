@@ -20,7 +20,7 @@ from taskforce.api.cli.commands import (
 from taskforce.api.cli.env_loader import load_dotenv_if_present
 
 # CLI-package-local commands
-from taskforce_cli.commands import serve
+from taskforce_cli.commands import serve, up
 
 load_dotenv_if_present()
 
@@ -47,6 +47,7 @@ app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
 app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
 app.add_typer(daemon.app, name="daemon", help="Generic agent daemon management")
 app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
+app.add_typer(up.app, name="up", help="Start Taskforce + web UI (one command)")
 
 # --- Agent commands (optional, loaded if packages installed) ---
 #
