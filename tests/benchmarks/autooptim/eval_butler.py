@@ -28,6 +28,15 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Windows console defaults to cp1252; agent tool results and delegation
+# output contain non-latin1 characters (e.g. the U+2192 arrow). structlog's
+# console renderer writes through stdout, so without UTF-8 the agent crashes
+# with UnicodeEncodeError mid-mission. Reconfigure before the taskforce
+# imports below trigger structlog setup.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
+
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 from taskforce.application.token_analytics_facade import get_execution_token_summary
