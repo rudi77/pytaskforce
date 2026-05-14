@@ -1,0 +1,36 @@
+# Taskforce Community — one-command deployment.
+#
+#   1. cp .env.example .env   &&   edit .env (add OPENAI_API_KEY)
+#   2. docker compose up -d
+#   3. open http://localhost:8070
+#
+# Uses the published image by default; uncomment `build:` to build locally.
+name: taskforce-community
+
+services:
+  taskforce:
+    image: ghcr.io/rudi77/taskforce-community:latest
+    # build: .
+    container_name: taskforce
+    ports:
+      - "8070:8070"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Persisted inside the named volume below.
+      TASKFORCE_WORK_DIR: /data
+      TASKFORCE_LOG_DIR: /data/logs
+    volumes:
+      - taskforce_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8070/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  taskforce_data:
+    driver: local

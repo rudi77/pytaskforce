@@ -54,6 +54,8 @@ if _get_token_analytics() is None:
 import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from taskforce.api.exception_handlers import taskforce_http_exception_handler
 from taskforce.api.routes import (
@@ -233,6 +235,67 @@ def _load_plugin_config() -> dict[str, Any]:
     return {}
 
 
+def _resolve_ui_dir() -> Path | None:
+    """Locate the built web UI directory, or return None if not available.
+
+    Resolution order:
+      1. ``TASKFORCE_UI_DIR`` env var (explicit override / container mount)
+      2. ``<package>/api/_ui`` — the UI build bundled into the wheel
+      3. ``<repo root>/ui/dist`` — a local ``pnpm build`` during development
+    """
+    candidates: list[Path] = []
+    env_dir = os.getenv("TASKFORCE_UI_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser())
+    candidates.append(Path(__file__).parent / "_ui")
+    candidates.append(Path(__file__).resolve().parents[3] / "ui" / "dist")
+    for candidate in candidates:
+        if candidate and (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+def _mount_ui(app: FastAPI) -> None:
+    """Serve the bundled single-page web UI from the API process.
+
+    Registered after all API and plugin routers so those always win; the
+    SPA catch-all only handles paths the API does not own. Without a built
+    UI present this is a no-op and the API still serves ``/api/v1`` + docs.
+    """
+    ui_dir = _resolve_ui_dir()
+    if ui_dir is None:
+        logger.info(
+            "ui.static.not_found",
+            hint="run `pnpm build` in ui/ or set TASKFORCE_UI_DIR to serve the web UI",
+        )
+        return
+
+    assets_dir = ui_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="ui-assets")
+
+    index_file = ui_dir / "index.html"
+    _api_prefixes = ("api/", "health", "docs", "redoc", "openapi.json")
+
+    @app.get("/", include_in_schema=False)
+    async def _ui_root() -> FileResponse:
+        return FileResponse(index_file)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _ui_spa(full_path: str) -> FileResponse:
+        # API/docs/health routes are registered earlier and match first;
+        # if we still get one here it is genuinely unknown -> 404 (not the SPA).
+        if full_path.startswith(_api_prefixes):
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = ui_dir / full_path
+        if candidate.is_file() and candidate.resolve().is_relative_to(ui_dir.resolve()):
+            return FileResponse(candidate)
+        # Unknown path -> hand control to the client-side router.
+        return FileResponse(index_file)
+
+    logger.info("ui.static.mounted", ui_dir=str(ui_dir))
+
+
 def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -305,6 +368,11 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Serve the bundled web UI (when present) so a single process delivers
+    # both the REST API and the front-end. Mounted last so API and plugin
+    # routes always take precedence over the SPA catch-all.
+    _mount_ui(app)
 
     return app
 

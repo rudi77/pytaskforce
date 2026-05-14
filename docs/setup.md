@@ -1,53 +1,79 @@
 # Setup & Installation
 
-Taskforce uses the modern **uv** package manager for fast, reliable dependency management.
+Taskforce ships in two editions and installs four ways. Pick the row that
+matches you — the full walkthrough for each path is in
+**[docs/install.md](install.md)**.
 
-## 🪟 Windows Setup (PowerShell)
+| You want… | Edition | Path |
+| :--- | :--- | :--- |
+| The quickest way on a desktop, no developer tools | Community | Native installer (`install.sh` / `install.ps1`) |
+| To run it on a server / share it with a team | Community | Docker (`docker compose up`) |
+| Multi-tenant, logins, RBAC, audit | Enterprise | See the `taskforce-enterprise` repository |
+| To hack on Taskforce itself | either | From source with `uv` (below) |
 
-### 1. Install uv
-If you don't have `uv` installed yet:
-```powershell
-pip install uv
+## TL;DR — Community edition
+
+**Native (Linux/macOS):**
+```bash
+curl -LsSf https://raw.githubusercontent.com/rudi77/pytaskforce/main/install.sh | sh
+taskforce up
 ```
 
-### 2. Initialize Environment
+**Native (Windows PowerShell):**
 ```powershell
-# Create the virtual environment
-uv venv .venv
-
-# Activate it
-.\.venv\Scripts\Activate.ps1
-
-# Sync dependencies
-uv sync
+irm https://raw.githubusercontent.com/rudi77/pytaskforce/main/install.ps1 | iex
+taskforce up
 ```
 
-## 🔐 Environment Variables
+**Docker (desktop or server):**
+```bash
+git clone https://github.com/rudi77/pytaskforce && cd pytaskforce
+cp .env.example .env        # then add your OPENAI_API_KEY
+docker compose up -d        # open http://localhost:8070
+```
 
-Taskforce requires several environment variables to function correctly. These are managed via a `.env` file.
+Either way, `taskforce up` (or the container) starts the REST API **and**
+the web UI from a single process and — for the native install — opens your
+browser at <http://localhost:8070>.
 
-1.  **Copy the template**:
-    ```powershell
-    Copy-Item .env.example .env
-    ```
-2.  **Edit `.env`**: At minimum, add your `OPENAI_API_KEY`.
+## From source (developers)
 
-### Key Variables
+Taskforce uses the **uv** package manager.
+
+```bash
+git clone https://github.com/rudi77/pytaskforce && cd pytaskforce
+uv sync                         # framework + CLI + bundled agent packages
+uv run playwright install chromium   # browser tool (optional)
+
+# build the web UI so `taskforce up` can serve it
+cd ui && pnpm install && pnpm run build && cd ..
+cp -r ui/dist src/taskforce/api/_ui
+
+cp .env.example .env            # add your OPENAI_API_KEY
+uv run taskforce up
+```
+
+## Environment variables
+
+Configuration lives in a `.env` file. The native installers write one to
+`~/.taskforce/.env`; from source or Docker, copy `.env.example` to `.env`.
+
 | Variable | Description |
 | :--- | :--- |
-| `OPENAI_API_KEY` | Required for OpenAI/LiteLLM models. |
-| `DATABASE_URL` | PostgreSQL connection string (required for `prod` profile). |
+| `OPENAI_API_KEY` | Required for OpenAI / LiteLLM models. |
+| `DATABASE_URL` | Optional. SQLite by default; PostgreSQL for production. |
+| `TASKFORCE_UI_DIR` | Optional. Override where the API looks for the built web UI. |
 | `GITHUB_TOKEN` | Optional. Required for GitHub-related tools. |
 
-## 🧠 Optional: Long-Term Memory
+Most runtime settings (LLM providers, channels, integrations) can also be
+managed from **Settings** in the web UI once the server is running.
 
-Long-term memory is file-based and does not require any external services.
-Enable the `memory` tool in your profile and point `memory.store_dir` to a
-writable directory (typically under the profile `work_dir`). See
-`docs/features/longterm-memory.md` for details.
+## Verifying the install
 
-## 🚀 Verifying the Install
-Run the help command to ensure everything is wired correctly:
-```powershell
-taskforce --help
+```bash
+taskforce --help        # CLI is wired up
+taskforce up            # API + web UI on http://localhost:8070
 ```
+
+See **[docs/install.md](install.md)** for the detailed guide, upgrade and
+uninstall steps, and the Enterprise edition.

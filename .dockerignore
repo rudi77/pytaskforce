@@ -1,0 +1,51 @@
+# VCS / CI
+.git
+.gitignore
+.github
+
+# Python caches / build output
+**/__pycache__
+**/*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+build/
+dist/
+sdist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv
+**/.venv
+env/
+venv/
+
+# Node / UI build artifacts (the image rebuilds these in the ui-builder stage)
+**/node_modules
+ui/dist
+src/taskforce/api/_ui
+
+# Runtime state / local data
+.taskforce/
+.taskforce_*/
+logs/
+traces/
+*.log
+test_results.json
+temp_bing.html
+
+# Heavy dev-only trees not needed at runtime
+tests/
+evals/
+docs/_build/
+
+# Editor / tooling
+.vscode/
+.cursor/
+.idea/
+.claude/

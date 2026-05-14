@@ -44,6 +44,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# ...except the tracked Taskforce build spec used by scripts/build_exe.py.
+!taskforce.spec
 
 # Installer logs
 pip-log.txt
@@ -255,3 +257,5 @@ examples/ap_ledger_agent/reports/
 .forge/events.duckdb
 .forge/*.log
 
+# Compiled web UI bundled into the package at build time (pnpm build -> ui/dist).
+src/taskforce/api/_ui/
