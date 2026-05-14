@@ -4,6 +4,9 @@ include CHANGELOG.md
 recursive-include src/taskforce_extensions/configs *.yaml
 recursive-include src/taskforce_extensions/plugins *.yaml *.py *.md *.txt *.ipynb
 recursive-include src/taskforce/core/prompts *.py
+# Compiled web UI bundled into the package by the build pipeline
+# (pnpm build -> ui/dist -> src/taskforce/api/_ui).
+recursive-include src/taskforce/api/_ui *
 recursive-exclude tests *
 recursive-exclude .taskforce *
 recursive-exclude dist *

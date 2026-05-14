@@ -164,6 +164,17 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# Include the compiled web UI even though ``src/taskforce/api/_ui/`` is a
+# build artifact ignored by VCS. The build pipeline (Docker image,
+# PyInstaller bundle, release workflow) runs ``pnpm build`` in ui/ and
+# copies ui/dist there before ``uv build``. When the directory is absent
+# this glob simply matches nothing, so a plain ``uv sync`` for local
+# development keeps working unchanged.
+artifacts = [
+    "src/taskforce/api/_ui/**",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskforce", "cli/src/taskforce_cli"]
 
@@ -270,5 +281,3 @@ ignore_missing_imports = true
 module = "taskforce.core.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
-
-
