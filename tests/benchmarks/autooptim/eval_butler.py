@@ -79,6 +79,22 @@ def _register_butler_config_dirs() -> None:
 
 _register_butler_config_dirs()
 
+
+# Install the LiteLLM token-analytics callback. The API server does this at
+# startup (server.py) and the CLI via its own bootstrap, but this eval drives
+# AgentFactory/AgentExecutor directly and skips both — so without this call
+# get_execution_token_summary() returns None and every steps/input_tokens/
+# tool_calls metric collapses to 0.
+def _install_token_analytics() -> None:
+    from taskforce.infrastructure.llm.token_analytics_callback import (
+        TokenAnalyticsCallback,
+    )
+
+    TokenAnalyticsCallback().install()
+
+
+_install_token_analytics()
+
 if TYPE_CHECKING:
     from taskforce.core.domain.lean_agent import Agent
 
