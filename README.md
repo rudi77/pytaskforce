@@ -4,29 +4,74 @@ Production-grade multi-agent orchestration framework built with **hexagonal (cle
 
 ## Quick Start
 
-### 1. Install uv
+Taskforce installs four ways — pick the one that fits. Every path ends with
+a single process serving the REST API **and** the web UI on
+<http://localhost:8070>. Full guide: **[docs/install.md](docs/install.md)**.
+
+### Option A — Native installer (easiest, no developer tools)
+
+**Linux / macOS:**
 ```bash
-# Install the uv package manager if you haven't already
-pip install uv
+curl -LsSf https://raw.githubusercontent.com/rudi77/pytaskforce/main/install.sh | sh
+taskforce up
 ```
 
-### 2. Setup Environment
-```bash
-# Clone and enter the repo
-cd pytaskforce
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/rudi77/pytaskforce/main/install.ps1 | iex
+taskforce up
+```
 
-# Create virtual environment and install dependencies
-uv venv .venv
-source .venv/bin/activate        # Linux/macOS
-# .\.venv\Scripts\Activate.ps1   # Windows PowerShell
+The installer downloads a self-contained bundle (no Python/Node/git
+needed), asks for your OpenAI API key, and puts a `taskforce` launcher on
+your `PATH`. Pass `--from-source` to install from this repository with
+`uv` instead.
+
+### Option B — Docker (desktop or server)
+
+```bash
+git clone https://github.com/rudi77/pytaskforce && cd pytaskforce
+cp .env.example .env        # then add your OPENAI_API_KEY
+docker compose up -d        # open http://localhost:8070
+```
+
+Works identically on Linux servers, Windows and macOS (Docker Desktop).
+State persists in the `taskforce_data` volume.
+
+### Option C — From source (developers)
+
+Taskforce uses the modern **uv** package manager.
+
+```bash
+# Install uv if you haven't already
+pip install uv
+
+# Clone and enter the repo
+git clone https://github.com/rudi77/pytaskforce && cd pytaskforce
+
+# Create the virtual environment and install everything
+# (framework + unified CLI + bundled agent packages)
 uv sync
 
-# Setup environment variables
-cp .env.example .env
-# Now edit .env and add your OPENAI_API_KEY
+# Browser tool (optional) — download the Chromium binary once
+uv run playwright install chromium
+
+# Build the web UI so the API can serve it (optional but recommended)
+cd ui && pnpm install && pnpm run build && cd ..
+cp -r ui/dist src/taskforce/api/_ui
+
+# Configure and run
+cp .env.example .env        # add your OPENAI_API_KEY
+uv run taskforce up
 ```
 
-### 3. Run Your First Mission
+> **Enterprise edition** — multi-tenant authentication, RBAC, policy
+> engine and audit trail — installs separately as its own image /
+> installer. See the
+> [taskforce-enterprise](https://github.com/rudi77/taskforce-enterprise)
+> repository.
+
+### Run Your First Mission
 ```bash
 # CLI Mode — default profile is 'butler' if taskforce-butler is installed,
 # otherwise 'dev'. Override any time with --profile <name>.
@@ -35,12 +80,16 @@ taskforce run mission "Describe the current weather in Vienna"
 # Interactive Chat
 taskforce chat
 
-# API Mode
-uvicorn taskforce.api.server:app --reload
-# Documentation: http://localhost:8000/docs
+# Web UI + REST API (single process)
+taskforce up
+# Documentation: http://localhost:8070/docs
 ```
 
-### 3a. Install Optional Agent Packages
+### Install Optional Agent Packages
+
+The native installer and Docker image already include the bundled agent
+packages. For a from-source install you can add them individually:
+
 ```bash
 # Enable butler (daemon + Google Workspace tools + scheduler)
 uv pip install -e agents/butler
@@ -60,9 +109,9 @@ point `TASKFORCE_DEPLOYMENT_MANIFEST` at your own manifest, or toggle agents
 from **Settings → Agents** in the UI — see
 [`docs/profiles.md`](docs/profiles.md#deployment-manifest-visible-agents-allowlist).
 
-### 3b. Configure runtime via the UI
+### Configure runtime via the UI
 
-Once the API is running, **Settings** in the UI exposes the runtime config you'd
+Once the server is running, **Settings** in the UI exposes the runtime config you'd
 otherwise pin via env vars:
 
 - **LLM Providers** — API keys + endpoints for OpenAI, Anthropic, Azure, Google,
@@ -78,7 +127,7 @@ production, set `TASKFORCE_SECRETS_KEY` so the master key lives outside the
 work dir; otherwise it auto-generates at `<work_dir>/.secrets.key` (mode 0600
 on POSIX).
 
-### 4. Load a Plugin (Optional)
+### Load a Plugin (Optional)
 ```bash
 # CLI: Load plugin directly
 taskforce chat --plugin examples/accounting_agent
@@ -135,6 +184,11 @@ Enterprise product features were moved to a dedicated repository. The OSS core k
 - UI plugin manifest endpoint: `GET /api/v1/ui/manifest`
 
 This means `pytaskforce` stays lightweight while allowing enterprise packages to plug in cleanly without forking the core.
+
+Installing the Enterprise edition is documented in the
+[taskforce-enterprise](https://github.com/rudi77/taskforce-enterprise)
+repository — it ships as its own Docker image and installer, layered on
+the Community distribution.
 
 ## Architecture Overview
 
@@ -287,7 +341,8 @@ See [ADR-017](docs/adr/adr-017-butler-role-specialization.md) for the role model
 
 Detailed guides are available in the [docs/](docs/) directory:
 
-- **[Setup & Installation](docs/setup.md)**: Environment setup guide.
+- **[Installation Guide](docs/install.md)**: All four install paths (native, Docker, source) for Community and Enterprise.
+- **[Setup & Configuration](docs/setup.md)**: Environment setup and `.env` reference.
 - **[CLI Guide](docs/cli.md)**: Master the `taskforce` command.
 - **[REST API Guide](docs/api.md)**: Integrating Taskforce via FastAPI.
 - **[Profiles & Config](docs/profiles.md)**: Configuration profiles and settings.
@@ -370,6 +425,19 @@ For the `browser` tool, download the Chromium binary once:
 ```bash
 playwright install chromium
 ```
+
+### Building the Distribution Artifacts
+
+```bash
+# Docker image (Community)
+docker build -t taskforce-community .
+
+# Self-contained PyInstaller bundle (used by the native installer's binary mode)
+uv run python scripts/build_exe.py --archive
+```
+
+Tagging a `v*` release runs `.github/workflows/release.yml`, which builds and
+publishes the Docker image and the per-OS PyInstaller bundles automatically.
 
 ### Optional Dependency Groups
 ```bash
