@@ -160,7 +160,7 @@ export default function ProjectDetailPage() {
         ) : activeList.length === 0 ? (
           <EmptyState
             title="Noch keine aktiven Conversations"
-            description="Starte mit „New conversation"."
+            description={'Starte mit „New conversation".'}
             className="max-w-md"
           />
         ) : (
