@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -28,10 +29,71 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Windows console defaults to cp1252; agent tool results and delegation
+# output contain non-latin1 characters (e.g. the U+2192 arrow). structlog's
+# console renderer writes through stdout, so without UTF-8 the agent crashes
+# with UnicodeEncodeError mid-mission. Reconfigure before the taskforce
+# imports below trigger structlog setup.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
+
 from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 from taskforce.application.token_analytics_facade import get_execution_token_summary
 from taskforce.core.domain.enums import EventType
+
+# Register the butler config dirs with the framework profile loader.
+#
+# After the agent-package split the 'butler' profile lives in
+# agents/butler/configs/. The package-discovery mechanisms
+# (register_agent_config_dirs / bootstrap_config_dirs) all require
+# `import taskforce_butler` to succeed first — but taskforce-butler is a
+# data-only package that is frequently NOT pip-installed in dev/eval
+# environments, so discovery silently skips butler and the profile load
+# fails with "Profile 'butler' not found".
+#
+# This eval is butler-specific and lives inside the repo, so it registers
+# the config dirs directly by path instead of relying on package
+# discovery. register_config_dir writes to a process-global list, so this
+# also covers downstream consumers like post-mission learning that build
+# their own ProfileLoader.
+def _register_butler_config_dirs() -> None:
+    from taskforce.application.profile_loader import register_config_dir
+
+    repo_root = Path(__file__).resolve().parents[3]
+    butler_configs = repo_root / "agents" / "butler" / "configs"
+    if not butler_configs.is_dir():
+        print(
+            f"ERROR: butler configs not found at {butler_configs} — "
+            "expected agents/butler/configs/ in the repo.",
+            file=sys.stderr,
+        )
+        raise FileNotFoundError(butler_configs)
+    register_config_dir(butler_configs)
+    for subdir in ("custom", "roles"):
+        path = butler_configs / subdir
+        if path.is_dir():
+            register_config_dir(path)
+
+
+_register_butler_config_dirs()
+
+
+# Install the LiteLLM token-analytics callback. The API server does this at
+# startup (server.py) and the CLI via its own bootstrap, but this eval drives
+# AgentFactory/AgentExecutor directly and skips both — so without this call
+# get_execution_token_summary() returns None and every steps/input_tokens/
+# tool_calls metric collapses to 0.
+def _install_token_analytics() -> None:
+    from taskforce.infrastructure.llm.token_analytics_callback import (
+        TokenAnalyticsCallback,
+    )
+
+    TokenAnalyticsCallback().install()
+
+
+_install_token_analytics()
 
 if TYPE_CHECKING:
     from taskforce.core.domain.lean_agent import Agent
@@ -242,6 +304,21 @@ MEMORY_MISSIONS: list[dict] = [
 # Each test has a mission, a check function, and a description.
 # The check function receives the final_answer string and returns True if passed.
 # These are FAST (~2 min total) and gate every /evolve merge.
+
+
+def _taskforce_version() -> str:
+    """Read the taskforce version from pyproject.toml.
+
+    Used by the Text File Read regression check so it tracks the real
+    version instead of a hardcoded literal that goes stale on every bump.
+    """
+    text = Path("pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
+_TASKFORCE_VERSION = _taskforce_version()
+
 REGRESSION_TESTS: list[dict] = [
     {
         "name": "Text File Read",
@@ -250,7 +327,7 @@ REGRESSION_TESTS: list[dict] = [
             "Lies die Datei pyproject.toml und nenne mir die Version von taskforce. "
             "Antworte nur mit der Versionsnummer."
         ),
-        "check": lambda answer: "0.1.0" in answer,
+        "check": lambda answer: bool(_TASKFORCE_VERSION) and _TASKFORCE_VERSION in answer,
         "description": "Can read a text file and extract a value",
     },
     {

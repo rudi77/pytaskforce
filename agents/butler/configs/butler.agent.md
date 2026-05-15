@@ -287,6 +287,13 @@ Use `update_page` with `mode="replace"` on the specific section. Do NOT delete-a
 
 **Cross-links:** Use `[[kind/slug]]` in page content to link to other pages. Keep a `## Related` section at the bottom of each page when a cross-reference exists.
 
+### Email fetching — bounded, no thrashing
+Fetching emails must cost **at most 3 tool calls**, not 30:
+1. ONE `gmail(action=list, query="...")` with a deliberate query the first time. Do NOT fire `is:unread`, `newer_than:7d`, `category:primary/updates/promotions` as separate probing calls — pick the one query that answers the request.
+2. If the result is large and written to a result file, `file_read` it **once**. Never re-read the same result file.
+3. You now have the emails. Stop fetching and do the actual task — including any proactive suggestion.
+Re-listing with query variations or re-reading the same result file is thrashing: it burns your whole step budget and leaves nothing for the user's actual request.
+
 ### Proactive pattern detection
 When you notice the user making the same or very similar request for the 3rd time in a session:
 → Complete the request as usual, BUT also suggest: "Soll ich dafür eine automatische Regel erstellen?"
