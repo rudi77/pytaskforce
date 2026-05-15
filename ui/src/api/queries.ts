@@ -1402,3 +1402,54 @@ export function useAllAgentsForVisibility() {
       apiFetch<AgentListResponse>("/api/v1/agents?include_hidden=true"),
   });
 }
+
+// ----- Workspace browse (Cowork-parity @mention picker) -------------------
+
+export interface WorkspaceEntry {
+  path: string;
+  name: string;
+  type: "file" | "dir";
+  size?: number | null;
+}
+
+export interface WorkspaceListResponse {
+  root: string;
+  path: string;
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+}
+
+export interface BrowseWorkspaceArgs {
+  path?: string;
+  q?: string;
+  includeHidden?: boolean;
+  limit?: number;
+}
+
+/**
+ * Mounts the workspace browse endpoint into React-Query so the picker can
+ * stay responsive (cached per directory + filter combo). The endpoint is
+ * cheap (single ``iterdir``) so a short ``staleTime`` is fine.
+ */
+export function useWorkspaceBrowse(
+  args: BrowseWorkspaceArgs,
+  enabled = true,
+) {
+  const { path = "", q = "", includeHidden = false, limit = 200 } = args;
+  return useQuery<WorkspaceListResponse>({
+    queryKey: ["workspace", "browse", path, q, includeHidden, limit] as const,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (path) params.set("path", path);
+      if (q) params.set("q", q);
+      if (includeHidden) params.set("include_hidden", "true");
+      if (limit !== 200) params.set("limit", String(limit));
+      const qs = params.toString();
+      return apiFetch<WorkspaceListResponse>(
+        `/api/v1/workspace/browse${qs ? `?${qs}` : ""}`,
+      );
+    },
+    enabled,
+    staleTime: 15_000,
+  });
+}
