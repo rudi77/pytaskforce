@@ -1,30 +1,43 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
+  Archive,
   Beaker,
   Bot,
+  Clock,
+  FolderOpen,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Moon,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
+  Plus,
   Sparkles,
-  Workflow,
-  Moon,
   Sun,
+  User,
+  Wand2,
+  Workflow,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
 import { useSettings } from "@/lib/settings";
 import { capabilitiesSatisfied, usePluginRegistry } from "@/plugins/registry";
 import type { PluginNavItem } from "@/plugins/types";
 import { useCurrentPermissions } from "@/lib/permissions";
+import {
+  useArchivedConversations,
+  useConversations,
+  useCreateConversation,
+  type ConversationInfo,
+} from "@/api/queries";
+import { formatRelativeTime } from "@/lib/utils";
 
 interface NavItem {
   to: string;
@@ -35,21 +48,34 @@ interface NavItem {
   order?: number;
 }
 
-const BUILTIN_NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, section: "main", order: 0 },
-  { to: "/agents", label: "Agents", icon: Bot, section: "main", order: 10 },
-  { to: "/chat", label: "Chat", icon: MessageSquare, section: "main", order: 20 },
-  { to: "/monitoring", label: "Monitoring", icon: Activity, section: "main", order: 30 },
-  { to: "/capabilities", label: "Capabilities", icon: Sparkles, section: "main", order: 40 },
-  { to: "/acp", label: "ACP Peers", icon: Network, section: "main", order: 50 },
-  { to: "/workflows", label: "Workflows", icon: Workflow, section: "main", order: 55 },
-  { to: "/evals", label: "Evals", icon: Beaker, section: "main", order: 60 },
+// Cowork-style primary navigation: a small, hand-picked set of verbs the
+// user reaches for most. The rest of the surfaces (Agents, Monitoring,
+// ACP, Evals, Dashboard) get demoted to a collapsible "Workspace"
+// section underneath. This keeps the sidebar uncluttered like Cowork's.
+const PRIMARY_NAV_ITEMS: NavItem[] = [
+  { to: "/chat", label: "Chat", icon: MessageSquare, order: 0 },
+  { to: "/projects", label: "Projects", icon: FolderOpen, order: 10 },
+  { to: "/workflows", label: "Scheduled", icon: Clock, order: 20 },
+  { to: "/monitoring", label: "Live artifacts", icon: Activity, order: 30 },
+  { to: "/settings", label: "Customize", icon: Wand2, order: 40 },
+];
+
+// Secondary surfaces — kept reachable but folded into a small group so they
+// don't compete with the primary verbs.
+const WORKSPACE_NAV_ITEMS: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, order: 0 },
+  { to: "/agents", label: "Agents", icon: Bot, order: 10 },
+  { to: "/capabilities", label: "Capabilities", icon: Sparkles, order: 20 },
+  { to: "/acp", label: "ACP Peers", icon: Network, order: 30 },
+  { to: "/workflows", label: "Workflows", icon: Workflow, order: 40 },
+  { to: "/evals", label: "Evals", icon: Beaker, order: 50 },
 ];
 
 const BUILTIN_PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/agents": "Agents",
   "/chat": "Chat",
+  "/projects": "Projects",
   "/monitoring": "Monitoring",
   "/acp": "ACP Peers",
   "/workflows": "Workflows",
@@ -59,11 +85,10 @@ const BUILTIN_PAGE_TITLES: Record<string, string> = {
 };
 
 const COLLAPSED_KEY = "taskforce.sidebar.collapsed";
+const WORKSPACE_OPEN_KEY = "taskforce.sidebar.workspaceOpen";
 
 // Each built-in admin path requires one of these permissions. The admin
-// section is rendered only when the current user has at least one of
-// them. When permissions are not enforced (single-tenant build, no
-// enterprise auth) `can()` returns true and the section stays visible.
+// section is rendered only when the current user has at least one of them.
 const ADMIN_PATH_PERMISSIONS: Record<string, string> = {
   "/admin/tenants": "tenant:manage",
   "/admin/users": "user:manage",
@@ -88,72 +113,353 @@ function ThemeToggle() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
-  mainItems: NavItem[];
+  primaryItems: NavItem[];
+  workspaceItems: NavItem[];
   adminItems: NavItem[];
 }
 
-function NavSection({
+function SidebarNavRow({
+  item,
+  collapsed,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+}) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      title={collapsed ? item.label : undefined}
+      className={({ isActive }) =>
+        cn(
+          "group flex items-center gap-2.5 rounded-md text-sm font-medium transition-colors",
+          collapsed ? "justify-center p-2" : "px-2.5 py-1.5",
+          isActive
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        )
+      }
+    >
+      <item.icon className="h-4 w-4 shrink-0" />
+      {collapsed ? null : <span className="truncate">{item.label}</span>}
+    </NavLink>
+  );
+}
+
+function PrimaryNav({
   items,
   collapsed,
-  label,
 }: {
   items: NavItem[];
   collapsed: boolean;
-  label?: string;
 }) {
-  if (items.length === 0) return null;
   return (
     <div className="space-y-0.5">
-      {!collapsed && label ? (
-        <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          {label}
-        </div>
-      ) : null}
       {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
-          title={collapsed ? item.label : undefined}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
-              collapsed ? "justify-center p-2" : "px-3 py-2",
-              isActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-            )
-          }
-        >
-          <item.icon className="h-4 w-4 shrink-0" />
-          {collapsed ? null : <span>{item.label}</span>}
-        </NavLink>
+        <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
       ))}
     </div>
   );
 }
 
-function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
+function NewTaskButton({ collapsed }: { collapsed: boolean }) {
+  const navigate = useNavigate();
+  const create = useCreateConversation();
+  const onClick = async () => {
+    try {
+      const conv = await create.mutateAsync({ channel: "rest" });
+      navigate(`/chat/${encodeURIComponent(conv.conversation_id)}`);
+    } catch {
+      // The create flow can fail (e.g. unauthenticated); the chat-empty
+      // state will handle it next when the user lands there manually.
+      navigate("/chat");
+    }
+  };
+
+  if (collapsed) {
+    return (
+      <Button
+        size="icon"
+        onClick={onClick}
+        disabled={create.isPending}
+        title="New task"
+        className="mx-auto"
+      >
+        <Plus className="h-4 w-4" />
+      </Button>
+    );
+  }
+  return (
+    <Button
+      onClick={onClick}
+      disabled={create.isPending}
+      className="w-full justify-start gap-2"
+      size="sm"
+    >
+      <Plus className="h-4 w-4" />
+      New task
+    </Button>
+  );
+}
+
+function RecentsSection({
+  collapsed,
+  activeId,
+}: {
+  collapsed: boolean;
+  activeId: string | undefined;
+}) {
+  const conversations = useConversations();
+  const archived = useArchivedConversations(10);
+
+  if (collapsed) return null;
+
+  const recent = (conversations.data ?? []).slice(0, 8);
+
+  return (
+    <div className="mt-4 flex min-h-0 flex-1 flex-col">
+      <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        Recents
+      </p>
+      <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+        {conversations.isLoading ? (
+          <div className="space-y-1 px-1">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+          </div>
+        ) : recent.length > 0 ? (
+          <ul className="space-y-0.5">
+            {recent.map((c) => (
+              <li key={c.conversation_id}>
+                <RecentItem conversation={c} active={c.conversation_id === activeId} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-2.5 text-xs text-muted-foreground">
+            No conversations yet.
+          </p>
+        )}
+
+        {archived.data && archived.data.length > 0 ? (
+          <details className="mt-3 px-1">
+            <summary className="cursor-pointer list-none rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/40 hover:text-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <Archive className="h-3 w-3" />
+                Archived ({archived.data.length})
+              </span>
+            </summary>
+            <ul className="mt-1 space-y-0.5">
+              {archived.data.map((c) => (
+                <li key={c.conversation_id}>
+                  <RecentItem
+                    conversation={{
+                      conversation_id: c.conversation_id,
+                      topic: c.topic,
+                      channel: "",
+                      message_count: c.message_count,
+                      last_activity: c.archived_at,
+                      started_at: c.started_at,
+                    }}
+                    active={false}
+                    muted
+                  />
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function RecentItem({
+  conversation: c,
+  active,
+  muted,
+}: {
+  conversation: ConversationInfo;
+  active: boolean;
+  muted?: boolean;
+}) {
+  const title = c.topic || c.channel || c.conversation_id;
+  return (
+    <Link
+      to={`/chat/${encodeURIComponent(c.conversation_id)}`}
+      className={cn(
+        "block truncate rounded-md px-2.5 py-1.5 text-sm transition-colors",
+        active
+          ? "bg-accent text-foreground"
+          : muted
+            ? "text-muted-foreground/70 hover:bg-accent/40 hover:text-foreground"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      )}
+      title={`${title} · ${formatRelativeTime(c.last_activity)}`}
+    >
+      {title}
+    </Link>
+  );
+}
+
+function WorkspaceSection({
+  items,
+  collapsed,
+}: {
+  items: NavItem[];
+  collapsed: boolean;
+}) {
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(WORKSPACE_OPEN_KEY) === "1";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_OPEN_KEY, open ? "1" : "0");
+  }, [open]);
+
+  if (items.length === 0) return null;
+
+  if (collapsed) {
+    return (
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <SidebarNavRow key={item.to} item={item} collapsed />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-foreground"
+        aria-expanded={open}
+      >
+        <span>Workspace</span>
+        <span aria-hidden>{open ? "−" : "+"}</span>
+      </button>
+      {open ? (
+        <div className="mt-1 space-y-0.5">
+          {items.map((item) => (
+            <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AdminSection({
+  items,
+  collapsed,
+}: {
+  items: NavItem[];
+  collapsed: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2">
+      {!collapsed ? (
+        <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          Admin
+        </p>
+      ) : null}
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UserFooter({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate();
   const setApiToken = useSettings((s) => s.setApiToken);
   const handleLogout = () => {
     setApiToken("");
     navigate("/login", { replace: true });
   };
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <ThemeToggle />
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sign out"
+          className="flex w-full items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <HealthIndicator />
+        <ThemeToggle />
+      </div>
+      <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <User className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          Signed in
+        </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sign out"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  collapsed,
+  onToggle,
+  primaryItems,
+  workspaceItems,
+  adminItems,
+}: SidebarProps) {
+  const { pathname } = useLocation();
+  // Highlight the active conversation in the Recents list when we're on
+  // /chat/:id. Reading the param out of the URL ourselves avoids
+  // threading state from the chat page back up here.
+  const activeConversationId = useMemo(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)/);
+    return match ? decodeURIComponent(match[1]) : undefined;
+  }, [pathname]);
+
   return (
     <aside
       className={cn(
         "hidden md:flex shrink-0 flex-col border-r border-border bg-card/40 transition-[width] duration-150",
-        collapsed ? "w-14" : "w-60",
+        collapsed ? "w-14" : "w-64",
       )}
     >
       <div
         className={cn(
           "flex h-14 items-center gap-2 border-b border-border",
-          collapsed ? "justify-center px-2" : "px-4",
+          collapsed ? "justify-center px-2" : "px-3",
         )}
       >
         <Sparkles className="h-5 w-5 shrink-0 text-primary" />
@@ -161,39 +467,34 @@ function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
           <span className="text-base font-semibold tracking-tight">Taskforce</span>
         )}
       </div>
-      <nav className={cn("flex-1 space-y-1", collapsed ? "p-1.5" : "p-3")}>
-        <NavSection items={mainItems} collapsed={collapsed} />
-        <NavSection items={adminItems} collapsed={collapsed} label="Admin" />
+
+      <div className={cn(collapsed ? "p-1.5" : "px-3 py-3")}>
+        <NewTaskButton collapsed={collapsed} />
+      </div>
+
+      <nav
+        className={cn(
+          "flex min-h-0 flex-1 flex-col",
+          collapsed ? "px-1.5 pb-2" : "px-2 pb-2",
+        )}
+      >
+        <PrimaryNav items={primaryItems} collapsed={collapsed} />
+
+        <RecentsSection collapsed={collapsed} activeId={activeConversationId} />
+
+        <div className={cn("mt-3 space-y-1", collapsed ? "" : "")}>
+          <WorkspaceSection items={workspaceItems} collapsed={collapsed} />
+          <AdminSection items={adminItems} collapsed={collapsed} />
+        </div>
       </nav>
-      <div className={cn("border-t border-border", collapsed ? "p-1.5" : "p-3")}>
-        <NavLink
-          to="/settings"
-          title={collapsed ? "Settings" : undefined}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-md text-sm font-medium transition-colors",
-              collapsed ? "justify-center p-2" : "px-3 py-2",
-              isActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-            )
-          }
-        >
-          <Settings className="h-4 w-4 shrink-0" />
-          {collapsed ? null : <span>Settings</span>}
-        </NavLink>
-        <button
-          type="button"
-          onClick={handleLogout}
-          title={collapsed ? "Sign out" : undefined}
-          className={cn(
-            "mt-1 flex w-full items-center gap-3 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
-            collapsed ? "justify-center p-2" : "px-3 py-2",
-          )}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {collapsed ? null : <span>Sign out</span>}
-        </button>
+
+      <div
+        className={cn(
+          "border-t border-border",
+          collapsed ? "p-1.5" : "px-3 py-2",
+        )}
+      >
+        <UserFooter collapsed={collapsed} />
         <Button
           type="button"
           variant="ghost"
@@ -201,7 +502,7 @@ function Sidebar({ collapsed, onToggle, mainItems, adminItems }: SidebarProps) {
           onClick={onToggle}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn("mt-2 w-full", collapsed ? "h-8" : "h-7 justify-start gap-2 px-3")}
+          className={cn("mt-2 w-full", collapsed ? "h-8" : "h-7 justify-start gap-2 px-2.5")}
         >
           {collapsed ? (
             <PanelLeftOpen className="h-4 w-4" />
@@ -228,9 +529,6 @@ function pluginNavItemToNavItem(
   pluginCapabilities: readonly string[],
   active: ReadonlySet<string>,
 ): NavItem | null {
-  // `requires` is the per-item override; when omitted we fall back to
-  // the owning plugin's full capability list so an item is hidden as
-  // soon as ANY of the plugin's caps becomes inactive.
   const requires = item.requires ?? pluginCapabilities;
   if (!capabilitiesSatisfied(requires, active)) return null;
   return {
@@ -252,8 +550,11 @@ export function AppShell() {
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
   });
 
-  const { mainItems, adminItems, pageTitles } = useMemo(() => {
-    const collected: NavItem[] = [...BUILTIN_NAV_ITEMS];
+  const { primaryItems, workspaceItems, adminItems, pageTitles } = useMemo(() => {
+    // Plugin nav items that don't explicitly target the admin section
+    // get appended to the Workspace group — that keeps the primary
+    // five-item nav stable.
+    const collected: NavItem[] = [];
     for (const plugin of plugins) {
       for (const navItem of plugin.navItems) {
         const resolved = pluginNavItemToNavItem(
@@ -268,9 +569,11 @@ export function AppShell() {
     const sortByOrder = (a: NavItem, b: NavItem) =>
       (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
 
-    const mainItems = collected
-      .filter((it) => (it.section ?? "main") === "main")
-      .sort(sortByOrder);
+    const primaryItems = [...PRIMARY_NAV_ITEMS].sort(sortByOrder);
+    const workspaceItems = [
+      ...WORKSPACE_NAV_ITEMS,
+      ...collected.filter((it) => (it.section ?? "main") === "main"),
+    ].sort(sortByOrder);
     const adminItems = collected
       .filter((it) => it.section === "admin")
       .filter((it) => {
@@ -280,14 +583,19 @@ export function AppShell() {
       .sort(sortByOrder);
 
     const pageTitles: Record<string, string> = { ...BUILTIN_PAGE_TITLES };
-    for (const item of [...mainItems, ...adminItems]) {
+    for (const item of [...primaryItems, ...workspaceItems, ...adminItems]) {
       pageTitles[item.to] = item.label;
     }
 
-    return { mainItems, adminItems, pageTitles };
+    return { primaryItems, workspaceItems, adminItems, pageTitles };
   }, [plugins, activeCapabilities, permissions]);
 
   const title = getPageTitle(pathname, pageTitles);
+  // On the Cowork-style pages (Chat, Projects) we hide the global header
+  // — each page renders its own breadcrumb / title inline. Other pages
+  // keep the lean top bar so users always know where they are.
+  const hideHeader =
+    pathname.startsWith("/chat") || pathname.startsWith("/projects");
 
   useEffect(() => {
     window.localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -298,23 +606,31 @@ export function AppShell() {
       <Sidebar
         collapsed={collapsed}
         onToggle={() => setCollapsed((c) => !c)}
-        mainItems={mainItems}
+        primaryItems={primaryItems}
+        workspaceItems={workspaceItems}
         adminItems={adminItems}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
-          <h1 className="text-base font-semibold tracking-tight">{title}</h1>
-          <div className="flex items-center gap-2">
-            <HealthIndicator />
-            <ThemeToggle />
-          </div>
-        </header>
-        <main className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-          <div className="mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col p-6">
+        {hideHeader ? null : (
+          // Health indicator + theme toggle live in the sidebar footer
+          // now — the top bar is reserved for the page title to keep
+          // page chrome lean and Cowork-like.
+          <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
+            <h1 className="text-base font-semibold tracking-tight">{title}</h1>
+          </header>
+        )}
+        <main className="relative min-h-0 flex-1 overflow-auto scrollbar-thin">
+          {hideHeader ? (
+            // Chat owns its layout entirely (full-bleed, no padding).
             <Outlet />
-          </div>
+          ) : (
+            <div className="mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col p-6">
+              <Outlet />
+            </div>
+          )}
         </main>
       </div>
     </div>
   );
 }
+

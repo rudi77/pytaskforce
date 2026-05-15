@@ -24,6 +24,7 @@ const AgentsList = lazy(() => import("@/pages/AgentsListPage"));
 const AgentEditor = lazy(() => import("@/pages/AgentEditorPage"));
 const AgentCompare = lazy(() => import("@/pages/AgentComparePage"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
+const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const MonitoringPage = lazy(() => import("@/pages/MonitoringPage"));
 const RunDetailPage = lazy(() => import("@/pages/RunDetailPage"));
 const AcpPage = lazy(() => import("@/pages/AcpPage"));
@@ -202,6 +203,7 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
         { path: "agents/:agentId", element: withSuspense(<AgentEditor mode="edit" />), errorElement: routeErrorElement },
         { path: "chat", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
         { path: "chat/:conversationId", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
+        { path: "projects", element: withSuspense(<ProjectsPage />), errorElement: routeErrorElement },
         { path: "monitoring", element: withSuspense(<MonitoringPage />), errorElement: routeErrorElement },
         { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />), errorElement: routeErrorElement },
         { path: "acp", element: withSuspense(<AcpPage />), errorElement: routeErrorElement },

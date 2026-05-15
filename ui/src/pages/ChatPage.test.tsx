@@ -42,6 +42,7 @@ vi.mock("@/features/chat/useChatStream", () => ({
     state: {
       text: "",
       toolCalls: [],
+      planSteps: [],
       completed: false,
       sessionId: null,
       pendingAskUser: null,
