@@ -7,6 +7,7 @@ import { getApiBaseUrl, getApiToken } from "@/lib/settings";
 import type { ChatMessage, FileMetadata } from "@/api/queries";
 import type { ToolCallView } from "@/features/chat/useChatStream";
 import { MessageContent, partsFromContent } from "@/features/chat/MessageContent";
+import type { ChatViewMode } from "@/features/chat/useChatPreferences";
 import type { WidgetEventHandler } from "@/features/chat/widgets/types";
 
 interface MessageBubbleProps {
@@ -14,6 +15,8 @@ interface MessageBubbleProps {
   pending?: boolean;
   toolCalls?: ToolCallView[];
   onWidgetEvent?: WidgetEventHandler;
+  /** Controls how much detail is rendered. Defaults to ``normal``. */
+  viewMode?: ChatViewMode;
 }
 
 /**
@@ -25,9 +28,20 @@ interface MessageBubbleProps {
  * inconsistent and made the transcript hard to scan. The role is signalled
  * via avatar, label and a subtle background tint instead.
  */
-export function MessageBubble({ message, pending, toolCalls, onWidgetEvent }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  pending,
+  toolCalls,
+  onWidgetEvent,
+  viewMode = "normal",
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
   const parts = partsFromContent(message.content, message.parts);
+  // Summary mode hides every tool call; assistant text + user prompts remain
+  // visible because that's the whole point of the mode (read what was said,
+  // not how it was figured out).
+  const showToolCalls = viewMode !== "summary" && toolCalls && toolCalls.length > 0;
+  const expandToolCalls = viewMode === "verbose";
 
   return (
     <div
@@ -45,7 +59,9 @@ export function MessageBubble({ message, pending, toolCalls, onWidgetEvent }: Me
           {pending ? <StreamingDots /> : null}
         </header>
 
-        {toolCalls && toolCalls.length > 0 ? <ToolCallList calls={toolCalls} /> : null}
+        {showToolCalls ? (
+          <ToolCallList calls={toolCalls!} defaultOpen={expandToolCalls} />
+        ) : null}
 
         <MessageContent parts={parts} pending={pending} onWidgetEvent={onWidgetEvent} />
 
@@ -91,7 +107,13 @@ function Avatar({ isUser }: { isUser: boolean }) {
   );
 }
 
-function ToolCallList({ calls }: { calls: ToolCallView[] }) {
+function ToolCallList({
+  calls,
+  defaultOpen,
+}: {
+  calls: ToolCallView[];
+  defaultOpen?: boolean;
+}) {
   if (calls.length === 0) return null;
   return (
     <ul className="space-y-1.5">
@@ -103,7 +125,7 @@ function ToolCallList({ calls }: { calls: ToolCallView[] }) {
             className="rounded-md border border-border bg-muted/40 text-xs"
             style={depth > 0 ? { marginLeft: depth * 12 } : undefined}
           >
-            <details className="group/tool">
+            <details className="group/tool" open={defaultOpen}>
               <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 [&::-webkit-details-marker]:hidden">
                 <ChevronRight className="h-3 w-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />
                 <Wrench className="h-3 w-3 text-muted-foreground" />

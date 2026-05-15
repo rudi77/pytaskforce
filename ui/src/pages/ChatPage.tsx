@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Archive,
   Bot,
+  Eye,
   GitBranch,
   Hash,
   MessageSquare,
@@ -41,6 +42,11 @@ import { ApiError } from "@/api/client";
 import { ChatComposer } from "@/features/chat/ChatComposer";
 import { MessageBubble } from "@/features/chat/MessageView";
 import { useChatStream } from "@/features/chat/useChatStream";
+import {
+  CHAT_VIEW_MODES,
+  useChatPreferences,
+  type ChatViewMode,
+} from "@/features/chat/useChatPreferences";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -293,6 +299,8 @@ interface ChatHeaderProps {
   archivePending: boolean;
   forkPending: boolean;
   onOpenSidebar: () => void;
+  viewMode: ChatViewMode;
+  onViewModeChange: (mode: ChatViewMode) => void;
 }
 
 function ChatHeader({
@@ -308,6 +316,8 @@ function ChatHeader({
   archivePending,
   forkPending,
   onOpenSidebar,
+  viewMode,
+  onViewModeChange,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -355,6 +365,7 @@ function ChatHeader({
             loading={agentsLoading}
             disabled={isStreaming}
           />
+          <ViewModePicker value={viewMode} onChange={onViewModeChange} />
           <Button
             variant="outline"
             size="sm"
@@ -423,6 +434,40 @@ function AgentPicker({
   );
 }
 
+function ViewModePicker({
+  value,
+  onChange,
+}: {
+  value: ChatViewMode;
+  onChange: (mode: ChatViewMode) => void;
+}) {
+  const current = CHAT_VIEW_MODES.find((m) => m.value === value);
+  return (
+    <label
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      title={current ? `${current.label}: ${current.hint}` : "Transcript detail level"}
+    >
+      <Eye className="h-4 w-4" aria-hidden />
+      <span className="sr-only">Transcript view</span>
+      <select
+        aria-label="Transcript view"
+        className={cn(
+          "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
+          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        )}
+        value={value}
+        onChange={(e) => onChange(e.target.value as ChatViewMode)}
+      >
+        {CHAT_VIEW_MODES.map((mode) => (
+          <option key={mode.value} value={mode.value}>
+            {mode.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Message list + empty / pending states
 // ---------------------------------------------------------------------------
@@ -430,9 +475,11 @@ function AgentPicker({
 function MessageList({
   messages,
   pending,
+  viewMode,
 }: {
   messages: ChatMessageT[];
   pending?: { text: string; toolCalls: ReturnType<typeof useChatStream>["state"]["toolCalls"] };
+  viewMode: ChatViewMode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -445,7 +492,21 @@ function MessageList({
     }
   }, [messages, pending?.text, pending?.toolCalls]);
 
-  if (messages.length === 0 && !pending) {
+  // In summary mode, drop role="tool" turns and assistant turns that only
+  // carry tool_calls (no visible text). The remaining transcript reads as
+  // "user asked X, assistant answered Y" — which is the whole point of the
+  // mode.
+  const visibleMessages = useMemo(() => {
+    if (viewMode !== "summary") return messages;
+    return messages.filter((m) => {
+      if (m.role === "tool") return false;
+      const hasText = typeof m.content === "string" && m.content.trim().length > 0;
+      const hasParts = Array.isArray(m.parts) && m.parts.length > 0;
+      return hasText || hasParts;
+    });
+  }, [messages, viewMode]);
+
+  if (visibleMessages.length === 0 && !pending) {
     return (
       <div className="flex flex-1 items-center justify-center px-4">
         <EmptyState
@@ -460,14 +521,15 @@ function MessageList({
   return (
     <div ref={ref} className="flex-1 overflow-auto scrollbar-thin">
       <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-4">
-        {messages.map((m, i) => (
-          <MessageBubble key={i} message={m} />
+        {visibleMessages.map((m, i) => (
+          <MessageBubble key={i} message={m} viewMode={viewMode} />
         ))}
         {pending ? (
           <MessageBubble
             message={{ role: "assistant", content: pending.text }}
             pending
             toolCalls={pending.toolCalls}
+            viewMode={viewMode}
           />
         ) : null}
       </div>
@@ -502,6 +564,8 @@ export default function ChatPage() {
     loadStoredAgentKey(conversationId),
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const viewMode = useChatPreferences((s) => s.viewMode);
+  const setViewMode = useChatPreferences((s) => s.setViewMode);
 
   useEffect(() => {
     setAgentKey(loadStoredAgentKey(conversationId));
@@ -613,6 +677,8 @@ export default function ChatPage() {
             archivePending={archive.isPending}
             forkPending={fork.isPending}
             onOpenSidebar={() => setSidebarOpen(true)}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
 
           <div className="flex min-h-0 flex-1 flex-col">
@@ -639,6 +705,7 @@ export default function ChatPage() {
                       ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
                       : undefined
                   }
+                  viewMode={viewMode}
                 />
                 {stream.error ? (
                   <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">

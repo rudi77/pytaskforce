@@ -12,7 +12,7 @@ import { formatBytes } from "@/features/chat/MessageView";
 
 interface ChatComposerProps {
   onSend: (text: string, attachments: FileMetadata[]) => Promise<void> | void;
-  onCancel?: () => void;
+  onCancel?: () => Promise<void> | void;
   isStreaming: boolean;
   disabled?: boolean;
 }
@@ -172,7 +172,15 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         </span>
         <div className="ml-auto flex items-center gap-2">
           {isStreaming && onCancel ? (
-            <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void onCancel();
+              }}
+              title="Ask the running agent to pause cooperatively"
+            >
               <Square className="h-3.5 w-3.5" />
               Stop
             </Button>
