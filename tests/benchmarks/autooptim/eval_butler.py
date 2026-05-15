@@ -42,6 +42,11 @@ from taskforce.application.executor import AgentExecutor
 from taskforce.application.factory import AgentFactory
 from taskforce.application.token_analytics_facade import get_execution_token_summary
 from taskforce.core.domain.enums import EventType
+# Butler's execution_error_handler re-raises asyncio.CancelledError as this
+# class. Without a dedicated catch arm the wrapped cancel falls into the
+# generic Exception path and a missed-deadline cancellation is reported as
+# "Mission error" with no signal that the 300s wait_for fired. See #268.
+from taskforce.core.domain.errors import CancelledError as TaskforceCancelledError
 
 # Register the butler config dirs with the framework profile loader.
 #
@@ -899,6 +904,18 @@ async def main(task_name: str) -> None:
                 "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
             }
             print(f"  [{name}] TIMEOUT after 300s", file=sys.stderr)
+        except TaskforceCancelledError as e:
+            r = {
+                "name": name, "prefix": prefix,
+                "wall_seconds": time.monotonic() - _t0,
+                "completed": False, "final_answer": "", "tool_trace": [],
+                "errors": [f"Mission cancelled: {str(e)[:1000]}"],
+                "error_type": "CancelledError",
+                "notification_count": 0, "delegation_steps": -1,
+                "steps": 0, "input_tokens": 0, "output_tokens": 0,
+                "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+            }
+            print(f"  [{name}] CANCELLED after {time.monotonic() - _t0:.1f}s (timeout or external cancel)", file=sys.stderr)
         except Exception as e:
             r = {
                 "name": name, "prefix": prefix,
@@ -950,6 +967,19 @@ async def main(task_name: str) -> None:
                     "error_type": "TimeoutError",
                 }
                 print(f"  [{seq['name']}] TIMEOUT after 300s", file=sys.stderr)
+            except TaskforceCancelledError as e:
+                r = {
+                    "name": seq["name"], "prefix": seq["prefix"],
+                    "wall_seconds": time.monotonic() - _t0, "completed": False,
+                    "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
+                    "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
+                    "notification_count": 0, "delegation_steps": -1,
+                    "tool_trace": [], "latency_ms": 0,
+                    "sequence_turns": 0,
+                    "errors": [f"Sequence cancelled: {str(e)[:1000]}"],
+                    "error_type": "CancelledError",
+                }
+                print(f"  [{seq['name']}] CANCELLED after {time.monotonic() - _t0:.1f}s (timeout or external cancel)", file=sys.stderr)
             except Exception as e:
                 r = {
                     "name": seq["name"], "prefix": seq["prefix"],
@@ -1098,6 +1128,18 @@ async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None
             "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
         }
         print(f"  [{mission_name}] TIMEOUT after 300s", file=sys.stderr)
+    except TaskforceCancelledError as e:
+        r = {
+            "name": mission_name, "prefix": prefix,
+            "wall_seconds": time.monotonic() - _t0,
+            "completed": False, "final_answer": "", "tool_trace": [],
+            "errors": [f"Mission cancelled: {str(e)[:1000]}"],
+            "error_type": "CancelledError",
+            "notification_count": 0, "delegation_steps": -1,
+            "steps": 0, "input_tokens": 0, "output_tokens": 0,
+            "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
+        }
+        print(f"  [{mission_name}] CANCELLED after {time.monotonic() - _t0:.1f}s (timeout or external cancel)", file=sys.stderr)
     except Exception as e:
         r = {
             "name": mission_name, "prefix": prefix,
