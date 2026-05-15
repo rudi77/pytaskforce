@@ -39,7 +39,13 @@ vi.mock("@/features/chat/ChatComposer", () => ({
 vi.mock("@/features/chat/useChatStream", () => ({
   useChatStream: () => ({
     isStreaming: false,
-    state: { text: "", toolCalls: [], completed: false },
+    state: {
+      text: "",
+      toolCalls: [],
+      completed: false,
+      sessionId: null,
+      pendingAskUser: null,
+    },
     error: null,
     reset: vi.fn(),
     cancel: vi.fn(),
@@ -62,6 +68,7 @@ vi.mock("@/api/queries", async () => {
     useCreateConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useArchiveConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useForkConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCompactConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
@@ -117,6 +124,32 @@ describe("ChatPage redesign", () => {
     // The truncated id is shown but only as secondary text (preserves
     // debugging affordance without dominating the header).
     expect(screen.getByText("abc12345…")).toBeInTheDocument();
+  });
+
+  it("renders the transcript view-mode dropdown in the header", () => {
+    mocks.conversations = [
+      {
+        conversation_id: "view-mode-1",
+        topic: "Has a view picker",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+    ];
+    mocks.messages = [{ role: "user", content: "hi" }];
+
+    renderAt("/chat/view-mode-1");
+
+    const picker = screen.getByLabelText("Transcript view") as HTMLSelectElement;
+    expect(picker).toBeInTheDocument();
+    // All three Cowork-style modes are listed.
+    expect(picker.options).toHaveLength(3);
+    expect(
+      Array.from(picker.options).map((o) => o.value),
+    ).toEqual(["normal", "verbose", "summary"]);
+    // Default is "normal" (zustand store's initial value).
+    expect(picker.value).toBe("normal");
   });
 
   it("renders the assistant empty state via <EmptyState/> when messages are empty", () => {

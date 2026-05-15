@@ -5,14 +5,20 @@ import { Paperclip, Send, Square, Trash2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { useUploadFile, type FileMetadata } from "@/api/queries";
+import { useUploadFile, type FileMetadata, type WorkspaceEntry } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "@/features/chat/MessageView";
+import { MentionPicker } from "@/features/chat/MentionPicker";
+import {
+  applyMentionPick,
+  getMentionContext,
+  type MentionContext,
+} from "@/features/chat/mention-context";
 
 interface ChatComposerProps {
   onSend: (text: string, attachments: FileMetadata[]) => Promise<void> | void;
-  onCancel?: () => void;
+  onCancel?: () => Promise<void> | void;
   isStreaming: boolean;
   disabled?: boolean;
 }
@@ -21,9 +27,41 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<FileMetadata[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [mention, setMention] = useState<MentionContext | null>(null);
   const upload = useUploadFile();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /** Re-derive mention context from the textarea's current state. Called
+   *  on every input event and on selection changes so the picker tracks
+   *  the cursor faithfully (typing, arrow keys, click reposition all
+   *  funnel here). */
+  const refreshMention = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const ctx = getMentionContext(ta.value, ta.selectionStart ?? ta.value.length);
+    setMention(ctx);
+  };
+
+  const onPickMention = (entry: WorkspaceEntry) => {
+    const ta = textareaRef.current;
+    if (!ta || !mention) return;
+    // Picking a directory keeps the picker open (handled inside the
+    // picker itself); only files reach this callback.
+    const { value: nextValue, cursor } = applyMentionPick(
+      text,
+      mention,
+      entry.path,
+    );
+    setText(nextValue);
+    setMention(null);
+    // Restore focus + cursor on the next tick so the new value is in
+    // the DOM before we move the caret.
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const uploadFiles = async (files: File[]) => {
     setError(null);
@@ -80,6 +118,27 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    // When the mention picker is open, swallow its navigation keys here
+    // so the textarea doesn't move the caret while the user is browsing
+    // the file list. The picker itself listens on ``window`` (capture
+    // phase) and handles the action; we just need to stop the textarea
+    // from also reacting.
+    if (mention) {
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "Escape"
+      ) {
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        // Plain Enter inside an active mention is "pick the highlighted
+        // entry" — the picker handles it.
+        e.preventDefault();
+        return;
+      }
+    }
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
@@ -134,16 +193,42 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         <p className="px-1 pb-2 text-xs text-destructive">{error}</p>
       ) : null}
 
-      <Textarea
-        ref={textareaRef}
-        rows={3}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Ask the agent…  (drag files in or paste images)"
-        className="resize-none border-0 bg-transparent p-0 font-sans text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
-        disabled={disabled}
-      />
+      <div className="relative">
+        {mention ? (
+          <div className="absolute bottom-full left-0 right-0 mb-2">
+            <MentionPicker
+              open
+              query={mention.query}
+              onPick={onPickMention}
+              onDismiss={() => setMention(null)}
+            />
+          </div>
+        ) : null}
+        <Textarea
+          ref={textareaRef}
+          rows={3}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            // Defer one frame: ``selectionStart`` reflects the post-change
+            // cursor after React commits, but onChange fires before that.
+            requestAnimationFrame(refreshMention);
+          }}
+          onKeyDown={onKeyDown}
+          onKeyUp={refreshMention}
+          onClick={refreshMention}
+          onSelect={refreshMention}
+          onBlur={() => {
+            // Closing on blur is too aggressive (clicking the picker
+            // would dismiss before the click registers). The picker
+            // uses ``onMouseDown`` for the same reason. We leave blur
+            // alone here.
+          }}
+          placeholder="Ask the agent…  (type @ to mention a file; drag files in or paste images)"
+          className="resize-none border-0 bg-transparent p-0 font-sans text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+          disabled={disabled}
+        />
+      </div>
 
       <div className="mt-2 flex items-center gap-2">
         <input
@@ -172,7 +257,15 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         </span>
         <div className="ml-auto flex items-center gap-2">
           {isStreaming && onCancel ? (
-            <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void onCancel();
+              }}
+              title="Ask the running agent to pause cooperatively"
+            >
               <Square className="h-3.5 w-3.5" />
               Stop
             </Button>

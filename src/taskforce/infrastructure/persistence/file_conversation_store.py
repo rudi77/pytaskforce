@@ -128,6 +128,26 @@ class FileConversationStore:
                 break
         await self._save_index(index)
 
+    async def replace_messages(
+        self,
+        conversation_id: str,
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Atomically replace the entire message log (used by ``compact``).
+
+        Mirrors ``append_message`` for the index-update side effects: bumps
+        ``last_activity`` and refreshes ``message_count`` so the active list
+        stays in sync with the on-disk log.
+        """
+        await self._save_messages(conversation_id, messages)
+        index = await self._load_index()
+        for conv in index:
+            if conv["conversation_id"] == conversation_id:
+                conv["last_activity"] = datetime.now(UTC).isoformat()
+                conv["message_count"] = len(messages)
+                break
+        await self._save_index(index)
+
     async def get_messages(
         self,
         conversation_id: str,

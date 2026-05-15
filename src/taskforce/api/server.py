@@ -83,6 +83,7 @@ from taskforce.api.routes import (
     settings as settings_route,
     skills,
     tools,
+    workspace,
     ui,
     workflows,
 )
@@ -338,6 +339,7 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(llm.router, prefix="/api/v1", tags=["llm"])
     app.include_router(planning_strategies.router, prefix="/api/v1", tags=["planning"])
     app.include_router(files.router, prefix="/api/v1", tags=["files"])
+    app.include_router(workspace.router, prefix="/api/v1", tags=["workspace"])
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
     app.include_router(mcp.router, prefix="/api/v1", tags=["mcp"])

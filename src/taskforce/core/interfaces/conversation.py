@@ -120,6 +120,24 @@ class ConversationManagerProtocol(Protocol):
         """
         ...
 
+    async def replace_messages(
+        self,
+        conversation_id: str,
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Atomically replace the entire message log of a conversation.
+
+        Used by the ``compact`` flow to swap N earlier messages for a single
+        summary message while keeping the conversation_id stable. Implementations
+        must update ``message_count`` and ``last_activity`` metadata so the
+        active-conversation listing stays consistent.
+
+        Args:
+            conversation_id: Target conversation.
+            messages: Full new message log (replaces existing messages).
+        """
+        ...
+
     async def list_active(self) -> list[ConversationInfo]:
         """List all active (non-archived) conversations.
 

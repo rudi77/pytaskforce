@@ -1464,6 +1464,12 @@ uv sync --group dev   # pytest, ruff, black, mypy, pyinstaller
 - `GITHUB_TOKEN` - GitHub API operations
 - `TASKFORCE_PROFILE` - Override profile selection
 - `TASKFORCE_WORK_DIR` - Override work directory (default: `.taskforce`)
+- `TASKFORCE_WORKSPACE_ROOT` - Project directory shown in the chat
+  `@mention` file picker (default: `cwd`). Read-only; the agent reads
+  file contents lazily via its `file_read` tool.
+- `TASKFORCE_WORKSPACE_EXCLUDE` - Comma-separated directory names to
+  hide from the `@mention` picker in addition to the built-in denylist
+  (`.git`, `node_modules`, `.venv`, `__pycache__`, `.taskforce`, ...).
 
 ---
 

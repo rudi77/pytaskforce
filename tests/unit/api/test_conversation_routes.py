@@ -211,3 +211,92 @@ class TestForkConversation:
         )
         assert resp.status_code == 201
         assert resp.json()["messages_copied"] == 3
+
+
+class TestCompactConversation:
+    """Tests for ``POST /api/v1/conversations/{id}/compact``."""
+
+    def test_returns_compact_result_for_existing_conversation(
+        self, client, mock_conversation_manager, monkeypatch
+    ):
+        # Stub the LLM provider so the test doesn't hit a real API.
+        async def fake_complete(messages, model=None, **kwargs):
+            assert any(m["role"] == "system" for m in messages)
+            return {"success": True, "content": "summary text"}
+
+        class _Stub:
+            async def complete(self, messages, model=None, **kwargs):
+                return await fake_complete(messages, model=model, **kwargs)
+
+        monkeypatch.setattr(
+            "taskforce.api.routes.conversations._build_default_llm_provider",
+            lambda: _Stub(),
+        )
+
+        # Manager pretends compact succeeded.
+        mock_conversation_manager.compact = AsyncMock(
+            return_value={
+                "status": "compacted",
+                "summarized": 8,
+                "kept": 4,
+                "summary_preview": "summary preview",
+            }
+        )
+
+        resp = client.post(
+            "/api/v1/conversations/abc123def456789012345678abcdef00/compact",
+            json={"keep_last_n": 4},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "compacted"
+        assert body["summarized"] == 8
+        assert body["kept"] == 4
+        assert body["summary_preview"] == "summary preview"
+
+        # Compact was called with our keep_last_n + a callable summarizer.
+        mock_conversation_manager.compact.assert_awaited_once()
+        args, kwargs = mock_conversation_manager.compact.await_args
+        assert args[0] == "abc123def456789012345678abcdef00"
+        assert callable(args[1])
+        assert kwargs["keep_last_n"] == 4
+
+    def test_returns_404_for_unknown_conversation(
+        self, client, mock_conversation_manager
+    ):
+        # No active conversations match the id; existence check fails.
+        mock_conversation_manager.get_messages = AsyncMock(return_value=[])
+        mock_conversation_manager.list_active = AsyncMock(return_value=[])
+
+        resp = client.post(
+            "/api/v1/conversations/does-not-exist/compact",
+            json={},
+        )
+        assert resp.status_code == 404
+        assert "conversation_not_found" in resp.text
+
+    def test_skipped_status_passes_through(
+        self, client, mock_conversation_manager, monkeypatch
+    ):
+        """When the manager returns skipped, the route should NOT call the
+        LLM but still return 200 with the skip details."""
+        monkeypatch.setattr(
+            "taskforce.api.routes.conversations._build_default_llm_provider",
+            lambda: object(),  # never called
+        )
+        mock_conversation_manager.compact = AsyncMock(
+            return_value={
+                "status": "skipped",
+                "reason": "below_threshold",
+                "messages": 3,
+            }
+        )
+        resp = client.post(
+            "/api/v1/conversations/abc123def456789012345678abcdef00/compact",
+            json={"keep_last_n": 4},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "skipped"
+        assert body["reason"] == "below_threshold"
+        assert body["messages"] == 3

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { sseStream } from "@/api/client";
+import { apiFetch, sseStream } from "@/api/client";
 
 export interface ToolCallView {
   id: string;
@@ -16,10 +16,30 @@ export interface ToolCallView {
   sourceAgent?: string | null;
 }
 
+export interface PendingAskUser {
+  question: string;
+  /** Hint listing the structured fields the agent still needs (free-form
+   *  strings — typically short labels like ``["start_date", "end_date"]``).
+   *  Empty when the agent just wants a freeform reply. */
+  missing: string[];
+  /** When set, the question is being routed to a specific channel (e.g.
+   *  Telegram) rather than the chat UI; the chat-side prompt should make
+   *  that explicit so the user doesn't think they need to answer here. */
+  channel?: string | null;
+  recipientId?: string | null;
+}
+
 export interface AssistantStreamState {
   text: string;
   toolCalls: ToolCallView[];
   completed: boolean;
+  /** Server-side session id, captured from the ``started`` SSE event. Needed
+   *  for cooperative interruption via ``POST /api/v1/execute/{id}/cancel``. */
+  sessionId: string | null;
+  /** Populated by an ``ask_user`` event. Persists across stream-end so the
+   *  prompt UI stays visible while the agent is paused waiting for input.
+   *  Cleared when the user sends the next message. */
+  pendingAskUser: PendingAskUser | null;
 }
 
 interface SseEnvelope {
@@ -36,21 +56,41 @@ export interface SendStreamingArgs {
   agentId?: string;
 }
 
-const EMPTY_STATE: AssistantStreamState = { text: "", toolCalls: [], completed: false };
+const EMPTY_STATE: AssistantStreamState = {
+  text: "",
+  toolCalls: [],
+  completed: false,
+  sessionId: null,
+  pendingAskUser: null,
+};
 
 export function useChatStream() {
   const [state, setState] = useState<AssistantStreamState>(EMPTY_STATE);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Mirrors ``state.sessionId`` for use inside ``cancel`` without triggering a
+  // re-render-driven stale closure. The state copy is what UI reads; this one
+  // is what the cancel handler reads.
+  const sessionIdRef = useRef<string | null>(null);
 
   const send = useCallback(
     async ({ conversationId, message, attachments, profile, agentId }: SendStreamingArgs) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      sessionIdRef.current = null;
       setError(null);
-      setState({ text: "", toolCalls: [], completed: false });
+      // Note: pendingAskUser intentionally clears on every send because the
+      // user's new message *is* the answer to the previous question. The
+      // executor will resume saved state from that message.
+      setState({
+        text: "",
+        toolCalls: [],
+        completed: false,
+        sessionId: null,
+        pendingAskUser: null,
+      });
       setIsStreaming(true);
 
       try {
@@ -73,7 +113,7 @@ export function useChatStream() {
           } catch {
             continue;
           }
-          handleEvent(evt.event, payload, setState);
+          handleEvent(evt.event, payload, setState, sessionIdRef);
         }
       } catch (err) {
         if (controller.signal.aborted) {
@@ -88,11 +128,31 @@ export function useChatStream() {
     [],
   );
 
-  const cancel = useCallback(() => {
+  const cancel = useCallback(async () => {
+    // Two-step cancellation: first ask the server to interrupt the agent
+    // cooperatively (so it persists state + emits a final ``complete`` with
+    // ``status=paused``), THEN tear down the SSE connection. Without the
+    // first step, aborting the fetch only stops the client from receiving
+    // events — the agent keeps running on the server until it finishes.
+    const sessionId = sessionIdRef.current;
+    if (sessionId) {
+      try {
+        await apiFetch<{ session_id: string; status: string }>(
+          `/api/v1/execute/${encodeURIComponent(sessionId)}/cancel`,
+          { method: "POST" },
+        );
+      } catch {
+        // 404 (session already completed) or transient network errors
+        // shouldn't prevent the client-side abort below.
+      }
+    }
     abortRef.current?.abort();
   }, []);
 
-  const reset = useCallback(() => setState(EMPTY_STATE), []);
+  const reset = useCallback(() => {
+    sessionIdRef.current = null;
+    setState(EMPTY_STATE);
+  }, []);
 
   return { state, isStreaming, error, send, cancel, reset };
 }
@@ -101,6 +161,7 @@ function handleEvent(
   eventName: string | undefined,
   payload: SseEnvelope,
   setState: React.Dispatch<React.SetStateAction<AssistantStreamState>>,
+  sessionIdRef: React.MutableRefObject<string | null>,
 ): void {
   if (eventName === "assistant_persisted") {
     setState((prev) => ({ ...prev, completed: true }));
@@ -111,6 +172,14 @@ function handleEvent(
   const type = payload.event_type;
   const details = (payload.details ?? {}) as Record<string, unknown>;
   switch (type) {
+    case "started": {
+      const sid = typeof details.session_id === "string" ? details.session_id : null;
+      if (sid) {
+        sessionIdRef.current = sid;
+        setState((prev) => ({ ...prev, sessionId: sid }));
+      }
+      break;
+    }
     case "llm_token": {
       const token =
         (typeof details.token === "string" && details.token) ||
@@ -155,6 +224,30 @@ function handleEvent(
       const finalText = (typeof details.content === "string" && details.content) || payload.message;
       if (typeof finalText === "string" && finalText.length > 0) {
         setState((prev) => ({ ...prev, text: finalText }));
+      }
+      break;
+    }
+    case "ask_user": {
+      const question = typeof details.question === "string" ? details.question : "";
+      const missingRaw = Array.isArray(details.missing) ? details.missing : [];
+      const missing = missingRaw.filter(
+        (m): m is string => typeof m === "string" && m.length > 0,
+      );
+      const channel =
+        typeof details.channel === "string" && details.channel.length > 0
+          ? details.channel
+          : null;
+      const recipientId =
+        typeof details.recipient_id === "string" && details.recipient_id.length > 0
+          ? details.recipient_id
+          : null;
+      // Only surface a prompt when there's *something* to show; otherwise
+      // the agent's intent is unclear and a blank card looks broken.
+      if (question || missing.length > 0) {
+        setState((prev) => ({
+          ...prev,
+          pendingAskUser: { question, missing, channel, recipientId },
+        }));
       }
       break;
     }
