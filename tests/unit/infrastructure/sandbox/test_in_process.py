@@ -178,3 +178,81 @@ async def test_workspace_dir_is_passed_as_cwd(tmp_path: Path) -> None:
 
     kwargs = mock_create.call_args.kwargs
     assert kwargs["cwd"] == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_falls_back_to_thread_subprocess_when_event_loop_unsupported(
+    tmp_path: Path,
+) -> None:
+    """Windows Selector-loop fallback (issue: powershell NotImplementedError).
+
+    ``asyncio.create_subprocess_exec`` raises bare ``NotImplementedError``
+    when the running loop doesn't support subprocesses (e.g. uvicorn
+    ``--reload`` happens to land on a Selector loop on Windows). The
+    executor must fall through to a thread-based ``subprocess.run`` so
+    powershell/bash/shell tools keep working instead of every call
+    surfacing as ``'<tool> failed: [NotImplementedError] '``.
+    """
+
+    executor = InProcessSandboxedExecutor()
+    with (
+        patch(
+            "taskforce.infrastructure.sandbox.in_process.asyncio.create_subprocess_exec",
+            side_effect=NotImplementedError(),
+        ),
+        patch(
+            "taskforce.infrastructure.sandbox.in_process.subprocess.run"
+        ) as mock_run,
+    ):
+        completed = MagicMock()
+        completed.stdout = b"fallback-output\n"
+        completed.stderr = b""
+        completed.returncode = 0
+        mock_run.return_value = completed
+
+        result = await executor.run(
+            SandboxRequest(kind="bash", script="echo hi", workspace_dir=tmp_path)
+        )
+
+    assert result.returncode == 0
+    assert result.stdout == "fallback-output\n"
+    assert result.timed_out is False
+    # The fallback path runs subprocess.run with capture_output=True;
+    # asserting on key args proves we didn't silently swallow the call.
+    assert mock_run.called
+    call_kwargs = mock_run.call_args.kwargs
+    assert call_kwargs["capture_output"] is True
+    assert call_kwargs["cwd"] == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_thread_fallback_timeout_surfaces_timed_out(tmp_path: Path) -> None:
+    """``subprocess.TimeoutExpired`` from the fallback path must round-trip
+    to ``SandboxResult(timed_out=True)`` so the tool layer reports a
+    timeout instead of a generic ToolError."""
+
+    import subprocess as _subprocess
+
+    executor = InProcessSandboxedExecutor()
+    with (
+        patch(
+            "taskforce.infrastructure.sandbox.in_process.asyncio.create_subprocess_exec",
+            side_effect=NotImplementedError(),
+        ),
+        patch(
+            "taskforce.infrastructure.sandbox.in_process.subprocess.run",
+            side_effect=_subprocess.TimeoutExpired(cmd="bash", timeout=5, output=b"partial"),
+        ),
+    ):
+        result = await executor.run(
+            SandboxRequest(
+                kind="bash",
+                script="sleep 10",
+                workspace_dir=tmp_path,
+                timeout_seconds=5,
+            )
+        )
+
+    assert result.timed_out is True
+    assert result.returncode == -1
+    assert "timed out" in result.stderr.lower()

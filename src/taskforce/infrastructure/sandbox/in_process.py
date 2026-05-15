@@ -11,6 +11,19 @@ backed implementation through
 Single-tenant / self-hosted builds are bit-for-bit identical to the
 previous behaviour where each tool called ``create_subprocess_exec``
 on its own.
+
+Windows fallback
+----------------
+``asyncio.create_subprocess_exec`` requires the Proactor event loop
+on Windows. uvicorn started under certain configurations (especially
+``--reload``) can end up running on a Selector loop where the call
+raises a bare ``NotImplementedError`` — i.e. every shell/powershell
+tool call dies before the agent even gets a result back. To keep the
+shell tool useful in that environment we transparently fall back to
+``subprocess.run`` on a worker thread. We lose cooperative SIGTERM
+on cancel in the fallback path (``subprocess.run`` blocks the thread
+until the timeout expires), but a working tool with degraded cancel
+beats an unusable one.
 """
 
 from __future__ import annotations
@@ -18,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import subprocess
 import sys
 from typing import Any
 
@@ -117,7 +131,11 @@ class InProcessSandboxedExecutor(SandboxedExecutorProtocol):
         if env is not None:
             kwargs["env"] = env
 
-        process = await asyncio.create_subprocess_exec(*argv, **kwargs)
+        try:
+            process = await asyncio.create_subprocess_exec(*argv, **kwargs)
+        except NotImplementedError:
+            # Windows + Selector event loop combo. See the module docstring.
+            return await _run_via_thread(argv, env, request)
 
         try:
             if request.timeout_seconds is None:
@@ -148,3 +166,53 @@ class InProcessSandboxedExecutor(SandboxedExecutorProtocol):
             stderr=(stderr or b"").decode("utf-8", errors="replace"),
             returncode=process.returncode if process.returncode is not None else -1,
         )
+
+
+async def _run_via_thread(
+    argv: list[str],
+    env: dict[str, str] | None,
+    request: SandboxRequest,
+) -> SandboxResult:
+    """Blocking-subprocess fallback for Windows Selector event loop.
+
+    Used when ``asyncio.create_subprocess_exec`` raises
+    ``NotImplementedError`` (Windows + non-Proactor loop). We hand the
+    call off to a worker thread via ``asyncio.to_thread`` so the event
+    loop stays responsive. ``subprocess.run``'s built-in timeout
+    handles the timeout case; on Windows it terminates the process with
+    a hard kill on timeout, which is the best ``subprocess`` gives us.
+
+    Cooperative SIGTERM-on-cancel from the Proactor path is *not*
+    reproduced here — ``asyncio.to_thread`` runs the function to
+    completion regardless of cancel, so a long-running command on the
+    Selector loop will sit in the worker thread until the timeout
+    elapses. Acceptable trade-off: a usable tool with weaker cancel
+    semantics beats a fundamentally broken one.
+    """
+
+    def _blocking_run() -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            argv,
+            cwd=str(request.workspace_dir) if request.workspace_dir else None,
+            env=env,
+            input=None,
+            capture_output=True,
+            timeout=request.timeout_seconds,
+            check=False,
+        )
+
+    try:
+        completed = await asyncio.to_thread(_blocking_run)
+    except subprocess.TimeoutExpired as exc:
+        return SandboxResult(
+            stdout=(exc.stdout or b"").decode("utf-8", errors="replace") if exc.stdout else "",
+            stderr=f"Command timed out after {request.timeout_seconds}s",
+            returncode=-1,
+            timed_out=True,
+        )
+
+    return SandboxResult(
+        stdout=(completed.stdout or b"").decode("utf-8", errors="replace"),
+        stderr=(completed.stderr or b"").decode("utf-8", errors="replace"),
+        returncode=completed.returncode if completed.returncode is not None else -1,
+    )
