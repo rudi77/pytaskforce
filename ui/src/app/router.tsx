@@ -9,6 +9,7 @@ import {
   isValidElement,
   lazy,
   Suspense,
+  useState,
   type ComponentType,
   type ReactNode,
 } from "react";
@@ -25,6 +26,7 @@ const AgentEditor = lazy(() => import("@/pages/AgentEditorPage"));
 const AgentCompare = lazy(() => import("@/pages/AgentComparePage"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
+const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage"));
 const MonitoringPage = lazy(() => import("@/pages/MonitoringPage"));
 const RunDetailPage = lazy(() => import("@/pages/RunDetailPage"));
 const AcpPage = lazy(() => import("@/pages/AcpPage"));
@@ -53,10 +55,80 @@ function getRouteErrorMessage(error: unknown): string {
   return "The page could not be loaded.";
 }
 
+// Dynamic-import 404s come from a Vite chunk-hash mismatch — the open tab is
+// referencing chunk URLs from a previous dev session that no longer exist
+// (e.g. after `dev.ps1` wiped node_modules/.vite, after `git pull`, or after
+// any pnpm install that re-optimized deps). A hard reload pulls a fresh
+// index.html and picks up the current chunk hashes. We attempt this at most
+// once per short window to avoid an infinite reload loop if the import is
+// genuinely broken.
+//
+// Two-layer guard:
+//   1. `dynamicImportReloadAttemptedInThisPageLoad` (module-scope) — survives
+//      React unmount/remount cycles within the same page load. The error
+//      boundary remounts during the route-transition recovery; without this
+//      flag, the second mount would see the already-stamped sessionStorage
+//      key and fall through to the manual UI, even though we *did* trigger
+//      a reload from the first mount. Reset implicitly when the module
+//      re-initializes after `location.reload()`.
+//   2. `DYNAMIC_IMPORT_RELOAD_KEY` in sessionStorage — survives the reload
+//      itself, so if the page comes back up and the import still fails (e.g.
+//      a genuinely broken page), the boundary shows the manual UI instead of
+//      looping reload → fail → reload.
+const DYNAMIC_IMPORT_RELOAD_KEY = "tf:dynamic-import-reload-attempt";
+const DYNAMIC_IMPORT_RELOAD_WINDOW_MS = 10_000;
+let dynamicImportReloadAttemptedInThisPageLoad = false;
+
+/** Test-only seam to reset the in-memory guard between cases. */
+export function __resetDynamicImportReloadGuard() {
+  dynamicImportReloadAttemptedInThisPageLoad = false;
+}
+
+function tryScheduleAutoReload(): boolean {
+  if (dynamicImportReloadAttemptedInThisPageLoad) return false;
+  try {
+    const raw = window.sessionStorage.getItem(DYNAMIC_IMPORT_RELOAD_KEY);
+    if (raw) {
+      const ts = Number.parseInt(raw, 10);
+      if (Number.isFinite(ts) && Date.now() - ts < DYNAMIC_IMPORT_RELOAD_WINDOW_MS) {
+        // Already retried in a previous page load — the import is genuinely
+        // broken; show the manual UI instead of looping.
+        return false;
+      }
+    }
+    window.sessionStorage.setItem(DYNAMIC_IMPORT_RELOAD_KEY, String(Date.now()));
+    dynamicImportReloadAttemptedInThisPageLoad = true;
+    // Schedule the reload as a microtask so the placeholder paints first
+    // and we don't depend on React's useEffect commit — react-router's
+    // error-recovery sometimes remounts the boundary before the effect
+    // from the first mount fires, which would otherwise swallow the
+    // reload call.
+    queueMicrotask(() => {
+      window.location.reload();
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function RouteErrorBoundary() {
   const error = useRouteError();
   const message = getRouteErrorMessage(error);
   const isDynamicImportError = message.includes("Failed to fetch dynamically imported module");
+  // Lazy initializer — evaluates exactly once per mount, so the
+  // sessionStorage side-effect doesn't repeat across re-renders.
+  const [willAutoReload] = useState(() =>
+    isDynamicImportError && tryScheduleAutoReload(),
+  );
+
+  if (willAutoReload) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6 text-sm text-muted-foreground">
+        Reloading…
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
