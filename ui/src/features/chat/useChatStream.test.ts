@@ -336,6 +336,46 @@ describe("useChatStream — server-side cancellation (Cowork-parity Phase 1)", (
     await sendPromise;
   });
 
+  it("clears planSteps when plan_updated reports an empty plan", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "go",
+      attachments: [],
+    });
+
+    // Populate the plan first…
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "[ ] 1. Step one" },
+      }),
+    });
+    await waitFor(() => {
+      expect(result.current.state.planSteps).toHaveLength(1);
+    });
+
+    // …then have the agent abandon the plan. The panel must clear.
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "No active plan." },
+      }),
+    });
+    await waitFor(() => {
+      expect(result.current.state.planSteps).toEqual([]);
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
   it("captures plan_updated events into state.planSteps (Cowork progress panel)", async () => {
     const stream = createControllableStream();
     sseStreamMock.mockReturnValue(stream.iterable);

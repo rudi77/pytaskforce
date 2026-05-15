@@ -267,10 +267,11 @@ function handleEvent(
       const planRaw =
         (typeof details.plan === "string" && details.plan) ||
         (Array.isArray(details.steps) ? details.steps.join("\n") : "");
+      // Always replace — an empty plan ("No active plan.") must clear
+      // the previous steps so the panel doesn't show a stale checklist
+      // after the agent abandons its plan.
       const steps = parsePlanMarkdown(planRaw);
-      if (steps.length > 0) {
-        setState((prev) => ({ ...prev, planSteps: steps }));
-      }
+      setState((prev) => ({ ...prev, planSteps: steps }));
       break;
     }
     case "ask_user": {

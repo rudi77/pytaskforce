@@ -5,10 +5,12 @@ import {
   Archive,
   Beaker,
   Bot,
+  ChevronDown,
   Clock,
   FolderOpen,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquare,
   Moon,
   Network,
@@ -25,6 +27,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
 import { useSettings } from "@/lib/settings";
@@ -119,7 +127,9 @@ function ThemeToggle() {
 
 interface SidebarProps {
   collapsed: boolean;
-  onToggle: () => void;
+  /** When omitted, the collapse toggle is hidden — used inside the
+   *  mobile Sheet, where Sheet's own close button already exists. */
+  onToggle?: () => void;
   primaryItems: NavItem[];
   workspaceItems: NavItem[];
   adminItems: NavItem[];
@@ -128,15 +138,18 @@ interface SidebarProps {
 function SidebarNavRow({
   item,
   collapsed,
+  onNavigate,
 }: {
   item: NavItem;
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <NavLink
       to={item.to}
       end={item.end}
       title={collapsed ? item.label : undefined}
+      onClick={onNavigate}
       className={({ isActive }) =>
         cn(
           "group flex items-center gap-2.5 rounded-md text-sm font-medium transition-colors",
@@ -156,23 +169,37 @@ function SidebarNavRow({
 function PrimaryNav({
   items,
   collapsed,
+  onNavigate,
 }: {
   items: NavItem[];
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <div className="space-y-0.5">
       {items.map((item) => (
-        <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
+        <SidebarNavRow
+          key={item.to}
+          item={item}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
       ))}
     </div>
   );
 }
 
-function NewTaskButton({ collapsed }: { collapsed: boolean }) {
+function NewTaskButton({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   const navigate = useNavigate();
   const create = useCreateConversation();
   const onClick = async () => {
+    onNavigate?.();
     try {
       const conv = await create.mutateAsync({ channel: "rest" });
       navigate(`/chat/${encodeURIComponent(conv.conversation_id)}`);
@@ -212,9 +239,11 @@ function NewTaskButton({ collapsed }: { collapsed: boolean }) {
 function RecentsSection({
   collapsed,
   activeId,
+  onNavigate,
 }: {
   collapsed: boolean;
   activeId: string | undefined;
+  onNavigate?: () => void;
 }) {
   const conversations = useConversations();
   const archived = useArchivedConversations(10);
@@ -239,7 +268,11 @@ function RecentsSection({
           <ul className="space-y-0.5">
             {recent.map((c) => (
               <li key={c.conversation_id}>
-                <RecentItem conversation={c} active={c.conversation_id === activeId} />
+                <RecentItem
+                  conversation={c}
+                  active={c.conversation_id === activeId}
+                  onNavigate={onNavigate}
+                />
               </li>
             ))}
           </ul>
@@ -271,6 +304,7 @@ function RecentsSection({
                     }}
                     active={false}
                     muted
+                    onNavigate={onNavigate}
                   />
                 </li>
               ))}
@@ -286,15 +320,18 @@ function RecentItem({
   conversation: c,
   active,
   muted,
+  onNavigate,
 }: {
   conversation: ConversationInfo;
   active: boolean;
   muted?: boolean;
+  onNavigate?: () => void;
 }) {
   const title = c.topic || c.channel || c.conversation_id;
   return (
     <Link
       to={`/chat/${encodeURIComponent(c.conversation_id)}`}
+      onClick={onNavigate}
       className={cn(
         "block truncate rounded-md px-2.5 py-1.5 text-sm transition-colors",
         active
@@ -313,9 +350,11 @@ function RecentItem({
 function WorkspaceSection({
   items,
   collapsed,
+  onNavigate,
 }: {
   items: NavItem[];
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -332,7 +371,12 @@ function WorkspaceSection({
     return (
       <div className="space-y-0.5">
         {items.map((item) => (
-          <SidebarNavRow key={item.to} item={item} collapsed />
+          <SidebarNavRow
+            key={item.to}
+            item={item}
+            collapsed
+            onNavigate={onNavigate}
+          />
         ))}
       </div>
     );
@@ -347,12 +391,23 @@ function WorkspaceSection({
         aria-expanded={open}
       >
         <span>Workspace</span>
-        <span aria-hidden>{open ? "−" : "+"}</span>
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 transition-transform",
+            !open && "-rotate-90",
+          )}
+          aria-hidden
+        />
       </button>
       {open ? (
         <div className="mt-1 space-y-0.5">
           {items.map((item) => (
-            <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
+            <SidebarNavRow
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
           ))}
         </div>
       ) : null}
@@ -363,9 +418,11 @@ function WorkspaceSection({
 function AdminSection({
   items,
   collapsed,
+  onNavigate,
 }: {
   items: NavItem[];
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -377,7 +434,12 @@ function AdminSection({
       ) : null}
       <div className="space-y-0.5">
         {items.map((item) => (
-          <SidebarNavRow key={item.to} item={item} collapsed={collapsed} />
+          <SidebarNavRow
+            key={item.to}
+            item={item}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
         ))}
       </div>
     </div>
@@ -433,13 +495,24 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function Sidebar({
+/**
+ * Sidebar body — shared between the desktop ``<aside>`` and the mobile
+ * Sheet drawer. The desktop variant supports a collapsed (icon-only)
+ * mode; the mobile variant always renders fully expanded since the
+ * Sheet itself provides the slim/expanded affordance.
+ */
+function SidebarBody({
   collapsed,
   onToggle,
   primaryItems,
   workspaceItems,
   adminItems,
-}: SidebarProps) {
+  onNavigate,
+  showCollapseToggle,
+}: SidebarProps & {
+  onNavigate?: () => void;
+  showCollapseToggle: boolean;
+}) {
   const { pathname } = useLocation();
   // Highlight the active conversation in the Recents list when we're on
   // /chat/:id. Reading the param out of the URL ourselves avoids
@@ -450,12 +523,7 @@ function Sidebar({
   }, [pathname]);
 
   return (
-    <aside
-      className={cn(
-        "hidden md:flex shrink-0 flex-col border-r border-border bg-card/40 transition-[width] duration-150",
-        collapsed ? "w-14" : "w-64",
-      )}
-    >
+    <div className="flex h-full min-h-0 flex-col">
       <div
         className={cn(
           "flex h-14 items-center gap-2 border-b border-border",
@@ -469,7 +537,7 @@ function Sidebar({
       </div>
 
       <div className={cn(collapsed ? "p-1.5" : "px-3 py-3")}>
-        <NewTaskButton collapsed={collapsed} />
+        <NewTaskButton collapsed={collapsed} onNavigate={onNavigate} />
       </div>
 
       <nav
@@ -478,13 +546,29 @@ function Sidebar({
           collapsed ? "px-1.5 pb-2" : "px-2 pb-2",
         )}
       >
-        <PrimaryNav items={primaryItems} collapsed={collapsed} />
+        <PrimaryNav
+          items={primaryItems}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
 
-        <RecentsSection collapsed={collapsed} activeId={activeConversationId} />
+        <RecentsSection
+          collapsed={collapsed}
+          activeId={activeConversationId}
+          onNavigate={onNavigate}
+        />
 
-        <div className={cn("mt-3 space-y-1", collapsed ? "" : "")}>
-          <WorkspaceSection items={workspaceItems} collapsed={collapsed} />
-          <AdminSection items={adminItems} collapsed={collapsed} />
+        <div className="mt-3 space-y-1">
+          <WorkspaceSection
+            items={workspaceItems}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+          <AdminSection
+            items={adminItems}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
         </div>
       </nav>
 
@@ -495,25 +579,43 @@ function Sidebar({
         )}
       >
         <UserFooter collapsed={collapsed} />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn("mt-2 w-full", collapsed ? "h-8" : "h-7 justify-start gap-2 px-2.5")}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-4 w-4" />
-          ) : (
-            <>
-              <PanelLeftClose className="h-4 w-4" />
-              <span className="text-xs font-medium">Collapse</span>
-            </>
-          )}
-        </Button>
+        {showCollapseToggle && onToggle ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "mt-2 w-full",
+              collapsed ? "h-8" : "h-7 justify-start gap-2 px-2.5",
+            )}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4" />
+                <span className="text-xs font-medium">Collapse</span>
+              </>
+            )}
+          </Button>
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+function Sidebar(props: SidebarProps) {
+  return (
+    <aside
+      className={cn(
+        "hidden md:flex shrink-0 flex-col border-r border-border bg-card/40 transition-[width] duration-150",
+        props.collapsed ? "w-14" : "w-64",
+      )}
+    >
+      <SidebarBody {...props} showCollapseToggle />
     </aside>
   );
 }
@@ -549,6 +651,18 @@ export function AppShell() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSED_KEY) === "1";
   });
+  // Mobile sidebar drawer state — only used below the ``md`` breakpoint
+  // where the inline aside is hidden. Closing the drawer on every
+  // navigation is handled via the ``onNavigate`` callback threaded into
+  // the sidebar body.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Auto-close the mobile drawer whenever the route changes. Without
+  // this, navigating from the drawer would leave it open behind the
+  // new page.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   const { primaryItems, workspaceItems, adminItems, pageTitles } = useMemo(() => {
     // Plugin nav items that don't explicitly target the admin section
@@ -610,15 +724,52 @@ export function AppShell() {
         workspaceItems={workspaceItems}
         adminItems={adminItems}
       />
+
+      {/* Mobile sidebar drawer (below md). Always rendered so the
+       *  Radix Sheet handles its own enter/exit animation; the
+       *  ``open`` flag is the single source of truth. */}
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent side="left" className="w-72 max-w-[85vw] p-0">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation</SheetTitle>
+          </SheetHeader>
+          <SidebarBody
+            collapsed={false}
+            primaryItems={primaryItems}
+            workspaceItems={workspaceItems}
+            adminItems={adminItems}
+            showCollapseToggle={false}
+            onNavigate={() => setMobileNavOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar — always visible below ``md`` so the
+         *  hamburger is reachable on every page (chat included). */}
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <h1 className="truncate text-sm font-semibold tracking-tight">
+            {title}
+          </h1>
+        </header>
+
         {hideHeader ? null : (
-          // Health indicator + theme toggle live in the sidebar footer
-          // now — the top bar is reserved for the page title to keep
-          // page chrome lean and Cowork-like.
-          <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
+          // Desktop header (md+). Health indicator + theme toggle live
+          // in the sidebar footer now — the top bar is reserved for the
+          // page title to keep page chrome lean and Cowork-like.
+          <header className="hidden h-14 shrink-0 items-center gap-4 border-b border-border bg-background/80 px-6 backdrop-blur md:flex">
             <h1 className="text-base font-semibold tracking-tight">{title}</h1>
           </header>
         )}
+
         <main className="relative min-h-0 flex-1 overflow-auto scrollbar-thin">
           {hideHeader ? (
             // Chat owns its layout entirely (full-bleed, no padding).

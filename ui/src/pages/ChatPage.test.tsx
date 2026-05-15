@@ -66,6 +66,7 @@ vi.mock("@/api/queries", async () => {
       error: null,
     }),
     useAgents: () => ({ data: { agents: [] }, isLoading: false }),
+    useHealth: () => ({ data: undefined, isLoading: false, isError: false }),
     useCreateConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useArchiveConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useForkConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),

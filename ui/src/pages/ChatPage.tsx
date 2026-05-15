@@ -9,6 +9,8 @@ import {
   Hash,
   MessageSquarePlus,
   Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,7 +44,7 @@ import {
   useChatPreferences,
   type ChatViewMode,
 } from "@/features/chat/useChatPreferences";
-import { cn } from "@/lib/utils";
+import { cn, pathBasename } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Agent selection helpers
@@ -90,6 +92,7 @@ function buildAgentOptions(agents: AgentSummary[] | undefined): AgentSelection[]
 }
 
 const AGENT_STORAGE_PREFIX = "taskforce.chat.agent:";
+const RIGHT_PANEL_KEY = "taskforce.chat.rightPanel";
 
 function loadStoredAgentKey(conversationId: string | undefined): string {
   if (!conversationId) return "";
@@ -131,6 +134,8 @@ interface ChatHeaderProps {
   compactPending: boolean;
   viewMode: ChatViewMode;
   onViewModeChange: (mode: ChatViewMode) => void;
+  rightPanelOpen: boolean;
+  onRightPanelToggle: () => void;
 }
 
 function ChatHeader({
@@ -150,6 +155,8 @@ function ChatHeader({
   compactPending,
   viewMode,
   onViewModeChange,
+  rightPanelOpen,
+  onRightPanelToggle,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -227,6 +234,24 @@ function ChatHeader({
           >
             <Archive className="h-4 w-4" />
             <span className="hidden xl:inline">Archive</span>
+          </Button>
+          {/* Only visible at lg+; that's the breakpoint where the right
+           *  panel itself starts rendering — hiding the toggle below it
+           *  avoids dangling controls on tablet widths. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRightPanelToggle}
+            aria-pressed={rightPanelOpen}
+            aria-label={rightPanelOpen ? "Hide side panel" : "Show side panel"}
+            title={rightPanelOpen ? "Hide side panel" : "Show side panel"}
+            className="hidden lg:inline-flex"
+          >
+            {rightPanelOpen ? (
+              <PanelRightClose className="h-4 w-4" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4" />
+            )}
           </Button>
         </div>
       ) : null}
@@ -379,13 +404,6 @@ function MessageList({
 // Page
 // ---------------------------------------------------------------------------
 
-function pathBasename(p: string | null | undefined): string | null {
-  if (!p) return null;
-  const norm = p.replace(/\\/g, "/").replace(/\/+$/, "");
-  const idx = norm.lastIndexOf("/");
-  return idx >= 0 ? norm.slice(idx + 1) : norm;
-}
-
 export default function ChatPage() {
   const params = useParams();
   const conversationId = params.conversationId;
@@ -413,15 +431,27 @@ export default function ChatPage() {
   const viewMode = useChatPreferences((s) => s.viewMode);
   const setViewMode = useChatPreferences((s) => s.setViewMode);
 
-  // The "project name" shown in the breadcrumb is best-effort: today we
-  // surface the resolved default profile as a stand-in (Cowork shows the
-  // project folder; Taskforce has no per-conversation working dir yet —
-  // ADR-026 covers that in Phase 2 of the roadmap). When neither is
-  // available we just hide the prefix.
+  // Right-panel toggle. Persists per-browser so the user's preference
+  // survives page reloads but isn't synced across devices (it's a
+  // viewport-level affordance, not a setting).
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(RIGHT_PANEL_KEY) !== "0";
+  });
+  useEffect(() => {
+    window.localStorage.setItem(RIGHT_PANEL_KEY, rightPanelOpen ? "1" : "0");
+  }, [rightPanelOpen]);
+
+  // The "project name" shown in the breadcrumb only appears when the
+  // backend really exposes a working directory via /health.checks. We
+  // intentionally do NOT fall back to ``default_profile`` — a profile
+  // name in the breadcrumb position would mislead users into thinking
+  // it's a project folder. Per-conversation working dirs are tracked
+  // as future work in docs/cowork-comparison.md (Phase 2).
   const projectName = useMemo(() => {
     const checks = (healthQuery.data?.checks ?? {}) as Record<string, unknown>;
     const wd = (checks.working_dir ?? checks.work_dir) as string | undefined;
-    return pathBasename(wd ?? null) ?? healthQuery.data?.default_profile ?? null;
+    return pathBasename(wd ?? null);
   }, [healthQuery.data]);
 
   useEffect(() => {
@@ -560,6 +590,8 @@ export default function ChatPage() {
           compactPending={compact.isPending}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          rightPanelOpen={rightPanelOpen}
+          onRightPanelToggle={() => setRightPanelOpen((o) => !o)}
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -612,12 +644,14 @@ export default function ChatPage() {
         </div>
       </section>
 
-      <RightPanel
-        projectName={projectName}
-        planSteps={stream.state.planSteps}
-        toolCalls={stream.state.toolCalls}
-        streaming={isStreaming}
-      />
+      {rightPanelOpen ? (
+        <RightPanel
+          projectName={projectName}
+          planSteps={stream.state.planSteps}
+          toolCalls={stream.state.toolCalls}
+          streaming={isStreaming}
+        />
+      ) : null}
     </div>
   );
 }

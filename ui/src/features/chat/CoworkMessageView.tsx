@@ -14,7 +14,7 @@
  * it; the chat page now uses these variants instead.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   Wrench,
@@ -73,9 +73,14 @@ export function CoworkMessage({
 // ---------------------------------------------------------------------------
 
 function UserChip({ message }: { message: ChatMessage }) {
+  // ``whitespace-pre-wrap`` preserves the user's line breaks; the legacy
+  // MessageBubble achieved the same via the Markdown pipeline. User
+  // prompts are plain text (not rendered as Markdown) intentionally —
+  // their content is unsanitised and Cowork doesn't markdown-render
+  // user input either.
   return (
     <div className="flex justify-end">
-      <div className="max-w-[70%] rounded-2xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed text-foreground">
+      <div className="max-w-[70%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed text-foreground">
         {message.content}
         {message.attachments && message.attachments.length > 0 ? (
           <div className="mt-2">
@@ -184,13 +189,32 @@ function ToolSummary({
   stillRunning?: boolean;
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
+  // Keep the open state in sync with the view-mode prop so toggling
+  // Normal ⇄ Verbose updates already-rendered summaries too. The user
+  // can still click to override locally; the effect only fires when
+  // ``defaultOpen`` itself changes.
+  useEffect(() => {
+    setOpen(!!defaultOpen);
+  }, [defaultOpen]);
+
   const stats = useMemo(() => summarize(calls), [calls]);
 
   const parts: string[] = [];
-  parts.push(`${stats.tools} Tool${stats.tools !== 1 ? "s" : ""} verwendet`);
-  if (stats.filesRead > 0) parts.push(`${stats.filesRead} Dateien gelesen`);
-  if (stats.filesWritten > 0) parts.push(`${stats.filesWritten} Dateien geschrieben`);
-  if (stats.commands > 0) parts.push(`${stats.commands} Befehle ausgeführt`);
+  const toolWord = stats.tools === 1 ? "tool" : "tools";
+  parts.push(`${stats.tools} ${toolWord} used`);
+  if (stats.filesRead > 0) {
+    parts.push(`${stats.filesRead} ${stats.filesRead === 1 ? "file" : "files"} read`);
+  }
+  if (stats.filesWritten > 0) {
+    parts.push(
+      `${stats.filesWritten} ${stats.filesWritten === 1 ? "file" : "files"} written`,
+    );
+  }
+  if (stats.commands > 0) {
+    parts.push(
+      `${stats.commands} ${stats.commands === 1 ? "command" : "commands"} run`,
+    );
+  }
 
   return (
     <div className="rounded-lg border border-border bg-muted/30">
@@ -200,11 +224,11 @@ function ToolSummary({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <Wrench className="h-3.5 w-3.5" />
+        <Wrench className="h-3.5 w-3.5" aria-hidden />
         <span>{parts.join(", ")}</span>
         {stillRunning ? (
           <Badge variant="warning" className="px-1 py-0 text-[10px]">
-            läuft
+            running
           </Badge>
         ) : null}
         <ChevronRight
@@ -212,6 +236,7 @@ function ToolSummary({
             "ml-auto h-3.5 w-3.5 transition-transform",
             open && "rotate-90",
           )}
+          aria-hidden
         />
       </button>
       {open ? (
@@ -252,7 +277,7 @@ function ToolRow({ call }: { call: ToolCallView }) {
           <span className="font-mono">{call.name}</span>
           {depth > 0 ? <SubAgentBadge path={call.agentPath ?? []} /> : null}
           <span className="ml-auto text-[10px] text-muted-foreground">
-            {call.pending ? "läuft…" : "fertig"}
+            {call.pending ? "running…" : "done"}
           </span>
         </summary>
         <div className="space-y-2 px-2 pb-2 font-mono text-[11px] text-muted-foreground">

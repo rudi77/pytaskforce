@@ -2,14 +2,13 @@ import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
-  FileText,
   FolderOpen,
   Layers,
   Wrench,
   Loader2,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn, pathBasename } from "@/lib/utils";
 import type { ToolCallView, PlanStepView } from "@/features/chat/useChatStream";
 
 interface RightPanelProps {
@@ -25,10 +24,10 @@ interface RightPanelProps {
  * Cowork-style three-card side panel: Progress / Files / Context.
  *
  * Cards collapse independently and remember their open state in component
- * memory (intentionally not persisted — the panel is short-lived per
- * conversation). Each card is a self-contained section and can be empty;
- * empty cards stay visible as small placeholders so the user can see what
- * the panel *would* show once the agent gets going.
+ * memory. Each card is self-contained and can be empty; we hide the whole
+ * panel when *nothing* is running yet so an empty side panel doesn't take
+ * up screen real-estate on the very first turn — once any signal arrives
+ * (plan step, tool call) it pops in.
  */
 export function RightPanel({
   projectName,
@@ -38,6 +37,17 @@ export function RightPanel({
 }: RightPanelProps) {
   const files = useMemo(() => collectReferencedFiles(toolCalls), [toolCalls]);
   const toolStats = useMemo(() => summarizeTools(toolCalls), [toolCalls]);
+
+  // When the conversation hasn't kicked off any work yet (and nothing
+  // is streaming), hide the panel altogether. The chat surface is the
+  // primary thing the user wants to see; an empty 3-card sidebar is
+  // visual noise.
+  const isEmpty =
+    !streaming &&
+    planSteps.length === 0 &&
+    toolCalls.length === 0 &&
+    files.length === 0;
+  if (isEmpty) return null;
 
   return (
     <aside className="hidden w-80 shrink-0 flex-col gap-3 border-l border-border bg-card/40 p-3 lg:flex">
@@ -78,7 +88,9 @@ function Card({
         className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/40"
         aria-expanded={open}
       >
-        <span className="text-muted-foreground">{icon}</span>
+        <span className="text-muted-foreground" aria-hidden>
+          {icon}
+        </span>
         <span className="flex-1 text-left">{title}</span>
         {headerExtra}
         <ChevronDown
@@ -86,6 +98,7 @@ function Card({
             "h-4 w-4 text-muted-foreground transition-transform",
             !open && "-rotate-90",
           )}
+          aria-hidden
         />
       </button>
       {open ? <div className="border-t border-border px-3 py-2">{children}</div> : null}
@@ -110,9 +123,7 @@ function ProgressCard({
   // with each step in done/active/pending state. The "active" step is the
   // first pending step while streaming.
   const hasPlan = planSteps.length > 0;
-  const activeIndex = streaming
-    ? planSteps.findIndex((s) => !s.done)
-    : -1;
+  const activeIndex = streaming ? planSteps.findIndex((s) => !s.done) : -1;
 
   const fallbackSteps = useMemo(
     () => deriveStepsFromToolCalls(toolCalls, streaming),
@@ -122,17 +133,23 @@ function ProgressCard({
   const steps = hasPlan ? planSteps : fallbackSteps;
 
   return (
-    <Card title="Fortschritt" icon={<Layers className="h-4 w-4" />}>
+    <Card title="Progress" icon={<Layers className="h-4 w-4" />}>
       {steps.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">
-          {streaming ? "Plan wird erstellt…" : "Noch keine Schritte."}
+          {streaming ? "Planning…" : "No steps yet."}
         </p>
       ) : (
         <ol className="space-y-1.5">
           {steps.map((step, idx) => {
             const isActive = idx === activeIndex;
+            // Step descriptions are unique enough in practice that
+            // ``description`` is a stable-ish key; combined with the
+            // index it stays correct even when the plan is reordered.
             return (
-              <li key={idx} className="flex items-start gap-2 text-sm">
+              <li
+                key={`${idx}-${step.description}`}
+                className="flex items-start gap-2 text-sm"
+              >
                 <StepIcon done={step.done} active={isActive} index={idx + 1} />
                 <span
                   className={cn(
@@ -156,7 +173,7 @@ function ProgressCard({
       {hasPlan && toolCalls.length > 0 ? (
         <details className="mt-3 border-t border-border pt-2 text-xs">
           <summary className="cursor-pointer list-none text-muted-foreground hover:text-foreground">
-            Aktuelle Tool-Calls ({toolCalls.length})
+            Recent tool calls ({toolCalls.length})
           </summary>
           <ul className="mt-2 space-y-1">
             {toolCalls.slice(-8).map((tc) => (
@@ -236,47 +253,75 @@ function deriveStepsFromToolCalls(
       done: !tc.pending,
     });
   }
-  // The currently-streaming call should not appear done even if its
-  // pending flag flickers; the active-index logic also depends on this.
+  // While streaming, the trailing tool call's pending flag can flicker.
+  // Pin the last step as not-done so the active-step rendering stays
+  // consistent. We rebuild the entry immutably instead of mutating in
+  // place.
   if (streaming && steps.length > 0) {
-    const last = steps[steps.length - 1];
-    if (toolCalls[toolCalls.length - 1]?.pending) last.done = false;
+    const lastTc = toolCalls[toolCalls.length - 1];
+    if (lastTc?.pending) {
+      const lastIdx = steps.length - 1;
+      steps[lastIdx] = { ...steps[lastIdx], done: false };
+    }
   }
   return steps;
 }
 
+/** Render a tool call as a short human-readable phrase for the progress
+ *  panel. Keep this consistent with the keys in the framework's tool
+ *  registry (``infrastructure/tools/registry.py``). Unknown tools fall
+ *  through to a generic label so the panel never shows just a bare name. */
 function humanizeToolCall(tc: ToolCallView): string {
   const a = (tc.args ?? {}) as Record<string, unknown>;
   const path = (a.path ?? a.file_path) as string | undefined;
   switch (tc.name) {
     case "file_read":
-      return path ? `Liest ${shortPath(path)}` : "Datei lesen";
+      return path ? `Read ${shortPath(path)}` : "Read file";
     case "file_write":
-      return path ? `Schreibt ${shortPath(path)}` : "Datei schreiben";
+      return path ? `Write ${shortPath(path)}` : "Write file";
     case "edit":
-      return path ? `Bearbeitet ${shortPath(path)}` : "Datei bearbeiten";
+      return path ? `Edit ${shortPath(path)}` : "Edit file";
     case "grep":
-      return typeof a.pattern === "string" ? `Sucht „${a.pattern}"` : "Sucht im Code";
+      return typeof a.pattern === "string" ? `Search “${a.pattern}”` : "Search code";
     case "glob":
       return typeof a.pattern === "string"
-        ? `Findet Dateien (${a.pattern})`
-        : "Sucht Dateien";
+        ? `Find files (${a.pattern})`
+        : "Find files";
     case "shell":
     case "bash":
     case "powershell":
       return typeof a.command === "string"
-        ? `Führt Befehl aus: ${truncate(a.command, 50)}`
-        : "Befehl ausführen";
+        ? `Run command: ${truncate(a.command, 50)}`
+        : "Run command";
+    case "python":
+      return "Run Python";
     case "web_search":
       return typeof a.query === "string"
-        ? `Sucht im Web: ${truncate(a.query, 40)}`
-        : "Web-Suche";
+        ? `Web search: ${truncate(a.query, 40)}`
+        : "Web search";
     case "web_fetch":
-      return typeof a.url === "string" ? `Holt ${shortDomain(a.url)}` : "Web-Fetch";
+      return typeof a.url === "string" ? `Fetch ${shortDomain(a.url)}` : "Fetch URL";
     case "ask_user":
-      return "Wartet auf Antwort";
+      return "Wait for user reply";
+    case "browser":
+      return "Browse the web";
+    case "wiki":
+      return "Update memory";
+    case "memory":
+      return "Look up memory";
+    case "send_notification":
+      return "Send notification";
+    case "calendar":
+      return "Calendar";
+    case "gmail":
+      return "Gmail";
+    case "rag_semantic_search":
+    case "rag_list_documents":
+    case "rag_get_document":
+    case "global_document_analysis":
+      return "Search knowledge base";
     default:
-      return `${tc.name}`;
+      return `Tool: ${tc.name}`;
   }
 }
 
@@ -298,7 +343,7 @@ function collectReferencedFiles(toolCalls: ToolCallView[]): ReferencedFile[] {
   const add = (path: string, origin: ReferencedFile["origin"]) => {
     if (!path || typeof path !== "string") return;
     if (seen.has(path)) return;
-    const display = pathBasename(path);
+    const display = pathBasename(path) ?? path;
     const ext = display.includes(".") ? display.split(".").pop()!.toLowerCase() : "";
     seen.set(path, { path, display, ext, origin });
   };
@@ -309,8 +354,10 @@ function collectReferencedFiles(toolCalls: ToolCallView[]): ReferencedFile[] {
     if (tc.name === "file_write" && typeof a.path === "string") add(a.path, "write");
     if (tc.name === "edit" && typeof a.file_path === "string") add(a.file_path, "edit");
 
-    // Some tools list paths in their result (grep, glob). We surface them
-    // as "match" so they don't crowd the panel with read/write semantics.
+    // Some tools list paths in their result (grep, glob). Heuristic: a
+    // path-shaped first segment of each line, capped at 20 lines so a
+    // huge grep doesn't flood the panel. JSON results are skipped — the
+    // shape varies enough that it's not worth a brittle parser here.
     const result = tc.result as unknown;
     if (typeof result === "string" && (tc.name === "grep" || tc.name === "glob")) {
       for (const line of result.split("\n").slice(0, 20)) {
@@ -344,7 +391,7 @@ function FilesCard({
     >
       {files.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">
-          Noch keine Dateien referenziert.
+          No files referenced yet.
         </p>
       ) : (
         <ul className="space-y-1">
@@ -379,11 +426,6 @@ function FileExtIcon({ ext }: { ext: string }) {
     txt: "bg-muted text-muted-foreground",
   };
   const cls = colour[ext] ?? "bg-muted text-muted-foreground";
-  if (!ext) {
-    return (
-      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-    );
-  }
   return (
     <span
       className={cn(
@@ -392,7 +434,7 @@ function FileExtIcon({ ext }: { ext: string }) {
       )}
       aria-hidden
     >
-      {ext.slice(0, 3)}
+      {ext ? ext.slice(0, 3) : "•"}
     </span>
   );
 }
@@ -436,26 +478,25 @@ function ContextCard({
 }) {
   return (
     <Card
-      title="Kontext"
+      title="Context"
       icon={<Wrench className="h-4 w-4" />}
       defaultOpen={false}
     >
       {stats.total === 0 ? (
         <p className="text-xs text-muted-foreground">
-          Verfolge die Tools und referenzierten Dateien, die in dieser Aufgabe
-          verwendet werden.
+          Tracks the tools and files this task touches.
         </p>
       ) : (
         <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">Tool-Calls</dt>
+          <dt className="text-muted-foreground">Tool calls</dt>
           <dd className="text-right font-medium">{stats.total}</dd>
-          <dt className="text-muted-foreground">Verschiedene Tools</dt>
+          <dt className="text-muted-foreground">Distinct tools</dt>
           <dd className="text-right font-medium">{stats.unique}</dd>
-          <dt className="text-muted-foreground">Dateien</dt>
+          <dt className="text-muted-foreground">Files</dt>
           <dd className="text-right font-medium">{fileCount}</dd>
           {stats.pending > 0 ? (
             <>
-              <dt className="text-muted-foreground">Laufend</dt>
+              <dt className="text-muted-foreground">Running</dt>
               <dd className="text-right font-medium text-primary">
                 {stats.pending}
               </dd>
@@ -463,7 +504,7 @@ function ContextCard({
           ) : null}
           {stats.topNames.length > 0 ? (
             <>
-              <dt className="col-span-2 mt-1 text-muted-foreground">Top Tools</dt>
+              <dt className="col-span-2 mt-1 text-muted-foreground">Top tools</dt>
               <dd className="col-span-2 font-mono text-[11px]">
                 {stats.topNames.join(", ")}
               </dd>
@@ -479,16 +520,8 @@ function ContextCard({
 // Path helpers
 // ---------------------------------------------------------------------------
 
-function pathBasename(p: string): string {
-  // Handle both POSIX and Windows separators since tool args can come from
-  // either platform.
-  const norm = p.replace(/\\/g, "/");
-  const idx = norm.lastIndexOf("/");
-  return idx >= 0 ? norm.slice(idx + 1) : norm;
-}
-
 function shortPath(p: string): string {
-  return pathBasename(p);
+  return pathBasename(p) ?? p;
 }
 
 function shortDomain(url: string): string {
