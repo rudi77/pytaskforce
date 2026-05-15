@@ -881,6 +881,7 @@ async def main(task_name: str) -> None:
 
     # Run standard (single-turn) missions
     for name, prefix, mission_text in standard_missions:
+        _t0 = time.monotonic()
         try:
             r = await asyncio.wait_for(
                 run_mission(name, prefix, mission_text, executor),
@@ -888,9 +889,11 @@ async def main(task_name: str) -> None:
             )
         except asyncio.TimeoutError:
             r = {
-                "name": name, "prefix": prefix, "wall_seconds": 300.0,
+                "name": name, "prefix": prefix,
+                "wall_seconds": time.monotonic() - _t0,
                 "completed": False, "final_answer": "", "tool_trace": [],
                 "errors": ["Mission timed out after 300s"],
+                "error_type": "TimeoutError",
                 "notification_count": 0, "delegation_steps": -1,
                 "steps": 0, "input_tokens": 0, "output_tokens": 0,
                 "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
@@ -898,14 +901,16 @@ async def main(task_name: str) -> None:
             print(f"  [{name}] TIMEOUT after 300s", file=sys.stderr)
         except Exception as e:
             r = {
-                "name": name, "prefix": prefix, "wall_seconds": 0.0,
+                "name": name, "prefix": prefix,
+                "wall_seconds": time.monotonic() - _t0,
                 "completed": False, "final_answer": "", "tool_trace": [],
-                "errors": [f"Mission error: {str(e)[:200]}"],
+                "errors": [f"Mission error ({type(e).__name__}): {str(e)[:1000]}"],
+                "error_type": type(e).__name__,
                 "notification_count": 0, "delegation_steps": -1,
                 "steps": 0, "input_tokens": 0, "output_tokens": 0,
                 "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
             }
-            print(f"  [{name}] ERROR: {e}", file=sys.stderr)
+            print(f"  [{name}] ERROR ({type(e).__name__}) after {time.monotonic() - _t0:.1f}s: {e}", file=sys.stderr)
         results.append(r)
         print(
             f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
@@ -919,6 +924,7 @@ async def main(task_name: str) -> None:
         print("\n  --- Memory & Learning Sequences ---", file=sys.stderr)
         for seq in MEMORY_MISSIONS:
             seq_executor = AgentExecutor()  # Fresh executor per sequence for isolation
+            _t0 = time.monotonic()
             try:
                 r = await asyncio.wait_for(
                     run_memory_sequence(seq, seq_executor),
@@ -934,27 +940,29 @@ async def main(task_name: str) -> None:
             except asyncio.TimeoutError:
                 r = {
                     "name": seq["name"], "prefix": seq["prefix"],
-                    "wall_seconds": 300.0, "completed": False,
+                    "wall_seconds": time.monotonic() - _t0, "completed": False,
                     "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
                     "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
                     "notification_count": 0, "delegation_steps": -1,
                     "tool_trace": [], "latency_ms": 0,
                     "sequence_turns": 0,
                     "errors": ["Memory sequence timed out after 300s"],
+                    "error_type": "TimeoutError",
                 }
                 print(f"  [{seq['name']}] TIMEOUT after 300s", file=sys.stderr)
             except Exception as e:
                 r = {
                     "name": seq["name"], "prefix": seq["prefix"],
-                    "wall_seconds": 0.0, "completed": False,
+                    "wall_seconds": time.monotonic() - _t0, "completed": False,
                     "memory_recall": 0.0, "steps": 0, "input_tokens": 0,
                     "output_tokens": 0, "tool_calls": 0, "ratio": 0.0,
                     "notification_count": 0, "delegation_steps": -1,
                     "tool_trace": [], "latency_ms": 0,
                     "sequence_turns": 0,
-                    "errors": [f"Sequence error: {str(e)[:200]}"],
+                    "errors": [f"Sequence error ({type(e).__name__}): {str(e)[:1000]}"],
+                    "error_type": type(e).__name__,
                 }
-                print(f"  [{seq['name']}] ERROR: {e}", file=sys.stderr)
+                print(f"  [{seq['name']}] ERROR ({type(e).__name__}) after {time.monotonic() - _t0:.1f}s: {e}", file=sys.stderr)
             memory_results.append(r)
 
     # Write trace file for proposer context
@@ -1072,6 +1080,7 @@ async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None
     executor = AgentExecutor()
     prefix = "dyn"
 
+    _t0 = time.monotonic()
     try:
         r = await asyncio.wait_for(
             run_mission(mission_name, prefix, mission_text, executor),
@@ -1079,9 +1088,11 @@ async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None
         )
     except asyncio.TimeoutError:
         r = {
-            "name": mission_name, "prefix": prefix, "wall_seconds": 300.0,
+            "name": mission_name, "prefix": prefix,
+            "wall_seconds": time.monotonic() - _t0,
             "completed": False, "final_answer": "", "tool_trace": [],
             "errors": ["Mission timed out after 300s"],
+            "error_type": "TimeoutError",
             "notification_count": 0, "delegation_steps": -1,
             "steps": 0, "input_tokens": 0, "output_tokens": 0,
             "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
@@ -1089,14 +1100,16 @@ async def main_dynamic(mission_text: str, mission_name: str = "dynamic") -> None
         print(f"  [{mission_name}] TIMEOUT after 300s", file=sys.stderr)
     except Exception as e:
         r = {
-            "name": mission_name, "prefix": prefix, "wall_seconds": 0.0,
+            "name": mission_name, "prefix": prefix,
+            "wall_seconds": time.monotonic() - _t0,
             "completed": False, "final_answer": "", "tool_trace": [],
-            "errors": [f"Mission error: {str(e)[:200]}"],
+            "errors": [f"Mission error ({type(e).__name__}): {str(e)[:1000]}"],
+            "error_type": type(e).__name__,
             "notification_count": 0, "delegation_steps": -1,
             "steps": 0, "input_tokens": 0, "output_tokens": 0,
             "tool_calls": 0, "ratio": 0.0, "latency_ms": 0,
         }
-        print(f"  [{mission_name}] ERROR: {e}", file=sys.stderr)
+        print(f"  [{mission_name}] ERROR ({type(e).__name__}) after {time.monotonic() - _t0:.1f}s: {e}", file=sys.stderr)
 
     print(
         f"  [{r['name']}] steps={r['steps']} in={r['input_tokens']:,} "
