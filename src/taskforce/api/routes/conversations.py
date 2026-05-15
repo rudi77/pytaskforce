@@ -2,12 +2,13 @@
 
 Provides REST endpoints for managing persistent agent conversations:
 
-- ``POST /conversations``            -- create a new conversation
-- ``GET  /conversations``            -- list active conversations
-- ``GET  /conversations/archived``   -- list archived conversations
-- ``GET  /conversations/{id}/messages`` -- get messages for a conversation
-- ``POST /conversations/{id}/messages`` -- append a message (and run agent)
-- ``POST /conversations/{id}/archive`` -- archive a conversation
+- ``POST   /conversations``                    -- create a new conversation
+- ``GET    /conversations``                    -- list active conversations
+- ``GET    /conversations/archived``           -- list archived conversations
+- ``GET    /conversations/{id}/messages``      -- get messages for a conversation
+- ``POST   /conversations/{id}/messages``      -- append a message (and run agent)
+- ``POST   /conversations/{id}/archive``       -- archive a conversation
+- ``DELETE /conversations/{id}``               -- permanently delete a conversation
 """
 
 from __future__ import annotations
@@ -44,8 +45,20 @@ _chat_logger = structlog.get_logger("taskforce.api.routes.conversations")
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-def _default_profile() -> str:
-    """Resolve the chat default profile (mirrors the unified CLI behaviour)."""
+def _default_profile(*, in_project: bool = False) -> str:
+    """Resolve the chat default profile.
+
+    For project-scoped conversations we use the ``default`` profile
+    (file/shell/python/edit/git tools, native ReAct) — the user wants
+    a focused worker that knows how to operate inside a directory,
+    not the butler's event-driven coordinator persona which underperforms
+    on per-project work and aggressively delegates to sub-agents.
+
+    Non-project chats keep the legacy resolution: ``butler`` when
+    installed, otherwise ``default``. Mirrors the unified CLI behaviour.
+    """
+    if in_project:
+        return "default"
     try:
         import importlib.util as _ilu
 
@@ -108,6 +121,7 @@ class ConversationSummaryResponse(BaseModel):
     started_at: datetime
     archived_at: datetime
     message_count: int
+    project_id: str | None = None
 
 
 class AttachmentRef(BaseModel):
@@ -291,10 +305,16 @@ async def create_conversation(
     response_model=list[ConversationInfoResponse],
 )
 async def list_active_conversations(
+    project_id: str | None = Query(
+        default=None,
+        description="Filter to conversations linked to this project id.",
+    ),
     manager=Depends(get_conversation_manager),
 ) -> list[ConversationInfoResponse]:
-    """List all active (non-archived) conversations."""
+    """List active (non-archived) conversations, optionally filtered by project."""
     active = await manager.list_active()
+    if project_id is not None:
+        active = [c for c in active if c.project_id == project_id]
     return [
         ConversationInfoResponse(
             conversation_id=c.conversation_id,
@@ -315,10 +335,16 @@ async def list_active_conversations(
 )
 async def list_archived_conversations(
     limit: int = Query(default=20, ge=1, le=100),
+    project_id: str | None = Query(
+        default=None,
+        description="Filter to conversations linked to this project id.",
+    ),
     manager=Depends(get_conversation_manager),
 ) -> list[ConversationSummaryResponse]:
-    """List archived conversations."""
+    """List archived conversations, optionally filtered by project."""
     archived = await manager.list_archived(limit)
+    if project_id is not None:
+        archived = [c for c in archived if getattr(c, "project_id", None) == project_id]
     return [
         ConversationSummaryResponse(
             conversation_id=c.conversation_id,
@@ -327,6 +353,7 @@ async def list_archived_conversations(
             started_at=c.started_at,
             archived_at=c.archived_at,
             message_count=c.message_count,
+            project_id=getattr(c, "project_id", None),
         )
         for c in archived
     ]
@@ -389,10 +416,12 @@ async def append_message(
     history = await manager.get_messages(conversation_id)
 
     mission = _build_attachments_prefix(attachments) + request.message
-    resolved_profile = request.profile or _default_profile()
     work_dir = await _resolve_conversation_work_dir(
         manager, project_store, conversation_id
     )
+    # Project-scoped conversations default to the ``default`` profile —
+    # see ``_default_profile`` for why butler isn't a good fit here.
+    resolved_profile = request.profile or _default_profile(in_project=work_dir is not None)
 
     # Execute agent with conversation history.
     result = await executor.execute_mission(
@@ -462,6 +491,7 @@ async def stream_message(
     work_dir = await _resolve_conversation_work_dir(
         manager, project_store, conversation_id
     )
+    resolved_profile = request.profile or _default_profile(in_project=work_dir is not None)
 
     async def event_stream() -> AsyncIterator[bytes]:
         accumulated_chunks: list[str] = []
@@ -484,7 +514,7 @@ async def stream_message(
             try:
                 async for update in executor.execute_mission_streaming(
                     mission=mission,
-                    profile=request.profile or _default_profile(),
+                    profile=resolved_profile,
                     agent_id=request.agent_id,
                     conversation_history=history,
                     work_dir=work_dir,
@@ -606,6 +636,32 @@ async def archive_conversation(
     """Archive a conversation with an optional summary."""
     summary = request.summary if request else None
     await manager.archive(conversation_id, summary)
+
+
+@router.delete(
+    "/{conversation_id}",
+    status_code=204,
+    responses={404: {"model": ErrorResponse}},
+)
+async def delete_conversation(
+    conversation_id: str,
+    manager=Depends(get_conversation_manager),
+) -> None:
+    """Permanently delete a conversation (active or archived).
+
+    Removes the index entry and purges the on-disk message log. Unlike
+    ``archive`` this is irreversible — used by the project UI when the
+    user explicitly removes a past chat. Returns 404 when the
+    conversation does not exist so the UI can detect double-clicks.
+    """
+    removed = await manager.delete(conversation_id)
+    if not removed:
+        raise _error_response(
+            status_code=404,
+            code="conversation_not_found",
+            message=f"No conversation with id {conversation_id!r}.",
+            details={"conversation_id": conversation_id},
+        )
 
 
 class ForkConversationRequest(BaseModel):

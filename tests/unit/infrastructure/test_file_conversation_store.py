@@ -123,3 +123,41 @@ class TestFileConversationStore:
         active = await store.list_active()
         conv = next(c for c in active if c.conversation_id == conv_id)
         assert conv.message_count == 2
+
+    async def test_delete_removes_active_conversation_and_messages(
+        self, store, tmp_path
+    ):
+        conv_id = await store.get_or_create("cli")
+        await store.append_message(conv_id, {"role": "user", "content": "Hi"})
+
+        removed = await store.delete(conv_id)
+        assert removed is True
+        # Gone from active.
+        assert all(c.conversation_id != conv_id for c in await store.list_active())
+        # Gone from archived too.
+        assert all(c.conversation_id != conv_id for c in await store.list_archived())
+        # Messages dir purged.
+        assert not (tmp_path / "conversations" / conv_id).exists()
+
+    async def test_delete_removes_archived_conversation(self, store):
+        conv_id = await store.get_or_create("cli")
+        await store.archive(conv_id)
+        assert any(c.conversation_id == conv_id for c in await store.list_archived())
+
+        removed = await store.delete(conv_id)
+        assert removed is True
+        assert all(c.conversation_id != conv_id for c in await store.list_archived())
+
+    async def test_delete_unknown_returns_false(self, store):
+        removed = await store.delete("never-existed")
+        assert removed is False
+
+    async def test_list_archived_includes_project_id(self, store):
+        """Archived summaries must carry ``project_id`` so the UI can
+        scope the archived list per project."""
+        conv_id = await store.create_new("rest", project_id="proj-42")
+        await store.archive(conv_id, summary="done")
+
+        archived = await store.list_archived()
+        match = next(c for c in archived if c.conversation_id == conv_id)
+        assert match.project_id == "proj-42"

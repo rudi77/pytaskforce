@@ -135,6 +135,138 @@ class TestSkillManagerInit:
 
 
 # ---------------------------------------------------------------------------
+# Project-Local Skill Discovery (#273 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestProjectRootSkillDiscovery:
+    """``project_root`` adds per-project skill directories at start.
+
+    Verifies the skill manager picks up skills committed inside a
+    project (``<root>/.taskforce/skills/`` or ``<root>/.claude/skills/``)
+    so they're available as soon as the agent is built for a
+    project-scoped conversation — no global registration needed.
+    """
+
+    def test_taskforce_skills_dir_under_project_root_is_searched(
+        self, tmp_path: Path
+    ) -> None:
+        project_skills = tmp_path / ".taskforce" / "skills"
+        project_skills.mkdir(parents=True)
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=False,
+                project_root=str(tmp_path),
+            )
+        # The FileSkillRegistry must have been built with the project's
+        # .taskforce/skills directory in its search list.
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        assert str(project_skills) in called_dirs
+
+    def test_claude_skills_dir_under_project_root_is_searched(
+        self, tmp_path: Path
+    ) -> None:
+        """Claude-Code convention (.claude/skills/) is also probed —
+        users with existing Claude projects get their skills picked up
+        without a manual migration."""
+        claude_skills = tmp_path / ".claude" / "skills"
+        claude_skills.mkdir(parents=True)
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=False,
+                project_root=str(tmp_path),
+            )
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        assert str(claude_skills) in called_dirs
+
+    def test_missing_project_skill_dirs_are_silently_skipped(
+        self, tmp_path: Path
+    ) -> None:
+        """No skill dirs inside the project → no entries added (no error).
+
+        When the search list is empty the manager doesn't instantiate
+        a registry at all — ``has_skills`` is ``False`` and no
+        FileSkillRegistry constructor call is made.
+        """
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            manager = SkillManager(
+                skills_path=None,
+                include_global_skills=False,
+                project_root=str(tmp_path),
+            )
+        MockRegistry.assert_not_called()
+        assert manager.has_skills is False
+
+    def test_project_root_suppresses_cwd_legacy_discovery(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When the agent is project-scoped, the legacy CWD-based
+        ``./.taskforce/skills/`` lookup is *not* consulted — otherwise
+        an agent running in project A would also see skills from
+        whatever directory the server happens to live in."""
+        # Set up an existing .taskforce/skills under cwd that the legacy
+        # code path would have picked up.
+        cwd_skills = tmp_path / "server_cwd_skills" / ".taskforce" / "skills"
+        cwd_skills.mkdir(parents=True)
+        monkeypatch.chdir(tmp_path / "server_cwd_skills")
+
+        # Project root has its OWN .taskforce/skills/ so the manager
+        # builds a registry (otherwise the empty-dirs short-circuit
+        # would skip the FileSkillRegistry call and leave call_args
+        # unset — masking the assertion).
+        project_root = tmp_path / "my-project"
+        project_skills = project_root / ".taskforce" / "skills"
+        project_skills.mkdir(parents=True)
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=True,
+                project_root=str(project_root),
+            )
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        # Project's own skills ARE in there.
+        assert str(project_skills) in called_dirs
+        # Legacy CWD-based discovery is suppressed when project_root is set.
+        assert str(cwd_skills) not in called_dirs
+
+    def test_no_project_root_keeps_legacy_cwd_discovery(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Standalone (non-project) chats still discover ``./.taskforce/skills/``
+        relative to the server's cwd — preserves bit-for-bit single-tenant
+        behaviour for legacy callers."""
+        cwd_skills = tmp_path / ".taskforce" / "skills"
+        cwd_skills.mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=True,
+                project_root=None,
+            )
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        assert str(cwd_skills) in called_dirs
+
+
+# ---------------------------------------------------------------------------
 # Skill Activation
 # ---------------------------------------------------------------------------
 

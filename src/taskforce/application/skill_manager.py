@@ -97,6 +97,7 @@ class SkillManager:
         skill_configs: list[dict[str, Any]] | None = None,
         switch_conditions: list[SkillSwitchCondition] | None = None,
         include_global_skills: bool = True,
+        project_root: str | Path | None = None,
     ):
         """
         Initialize the skill manager.
@@ -107,6 +108,11 @@ class SkillManager:
             switch_conditions: Optional list of switch conditions
             include_global_skills: If True, include skills from ~/.taskforce/skills
                                   and .taskforce/skills (default: True)
+            project_root: When set, the agent is scoped to this project
+                directory and the manager additionally discovers skills
+                under ``<project_root>/.taskforce/skills/`` and
+                ``<project_root>/.claude/skills/`` (Claude-Code convention).
+                Without it the legacy CWD-based discovery applies.
         """
         self._skills_path = Path(skills_path) if skills_path else None
         self._skill_configs = self._parse_skill_configs(skill_configs or [])
@@ -115,6 +121,9 @@ class SkillManager:
         self._previous_skill_name: str | None = None
         self._context_data: dict[str, Any] = {}
         self._include_global_skills = include_global_skills
+        self._project_root = (
+            Path(project_root).expanduser().resolve() if project_root else None
+        )
 
         # Build list of skill directories
         skill_directories = self._build_skill_directories()
@@ -142,23 +151,41 @@ class SkillManager:
         """
         Build the list of skill directories to search.
 
+        Order = priority (highest first). Project-local skills sit above
+        user-global skills so a project can override the user's defaults
+        without filesystem trickery.
+
         Returns:
-            List of directory paths, with plugin skills first (highest priority)
+            List of directory paths.
         """
         directories: list[str] = []
 
-        # Plugin-specific skills have highest priority
+        # Plugin-specific skills have highest priority.
         if self._skills_path and self._skills_path.exists():
             directories.append(str(self._skills_path))
 
-        # Include global skills if enabled
-        if self._include_global_skills:
-            # Project skills (.taskforce/skills)
-            project_skills = Path.cwd() / ".taskforce" / "skills"
-            if project_skills.exists():
-                directories.append(str(project_skills))
+        # Project-local skills, when the agent is scoped to a project
+        # (e.g. project-linked conversation). We probe both conventions
+        # so users with existing Claude-Code projects get their skills
+        # picked up automatically.
+        if self._project_root is not None:
+            for sub in (".taskforce/skills", ".claude/skills"):
+                candidate = self._project_root / sub
+                if candidate.exists():
+                    directories.append(str(candidate))
 
-            # User skills (~/.taskforce/skills)
+        # Include global skills if enabled.
+        if self._include_global_skills:
+            # CWD-based ".taskforce/skills" — the legacy fallback. Only
+            # consulted when the agent is NOT scoped to a project, so a
+            # project chat doesn't accidentally pull skills from whatever
+            # directory happens to be the server's cwd.
+            if self._project_root is None:
+                project_skills = Path.cwd() / ".taskforce" / "skills"
+                if project_skills.exists():
+                    directories.append(str(project_skills))
+
+            # User skills (~/.taskforce/skills) — applied across projects.
             user_skills = Path.home() / ".taskforce" / "skills"
             if user_skills.exists():
                 directories.append(str(user_skills))

@@ -36,6 +36,7 @@ class ConversationSummary:
     started_at: datetime
     archived_at: datetime
     message_count: int
+    project_id: str | None = None
 
 
 class ConversationManagerProtocol(Protocol):
@@ -168,5 +169,20 @@ class ConversationManagerProtocol(Protocol):
 
         Returns:
             List of ``ConversationSummary`` ordered by archive date (newest first).
+        """
+        ...
+
+    async def delete(self, conversation_id: str) -> bool:
+        """Hard-delete a conversation (active or archived).
+
+        Removes the conversation from the index and purges any stored
+        messages. Unlike ``archive`` this is irreversible.
+
+        Args:
+            conversation_id: Conversation to delete.
+
+        Returns:
+            ``True`` when a conversation was deleted, ``False`` when no
+            conversation with that id existed.
         """
         ...

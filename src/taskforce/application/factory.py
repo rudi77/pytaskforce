@@ -320,7 +320,9 @@ class AgentFactory:
             planning_strategy=agent_settings["planning_strategy"].name,
         )
 
-        skill_manager = self._build_default_skill_manager()
+        skill_manager = self._build_default_skill_manager(
+            project_root=definition.work_dir
+        )
         activate_skill_tool = self._maybe_add_skill_tool_for_profile(skill_manager, all_tools)
         if activate_skill_tool is not None:
             # Re-assemble system prompt to include new tool description
@@ -1423,9 +1425,21 @@ class AgentFactory:
             self._configure_skill_switch_conditions(skill_manager, manifest.skill_names)
         return skill_manager
 
-    def _build_default_skill_manager(self) -> SkillManager | None:
-        """Build a SkillManager for profile-based agents with project/user skills."""
-        manager = SkillManager(include_global_skills=True)
+    def _build_default_skill_manager(
+        self, project_root: str | None = None
+    ) -> SkillManager | None:
+        """Build a SkillManager for profile-based agents with project/user skills.
+
+        When ``project_root`` is given (project-scoped conversation per
+        #273), skills under ``<project_root>/.taskforce/skills/`` and
+        ``<project_root>/.claude/skills/`` are discovered in addition to
+        the user-global directory — so per-project workflows can ship
+        their own skills without polluting other projects.
+        """
+        manager = SkillManager(
+            include_global_skills=True,
+            project_root=project_root,
+        )
         if manager.has_skills:
             return manager
         return None

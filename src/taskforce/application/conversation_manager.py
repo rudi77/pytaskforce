@@ -95,6 +95,14 @@ class ConversationManager:
         """Archive a conversation with an optional summary."""
         await self._store.archive(conversation_id, summary)
 
+    async def delete(self, conversation_id: str) -> bool:
+        """Hard-delete a conversation (irreversible).
+
+        Returns ``True`` when the conversation existed and was removed,
+        ``False`` when nothing matched.
+        """
+        return await self._store.delete(conversation_id)
+
     async def replace_messages(
         self,
         conversation_id: str,

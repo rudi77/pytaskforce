@@ -416,7 +416,13 @@ export default function ChatPage() {
   const archive = useArchiveConversation();
   const fork = useForkConversation();
   const compact = useCompactConversation();
-  const stream = useChatStream();
+  // ``useChatStream(conversationId)`` scopes stream state per conversation
+  // via the module-level zustand store, so navigating away from the chat
+  // page mid-run no longer drops in-flight tool calls / plan steps —
+  // remounting with the same id resubscribes to whatever the store
+  // currently holds. ``conversationId`` may be undefined (NoConversationPicker
+  // landing screen); the hook tolerates that by returning an EMPTY_STATE.
+  const stream = useChatStream(conversationId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const agentsQuery = useAgents();
@@ -470,21 +476,53 @@ export default function ChatPage() {
   const messages = messagesQuery.data ?? [];
   const isStreaming = stream.isStreaming;
 
-  useEffect(() => {
-    stream.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  // No conversationId-switch reset: stream state is now keyed by
+  // conversationId in the store, so switching naturally swaps in the
+  // target conversation's state (or EMPTY_STATE if unseen).
 
+  // Phase 1 — agent declared "done". The in-stream ``complete`` event
+  // fires BEFORE the route's ``finally`` block has actually persisted
+  // the assistant reply to conversation history. Refetching here would
+  // race the backend's append_message and silently overwrite the live
+  // streamed bubble with a stale (pre-completion) message list — which
+  // is exactly the "result disappears at the end" symptom. So we only
+  // do the optimistic write here; the refetch happens in phase 2 below.
   useEffect(() => {
-    if (stream.state.completed && conversationId) {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.conversationMessages(conversationId),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
-      stream.reset();
-    }
+    if (!stream.state.completed || !conversationId) return;
+    const streamedText = stream.state.text;
+    if (!streamedText) return;
+    queryClient.setQueryData<ChatMessageT[]>(
+      queryKeys.conversationMessages(conversationId),
+      (prev) => {
+        const list = prev ?? [];
+        const last = list[list.length - 1];
+        if (last?.role === "assistant" && last.content === streamedText) {
+          return list;
+        }
+        return [...list, { role: "assistant", content: streamedText }];
+      },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.state.completed, conversationId]);
+
+  // Phase 2 — server confirmed the reply is in conversation history.
+  // Now the refetch is safe: the backend has the new turn on disk so
+  // useConversationMessages will return the canonical version (which
+  // for chat purposes is identical to our optimistic write — same
+  // ``role`` / ``content``).
+  //
+  // ``stream.reset()`` is NOT called here: the right-side panel
+  // (Progress / Workspace / Context) needs ``toolCalls`` and
+  // ``planSteps`` to stay visible until the user sends the next
+  // message. A subsequent ``send()`` resets the bucket on its own.
+  useEffect(() => {
+    if (!stream.state.persistedAt || !conversationId) return;
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.conversationMessages(conversationId),
+    });
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.state.persistedAt, conversationId]);
 
   const onSend = async (text: string, attachments: FileMetadata[]) => {
     if (!conversationId) return;
@@ -612,7 +650,15 @@ export default function ChatPage() {
               <MessageList
                 messages={messages}
                 pending={
-                  isStreaming || stream.state.text || stream.state.toolCalls.length > 0
+                  // Show the live streaming entry only while the agent
+                  // is still working OR the assistant reply hasn't been
+                  // persisted yet. Once the ``completed`` flag flips, the
+                  // persisted reply takes over via ``messages`` and the
+                  // pending entry would otherwise duplicate it. Tool
+                  // calls + plan steps survive in the store and surface
+                  // via RightPanel — they're not lost, just rendered
+                  // through the side panel instead of the chat bubble.
+                  isStreaming || (!stream.state.completed && stream.state.text)
                     ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
                     : undefined
                 }

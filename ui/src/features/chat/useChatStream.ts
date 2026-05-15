@@ -1,4 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
+import { create } from "zustand";
+
 import { apiFetch, sseStream } from "@/api/client";
 
 export interface ToolCallView {
@@ -43,7 +45,18 @@ export interface AssistantStreamState {
    *  into a structured form). Empty when the agent isn't using the
    *  PlannerTool. */
   planSteps: PlanStepView[];
+  /** Set by the in-stream ``complete`` event — the LLM has finished, but
+   *  the backend may not have persisted the assistant reply yet (the
+   *  persist happens in the route's ``finally`` block, after this event
+   *  fires). UI should optimistically show the streamed text but wait
+   *  on ``persisted`` before triggering a refetch. */
   completed: boolean;
+  /** Bumped (timestamp ms) by the ``assistant_persisted`` SSE event —
+   *  the server has now written the assistant reply to conversation
+   *  history. Refetching messages now is safe. We use a timestamp
+   *  rather than a bool so consumers can ``useEffect`` on it across
+   *  multiple completions in the same conversation. */
+  persistedAt: number | null;
   /** Server-side session id, captured from the ``started`` SSE event. Needed
    *  for cooperative interruption via ``POST /api/v1/execute/{id}/cancel``. */
   sessionId: string | null;
@@ -72,6 +85,7 @@ const EMPTY_STATE: AssistantStreamState = {
   toolCalls: [],
   planSteps: [],
   completed: false,
+  persistedAt: null,
   sessionId: null,
   pendingAskUser: null,
 };
@@ -99,108 +113,275 @@ export function parsePlanMarkdown(plan: string): PlanStepView[] {
   return steps;
 }
 
-export function useChatStream() {
-  const [state, setState] = useState<AssistantStreamState>(EMPTY_STATE);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  // Mirrors ``state.sessionId`` for use inside ``cancel`` without triggering a
-  // re-render-driven stale closure. The state copy is what UI reads; this one
-  // is what the cancel handler reads.
-  const sessionIdRef = useRef<string | null>(null);
+// ---------------------------------------------------------------------------
+// Global stream store
+// ---------------------------------------------------------------------------
+//
+// Pre-#274 ``useChatStream`` owned its own component-local state via
+// ``useState``. When the user navigated away from the chat page mid-run, the
+// hook unmounted, the SSE ``for await`` loop's ``setState`` calls landed in
+// a dead React tree, and on return the panel showed an empty stream — the
+// agent was still busy on the server but the UI had no idea.
+//
+// Now state is keyed by conversationId in a module-scoped zustand store and
+// the SSE iteration writes through ``setState`` of the store, not React
+// component state. Navigation no longer interrupts streaming, and a
+// re-mounted ``ChatPage`` instantly resubscribes to whatever the store
+// currently holds for that conversation.
 
-  const send = useCallback(
-    async ({ conversationId, message, attachments, profile, agentId }: SendStreamingArgs) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      sessionIdRef.current = null;
-      setError(null);
-      // Note: pendingAskUser intentionally clears on every send because the
-      // user's new message *is* the answer to the previous question. The
-      // executor will resume saved state from that message.
-      setState({
-        text: "",
-        toolCalls: [],
-        planSteps: [],
-        completed: false,
-        sessionId: null,
-        pendingAskUser: null,
-      });
-      setIsStreaming(true);
+interface ChatStreamStore {
+  /** Per-conversation stream state. Looked up at render time. */
+  streams: Record<string, AssistantStreamState>;
+  /** Per-conversation "is currently consuming SSE events" flag. */
+  streamingByConversation: Record<string, boolean>;
+  /** Per-conversation last error message. */
+  errors: Record<string, string | null>;
+  /** Most-recently-targeted conversationId, used as a fallback for the
+   *  parameter-less ``useChatStream()`` form (legacy tests). */
+  currentConversation: string | null;
 
+  /** Patch one conversation's stream state. Caller passes either a
+   *  partial replacement OR a transform function — same ergonomics as
+   *  ``setState``. */
+  patchStream: (
+    conversationId: string,
+    patch:
+      | Partial<AssistantStreamState>
+      | ((prev: AssistantStreamState) => AssistantStreamState),
+  ) => void;
+  setStreaming: (conversationId: string, streaming: boolean) => void;
+  setError: (conversationId: string, error: string | null) => void;
+  setCurrent: (conversationId: string | null) => void;
+  resetConversation: (conversationId: string) => void;
+  resetAll: () => void;
+}
+
+const useChatStreamStore = create<ChatStreamStore>((set) => ({
+  streams: {},
+  streamingByConversation: {},
+  errors: {},
+  currentConversation: null,
+
+  patchStream: (conversationId, patch) =>
+    set((state) => {
+      const prev = state.streams[conversationId] ?? EMPTY_STATE;
+      const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+      return {
+        streams: { ...state.streams, [conversationId]: next },
+      };
+    }),
+  setStreaming: (conversationId, streaming) =>
+    set((state) => ({
+      streamingByConversation: {
+        ...state.streamingByConversation,
+        [conversationId]: streaming,
+      },
+    })),
+  setError: (conversationId, error) =>
+    set((state) => ({
+      errors: { ...state.errors, [conversationId]: error },
+    })),
+  setCurrent: (conversationId) =>
+    set({ currentConversation: conversationId }),
+  resetConversation: (conversationId) =>
+    set((state) => {
+      const streams = { ...state.streams };
+      const streaming = { ...state.streamingByConversation };
+      const errors = { ...state.errors };
+      delete streams[conversationId];
+      delete streaming[conversationId];
+      delete errors[conversationId];
+      return {
+        streams,
+        streamingByConversation: streaming,
+        errors,
+      };
+    }),
+  resetAll: () =>
+    set({
+      streams: {},
+      streamingByConversation: {},
+      errors: {},
+      currentConversation: null,
+    }),
+}));
+
+// AbortControllers can't go through zustand: they're not serialisable and we
+// don't want their identity to trigger re-renders. Module-scope map keyed
+// by conversationId means a re-mounted hook still reaches the in-flight
+// controller of the previous mount.
+const _abortControllers = new Map<string, AbortController>();
+
+/** Test-only reset. Wipes all stream state AND in-flight controllers. */
+export function __resetChatStreamStore() {
+  for (const ctrl of _abortControllers.values()) {
+    try {
+      ctrl.abort();
+    } catch {
+      /* nothing */
+    }
+  }
+  _abortControllers.clear();
+  useChatStreamStore.getState().resetAll();
+}
+
+// ---------------------------------------------------------------------------
+// SSE drive — lives at module scope, NOT inside a hook.
+// ---------------------------------------------------------------------------
+
+async function drive(args: SendStreamingArgs): Promise<void> {
+  const { conversationId, message, attachments, profile, agentId } = args;
+  const store = useChatStreamStore.getState();
+
+  // Replace any in-flight controller for this conversation so a fresh send
+  // supersedes the previous one cleanly (matches the legacy single-flight
+  // behaviour).
+  const existing = _abortControllers.get(conversationId);
+  if (existing) {
+    existing.abort();
+  }
+  const controller = new AbortController();
+  _abortControllers.set(conversationId, controller);
+  store.setCurrent(conversationId);
+  store.setError(conversationId, null);
+  // Reset the per-conversation state — ``pendingAskUser`` clears because
+  // the user's new message *is* the answer to the previous question; the
+  // executor resumes from saved state on its own side.
+  store.patchStream(conversationId, () => ({
+    text: "",
+    toolCalls: [],
+    planSteps: [],
+    completed: false,
+    persistedAt: null,
+    sessionId: null,
+    pendingAskUser: null,
+  }));
+  store.setStreaming(conversationId, true);
+
+  try {
+    const stream = sseStream(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
+      {
+        body: {
+          message,
+          ...(profile ? { profile } : {}),
+          ...(agentId ? { agent_id: agentId } : {}),
+          attachments,
+        },
+      },
+      controller.signal,
+    );
+    for await (const evt of stream) {
+      let payload: SseEnvelope = {};
       try {
-        const stream = sseStream(
-          `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
-          {
-            body: {
-              message,
-              ...(profile ? { profile } : {}),
-              ...(agentId ? { agent_id: agentId } : {}),
-              attachments,
-            },
-          },
-          controller.signal,
-        );
-        for await (const evt of stream) {
-          let payload: SseEnvelope = {};
-          try {
-            payload = JSON.parse(evt.data) as SseEnvelope;
-          } catch {
-            continue;
-          }
-          handleEvent(evt.event, payload, setState, sessionIdRef);
-        }
-      } catch (err) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setError((err as Error).message ?? String(err));
-      } finally {
-        if (abortRef.current === controller) abortRef.current = null;
-        setIsStreaming(false);
+        payload = JSON.parse(evt.data) as SseEnvelope;
+      } catch {
+        continue;
       }
-    },
-    [],
+      handleEvent(conversationId, evt.event, payload);
+    }
+  } catch (err) {
+    if (controller.signal.aborted) {
+      return;
+    }
+    store.setError(conversationId, (err as Error).message ?? String(err));
+  } finally {
+    if (_abortControllers.get(conversationId) === controller) {
+      _abortControllers.delete(conversationId);
+    }
+    useChatStreamStore.getState().setStreaming(conversationId, false);
+  }
+}
+
+async function cancelStream(conversationId: string): Promise<void> {
+  // Two-step cancellation: first ask the server to interrupt the agent
+  // cooperatively (so it persists state + emits a final ``complete`` with
+  // ``status=paused``), THEN tear down the SSE connection. Without the
+  // first step, aborting the fetch only stops the client from receiving
+  // events — the agent keeps running on the server until it finishes.
+  const sessionId =
+    useChatStreamStore.getState().streams[conversationId]?.sessionId ?? null;
+  if (sessionId) {
+    try {
+      await apiFetch<{ session_id: string; status: string }>(
+        `/api/v1/execute/${encodeURIComponent(sessionId)}/cancel`,
+        { method: "POST" },
+      );
+    } catch {
+      // 404 (session already completed) or transient network errors
+      // shouldn't prevent the client-side abort below.
+    }
+  }
+  _abortControllers.get(conversationId)?.abort();
+}
+
+// ---------------------------------------------------------------------------
+// Public hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Read + drive chat streaming state for a single conversation.
+ *
+ * Passing ``conversationId`` is strongly preferred — it scopes state per
+ * conversation so navigating away and back doesn't lose in-flight tool
+ * calls or plan steps. Omitting it falls back to whichever conversation
+ * was most recently the target of ``send()`` (legacy single-stream
+ * behaviour, kept for tests and any code that drives only one
+ * conversation at a time).
+ */
+export function useChatStream(conversationId?: string) {
+  const currentFromStore = useChatStreamStore((s) => s.currentConversation);
+  const activeId = conversationId ?? currentFromStore;
+
+  const state = useChatStreamStore((s) =>
+    activeId ? s.streams[activeId] ?? EMPTY_STATE : EMPTY_STATE,
+  );
+  const isStreaming = useChatStreamStore((s) =>
+    activeId ? !!s.streamingByConversation[activeId] : false,
+  );
+  const error = useChatStreamStore((s) =>
+    activeId ? s.errors[activeId] ?? null : null,
   );
 
-  const cancel = useCallback(async () => {
-    // Two-step cancellation: first ask the server to interrupt the agent
-    // cooperatively (so it persists state + emits a final ``complete`` with
-    // ``status=paused``), THEN tear down the SSE connection. Without the
-    // first step, aborting the fetch only stops the client from receiving
-    // events — the agent keeps running on the server until it finishes.
-    const sessionId = sessionIdRef.current;
-    if (sessionId) {
-      try {
-        await apiFetch<{ session_id: string; status: string }>(
-          `/api/v1/execute/${encodeURIComponent(sessionId)}/cancel`,
-          { method: "POST" },
-        );
-      } catch {
-        // 404 (session already completed) or transient network errors
-        // shouldn't prevent the client-side abort below.
-      }
-    }
-    abortRef.current?.abort();
+  const send = useCallback(async (args: SendStreamingArgs) => {
+    await drive(args);
   }, []);
 
+  const cancel = useCallback(async () => {
+    if (!activeId) return;
+    await cancelStream(activeId);
+  }, [activeId]);
+
   const reset = useCallback(() => {
-    sessionIdRef.current = null;
-    setState(EMPTY_STATE);
-  }, []);
+    if (!activeId) return;
+    useChatStreamStore.getState().resetConversation(activeId);
+  }, [activeId]);
 
   return { state, isStreaming, error, send, cancel, reset };
 }
 
+// ---------------------------------------------------------------------------
+// Event dispatcher
+// ---------------------------------------------------------------------------
+
 function handleEvent(
+  conversationId: string,
   eventName: string | undefined,
   payload: SseEnvelope,
-  setState: React.Dispatch<React.SetStateAction<AssistantStreamState>>,
-  sessionIdRef: React.MutableRefObject<string | null>,
 ): void {
+  const { patchStream } = useChatStreamStore.getState();
+
   if (eventName === "assistant_persisted") {
-    setState((prev) => ({ ...prev, completed: true }));
+    // Server-side write of the assistant reply is complete; mark the
+    // moment so consumers can safely trigger a refetch without racing
+    // the backend's write. ``completed`` is also bumped here so a
+    // run that never emitted an in-stream ``complete`` event (e.g.
+    // pure content-filter recovery path) still flips out of "live".
+    patchStream(conversationId, (prev) => ({
+      ...prev,
+      completed: true,
+      persistedAt: Date.now(),
+    }));
     return;
   }
   if (eventName === "message_persisted") return;
@@ -211,8 +392,7 @@ function handleEvent(
     case "started": {
       const sid = typeof details.session_id === "string" ? details.session_id : null;
       if (sid) {
-        sessionIdRef.current = sid;
-        setState((prev) => ({ ...prev, sessionId: sid }));
+        patchStream(conversationId, (prev) => ({ ...prev, sessionId: sid }));
       }
       break;
     }
@@ -221,7 +401,7 @@ function handleEvent(
         (typeof details.token === "string" && details.token) ||
         (typeof payload.message === "string" ? payload.message : "");
       if (token) {
-        setState((prev) => ({ ...prev, text: prev.text + token }));
+        patchStream(conversationId, (prev) => ({ ...prev, text: prev.text + token }));
       }
       break;
     }
@@ -236,7 +416,7 @@ function handleEvent(
         : null;
       const sourceAgent =
         typeof details.source_agent === "string" ? details.source_agent : null;
-      setState((prev) => ({
+      patchStream(conversationId, (prev) => ({
         ...prev,
         toolCalls: [
           ...prev.toolCalls,
@@ -248,7 +428,7 @@ function handleEvent(
     case "tool_result": {
       const id = String(details.tool_call_id ?? details.id ?? "");
       const result = details.result ?? details.output ?? payload.message;
-      setState((prev) => ({
+      patchStream(conversationId, (prev) => ({
         ...prev,
         toolCalls: prev.toolCalls.map((tc) =>
           tc.id === id || (!id && tc.pending) ? { ...tc, result, pending: false } : tc,
@@ -259,7 +439,7 @@ function handleEvent(
     case "final_answer": {
       const finalText = (typeof details.content === "string" && details.content) || payload.message;
       if (typeof finalText === "string" && finalText.length > 0) {
-        setState((prev) => ({ ...prev, text: finalText }));
+        patchStream(conversationId, (prev) => ({ ...prev, text: finalText }));
       }
       break;
     }
@@ -271,7 +451,7 @@ function handleEvent(
       // the previous steps so the panel doesn't show a stale checklist
       // after the agent abandons its plan.
       const steps = parsePlanMarkdown(planRaw);
-      setState((prev) => ({ ...prev, planSteps: steps }));
+      patchStream(conversationId, (prev) => ({ ...prev, planSteps: steps }));
       break;
     }
     case "ask_user": {
@@ -291,7 +471,7 @@ function handleEvent(
       // Only surface a prompt when there's *something* to show; otherwise
       // the agent's intent is unclear and a blank card looks broken.
       if (question || missing.length > 0) {
-        setState((prev) => ({
+        patchStream(conversationId, (prev) => ({
           ...prev,
           pendingAskUser: { question, missing, channel, recipientId },
         }));
@@ -299,12 +479,15 @@ function handleEvent(
       break;
     }
     case "complete": {
-      setState((prev) => ({ ...prev, completed: true }));
+      patchStream(conversationId, (prev) => ({ ...prev, completed: true }));
       break;
     }
     case "error": {
       const msg = typeof details.error === "string" ? details.error : payload.message ?? "Stream error";
-      setState((prev) => ({ ...prev, text: prev.text + `\n\n_Error: ${msg}_` }));
+      patchStream(conversationId, (prev) => ({
+        ...prev,
+        text: prev.text + `\n\n_Error: ${msg}_`,
+      }));
       break;
     }
     default:

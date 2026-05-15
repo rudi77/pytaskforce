@@ -33,6 +33,7 @@ def mock_conversation_manager():
     mgr.get_messages = AsyncMock(return_value=[])
     mgr.append_message = AsyncMock()
     mgr.archive = AsyncMock()
+    mgr.delete = AsyncMock(return_value=True)
     return mgr
 
 
@@ -120,6 +121,77 @@ class TestListConversations:
         assert len(data) == 1
         assert data[0]["topic"] == "Test topic"
 
+    def test_list_active_filters_by_project(self, client, mock_conversation_manager):
+        """``?project_id`` keeps only conversations linked to the project."""
+        mock_conversation_manager.list_active = AsyncMock(
+            return_value=[
+                ConversationInfo(
+                    conversation_id="conv-a",
+                    channel="rest",
+                    started_at=datetime(2026, 4, 1, tzinfo=UTC),
+                    last_activity=datetime(2026, 4, 1, tzinfo=UTC),
+                    message_count=1,
+                    topic=None,
+                    project_id="proj-1",
+                ),
+                ConversationInfo(
+                    conversation_id="conv-b",
+                    channel="rest",
+                    started_at=datetime(2026, 4, 2, tzinfo=UTC),
+                    last_activity=datetime(2026, 4, 2, tzinfo=UTC),
+                    message_count=1,
+                    topic=None,
+                    project_id="proj-2",
+                ),
+                ConversationInfo(
+                    conversation_id="conv-c",
+                    channel="rest",
+                    started_at=datetime(2026, 4, 3, tzinfo=UTC),
+                    last_activity=datetime(2026, 4, 3, tzinfo=UTC),
+                    message_count=1,
+                    topic=None,
+                    project_id=None,
+                ),
+            ]
+        )
+        resp = client.get("/api/v1/conversations?project_id=proj-1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [c["conversation_id"] for c in data] == ["conv-a"]
+
+    def test_list_archived_filters_by_project_and_exposes_id(
+        self, client, mock_conversation_manager
+    ):
+        """``?project_id`` filters archived too; ``project_id`` is on the wire."""
+        mock_conversation_manager.list_archived = AsyncMock(
+            return_value=[
+                ConversationSummary(
+                    conversation_id="arch-a",
+                    topic="t",
+                    summary="s",
+                    started_at=datetime(2026, 3, 1, tzinfo=UTC),
+                    archived_at=datetime(2026, 3, 5, tzinfo=UTC),
+                    message_count=4,
+                    project_id="proj-1",
+                ),
+                ConversationSummary(
+                    conversation_id="arch-b",
+                    topic="t2",
+                    summary="s2",
+                    started_at=datetime(2026, 3, 2, tzinfo=UTC),
+                    archived_at=datetime(2026, 3, 6, tzinfo=UTC),
+                    message_count=2,
+                    project_id="proj-2",
+                ),
+            ]
+        )
+        resp = client.get("/api/v1/conversations/archived?project_id=proj-1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["conversation_id"] == "arch-a"
+        assert data[0]["project_id"] == "proj-1"
+
 
 class TestAppendMessage:
     def test_sends_message_and_gets_reply(
@@ -203,6 +275,10 @@ class TestAppendMessage:
         # The executor must have been called with the project's path.
         _, kwargs = mock_executor.execute_mission.call_args
         assert kwargs["work_dir"] == "/srv/projects/tutti"
+        # Project-scoped chats default to the ``default`` profile, not butler.
+        # Butler underperforms on per-project work and aggressively delegates
+        # to sub-agents instead of touching the workspace itself.
+        assert kwargs["profile"] == "default"
 
     def test_deleted_project_falls_back_to_default_work_dir(
         self,
@@ -283,6 +359,19 @@ class TestArchiveConversation:
         resp = client.post("/api/v1/conversations/conv-123/archive")
         assert resp.status_code == 204
         mock_conversation_manager.archive.assert_called_once_with("conv-123", None)
+
+
+class TestDeleteConversation:
+    def test_delete_returns_204(self, client, mock_conversation_manager):
+        resp = client.delete("/api/v1/conversations/conv-123")
+        assert resp.status_code == 204
+        mock_conversation_manager.delete.assert_awaited_once_with("conv-123")
+
+    def test_delete_unknown_returns_404(self, client, mock_conversation_manager):
+        mock_conversation_manager.delete = AsyncMock(return_value=False)
+        resp = client.delete("/api/v1/conversations/ghost")
+        assert resp.status_code == 404
+        assert "conversation_not_found" in resp.text
 
 
 class TestForkConversation:

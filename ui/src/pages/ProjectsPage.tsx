@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowDownAZ,
   FolderOpen,
+  MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
@@ -14,10 +15,12 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { ApiError } from "@/api/client";
 import {
+  useConversations,
   useCreateConversation,
   useDeleteProject,
   useHealth,
   useProjects,
+  type ConversationInfo,
   type Project,
 } from "@/api/queries";
 import { toast } from "@/components/ui/toast";
@@ -39,11 +42,30 @@ type SortKey = "recent" | "name";
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const projects = useProjects();
+  const conversations = useConversations();
   const health = useHealth();
   const createConversation = useCreateConversation();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Index conversations by project_id once so each tile renders without
+  // scanning the full list. Active conversations only — archived ones
+  // are kept out to avoid noise on a freshly opened project page.
+  const conversationsByProject = useMemo(() => {
+    const map = new Map<string, ConversationInfo[]>();
+    for (const c of conversations.data ?? []) {
+      if (!c.project_id) continue;
+      const bucket = map.get(c.project_id) ?? [];
+      bucket.push(c);
+      map.set(c.project_id, bucket);
+    }
+    // Newest first inside each bucket.
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.last_activity < b.last_activity ? 1 : -1));
+    }
+    return map;
+  }, [conversations.data]);
 
   const visible = useMemo(() => {
     const list = projects.data ?? [];
@@ -76,6 +98,25 @@ export default function ProjectsPage() {
         err instanceof ApiError ? err.message : (err as Error).message,
       );
     }
+  };
+
+  /**
+   * Default action when clicking a project's title/folder area.
+   *
+   * If the project already has an active conversation, jump straight
+   * into the most recent one — the obvious "resume my work" affordance.
+   * Only create a fresh chat when there is nothing to resume; otherwise
+   * every click would silently fork a new conversation and the user's
+   * earlier work would scroll off-screen in the sidebar Recents list.
+   * Explicit "New conversation" is exposed on the tile itself.
+   */
+  const openProject = (project: Project) => {
+    const existing = conversationsByProject.get(project.project_id) ?? [];
+    if (existing.length > 0) {
+      navigate(`/chat/${encodeURIComponent(existing[0].conversation_id)}`);
+      return;
+    }
+    void startConversationFor(project);
   };
 
   return (
@@ -151,7 +192,14 @@ export default function ProjectsPage() {
               <li key={project.project_id}>
                 <ProjectTile
                   project={project}
-                  onOpen={() => startConversationFor(project)}
+                  conversations={
+                    conversationsByProject.get(project.project_id) ?? []
+                  }
+                  onOpen={() => openProject(project)}
+                  onNewConversation={() => startConversationFor(project)}
+                  onOpenConversation={(id) =>
+                    navigate(`/chat/${encodeURIComponent(id)}`)
+                  }
                 />
               </li>
             ))}
@@ -171,12 +219,24 @@ export default function ProjectsPage() {
   );
 }
 
+// Cap shown so a long-running project with dozens of chats doesn't push
+// the action row off-screen. Anything beyond is rolled into a "+N more"
+// hint that scrolls the user to the sidebar Recents view (the canonical
+// full list lives there).
+const TILE_MAX_CONVERSATIONS = 4;
+
 function ProjectTile({
   project,
+  conversations,
   onOpen,
+  onNewConversation,
+  onOpenConversation,
 }: {
   project: Project;
+  conversations: ConversationInfo[];
   onOpen: () => void;
+  onNewConversation: () => void;
+  onOpenConversation: (conversationId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const deleteProject = useDeleteProject();
@@ -203,6 +263,9 @@ function ProjectTile({
     setMenuOpen(false);
   };
 
+  const visibleConversations = conversations.slice(0, TILE_MAX_CONVERSATIONS);
+  const hiddenCount = conversations.length - visibleConversations.length;
+
   return (
     <div
       className={cn(
@@ -214,6 +277,11 @@ function ProjectTile({
         type="button"
         onClick={onOpen}
         className="flex w-full items-center gap-2 text-left"
+        title={
+          conversations.length > 0
+            ? `Open last conversation (${conversations.length} total)`
+            : "Start a new conversation"
+        }
       >
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FolderOpen className="h-4 w-4" />
@@ -227,38 +295,87 @@ function ProjectTile({
           </p>
         </div>
       </button>
+
+      {/* Conversation list — only renders when the project actually has
+       *  past chats, so a freshly created project doesn't show an empty
+       *  "Conversations" block. */}
+      {visibleConversations.length > 0 ? (
+        <ul className="flex w-full flex-col gap-0.5">
+          {visibleConversations.map((c) => (
+            <li key={c.conversation_id}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenConversation(c.conversation_id);
+                }}
+                className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                title={c.topic || c.conversation_id}
+              >
+                <MessageSquare className="h-3 w-3 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {c.topic || `Conversation ${c.conversation_id.slice(0, 8)}`}
+                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                  {formatRelativeTime(c.last_activity)}
+                </span>
+              </button>
+            </li>
+          ))}
+          {hiddenCount > 0 ? (
+            <li className="px-2 pt-0.5 text-[10px] text-muted-foreground/70">
+              +{hiddenCount} more in Recents
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+
       <div className="flex w-full items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {formatRelativeTime(project.created_at)}
         </p>
-        <div className="relative">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setMenuOpen((v) => !v);
+              onNewConversation();
             }}
-            aria-label="Menu"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            title="Start a new conversation in this project"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <Plus className="h-3 w-3" />
+            New
           </button>
-          {menuOpen ? (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 z-10 mt-1 min-w-40 rounded-md border border-border bg-popover p-1 shadow-md"
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((v) => !v);
+              }}
+              aria-label="Menu"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <button
-                type="button"
-                onClick={onDelete}
-                disabled={deleteProject.isPending}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {menuOpen ? (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 z-10 mt-1 min-w-40 rounded-md border border-border bg-popover p-1 shadow-md"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Aus Liste entfernen
-              </button>
-            </div>
-          ) : null}
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={deleteProject.isPending}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Aus Liste entfernen
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

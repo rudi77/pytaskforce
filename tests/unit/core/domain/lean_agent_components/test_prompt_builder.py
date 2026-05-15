@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import Mock
+
+import pytest
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
 from taskforce.core.domain.lean_agent_components.prompt_builder import LeanPromptBuilder
+from taskforce.core.interfaces.workspace import set_workspace_context
 
 
 def _make_builder(
@@ -113,6 +117,107 @@ class TestContextPackSectionCaching:
 
         # Cache key should change because message count changed
         assert key_before != key_after
+
+
+class _FakeWorkspace:
+    def __init__(self, root: Path) -> None:
+        self._root = root
+
+    def root(self) -> Path:
+        return self._root
+
+
+@pytest.fixture
+def clear_workspace_after_test():
+    """The workspace ContextVar is module-global; never leak between tests."""
+    yield
+    set_workspace_context(None)
+
+
+class TestWorkspaceSection:
+    """``_build_workspace_section`` surfaces the project root + CLAUDE.md."""
+
+    def test_no_workspace_no_section(self, clear_workspace_after_test):
+        """No project linked → no WORKSPACE section (legacy behaviour)."""
+        builder = _make_builder()
+        prompt = builder.build_system_prompt()
+        assert "## WORKSPACE" not in prompt
+
+    def test_workspace_root_in_section(self, tmp_path: Path, clear_workspace_after_test):
+        """When a workspace is set, the prompt names the project root and
+        nudges the agent away from the 'I have no filesystem access'
+        hallucination."""
+        set_workspace_context(_FakeWorkspace(tmp_path))
+        builder = _make_builder()
+        prompt = builder.build_system_prompt()
+        assert "## WORKSPACE" in prompt
+        assert str(tmp_path) in prompt
+        # The anti-hallucination nudge — the whole reason this section exists.
+        assert "do NOT claim you have no" in prompt
+
+    def test_claude_md_injected_when_present(
+        self, tmp_path: Path, clear_workspace_after_test
+    ):
+        """``<root>/CLAUDE.md`` body is appended verbatim."""
+        (tmp_path / "CLAUDE.md").write_text(
+            "Use uv, not pip.\nRun pytest after every change.\n",
+            encoding="utf-8",
+        )
+        set_workspace_context(_FakeWorkspace(tmp_path))
+        builder = _make_builder()
+        prompt = builder.build_system_prompt()
+        assert "Project guidance (CLAUDE.md)" in prompt
+        assert "Use uv, not pip." in prompt
+        assert "Run pytest after every change." in prompt
+
+    def test_claude_md_absent_omits_guidance(
+        self, tmp_path: Path, clear_workspace_after_test
+    ):
+        """Workspace section renders even without CLAUDE.md — but skips the
+        guidance subsection."""
+        set_workspace_context(_FakeWorkspace(tmp_path))
+        builder = _make_builder()
+        prompt = builder.build_system_prompt()
+        assert "## WORKSPACE" in prompt
+        assert "Project guidance (CLAUDE.md)" not in prompt
+
+    def test_workspace_section_cached(self, tmp_path: Path, clear_workspace_after_test):
+        """Repeat build with unchanged workspace + CLAUDE.md hits the cache."""
+        (tmp_path / "CLAUDE.md").write_text("rules", encoding="utf-8")
+        set_workspace_context(_FakeWorkspace(tmp_path))
+        builder = _make_builder()
+
+        first = builder._build_workspace_section()
+        key_after_first = builder._cached_workspace_key
+        second = builder._build_workspace_section()
+
+        assert first == second
+        assert key_after_first == builder._cached_workspace_key
+
+    def test_workspace_section_invalidated_on_claude_md_edit(
+        self, tmp_path: Path, clear_workspace_after_test
+    ):
+        """Editing CLAUDE.md changes the mtime → cache key changes →
+        new content shows up without an agent restart."""
+        md = tmp_path / "CLAUDE.md"
+        md.write_text("v1", encoding="utf-8")
+        set_workspace_context(_FakeWorkspace(tmp_path))
+        builder = _make_builder()
+
+        first = builder._build_workspace_section()
+        assert "v1" in first
+
+        # Bump mtime explicitly — the file may be too fresh for the second
+        # write to advance the system clock on Windows otherwise.
+        import os
+
+        new_time = md.stat().st_atime + 5
+        md.write_text("v2-newer", encoding="utf-8")
+        os.utime(md, (new_time, new_time))
+
+        second = builder._build_workspace_section()
+        assert "v2-newer" in second
+        assert "v1" not in second
 
 
 class TestDeduplicationWiring:

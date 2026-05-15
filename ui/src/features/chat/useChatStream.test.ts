@@ -31,7 +31,11 @@ vi.mock("@/api/client", () => ({
 }));
 
 // Import AFTER the mock so the hook picks up the mocked module.
-import { parsePlanMarkdown, useChatStream } from "./useChatStream";
+import {
+  __resetChatStreamStore,
+  parsePlanMarkdown,
+  useChatStream,
+} from "./useChatStream";
 
 type Event = { event: string; data: string };
 
@@ -82,6 +86,7 @@ describe("useChatStream — server-side cancellation (Cowork-parity Phase 1)", (
   beforeEach(() => {
     apiFetchMock.mockReset();
     sseStreamMock.mockReset();
+    __resetChatStreamStore();
   });
 
   afterEach(() => {
@@ -462,5 +467,118 @@ describe("useChatStream — server-side cancellation (Cowork-parity Phase 1)", (
 
     stream.close();
     await sendPromise;
+  });
+});
+
+describe("useChatStream — state survives unmount (#274)", () => {
+  beforeEach(() => {
+    apiFetchMock.mockReset();
+    sseStreamMock.mockReset();
+    __resetChatStreamStore();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a remounted hook observes the events the previous mount received", async () => {
+    // Reproduces "navigate away mid-run, come back later": the SSE loop
+    // is driven by a module-level store, so events that arrive between
+    // unmount and remount must still be visible to the second mount.
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    // Mount #1: start the run.
+    const first = renderHook(() => useChatStream("conv-X"));
+    const sendPromise = first.result.current.send({
+      conversationId: "conv-X",
+      message: "do work",
+      attachments: [],
+    });
+
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "started",
+        details: { session_id: "sess-X" },
+      }),
+    });
+    await waitFor(() =>
+      expect(first.result.current.state.sessionId).toBe("sess-X"),
+    );
+
+    // Simulate the user navigating away — the chat page unmounts.
+    first.unmount();
+
+    // Events keep coming while the page is gone. Without the store
+    // refactor these would land in the dead hook's setState and be lost.
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "tool_call",
+        details: {
+          tool_call_id: "tc-1",
+          tool: "file_read",
+          arguments: { path: "src/foo.py" },
+        },
+      }),
+    });
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "[ ] 1. read file\n[ ] 2. write file" },
+      }),
+    });
+
+    // Give the SSE iteration a tick to drain the queued events into the
+    // store (the iterator microtasks need to run).
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Mount #2: user comes back to the same conversation.
+    const second = renderHook(() => useChatStream("conv-X"));
+
+    // The just-mounted hook must see what the previous mount missed.
+    await waitFor(() => {
+      expect(second.result.current.state.sessionId).toBe("sess-X");
+      expect(second.result.current.state.toolCalls).toHaveLength(1);
+      expect(second.result.current.state.toolCalls[0].name).toBe("file_read");
+      expect(second.result.current.state.planSteps).toHaveLength(2);
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
+  it("scopes state per conversationId so chats don't leak into each other", async () => {
+    const streamA = createControllableStream();
+    sseStreamMock.mockReturnValueOnce(streamA.iterable);
+
+    const hookA = renderHook(() => useChatStream("conv-A"));
+    const sendA = hookA.result.current.send({
+      conversationId: "conv-A",
+      message: "hi",
+      attachments: [],
+    });
+    streamA.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "started",
+        details: { session_id: "sess-A" },
+      }),
+    });
+    await waitFor(() =>
+      expect(hookA.result.current.state.sessionId).toBe("sess-A"),
+    );
+
+    // Open the OTHER conversation in a separate hook — it must not see
+    // conv-A's state spilling over.
+    const hookB = renderHook(() => useChatStream("conv-B"));
+    expect(hookB.result.current.state.sessionId).toBeNull();
+    expect(hookB.result.current.state.toolCalls).toEqual([]);
+    expect(hookB.result.current.isStreaming).toBe(false);
+
+    streamA.close();
+    await sendA;
   });
 });

@@ -44,6 +44,7 @@ vi.mock("@/features/chat/useChatStream", () => ({
       toolCalls: [],
       planSteps: [],
       completed: false,
+      persistedAt: null,
       sessionId: null,
       pendingAskUser: null,
     },

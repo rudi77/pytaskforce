@@ -15,6 +15,7 @@ Directory layout::
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -220,9 +221,39 @@ class FileConversationStore:
                 started_at=datetime.fromisoformat(c["started_at"]),
                 archived_at=datetime.fromisoformat(c["archived_at"]),
                 message_count=c["message_count"],
+                project_id=c.get("project_id"),
             )
             for c in archived[:limit]
         ]
+
+    async def delete(self, conversation_id: str) -> bool:
+        """Hard-delete a conversation: drop the index entry and purge messages.
+
+        Returns ``True`` when an entry was removed, ``False`` otherwise.
+        Missing message directories are tolerated — the index is the
+        source of truth, and removing a half-broken conversation is the
+        whole point of this operation.
+        """
+        index = await self._load_index()
+        new_index = [c for c in index if c["conversation_id"] != conversation_id]
+        if len(new_index) == len(index):
+            return False
+        await self._save_index(new_index)
+
+        conv_dir = self._base_dir / conversation_id
+        if conv_dir.exists():
+            # Best-effort cleanup; failure here would leave dangling files
+            # but the conversation is already gone from the index.
+            try:
+                shutil.rmtree(conv_dir)
+            except OSError as exc:
+                logger.warning(
+                    "conversation.delete_partial",
+                    conversation_id=conversation_id,
+                    error=str(exc),
+                )
+        logger.info("conversation.deleted", conversation_id=conversation_id)
+        return True
 
     async def get_conversation(self, conversation_id: str) -> Conversation | None:
         """Load a full Conversation domain object.

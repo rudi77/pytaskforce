@@ -159,6 +159,7 @@ export interface ConversationSummary {
   started_at: string;
   archived_at: string;
   message_count: number;
+  project_id: string | null;
 }
 
 export interface ChatMessage {
@@ -190,7 +191,11 @@ export const queryKeys = {
   llmModels: ["llm", "models"] as const,
   acpPeers: ["acp", "peers"] as const,
   conversations: ["conversations", "list"] as const,
+  conversationsByProject: (projectId: string) =>
+    ["conversations", "list", "project", projectId] as const,
   archivedConversations: ["conversations", "archived"] as const,
+  archivedConversationsByProject: (projectId: string) =>
+    ["conversations", "archived", "project", projectId] as const,
   conversationMessages: (id: string) => ["conversations", "messages", id] as const,
   projects: ["projects", "list"] as const,
   project: (id: string) => ["projects", "detail", id] as const,
@@ -496,19 +501,29 @@ export function useCloneProfile() {
   });
 }
 
-export function useConversations() {
+export function useConversations(projectId?: string) {
   return useQuery<ConversationInfo[]>({
-    queryKey: queryKeys.conversations,
-    queryFn: () => apiFetch<ConversationInfo[]>("/api/v1/conversations"),
+    queryKey: projectId
+      ? queryKeys.conversationsByProject(projectId)
+      : queryKeys.conversations,
+    queryFn: () =>
+      apiFetch<ConversationInfo[]>("/api/v1/conversations", {
+        query: projectId ? { project_id: projectId } : undefined,
+      }),
   });
 }
 
-export function useArchivedConversations(limit = 20) {
+export function useArchivedConversations(
+  limit = 20,
+  projectId?: string,
+) {
   return useQuery<ConversationSummary[]>({
-    queryKey: queryKeys.archivedConversations,
+    queryKey: projectId
+      ? queryKeys.archivedConversationsByProject(projectId)
+      : queryKeys.archivedConversations,
     queryFn: () =>
       apiFetch<ConversationSummary[]>("/api/v1/conversations/archived", {
-        query: { limit },
+        query: projectId ? { limit, project_id: projectId } : { limit },
       }),
   });
 }
@@ -620,6 +635,23 @@ export function useArchiveConversation() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
       qc.invalidateQueries({ queryKey: queryKeys.archivedConversations });
+    },
+  });
+}
+
+export function useDeleteConversation() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { id: string }>({
+    mutationFn: ({ id }) =>
+      apiFetch<void>(`/api/v1/conversations/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    // The DELETE applies to either an active or an archived conversation —
+    // invalidate both list shapes (global + per-project) so any open page
+    // refetches the right slice without us having to know which one the
+    // caller is on.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
 }
