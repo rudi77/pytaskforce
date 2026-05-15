@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowDownAZ,
   FolderOpen,
@@ -323,8 +323,14 @@ function ProjectTile({
             </li>
           ))}
           {hiddenCount > 0 ? (
-            <li className="px-2 pt-0.5 text-[10px] text-muted-foreground/70">
-              +{hiddenCount} more in Recents
+            <li className="px-2 pt-0.5">
+              <Link
+                to={`/projects/${encodeURIComponent(project.project_id)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-[10px] text-muted-foreground/80 hover:text-foreground hover:underline"
+              >
+                +{hiddenCount} more — View all
+              </Link>
             </li>
           ) : null}
         </ul>
@@ -335,6 +341,15 @@ function ProjectTile({
           {formatRelativeTime(project.created_at)}
         </p>
         <div className="flex items-center gap-1">
+          <Link
+            to={`/projects/${encodeURIComponent(project.project_id)}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            title="View all conversations in this project"
+          >
+            <MessageSquare className="h-3 w-3" />
+            View all
+          </Link>
           <button
             type="button"
             onClick={(e) => {

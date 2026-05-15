@@ -276,6 +276,7 @@ export function buildRouter(registry: PluginRegistry = defaultRegistry) {
         { path: "chat", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
         { path: "chat/:conversationId", element: withSuspense(<ChatPage />), errorElement: routeErrorElement },
         { path: "projects", element: withSuspense(<ProjectsPage />), errorElement: routeErrorElement },
+        { path: "projects/:projectId", element: withSuspense(<ProjectDetailPage />), errorElement: routeErrorElement },
         { path: "monitoring", element: withSuspense(<MonitoringPage />), errorElement: routeErrorElement },
         { path: "monitoring/runs/:sessionId", element: withSuspense(<RunDetailPage />), errorElement: routeErrorElement },
         { path: "acp", element: withSuspense(<AcpPage />), errorElement: routeErrorElement },
