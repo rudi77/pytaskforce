@@ -164,11 +164,29 @@ async def _stream_final_response(
         )
 
 
+#: Substring keywords that mark a provider exception as a content-filter
+#: block. Same set the infrastructure-layer LiteLLM service uses; we
+#: duplicate it here because core/domain may not import infrastructure.
+_CONTENT_FILTER_KEYWORDS: tuple[str, ...] = (
+    "content_filter",
+    "contentpolicyviolation",
+    "content policy",
+    "filtered due to the prompt triggering",
+    "responsibleaipolicyviolation",
+)
+
+
+def _looks_like_content_filter(error: Exception) -> bool:
+    """True if ``error``'s message looks like a content-filter rejection."""
+    msg = str(error).lower()
+    return any(kw in msg for kw in _CONTENT_FILTER_KEYWORDS)
+
+
 async def _salvage_answer(
     agent: Agent,
     messages: list[dict[str, Any]],
     logger: LoggerProtocol,
-) -> str:
+) -> tuple[str, bool]:
     """Force a final answer from the LLM when execution stalls or exceeds max steps.
 
     Makes one last LLM call WITHOUT tools, asking the model to produce the best
@@ -176,7 +194,12 @@ async def _salvage_answer(
     empty "Execution failed" responses.
 
     Returns:
-        The salvage answer text, or empty string if the LLM call fails.
+        ``(answer, content_filter_blocked)``. ``answer`` is the salvage
+        text, or empty string if every attempt failed. ``content_filter_blocked``
+        is ``True`` when at least one attempt was rejected by the content
+        filter and none succeeded — the caller uses this to tag a downstream
+        ERROR event with ``error_kind="content_filter"`` so the user sees
+        the proper recovery-failed message instead of "[no response]".
     """
     salvage_messages = messages + [
         {
@@ -188,6 +211,7 @@ async def _salvage_answer(
             ),
         }
     ]
+    saw_content_filter = False
     # Try fast model first, fall back to main model if content-filtered.
     for model_hint in ("summarizing", "reasoning"):
         try:
@@ -201,12 +225,17 @@ async def _salvage_answer(
             answer = (result.get("content") or "").strip()
             if answer:
                 logger.info("salvage_answer_generated", length=len(answer), model=model_hint)
-                return answer
+                return answer, False
         except Exception as e:
+            if _looks_like_content_filter(e):
+                saw_content_filter = True
             logger.warning(
-                "salvage_answer_attempt_failed", model=model_hint, error=str(e)
+                "salvage_answer_attempt_failed",
+                model=model_hint,
+                error=str(e),
+                content_filter=_looks_like_content_filter(e),
             )
-    return ""
+    return "", saw_content_filter
 
 
 async def _generate_and_register_plan(

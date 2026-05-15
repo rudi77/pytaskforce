@@ -516,7 +516,9 @@ async def _react_loop(
                     session_id=session_id,
                 )
                 # Salvage: force a final answer from the LLM with available context
-                salvage = await _salvage_answer(agent, messages, logger)
+                salvage, content_filter_blocked = await _salvage_answer(
+                    agent, messages, logger
+                )
                 if salvage:
                     agent.context.append_message(
                         {"role": MessageRole.ASSISTANT.value, "content": salvage},
@@ -526,14 +528,17 @@ async def _react_loop(
                         data={"content": salvage},
                     )
                 else:
+                    error_data: dict[str, Any] = {
+                        "message": (
+                            "Execution stalled due to repeated no-progress tool calls. "
+                            "Please refine scope, path, or constraints and retry."
+                        )
+                    }
+                    if content_filter_blocked:
+                        error_data["error_kind"] = "content_filter"
                     yield StreamEvent(
                         event_type=EventType.ERROR,
-                        data={
-                            "message": (
-                                "Execution stalled due to repeated no-progress tool calls. "
-                                "Please refine scope, path, or constraints and retry."
-                            )
-                        },
+                        data=error_data,
                     )
                 return
 
@@ -572,7 +577,7 @@ async def _react_loop(
 
     if step >= agent.max_steps and not final:
         # Salvage: force a final answer before giving up
-        salvage = await _salvage_answer(agent, messages, logger)
+        salvage, content_filter_blocked = await _salvage_answer(agent, messages, logger)
         if salvage:
             agent.context.append_message(
                 {"role": MessageRole.ASSISTANT.value, "content": salvage},
@@ -582,9 +587,14 @@ async def _react_loop(
                 data={"content": salvage},
             )
         else:
+            error_data: dict[str, Any] = {
+                "message": f"Exceeded max steps ({agent.max_steps})"
+            }
+            if content_filter_blocked:
+                error_data["error_kind"] = "content_filter"
             yield StreamEvent(
                 event_type=EventType.ERROR,
-                data={"message": f"Exceeded max steps ({agent.max_steps})"},
+                data=error_data,
             )
 
 

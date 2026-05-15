@@ -31,6 +31,9 @@ from taskforce.application.file_storage import (
     get_file_storage,
 )
 from taskforce.core.domain.enums import EventType
+from taskforce.core.domain.planning.react_loop import (
+    build_user_message_for_error as _build_user_message_for_error,
+)
 
 _chat_logger = structlog.get_logger("taskforce.api.routes.conversations")
 
@@ -394,6 +397,12 @@ async def stream_message(
     async def event_stream() -> AsyncIterator[bytes]:
         accumulated_chunks: list[str] = []
         final_text: str | None = None
+        # Last ERROR event surfaced by the agent (content_filter,
+        # max_steps, …). Used as the persisted reply when the run
+        # produces no FINAL_ANSWER + no LLM tokens — otherwise the user
+        # would see a literal "[no response]" placeholder instead of an
+        # actionable message (e.g. the German content-filter hint).
+        error_text: str | None = None
         completed = False
         # Sentinel used to signal end-of-stream from the producer task.
         sentinel = object()
@@ -448,6 +457,20 @@ async def stream_message(
                     candidate = (update.details or {}).get("content") or update.message
                     if isinstance(candidate, str) and candidate:
                         final_text = candidate
+                if update.event_type == EventType.ERROR.value:
+                    # Build a user-facing message from the structured error so
+                    # the persisted reply is something they can act on (e.g.
+                    # content-filter advice) rather than "[no response]".
+                    details = update.details or {}
+                    error_kind = (
+                        details.get("error_kind") if isinstance(details, dict) else None
+                    )
+                    raw_error = update.message or (
+                        details.get("error") if isinstance(details, dict) else ""
+                    )
+                    error_text = _build_user_message_for_error(
+                        error_kind or "", raw_error or ""
+                    )
                 if update.event_type == EventType.COMPLETE.value:
                     completed = True
                 payload = json.dumps(asdict(update), default=str)
@@ -472,7 +495,11 @@ async def stream_message(
             if not completed and assistant_text:
                 assistant_text += "\n\n[partial — interrupted]"
             elif not assistant_text:
-                assistant_text = "[no response]"
+                # Prefer the structured ERROR message (content_filter,
+                # max_steps, …) over the bare placeholder. Both are
+                # last-resort UX strings — the error variant is just
+                # informative.
+                assistant_text = error_text or "[no response]"
             try:
                 await manager.append_message(
                     conversation_id,
