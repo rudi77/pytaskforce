@@ -44,14 +44,21 @@ def build_user_message_for_error(error_kind: str, raw_error: str) -> str:
     """
     if error_kind == "content_filter":
         return (
-            "Der Inhaltsfilter des LLM-Anbieters hat den Prompt-Kontext "
-            "blockiert. Auslöser ist meist nicht die aktuelle Frage selbst, "
-            "sondern der angesammelte Recherche-Kontext aus den vorherigen "
-            "Schritten (Suchsnippets, geladene Artikel-Texte, "
-            "Tool-Ausgaben). Bitte starte die Aufgabe in einer neuen "
-            "Konversation oder reduziere die Suchtiefe — z. B. weniger "
-            "Suchrunden, gezieltere Queries oder eine neutralere "
-            "Formulierung der Mission."
+            "Der Inhaltsfilter des LLM-Anbieters hat den Prompt blockiert "
+            "und auch alle Recovery-Versuche (History-Trimm, ohne Tools, "
+            "Neutral-Rephrase) sind durchgekommen.\n\n"
+            "Was meistens hilft, in dieser Reihenfolge:\n"
+            "• **`/compact`** im Chat aufrufen — staucht die bisherige "
+            "Conversation zu einer Zusammenfassung; danach läuft die "
+            "nächste Anfrage in derselben Conversation, aber mit weniger "
+            "Trigger-Material.\n"
+            "• Neue Conversation für die Aufgabe starten, um den "
+            "angesammelten Recherche-Kontext loszuwerden.\n"
+            "• Wenn der Filter direkt am Anfang zuschlägt: liegt's am "
+            "Inhalt deiner Daten (Kundendaten, Mails, PII), greift "
+            "Azures Prompt-Shield. Filter in Azure AI Foundry unter "
+            "*Deployment → Content filter* niedriger stellen oder ein "
+            "Deployment ohne Shield verwenden."
         )
     if raw_error:
         return (

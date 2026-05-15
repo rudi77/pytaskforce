@@ -96,11 +96,16 @@ async def test_recovery_succeeds_after_content_filter(temp_config_file: str) -> 
 async def test_recovery_failure_surfaces_content_filter_error(temp_config_file: str) -> None:
     """When all recovery stages also content-filter, surface non_retryable error.
 
-    Recovery now runs two staged retries (``tool_results_only`` then
+    Recovery runs two staged retries (``tool_results_only`` then
     ``aggressive``), so the total call count is primary + 2 stages = 3
-    when both stages keep getting filtered.
+    when both stages keep getting filtered. The rephrase stage is
+    explicitly disabled here to isolate the bail-out path — see
+    ``test_rephrase_stage_on_by_default`` for the default-on contract.
     """
-    service = LiteLLMService(config_path=temp_config_file)
+    service = LiteLLMService(
+        config_path=temp_config_file,
+        recover_via_rephrase=False,
+    )
 
     messages = [
         {"role": "system", "content": "system"},
@@ -166,9 +171,14 @@ async def test_recovery_stages_succeed_in_first_stage(temp_config_file: str) -> 
 
 
 @pytest.mark.asyncio
-async def test_rephrase_stage_off_by_default(temp_config_file: str) -> None:
-    """Without ``recover_via_rephrase=True`` the rephrase stage never fires."""
-    service = LiteLLMService(config_path=temp_config_file)
+async def test_rephrase_stage_explicit_off_is_respected(temp_config_file: str) -> None:
+    """Opting out of rephrase via ``recover_via_rephrase=False`` short-circuits
+    that recovery stage. Default is ON since #274 — see the companion test
+    ``test_rephrase_stage_on_by_default``."""
+    service = LiteLLMService(
+        config_path=temp_config_file,
+        recover_via_rephrase=False,
+    )
 
     messages = [
         {"role": "system", "content": "sys"},
@@ -192,6 +202,18 @@ async def test_rephrase_stage_off_by_default(temp_config_file: str) -> None:
 
     # Primary + 2 staged retries — no rephrase call (would be a 4th).
     assert call_count["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_rephrase_stage_on_by_default(temp_config_file: str) -> None:
+    """#274 flipped ``recover_via_rephrase`` to default-on so a recurring
+    Azure content-filter trip on legitimate business data (PII, emails,
+    financial figures) gets one extra rescue attempt before bailing.
+    Costs one tiny LLM call on the failure path; no overhead when the
+    primary stream succeeds."""
+    service = LiteLLMService(config_path=temp_config_file)
+    # Sanity check — the constructor default is the contract under test here.
+    assert service._recover_via_rephrase is True
 
 
 @pytest.mark.asyncio
@@ -600,8 +622,14 @@ async def test_no_tools_recovery_skipped_when_no_tools_originally(
 ) -> None:
     """Without tools in the original request the ``no_tools`` stage is
     a no-op (nothing to disable). The recovery should match pre-fix
-    behaviour: primary + 2 strip stages, then error."""
-    service = LiteLLMService(config_path=temp_config_file)
+    behaviour: primary + 2 strip stages, then error. Rephrase opted out
+    so the call-count assertion isolates the no_tools logic — the
+    default-on rephrase contract is covered by
+    ``test_rephrase_stage_on_by_default``."""
+    service = LiteLLMService(
+        config_path=temp_config_file,
+        recover_via_rephrase=False,
+    )
 
     messages = [
         {"role": "system", "content": "sys"},

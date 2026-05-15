@@ -38,7 +38,12 @@ def test_content_filter_kind_returns_specific_message() -> None:
     # Substantive German text — not the gateway's generic fallback.
     assert "Inhaltsfilter" in msg
     assert "blockiert" in msg
-    assert "neutraler" in msg or "Stichworte" in msg
+    # The actionable hint: when recovery fails the user should see at
+    # least one concrete next step. ``/compact`` is the cheapest fix
+    # because it shrinks the conversation in place; the Azure Foundry
+    # tip kicks in when the user's data itself trips the filter (PII
+    # on customer records etc.).
+    assert "/compact" in msg or "Azure" in msg
 
 
 def test_unknown_kind_falls_back_to_wrapped_error() -> None:

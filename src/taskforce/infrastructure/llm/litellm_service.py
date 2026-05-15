@@ -151,15 +151,18 @@ class LiteLLMService:
         self,
         config_path: str = "src/taskforce/configs/llm_config.yaml",
         *,
-        recover_via_rephrase: bool = False,
+        recover_via_rephrase: bool = True,
         recovery_keep_last_n: int = 2,
     ) -> None:
         self.logger = structlog.get_logger(__name__)
         self._config = LLMConfigLoader(config_path)
         self._parser = LLMResponseParser()
-        # Off by default: when True, content-filter recovery escalates
-        # to a neutral-rephrase stage if straight history-stripping
-        # also fails. The rephrase costs one extra small LLM call.
+        # ON by default since #274 — content-filter recovery escalates to
+        # a neutral-rephrase stage if straight history-stripping also
+        # fails. Costs one extra small LLM call ONLY on the failure path
+        # (no overhead on successful streams). The recurring pain of
+        # losing an entire run to an Azure content filter is bigger than
+        # one summary-class call's worth of latency / cost.
         self._recover_via_rephrase = recover_via_rephrase
         self._recovery_keep_last_n = max(1, recovery_keep_last_n)
         # Local sanitizer for the recovery path — keeps the LLM-side
