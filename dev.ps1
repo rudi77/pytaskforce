@@ -14,12 +14,17 @@
 #   .\dev.ps1 -ForceVite       # always wipe Vite dep cache + start with --force
 #
 # Stale-chunk protection:
-#   Before starting the UI, the script hashes
-#       ui/node_modules/@taskforce/enterprise-ui/dist/index.js (+ index.css)
-#   and compares with ui/.dev-fingerprint. If the dist changed since the last
+#   Before starting the UI, the script computes a fingerprint over:
+#       - ui/node_modules/@taskforce/enterprise-ui/dist/index.js (+ index.css)
+#       - git HEAD commit hash               (catches `git pull` of community PRs)
+#       - SHA256(ui/package.json)            (catches UI dep changes)
+#       - SHA256(ui/pnpm-lock.yaml) if present
+#   and compares with ui/.dev-fingerprint. If anything changed since the last
 #   run, ui/node_modules/.vite is wiped and Vite is started with --force, so
 #   the browser stops requesting old chunk hashes (e.g. CreateUserPage-XXX.js
-#   404 / "Page update required").
+#   404 / "Page update required"). This is essential after a `git pull` that
+#   touches ui/src/ — Vite's deps cache must be invalidated even though the
+#   enterprise-ui dist is unchanged.
 #
 # Stops processes cleanly on Ctrl+C (single-terminal mode).
 
@@ -231,15 +236,43 @@ function Invoke-SyncPlugins {
 
 # ---------------------------------------- stale-chunk protection (Vite cache)
 function Get-EnterpriseUiFingerprint {
-    # SHA256(dist/index.js) + SHA256(dist/index.css). When enterprise-ui is
-    # rebuilt, code-split chunk hashes change -> index.js content changes ->
-    # fingerprint changes. Returns $null when dist isn't there yet.
+    # Composite fingerprint over every input that, when it changes, makes the
+    # Vite deps cache stale:
+    #
+    #   - SHA256(enterprise-ui/dist/index.js) + SHA256(.../index.css)
+    #     -> catches enterprise plugin rebuilds (code-split chunk hashes change)
+    #   - git HEAD commit hash
+    #     -> catches `git pull` of community PRs that touch ui/src/. Without
+    #        this, a pull that doesn't rebuild enterprise-ui still leaves the
+    #        browser referencing dead chunk URLs from the previous Vite session.
+    #   - SHA256(ui/package.json)
+    #     -> catches UI dependency changes (new package, version bump)
+    #   - SHA256(ui/pnpm-lock.yaml) if present
+    #     -> catches transitive dep updates
+    #
+    # Returns $null only when enterprise-ui dist is completely missing (so the
+    # caller can warn instead of triggering a useless cache wipe).
     $indexJs  = Join-Path $EnterpriseUiDist "index.js"
     $indexCss = Join-Path $EnterpriseUiDist "index.css"
     if (-not (Test-Path $indexJs)) { return $null }
     $parts = @((Get-FileHash -Algorithm SHA256 -Path $indexJs).Hash)
     if (Test-Path $indexCss) {
         $parts += (Get-FileHash -Algorithm SHA256 -Path $indexCss).Hash
+    }
+    # git HEAD — best-effort; if `git` isn't on PATH or this isn't a repo, skip.
+    try {
+        $head = & git -C $RepoRoot rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $head) {
+            $parts += $head.Trim()
+        }
+    } catch { }
+    $uiPkgJson  = Join-Path $UiDir "package.json"
+    if (Test-Path $uiPkgJson) {
+        $parts += (Get-FileHash -Algorithm SHA256 -Path $uiPkgJson).Hash
+    }
+    $pnpmLock = Join-Path $UiDir "pnpm-lock.yaml"
+    if (Test-Path $pnpmLock) {
+        $parts += (Get-FileHash -Algorithm SHA256 -Path $pnpmLock).Hash
     }
     return ($parts -join ":")
 }
@@ -267,11 +300,11 @@ function Sync-ViteCacheForEnterpriseUi {
         $previous = (Get-Content $ViteFingerprintFile -Raw -ErrorAction SilentlyContinue).Trim()
     }
     if ($current -eq $previous -and (Test-Path $ViteCacheDir)) {
-        Write-Ok "Vite cache: enterprise-ui unchanged"
+        Write-Ok "Vite cache: enterprise-ui + git HEAD + ui deps unchanged"
         return $false
     }
     if ($previous -and $current -ne $previous) {
-        Write-Step "enterprise-ui dist changed since last run - clearing Vite dep cache"
+        Write-Step "enterprise-ui / git HEAD / ui deps changed since last run - clearing Vite dep cache"
     } elseif (-not (Test-Path $ViteCacheDir)) {
         Write-Step "no Vite dep cache yet - will optimize on start"
     } else {
