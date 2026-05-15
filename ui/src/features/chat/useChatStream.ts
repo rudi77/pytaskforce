@@ -29,9 +29,20 @@ export interface PendingAskUser {
   recipientId?: string | null;
 }
 
+/** One row of the Cowork-style progress panel. Derived from
+ *  ``plan_updated`` SSE events. */
+export interface PlanStepView {
+  description: string;
+  done: boolean;
+}
+
 export interface AssistantStreamState {
   text: string;
   toolCalls: ToolCallView[];
+  /** Plan steps as last reported by the agent (Markdown checklist parsed
+   *  into a structured form). Empty when the agent isn't using the
+   *  PlannerTool. */
+  planSteps: PlanStepView[];
   completed: boolean;
   /** Server-side session id, captured from the ``started`` SSE event. Needed
    *  for cooperative interruption via ``POST /api/v1/execute/{id}/cancel``. */
@@ -59,10 +70,34 @@ export interface SendStreamingArgs {
 const EMPTY_STATE: AssistantStreamState = {
   text: "",
   toolCalls: [],
+  planSteps: [],
   completed: false,
   sessionId: null,
   pendingAskUser: null,
 };
+
+/** Parse the PlannerTool's Markdown checklist (e.g. ``"[x] 1. fetch\n[ ] 2. write"``)
+ *  into a structured plan-step list. Lines that don't match the checkbox shape
+ *  are kept as plain pending entries so we never silently drop content. */
+export function parsePlanMarkdown(plan: string): PlanStepView[] {
+  if (!plan || plan.trim() === "" || plan.trim() === "No active plan.") {
+    return [];
+  }
+  const steps: PlanStepView[] = [];
+  for (const raw of plan.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const match = line.match(/^\[( |x|X)\]\s*(?:\d+\.\s*)?(.*)$/);
+    if (match) {
+      const done = match[1].toLowerCase() === "x";
+      const description = match[2].trim();
+      if (description) steps.push({ description, done });
+    } else {
+      steps.push({ description: line, done: false });
+    }
+  }
+  return steps;
+}
 
 export function useChatStream() {
   const [state, setState] = useState<AssistantStreamState>(EMPTY_STATE);
@@ -87,6 +122,7 @@ export function useChatStream() {
       setState({
         text: "",
         toolCalls: [],
+        planSteps: [],
         completed: false,
         sessionId: null,
         pendingAskUser: null,
@@ -225,6 +261,17 @@ function handleEvent(
       if (typeof finalText === "string" && finalText.length > 0) {
         setState((prev) => ({ ...prev, text: finalText }));
       }
+      break;
+    }
+    case "plan_updated": {
+      const planRaw =
+        (typeof details.plan === "string" && details.plan) ||
+        (Array.isArray(details.steps) ? details.steps.join("\n") : "");
+      // Always replace — an empty plan ("No active plan.") must clear
+      // the previous steps so the panel doesn't show a stale checklist
+      // after the agent abandons its plan.
+      const steps = parsePlanMarkdown(planRaw);
+      setState((prev) => ({ ...prev, planSteps: steps }));
       break;
     }
     case "ask_user": {

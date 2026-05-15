@@ -1,40 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Archive,
   Bot,
+  ChevronDown,
   Eye,
   GitBranch,
   Hash,
-  MessageSquare,
   MessageSquarePlus,
   Minimize2,
-  PanelLeft,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import {
   queryKeys,
   useAgents,
   useArchiveConversation,
-  useArchivedConversations,
   useCompactConversation,
   useConversationMessages,
   useConversations,
   useCreateConversation,
   useForkConversation,
+  useHealth,
   type AgentSummary,
   type ChatMessage as ChatMessageT,
   type ConversationInfo,
@@ -43,30 +36,28 @@ import {
 import { ApiError } from "@/api/client";
 import { AskUserCard } from "@/features/chat/AskUserCard";
 import { ChatComposer } from "@/features/chat/ChatComposer";
-import { MessageBubble } from "@/features/chat/MessageView";
+import { CoworkMessage } from "@/features/chat/CoworkMessageView";
+import { RightPanel } from "@/features/chat/RightPanel";
 import { useChatStream } from "@/features/chat/useChatStream";
 import {
   CHAT_VIEW_MODES,
   useChatPreferences,
   type ChatViewMode,
 } from "@/features/chat/useChatPreferences";
-import { cn } from "@/lib/utils";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, pathBasename } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Agent selection helpers (unchanged from the previous design)
+// Agent selection helpers
 // ---------------------------------------------------------------------------
 
 interface AgentSelection {
-  /** Stable key used for the dropdown value and localStorage. */
   key: string;
   label: string;
-  /** Either custom-agent id (sent as `agent_id`) or profile name (sent as `profile`). Empty string = server default. */
   agentId?: string;
   profile?: string;
 }
 
-const AGENT_DEFAULT: AgentSelection = { key: "", label: "Default (server)" };
+const AGENT_DEFAULT: AgentSelection = { key: "", label: "Default" };
 
 function buildAgentOptions(agents: AgentSummary[] | undefined): AgentSelection[] {
   if (!agents) return [AGENT_DEFAULT];
@@ -77,19 +68,19 @@ function buildAgentOptions(agents: AgentSummary[] | undefined): AgentSelection[]
     if (a.source === "custom") {
       custom.push({
         key: `custom:${a.agent_id}`,
-        label: `${a.name} (${a.agent_id})`,
+        label: `${a.name}`,
         agentId: a.agent_id,
       });
     } else if (a.source === "plugin") {
       plugins.push({
         key: `plugin:${a.agent_id}`,
-        label: `${a.name} (plugin)`,
+        label: `${a.name}`,
         agentId: a.agent_id,
       });
     } else if (a.source === "profile") {
       profiles.push({
         key: `profile:${a.profile}`,
-        label: `${a.profile} (profile)`,
+        label: `${a.profile}`,
         profile: a.profile,
       });
     }
@@ -101,6 +92,7 @@ function buildAgentOptions(agents: AgentSummary[] | undefined): AgentSelection[]
 }
 
 const AGENT_STORAGE_PREFIX = "taskforce.chat.agent:";
+const RIGHT_PANEL_KEY = "taskforce.chat.rightPanel";
 
 function loadStoredAgentKey(conversationId: string | undefined): string {
   if (!conversationId) return "";
@@ -117,181 +109,18 @@ function persistAgentKey(conversationId: string | undefined, key: string): void 
     if (key) localStorage.setItem(AGENT_STORAGE_PREFIX + conversationId, key);
     else localStorage.removeItem(AGENT_STORAGE_PREFIX + conversationId);
   } catch {
-    /* storage unavailable — silently ignore */
+    /* storage unavailable */
   }
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar — conversation list (used inline on desktop, inside Sheet on mobile)
-// ---------------------------------------------------------------------------
-
-interface SidebarBodyProps {
-  activeId?: string;
-  onNavigate?: () => void;
-}
-
-function SidebarBody({ activeId, onNavigate }: SidebarBodyProps) {
-  const navigate = useNavigate();
-  const conversations = useConversations();
-  const archived = useArchivedConversations(20);
-  const create = useCreateConversation();
-
-  const onNew = async () => {
-    const conv = await create.mutateAsync({ channel: "rest" });
-    onNavigate?.();
-    navigate(`/chat/${encodeURIComponent(conv.conversation_id)}`);
-  };
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
-        <h2 className="text-sm font-semibold">Conversations</h2>
-        <Button size="sm" onClick={onNew} disabled={create.isPending}>
-          <MessageSquarePlus className="h-4 w-4" />
-          New
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto scrollbar-thin px-2 py-2">
-        <SidebarSection label="Active">
-          {conversations.isLoading ? (
-            <Skeleton className="h-12" />
-          ) : conversations.data && conversations.data.length > 0 ? (
-            conversations.data.map((c) => (
-              <ConversationItem
-                key={c.conversation_id}
-                conversation={c}
-                active={activeId === c.conversation_id}
-                onNavigate={onNavigate}
-              />
-            ))
-          ) : (
-            <p className="px-1 text-xs text-muted-foreground">
-              No active conversations.
-            </p>
-          )}
-        </SidebarSection>
-
-        <SidebarSection label="Archived" className="mt-3">
-          {archived.isLoading ? (
-            <Skeleton className="h-10" />
-          ) : archived.data && archived.data.length > 0 ? (
-            archived.data.map((c) => (
-              <ConversationItem
-                key={c.conversation_id}
-                conversation={{
-                  conversation_id: c.conversation_id,
-                  topic: c.topic,
-                  channel: null,
-                  message_count: c.message_count,
-                  last_activity: c.archived_at,
-                }}
-                active={false}
-                badge="archived"
-                onNavigate={onNavigate}
-              />
-            ))
-          ) : (
-            <p className="px-1 text-xs text-muted-foreground">
-              No archived conversations.
-            </p>
-          )}
-        </SidebarSection>
-      </div>
-    </div>
-  );
-}
-
-function SidebarSection({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={cn("flex flex-col gap-0.5", className)}>
-      <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-interface ConversationItemFields {
-  conversation_id: string;
-  topic?: string | null;
-  channel?: string | null;
-  message_count: number;
-  last_activity: string;
-}
-
-function ConversationItem({
-  conversation: c,
-  active,
-  badge,
-  onNavigate,
-}: {
-  conversation: ConversationItemFields;
-  active: boolean;
-  badge?: string;
-  onNavigate?: () => void;
-}) {
-  const title = c.topic || c.channel || c.conversation_id;
-  const subtitle = c.message_count
-    ? `${c.message_count} msg · ${formatRelativeTime(c.last_activity)}`
-    : formatRelativeTime(c.last_activity);
-  return (
-    <Link
-      to={`/chat/${encodeURIComponent(c.conversation_id)}`}
-      onClick={onNavigate}
-      className={cn(
-        "group flex items-start gap-2 rounded-md border border-transparent px-2 py-2 text-sm transition-colors",
-        active
-          ? "border-primary/40 bg-primary/10"
-          : "hover:bg-accent",
-      )}
-    >
-      <span
-        className={cn(
-          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-muted-foreground",
-          active && "border-primary/40 text-primary",
-        )}
-        aria-hidden
-      >
-        <MessageSquare className="h-3 w-3" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate font-medium">{title}</span>
-          {c.channel ? (
-            <Badge variant="outline" className="shrink-0 px-1 py-0 text-[9px] uppercase">
-              {c.channel}
-            </Badge>
-          ) : null}
-          {badge ? (
-            <Badge variant="outline" className="ml-auto shrink-0 px-1 py-0 text-[9px]">
-              {badge}
-            </Badge>
-          ) : null}
-        </span>
-        <span className="block truncate text-[11px] text-muted-foreground">
-          {subtitle}
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Header — toolbar with topic, ID and actions
+// Breadcrumb header
 // ---------------------------------------------------------------------------
 
 interface ChatHeaderProps {
   activeConversation: ConversationInfo | undefined;
   conversationId: string | undefined;
+  projectName: string | null;
   agentOptions: AgentSelection[];
   agentKey: string;
   onAgentChange: (key: string) => void;
@@ -303,14 +132,16 @@ interface ChatHeaderProps {
   archivePending: boolean;
   forkPending: boolean;
   compactPending: boolean;
-  onOpenSidebar: () => void;
   viewMode: ChatViewMode;
   onViewModeChange: (mode: ChatViewMode) => void;
+  rightPanelOpen: boolean;
+  onRightPanelToggle: () => void;
 }
 
 function ChatHeader({
   activeConversation,
   conversationId,
+  projectName,
   agentOptions,
   agentKey,
   onAgentChange,
@@ -322,9 +153,10 @@ function ChatHeader({
   archivePending,
   forkPending,
   compactPending,
-  onOpenSidebar,
   viewMode,
   onViewModeChange,
+  rightPanelOpen,
+  onRightPanelToggle,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -332,30 +164,28 @@ function ChatHeader({
   const primary = topic || channel || (idShort ? "Untitled conversation" : "Chat");
 
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-card/60 px-3 py-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onOpenSidebar}
-        className="md:hidden"
-        aria-label="Open conversations"
-      >
-        <PanelLeft className="h-4 w-4" />
-      </Button>
+    <div className="flex items-center gap-3 border-b border-border px-5 py-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h2 className="truncate text-sm font-semibold" title={topic || undefined}>
+        {/* Breadcrumb: project › conversation. Mimics Cowork's
+         *  "D:\…\TuttiPaletti / Agent task and responsibilities" line. */}
+        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {projectName ? (
+            <>
+              <span className="truncate">{projectName}</span>
+              <span aria-hidden>/</span>
+            </>
+          ) : null}
+          <h2
+            className="truncate text-sm font-semibold text-foreground"
+            title={topic || undefined}
+          >
             {primary}
           </h2>
-          {channel && topic ? (
-            <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] uppercase">
-              {channel}
-            </Badge>
-          ) : null}
-        </div>
+          <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+        </nav>
         {idShort ? (
           <p
-            className="flex items-center gap-1 text-[11px] text-muted-foreground"
+            className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"
             title={conversationId ?? undefined}
           >
             <Hash className="h-3 w-3" />
@@ -374,36 +204,54 @@ function ChatHeader({
           />
           <ViewModePicker value={viewMode} onChange={onViewModeChange} />
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={onCompact}
             disabled={compactPending || isStreaming}
             title="Summarize earlier messages to reclaim context window space"
           >
             <Minimize2 className="h-4 w-4" />
-            <span className="hidden lg:inline">
+            <span className="hidden xl:inline">
               {compactPending ? "Compacting…" : "Compact"}
             </span>
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={onFork}
             disabled={forkPending}
             title="Create a copy of this conversation to replay or branch"
           >
             <GitBranch className="h-4 w-4" />
-            <span className="hidden lg:inline">Fork</span>
+            <span className="hidden xl:inline">Fork</span>
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={onArchive}
             disabled={archivePending}
             title="Archive this conversation"
           >
             <Archive className="h-4 w-4" />
-            <span className="hidden lg:inline">Archive</span>
+            <span className="hidden xl:inline">Archive</span>
+          </Button>
+          {/* Only visible at lg+; that's the breakpoint where the right
+           *  panel itself starts rendering — hiding the toggle below it
+           *  avoids dangling controls on tablet widths. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRightPanelToggle}
+            aria-pressed={rightPanelOpen}
+            aria-label={rightPanelOpen ? "Hide side panel" : "Show side panel"}
+            title={rightPanelOpen ? "Hide side panel" : "Show side panel"}
+            className="hidden lg:inline-flex"
+          >
+            {rightPanelOpen ? (
+              <PanelRightClose className="h-4 w-4" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4" />
+            )}
           </Button>
         </div>
       ) : null}
@@ -430,7 +278,7 @@ function AgentPicker({
       <span className="sr-only">Agent</span>
       <select
         className={cn(
-          "h-8 max-w-[12rem] rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
+          "h-8 max-w-[10rem] rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
           "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed disabled:opacity-50",
         )}
@@ -488,7 +336,7 @@ function ViewModePicker({
 }
 
 // ---------------------------------------------------------------------------
-// Message list + empty / pending states
+// Message list — Cowork-style flowing transcript
 // ---------------------------------------------------------------------------
 
 function MessageList({
@@ -504,17 +352,13 @@ function MessageList({
 
   useEffect(() => {
     const el = ref.current;
-    // jsdom (the test environment) doesn't implement Element.scrollTo;
-    // guard the call so it can't throw in tests or older browsers.
     if (el && typeof el.scrollTo === "function") {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages, pending?.text, pending?.toolCalls]);
 
   // In summary mode, drop role="tool" turns and assistant turns that only
-  // carry tool_calls (no visible text). The remaining transcript reads as
-  // "user asked X, assistant answered Y" — which is the whole point of the
-  // mode.
+  // carry tool_calls (no visible text).
   const visibleMessages = useMemo(() => {
     if (viewMode !== "summary") return messages;
     return messages.filter((m) => {
@@ -539,12 +383,12 @@ function MessageList({
 
   return (
     <div ref={ref} className="flex-1 overflow-auto scrollbar-thin">
-      <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">
         {visibleMessages.map((m, i) => (
-          <MessageBubble key={i} message={m} viewMode={viewMode} />
+          <CoworkMessage key={i} message={m} viewMode={viewMode} />
         ))}
         {pending ? (
-          <MessageBubble
+          <CoworkMessage
             message={{ role: "assistant", content: pending.text }}
             pending
             toolCalls={pending.toolCalls}
@@ -576,6 +420,7 @@ export default function ChatPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const agentsQuery = useAgents();
+  const healthQuery = useHealth();
   const agentOptions = useMemo(
     () => buildAgentOptions(agentsQuery.data?.agents),
     [agentsQuery.data],
@@ -583,9 +428,31 @@ export default function ChatPage() {
   const [agentKey, setAgentKey] = useState<string>(() =>
     loadStoredAgentKey(conversationId),
   );
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const viewMode = useChatPreferences((s) => s.viewMode);
   const setViewMode = useChatPreferences((s) => s.setViewMode);
+
+  // Right-panel toggle. Persists per-browser so the user's preference
+  // survives page reloads but isn't synced across devices (it's a
+  // viewport-level affordance, not a setting).
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(RIGHT_PANEL_KEY) !== "0";
+  });
+  useEffect(() => {
+    window.localStorage.setItem(RIGHT_PANEL_KEY, rightPanelOpen ? "1" : "0");
+  }, [rightPanelOpen]);
+
+  // The "project name" shown in the breadcrumb only appears when the
+  // backend really exposes a working directory via /health.checks. We
+  // intentionally do NOT fall back to ``default_profile`` — a profile
+  // name in the breadcrumb position would mislead users into thinking
+  // it's a project folder. Per-conversation working dirs are tracked
+  // as future work in docs/cowork-comparison.md (Phase 2).
+  const projectName = useMemo(() => {
+    const checks = (healthQuery.data?.checks ?? {}) as Record<string, unknown>;
+    const wd = (checks.working_dir ?? checks.work_dir) as string | undefined;
+    return pathBasename(wd ?? null);
+  }, [healthQuery.data]);
 
   useEffect(() => {
     setAgentKey(loadStoredAgentKey(conversationId));
@@ -645,8 +512,6 @@ export default function ChatPage() {
 
   const onCompact = async () => {
     if (!conversationId) return;
-    // Destructive (the original messages can't be recovered) — confirm
-    // explicitly. Cowork-style /compact has the same one-way semantics.
     if (
       !window.confirm(
         "Compact this conversation? Earlier messages will be replaced " +
@@ -699,98 +564,95 @@ export default function ChatPage() {
     }
   };
 
+  // No conversation selected → show the picker. Keeps the test happy
+  // ("Pick or start a conversation" still rendered).
+  if (!conversationId) {
+    return <NoConversationPicker />;
+  }
+
   return (
-    <Card className="flex h-full min-h-0 flex-1 overflow-hidden">
-      {/* Desktop sidebar (inline). Mobile uses a Sheet anchored to the header. */}
-      <aside className="hidden w-72 shrink-0 border-r border-border bg-card md:flex md:flex-col">
-        <SidebarBody activeId={conversationId} />
-      </aside>
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden">
+      <section className="flex min-w-0 flex-1 flex-col">
+        <ChatHeader
+          activeConversation={activeConversation}
+          conversationId={conversationId}
+          projectName={projectName}
+          agentOptions={agentOptions}
+          agentKey={agentKey}
+          onAgentChange={setAgentKey}
+          agentsLoading={agentsQuery.isLoading}
+          isStreaming={isStreaming}
+          onArchive={onArchive}
+          onFork={onFork}
+          onCompact={onCompact}
+          archivePending={archive.isPending}
+          forkPending={fork.isPending}
+          compactPending={compact.isPending}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          rightPanelOpen={rightPanelOpen}
+          onRightPanelToggle={() => setRightPanelOpen((o) => !o)}
+        />
 
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-80 max-w-[85vw] p-0">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Conversations</SheetTitle>
-          </SheetHeader>
-          <SidebarBody
-            activeId={conversationId}
-            onNavigate={() => setSidebarOpen(false)}
-          />
-        </SheetContent>
-
-        <section className="flex min-w-0 flex-1 flex-col">
-          <ChatHeader
-            activeConversation={activeConversation}
-            conversationId={conversationId}
-            agentOptions={agentOptions}
-            agentKey={agentKey}
-            onAgentChange={setAgentKey}
-            agentsLoading={agentsQuery.isLoading}
-            isStreaming={isStreaming}
-            onArchive={onArchive}
-            onFork={onFork}
-            onCompact={onCompact}
-            archivePending={archive.isPending}
-            forkPending={fork.isPending}
-            compactPending={compact.isPending}
-            onOpenSidebar={() => setSidebarOpen(true)}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            {!conversationId ? (
-              <NoConversationPicker />
-            ) : messagesQuery.isLoading ? (
-              <div className="flex-1 p-4">
-                <Skeleton className="h-full w-full" />
-              </div>
-            ) : messagesQuery.error instanceof ApiError &&
-              messagesQuery.error.status === 404 ? (
-              <div className="flex flex-1 items-center justify-center p-6">
-                <EmptyState
-                  title="Conversation not found"
-                  description="It may have been archived or never existed."
-                />
-              </div>
-            ) : (
-              <>
-                <MessageList
-                  messages={messages}
-                  pending={
-                    isStreaming || stream.state.text || stream.state.toolCalls.length > 0
-                      ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
-                      : undefined
-                  }
-                  viewMode={viewMode}
-                />
-                {stream.error ? (
-                  <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
-                    {stream.error}
-                  </p>
-                ) : null}
-                {stream.state.pendingAskUser ? (
-                  <div className="border-t border-border bg-card/60 px-3 pt-3">
-                    <AskUserCard
-                      prompt={stream.state.pendingAskUser}
-                      onAnswer={(answer) => void onSend(answer, [])}
-                      disabled={isStreaming}
-                    />
-                  </div>
-                ) : null}
-                <div className="border-t border-border bg-card/60 p-3">
-                  <ChatComposer
-                    onSend={onSend}
-                    onCancel={stream.cancel}
-                    isStreaming={isStreaming}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {messagesQuery.isLoading ? (
+            <div className="flex-1 p-4">
+              <Skeleton className="h-full w-full" />
+            </div>
+          ) : messagesQuery.error instanceof ApiError &&
+            messagesQuery.error.status === 404 ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <EmptyState
+                title="Conversation not found"
+                description="It may have been archived or never existed."
+              />
+            </div>
+          ) : (
+            <>
+              <MessageList
+                messages={messages}
+                pending={
+                  isStreaming || stream.state.text || stream.state.toolCalls.length > 0
+                    ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
+                    : undefined
+                }
+                viewMode={viewMode}
+              />
+              {stream.error ? (
+                <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
+                  {stream.error}
+                </p>
+              ) : null}
+              {stream.state.pendingAskUser ? (
+                <div className="border-t border-border bg-card/60 px-3 pt-3">
+                  <AskUserCard
+                    prompt={stream.state.pendingAskUser}
+                    onAnswer={(answer) => void onSend(answer, [])}
+                    disabled={isStreaming}
                   />
                 </div>
-              </>
-            )}
-          </div>
-        </section>
+              ) : null}
+              <div className="border-t border-border px-4 py-3">
+                <ChatComposer
+                  onSend={onSend}
+                  onCancel={stream.cancel}
+                  isStreaming={isStreaming}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </section>
 
-      </Sheet>
-    </Card>
+      {rightPanelOpen ? (
+        <RightPanel
+          projectName={projectName}
+          planSteps={stream.state.planSteps}
+          toolCalls={stream.state.toolCalls}
+          streaming={isStreaming}
+        />
+      ) : null}
+    </div>
   );
 }
 

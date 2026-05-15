@@ -29,3 +29,13 @@ export function formatRelativeTime(input: string | number | Date): string {
   const years = Math.round(days / 365);
   return fmt(years, "y");
 }
+
+/** Last path segment for both POSIX and Windows separators. Returns the
+ *  input unchanged when no separator is present, and ``null`` when the
+ *  input itself is nullish — useful for breadcrumb rendering. */
+export function pathBasename(p: string | null | undefined): string | null {
+  if (!p) return null;
+  const norm = p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const idx = norm.lastIndexOf("/");
+  return idx >= 0 ? norm.slice(idx + 1) : norm;
+}

@@ -31,7 +31,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 // Import AFTER the mock so the hook picks up the mocked module.
-import { useChatStream } from "./useChatStream";
+import { parsePlanMarkdown, useChatStream } from "./useChatStream";
 
 type Event = { event: string; data: string };
 
@@ -334,6 +334,102 @@ describe("useChatStream — server-side cancellation (Cowork-parity Phase 1)", (
 
     stream.close();
     await sendPromise;
+  });
+
+  it("clears planSteps when plan_updated reports an empty plan", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "go",
+      attachments: [],
+    });
+
+    // Populate the plan first…
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "[ ] 1. Step one" },
+      }),
+    });
+    await waitFor(() => {
+      expect(result.current.state.planSteps).toHaveLength(1);
+    });
+
+    // …then have the agent abandon the plan. The panel must clear.
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "No active plan." },
+      }),
+    });
+    await waitFor(() => {
+      expect(result.current.state.planSteps).toEqual([]);
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
+  it("captures plan_updated events into state.planSteps (Cowork progress panel)", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "process the mail",
+      attachments: [],
+    });
+
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: {
+          action: "create_plan",
+          plan: "[x] 1. Read mail\n[ ] 2. Classify\n[ ] 3. Draft reply",
+        },
+      }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.planSteps).toHaveLength(3);
+    });
+    expect(result.current.state.planSteps[0]).toEqual({
+      description: "Read mail",
+      done: true,
+    });
+    expect(result.current.state.planSteps[2]).toEqual({
+      description: "Draft reply",
+      done: false,
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
+  it("parsePlanMarkdown handles the documented PlannerTool format", () => {
+    expect(parsePlanMarkdown("No active plan.")).toEqual([]);
+    expect(parsePlanMarkdown("")).toEqual([]);
+    expect(parsePlanMarkdown("[x] 1. Done\n[ ] 2. Pending")).toEqual([
+      { description: "Done", done: true },
+      { description: "Pending", done: false },
+    ]);
+    // Tolerant to upper-case X + missing numbering.
+    expect(parsePlanMarkdown("[X] do the thing")).toEqual([
+      { description: "do the thing", done: true },
+    ]);
+    // Free lines are kept as pending entries (better than silent drop).
+    expect(parsePlanMarkdown("just text")).toEqual([
+      { description: "just text", done: false },
+    ]);
   });
 
   it("cancel() swallows a 404 from the cancel endpoint (stale session)", async () => {
