@@ -40,9 +40,16 @@ DEFAULT_AGENT = "default_agent"
 #: (used by the upcoming UI editor — see Phase A's deployment.yaml).
 VISIBLE_AGENTS = "visible_agents"
 
+#: Tenant-level approval policy. Payload: ``{"bypass_tools": ["python", ...]}``.
+#: Tools listed here skip the ApprovalServiceProtocol gate even when their
+#: ``requires_approval`` is True. UNION semantics with per-agent
+#: ``agent.approval_bypass_tools`` from profile YAML. Use for trusted
+#: single-user workflows where a tool's default HIGH risk level is overkill.
+APPROVAL = "approval"
+
 
 KNOWN_SECTIONS: frozenset[str] = frozenset(
-    {LLM_PROVIDERS, CHANNELS, OAUTH, DEFAULT_AGENT, VISIBLE_AGENTS}
+    {LLM_PROVIDERS, CHANNELS, OAUTH, DEFAULT_AGENT, VISIBLE_AGENTS, APPROVAL}
 )
 
 

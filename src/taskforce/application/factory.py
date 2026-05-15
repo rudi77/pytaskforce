@@ -540,6 +540,7 @@ class AgentFactory:
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
             "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
+            "approval_bypass_tools": agent_config.get("approval_bypass_tools"),
         }
 
     def _instantiate_agent(
@@ -582,6 +583,7 @@ class AgentFactory:
             tool_result_store_threshold=settings.get("tool_result_store_threshold"),
             tool_message_max_chars=settings.get("tool_message_max_chars"),
             assistant_message_max_chars=settings.get("assistant_message_max_chars"),
+            approval_bypass_tools=settings.get("approval_bypass_tools"),
         )
 
     async def _load_plugin_tools_for_definition(
@@ -1154,6 +1156,7 @@ class AgentFactory:
                 "tool_result_store_threshold": agent_defaults.get("tool_result_store_threshold"),
                 "tool_message_max_chars": agent_defaults.get("tool_message_max_chars"),
                 "assistant_message_max_chars": agent_defaults.get("assistant_message_max_chars"),
+                "approval_bypass_tools": agent_defaults.get("approval_bypass_tools"),
             },
         }
 
@@ -1265,6 +1268,7 @@ class AgentFactory:
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
             "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
+            "approval_bypass_tools": agent_config.get("approval_bypass_tools"),
         }
         plugin_work_dir = merged_config.get("persistence", {}).get("work_dir")
         plugin_wiki_store, plugin_wiki_cfg = self._build_wiki_injection(

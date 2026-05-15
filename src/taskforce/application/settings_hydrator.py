@@ -32,7 +32,10 @@ from typing import Any
 
 import structlog
 
-from taskforce.core.domain.settings import CHANNELS, LLM_PROVIDERS
+from taskforce.application.infrastructure_overrides import (
+    set_approval_bypass_override,
+)
+from taskforce.core.domain.settings import APPROVAL, CHANNELS, LLM_PROVIDERS
 
 logger = structlog.get_logger(__name__)
 
@@ -124,6 +127,36 @@ def hydrate_channels_env(store: Any) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Approval bypass list
+# ---------------------------------------------------------------------------
+
+
+def hydrate_approval(store: Any) -> list[str]:
+    """Apply the ``approval`` settings section to the global override.
+
+    Schema::
+
+        {"bypass_tools": ["python", "shell"]}
+
+    Empty / missing section clears the override. Returns the list of
+    tools written (for logging).
+    """
+    section = store.get(APPROVAL) or {}
+    raw = section.get("bypass_tools") if isinstance(section, dict) else None
+    # Defensive parse: ignore non-string entries silently so one bad row
+    # doesn't poison the whole override.
+    tools: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                tools.append(item.strip())
+    set_approval_bypass_override(tools)
+    if tools:
+        logger.info("settings.hydrate.approval", bypass_tools=tools)
+    return tools
+
+
+# ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
 
@@ -133,4 +166,5 @@ def hydrate_all(store: Any) -> dict[str, list[str]]:
     return {
         "llm_providers": hydrate_llm_providers_env(store),
         "channels": hydrate_channels_env(store),
+        "approval": hydrate_approval(store),
     }

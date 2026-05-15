@@ -28,10 +28,12 @@ from taskforce.api.dependencies import (
 )
 from taskforce.api.errors import http_exception as _http_exception
 from taskforce.application.settings_hydrator import (
+    hydrate_approval,
     hydrate_channels_env,
     hydrate_llm_providers_env,
 )
 from taskforce.core.domain.settings import (
+    APPROVAL,
     CHANNELS,
     KNOWN_SECTIONS,
     LLM_PROVIDERS,
@@ -62,6 +64,8 @@ def _rehydrate_for_section(section: str, store) -> None:
 
         get_gateway_components.cache_clear()
         get_gateway.cache_clear()
+    elif section == APPROVAL:
+        hydrate_approval(store)
 
 
 # ---------------------------------------------------------------------------

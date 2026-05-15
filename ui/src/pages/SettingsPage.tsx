@@ -8,6 +8,7 @@ import { useSettings } from "@/lib/settings";
 import LLMProvidersTab from "@/features/settings/LLMProvidersTab";
 import ChannelsTab from "@/features/settings/ChannelsTab";
 import AgentVisibilityTab from "@/features/settings/AgentVisibilityTab";
+import ApprovalsTab from "@/features/settings/ApprovalsTab";
 import IntegrationsTab from "@/features/settings/IntegrationsTab";
 
 function GeneralTab() {
@@ -102,6 +103,7 @@ const TABS: Array<{ value: string; label: string; render: () => JSX.Element }> =
   { value: "llm", label: "LLM Providers", render: () => <LLMProvidersTab /> },
   { value: "channels", label: "Channels", render: () => <ChannelsTab /> },
   { value: "agents", label: "Agents", render: () => <AgentVisibilityTab /> },
+  { value: "approvals", label: "Approvals", render: () => <ApprovalsTab /> },
   { value: "integrations", label: "Integrations", render: () => <IntegrationsTab /> },
 ];
 

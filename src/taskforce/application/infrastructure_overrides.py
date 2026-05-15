@@ -75,6 +75,11 @@ _webhook_workflow_resolver: Callable[[str], Awaitable[str | None]] | None = None
 _cross_tenant_acp_authorizer: Callable[[str, str, Any], bool] | None = None
 _mission_lifecycle_hook: Any | None = None
 _approval_service: Any | None = None
+# Tenant-level approval bypass list. Tool short-names listed here skip the
+# ApprovalServiceProtocol gate (in addition to per-agent ``agent.approval_bypass_tools``
+# from profile YAML). Hydrated from the ``approval`` settings section on startup
+# and after every PUT/DELETE on that section. See ``application.settings_hydrator``.
+_approval_bypass_override: frozenset[str] = frozenset()
 # Issue #196 — per-user override hooks for stores that were previously
 # hard-wired to ``<work_dir>/...`` flat paths. Enterprise plugins use
 # these seams to route writes per-(tenant, user) so no per-user data
@@ -833,6 +838,26 @@ def get_approval_service() -> Any | None:
     return _approval_service
 
 
+def set_approval_bypass_override(tools: list[str] | None) -> None:
+    """Install (or clear) the tenant-level approval bypass list.
+
+    Tool short-names in this list skip the ApprovalServiceProtocol gate
+    (in addition to per-agent ``agent.approval_bypass_tools`` from
+    profile YAML). The two sources combine via UNION inside the gate.
+
+    Called by ``application.settings_hydrator.hydrate_approval`` on
+    startup and after every PUT/DELETE on the ``approval`` settings
+    section. Pass ``None`` or an empty list to clear.
+    """
+    global _approval_bypass_override
+    _approval_bypass_override = frozenset(tools or ())
+
+
+def get_approval_bypass_override() -> frozenset[str]:
+    """Return the current tenant-level bypass list (empty when unset)."""
+    return _approval_bypass_override
+
+
 def warn_if_multi_tenant_without_sandbox() -> bool:
     """Emit a hard one-shot warning when multi-tenant runs without a sandbox.
 
@@ -907,6 +932,7 @@ def clear_infrastructure_overrides() -> None:
     global _cross_tenant_acp_authorizer
     global _mission_lifecycle_hook
     global _approval_service
+    global _approval_bypass_override
     global _experience_store_override
     global _standing_goal_store_override
     global _runtime_checkpoint_store_override
@@ -941,6 +967,7 @@ def clear_infrastructure_overrides() -> None:
     _cross_tenant_acp_authorizer = None
     _mission_lifecycle_hook = None
     _approval_service = None
+    _approval_bypass_override = frozenset()
     _experience_store_override = None
     _standing_goal_store_override = None
     _runtime_checkpoint_store_override = None

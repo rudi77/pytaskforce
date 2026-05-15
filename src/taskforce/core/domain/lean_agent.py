@@ -105,6 +105,7 @@ class Agent:
         tool_result_store_threshold: int | None = None,
         tool_message_max_chars: int | None = None,
         assistant_message_max_chars: int | None = None,
+        approval_bypass_tools: list[str] | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -164,6 +165,16 @@ class Agent:
             tool_result_store_threshold
             if tool_result_store_threshold is not None
             else self.TOOL_RESULT_STORE_THRESHOLD
+        )
+
+        # Profile-level approval bypass: tool short-names listed here
+        # skip the ApprovalServiceProtocol gate even when their
+        # ``requires_approval`` is True. Use for trusted single-user
+        # workflows (local dev, scheduled butler runs) where a tool's
+        # default HIGH risk level is overkill. The existing
+        # ``auto_approve_for_origins`` trigger-origin path is unchanged.
+        self._approval_bypass_tools: frozenset[str] = frozenset(
+            approval_bypass_tools or ()
         )
 
         # Context pack configuration (Story 9.2)
@@ -673,6 +684,31 @@ class Agent:
         if tool is None:
             return None
         if not getattr(tool, "requires_approval", False):
+            return None
+
+        # Two-source bypass:
+        #   1. Per-agent profile YAML (``agent.approval_bypass_tools``)
+        #   2. Tenant-level settings store (``approval`` section), UI-edited
+        # UNION semantics: a tool short-name in EITHER set skips the gate.
+        # ``getattr`` tolerates stubs / tests that don't construct the
+        # full Agent. The tenant-level override is read here (not cached
+        # at __init__) so UI edits take effect on the next tool call.
+        profile_bypass = getattr(self, "_approval_bypass_tools", frozenset())
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_bypass_override,
+        )
+
+        tenant_bypass = get_approval_bypass_override()
+        if tool_name in profile_bypass or tool_name in tenant_bypass:
+            self.logger.info(
+                "tool.approval.bypassed_by_profile",
+                tool_name=tool_name,
+                reason=(
+                    "profile_approval_bypass_list"
+                    if tool_name in profile_bypass
+                    else "tenant_approval_bypass_settings"
+                ),
+            )
             return None
 
         from taskforce.application.infrastructure_overrides import (
