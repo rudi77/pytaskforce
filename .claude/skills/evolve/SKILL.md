@@ -163,9 +163,20 @@ Do NOT summarize or interpret. Return the raw JSON string only.
 
 Collect all 9 JSON results. Compute median of primary metric per variant.
 
-### Step 6: JUDGE — Compare Medians
+### Step 6: JUDGE
 
-Present comparison table:
+First classify the objective's primary metric — this decides how you judge:
+
+- **Continuous** (`token_efficiency` → `avg_input_tokens`, `wall_time` →
+  `avg_wall_seconds`, `step_reduction` → `avg_steps`): judge on the aggregate
+  median.
+- **Discrete-aggregate** (`memory_recall`, `answer_quality` — a mean over N
+  pass/fail missions): the aggregate median has a noise floor of ±(1/N) and
+  washes out real per-mission effects. Judge **per-mission pass-rate** instead.
+
+#### Continuous objectives — aggregate median
+
+Present:
 ```
 | | Baseline | A | B | C |
 |---|---|---|---|---|
@@ -174,13 +185,43 @@ Present comparison table:
 | task_completion (min) | ... | ... | ... | ... |
 | Δ primary vs baseline | — | ...% | ...% | ...% |
 ```
+Winner rules:
+1. `task_completion` >= baseline (no completion regression).
+2. Primary median improves >= 5% over baseline median.
+3. Tie on primary → the secondary metric decides.
+4. No variant >= 5% → NO WINNER.
 
-**Winner selection rules:**
-1. `task_completion` must be >= baseline (no regression on completions)
-2. Primary metric must improve by >= 5% over baseline median
-3. If tie on primary, use secondary metric
-4. If multiple variants improve different files → RECOMBINE (merge all)
-5. If no variant improves >= 5% → NO WINNER, try different mutations next cycle
+#### Discrete-aggregate objectives — per-mission pass-rate
+
+Present the per-mission pass-rate (passes / runs) for baseline and every variant:
+```
+| Mission | Baseline | A | B | C |
+|---------|----------|----|----|----|
+| mission_1 | 0/3 | 2/3 | 0/3 | 1/3 |
+| mission_2 | 3/3 | 3/3 | 3/3 | 3/3 |
+| ...       |     |     |     |     |
+```
+Winner rules:
+1. `task_completion` >= baseline.
+2. A variant **wins** if it lifts at least one mission from a low baseline
+   pass-rate (<=1/3) to a high pass-rate (3/3, or >=2/3 when baseline was 0/3)
+   **AND** regresses no other mission below its baseline pass-rate.
+3. A consistently-failing mission (0/3 baseline) that stays 0/3 under every
+   variant is NOT a win for anyone — surface it as a likely non-prompt-fixable
+   gap (board item) and stop spending variants on it.
+4. The aggregate median moving <5% does **not** disqualify a per-mission
+   winner — that is exactly the signal the aggregate median hides.
+
+#### Both objective types
+
+5. **Recombine**: if variants improve *different* missions/metrics with no
+   mutual regression → apply all winning mutations to one worktree and
+   re-evaluate (n=3). Recombination can *dilute* (combined prompt changes
+   interfere) — it is only a winner if the re-measured result holds. Never
+   assume it stacks.
+6. If nothing improves under the rules above → NO WINNER. Log the full
+   per-mission table to `evolve_log.jsonl` and try different mutations — or a
+   different objective — next cycle.
 
 ### Step 7: REGRESSION GATE + MERGE + CLEANUP
 
