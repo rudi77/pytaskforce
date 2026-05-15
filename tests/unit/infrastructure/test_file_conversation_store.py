@@ -100,3 +100,26 @@ class TestFileConversationStore:
         # Same sender gets same conversation.
         id_a2 = await store.get_or_create("telegram", sender_id="user_a")
         assert id_a == id_a2
+
+    async def test_replace_messages_overwrites_log_and_updates_count(self, store):
+        conv_id = await store.get_or_create("cli")
+        # Seed with 5 messages.
+        for i in range(5):
+            await store.append_message(
+                conv_id, {"role": "user", "content": f"msg-{i}"}
+            )
+        # Replace with 2 messages (simulates compact: 1 summary + 1 kept).
+        new_log = [
+            {"role": "system", "content": "[summary] earlier turns…"},
+            {"role": "user", "content": "msg-4"},
+        ]
+        await store.replace_messages(conv_id, new_log)
+
+        # On-disk log fully replaced.
+        loaded = await store.get_messages(conv_id)
+        assert loaded == new_log
+
+        # Index metadata reflects the new count.
+        active = await store.list_active()
+        conv = next(c for c in active if c.conversation_id == conv_id)
+        assert conv.message_count == 2

@@ -564,6 +564,41 @@ export function useArchiveConversation() {
   });
 }
 
+export interface CompactConversationResult {
+  status: "compacted" | "skipped";
+  summarized?: number;
+  kept?: number;
+  summary_preview?: string | null;
+  reason?: string | null;
+  messages?: number | null;
+}
+
+export function useCompactConversation() {
+  const qc = useQueryClient();
+  return useMutation<
+    CompactConversationResult,
+    Error,
+    { id: string; keepLastN?: number }
+  >({
+    mutationFn: ({ id, keepLastN }) =>
+      apiFetch<CompactConversationResult>(
+        `/api/v1/conversations/${encodeURIComponent(id)}/compact`,
+        {
+          method: "POST",
+          body: { keep_last_n: keepLastN ?? 4 },
+        },
+      ),
+    onSuccess: (_data, variables) => {
+      // Invalidate both the message log and the conversation list so the
+      // sidebar's message_count refreshes too.
+      qc.invalidateQueries({
+        queryKey: queryKeys.conversationMessages(variables.id),
+      });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+  });
+}
+
 export interface TokenUsageBucket {
   bucket: string;
   prompt_tokens: number;

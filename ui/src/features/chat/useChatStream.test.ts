@@ -182,6 +182,160 @@ describe("useChatStream — server-side cancellation (Cowork-parity Phase 1)", (
     await waitFor(() => expect(result.current.isStreaming).toBe(false));
   });
 
+  it("captures ask_user events into state.pendingAskUser (chat-side)", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "schedule a meeting",
+      attachments: [],
+    });
+
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "ask_user",
+        details: {
+          question: "Which day works for you?",
+          missing: ["date"],
+        },
+      }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.pendingAskUser).not.toBeNull();
+    });
+    expect(result.current.state.pendingAskUser).toEqual({
+      question: "Which day works for you?",
+      missing: ["date"],
+      channel: null,
+      recipientId: null,
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
+  it("captures channel routing fields when the question targets a channel", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "ping the user",
+      attachments: [],
+    });
+
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "ask_user",
+        details: {
+          question: "Approve the wire transfer?",
+          missing: [],
+          channel: "telegram",
+          recipient_id: "u-42",
+        },
+      }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.pendingAskUser?.channel).toBe("telegram");
+    });
+    expect(result.current.state.pendingAskUser?.recipientId).toBe("u-42");
+
+    stream.close();
+    await sendPromise;
+  });
+
+  it("clears pendingAskUser on the next send() (the answer is the next message)", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const firstSend = result.current.send({
+      conversationId: "conv-1",
+      message: "kick off",
+      attachments: [],
+    });
+
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "ask_user",
+        details: { question: "Confirm?", missing: [] },
+      }),
+    });
+    await waitFor(() => {
+      expect(result.current.state.pendingAskUser?.question).toBe("Confirm?");
+    });
+    stream.close();
+    await firstSend;
+
+    // Replace the stream mock for the resume call.
+    const stream2 = createControllableStream();
+    sseStreamMock.mockReturnValue(stream2.iterable);
+
+    const secondSend = result.current.send({
+      conversationId: "conv-1",
+      message: "yes",
+      attachments: [],
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.pendingAskUser).toBeNull();
+    });
+
+    stream2.close();
+    await secondSend;
+  });
+
+  it("ignores ask_user events with no question and no missing fields", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValue(stream.iterable);
+
+    const { result } = renderHook(() => useChatStream());
+
+    const sendPromise = result.current.send({
+      conversationId: "conv-1",
+      message: "hi",
+      attachments: [],
+    });
+
+    // Defensive: a malformed event with empty payload shouldn't render a
+    // blank prompt card to the user.
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "ask_user",
+        details: { question: "", missing: [] },
+      }),
+    });
+
+    // Give the loop a tick to process.
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "llm_token",
+        details: { token: "ok" },
+      }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.text).toBe("ok");
+    });
+    expect(result.current.state.pendingAskUser).toBeNull();
+
+    stream.close();
+    await sendPromise;
+  });
+
   it("cancel() swallows a 404 from the cancel endpoint (stale session)", async () => {
     const stream = createControllableStream();
     sseStreamMock.mockReturnValue(stream.iterable);

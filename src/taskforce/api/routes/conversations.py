@@ -558,3 +558,176 @@ async def fork_conversation(
         source_id=conversation_id,
         messages_copied=copied,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compact (Cowork-style /compact)
+# ---------------------------------------------------------------------------
+
+
+class CompactRequest(BaseModel):
+    """Body for ``POST /conversations/{id}/compact``."""
+
+    keep_last_n: int = Field(
+        default=4,
+        ge=0,
+        le=50,
+        description=(
+            "Number of trailing messages to keep verbatim. Earlier messages "
+            "are summarized into a single ``role=system`` summary message "
+            "prepended to the kept tail. Defaults to 4."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "Optional model alias for the summarization call (e.g. ``fast``). "
+            "Falls back to the LLM router's default routing for the "
+            "``summarizing`` phase hint."
+        ),
+    )
+
+
+class CompactResponse(BaseModel):
+    """Result of a compact operation."""
+
+    status: str = Field(
+        ..., description="``compacted`` or ``skipped`` (see ``reason``)."
+    )
+    summarized: int = Field(
+        default=0,
+        description="Number of messages folded into the summary.",
+    )
+    kept: int = Field(default=0, description="Number of messages kept verbatim.")
+    summary_preview: str | None = Field(
+        default=None,
+        description="First 200 chars of the generated summary (debug aid).",
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Populated when ``status=skipped`` (e.g. ``below_threshold``).",
+    )
+    messages: int | None = Field(
+        default=None,
+        description="Total message count when skipped.",
+    )
+
+
+def _build_default_llm_provider() -> Any:
+    """Build a transient LLM provider for the summarization call.
+
+    Mirrors what ``InfrastructureBuilder.build_llm_provider`` does inside the
+    main agent factory but without instantiating a full agent — we only need
+    the ``complete`` surface here.
+    """
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+    return InfrastructureBuilder().build_llm_provider({"llm": {}})
+
+
+async def _llm_summarizer(
+    messages: list[dict[str, Any]],
+    llm_provider: Any,
+    model: str | None,
+    system_prompt: str,
+) -> str:
+    """Format the transcript and ask the LLM for a compact summary."""
+    transcript = _format_transcript_for_summary(messages)
+    result = await llm_provider.complete(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": transcript},
+        ],
+        # ``summarizing`` is the canonical phase hint that the LLM router
+        # uses to pick a fast/cheap model when routing rules are configured.
+        model=model or "summarizing",
+    )
+    if not result.get("success"):
+        err = result.get("error") or "unknown error"
+        raise RuntimeError(f"LLM summarization failed: {err}")
+    content = result.get("content") or ""
+    if not isinstance(content, str):
+        content = str(content)
+    return content
+
+
+def _format_transcript_for_summary(messages: list[dict[str, Any]]) -> str:
+    """Render a role-tagged transcript that fits in a single user turn.
+
+    Each line is capped at 4000 chars to keep extreme tool outputs from
+    blowing the summarizer's context. Truncation is marked explicitly so
+    the LLM doesn't treat it as the end of a turn.
+    """
+    lines: list[str] = []
+    for m in messages:
+        role = m.get("role", "?")
+        content = m.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(str(p) for p in content)
+        if not isinstance(content, str):
+            content = str(content)
+        if len(content) > 4000:
+            content = content[:4000] + " …[truncated]"
+        lines.append(f"[{role}] {content}")
+    return "\n\n".join(lines)
+
+
+@router.post(
+    "/{conversation_id}/compact",
+    response_model=CompactResponse,
+    summary="Compact a conversation by summarizing earlier messages",
+    responses={
+        404: {"model": ErrorResponse, "description": "Conversation not found."},
+    },
+)
+async def compact_conversation(
+    conversation_id: str,
+    request: CompactRequest | None = None,
+    manager=Depends(get_conversation_manager),
+) -> CompactResponse:
+    """Compact the conversation: summarize earlier turns into a single
+    ``role=system`` message while keeping the last N messages verbatim.
+
+    Cowork-style ``/compact``: lets the user keep working in the same
+    conversation_id without context-window pressure. The original messages
+    are NOT recoverable after this operation — clients should warn before
+    invoking it (or fork first).
+    """
+    body = request or CompactRequest()
+
+    # Confirm the conversation exists; otherwise summarizing an empty
+    # transcript is wasted work and the user gets a clearer error.
+    existing = await manager.get_messages(conversation_id)
+    if existing is None or (not existing and not await _conversation_exists(manager, conversation_id)):
+        raise _error_response(
+            status_code=404,
+            code="conversation_not_found",
+            message=f"No conversation with id {conversation_id!r}.",
+            details={"conversation_id": conversation_id},
+        )
+
+    llm_provider = _build_default_llm_provider()
+
+    async def summarizer(msgs: list[dict[str, Any]]) -> str:
+        return await _llm_summarizer(
+            msgs,
+            llm_provider=llm_provider,
+            model=body.model,
+            system_prompt=manager._COMPACT_SYSTEM_PROMPT,  # noqa: SLF001
+        )
+
+    result = await manager.compact(
+        conversation_id,
+        summarizer,
+        keep_last_n=body.keep_last_n,
+    )
+    return CompactResponse(**result)
+
+
+async def _conversation_exists(manager: Any, conversation_id: str) -> bool:
+    """Cheap existence check: scan the active list for the id."""
+    try:
+        active = await manager.list_active()
+    except Exception:  # noqa: BLE001 — defensive
+        return False
+    return any(c.conversation_id == conversation_id for c in active)

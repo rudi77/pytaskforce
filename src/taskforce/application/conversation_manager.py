@@ -93,6 +93,109 @@ class ConversationManager:
         """Archive a conversation with an optional summary."""
         await self._store.archive(conversation_id, summary)
 
+    async def replace_messages(
+        self,
+        conversation_id: str,
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Replace the full message log (used by ``compact``)."""
+        await self._store.replace_messages(conversation_id, messages)
+
+    # ------------------------------------------------------------------
+    # Compaction
+    # ------------------------------------------------------------------
+
+    _COMPACT_SYSTEM_PROMPT = (
+        "You are a precise conversation summarizer. The user gives you a "
+        "transcript of an in-flight assistant conversation tagged with role "
+        "labels ([user], [assistant], [tool], [system]). Produce a compact "
+        "summary that another AI assistant could use to continue the work "
+        "WITHOUT seeing the original messages. Preserve: the user's goals, "
+        "key decisions made, intermediate findings, open questions, file "
+        "paths or identifiers that were referenced, and any constraints. "
+        "Drop pleasantries and verbose tool output. Aim for under 800 tokens. "
+        "Reply with the summary only — no preamble, no headers."
+    )
+
+    async def compact(
+        self,
+        conversation_id: str,
+        summarizer: Any,
+        *,
+        keep_last_n: int = 4,
+    ) -> dict[str, Any]:
+        """Replace older messages with a single LLM-generated summary.
+
+        Mirrors Cowork's ``/compact`` slash-command behaviour: compresses the
+        long tail of a conversation so the agent can keep working in the
+        same conversation_id without context-window pressure.
+
+        Args:
+            conversation_id: Target conversation.
+            summarizer: Async callable ``(messages: list[dict]) -> str`` that
+                produces the summary text. Decoupled from any specific LLM
+                provider so the manager stays infrastructure-agnostic and
+                tests can pass a fake.
+            keep_last_n: Number of trailing messages to keep verbatim. The
+                rest are summarized into a single ``role="system"`` message
+                prepended to the kept tail. Defaults to 4 (typical: last
+                user/assistant pair × 2).
+
+        Returns:
+            Status dict:
+                ``{"status": "compacted", "summarized": N, "kept": M,
+                   "summary_preview": "..."}``
+            or ``{"status": "skipped", "reason": "...", "messages": N}``
+            when there's not enough to compress meaningfully.
+        """
+        messages = await self._store.get_messages(conversation_id)
+        # +1 because the summary itself takes one slot — compacting a
+        # conversation that's already only keep_last_n long is a no-op.
+        if len(messages) <= keep_last_n + 1:
+            return {
+                "status": "skipped",
+                "reason": "below_threshold",
+                "messages": len(messages),
+            }
+
+        if keep_last_n > 0:
+            to_summarize = messages[:-keep_last_n]
+            kept = messages[-keep_last_n:]
+        else:
+            to_summarize = list(messages)
+            kept = []
+
+        summary_text = await summarizer(to_summarize)
+        if not isinstance(summary_text, str) or not summary_text.strip():
+            raise RuntimeError(
+                "Summarizer returned empty content; refusing to compact "
+                "(would silently destroy conversation history)."
+            )
+
+        summary_message: dict[str, Any] = {
+            "role": "system",
+            "content": (
+                f"[Compacted summary of {len(to_summarize)} earlier messages]"
+                f"\n\n{summary_text.strip()}"
+            ),
+        }
+        new_messages: list[dict[str, Any]] = [summary_message, *kept]
+        await self._store.replace_messages(conversation_id, new_messages)
+
+        logger.info(
+            "conversation.compacted",
+            conversation_id=conversation_id,
+            summarized=len(to_summarize),
+            kept=len(kept),
+            summary_chars=len(summary_text),
+        )
+        return {
+            "status": "compacted",
+            "summarized": len(to_summarize),
+            "kept": len(kept),
+            "summary_preview": summary_text.strip()[:200],
+        }
+
     # Volatile per-message fields that the store fills in on append; these
     # must not be transferred to the forked conversation because they refer
     # to the source conversation's storage layout.

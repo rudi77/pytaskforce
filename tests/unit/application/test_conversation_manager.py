@@ -135,3 +135,114 @@ class TestConversationManager:
         await manager.get_or_create("cli")
 
         mock_store.archive.assert_not_called()
+
+
+class TestConversationManagerCompact:
+    """Tests for the Cowork-style ``/compact`` operation."""
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.replace_messages = AsyncMock()
+        return store
+
+    @pytest.fixture
+    def manager(self, mock_store):
+        return ConversationManager(mock_store)
+
+    async def test_compact_skips_when_below_threshold(self, manager, mock_store):
+        # 4 kept + 1 summary slot = 5 messages minimum to compact; 4 messages
+        # is too few — must skip without calling the summarizer.
+        mock_store.get_messages = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+                {"role": "user", "content": "again"},
+                {"role": "assistant", "content": "yes"},
+            ]
+        )
+        summarizer = AsyncMock()
+
+        result = await manager.compact("conv-1", summarizer, keep_last_n=4)
+
+        assert result["status"] == "skipped"
+        assert result["reason"] == "below_threshold"
+        assert result["messages"] == 4
+        summarizer.assert_not_awaited()
+        mock_store.replace_messages.assert_not_awaited()
+
+    async def test_compact_summarizes_and_replaces(self, manager, mock_store):
+        # 10 messages, keep last 4 → summarize the first 6.
+        original = [
+            {"role": "user", "content": f"msg {i}"} for i in range(10)
+        ]
+        mock_store.get_messages = AsyncMock(return_value=original)
+
+        async def fake_summary(msgs):
+            assert len(msgs) == 6
+            return "concise summary of the early back-and-forth"
+
+        result = await manager.compact("conv-1", fake_summary, keep_last_n=4)
+
+        assert result["status"] == "compacted"
+        assert result["summarized"] == 6
+        assert result["kept"] == 4
+        assert "concise summary" in result["summary_preview"]
+
+        # Store was rewritten with [summary, ...last_4_originals].
+        mock_store.replace_messages.assert_awaited_once()
+        _conv_id, new_messages = mock_store.replace_messages.await_args.args
+        assert _conv_id == "conv-1"
+        assert len(new_messages) == 5  # 1 summary + 4 kept
+        assert new_messages[0]["role"] == "system"
+        assert "Compacted summary of 6 earlier messages" in new_messages[0]["content"]
+        assert "concise summary" in new_messages[0]["content"]
+        # Tail messages preserved verbatim, in order.
+        assert [m["content"] for m in new_messages[1:]] == [
+            "msg 6",
+            "msg 7",
+            "msg 8",
+            "msg 9",
+        ]
+
+    async def test_compact_with_keep_last_n_zero_summarizes_everything(
+        self, manager, mock_store
+    ):
+        original = [{"role": "user", "content": f"m{i}"} for i in range(8)]
+        mock_store.get_messages = AsyncMock(return_value=original)
+
+        async def fake_summary(msgs):
+            assert len(msgs) == 8
+            return "all of it"
+
+        result = await manager.compact("conv-1", fake_summary, keep_last_n=0)
+
+        assert result["status"] == "compacted"
+        assert result["summarized"] == 8
+        assert result["kept"] == 0
+
+        _conv_id, new_messages = mock_store.replace_messages.await_args.args
+        assert len(new_messages) == 1  # just the summary
+        assert "all of it" in new_messages[0]["content"]
+
+    async def test_compact_refuses_empty_summary(self, manager, mock_store):
+        # Defence against silently destroying history when the LLM call
+        # returns nothing usable.
+        mock_store.get_messages = AsyncMock(
+            return_value=[{"role": "user", "content": str(i)} for i in range(10)]
+        )
+
+        async def empty_summary(_msgs):
+            return "   "  # whitespace only
+
+        with pytest.raises(RuntimeError, match="empty content"):
+            await manager.compact("conv-1", empty_summary, keep_last_n=4)
+        mock_store.replace_messages.assert_not_awaited()
+
+    async def test_replace_messages_delegates(self, manager, mock_store):
+        await manager.replace_messages(
+            "conv-1", [{"role": "system", "content": "x"}]
+        )
+        mock_store.replace_messages.assert_awaited_once_with(
+            "conv-1", [{"role": "system", "content": "x"}]
+        )

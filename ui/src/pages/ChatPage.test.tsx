@@ -39,7 +39,13 @@ vi.mock("@/features/chat/ChatComposer", () => ({
 vi.mock("@/features/chat/useChatStream", () => ({
   useChatStream: () => ({
     isStreaming: false,
-    state: { text: "", toolCalls: [], completed: false, sessionId: null },
+    state: {
+      text: "",
+      toolCalls: [],
+      completed: false,
+      sessionId: null,
+      pendingAskUser: null,
+    },
     error: null,
     reset: vi.fn(),
     cancel: vi.fn(),
@@ -62,6 +68,7 @@ vi.mock("@/api/queries", async () => {
     useCreateConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useArchiveConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useForkConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCompactConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 

@@ -16,6 +16,19 @@ export interface ToolCallView {
   sourceAgent?: string | null;
 }
 
+export interface PendingAskUser {
+  question: string;
+  /** Hint listing the structured fields the agent still needs (free-form
+   *  strings — typically short labels like ``["start_date", "end_date"]``).
+   *  Empty when the agent just wants a freeform reply. */
+  missing: string[];
+  /** When set, the question is being routed to a specific channel (e.g.
+   *  Telegram) rather than the chat UI; the chat-side prompt should make
+   *  that explicit so the user doesn't think they need to answer here. */
+  channel?: string | null;
+  recipientId?: string | null;
+}
+
 export interface AssistantStreamState {
   text: string;
   toolCalls: ToolCallView[];
@@ -23,6 +36,10 @@ export interface AssistantStreamState {
   /** Server-side session id, captured from the ``started`` SSE event. Needed
    *  for cooperative interruption via ``POST /api/v1/execute/{id}/cancel``. */
   sessionId: string | null;
+  /** Populated by an ``ask_user`` event. Persists across stream-end so the
+   *  prompt UI stays visible while the agent is paused waiting for input.
+   *  Cleared when the user sends the next message. */
+  pendingAskUser: PendingAskUser | null;
 }
 
 interface SseEnvelope {
@@ -44,6 +61,7 @@ const EMPTY_STATE: AssistantStreamState = {
   toolCalls: [],
   completed: false,
   sessionId: null,
+  pendingAskUser: null,
 };
 
 export function useChatStream() {
@@ -63,7 +81,16 @@ export function useChatStream() {
       abortRef.current = controller;
       sessionIdRef.current = null;
       setError(null);
-      setState({ text: "", toolCalls: [], completed: false, sessionId: null });
+      // Note: pendingAskUser intentionally clears on every send because the
+      // user's new message *is* the answer to the previous question. The
+      // executor will resume saved state from that message.
+      setState({
+        text: "",
+        toolCalls: [],
+        completed: false,
+        sessionId: null,
+        pendingAskUser: null,
+      });
       setIsStreaming(true);
 
       try {
@@ -197,6 +224,30 @@ function handleEvent(
       const finalText = (typeof details.content === "string" && details.content) || payload.message;
       if (typeof finalText === "string" && finalText.length > 0) {
         setState((prev) => ({ ...prev, text: finalText }));
+      }
+      break;
+    }
+    case "ask_user": {
+      const question = typeof details.question === "string" ? details.question : "";
+      const missingRaw = Array.isArray(details.missing) ? details.missing : [];
+      const missing = missingRaw.filter(
+        (m): m is string => typeof m === "string" && m.length > 0,
+      );
+      const channel =
+        typeof details.channel === "string" && details.channel.length > 0
+          ? details.channel
+          : null;
+      const recipientId =
+        typeof details.recipient_id === "string" && details.recipient_id.length > 0
+          ? details.recipient_id
+          : null;
+      // Only surface a prompt when there's *something* to show; otherwise
+      // the agent's intent is unclear and a blank card looks broken.
+      if (question || missing.length > 0) {
+        setState((prev) => ({
+          ...prev,
+          pendingAskUser: { question, missing, channel, recipientId },
+        }));
       }
       break;
     }

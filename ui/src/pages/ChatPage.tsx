@@ -8,6 +8,7 @@ import {
   Hash,
   MessageSquare,
   MessageSquarePlus,
+  Minimize2,
   PanelLeft,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -29,6 +30,7 @@ import {
   useAgents,
   useArchiveConversation,
   useArchivedConversations,
+  useCompactConversation,
   useConversationMessages,
   useConversations,
   useCreateConversation,
@@ -39,6 +41,7 @@ import {
   type FileMetadata,
 } from "@/api/queries";
 import { ApiError } from "@/api/client";
+import { AskUserCard } from "@/features/chat/AskUserCard";
 import { ChatComposer } from "@/features/chat/ChatComposer";
 import { MessageBubble } from "@/features/chat/MessageView";
 import { useChatStream } from "@/features/chat/useChatStream";
@@ -296,8 +299,10 @@ interface ChatHeaderProps {
   isStreaming: boolean;
   onArchive: () => void;
   onFork: () => void;
+  onCompact: () => void;
   archivePending: boolean;
   forkPending: boolean;
+  compactPending: boolean;
   onOpenSidebar: () => void;
   viewMode: ChatViewMode;
   onViewModeChange: (mode: ChatViewMode) => void;
@@ -313,8 +318,10 @@ function ChatHeader({
   isStreaming,
   onArchive,
   onFork,
+  onCompact,
   archivePending,
   forkPending,
+  compactPending,
   onOpenSidebar,
   viewMode,
   onViewModeChange,
@@ -366,6 +373,18 @@ function ChatHeader({
             disabled={isStreaming}
           />
           <ViewModePicker value={viewMode} onChange={onViewModeChange} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCompact}
+            disabled={compactPending || isStreaming}
+            title="Summarize earlier messages to reclaim context window space"
+          >
+            <Minimize2 className="h-4 w-4" />
+            <span className="hidden lg:inline">
+              {compactPending ? "Compacting…" : "Compact"}
+            </span>
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -552,6 +571,7 @@ export default function ChatPage() {
   const messagesQuery = useConversationMessages(conversationId);
   const archive = useArchiveConversation();
   const fork = useForkConversation();
+  const compact = useCompactConversation();
   const stream = useChatStream();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -623,6 +643,40 @@ export default function ChatPage() {
     await archive.mutateAsync({ id: conversationId });
   };
 
+  const onCompact = async () => {
+    if (!conversationId) return;
+    // Destructive (the original messages can't be recovered) — confirm
+    // explicitly. Cowork-style /compact has the same one-way semantics.
+    if (
+      !window.confirm(
+        "Compact this conversation? Earlier messages will be replaced " +
+          "by an LLM-generated summary. This cannot be undone — fork " +
+          "first if you want to keep the original.",
+      )
+    )
+      return;
+    try {
+      const result = await compact.mutateAsync({ id: conversationId });
+      if (result.status === "compacted") {
+        toast.success(
+          "Conversation compacted",
+          `${result.summarized ?? 0} messages folded into a summary; ${
+            result.kept ?? 0
+          } kept verbatim.`,
+        );
+      } else {
+        toast.info(
+          "Nothing to compact",
+          `Conversation has only ${result.messages ?? 0} messages — below the threshold.`,
+        );
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not compact conversation.";
+      toast.error("Compact failed", message);
+    }
+  };
+
   const onFork = async () => {
     if (!conversationId) return;
     try {
@@ -674,8 +728,10 @@ export default function ChatPage() {
             isStreaming={isStreaming}
             onArchive={onArchive}
             onFork={onFork}
+            onCompact={onCompact}
             archivePending={archive.isPending}
             forkPending={fork.isPending}
+            compactPending={compact.isPending}
             onOpenSidebar={() => setSidebarOpen(true)}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -711,6 +767,15 @@ export default function ChatPage() {
                   <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
                     {stream.error}
                   </p>
+                ) : null}
+                {stream.state.pendingAskUser ? (
+                  <div className="border-t border-border bg-card/60 px-3 pt-3">
+                    <AskUserCard
+                      prompt={stream.state.pendingAskUser}
+                      onAnswer={(answer) => void onSend(answer, [])}
+                      disabled={isStreaming}
+                    />
+                  </div>
                 ) : null}
                 <div className="border-t border-border bg-card/60 p-3">
                   <ChatComposer
