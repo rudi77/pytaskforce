@@ -1,13 +1,28 @@
-"""Wiki context loader for automatic index injection at session start.
+"""Wiki context loader for optional index injection at session start.
 
-Replaces ``MemoryContextLoader``.  Loads the wiki index (always small)
+Replaces ``MemoryContextLoader``.  When enabled, loads the wiki index
 and optionally the top-N pages matching the current mission, then
 returns a system-prompt section that tells the agent what pages exist
 and hints at which are most relevant.
 
-The agent fetches page bodies on demand via ``wiki(action=read_page)``
-— we deliberately do not inject full page content to keep the prompt
-small and force the agent to consult the wiki actively.
+**Auto-injection is OFF by default** (issue #275). Wiki page names and
+top-K body snippets used to land in every LLM call's system prompt,
+which trips Azure / OpenAI content filters once the wiki accumulates
+customer / invoice / PII-adjacent data — and the filter recovery in
+ADR-025 cannot strip system-prompt content. Profiles that want the
+old behaviour can re-enable it explicitly via ``wiki.context_injection``.
+
+Two recommended replacement paths:
+
+1. **On-demand lookup** — the agent calls ``wiki(action=search)`` /
+   ``wiki(action=read_page)`` itself when it needs prior context. The
+   tool description (see :mod:`wiki_tool`) already tells the agent to
+   search at the start of a new topic.
+2. **Memory sub-agent** — wire the ``memory_specialist`` sub-agent
+   (``agents/butler/configs/custom/memory_specialist.yaml``) and let
+   the master delegate recall queries to it. The specialist returns a
+   structured JSON payload so raw page bodies never enter the master's
+   context.
 """
 
 from __future__ import annotations
@@ -22,18 +37,23 @@ from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
 
 @dataclass
 class WikiContextConfig:
-    """Configuration for wiki context injection."""
+    """Configuration for wiki context injection.
+
+    Defaults are conservative (no auto-injection) — see module docstring
+    for the rationale. Profiles that need backward-compatible behaviour
+    set ``top_k_relevant`` and/or ``include_index`` explicitly.
+    """
 
     max_total_chars: int = 2000
-    top_k_relevant: int = 5
-    include_index: bool = True
+    top_k_relevant: int = 0
+    include_index: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WikiContextConfig:
         return cls(
             max_total_chars=int(data.get("max_total_chars", 2000)),
-            top_k_relevant=int(data.get("top_k_relevant", 5)),
-            include_index=bool(data.get("include_index", True)),
+            top_k_relevant=int(data.get("top_k_relevant", 0)),
+            include_index=bool(data.get("include_index", False)),
         )
 
 
@@ -58,8 +78,10 @@ class WikiContextLoader:
             if index_text:
                 sections.append(index_text)
 
-        if mission:
-            relevant = await self._store.search(mission, limit=max(1, self._config.top_k_relevant))
+        # ``top_k_relevant == 0`` means "do not include relevant-page
+        # hooks at all" — must not silently coerce to 1 (issue #275).
+        if mission and self._config.top_k_relevant > 0:
+            relevant = await self._store.search(mission, limit=self._config.top_k_relevant)
             if relevant:
                 sections.append(_render_relevant(relevant))
 

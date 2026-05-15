@@ -24,6 +24,8 @@ sub_agents:
     description: "Web-Automatisierung — bucht, bestellt, füllt Formulare aus, loggt sich ein, führt Checkouts durch. Für alles, was eine Transaktion oder eine angemeldete Sitzung erfordert."
   - specialist: coding_agent
     description: "Entwicklung — Code erstellen, ändern, testen, reviewen, debuggen, refactoren."
+  - specialist: memory_specialist
+    description: "Langzeit-Gedächtnis (read-only) — durchsucht das Wiki nach früheren Fakten (Kunden, Rechnungen, Präferenzen, Workflows) und liefert ein strukturiertes JSON zurück. Nutze ihn statt direkter Wiki-Suchen, wenn die Recall-Frage mehrere Pages oder sensible Daten betrifft."
 
 tools:
   - file_read
@@ -126,8 +128,10 @@ Say so in your FIRST response — don't pretend, don't retry. Suggest a workarou
 - **research_agent**: **comprehensive** web research only — multi-source comparison, briefings/Berichte, deep dives, contradictory-source resolution. Use ONLY when (a) the user needs several sources cross-referenced, (b) an explicit briefing/Bericht/Vergleich is requested, or (c) more than one research step is genuinely needed. **Do NOT spawn research_agent for a single-source factual lookup** (weather, current price, current score, one-off fact, "X says Y") — use your own `web_fetch` directly for those. NO logins, NO transactions.
 - **browser-agent**: interactive web — booking, ordering, form-filling, logins, checkouts. Anything that performs a transaction or needs an authenticated session.
 - **coding_agent**: writing, editing, testing, reviewing, debugging, and refactoring code.
+- **memory_specialist**: read-only wiki lookup. Returns a strict JSON `{summary, found[]}` payload — page bodies stay inside its session. Use it when you need to recall multiple facts at once (customer + invoice + prior conversation thread) instead of running several `wiki(action=search)` calls yourself. Single, narrow lookups can still go through your own `wiki` tool.
 
 **Research vs. browser:** if the user just wants to *know* something → research_agent. If the user wants something *done* on a website (booked, ordered, submitted) → browser-agent.
+**Recall vs. realtime:** memory_specialist is for facts the user has shared before (saved in the wiki). For anything realtime → research_agent.
 
 ## CRITICAL: Delegating file attachments to sub-agents
 

@@ -92,11 +92,25 @@ async def _run_via_sandbox(
             "error": "Command cancelled",
             "command": command,
         }
-    except Exception as exc:  # pragma: no cover — defensive
+    except Exception as exc:
+        # Some exceptions (notably ``NotImplementedError()`` raised by
+        # ``asyncio.create_subprocess_exec`` on Windows when the event
+        # loop policy is ``SelectorEventLoop``) have an empty ``str(exc)``,
+        # which used to surface as ``"<tool> failed: "`` — completely
+        # opaque to both the agent and the operator. Always include the
+        # exception type so the failure mode is greppable in logs and
+        # actionable for the agent. Issue #274.
+        exc_type = type(exc).__name__
+        exc_msg = str(exc) or repr(exc)
         tool_error = ToolError(
-            f"{tool_name} failed: {exc}",
+            f"{tool_name} failed: [{exc_type}] {exc_msg}",
             tool_name=tool_name,
-            details={"command": command, "cwd": cwd, "timeout": timeout},
+            details={
+                "command": command,
+                "cwd": cwd,
+                "timeout": timeout,
+                "exception_type": exc_type,
+            },
         )
         return tool_error_payload(tool_error)
 
@@ -112,10 +126,9 @@ async def _run_via_sandbox(
         "command": command,
     }
     if not success:
-        payload["error"] = (
-            result.stderr or f"Command failed with code {result.returncode}"
-        )
+        payload["error"] = result.stderr or f"Command failed with code {result.returncode}"
     return payload
+
 
 # Dangerous command patterns shared across shell tools
 _DANGEROUS_PATTERNS = [
@@ -303,21 +316,15 @@ class BashTool(ToolProtocol):
         if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
             return {"success": False, "error": "Command blocked for safety reasons"}
 
-        try:
-            return await _run_via_sandbox(
-                tool_name=self.name,
-                kind="bash",
-                command=command,
-                timeout=timeout,
-                cwd=cwd,
-            )
-        except Exception as e:
-            tool_error = ToolError(
-                f"{self.name} failed: {e}",
-                tool_name=self.name,
-                details={"command": command, "cwd": cwd, "timeout": timeout},
-            )
-            return tool_error_payload(tool_error)
+        # ``_run_via_sandbox`` already wraps every non-cancellation exception
+        # in a typed ``ToolError`` payload (see #274); no extra layer needed.
+        return await _run_via_sandbox(
+            tool_name=self.name,
+            kind="bash",
+            command=command,
+            timeout=timeout,
+            cwd=cwd,
+        )
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""

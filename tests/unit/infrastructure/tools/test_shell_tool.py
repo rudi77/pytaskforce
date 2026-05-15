@@ -9,7 +9,6 @@ Tests ShellTool and PowerShellTool functionality including:
 - Parameter validation
 """
 
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -164,9 +163,7 @@ class TestShellToolExecution:
         """Test executing a command that fails."""
         with patch(_SHELL_SUBPROCESS_TARGET) as mock_create:
             mock_proc = AsyncMock()
-            mock_proc.communicate = AsyncMock(
-                return_value=(b"", b"No such file or directory\n")
-            )
+            mock_proc.communicate = AsyncMock(return_value=(b"", b"No such file or directory\n"))
             mock_proc.returncode = 1
             mock_create.return_value = mock_proc
 
@@ -228,6 +225,32 @@ class TestShellToolExecution:
 
             assert result["success"] is False
             assert "error" in result
+            # Issue #274: the exception type must be visible in the
+            # error string and in details, so log readers and the agent
+            # can tell *what* failed even without grepping for keywords.
+            assert "OSError" in result["error"]
+            assert "Permission denied" in result["error"]
+            assert result.get("error_type") == "ToolError"
+            assert result.get("details", {}).get("exception_type") == "OSError"
+
+    async def test_exception_with_empty_message_surfaces_type(self, tool):
+        """Issue #274: NotImplementedError() has empty str() — used to
+        produce ``"shell failed: "`` with nothing after the colon, which
+        masked the real failure mode (wrong asyncio event-loop policy on
+        Windows). The wrapper must always include the type name.
+        """
+        with patch(
+            _SHELL_SUBPROCESS_TARGET,
+            side_effect=NotImplementedError(),
+        ):
+            result = await tool.execute(command="echo hi")
+
+            assert result["success"] is False
+            assert "NotImplementedError" in result["error"]
+            # The trailing ": " with empty payload — the exact symptom in
+            # the original bug report — must no longer be possible.
+            assert not result["error"].endswith("failed: ")
+            assert result.get("details", {}).get("exception_type") == "NotImplementedError"
 
     async def test_failed_command_uses_stderr_as_error(self, tool):
         """Test that stderr is used as error message for failed commands."""
@@ -365,9 +388,7 @@ class TestPowerShellToolExecution:
         with patch("shutil.which", return_value="/usr/bin/pwsh"):
             with patch("asyncio.create_subprocess_exec") as mock_create:
                 mock_proc = AsyncMock()
-                mock_proc.communicate = AsyncMock(
-                    return_value=(b"", b"cmdlet not found\n")
-                )
+                mock_proc.communicate = AsyncMock(return_value=(b"", b"cmdlet not found\n"))
                 mock_proc.returncode = 1
                 mock_create.return_value = mock_proc
 
@@ -393,9 +414,7 @@ class TestPowerShellToolExecution:
     async def test_cwd_nonexistent_directory(self, tool):
         """Test PowerShell with non-existent working directory."""
         with patch("shutil.which", return_value="/usr/bin/pwsh"):
-            result = await tool.execute(
-                command="Get-Location", cwd="/nonexistent/dir/path"
-            )
+            result = await tool.execute(command="Get-Location", cwd="/nonexistent/dir/path")
             assert result["success"] is False
             assert "does not exist" in result["error"]
 
@@ -450,9 +469,7 @@ class TestPowerShellToolExecution:
         with patch("shutil.which", return_value="/usr/bin/pwsh"):
             with patch("asyncio.create_subprocess_exec") as mock_create:
                 mock_proc = AsyncMock()
-                mock_proc.communicate = AsyncMock(
-                    side_effect=asyncio.CancelledError()
-                )
+                mock_proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
                 mock_proc.kill = MagicMock()
                 mock_create.return_value = mock_proc
 

@@ -53,10 +53,47 @@ async def test_factory_wires_wiki_tool_and_store(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_wiki_context_is_injected_at_session_start(
+async def test_agent_wiki_context_is_off_by_default(
     tmp_path: Path,
 ) -> None:
-    """The agent's wiki store reads the same index the tool writes."""
+    """Issue #275: auto-injection of wiki content into the system prompt
+    must be OFF by default. Profiles that want the legacy behaviour set
+    ``wiki.context_injection`` explicitly.
+    """
+    factory = AgentFactory()
+    agent = await factory.create_agent(
+        system_prompt="You are a test agent.",
+        tools=["wiki"],
+        persistence={"type": "file", "work_dir": str(tmp_path)},
+    )
+
+    wiki_tool = agent.tools["wiki"]
+    await wiki_tool.execute(
+        action="write_page",
+        name="preferences/bookkeeping-formats",
+        title="Bookkeeping Formats",
+        content="Always book as Tab-separated.",
+    )
+
+    await agent.load_memory_context(mission="bookkeeping")
+    assert agent._wiki_context is None, (
+        "default wiki context injection must stay off — the page was "
+        "written successfully but must not leak into the system prompt"
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_wiki_context_is_injected_when_opted_in(
+    tmp_path: Path,
+) -> None:
+    """The integration still works end-to-end when a profile opts in to
+    auto-injection — the agent's wiki store reads the same index the
+    tool writes.
+    """
+    from taskforce.core.domain.lean_agent_components.wiki_context_loader import (
+        WikiContextConfig,
+    )
+
     factory = AgentFactory()
     agent = await factory.create_agent(
         system_prompt="You are a test agent.",
@@ -66,6 +103,11 @@ async def test_agent_wiki_context_is_injected_at_session_start(
 
     # Fresh agent: the wiki store should be wired in.
     assert agent._wiki_store is not None, "wiki_store must be injected"
+
+    # Inline factory mode does not surface ``wiki.context_injection``;
+    # flip the loader config on the live agent to exercise the
+    # injection path the same way a profile YAML would.
+    agent._wiki_context_config = WikiContextConfig(include_index=True, top_k_relevant=5)
 
     wiki_tool = agent.tools["wiki"]
     await wiki_tool.execute(
@@ -77,9 +119,9 @@ async def test_agent_wiki_context_is_injected_at_session_start(
 
     await agent.load_memory_context(mission="bookkeeping")
     context = agent._wiki_context or ""
-    assert "bookkeeping" in context.lower(), (
-        "the freshly written page should show up in the injected wiki context"
-    )
+    assert (
+        "bookkeeping" in context.lower()
+    ), "the freshly written page should show up in the injected wiki context"
 
 
 @pytest.mark.asyncio

@@ -11,9 +11,17 @@ agent:
   planning_strategy: native_react
   planning_strategy_params:
     max_step_iterations: 3
-    max_plan_steps: 12
+    max_plan_steps: 30
     reflect_every_step: false
-  max_steps: 30
+  max_steps: 120
+
+# Post-mission learning: after each successful mission, a fast LLM
+# extracts reusable knowledge (working sources, recurring entities,
+# workflow rules) and writes it to the wiki at .taskforce/memory/wiki/.
+# Transient answers (today's prices, the next train) are not stored.
+learning:
+  enabled: true
+  model_alias: fast  
 
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
@@ -21,6 +29,14 @@ llm:
 
 wiki:
   store_dir: .taskforce/memory/wiki
+  # Wiki auto-injection into the system prompt is OFF by default — see
+  # issue #275 and wiki_context_loader.py module docstring. The agent
+  # finds and reads pages on demand via wiki(action=search) /
+  # wiki(action=read_page) instead. Explicitly setting the values here
+  # documents the intent for anyone reading the profile.
+  context_injection:
+    top_k_relevant: 0
+    include_index: false
 
 logging:
   level: INFO
@@ -37,12 +53,10 @@ tools:
   - file_read
   - file_write
   - edit
-  - python
-  - bash
-  - shell
+  - pythons
+  - powershell
   - grep
   - glob
   - git
   - ask_user
   - wiki
-  - llm

@@ -1,0 +1,147 @@
+# Memory Specialist - Context-isolated long-term memory sub-agent
+#
+# Designed for the same context-isolation pattern as research_specialist:
+# this agent searches the wiki on behalf of a master agent and returns
+# ONLY a small, structured JSON payload. The full page bodies stay inside
+# this agent's session, so the master's message log and system prompt
+# never carry raw customer data, invoice numbers, or contact details
+# that aggregate across topics and trip provider content filters.
+#
+# Master agents (Butler, Coding-Agent, custom orchestrators) reference
+# it as a `specialist:` entry — same delegation pattern as
+# research_specialist. The master's wiki auto-injection should be off
+# when this specialist is wired up; long-term recall happens exclusively
+# through delegation.
+
+agent_id: memory_specialist
+name: MemorySpecialist
+description: >
+  Context-isolated wiki lookup. Returns structured findings as a JSON
+  object (summary, found[]). Hands no raw page bodies back to the
+  parent, so master agents can answer without ever pulling customer /
+  invoice / PII-adjacent strings into their own context.
+created_at: '2026-05-15T00:00:00+00:00'
+updated_at: '2026-05-15T00:00:00+00:00'
+profile: memory_specialist
+specialist: null
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 2
+    max_plan_steps: 6
+    reflect_every_step: false
+  max_steps: 15
+  llm_fallback: false
+  # Aggressive context-engineering caps. Wiki pages can be long; the
+  # tool result store catches anything over the threshold and the
+  # message log caps keep the working set small.
+  tool_result_store_threshold: 1500
+  tool_message_max_chars: 1200
+  assistant_message_max_chars: 2000
+
+persistence:
+  type: file
+  work_dir: .taskforce_memory_specialist
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 8
+  max_chars_per_item: 1500
+  max_total_chars: 15000
+
+context_management:
+  summary_threshold: 20
+  compression_trigger: 15000
+
+# Wiki auto-injection is meaningless for the memory specialist itself —
+# it IS the wiki agent. The framework should keep the default off here
+# regardless of the global default.
+wiki:
+  context_injection:
+    max_total_chars: 0
+    top_k_relevant: 0
+    include_index: false
+
+tools:
+  - wiki
+  - fetch_result
+
+system_prompt: |
+  You are a context-isolated memory specialist. Your only job is to
+  search the wiki and return structured findings.
+
+  Answer in the same language as the question.
+
+  ## Mandate
+
+  Look up facts in the wiki for the parent agent and return them as a
+  STRICT JSON payload — never prose, never full page bodies, never
+  freeform paragraphs. The parent will synthesise the user-facing
+  answer from your structured output.
+
+  ## Output contract (mandatory)
+
+  Your final reply MUST be a JSON object of this exact shape:
+
+      {
+        "summary": "<one sentence, neutral, factual, no loaded language>",
+        "found": [
+          {
+            "page": "<wiki page path, e.g. entities/foo-bar>",
+            "facts": [
+              "<one short factual statement, ≤200 chars>",
+              "..."
+            ]
+          }
+        ],
+        "no_match": false
+      }
+
+  Rules:
+  - `summary` is one neutral sentence describing what was found.
+  - `found` is a list of pages that actually contained relevant info.
+    Empty list `[]` is fine when nothing matched — set `no_match: true`
+    in that case.
+  - `facts` are short, neutral, declarative statements extracted from
+    the page. Strip any politically loaded, violent, or weapons-related
+    framing — keep the underlying information.
+  - Do NOT paste raw page bodies, snippets, or formatted markdown.
+  - Do NOT include narrative, opinions, or freeform paragraphs.
+  - No preamble, no explanation outside the JSON.
+
+  ## Workflow
+
+  1. Start with `wiki(action=search, query="<focused query>")` to find
+     candidate pages. Use the user's actual terms, not paraphrases.
+  2. For the top 1–3 hits, call `wiki(action=read_page, name="<path>")`
+     to load the page body.
+  3. Extract the facts that answer the parent's question. Skip
+     unrelated sections.
+  4. Reply with the JSON. Stop.
+
+  ## Efficiency
+
+  - One search round is usually enough. Stop as soon as you have
+    enough facts to answer the parent's query.
+  - Do not read pages whose search snippet already shows they are
+    off-topic.
+  - If the search returns nothing, do NOT keep guessing different
+    queries. Reply with `{"summary": "no matching page", "found": [],
+    "no_match": true}` and stop.
+  - Step budget is tight (max 15) — get in, look up, get out.
+
+  ## What NOT to do
+
+  - Do NOT write to the wiki (`write_page`, `update_page`, `log`,
+    `delete_page`). Those actions are the master agent's job — yours
+    is read-only recall.
+  - Do NOT answer the parent's question yourself. Just return the
+    facts; the parent synthesises.
