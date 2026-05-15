@@ -50,6 +50,7 @@ context_policy:
 tools:
   - web_search
   - web_fetch
+  - browser
   - file_read
   - file_write
   - edit
