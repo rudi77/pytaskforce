@@ -275,12 +275,34 @@ Persistent conversation management — the replacement for sessions.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/conversations` | Create a new conversation |
+| `POST` | `/api/v1/conversations` | Create a new conversation (accepts optional `project_id`) |
 | `GET` | `/api/v1/conversations` | List active conversations |
 | `GET` | `/api/v1/conversations/archived` | List archived conversations |
 | `GET` | `/api/v1/conversations/{id}/messages` | Get messages for a conversation |
 | `POST` | `/api/v1/conversations/{id}/messages` | Send a message (runs agent, returns reply) |
 | `POST` | `/api/v1/conversations/{id}/archive` | Archive a conversation |
+
+When a conversation carries a `project_id`, the agent's `working_dir` for
+that conversation is resolved to the project's `path` instead of the
+global `TASKFORCE_WORK_DIR`.
+
+### Projects
+
+Cowork-style project workspaces. A project is a directory on disk that
+holds everything the agent needs for a body of work: a `CLAUDE.md`
+(instructions/rules), a `skills/` folder, plus any free-form context.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/projects` | Create or import a project (`mode: "scratch" \| "existing"`) |
+| `GET` | `/api/v1/projects` | List projects (newest first) |
+| `GET` | `/api/v1/projects/{id}` | Get a single project |
+| `DELETE` | `/api/v1/projects/{id}` | Remove from registry (directory stays on disk) |
+
+`POST /projects` ensures the directory contains at minimum a `CLAUDE.md`
+file and a `skills/` folder. Existing files are never overwritten — the
+user's files always win. `mode=existing` rejects with `400 path_not_found`
+when the directory doesn't already exist.
 
 ### Cancelling a Running Mission
 

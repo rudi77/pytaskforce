@@ -53,21 +53,23 @@ class ConversationManager:
         self,
         channel: str,
         sender_id: str | None = None,
+        project_id: str | None = None,
     ) -> str:
         """Get active conversation or create a new one.
 
         Also triggers auto-archival of stale conversations.
         """
         await self._auto_archive_stale()
-        return await self._store.get_or_create(channel, sender_id)
+        return await self._store.get_or_create(channel, sender_id, project_id)
 
     async def create_new(
         self,
         channel: str,
         sender_id: str | None = None,
+        project_id: str | None = None,
     ) -> str:
         """Explicitly start a new conversation (e.g. ``/new``)."""
-        return await self._store.create_new(channel, sender_id)
+        return await self._store.create_new(channel, sender_id, project_id)
 
     async def append_message(
         self,

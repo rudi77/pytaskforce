@@ -29,12 +29,19 @@ class TestConversationManager:
     async def test_get_or_create_delegates(self, manager, mock_store):
         result = await manager.get_or_create("cli")
         assert result == "conv-123"
-        mock_store.get_or_create.assert_called_once_with("cli", None)
+        mock_store.get_or_create.assert_called_once_with("cli", None, None)
 
     async def test_create_new_delegates(self, manager, mock_store):
         result = await manager.create_new("telegram", sender_id="user_a")
         assert result == "conv-456"
-        mock_store.create_new.assert_called_once_with("telegram", "user_a")
+        mock_store.create_new.assert_called_once_with("telegram", "user_a", None)
+
+    async def test_create_new_with_project_id(self, manager, mock_store):
+        result = await manager.create_new(
+            "rest", sender_id=None, project_id="proj-7"
+        )
+        assert result == "conv-456"
+        mock_store.create_new.assert_called_once_with("rest", None, "proj-7")
 
     async def test_append_message_delegates(self, manager, mock_store):
         msg = {"role": "user", "content": "Hello"}

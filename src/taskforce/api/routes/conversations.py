@@ -23,7 +23,11 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from taskforce.api.dependencies import get_conversation_manager, get_executor
+from taskforce.api.dependencies import (
+    get_conversation_manager,
+    get_executor,
+    get_project_store,
+)
 from taskforce.api.errors import http_exception as _error_response
 from taskforce.api.schemas.errors import ErrorResponse
 from taskforce.application.file_storage import (
@@ -74,6 +78,13 @@ class CreateConversationRequest(BaseModel):
 
     channel: str = Field(default="rest", description="Channel identifier.")
     sender_id: str | None = Field(default=None, description="Sender identifier.")
+    project_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional project to link the conversation to. When set, the "
+            "agent's working_dir resolves to the project's path."
+        ),
+    )
 
 
 class ConversationInfoResponse(BaseModel):
@@ -85,6 +96,7 @@ class ConversationInfoResponse(BaseModel):
     last_activity: datetime
     message_count: int
     topic: str | None = None
+    project_id: str | None = None
 
 
 class ConversationSummaryResponse(BaseModel):
@@ -180,6 +192,37 @@ def _resolve_attachments(refs: list[AttachmentRef]) -> list[dict[str, Any]]:
     return out
 
 
+async def _resolve_conversation_work_dir(
+    manager: Any,
+    project_store: Any,
+    conversation_id: str,
+) -> str | None:
+    """Return the project's path for a conversation, or ``None``.
+
+    Looks up the conversation in the manager's active list, reads the
+    ``project_id`` if set, and resolves it to a directory path via the
+    project store. Returns ``None`` when the conversation isn't linked
+    to a project (the executor then falls back to the profile's
+    configured ``persistence.work_dir``).
+    """
+    try:
+        active = await manager.list_active()
+    except Exception:  # noqa: BLE001 — defensive: never block a chat reply
+        return None
+    info = next(
+        (c for c in active if c.conversation_id == conversation_id),
+        None,
+    )
+    if info is None or info.project_id is None:
+        return None
+    project = await project_store.get(info.project_id)
+    if project is None:
+        # Conversation references a deleted project; let the executor
+        # use the default work_dir rather than erroring out mid-chat.
+        return None
+    return project.path
+
+
 def _build_attachments_prefix(attachments: list[dict[str, Any]]) -> str:
     """Render an attachment summary the agent can read."""
     if not attachments:
@@ -205,9 +248,24 @@ def _build_attachments_prefix(attachments: list[dict[str, Any]]) -> str:
 async def create_conversation(
     request: CreateConversationRequest,
     manager=Depends(get_conversation_manager),
+    project_store=Depends(get_project_store),
 ) -> ConversationInfoResponse:
     """Create a new conversation, archiving any existing active one for the channel."""
-    conv_id = await manager.create_new(request.channel, request.sender_id)
+    if request.project_id is not None:
+        project = await project_store.get(request.project_id)
+        if project is None:
+            raise _error_response(
+                status_code=400,
+                code="project_not_found",
+                message=f"No project with id {request.project_id!r}.",
+                details={"project_id": request.project_id},
+            )
+
+    conv_id = await manager.create_new(
+        request.channel,
+        request.sender_id,
+        project_id=request.project_id,
+    )
     active = await manager.list_active()
     info = next((c for c in active if c.conversation_id == conv_id), None)
     if not info:
@@ -224,6 +282,7 @@ async def create_conversation(
         last_activity=info.last_activity,
         message_count=info.message_count,
         topic=info.topic,
+        project_id=info.project_id,
     )
 
 
@@ -244,6 +303,7 @@ async def list_active_conversations(
             last_activity=c.last_activity,
             message_count=c.message_count,
             topic=c.topic,
+            project_id=c.project_id,
         )
         for c in active
     ]
@@ -303,6 +363,7 @@ async def append_message(
     request: AppendMessageRequest,
     manager=Depends(get_conversation_manager),
     executor=Depends(get_executor),
+    project_store=Depends(get_project_store),
 ) -> AppendMessageResponse:
     """Send a message to the agent within a conversation.
 
@@ -329,6 +390,9 @@ async def append_message(
 
     mission = _build_attachments_prefix(attachments) + request.message
     resolved_profile = request.profile or _default_profile()
+    work_dir = await _resolve_conversation_work_dir(
+        manager, project_store, conversation_id
+    )
 
     # Execute agent with conversation history.
     result = await executor.execute_mission(
@@ -336,6 +400,7 @@ async def append_message(
         profile=resolved_profile,
         agent_id=request.agent_id,
         conversation_history=history,
+        work_dir=work_dir,
     )
 
     # Append assistant reply.
@@ -369,6 +434,7 @@ async def stream_message(
     request: AppendMessageRequest,
     manager=Depends(get_conversation_manager),
     executor=Depends(get_executor),
+    project_store=Depends(get_project_store),
 ) -> StreamingResponse:
     """Append a user message, run the agent, and stream tokens back as SSE.
 
@@ -393,6 +459,9 @@ async def stream_message(
 
     history = await manager.get_messages(conversation_id)
     mission = _build_attachments_prefix(attachments) + request.message
+    work_dir = await _resolve_conversation_work_dir(
+        manager, project_store, conversation_id
+    )
 
     async def event_stream() -> AsyncIterator[bytes]:
         accumulated_chunks: list[str] = []
@@ -418,6 +487,7 @@ async def stream_message(
                     profile=request.profile or _default_profile(),
                     agent_id=request.agent_id,
                     conversation_history=history,
+                    work_dir=work_dir,
                 ):
                     await queue.put(update)
             except Exception as exc:  # noqa: BLE001 — forwarded to consumer

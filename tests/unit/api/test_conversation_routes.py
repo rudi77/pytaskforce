@@ -53,17 +53,30 @@ def mock_executor():
 
 
 @pytest.fixture
-def client(mock_conversation_manager, mock_executor):
+def mock_project_store():
+    """Project store stub — returns None for any lookup."""
+    store = AsyncMock()
+    store.get = AsyncMock(return_value=None)
+    return store
+
+
+@pytest.fixture
+def client(mock_conversation_manager, mock_executor, mock_project_store):
     """Create a test client with overridden dependencies."""
     from fastapi import FastAPI
 
-    from taskforce.api.dependencies import get_conversation_manager, get_executor
+    from taskforce.api.dependencies import (
+        get_conversation_manager,
+        get_executor,
+        get_project_store,
+    )
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
     app.dependency_overrides[get_conversation_manager] = lambda: mock_conversation_manager
     app.dependency_overrides[get_executor] = lambda: mock_executor
+    app.dependency_overrides[get_project_store] = lambda: mock_project_store
 
     return TestClient(app)
 
@@ -75,7 +88,9 @@ class TestCreateConversation:
         data = resp.json()
         assert data["conversation_id"] == "abc123def456789012345678abcdef00"
         assert data["channel"] == "rest"
-        mock_conversation_manager.create_new.assert_called_once_with("rest", None)
+        mock_conversation_manager.create_new.assert_called_once_with(
+            "rest", None, project_id=None
+        )
 
 
 class TestListConversations:
@@ -136,6 +151,100 @@ class TestAppendMessage:
             json={"message": "   "},
         )
         assert resp.status_code == 400
+
+    def test_runs_with_project_work_dir(
+        self,
+        client,
+        mock_conversation_manager,
+        mock_executor,
+        mock_project_store,
+    ):
+        """When the conversation carries a ``project_id``, the executor
+        receives the resolved project path as ``work_dir``."""
+        from types import SimpleNamespace
+
+        # Conversation is linked to project "proj-7".
+        mock_conversation_manager.list_active = AsyncMock(
+            return_value=[
+                ConversationInfo(
+                    conversation_id="conv-123",
+                    channel="rest",
+                    started_at=datetime(2026, 3, 18, tzinfo=UTC),
+                    last_activity=datetime(2026, 3, 18, tzinfo=UTC),
+                    message_count=1,
+                    topic=None,
+                    project_id="proj-7",
+                )
+            ]
+        )
+        mock_project_store.get = AsyncMock(
+            return_value=SimpleNamespace(
+                project_id="proj-7",
+                name="TuttiPaletti",
+                path="/srv/projects/tutti",
+                created_at=datetime(2026, 3, 18, tzinfo=UTC),
+            )
+        )
+        mock_conversation_manager.get_messages = AsyncMock(
+            side_effect=[
+                [{"role": "user", "content": "Hi"}],
+                [
+                    {"role": "user", "content": "Hi"},
+                    {"role": "assistant", "content": "Hello back!"},
+                ],
+            ]
+        )
+
+        resp = client.post(
+            "/api/v1/conversations/conv-123/messages",
+            json={"message": "Hi"},
+        )
+        assert resp.status_code == 200
+        # The executor must have been called with the project's path.
+        _, kwargs = mock_executor.execute_mission.call_args
+        assert kwargs["work_dir"] == "/srv/projects/tutti"
+
+    def test_deleted_project_falls_back_to_default_work_dir(
+        self,
+        client,
+        mock_conversation_manager,
+        mock_executor,
+        mock_project_store,
+    ):
+        """Conversation references a project that was removed from the
+        registry — the executor must still run, with ``work_dir=None`` so
+        the profile's default work_dir is used."""
+        mock_conversation_manager.list_active = AsyncMock(
+            return_value=[
+                ConversationInfo(
+                    conversation_id="conv-123",
+                    channel="rest",
+                    started_at=datetime(2026, 3, 18, tzinfo=UTC),
+                    last_activity=datetime(2026, 3, 18, tzinfo=UTC),
+                    message_count=1,
+                    topic=None,
+                    project_id="ghost",
+                )
+            ]
+        )
+        mock_project_store.get = AsyncMock(return_value=None)
+        mock_conversation_manager.get_messages = AsyncMock(
+            side_effect=[
+                [{"role": "user", "content": "Hi"}],
+                [
+                    {"role": "user", "content": "Hi"},
+                    {"role": "assistant", "content": "Hello back!"},
+                ],
+            ]
+        )
+
+        resp = client.post(
+            "/api/v1/conversations/conv-123/messages",
+            json={"message": "Hi"},
+        )
+        assert resp.status_code == 200
+        _, kwargs = mock_executor.execute_mission.call_args
+        assert kwargs["work_dir"] is None
 
 
 class TestGetMessages:

@@ -89,6 +89,7 @@ _standing_goal_store_override: Callable[[str], Any] | None = None
 _runtime_checkpoint_store_override: Callable[[str], Any] | None = None
 _pending_channel_question_store_override: Callable[[str], Any] | None = None
 _tool_result_store_override: Callable[[str], Any] | None = None
+_project_store_override: Callable[[str], Any] | None = None
 # Butler agent-package state directory (gmail seen ids, future butler
 # per-tool state). Override-hook callable returning the directory the
 # butler tools should write to for the current request scope. See
@@ -171,6 +172,26 @@ def set_settings_store_override(
 def get_settings_store_override() -> Callable[[str], Any] | None:
     """Return the currently installed settings-store override, if any."""
     return _settings_store_override
+
+
+def set_project_store_override(
+    provider: Callable[[str], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_project_store``.
+
+    The provider receives the same ``work_dir`` argument as the builder
+    method and must return an object satisfying
+    :class:`taskforce.core.interfaces.project.ProjectStoreProtocol`.
+    Use this to back the project registry with a tenant-scoped store
+    (e.g. database-backed) from an enterprise plugin.
+    """
+    global _project_store_override
+    _project_store_override = provider
+
+
+def get_project_store_override() -> Callable[[str], Any] | None:
+    """Return the currently installed project-store override, if any."""
+    return _project_store_override
 
 
 def set_token_store_override(provider: Callable[[], Any] | None) -> None:
@@ -938,6 +959,7 @@ def clear_infrastructure_overrides() -> None:
     global _runtime_checkpoint_store_override
     global _pending_channel_question_store_override
     global _tool_result_store_override
+    global _project_store_override
     global _butler_state_dir_override
     global _sub_agent_result_dir_override
     global _upload_storage_dir_override
@@ -973,6 +995,7 @@ def clear_infrastructure_overrides() -> None:
     _runtime_checkpoint_store_override = None
     _pending_channel_question_store_override = None
     _tool_result_store_override = None
+    _project_store_override = None
     _butler_state_dir_override = None
     _sub_agent_result_dir_override = None
     _upload_storage_dir_override = None
