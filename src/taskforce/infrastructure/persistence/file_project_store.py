@@ -3,9 +3,10 @@ File-Based Project Store
 
 Persists projects as a single JSON document at
 ``<work_dir>/projects.json``. Writes are serialized through an
-``asyncio.Lock`` and use the standard temp-file + rename atomic-write
-pattern, mirroring the other file-based stores in the framework
-(``FileConversationStore``, ``FileStandingGoalStore``).
+``asyncio.Lock`` keyed by the file path so concurrent ``POST
+/projects`` requests cannot race past the duplicate-path check, even
+though ``get_project_store()`` builds a fresh store instance per
+request.
 """
 
 from __future__ import annotations
@@ -24,6 +25,26 @@ from taskforce.core.domain.project import Project
 logger = structlog.get_logger(__name__)
 
 
+# Module-level lock registry, keyed by the absolute index-file path.
+# ``get_project_store()`` (in ``api/dependencies.py``) intentionally
+# does not cache the store instance — the override hook for
+# enterprise tenant-scoping must re-resolve on every call. An
+# instance-level lock would therefore reset per request and the
+# duplicate-path guard inside ``create()`` could be raced. Looking
+# up the lock by path keeps the critical section serialised across
+# every instance pointing at the same file.
+_FILE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _lock_for(path: Path) -> asyncio.Lock:
+    key = str(path)
+    lock = _FILE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _FILE_LOCKS[key] = lock
+    return lock
+
+
 class FileProjectStore:
     """File-backed project registry.
 
@@ -37,7 +58,7 @@ class FileProjectStore:
         self._base_dir = Path(work_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._file = self._base_dir / "projects.json"
-        self._lock = asyncio.Lock()
+        self._lock = _lock_for(self._file)
 
     async def create(self, name: str, path: str) -> Project:
         if not name.strip():

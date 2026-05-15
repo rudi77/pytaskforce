@@ -110,3 +110,35 @@ class TestPersistenceAcrossInstances:
 
         assert loaded is not None
         assert loaded.path == str(a.resolve())
+
+    async def test_concurrent_creates_with_same_path_only_one_wins(
+        self, tmp_path: Path
+    ) -> None:
+        """Lock must be shared across instances pointing at the same file.
+
+        ``get_project_store()`` rebuilds the store per request, so a
+        per-instance lock would let two concurrent POSTs both pass
+        the duplicate-path check.
+        """
+        import asyncio
+
+        target = tmp_path / "shared-target"
+        target.mkdir()
+
+        async def attempt(name: str) -> Exception | None:
+            store = FileProjectStore(work_dir=str(tmp_path / "store"))
+            try:
+                await store.create(name=name, path=str(target))
+                return None
+            except ValueError as exc:
+                return exc
+
+        results = await asyncio.gather(
+            attempt("A"), attempt("B"), attempt("C")
+        )
+        # Exactly one create wins; the other two see "already exists".
+        successes = [r for r in results if r is None]
+        failures = [r for r in results if isinstance(r, ValueError)]
+        assert len(successes) == 1
+        assert len(failures) == 2
+        assert all("already exists" in str(e) for e in failures)

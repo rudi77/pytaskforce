@@ -18,6 +18,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -27,6 +28,24 @@ from taskforce.core.domain.agent import Agent
 from taskforce.core.domain.enums import EventType, ExecutionStatus
 from taskforce.core.domain.exceptions import AgentExecutionError
 from taskforce.core.domain.models import ExecutionResult, TokenUsage
+from taskforce.core.interfaces.workspace import workspace_scope
+
+
+@dataclass(frozen=True)
+class _ProjectWorkspace:
+    """Workspace context anchored at a project's directory.
+
+    Path-aware tools (``file_read``, ``file_write``, ``edit``, ``grep``,
+    ``glob``) consult ``WorkspaceContextProtocol`` via
+    ``resolve_workspace_path`` so relative paths resolve against the
+    project root and absolute paths outside the root are rejected.
+    """
+
+    _root: Path
+
+    def root(self) -> Path:
+        return self._root
+
 
 logger = structlog.get_logger()
 
@@ -420,8 +439,15 @@ class AgentExecutor:
 
         execution_failed = False
         _failure_error: str | None = None
+        # Install the workspace context so path-aware tools resolve
+        # relative paths under the project root and reject ``..``
+        # traversal. Skipped when no project is linked (work_dir is
+        # ``None``), preserving today's behaviour bit-for-bit.
+        workspace = (
+            _ProjectWorkspace(Path(work_dir).resolve()) if work_dir else None
+        )
         try:
-            with _run_context(
+            with workspace_scope(workspace), _run_context(
                 session_id=resolved_session_id,
                 agent_id=agent_id,
                 profile=profile,

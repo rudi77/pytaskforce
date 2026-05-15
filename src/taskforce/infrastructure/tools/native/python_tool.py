@@ -128,8 +128,16 @@ class PythonTool(ToolProtocol):
                 except (OSError, FileNotFoundError):
                     pass
 
-        # Validate and prepare cwd
+        # Validate and prepare cwd. When the agent omits ``cwd`` and a
+        # workspace context is installed (project-linked conversation),
+        # default to the project root so relative paths resolve there.
         cwd_path = None
+        if cwd is None:
+            from taskforce.core.interfaces.workspace import get_workspace_context
+
+            ws = get_workspace_context()
+            if ws is not None:
+                cwd_path = str(ws.root())
         if cwd is not None:
             if not isinstance(cwd, str):
                 return {"success": False, "error": "cwd must be a string path"}

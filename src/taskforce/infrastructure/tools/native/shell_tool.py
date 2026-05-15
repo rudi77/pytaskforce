@@ -32,6 +32,22 @@ from taskforce.infrastructure.sandbox.in_process import InProcessSandboxedExecut
 _DEFAULT_EXECUTOR: SandboxedExecutorProtocol = InProcessSandboxedExecutor()
 
 
+def _default_workspace_dir() -> Path:
+    """Return the cwd a shell command should run in when none is passed.
+
+    When the agent runs inside a project workspace (``WorkspaceContextProtocol``
+    installed by the executor for project-linked conversations), commands
+    default to the project root. Outside of a project the process cwd is
+    used — today's behaviour bit-for-bit.
+    """
+    from taskforce.core.interfaces.workspace import get_workspace_context
+
+    ctx = get_workspace_context()
+    if ctx is not None:
+        return ctx.root()
+    return Path.cwd()
+
+
 def _resolve_executor() -> SandboxedExecutorProtocol:
     """Return the currently installed sandboxed executor (or the default)."""
     return get_sandboxed_executor() or _DEFAULT_EXECUTOR
@@ -53,7 +69,7 @@ async def _run_via_sandbox(
     """
     import asyncio
 
-    workspace_dir = Path(cwd) if cwd else Path.cwd()
+    workspace_dir = Path(cwd) if cwd else _default_workspace_dir()
     request = SandboxRequest(
         kind=kind,
         script=command,

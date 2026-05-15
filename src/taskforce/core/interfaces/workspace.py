@@ -32,6 +32,8 @@ framework only sees the resolved root.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Protocol
@@ -120,10 +122,32 @@ def resolve_workspace_path(raw_path: str | Path) -> Path:
     return resolved
 
 
+@contextlib.contextmanager
+def workspace_scope(
+    ctx: WorkspaceContextProtocol | None,
+) -> Iterator[None]:
+    """Install ``ctx`` as the active workspace for the duration of the block.
+
+    Restores the previous context on exit so nested or sequential
+    scopes don't leak. ``ctx=None`` is a no-op that still preserves
+    the bracketing semantics — useful when callers don't always have a
+    workspace to install.
+    """
+    if ctx is None:
+        yield
+        return
+    token = _workspace_context.set(ctx)
+    try:
+        yield
+    finally:
+        _workspace_context.reset(token)
+
+
 __all__ = [
     "WorkspaceContextProtocol",
     "WorkspaceTraversalError",
     "set_workspace_context",
     "get_workspace_context",
     "resolve_workspace_path",
+    "workspace_scope",
 ]
