@@ -46,8 +46,18 @@ class AgentCreationPipeline:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         plugin_path: str | None = None,
+        work_dir: str | None = None,
     ) -> Agent:
-        """Create Agent using factory, dispatching to the right strategy."""
+        """Create Agent using factory, dispatching to the right strategy.
+
+        ``work_dir`` overrides the profile's ``persistence.work_dir`` and
+        is used when the agent runs against a project-rooted workspace
+        (a conversation linked to a :class:`Project`). Only the
+        profile-driven path (``_from_profile``) honours the override
+        today; the agent-id and plugin paths use the registered
+        definition's own ``work_dir`` and are out of scope for the
+        Cowork-style project model.
+        """
         self._logger.debug(
             "creating_lean_agent",
             profile=profile,
@@ -57,6 +67,7 @@ class AgentCreationPipeline:
             version=version,
             planning_strategy=planning_strategy,
             plugin_path=plugin_path,
+            work_dir=work_dir,
         )
 
         if plugin_path:
@@ -84,6 +95,7 @@ class AgentCreationPipeline:
             user_context,
             planning_strategy,
             planning_strategy_params,
+            work_dir=work_dir,
         )
 
     async def _from_plugin_path(
@@ -338,6 +350,7 @@ class AgentCreationPipeline:
         user_context: dict[str, Any] | None,
         planning_strategy: str | None,
         planning_strategy_params: dict[str, Any] | None,
+        work_dir: str | None = None,
     ) -> Agent:
         """Create agent from a profile, checking for plugin match first.
 
@@ -371,6 +384,7 @@ class AgentCreationPipeline:
             user_context=user_context,
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
+            work_dir=work_dir,
         )
 
     def _peek_runtime(self, profile: str) -> str | None:

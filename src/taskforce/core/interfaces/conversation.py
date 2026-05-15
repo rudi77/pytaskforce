@@ -23,6 +23,7 @@ class ConversationInfo:
     last_activity: datetime
     message_count: int
     topic: str | None = None
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,19 +50,29 @@ class ConversationManagerProtocol(Protocol):
         self,
         channel: str,
         sender_id: str | None = None,
+        project_id: str | None = None,
     ) -> str:
         """Get the active conversation for a channel/sender, or create a new one.
 
         Args:
             channel: Communication channel (e.g. "telegram", "cli", "rest").
             sender_id: Optional sender identifier for multi-user channels.
+            project_id: Optional project id to associate with the new
+                conversation (only applied when a new conversation is
+                created — existing conversations keep their original
+                project association).
 
         Returns:
             The conversation_id of the active (or newly created) conversation.
         """
         ...
 
-    async def create_new(self, channel: str, sender_id: str | None = None) -> str:
+    async def create_new(
+        self,
+        channel: str,
+        sender_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
         """Explicitly create a new conversation (e.g. via ``/new``).
 
         Archives the currently active conversation for the given
@@ -70,6 +81,9 @@ class ConversationManagerProtocol(Protocol):
         Args:
             channel: Communication channel.
             sender_id: Optional sender identifier.
+            project_id: Optional project id to associate with the new
+                conversation. When set, the agent's working_dir for
+                this conversation resolves to the project's path.
 
         Returns:
             The conversation_id of the new conversation.

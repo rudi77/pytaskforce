@@ -95,6 +95,7 @@ class Conversation:
     summary: str | None = None
     archived_at: datetime | None = None
     sender_id: str | None = None
+    project_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     topic_segments: list[TopicSegment] = field(default_factory=list)
     active_topic_id: str | None = None

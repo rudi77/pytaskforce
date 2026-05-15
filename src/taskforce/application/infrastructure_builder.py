@@ -639,6 +639,31 @@ class InfrastructureBuilder:
 
         return FileConversationStore(work_dir=work_dir)
 
+    def build_project_store(self, work_dir: str = ".taskforce") -> Any:
+        """Build the project registry store (Cowork-style projects).
+
+        Defaults to the framework's file-based
+        :class:`FileProjectStore`. Plugins can substitute a tenant-
+        scoped backend via ``set_project_store_override``.
+
+        Returns:
+            Object satisfying
+            :class:`taskforce.core.interfaces.project.ProjectStoreProtocol`.
+        """
+        from taskforce.application.infrastructure_overrides import (
+            get_project_store_override,
+        )
+
+        override = get_project_store_override()
+        if override is not None:
+            return override(work_dir)
+
+        from taskforce.infrastructure.persistence.file_project_store import (
+            FileProjectStore,
+        )
+
+        return FileProjectStore(work_dir=work_dir)
+
     def build_agent_state(self, work_dir: str = ".taskforce") -> Any:
         """Build persistent singleton-agent state storage."""
         from taskforce.application.infrastructure_overrides import (

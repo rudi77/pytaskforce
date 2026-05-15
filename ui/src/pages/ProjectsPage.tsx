@@ -3,137 +3,78 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowDownAZ,
   FolderOpen,
+  MoreHorizontal,
   Plus,
   Search,
+  Trash2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
+import { ApiError } from "@/api/client";
 import {
-  useConversations,
   useCreateConversation,
+  useDeleteProject,
   useHealth,
-  type ConversationInfo,
+  useProjects,
+  type Project,
 } from "@/api/queries";
+import { toast } from "@/components/ui/toast";
 import { formatRelativeTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { NewProjectModal } from "@/features/projects/NewProjectModal";
 
 /**
- * Cowork-style Projects grid.
+ * Cowork-style Projects page.
  *
- * Until the framework gets a real per-project working directory (Phase 2 of
- * the Cowork roadmap, see ``docs/cowork-comparison.md``), a "project" is
- * derived from the conversation channel — REST chat sessions, Telegram
- * threads, Teams, etc. Each card opens the most-recent conversation for
- * that channel. The page also surfaces the resolved workspace (from
- * ``/health.checks.working_dir`` when present) as the implicit "default
- * project" so the user always sees at least one card.
+ * A project is a directory on disk that holds CLAUDE.md, skills/ and
+ * any free-form context the agent needs for that body of work.
+ * Clicking a project starts a new conversation linked to the project
+ * so the agent's working_dir is rooted at the project's path.
  */
-
-interface ProjectCard {
-  id: string;
-  title: string;
-  subtitle: string;
-  lastActivity: string;
-  conversationCount: number;
-  primaryConversation: ConversationInfo;
-}
-
-function buildProjects(conversations: ConversationInfo[]): ProjectCard[] {
-  const byKey = new Map<string, ConversationInfo[]>();
-  for (const c of conversations) {
-    const key = c.channel || "rest";
-    const bucket = byKey.get(key) ?? [];
-    bucket.push(c);
-    byKey.set(key, bucket);
-  }
-
-  const projects: ProjectCard[] = [];
-  for (const [key, list] of byKey.entries()) {
-    list.sort((a, b) => (a.last_activity < b.last_activity ? 1 : -1));
-    const head = list[0];
-    projects.push({
-      id: key,
-      title: titleForChannel(key),
-      subtitle: subtitleFor(list),
-      lastActivity: head.last_activity,
-      conversationCount: list.length,
-      primaryConversation: head,
-    });
-  }
-  projects.sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1));
-  return projects;
-}
-
-function titleForChannel(channel: string): string {
-  switch (channel) {
-    case "rest":
-      return "Web Chat";
-    case "telegram":
-      return "Telegram";
-    case "teams":
-      return "Microsoft Teams";
-    case "slack":
-      return "Slack";
-    case "":
-      return "Workspace";
-    default:
-      return channel.charAt(0).toUpperCase() + channel.slice(1);
-  }
-}
-
-function subtitleFor(list: ConversationInfo[]): string {
-  if (list.length === 1) return "1 conversation";
-  return `${list.length} conversations`;
-}
 
 type SortKey = "recent" | "name";
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const conversations = useConversations();
+  const projects = useProjects();
   const health = useHealth();
-  const create = useCreateConversation();
+  const createConversation = useCreateConversation();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const projects = useMemo(() => {
-    const built = buildProjects(conversations.data ?? []);
+  const visible = useMemo(() => {
+    const list = projects.data ?? [];
     const filtered = query
-      ? built.filter((p) =>
-          p.title.toLowerCase().includes(query.toLowerCase()),
+      ? list.filter((p) =>
+          [p.name, p.path]
+            .join("\n")
+            .toLowerCase()
+            .includes(query.toLowerCase()),
         )
-      : built;
+      : [...list];
     if (sort === "name") {
-      filtered.sort((a, b) => a.title.localeCompare(b.title));
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     }
     return filtered;
-  }, [conversations.data, query, sort]);
+  }, [projects.data, query, sort]);
 
-  // Implicit workspace card from /health — surfaced even when no
-  // conversations exist yet, so the user always sees their working
-  // directory.
-  const workspaceCard = useMemo(() => {
-    const checks = (health.data?.checks ?? {}) as Record<string, unknown>;
-    const wd =
-      (checks.working_dir as string | undefined) ??
-      (checks.work_dir as string | undefined) ??
-      null;
-    if (!wd && !health.data?.default_profile) return null;
-    return {
-      title: wd ?? health.data?.default_profile ?? "Workspace",
-      path: wd,
-      profile: health.data?.default_profile,
-    };
-  }, [health.data]);
-
-  const onCreate = async () => {
+  const startConversationFor = async (project: Project) => {
     try {
-      const conv = await create.mutateAsync({ channel: "rest" });
+      const conv = await createConversation.mutateAsync({
+        channel: "rest",
+        project_id: project.project_id,
+      });
       navigate(`/chat/${encodeURIComponent(conv.conversation_id)}`);
-    } catch {
-      // Toast handled by the mutation defaults; user can retry.
+    } catch (err) {
+      toast.error(
+        "Conversation konnte nicht gestartet werden",
+        err instanceof ApiError ? err.message : (err as Error).message,
+      );
     }
   };
 
@@ -160,66 +101,72 @@ export default function ProjectsPage() {
               className="h-9 w-48 pl-8"
             />
           </div>
-          <Button onClick={onCreate} disabled={create.isPending}>
+          <Button onClick={() => setModalOpen(true)}>
             <Plus className="h-4 w-4" />
             New project
           </Button>
         </div>
       </header>
 
-      {workspaceCard ? (
-        <section>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Workspace
-          </p>
-          <WorkspaceTile
-            title={workspaceCard.title}
-            path={workspaceCard.path}
-            profile={workspaceCard.profile}
-            onOpen={() => navigate("/chat")}
-          />
-        </section>
-      ) : null}
+      <DefaultWorkspaceHint healthData={health.data} />
 
       <section className="min-h-0 flex-1">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          Recent
-        </p>
-        {conversations.isLoading ? (
+        {projects.isLoading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <CardSkeleton />
             <CardSkeleton />
             <CardSkeleton />
           </div>
-        ) : projects.length === 0 ? (
+        ) : projects.isError ? (
           <EmptyState
-            title="No projects yet"
-            description="Projects appear here once you start a conversation. Click ‘New project’ to get going."
+            title="Projects konnten nicht geladen werden"
+            description={
+              projects.error instanceof ApiError
+                ? projects.error.message
+                : "Backend antwortet nicht."
+            }
+            className="max-w-md"
+          />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={query ? "Keine Treffer" : "Noch keine Projekte"}
+            description={
+              query
+                ? "Versuch's mit einem anderen Suchbegriff."
+                : "Lege ein neues Projekt an — entweder von Grund auf neu oder mit einem vorhandenen Ordner."
+            }
             action={
-              <Button onClick={onCreate} disabled={create.isPending}>
-                <Plus className="h-4 w-4" />
-                New project
-              </Button>
+              query ? undefined : (
+                <Button onClick={() => setModalOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  New project
+                </Button>
+              )
             }
             className="max-w-md"
           />
         ) : (
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <li key={p.id}>
+            {visible.map((project) => (
+              <li key={project.project_id}>
                 <ProjectTile
-                  project={p}
-                  onOpen={() =>
-                    navigate(
-                      `/chat/${encodeURIComponent(p.primaryConversation.conversation_id)}`,
-                    )
-                  }
+                  project={project}
+                  onOpen={() => startConversationFor(project)}
                 />
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <NewProjectModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onCreated={(project) => {
+          toast.success("Projekt erstellt", project.path);
+          startConversationFor(project);
+        }}
+      />
     </div>
   );
 }
@@ -228,84 +175,117 @@ function ProjectTile({
   project,
   onOpen,
 }: {
-  project: ProjectCard;
+  project: Project;
   onOpen: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const deleteProject = useDeleteProject();
+
+  const onDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (
+      !confirm(
+        `'${project.name}' aus der Liste entfernen?\n\nDas Verzeichnis auf der Platte bleibt erhalten.`,
+      )
+    ) {
+      setMenuOpen(false);
+      return;
+    }
+    try {
+      await deleteProject.mutateAsync(project.project_id);
+      toast.success("Projekt entfernt", project.name);
+    } catch (err) {
+      toast.error(
+        "Konnte Projekt nicht entfernen",
+        err instanceof ApiError ? err.message : (err as Error).message,
+      );
+    }
+    setMenuOpen(false);
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={cn(
-        "group flex h-full w-full flex-col items-start gap-3 rounded-xl border border-border bg-card px-4 py-4 text-left transition-colors",
+        "group relative flex h-full w-full flex-col items-start gap-3 rounded-xl border border-border bg-card px-4 py-4 text-left transition-colors",
         "hover:border-primary/40 hover:bg-accent/40",
       )}
     >
-      <div className="flex w-full items-center gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-2 text-left"
+      >
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FolderOpen className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-foreground">
-            {project.title}
+            {project.name}
           </h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {project.subtitle}
+          <p className="truncate font-mono text-[11px] text-muted-foreground" title={project.path}>
+            {project.path}
           </p>
         </div>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {formatRelativeTime(project.lastActivity)}
-      </p>
-    </button>
-  );
-}
-
-function WorkspaceTile({
-  title,
-  path,
-  profile,
-  onOpen,
-}: {
-  title: string;
-  path?: string | null;
-  profile?: string | null;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={cn(
-        "group flex w-full max-w-md flex-col items-start gap-2 rounded-xl border border-border bg-card px-4 py-4 text-left transition-colors",
-        "hover:border-primary/40 hover:bg-accent/40",
-      )}
-    >
-      <div className="flex w-full items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <FolderOpen className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-foreground">
-            {title}
-          </h3>
-          {profile ? (
-            <p className="truncate text-xs text-muted-foreground">
-              Default profile: {profile}
-            </p>
+      </button>
+      <div className="flex w-full items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {formatRelativeTime(project.created_at)}
+        </p>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            aria-label="Menu"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuOpen ? (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 z-10 mt-1 min-w-40 rounded-md border border-border bg-popover p-1 shadow-md"
+            >
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={deleteProject.isPending}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Aus Liste entfernen
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
-      {path ? (
-        <p className="truncate text-[11px] text-muted-foreground" title={path}>
-          {path}
-        </p>
-      ) : null}
-    </button>
+    </div>
+  );
+}
+
+function DefaultWorkspaceHint({
+  healthData,
+}: {
+  healthData: ReturnType<typeof useHealth>["data"];
+}) {
+  const checks = (healthData?.checks ?? {}) as Record<string, unknown>;
+  const wd =
+    (checks.working_dir as string | undefined) ??
+    (checks.work_dir as string | undefined) ??
+    null;
+  if (!wd) return null;
+  return (
+    <p className="text-[11px] text-muted-foreground">
+      Standard-Workspace (für Conversations ohne Projekt):{" "}
+      <span className="font-mono">{wd}</span>
+    </p>
   );
 }
 
 function CardSkeleton() {
   return (
-    <div className="h-24 animate-pulse rounded-xl border border-border bg-card/60" />
+    <div className="h-28 animate-pulse rounded-xl border border-border bg-card/60" />
   );
 }

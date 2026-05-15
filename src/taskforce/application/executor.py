@@ -129,6 +129,7 @@ class AgentExecutor:
         planning_strategy: str | None = None,
         planning_strategy_params: dict[str, Any] | None = None,
         plugin_path: str | None = None,
+        work_dir: str | None = None,
     ) -> ExecutionResult:
         """Execute Agent mission with comprehensive orchestration.
 
@@ -171,6 +172,7 @@ class AgentExecutor:
             planning_strategy=planning_strategy,
             planning_strategy_params=planning_strategy_params,
             plugin_path=plugin_path,
+            work_dir=work_dir,
         ):
             # Forward progress updates to callback if provided
             if progress_callback:
@@ -283,6 +285,7 @@ class AgentExecutor:
         planning_strategy_params: dict[str, Any] | None = None,
         agent: Agent | None = None,
         plugin_path: str | None = None,
+        work_dir: str | None = None,
     ) -> AsyncIterator[ProgressUpdate]:
         """Execute Agent mission with streaming progress updates.
 
@@ -392,6 +395,7 @@ class AgentExecutor:
                 planning_strategy=planning_strategy,
                 planning_strategy_params=planning_strategy_params,
                 plugin_path=plugin_path,
+                work_dir=work_dir,
             )
 
         await self._maybe_store_conversation_history(

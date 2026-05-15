@@ -134,6 +134,22 @@ export interface ConversationInfo {
   last_activity: string;
   message_count: number;
   topic: string | null;
+  project_id: string | null;
+}
+
+export interface Project {
+  project_id: string;
+  name: string;
+  path: string;
+  created_at: string;
+}
+
+export type CreateProjectMode = "scratch" | "existing";
+
+export interface CreateProjectInput {
+  name: string;
+  path: string;
+  mode: CreateProjectMode;
 }
 
 export interface ConversationSummary {
@@ -176,6 +192,8 @@ export const queryKeys = {
   conversations: ["conversations", "list"] as const,
   archivedConversations: ["conversations", "archived"] as const,
   conversationMessages: (id: string) => ["conversations", "messages", id] as const,
+  projects: ["projects", "list"] as const,
+  project: (id: string) => ["projects", "detail", id] as const,
   settings: ["settings", "list"] as const,
   settingsSection: (section: string) => ["settings", "section", section] as const,
   oauthConnections: ["oauth", "connections"] as const,
@@ -509,6 +527,7 @@ export function useConversationMessages(id: string | undefined) {
 interface CreateConversationInput {
   channel?: string;
   sender_id?: string;
+  project_id?: string | null;
 }
 
 export function useCreateConversation() {
@@ -520,6 +539,47 @@ export function useCreateConversation() {
         body: payload ?? { channel: "rest" },
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.conversations }),
+  });
+}
+
+// --- Projects --------------------------------------------------------------
+
+export function useProjects() {
+  return useQuery<Project[]>({
+    queryKey: queryKeys.projects,
+    queryFn: () => apiFetch<Project[]>("/api/v1/projects"),
+  });
+}
+
+export function useProject(id: string | undefined) {
+  return useQuery<Project>({
+    queryKey: queryKeys.project(id ?? ""),
+    queryFn: () =>
+      apiFetch<Project>(`/api/v1/projects/${encodeURIComponent(id!)}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateProject() {
+  const qc = useQueryClient();
+  return useMutation<Project, Error, CreateProjectInput>({
+    mutationFn: (payload) =>
+      apiFetch<Project>("/api/v1/projects", {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projects }),
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (projectId) =>
+      apiFetch<void>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projects }),
   });
 }
 

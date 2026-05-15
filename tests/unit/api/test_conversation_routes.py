@@ -53,17 +53,30 @@ def mock_executor():
 
 
 @pytest.fixture
-def client(mock_conversation_manager, mock_executor):
+def mock_project_store():
+    """Project store stub — returns None for any lookup."""
+    store = AsyncMock()
+    store.get = AsyncMock(return_value=None)
+    return store
+
+
+@pytest.fixture
+def client(mock_conversation_manager, mock_executor, mock_project_store):
     """Create a test client with overridden dependencies."""
     from fastapi import FastAPI
 
-    from taskforce.api.dependencies import get_conversation_manager, get_executor
+    from taskforce.api.dependencies import (
+        get_conversation_manager,
+        get_executor,
+        get_project_store,
+    )
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
     app.dependency_overrides[get_conversation_manager] = lambda: mock_conversation_manager
     app.dependency_overrides[get_executor] = lambda: mock_executor
+    app.dependency_overrides[get_project_store] = lambda: mock_project_store
 
     return TestClient(app)
 
@@ -75,7 +88,9 @@ class TestCreateConversation:
         data = resp.json()
         assert data["conversation_id"] == "abc123def456789012345678abcdef00"
         assert data["channel"] == "rest"
-        mock_conversation_manager.create_new.assert_called_once_with("rest", None)
+        mock_conversation_manager.create_new.assert_called_once_with(
+            "rest", None, project_id=None
+        )
 
 
 class TestListConversations:

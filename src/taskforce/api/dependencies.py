@@ -428,6 +428,19 @@ def get_conversation_manager():
     return ConversationManager(store)
 
 
+def get_project_store():
+    """Provide a ProjectStore for the current request scope.
+
+    Not lru_cached for the same reason as ``get_settings_store``: when
+    a plugin installs ``set_project_store_override`` to scope per
+    tenant, the override re-resolves on every call.
+    """
+    from taskforce.application.infrastructure_builder import InfrastructureBuilder
+
+    work_dir = os.getenv("TASKFORCE_WORK_DIR", ".taskforce")
+    return InfrastructureBuilder().build_project_store(work_dir=work_dir)
+
+
 @lru_cache(maxsize=1)
 def get_request_queue():
     """Provide a shared RequestQueue instance."""

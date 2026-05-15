@@ -53,6 +53,7 @@ class FileConversationStore:
         self,
         channel: str,
         sender_id: str | None = None,
+        project_id: str | None = None,
     ) -> str:
         """Return the active conversation for channel/sender, or create one."""
         index = await self._load_index()
@@ -64,9 +65,14 @@ class FileConversationStore:
             ):
                 return conv["conversation_id"]
 
-        return await self.create_new(channel, sender_id)
+        return await self.create_new(channel, sender_id, project_id)
 
-    async def create_new(self, channel: str, sender_id: str | None = None) -> str:
+    async def create_new(
+        self,
+        channel: str,
+        sender_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
         """Create a new conversation, archiving any existing active one."""
         index = await self._load_index()
 
@@ -93,6 +99,7 @@ class FileConversationStore:
             "summary": None,
             "archived_at": None,
             "sender_id": sender_id,
+            "project_id": project_id,
         }
         index.append(entry)
         await self._save_index(index)
@@ -191,6 +198,7 @@ class FileConversationStore:
                 last_activity=datetime.fromisoformat(c["last_activity"]),
                 message_count=c["message_count"],
                 topic=c.get("topic"),
+                project_id=c.get("project_id"),
             )
             for c in active
         ]
@@ -245,6 +253,7 @@ class FileConversationStore:
                     topic=entry.get("topic"),
                     summary=entry.get("summary"),
                     sender_id=entry.get("sender_id"),
+                    project_id=entry.get("project_id"),
                     metadata=entry.get("metadata", {}),
                 )
                 # Load topic segments if stored.
