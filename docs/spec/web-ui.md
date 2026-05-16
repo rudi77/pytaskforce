@@ -19,8 +19,15 @@ documented REST surface — there is no privileged backdoor.
 ## Capabilities (what the user can do)
 
 - chat with any visible agent, streaming tokens over SSE, in a single conversation or many parallel ones
+- switch per-conversation permission mode in chat header (`Ask`, `Auto-Edits`, `Plan`, `Auto`, `Bypass`) to control approval strictness for the next run
 - attach files (`@mention` picker) and follow tool-call output inline
 - create, list, open, archive, and remove conversations from a sidebar
+- switch chat sessions with keyboard shortcuts (`Ctrl/Cmd+Tab`, `Ctrl/Cmd+Shift+Tab`) and create a new session with `Ctrl/Cmd+N`
+- filter Recents in the sidebar by scope (`All`, `Project`, `Global`) and see project badges per conversation
+- open a second conversation as split view from Recents via Ctrl/Cmd-click and close it from the split pane header
+- open a read-only file pane from the RightPanel file list (shows latest cached `file_read` content for that path)
+- edit and save files from the file pane with optimistic conflict detection (`mtime` token) and `Ctrl/Cmd+S` shortcut
+- see per-session runtime badges in Recents (`running`, `needs-input`, `error`, `done`)
 - create projects (from scratch or by importing a directory), list them, open per-project conversation detail pages
 - bind a new conversation to a project so the agent runs in that project's working directory
 - list every agent allowed by the deployment manifest, open the editor, compare two agents side-by-side

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Archive,
   Bot,
@@ -34,6 +34,7 @@ import {
   type FileMetadata,
 } from "@/api/queries";
 import { ApiError } from "@/api/client";
+import { apiFetch } from "@/api/client";
 import { AskUserCard } from "@/features/chat/AskUserCard";
 import { ChatComposer } from "@/features/chat/ChatComposer";
 import { CoworkMessage } from "@/features/chat/CoworkMessageView";
@@ -41,6 +42,8 @@ import { RightPanel } from "@/features/chat/RightPanel";
 import { useChatStream } from "@/features/chat/useChatStream";
 import {
   CHAT_VIEW_MODES,
+  CHAT_PERMISSION_MODES,
+  type ChatPermissionMode,
   useChatPreferences,
   type ChatViewMode,
 } from "@/features/chat/useChatPreferences";
@@ -136,6 +139,16 @@ interface ChatHeaderProps {
   onViewModeChange: (mode: ChatViewMode) => void;
   rightPanelOpen: boolean;
   onRightPanelToggle: () => void;
+  permissionMode: ChatPermissionMode;
+  onPermissionModeChange: (mode: ChatPermissionMode) => void;
+}
+
+interface OpenFileView {
+  path: string;
+  content: string;
+  mtimeNs: number | null;
+  dirty: boolean;
+  editing: boolean;
 }
 
 function ChatHeader({
@@ -157,6 +170,8 @@ function ChatHeader({
   onViewModeChange,
   rightPanelOpen,
   onRightPanelToggle,
+  permissionMode,
+  onPermissionModeChange,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -203,6 +218,11 @@ function ChatHeader({
             disabled={isStreaming}
           />
           <ViewModePicker value={viewMode} onChange={onViewModeChange} />
+          <PermissionModePicker
+            value={permissionMode}
+            onChange={onPermissionModeChange}
+            disabled={isStreaming}
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -335,6 +355,43 @@ function ViewModePicker({
   );
 }
 
+function PermissionModePicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ChatPermissionMode;
+  onChange: (mode: ChatPermissionMode) => void;
+  disabled: boolean;
+}) {
+  const current = CHAT_PERMISSION_MODES.find((m) => m.value === value);
+  return (
+    <label
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      title={current ? `${current.label}: ${current.hint}` : "Permission mode"}
+    >
+      <span className="sr-only">Permission mode</span>
+      <select
+        aria-label="Permission mode"
+        className={cn(
+          "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
+          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+        )}
+        value={value}
+        onChange={(e) => onChange(e.target.value as ChatPermissionMode)}
+        disabled={disabled}
+      >
+        {CHAT_PERMISSION_MODES.map((mode) => (
+          <option key={mode.value} value={mode.value}>
+            {mode.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Message list — Cowork-style flowing transcript
 // ---------------------------------------------------------------------------
@@ -406,13 +463,17 @@ function MessageList({
 
 export default function ChatPage() {
   const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const conversationId = params.conversationId;
+  const splitConversationId = searchParams.get("split") || undefined;
   const conversationsQuery = useConversations();
   const activeConversation = useMemo(
     () => conversationsQuery.data?.find((c) => c.conversation_id === conversationId),
     [conversationsQuery.data, conversationId],
   );
   const messagesQuery = useConversationMessages(conversationId);
+  const splitMessagesQuery = useConversationMessages(splitConversationId);
+  const createConversation = useCreateConversation();
   const archive = useArchiveConversation();
   const fork = useForkConversation();
   const compact = useCompactConversation();
@@ -436,6 +497,8 @@ export default function ChatPage() {
   );
   const viewMode = useChatPreferences((s) => s.viewMode);
   const setViewMode = useChatPreferences((s) => s.setViewMode);
+  const permissionMode = useChatPreferences((s) => s.permissionMode);
+  const setPermissionMode = useChatPreferences((s) => s.setPermissionMode);
 
   // Right-panel toggle. Persists per-browser so the user's preference
   // survives page reloads but isn't synced across devices (it's a
@@ -444,6 +507,7 @@ export default function ChatPage() {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(RIGHT_PANEL_KEY) !== "0";
   });
+  const [openFile, setOpenFile] = useState<OpenFileView | null>(null);
   useEffect(() => {
     window.localStorage.setItem(RIGHT_PANEL_KEY, rightPanelOpen ? "1" : "0");
   }, [rightPanelOpen]);
@@ -539,6 +603,7 @@ export default function ChatPage() {
       attachments: attachments.map((a) => ({ file_id: a.file_id })),
       agentId: selectedAgent.agentId,
       profile: selectedAgent.profile,
+      permissionMode,
     });
   };
 
@@ -602,11 +667,113 @@ export default function ChatPage() {
     }
   };
 
+  const handleOpenFile = (path: string) => {
+    const normalized = path.trim();
+    void apiFetch<{ path: string; content: string; mtime_ns: number }>(
+      `/api/v1/workspace/file?path=${encodeURIComponent(normalized)}`,
+    )
+      .then((file) => {
+        setOpenFile({
+          path: file.path,
+          content: file.content,
+          mtimeNs: file.mtime_ns,
+          dirty: false,
+          editing: false,
+        });
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "Could not open file.";
+        toast.error("Open file failed", msg);
+      });
+  };
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
+      if (!openFile?.editing || !openFile.dirty || openFile.mtimeNs === null) return;
+      event.preventDefault();
+      void apiFetch<{ path: string; mtime_ns: number }>("/api/v1/workspace/file", {
+        method: "PUT",
+        body: {
+          path: openFile.path,
+          content: openFile.content,
+          expected_mtime_ns: openFile.mtimeNs,
+        },
+      })
+        .then((saved) => {
+          setOpenFile((prev) =>
+            prev
+              ? { ...prev, mtimeNs: saved.mtime_ns, dirty: false, editing: false }
+              : prev,
+          );
+          toast.success("File saved", saved.path);
+        })
+        .catch((err) => {
+          if (err instanceof ApiError && err.status === 409) {
+            toast.error("Save conflict", "File changed on disk. Reopen and merge changes.");
+            return;
+          }
+          const msg = err instanceof Error ? err.message : "Could not save file.";
+          toast.error("Save failed", msg);
+        });
+    };
+    window.addEventListener("keydown", handler, { capture: true });
+    return () => window.removeEventListener("keydown", handler, { capture: true });
+  }, [openFile]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const inEditable =
+        tag === "input" ||
+        tag === "textarea" ||
+        target?.isContentEditable === true;
+      if (inEditable) return;
+
+      const isCtrlOrMeta = event.ctrlKey || event.metaKey;
+      if (!isCtrlOrMeta) return;
+
+      if (event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        void createConversation
+          .mutateAsync({ channel: "rest" })
+          .then((conv) => {
+            navigate(`/chat/${encodeURIComponent(conv.conversation_id)}`);
+          })
+          .catch(() => {
+            toast.error("Could not start conversation", "Please try again.");
+          });
+        return;
+      }
+
+      if (event.key.toLowerCase() === "tab") {
+        event.preventDefault();
+        const list = conversationsQuery.data ?? [];
+        if (list.length < 2 || !conversationId) return;
+        const index = list.findIndex((c) => c.conversation_id === conversationId);
+        if (index < 0) return;
+        const delta = event.shiftKey ? -1 : 1;
+        const next = (index + delta + list.length) % list.length;
+        const nextId = list[next]?.conversation_id;
+        if (nextId) {
+          navigate(`/chat/${encodeURIComponent(nextId)}`);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handler, { capture: true });
+    return () => window.removeEventListener("keydown", handler, { capture: true });
+  }, [conversationId, conversationsQuery.data, createConversation, navigate]);
+
   // No conversation selected → show the picker. Keeps the test happy
   // ("Pick or start a conversation" still rendered).
   if (!conversationId) {
     return <NoConversationPicker />;
   }
+
+  const splitMessages = splitMessagesQuery.data ?? [];
 
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden">
@@ -630,6 +797,8 @@ export default function ChatPage() {
           onViewModeChange={setViewMode}
           rightPanelOpen={rightPanelOpen}
           onRightPanelToggle={() => setRightPanelOpen((o) => !o)}
+          permissionMode={permissionMode}
+          onPermissionModeChange={setPermissionMode}
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -690,13 +859,117 @@ export default function ChatPage() {
         </div>
       </section>
 
+      {splitConversationId ? (
+        <section className="hidden min-w-0 w-[44%] border-l border-border lg:flex lg:flex-col">
+          <div className="flex items-center justify-between border-b border-border px-4 py-2">
+            <p className="truncate text-sm font-medium">Split view · {splitConversationId.slice(0, 8)}…</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete("split");
+                setSearchParams(next, { replace: true });
+              }}
+            >
+              Close
+            </Button>
+          </div>
+          {splitMessagesQuery.isLoading ? (
+            <div className="flex-1 p-4">
+              <Skeleton className="h-full w-full" />
+            </div>
+          ) : (
+            <MessageList messages={splitMessages} viewMode={viewMode} />
+          )}
+        </section>
+      ) : null}
+
       {rightPanelOpen ? (
         <RightPanel
           projectName={projectName}
           planSteps={stream.state.planSteps}
           toolCalls={stream.state.toolCalls}
           streaming={isStreaming}
+          onOpenFile={handleOpenFile}
         />
+      ) : null}
+
+      {openFile ? (
+        <section className="hidden min-w-0 w-[38%] border-l border-border bg-card/40 p-3 xl:flex xl:flex-col">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="truncate text-sm font-medium" title={openFile.path}>{openFile.path}</p>
+            <div className="flex items-center gap-1">
+              {!openFile.editing ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOpenFile((prev) => (prev ? { ...prev, editing: true } : prev))}
+                >
+                  Edit
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setOpenFile((prev) => (prev ? { ...prev, editing: false, dirty: false } : prev))}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={!openFile.dirty || openFile.mtimeNs === null}
+                    onClick={() => {
+                      if (!openFile || openFile.mtimeNs === null) return;
+                      void apiFetch<{ path: string; mtime_ns: number }>("/api/v1/workspace/file", {
+                        method: "PUT",
+                        body: {
+                          path: openFile.path,
+                          content: openFile.content,
+                          expected_mtime_ns: openFile.mtimeNs,
+                        },
+                      })
+                        .then((saved) => {
+                          setOpenFile((prev) =>
+                            prev ? { ...prev, mtimeNs: saved.mtime_ns, dirty: false, editing: false } : prev,
+                          );
+                          toast.success("File saved", saved.path);
+                        })
+                        .catch((err) => {
+                          if (err instanceof ApiError && err.status === 409) {
+                            toast.error("Save conflict", "File changed on disk. Reopen and merge changes.");
+                            return;
+                          }
+                          const msg = err instanceof Error ? err.message : "Could not save file.";
+                          toast.error("Save failed", msg);
+                        });
+                    }}
+                  >
+                    Save
+                  </Button>
+                </>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setOpenFile(null)}>Close</Button>
+            </div>
+          </div>
+          {openFile.editing ? (
+            <textarea
+              className="min-h-0 flex-1 resize-none rounded border border-border bg-background p-3 font-mono text-xs leading-relaxed"
+              value={openFile.content}
+              onChange={(e) =>
+                setOpenFile((prev) =>
+                  prev ? { ...prev, content: e.target.value, dirty: true } : prev,
+                )
+              }
+            />
+          ) : (
+            <pre className="min-h-0 flex-1 overflow-auto rounded border border-border bg-background p-3 text-xs leading-relaxed">
+              {openFile.content}
+            </pre>
+          )}
+        </section>
       ) : null}
     </div>
   );

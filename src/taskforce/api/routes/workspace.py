@@ -96,6 +96,23 @@ class WorkspaceListResponse(BaseModel):
     )
 
 
+class WorkspaceFileResponse(BaseModel):
+    path: str
+    content: str
+    mtime_ns: int
+
+
+class WorkspaceFileWriteRequest(BaseModel):
+    path: str = Field(..., description="Workspace-relative file path.")
+    content: str = Field(..., description="New full file content.")
+    expected_mtime_ns: int = Field(..., description="Optimistic concurrency token from last read.")
+
+
+class WorkspaceFileWriteResponse(BaseModel):
+    path: str
+    mtime_ns: int
+
+
 # ---------------------------------------------------------------------------
 # Configuration helpers
 # ---------------------------------------------------------------------------
@@ -192,6 +209,29 @@ def _resolve_target(rel_path: str) -> _ResolvedTarget:
             details={"path": cleaned},
         )
 
+    return _ResolvedTarget(root=root, target=target, relative=cleaned)
+
+
+def _resolve_file_target(rel_path: str) -> _ResolvedTarget:
+    root = _resolve_workspace_root()
+    cleaned = (rel_path or "").strip().lstrip("/").replace("\\", "/")
+    target = (root / cleaned).resolve() if cleaned else root
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise _http_exception(
+            status_code=400,
+            code="invalid_path",
+            message="Path escapes the workspace root.",
+            details={"path": rel_path},
+        ) from exc
+    if not target.exists() or not target.is_file():
+        raise _http_exception(
+            status_code=404,
+            code="path_not_found",
+            message=f"No such file inside the workspace: {cleaned or '.'}",
+            details={"path": cleaned},
+        )
     return _ResolvedTarget(root=root, target=target, relative=cleaned)
 
 
@@ -306,3 +346,35 @@ def browse_workspace(
         entries=entries,
         truncated=truncated,
     )
+
+
+@router.get("/workspace/file", response_model=WorkspaceFileResponse)
+def read_workspace_file(path: str = Query(..., description="Workspace-relative file path.")) -> WorkspaceFileResponse:
+    resolved = _resolve_file_target(path)
+    try:
+        content = resolved.target.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise _http_exception(
+            status_code=400,
+            code="not_text_file",
+            message="File is not valid UTF-8 text.",
+            details={"path": resolved.relative},
+        ) from exc
+    mtime_ns = resolved.target.stat().st_mtime_ns
+    return WorkspaceFileResponse(path=resolved.relative, content=content, mtime_ns=mtime_ns)
+
+
+@router.put("/workspace/file", response_model=WorkspaceFileWriteResponse)
+def write_workspace_file(request: WorkspaceFileWriteRequest) -> WorkspaceFileWriteResponse:
+    resolved = _resolve_file_target(request.path)
+    current_mtime = resolved.target.stat().st_mtime_ns
+    if current_mtime != request.expected_mtime_ns:
+        raise _http_exception(
+            status_code=409,
+            code="file_conflict",
+            message="File changed since last read.",
+            details={"path": resolved.relative, "current_mtime_ns": current_mtime},
+        )
+    resolved.target.write_text(request.content, encoding="utf-8")
+    new_mtime = resolved.target.stat().st_mtime_ns
+    return WorkspaceFileWriteResponse(path=resolved.relative, mtime_ns=new_mtime)

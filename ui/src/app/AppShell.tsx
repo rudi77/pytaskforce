@@ -43,9 +43,11 @@ import {
   useArchivedConversations,
   useConversations,
   useCreateConversation,
+  useProjects,
   type ConversationInfo,
 } from "@/api/queries";
 import { formatRelativeTime } from "@/lib/utils";
+import { useConversationRuntimeStatusMap } from "@/features/chat/useChatStream";
 
 interface NavItem {
   to: string;
@@ -246,17 +248,48 @@ function RecentsSection({
   onNavigate?: () => void;
 }) {
   const conversations = useConversations();
+  const projects = useProjects();
   const archived = useArchivedConversations(10);
+  const runtimeStatus = useConversationRuntimeStatusMap();
+  const [scope, setScope] = useState<"all" | "project" | "global">("all");
 
   if (collapsed) return null;
 
-  const recent = (conversations.data ?? []).slice(0, 8);
+  const filtered = (conversations.data ?? []).filter((c) => {
+    if (scope === "project") return !!c.project_id;
+    if (scope === "global") return !c.project_id;
+    return true;
+  });
+  const recent = filtered.slice(0, 8);
+  const projectNames = new Map((projects.data ?? []).map((p) => [p.project_id, p.name]));
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
       <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         Recents
       </p>
+      <div className="mb-1 flex items-center gap-1 px-1.5">
+        {[
+          ["all", "All"],
+          ["project", "Project"],
+          ["global", "Global"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setScope(value as "all" | "project" | "global")}
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] transition-colors",
+              scope === value
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+            )}
+            aria-pressed={scope === value}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {conversations.isLoading ? (
           <div className="space-y-1 px-1">
@@ -270,6 +303,8 @@ function RecentsSection({
               <li key={c.conversation_id}>
                 <RecentItem
                   conversation={c}
+                  projectName={c.project_id ? projectNames.get(c.project_id) ?? null : null}
+                  status={runtimeStatus[c.conversation_id]}
                   active={c.conversation_id === activeId}
                   onNavigate={onNavigate}
                 />
@@ -297,11 +332,14 @@ function RecentsSection({
                     conversation={{
                       conversation_id: c.conversation_id,
                       topic: c.topic,
+                      project_id: c.project_id,
                       channel: "",
                       message_count: c.message_count,
                       last_activity: c.archived_at,
                       started_at: c.started_at,
                     }}
+                    projectName={c.project_id ? projectNames.get(c.project_id) ?? null : null}
+                    status={runtimeStatus[c.conversation_id]}
                     active={false}
                     muted
                     onNavigate={onNavigate}
@@ -320,18 +358,32 @@ function RecentItem({
   conversation: c,
   active,
   muted,
+  projectName,
   onNavigate,
 }: {
   conversation: ConversationInfo;
   active: boolean;
   muted?: boolean;
+  projectName?: string | null;
+  status?: "running" | "needs-input" | "error" | "done" | "idle";
   onNavigate?: () => void;
 }) {
   const title = c.topic || c.channel || c.conversation_id;
+  const location = useLocation();
+  const navigate = useNavigate();
   return (
     <Link
       to={`/chat/${encodeURIComponent(c.conversation_id)}`}
-      onClick={onNavigate}
+      onClick={(event) => {
+        if ((event.metaKey || event.ctrlKey) && location.pathname.startsWith("/chat/")) {
+          event.preventDefault();
+          const [base] = location.pathname.split("?");
+          navigate(`${base}?split=${encodeURIComponent(c.conversation_id)}`);
+          onNavigate?.();
+          return;
+        }
+        onNavigate?.();
+      }}
       className={cn(
         "block truncate rounded-md px-2.5 py-1.5 text-sm transition-colors",
         active
@@ -342,7 +394,17 @@ function RecentItem({
       )}
       title={`${title} · ${formatRelativeTime(c.last_activity)}`}
     >
-      {title}
+      <span className="truncate">{title}</span>
+      {projectName ? (
+        <span className="ml-1 inline-flex rounded bg-muted px-1 py-0 text-[10px] text-muted-foreground">
+          {projectName}
+        </span>
+      ) : null}
+      {status && status !== "idle" ? (
+        <span className="ml-1 inline-flex rounded border px-1 py-0 text-[10px] text-muted-foreground">
+          {status}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -784,4 +846,3 @@ export function AppShell() {
     </div>
   );
 }
-

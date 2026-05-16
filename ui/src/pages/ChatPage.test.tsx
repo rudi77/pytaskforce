@@ -11,7 +11,7 @@
 
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ChatPage from "./ChatPage";
@@ -155,6 +155,33 @@ describe("ChatPage redesign", () => {
     expect(picker.value).toBe("normal");
   });
 
+  it("renders the permission-mode dropdown in the header", () => {
+    mocks.conversations = [
+      {
+        conversation_id: "perm-mode-1",
+        topic: "Has permission picker",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+    ];
+    mocks.messages = [{ role: "user", content: "hi" }];
+
+    renderAt("/chat/perm-mode-1");
+
+    const picker = screen.getByLabelText("Permission mode") as HTMLSelectElement;
+    expect(picker).toBeInTheDocument();
+    expect(Array.from(picker.options).map((o) => o.value)).toEqual([
+      "ask",
+      "auto_accept_edits",
+      "plan",
+      "auto",
+      "bypass",
+    ]);
+    expect(picker.value).toBe("ask");
+  });
+
   it("renders the assistant empty state via <EmptyState/> when messages are empty", () => {
     mocks.conversations = [
       {
@@ -173,5 +200,61 @@ describe("ChatPage redesign", () => {
     // The new copy lives inside the shared EmptyState component instead
     // of the old ad-hoc border-dashed ConversationStarter.
     expect(screen.getByText("How can the agent help?")).toBeInTheDocument();
+  });
+
+  it("cycles to the next conversation on Ctrl+Tab", () => {
+    mocks.conversations = [
+      {
+        conversation_id: "conv-a",
+        topic: "Conversation A",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+      {
+        conversation_id: "conv-b",
+        topic: "Conversation B",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+    ];
+    mocks.messages = [{ role: "user", content: "hi" }];
+
+    renderAt("/chat/conv-a");
+    expect(screen.getByRole("heading", { name: "Conversation A" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+
+    expect(screen.getByRole("heading", { name: "Conversation B" })).toBeInTheDocument();
+  });
+
+  it("ignores repeated keydown events for session hotkeys", () => {
+    mocks.conversations = [
+      {
+        conversation_id: "repeat-a",
+        topic: "Repeat A",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+      {
+        conversation_id: "repeat-b",
+        topic: "Repeat B",
+        channel: "rest",
+        last_activity: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        message_count: 1,
+      },
+    ];
+    mocks.messages = [{ role: "user", content: "hi" }];
+
+    renderAt("/chat/repeat-a");
+    fireEvent.keyDown(window, { key: "Tab", ctrlKey: true, repeat: true });
+
+    expect(screen.getByRole("heading", { name: "Repeat A" })).toBeInTheDocument();
   });
 });

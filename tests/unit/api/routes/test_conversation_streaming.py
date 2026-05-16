@@ -44,7 +44,11 @@ class _RecordingConversationManager:
 class _StreamingExecutor:
     """Plain executor double exposing an async-iterating mission stream."""
 
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
     def execute_mission_streaming(self, **_kwargs) -> AsyncIterator[_Update]:
+        self.calls.append(dict(_kwargs))
         async def _stream() -> AsyncIterator[_Update]:
             yield _Update(event_type=EventType.STARTED.value, message="started")
             yield _Update(
@@ -189,3 +193,17 @@ def test_streaming_emits_keepalive_ping(
     assert ": ping" in response.text
     # The real events still get through.
     assert "event: assistant_persisted" in response.text
+
+
+def test_streaming_forwards_permission_mode_to_executor(
+    client: TestClient, streaming_executor: _StreamingExecutor
+) -> None:
+    response = client.post(
+        "/api/v1/conversations/conv-perm/messages/stream",
+        json={"message": "hi", "permission_mode": "plan"},
+    )
+    assert response.status_code == 200
+    assert streaming_executor.calls, "executor should be invoked"
+    assert streaming_executor.calls[-1].get("user_context") == {
+        "permission_mode": "plan"
+    }
