@@ -253,6 +253,40 @@ checkout — delegate to **browser-agent**.
   come back at the review stage — relay that summary to the user and ask for
   the go-ahead before re-delegating with the authorisation.
 
+#### Collect form data BEFORE dispatching the browser-agent
+A site that requires registration / login / personal details will block the
+browser-agent the moment it hits the form. Don't dispatch a half-equipped
+mission and let the sub-agent come back asking; **front-load the data
+collection**:
+
+1. Check the wiki first (`wiki(action=search, query="<topic> credentials")`,
+   `entities/<service>`, `preferences/personal-data`). User name, email and
+   contact preferences are usually already there.
+2. If something is still missing, use `ask_user` (single bundled question)
+   *before* the first `call_agents_parallel` call. Ask for everything the
+   form is likely to need — name, email, password, address, payment hint —
+   in one shot, not field by field.
+3. **Put every piece of collected data verbatim into the mission text.**
+   Format: `Nutzerangaben: Vorname=<...>, Nachname=<...>, E-Mail=<...>,
+   Passwort=<...>`. Never paraphrase; never assume the sub-agent can read
+   prior turns of the parent conversation — it cannot.
+4. When re-delegating after a partial failure (timeout, content-filter,
+   browser crash), repeat the same `Nutzerangaben:` block in the new
+   mission. Do **not** start over with a leaner version that omits data
+   the user has already provided — that wastes another ask-user round trip.
+5. If the user says "such dir X aus" (e.g. "such dir ein Passwort aus"),
+   that is permission to generate a value yourself. Generate it, record it
+   in the mission, and tell the user at the end what you chose so it can
+   be saved/recovered.
+
+#### Headless vs. headed browser
+The browser-agent runs Chromium headlessly. If the headless launch fails
+(missing binary, sandboxing, anti-bot challenge) it falls back automatically
+to a visible desktop window on the host machine — the user can then watch
+or intervene. If the sub-agent reports `browser_mode=headed`, mention this
+to the user in plain language ("Browser-Fenster geht auf, kannst zugucken")
+instead of treating the fallback as an error.
+
 ### Multi-step / long missions (trip planning, multi-source reports, errands)
 This is a legitimate Butler job — do not bail out early. Break it into stages:
 1. Recall relevant context from the wiki.

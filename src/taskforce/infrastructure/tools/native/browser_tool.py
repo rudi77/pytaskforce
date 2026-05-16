@@ -96,13 +96,39 @@ class _BrowserSession:
         self._browser: Any = None
         self._context: Any = None
         self._page: Any = None
+        self._headless: bool | None = None
+
+    @property
+    def headless(self) -> bool | None:
+        """Effective headless mode for the live session (None if not started)."""
+        return self._headless
 
     async def start(self, headless: bool = True) -> None:
-        """Launch the browser and open an initial page."""
+        """Launch the browser and open an initial page.
+
+        If a headless launch fails (e.g. missing/incompatible browser
+        binary), automatically retry with ``headless=False`` so a real
+        desktop window opens and the user can complete the flow
+        manually if needed.
+        """
         from playwright.async_api import async_playwright  # type: ignore[import]
 
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=headless)
+
+        try:
+            self._browser = await self._playwright.chromium.launch(headless=headless)
+            effective_headless = headless
+        except Exception as exc:
+            if not headless:
+                # User explicitly asked for headed; nothing to fall back to.
+                raise
+            logger.warning(
+                "browser_session.headless_launch_failed_falling_back_to_headed",
+                error=repr(exc),
+            )
+            self._browser = await self._playwright.chromium.launch(headless=False)
+            effective_headless = False
+
         self._context = await self._browser.new_context(
             viewport={"width": 1280, "height": 720},
             user_agent=(
@@ -112,7 +138,12 @@ class _BrowserSession:
             ),
         )
         self._page = await self._context.new_page()
-        logger.info("browser_session.started", headless=headless)
+        self._headless = effective_headless
+        logger.info(
+            "browser_session.started",
+            headless=effective_headless,
+            fell_back_to_headed=(headless and not effective_headless),
+        )
 
     @property
     def page(self) -> Any:
@@ -407,11 +438,15 @@ class BrowserTool(ToolProtocol):
             return {"success": False, "error": ssrf_error}
 
         response = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+        session = _session
         return {
             "success": True,
             "url": page.url,
             "status": response.status if response else None,
             "title": await page.title(),
+            "browser_mode": (
+                "headed" if session and session.headless is False else "headless"
+            ),
         }
 
     async def _action_click(

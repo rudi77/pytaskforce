@@ -442,6 +442,73 @@ class TestExecuteActions:
 
 
 # ---------------------------------------------------------------------------
+# Headless-fallback tests
+# ---------------------------------------------------------------------------
+
+
+class TestHeadlessFallback:
+    """Verify that a failed headless launch falls back to a headed window."""
+
+    async def test_falls_back_to_headed_when_headless_launch_fails(self) -> None:
+        from taskforce.infrastructure.tools.native.browser_tool import _BrowserSession
+
+        chromium = MagicMock()
+
+        async def launch(*, headless: bool):
+            if headless:
+                raise RuntimeError(
+                    "BrowserType.launch: Executable doesn't exist at "
+                    "C:\\Users\\rudi\\AppData\\Local\\ms-playwright\\..."
+                )
+            browser = MagicMock()
+            browser.new_context = AsyncMock(
+                return_value=MagicMock(new_page=AsyncMock(return_value=MagicMock()))
+            )
+            return browser
+
+        chromium.launch = AsyncMock(side_effect=launch)
+        playwright_obj = MagicMock(chromium=chromium)
+
+        async_pw = MagicMock()
+        async_pw.start = AsyncMock(return_value=playwright_obj)
+
+        with patch(
+            "playwright.async_api.async_playwright",
+            return_value=async_pw,
+        ):
+            session = _BrowserSession()
+            await session.start(headless=True)
+
+        # First call with headless=True, second with headless=False.
+        assert chromium.launch.await_count == 2
+        first_call_kwargs = chromium.launch.await_args_list[0].kwargs
+        second_call_kwargs = chromium.launch.await_args_list[1].kwargs
+        assert first_call_kwargs == {"headless": True}
+        assert second_call_kwargs == {"headless": False}
+        assert session.headless is False
+
+    async def test_headed_request_does_not_fall_back(self) -> None:
+        from taskforce.infrastructure.tools.native.browser_tool import _BrowserSession
+
+        chromium = MagicMock()
+        chromium.launch = AsyncMock(side_effect=RuntimeError("display unavailable"))
+        playwright_obj = MagicMock(chromium=chromium)
+        async_pw = MagicMock()
+        async_pw.start = AsyncMock(return_value=playwright_obj)
+
+        with patch(
+            "playwright.async_api.async_playwright",
+            return_value=async_pw,
+        ):
+            session = _BrowserSession()
+            with pytest.raises(RuntimeError, match="display unavailable"):
+                await session.start(headless=False)
+
+        # No fallback attempt for an explicit headed request.
+        assert chromium.launch.await_count == 1
+
+
+# ---------------------------------------------------------------------------
 # Registry integration test
 # ---------------------------------------------------------------------------
 

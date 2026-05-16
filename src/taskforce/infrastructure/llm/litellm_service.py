@@ -1288,35 +1288,91 @@ class LiteLLMService:
     ) -> dict[str, Any] | None:
         """Attempt recovery from Azure content-policy violation.
 
-        Strips the message history to just system + latest messages and
-        retries once.  Returns the LLM result on success, or None if
-        recovery also fails.
+        Stage 1: aggressive strip of message history (system + last
+        ``recovery_keep_last_n`` plain turns). Stage 2 (optional, when
+        ``recover_via_rephrase=True``): neutralise the last user turn
+        via a small LLM call and retry once. Returns the LLM result on
+        success, or ``None`` if all stages fail.
+
+        Mirrors the recovery cascade used in the streaming path so a
+        non-streaming ``complete()`` does not give up after one stage.
         """
         stripped = self._strip_messages_for_content_recovery(messages, mode="aggressive")
         if len(stripped) >= len(messages):
-            return None  # Nothing to strip — can't recover
+            stripped = None  # Nothing left to strip — skip stage 1
+
+        if stripped is not None:
+            logger.warning(
+                "llm_content_filter_recovery",
+                original_messages=len(messages),
+                stripped_messages=len(stripped),
+                model=resolved_model,
+            )
+
+            _, _, litellm_kwargs = self._prepare_request(
+                stripped, model, tools, tool_choice, **kwargs
+            )
+
+            try:
+                result = await self._attempt_completion(
+                    litellm_kwargs, resolved_model, stripped, tools, attempt=1
+                )
+                logger.info(
+                    "llm_content_filter_recovery_success",
+                    model=resolved_model,
+                )
+                return result
+            except Exception as recovery_error:
+                logger.warning(
+                    "llm_content_filter_recovery_stage_failed",
+                    stage="aggressive",
+                    model=resolved_model,
+                    error=str(recovery_error)[:200],
+                )
+
+        # Stage 2: rephrase the latest user turn neutrally and retry.
+        if not self._recover_via_rephrase:
+            logger.error(
+                "llm_content_filter_recovery_failed",
+                model=resolved_model,
+            )
+            return None
+
+        base = stripped if stripped is not None else messages
+        rephrased = await self._rephrase_user_message_for_recovery(base, resolved_model)
+        if rephrased is None:
+            logger.error(
+                "llm_content_filter_recovery_failed",
+                stage="rephrase",
+                model=resolved_model,
+                reason="no_rephrase_available",
+            )
+            return None
 
         logger.warning(
             "llm_content_filter_recovery",
+            stage="rephrase",
             original_messages=len(messages),
-            stripped_messages=len(stripped),
+            stripped_messages=len(rephrased),
             model=resolved_model,
         )
-
-        _, _, litellm_kwargs = self._prepare_request(stripped, model, tools, tool_choice, **kwargs)
-
+        _, _, litellm_kwargs = self._prepare_request(
+            rephrased, model, tools, tool_choice, **kwargs
+        )
         try:
             result = await self._attempt_completion(
-                litellm_kwargs, resolved_model, stripped, tools, attempt=1
+                litellm_kwargs, resolved_model, rephrased, tools, attempt=1
             )
             logger.info(
                 "llm_content_filter_recovery_success",
+                stage="rephrase",
                 model=resolved_model,
             )
             return result
         except Exception as recovery_error:
             logger.error(
                 "llm_content_filter_recovery_failed",
+                stage="rephrase",
                 model=resolved_model,
                 error=str(recovery_error)[:200],
             )

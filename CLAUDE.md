@@ -669,9 +669,12 @@ per stage:
    web-search query). Only runs when tools were originally provided
    AND at least one strip stage was attempted (so we know the
    primary error is content-filter, not a malformed request).
-4. `rephrase` *(opt-in)* — `LiteLLMService(recover_via_rephrase=True)`
-   adds a small no-tools LLM call that rewrites the latest user turn
-   neutrally, then retries once. Off by default.
+4. `rephrase` — `LiteLLMService(recover_via_rephrase=True)` adds a
+   small no-tools LLM call that rewrites the latest user turn
+   neutrally, then retries once. **ON by default** in both the
+   streaming `complete_stream` and the non-streaming `complete`
+   paths — pass `recover_via_rephrase=False` to opt out. Costs one
+   extra small LLM call ONLY on the failure path.
 
 The agent surfaces a factual German user message naming the real
 cause (accumulated research context) instead of a hallucinated

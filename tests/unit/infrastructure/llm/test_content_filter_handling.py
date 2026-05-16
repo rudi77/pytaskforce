@@ -68,3 +68,97 @@ async def test_handle_stream_error_does_not_tag_other_errors(
     assert event["type"] == "error"
     assert "non_retryable" not in event
     assert "error_kind" not in event
+
+
+# ---------------------------------------------------------------------------
+# Non-streaming _recover_from_content_filter: rephrase fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def recovery_service(service: LiteLLMService) -> LiteLLMService:
+    """Service with rephrase recovery enabled and stubbed prepare_request."""
+    service._recover_via_rephrase = True  # type: ignore[attr-defined]
+    service._recovery_keep_last_n = 2  # type: ignore[attr-defined]
+
+    def _prepare(messages, model, tools, tool_choice, **kwargs):  # noqa: ANN001
+        return (None, model or "gpt-test", {"messages": messages, "model": model or "gpt-test"})
+
+    service._prepare_request = _prepare  # type: ignore[method-assign]
+    return service
+
+
+async def test_recovery_falls_through_to_rephrase_when_strip_fails(
+    recovery_service: LiteLLMService,
+) -> None:
+    """Stage 2 (rephrase) runs when stage 1 (aggressive strip) also throws."""
+    messages = [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "old turn 1"},
+        {"role": "assistant", "content": "old reply 1"},
+        {"role": "user", "content": "register Rudi Dittrich for voting"},
+    ]
+
+    call_log: list[str] = []
+
+    async def _attempt(_litellm_kwargs, _model, _msgs, _tools, attempt):  # noqa: ANN001
+        call_log.append("strip")
+        raise RuntimeError("Azure content_policy violation again")
+
+    async def _rephrase(_messages, _resolved):  # noqa: ANN001
+        call_log.append("rephrase_call")
+        return [{"role": "user", "content": "submit a vote on behalf of a participant"}]
+
+    rephrase_success: dict[str, object] = {
+        "success": True,
+        "content": "rephrased response",
+    }
+
+    attempt_iter = iter([_attempt, lambda *a, **kw: rephrase_success])
+
+    async def _wrapper(*args, **kwargs):  # noqa: ANN001
+        call_log.append("attempt")
+        fn = next(attempt_iter)
+        result = fn(*args, **kwargs)
+        if hasattr(result, "__await__"):
+            return await result
+        return result
+
+    recovery_service._attempt_completion = _wrapper  # type: ignore[method-assign]
+    recovery_service._rephrase_user_message_for_recovery = _rephrase  # type: ignore[method-assign]
+
+    result = await recovery_service._recover_from_content_filter(
+        messages, model="main", tools=None, tool_choice=None, resolved_model="gpt-test"
+    )
+
+    assert result is rephrase_success
+    # Stage 1 (strip) attempted then failed, stage 2 (rephrase) succeeded.
+    assert call_log == ["attempt", "strip", "rephrase_call", "attempt"]
+
+
+async def test_recovery_returns_none_when_rephrase_disabled(
+    recovery_service: LiteLLMService,
+) -> None:
+    """When recover_via_rephrase=False, recovery stops after the strip stage."""
+    recovery_service._recover_via_rephrase = False  # type: ignore[attr-defined]
+    messages = [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "old turn"},
+        {"role": "assistant", "content": "reply"},
+        {"role": "user", "content": "current request"},
+    ]
+
+    async def _attempt(*_args, **_kwargs) -> None:
+        raise RuntimeError("Azure content_policy violation")
+
+    async def _rephrase(*_args, **_kwargs):  # noqa: ANN001
+        raise AssertionError("rephrase must not be called when disabled")
+
+    recovery_service._attempt_completion = _attempt  # type: ignore[method-assign]
+    recovery_service._rephrase_user_message_for_recovery = _rephrase  # type: ignore[method-assign]
+
+    result = await recovery_service._recover_from_content_filter(
+        messages, model="main", tools=None, tool_choice=None, resolved_model="gpt-test"
+    )
+
+    assert result is None
