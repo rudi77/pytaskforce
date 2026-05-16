@@ -203,6 +203,10 @@ class BrowserTool(ToolProtocol):
         hover             – Move the mouse over an element.
         press_key         – Press a keyboard key (optionally on a focused element).
         scroll            – Scroll the page or an element.
+        inspect           – One-shot structured snapshot of every form,
+                            button, tab, radio group and overlay on the
+                            current page. Call this AFTER navigate; it
+                            replaces hand-written DOM queries.
         dismiss_overlays  – Remove common cookie/consent banners that
                             intercept clicks (usercentrics, OneTrust,
                             Cookiebot, GDPR variants, max-z-index modals).
@@ -250,6 +254,7 @@ class BrowserTool(ToolProtocol):
                         "hover",
                         "press_key",
                         "scroll",
+                        "inspect",
                         "dismiss_overlays",
                         "restart_headed",
                         "close",
@@ -263,6 +268,7 @@ class BrowserTool(ToolProtocol):
                         "wait_for_url (wait for URL), select (choose <select> option), "
                         "hover (mouse over element), press_key (keyboard key), "
                         "scroll (scroll page), "
+                        "inspect (structured snapshot of forms/buttons/tabs/radio-groups/overlays — call this AFTER navigate instead of writing custom DOM queries), "
                         "dismiss_overlays (remove cookie/consent banners that intercept clicks), "
                         "restart_headed (reopen browser with a visible window so the user can intervene), "
                         "close (close browser session)."
@@ -425,13 +431,14 @@ class BrowserTool(ToolProtocol):
             "press_key": self._action_press_key,
             "scroll": self._action_scroll,
             "dismiss_overlays": self._action_dismiss_overlays,
+            "inspect": self._action_inspect,
         }
 
         handler = dispatch.get(action)
         if handler is None:
             return {"success": False, "error": f"Unknown action: '{action}'"}
 
-        if action in ("screenshot", "evaluate", "scroll", "dismiss_overlays"):
+        if action in ("screenshot", "evaluate", "scroll", "dismiss_overlays", "inspect"):
             return await handler(page, kwargs)
         return await handler(page, kwargs, timeout)
 
@@ -777,6 +784,147 @@ class BrowserTool(ToolProtocol):
             "url": page.url,
         }
 
+    async def _action_inspect(
+        self, page: Any, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Return a compact structured snapshot of all interactive elements
+        on the current page — forms, buttons, tabs, radio groups, overlays.
+
+        Designed to be the agent's "map once, act many" primitive: a
+        single call yields enough structure to drive the rest of the
+        flow without writing custom DOM-evaluate JS. The snapshot is
+        deliberately compact so it stays in the agent's message log
+        (under the tool_result_store threshold for typical pages).
+        """
+        script = """
+        (() => {
+          const trim = (s, n=80) => (s || '').toString().trim().slice(0, n);
+          const visible = el => !!(el.offsetWidth || el.offsetHeight ||
+                                    el.getClientRects().length);
+
+          const forms = [...document.querySelectorAll('form')].map(f => ({
+            id: f.id || '',
+            name: f.name || '',
+            action: trim(f.action, 200),
+            method: (f.method || 'get').toUpperCase(),
+            visible: visible(f),
+            fields: [...f.querySelectorAll('input, select, textarea')]
+              .filter(el => el.type !== 'hidden')
+              .map(el => {
+                const item = {
+                  tag: el.tagName.toLowerCase(),
+                  type: el.type || '',
+                  name: el.name || '',
+                  id: el.id || '',
+                };
+                if (el.type === 'password') {
+                  item.value = el.value ? '<filled>' : '';
+                } else if (el.type === 'checkbox' || el.type === 'radio') {
+                  item.value = el.value || '';
+                  item.checked = !!el.checked;
+                } else {
+                  item.value = trim(el.value, 50);
+                }
+                if (el.placeholder) item.placeholder = trim(el.placeholder, 60);
+                if (el.required) item.required = true;
+                // Label lookup: <label for=id> wins; fallback to wrapping label.
+                let label = '';
+                if (el.id) {
+                  const lab = document.querySelector(`label[for="${el.id}"]`);
+                  if (lab) label = lab.innerText;
+                }
+                if (!label && el.closest('label')) {
+                  label = el.closest('label').innerText;
+                }
+                if (label) item.label = trim(label, 60);
+                return item;
+              }),
+            submit: [...f.querySelectorAll(
+              'button[type=submit], input[type=submit], button:not([type])'
+            )].map(el => ({
+              text: trim(el.innerText || el.value, 60),
+              name: el.name || '',
+              id: el.id || '',
+            })),
+          }));
+
+          const buttons = [...document.querySelectorAll(
+            'button, a[role=button], [role=button]'
+          )]
+            .filter(el => !el.closest('form'))
+            .slice(0, 30)
+            .map(el => ({
+              tag: el.tagName.toLowerCase(),
+              text: trim(el.innerText, 80),
+              id: el.id || '',
+              cls: trim(el.className, 60),
+              href: el.href ? trim(el.href, 120) : '',
+            }))
+            .filter(b => b.text);
+
+          const tabs = [...document.querySelectorAll('[role=tab]')].map(el => ({
+            text: trim(el.innerText, 50),
+            id: el.id || '',
+            controls: el.getAttribute('aria-controls') || '',
+            selected: el.getAttribute('aria-selected') === 'true',
+            visible: visible(el),
+          }));
+
+          const radioGroups = {};
+          [...document.querySelectorAll('input[type=radio]')].forEach(r => {
+            const name = r.name || '_unnamed';
+            if (!radioGroups[name]) radioGroups[name] = [];
+            let label = '';
+            if (r.id) {
+              const lab = document.querySelector(`label[for="${r.id}"]`);
+              if (lab) label = lab.innerText;
+            }
+            radioGroups[name].push({
+              value: r.value || '',
+              id: r.id || '',
+              checked: !!r.checked,
+              label: trim(label, 60),
+            });
+          });
+
+          const overlays = [...document.querySelectorAll(
+            '[id*="cookie"], [id*="consent"], #usercentrics-root, ' +
+            '#onetrust-banner-sdk, #CybotCookiebotDialog'
+          )]
+            .filter(el => visible(el))
+            .map(el => ({
+              id: el.id || '',
+              cls: trim(el.className, 60),
+            }))
+            .slice(0, 5);
+
+          return {
+            url: window.location.href,
+            title: trim(document.title, 120),
+            forms,
+            buttons,
+            tabs,
+            radioGroups,
+            overlays,
+          };
+        })()
+        """
+        snapshot = await page.evaluate(script)
+        logger.info(
+            "browser_tool.inspect",
+            forms=len(snapshot.get("forms", [])) if isinstance(snapshot, dict) else 0,
+            buttons=len(snapshot.get("buttons", [])) if isinstance(snapshot, dict) else 0,
+            tabs=len(snapshot.get("tabs", [])) if isinstance(snapshot, dict) else 0,
+            radio_groups=len(snapshot.get("radioGroups", {})) if isinstance(snapshot, dict) else 0,
+            overlays=len(snapshot.get("overlays", [])) if isinstance(snapshot, dict) else 0,
+        )
+        return {
+            "success": True,
+            "action": "inspect",
+            "url": page.url,
+            "page": snapshot,
+        }
+
     async def _action_restart_headed(self) -> dict[str, Any]:
         """Close the current session and reopen the browser visibly.
 
@@ -831,6 +979,7 @@ class BrowserTool(ToolProtocol):
             "hover",
             "press_key",
             "scroll",
+            "inspect",
             "dismiss_overlays",
             "restart_headed",
             "close",

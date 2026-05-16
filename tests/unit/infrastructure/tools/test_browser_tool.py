@@ -489,6 +489,65 @@ class TestDismissOverlays:
         assert "dismiss_overlays" in actions
 
 
+class TestInspectAction:
+    """Verify the structured-snapshot action."""
+
+    @pytest.fixture(autouse=True)
+    def patch_session(self, mock_session: MagicMock) -> None:
+        with patch(
+            "taskforce.infrastructure.tools.native.browser_tool._get_session",
+            new=AsyncMock(return_value=mock_session),
+        ):
+            yield
+
+    async def test_inspect_returns_structured_snapshot(
+        self, tool: BrowserTool, mock_page: MagicMock
+    ) -> None:
+        fake_snapshot = {
+            "url": "https://example.com/voting",
+            "title": "Voting",
+            "forms": [
+                {
+                    "id": "fluentform_11",
+                    "fields": [
+                        {"name": "first_name", "id": "ff_11_first", "type": "text"},
+                        {"name": "email", "id": "ff_11_email", "type": "email"},
+                    ],
+                    "submit": [{"text": "Jetzt registrieren"}],
+                }
+            ],
+            "buttons": [{"text": "Menü"}],
+            "tabs": [
+                {"text": "FLINTA", "id": "t1", "selected": True},
+                {"text": "ALL-GENDER", "id": "t3", "selected": False},
+            ],
+            "radioGroups": {"vote_all_gender": [{"value": "Nik", "checked": False}]},
+            "overlays": [{"id": "usercentrics-root"}],
+        }
+        mock_page.evaluate = AsyncMock(return_value=fake_snapshot)
+
+        result = await tool.execute(action="inspect")
+
+        assert result["success"] is True
+        assert result["action"] == "inspect"
+        assert result["page"] == fake_snapshot
+        # Ensure the inspect script was actually invoked once.
+        mock_page.evaluate.assert_awaited_once()
+        script = mock_page.evaluate.await_args.args[0]
+        # Spot-check the script covers the key element categories.
+        for needle in ("form", "role=tab", "input[type=radio]", "usercentrics"):
+            assert needle in script
+
+    def test_inspect_validates(self, tool: BrowserTool) -> None:
+        valid, error = tool.validate_params(action="inspect")
+        assert valid is True
+        assert error is None
+
+    def test_inspect_in_action_enum(self, tool: BrowserTool) -> None:
+        actions = tool.parameters_schema["properties"]["action"]["enum"]
+        assert "inspect" in actions
+
+
 class TestRestartHeaded:
     """Verify the restart_headed escalation action."""
 
