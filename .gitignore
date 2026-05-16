@@ -259,3 +259,7 @@ examples/ap_ledger_agent/reports/
 
 # Compiled web UI bundled into the package at build time (pnpm build -> ui/dist).
 src/taskforce/api/_ui/
+
+# Working directory for transient script outputs, code-review findings,
+# spec-check reports, etc. Not part of the repo's history.
+tmp/
