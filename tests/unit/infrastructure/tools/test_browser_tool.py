@@ -442,6 +442,112 @@ class TestExecuteActions:
 
 
 # ---------------------------------------------------------------------------
+# dismiss_overlays and restart_headed action tests
+# ---------------------------------------------------------------------------
+
+
+class TestDismissOverlays:
+    """Verify the new overlay-removal action."""
+
+    @pytest.fixture(autouse=True)
+    def patch_session(self, mock_session: MagicMock) -> None:
+        with patch(
+            "taskforce.infrastructure.tools.native.browser_tool._get_session",
+            new=AsyncMock(return_value=mock_session),
+        ):
+            yield
+
+    async def test_dismiss_overlays_runs_evaluate_and_reports_removed(
+        self, tool: BrowserTool, mock_page: MagicMock
+    ) -> None:
+        mock_page.evaluate = AsyncMock(return_value={"removed": 3})
+        result = await tool.execute(action="dismiss_overlays")
+        assert result["success"] is True
+        assert result["action"] == "dismiss_overlays"
+        assert result["removed"] == 3
+        mock_page.evaluate.assert_awaited_once()
+        script = mock_page.evaluate.await_args.args[0]
+        # The script must target at least the usercentrics + onetrust roots.
+        assert "usercentrics" in script
+        assert "onetrust" in script
+
+    async def test_dismiss_overlays_handles_zero_removed(
+        self, tool: BrowserTool, mock_page: MagicMock
+    ) -> None:
+        mock_page.evaluate = AsyncMock(return_value={"removed": 0})
+        result = await tool.execute(action="dismiss_overlays")
+        assert result["success"] is True
+        assert result["removed"] == 0
+
+    def test_dismiss_overlays_validates(self, tool: BrowserTool) -> None:
+        valid, error = tool.validate_params(action="dismiss_overlays")
+        assert valid is True
+        assert error is None
+
+    def test_dismiss_overlays_in_action_enum(self, tool: BrowserTool) -> None:
+        actions = tool.parameters_schema["properties"]["action"]["enum"]
+        assert "dismiss_overlays" in actions
+
+
+class TestRestartHeaded:
+    """Verify the restart_headed escalation action."""
+
+    async def test_restart_headed_closes_and_reopens_headed(
+        self, tool: BrowserTool
+    ) -> None:
+        old_session = MagicMock()
+        old_session.close = AsyncMock()
+        browser_module._session = old_session  # type: ignore[assignment]
+
+        new_session = MagicMock()
+        new_session.headless = False
+
+        async def _get_session_replacement(headless: bool = True):
+            assert headless is False, "restart_headed must request headless=False"
+            browser_module._session = new_session  # type: ignore[assignment]
+            return new_session
+
+        with patch(
+            "taskforce.infrastructure.tools.native.browser_tool._get_session",
+            new=_get_session_replacement,
+        ):
+            result = await tool.execute(action="restart_headed")
+
+        assert result["success"] is True
+        assert result["action"] == "restart_headed"
+        assert result["browser_mode"] == "headed"
+        old_session.close.assert_awaited_once()
+        assert browser_module._session is new_session
+
+    async def test_restart_headed_works_without_prior_session(
+        self, tool: BrowserTool
+    ) -> None:
+        browser_module._session = None  # type: ignore[assignment]
+
+        new_session = MagicMock()
+        new_session.headless = False
+
+        async def _get_session_replacement(headless: bool = True):
+            assert headless is False
+            browser_module._session = new_session  # type: ignore[assignment]
+            return new_session
+
+        with patch(
+            "taskforce.infrastructure.tools.native.browser_tool._get_session",
+            new=_get_session_replacement,
+        ):
+            result = await tool.execute(action="restart_headed")
+
+        assert result["success"] is True
+        assert result["browser_mode"] == "headed"
+
+    def test_restart_headed_validates(self, tool: BrowserTool) -> None:
+        valid, error = tool.validate_params(action="restart_headed")
+        assert valid is True
+        assert error is None
+
+
+# ---------------------------------------------------------------------------
 # Headless-fallback tests
 # ---------------------------------------------------------------------------
 

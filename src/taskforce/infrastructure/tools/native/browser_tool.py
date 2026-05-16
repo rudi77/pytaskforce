@@ -203,6 +203,12 @@ class BrowserTool(ToolProtocol):
         hover             – Move the mouse over an element.
         press_key         – Press a keyboard key (optionally on a focused element).
         scroll            – Scroll the page or an element.
+        dismiss_overlays  – Remove common cookie/consent banners that
+                            intercept clicks (usercentrics, OneTrust,
+                            Cookiebot, GDPR variants, max-z-index modals).
+        restart_headed    – Close the current session and reopen the
+                            browser with a visible desktop window so the
+                            user can intervene when headless gets stuck.
         close             – Close the browser session.
 
     Installation:
@@ -244,6 +250,8 @@ class BrowserTool(ToolProtocol):
                         "hover",
                         "press_key",
                         "scroll",
+                        "dismiss_overlays",
+                        "restart_headed",
                         "close",
                     ],
                     "description": (
@@ -254,7 +262,10 @@ class BrowserTool(ToolProtocol):
                         "evaluate (run JavaScript), wait_for_selector (wait for element), "
                         "wait_for_url (wait for URL), select (choose <select> option), "
                         "hover (mouse over element), press_key (keyboard key), "
-                        "scroll (scroll page), close (close browser session)."
+                        "scroll (scroll page), "
+                        "dismiss_overlays (remove cookie/consent banners that intercept clicks), "
+                        "restart_headed (reopen browser with a visible window so the user can intervene), "
+                        "close (close browser session)."
                     ),
                 },
                 "url": {
@@ -393,6 +404,9 @@ class BrowserTool(ToolProtocol):
         if action == "close":
             return await self._action_close()
 
+        if action == "restart_headed":
+            return await self._action_restart_headed()
+
         session = await _get_session(headless=headless)
         page = session.page
 
@@ -410,13 +424,14 @@ class BrowserTool(ToolProtocol):
             "hover": self._action_hover,
             "press_key": self._action_press_key,
             "scroll": self._action_scroll,
+            "dismiss_overlays": self._action_dismiss_overlays,
         }
 
         handler = dispatch.get(action)
         if handler is None:
             return {"success": False, "error": f"Unknown action: '{action}'"}
 
-        if action in ("screenshot", "evaluate", "scroll"):
+        if action in ("screenshot", "evaluate", "scroll", "dismiss_overlays"):
             return await handler(page, kwargs)
         return await handler(page, kwargs, timeout)
 
@@ -687,6 +702,111 @@ class BrowserTool(ToolProtocol):
             _session = None
         return {"success": True, "action": "close", "message": "Browser session closed."}
 
+    async def _action_dismiss_overlays(
+        self, page: Any, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Remove cookie/consent banners and high-z-index overlays that
+        intercept pointer events on real-world sites.
+
+        Strategy: nuke a small list of well-known consent vendor roots,
+        then sweep `<div>` nodes whose computed `z-index` sits in the
+        max-int range that consent libraries love to use. Removal is
+        idempotent — calling twice is safe.
+        """
+        script = """
+        (() => {
+          const selectors = [
+            '#usercentrics-root',
+            '#usercentrics-cmp-ui',
+            '#CybotCookiebotDialog',
+            '#CybotCookiebotDialogBodyUnderlay',
+            '#onetrust-banner-sdk',
+            '#onetrust-consent-sdk',
+            '.ot-sdk-container',
+            '#truste-consent-track',
+            '.qc-cmp2-container',
+            '#sp_message_container_default',
+            '.cookieconsent',
+            '.cc-banner',
+            '.cc-window',
+            '#cookie-consent',
+            '#cookie-banner',
+            '[id*="cookie-banner"]',
+            '[class*="cookie-banner"]',
+            '[id*="consent-banner"]',
+            '[class*="consent-banner"]',
+            '.gdpr-banner',
+            '.cmp-container',
+          ];
+          let removed = 0;
+          for (const sel of selectors) {
+            document.querySelectorAll(sel).forEach(el => {
+              el.remove();
+              removed++;
+            });
+          }
+          // Sweep top-level overlays with absurdly high z-index that
+          // are also positioned fixed/absolute and span most of the
+          // viewport — typical consent / paywall shape.
+          document.querySelectorAll('body > div, body > aside').forEach(el => {
+            const cs = window.getComputedStyle(el);
+            const z = parseInt(cs.zIndex, 10);
+            const pos = cs.position;
+            if (
+              !isNaN(z) && z >= 1000000 &&
+              (pos === 'fixed' || pos === 'absolute') &&
+              el.offsetHeight >= window.innerHeight * 0.3
+            ) {
+              el.remove();
+              removed++;
+            }
+          });
+          // Some libraries also lock body scroll while the overlay is up.
+          document.documentElement.style.overflow = '';
+          document.body.style.overflow = '';
+          return { removed };
+        })()
+        """
+        result = await page.evaluate(script)
+        removed = result.get("removed", 0) if isinstance(result, dict) else 0
+        logger.info("browser_tool.dismiss_overlays", removed=removed)
+        return {
+            "success": True,
+            "action": "dismiss_overlays",
+            "removed": removed,
+            "url": page.url,
+        }
+
+    async def _action_restart_headed(self) -> dict[str, Any]:
+        """Close the current session and reopen the browser visibly.
+
+        Escalation path for when headless interactions keep failing
+        (overlays intercept clicks, anti-bot challenges, unstable DOM,
+        manual login required). The visible Chromium window lets the
+        user watch or intervene directly. Pre-existing cookies and
+        session state on the old context are dropped — the agent must
+        re-navigate after this call.
+        """
+        global _session
+        if _session is not None:
+            await _session.close()
+            _session = None
+        session = await _get_session(headless=False)
+        logger.info(
+            "browser_tool.restart_headed",
+            headless=session.headless,
+        )
+        return {
+            "success": True,
+            "action": "restart_headed",
+            "browser_mode": "headed",
+            "message": (
+                "Headed Chromium window is now open. Re-navigate to the "
+                "target URL and continue. The user can watch and "
+                "intervene directly."
+            ),
+        }
+
     # ------------------------------------------------------------------
     # Parameter validation
     # ------------------------------------------------------------------
@@ -711,6 +831,8 @@ class BrowserTool(ToolProtocol):
             "hover",
             "press_key",
             "scroll",
+            "dismiss_overlays",
+            "restart_headed",
             "close",
         }
         if action not in valid_actions:

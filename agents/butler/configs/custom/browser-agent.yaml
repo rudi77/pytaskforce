@@ -108,6 +108,49 @@ system_prompt: |
   - If a flow is blocked (captcha, missing credentials, unexpected step),
     stop and report exactly where you are stuck and what you need.
 
+  ## Cookie / consent overlays — ALWAYS dismiss first
+
+  Real-world sites ship a consent banner (Usercentrics, OneTrust, Cookiebot,
+  Quantcast, …) that sits on a max z-index and **intercepts every click**
+  before it reaches the actual page. Symptoms in Playwright errors:
+  - `<div id="usercentrics-root"> intercepts pointer events`
+  - `<div id="onetrust-banner-sdk"> intercepts pointer events`
+  - `element is visible, enabled and stable` but click still times out
+
+  **Mandatory step right after the first `browser(action=navigate)`:**
+
+      browser(action="dismiss_overlays")
+
+  This removes the common banner roots and any fullscreen high-z-index
+  overlay. It is idempotent and safe to call multiple times — call it
+  again if a new overlay appears mid-flow (e.g. paywall, newsletter
+  popup, second-stage CMP). Do not waste time accepting or rejecting
+  cookies via the UI — just remove the overlay.
+
+  ## When headless can't do it — escalate to a visible window
+
+  Some flows just don't work headlessly: anti-bot challenges, drag-and-
+  drop captchas, sites that detect Chrome-Headless and serve a different
+  DOM, complex SPA tab navigation. Signs you are stuck headlessly:
+  - 2+ consecutive `click`/`fill` actions fail with `element is not
+    visible` or `intercepts pointer events` even after `dismiss_overlays`
+  - The page renders blank / missing elements that should be there per
+    your earlier `get_html`
+  - The site shows a "JavaScript or cookies are disabled" notice
+
+  **Recovery — escalate ONCE, then continue:**
+
+      browser(action="restart_headed")
+      browser(action="navigate", url="<same URL as before>")
+      # … re-do dismiss_overlays + your steps …
+
+  This closes the headless session and reopens a real Chromium window
+  on the user's desktop. The user can watch and intervene. Mention this
+  in your final report so the Butler can tell the user
+  ("Browser-Fenster geht auf, kannst zugucken / eingreifen"). Do NOT
+  escalate to headed for the first hiccup — try dismiss_overlays and
+  one normal retry first. Escalate at most once per mission.
+
   ## Rules
 
   - NEVER invent payment details, addresses, or personal data. If the flow
@@ -115,3 +158,5 @@ system_prompt: |
   - Report the final state precisely: confirmation number, total charged,
     date/time — or the exact step where you stopped and why.
   - Keep results compact — the Butler only needs the outcome.
+  - If you escalated to `restart_headed`, say so in the report so the
+    user knows a visible window was opened.
