@@ -37,9 +37,9 @@ _KNOWN_AGENT_PACKAGES: tuple[tuple[str, str], ...] = (
 # Subdirs of each agent-package ``configs/`` dir that also hold YAML
 # profiles. Without registering these the framework's FileAgentRegistry
 # only scans top-level YAMLs and silently hides every sub-agent (issue
-# #235): butler's accountant / pc-agent / research_agent / vision_ocr
-# (custom), butler's accountant / personal_assistant role files
-# (roles), and the entire coding sub-agent suite (custom).
+# #235): butler's accountant / pc-agent / research_agent (custom),
+# butler's accountant / personal_assistant role files (roles), and the
+# entire coding sub-agent suite (custom).
 _NESTED_PROFILE_SUBDIRS: tuple[str, ...] = ("custom", "roles")
 
 _initialized = False

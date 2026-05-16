@@ -45,7 +45,7 @@ Install the matching package to unlock these profiles.
 | `butler` | `butler.yaml` | Event-driven personal assistant daemon |
 | `butler_roles/accountant` | `roles/accountant.yaml` | Financial document processing |
 | `butler_roles/personal_assistant` | `roles/personal_assistant.yaml` | General personal assistant tasks |
-| `accountant`, `pc-agent`, `research_agent`, `vision_ocr` | `custom/*.yaml` | Butler custom-role profiles |
+| `accountant`, `pc-agent`, `research_agent` | `custom/*.yaml` | Butler custom-role profiles |
 
 **`taskforce-coding-agent`** — profiles in `agents/coding-agent/configs/`:
 

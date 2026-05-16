@@ -247,7 +247,7 @@ Sub-agent profiles ship in `agents/coding-agent/configs/custom/`:
 | `swe_coder` | SWE-Bench solving |
 
 Butler custom roles live in `agents/butler/configs/custom/` (`accountant`,
-`pc-agent`, `research_agent`, `vision_ocr`). Butler *top-level* role specializations
+`pc-agent`, `research_agent`). Butler *top-level* role specializations
 are under `agents/butler/configs/roles/` (`accountant`, `personal_assistant`).
 
 ### Custom Agent Example

@@ -31,9 +31,7 @@ class _ToolCallBatchResults:
     after all sub-agent stream events have been emitted live.
     """
 
-    tool_results: list[tuple[ToolCallRequest, dict[str, Any]]] = field(
-        default_factory=list
-    )
+    tool_results: list[tuple[ToolCallRequest, dict[str, Any]]] = field(default_factory=list)
 
 
 def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> None:
@@ -118,8 +116,8 @@ async def _stream_tool_calls_with_event_pump(
         yield _ToolCallBatchResults(tool_results=tool_results)
         return
 
-    tools_task: asyncio.Task[list[tuple[ToolCallRequest, dict[str, Any]]]] = (
-        asyncio.create_task(_execute_tool_calls(agent, requests, session_id))
+    tools_task: asyncio.Task[list[tuple[ToolCallRequest, dict[str, Any]]]] = asyncio.create_task(
+        _execute_tool_calls(agent, requests, session_id)
     )
 
     # Race the tool task against the queue; emit events as they arrive.
@@ -305,20 +303,24 @@ async def _process_tool_calls(
             # contract is satisfied. The LLM can decide on resume
             # whether to re-issue them.
             skipped_ids: list[str] = [r.tool_call_id for r in requests] + [
-                t["id"] for t in tool_calls[idx + 1:]
+                t["id"] for t in tool_calls[idx + 1 :]
             ]
             for sid in skipped_ids:
-                agent.context.append_message({
-                    "role": MessageRole.TOOL.value,
-                    "tool_call_id": sid,
-                    "content": json.dumps({
-                        "skipped": True,
-                        "reason": (
-                            "Skipped because ask_user paused execution; "
-                            "re-issue if still needed after the user replies."
+                agent.context.append_message(
+                    {
+                        "role": MessageRole.TOOL.value,
+                        "tool_call_id": sid,
+                        "content": json.dumps(
+                            {
+                                "skipped": True,
+                                "reason": (
+                                    "Skipped because ask_user paused execution; "
+                                    "re-issue if still needed after the user replies."
+                                ),
+                            }
                         ),
-                    }),
-                })
+                    }
+                )
             if skipped_ids:
                 logger.info(
                     "tool_calls.skipped_for_ask_user",
@@ -376,23 +378,23 @@ async def _process_tool_calls(
             # Defensive: the pump always yields exactly one batch result as
             # its final item.  A None here means the contract was violated
             # (e.g. someone refactored the pump and forgot the final yield).
-            raise RuntimeError(
-                "tool-call event pump did not yield a _ToolCallBatchResults"
-            )
+            raise RuntimeError("tool-call event pump did not yield a _ToolCallBatchResults")
         for req, res in batch_results.tool_results:
             async for e in _emit_tool_result(agent, req, res):
                 yield e
             # Capture sub-agent context snapshots before they're lost to serialization
             _collect_sub_agent_snapshots(agent, res)
-            agent.context.append_message(
-                await agent.tool_result_message_factory.build_message(
-                    tool_call_id=req.tool_call_id,
-                    tool_name=req.tool_name,
-                    tool_result=res,
-                    session_id=session_id,
-                    step=step,
-                )
-            )
+            # build_messages returns [tool_msg, *multimodal_followups] so
+            # tools that produce images (multimedia, future audio/video)
+            # reach vision-capable LLMs as proper image_url content blocks.
+            for msg in await agent.tool_result_message_factory.build_messages(
+                tool_call_id=req.tool_call_id,
+                tool_name=req.tool_name,
+                tool_result=res,
+                session_id=session_id,
+                step=step,
+            ):
+                agent.context.append_message(msg)
     finally:
         if owns_sink:
             agent._sub_agent_event_sink = None

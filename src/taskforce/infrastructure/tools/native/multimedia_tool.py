@@ -160,32 +160,52 @@ class MultimediaTool(ToolProtocol):
             return tool_error_payload(tool_error)
 
     async def _read_image(self, path: Path, metadata: dict[str, Any]) -> dict[str, Any]:
-        """Read an image file and return base64 encoded data."""
+        """Read an image file and return it as an attachment for vision LLMs.
+
+        The ``attachments`` field is the framework-wide convention
+        (see ``core/domain/multimodal.py``). When the tool-result message
+        factory sees it, it appends a follow-up multimodal user message
+        so the LLM actually receives the image as an ``image_url`` block.
+        """
         try:
-            # Read binary data
             image_data = path.read_bytes()
             base64_data = base64.b64encode(image_data).decode("utf-8")
-
-            # Determine MIME type
             mime_type = mimetypes.guess_type(str(path))[0] or "image/png"
+            data_url = f"data:{mime_type};base64,{base64_data}"
 
-            # Try to get image dimensions if PIL is available
             dimensions = None
             try:
                 from PIL import Image
+
                 with Image.open(path) as img:
                     dimensions = {"width": img.width, "height": img.height, "mode": img.mode}
             except ImportError:
-                pass  # PIL not available
+                pass
             except Exception:
-                pass  # Could not read image with PIL
+                pass
 
-            result = {
+            summary_parts = [
+                f"Loaded image: {path.name}",
+                f"mime={mime_type}",
+            ]
+            if dimensions:
+                summary_parts.append(f"size={dimensions['width']}x{dimensions['height']}")
+            summary = ", ".join(summary_parts) + " (passed to LLM as multimodal content)."
+
+            attachment: dict[str, Any] = {
+                "type": "image",
+                "mime_type": mime_type,
+                "data_url": data_url,
+                "file_path": str(path),
+                "file_name": path.name,
+            }
+
+            result: dict[str, Any] = {
                 "success": True,
                 "type": "image",
                 "mime_type": mime_type,
-                "base64_data": base64_data,
-                "data_url": f"data:{mime_type};base64,{base64_data}",
+                "output": summary,
+                "attachments": [attachment],
                 "metadata": metadata,
             }
 
@@ -246,11 +266,13 @@ class MultimediaTool(ToolProtocol):
             if page_num <= total_pages:
                 page = reader.pages[page_num - 1]  # 0-indexed
                 text = page.extract_text() or ""
-                pages_content.append({
-                    "page_number": page_num,
-                    "text": text,
-                    "char_count": len(text),
-                })
+                pages_content.append(
+                    {
+                        "page_number": page_num,
+                        "text": text,
+                        "char_count": len(text),
+                    }
+                )
 
         # Get PDF metadata
         pdf_metadata = {}
@@ -291,11 +313,13 @@ class MultimediaTool(ToolProtocol):
                 if page_num <= total_pages:
                     page = pdf.pages[page_num - 1]  # 0-indexed
                     text = page.extract_text() or ""
-                    pages_content.append({
-                        "page_number": page_num,
-                        "text": text,
-                        "char_count": len(text),
-                    })
+                    pages_content.append(
+                        {
+                            "page_number": page_num,
+                            "text": text,
+                            "char_count": len(text),
+                        }
+                    )
 
             pdf_metadata = pdf.metadata or {}
 
@@ -367,9 +391,15 @@ class MultimediaTool(ToolProtocol):
             }
 
         except json.JSONDecodeError as e:
-            return {"success": False, "error": f"Invalid notebook format: {e}", "metadata": metadata}
+            return {
+                "success": False,
+                "error": f"Invalid notebook format: {e}",
+                "metadata": metadata,
+            }
 
-    def _parse_page_range(self, page_range: str | None, total_pages: int, max_pages: int) -> list[int]:
+    def _parse_page_range(
+        self, page_range: str | None, total_pages: int, max_pages: int
+    ) -> list[int]:
         """Parse page range string into list of page numbers."""
         if not page_range:
             # Return all pages up to max_pages

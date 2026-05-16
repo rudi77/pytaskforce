@@ -1240,7 +1240,7 @@ directories at startup (see `taskforce_cli.agent_discovery.register_agent_config
 |---------|---------|----------|
 | `butler` | taskforce-butler | `agents/butler/configs/butler.yaml` |
 | `butler_roles/accountant`, `butler_roles/personal_assistant` | taskforce-butler | `agents/butler/configs/roles/` |
-| Butler custom roles (`accountant`, `pc-agent`, `research_agent`, `vision_ocr`) | taskforce-butler | `agents/butler/configs/custom/` |
+| Butler custom roles (`accountant`, `pc-agent`, `research_agent`) | taskforce-butler | `agents/butler/configs/custom/` |
 | `coding_agent`, `coding_analysis` | taskforce-coding-agent | `agents/coding-agent/configs/` |
 | Coding sub-agents (`coding_planner`, `coding_worker`, `coding_reviewer`, `code_reviewer`, `test_engineer`, `doc_writer`, `swe_analyzer`, `swe_coder`) | taskforce-coding-agent | `agents/coding-agent/configs/custom/` |
 | `rag_agent` | taskforce-rag-agent | `agents/rag-agent/configs/rag_agent.yaml` |

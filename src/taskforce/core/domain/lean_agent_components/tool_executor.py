@@ -7,12 +7,15 @@ from typing import Any
 
 import structlog
 
+from taskforce.core.domain.enums import MessageRole
+from taskforce.core.domain.multimodal import (
+    build_multimodal_content,
+    has_image_attachments,
+)
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.interfaces.tool_result_store import ToolResultStoreProtocol
 from taskforce.core.interfaces.tools import ToolProtocol
 from taskforce.core.tools.tool_converter import (
-    create_tool_result_preview,
-    tool_result_preview_to_message,
     tool_result_to_message,
 )
 
@@ -125,6 +128,60 @@ class ToolResultMessageFactory:
                 return override
         return self._result_store_threshold
 
+    async def build_messages(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        tool_result: dict[str, Any],
+        session_id: str,
+        step: int,
+    ) -> list[dict[str, Any]]:
+        """Return the tool message plus any multimodal follow-ups.
+
+        Tools that produce media (images today, audio/video later) signal
+        this by returning an ``attachments`` list shaped like the gateway
+        convention::
+
+            {"type": "image", "data_url": "data:image/...;base64,...",
+             "mime_type": "image/jpeg", "file_path": "/tmp/x.jpg"}
+
+        For each call, this returns:
+
+        1. The standard ``role="tool"`` message (with ``attachments``
+           stripped from the payload so base64 never leaks into the text
+           tool message).
+        2. If any image attachments are present, a follow-up
+           ``role="user"`` message whose ``content`` is OpenAI-shaped
+           multimodal blocks built via
+           :func:`taskforce.core.domain.multimodal.build_multimodal_content`.
+           LiteLLM translates this to the right per-provider format
+           (Anthropic ``image`` blocks, Gemini ``inlineData`` etc.).
+        """
+        attachments: list[dict[str, Any]] | None = None
+        if isinstance(tool_result, dict):
+            raw = tool_result.get("attachments")
+            if isinstance(raw, list) and raw:
+                attachments = raw
+                tool_result = {k: v for k, v in tool_result.items() if k != "attachments"}
+
+        tool_msg = await self.build_message(
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            tool_result=tool_result,
+            session_id=session_id,
+            step=step,
+        )
+        messages: list[dict[str, Any]] = [tool_msg]
+
+        if has_image_attachments(attachments):
+            count = len(attachments) if attachments else 0
+            caption = f"[Tool '{tool_name}' returned {count} attachment(s).]"
+            content = build_multimodal_content(caption, attachments)
+            messages.append({"role": MessageRole.USER.value, "content": content})
+
+        return messages
+
     async def build_message(
         self,
         *,
@@ -141,6 +198,12 @@ class ToolResultMessageFactory:
         full result to a file and returns a short message with the file path.
         The agent can use file_read to access the complete data.
         Otherwise, returns the result inline.
+
+        NOTE: this returns only the ``role="tool"`` message. Callers that
+        want media attachments (e.g. images) to actually reach a
+        vision-capable LLM should use :meth:`build_messages` instead, which
+        returns the tool message plus any multimodal follow-up user
+        messages.
         """
         if not isinstance(tool_result, dict):
             tool_result = {"success": True, "data": tool_result}

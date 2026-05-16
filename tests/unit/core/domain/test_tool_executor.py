@@ -560,3 +560,133 @@ class TestToolResultMessageFactoryPerToolThreshold:
         )
 
         store.put.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# build_messages: multimodal follow-up for tools that return images
+# ---------------------------------------------------------------------------
+
+
+class TestToolResultMessageFactoryBuildMessages:
+    """Tests for ToolResultMessageFactory.build_messages."""
+
+    async def test_no_attachments_returns_single_message(self) -> None:
+        """Without attachments, build_messages == [build_message]."""
+        factory = ToolResultMessageFactory(
+            tool_result_store=None,
+            result_store_threshold=5000,
+            logger=_StubLogger(),
+        )
+
+        msgs = await factory.build_messages(
+            tool_call_id="call_1",
+            tool_name="file_read",
+            tool_result={"success": True, "output": "Hello"},
+            session_id="s1",
+            step=1,
+        )
+
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "tool"
+        assert msgs[0]["content"] == "Hello"
+
+    async def test_image_attachment_appends_multimodal_user_message(self) -> None:
+        """Image attachment -> follow-up user message with image_url block."""
+        factory = ToolResultMessageFactory(
+            tool_result_store=None,
+            result_store_threshold=5000,
+            logger=_StubLogger(),
+        )
+
+        data_url = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+        msgs = await factory.build_messages(
+            tool_call_id="call_img",
+            tool_name="multimedia",
+            tool_result={
+                "success": True,
+                "output": "Loaded image: photo.jpg",
+                "attachments": [{"type": "image", "mime_type": "image/jpeg", "data_url": data_url}],
+            },
+            session_id="s1",
+            step=1,
+        )
+
+        assert len(msgs) == 2
+        # Tool message: lean, NO base64 leakage
+        assert msgs[0]["role"] == "tool"
+        assert msgs[0]["content"] == "Loaded image: photo.jpg"
+        assert data_url not in msgs[0]["content"]
+        # Follow-up: user role, multimodal content list with image_url block
+        assert msgs[1]["role"] == "user"
+        assert isinstance(msgs[1]["content"], list)
+        types = [part.get("type") for part in msgs[1]["content"]]
+        assert "image_url" in types
+        image_block = next(p for p in msgs[1]["content"] if p["type"] == "image_url")
+        assert image_block["image_url"]["url"] == data_url
+
+    async def test_attachments_stripped_before_storing(self) -> None:
+        """Large result + attachments: persisted payload must not contain them."""
+        handle = _make_handle("h1", "multimedia")
+        store = AsyncMock()
+        store.put = AsyncMock(return_value=handle)
+        store._result_path = MagicMock(return_value="/tmp/results/h1.json")
+
+        factory = ToolResultMessageFactory(
+            tool_result_store=store,
+            result_store_threshold=100,
+            logger=_StubLogger(),
+        )
+
+        big_output = "summary " * 200
+        msgs = await factory.build_messages(
+            tool_call_id="call_big_img",
+            tool_name="multimedia",
+            tool_result={
+                "success": True,
+                "output": big_output,
+                "attachments": [
+                    {
+                        "type": "image",
+                        "mime_type": "image/png",
+                        "data_url": "data:image/png;base64,AAAA",
+                    }
+                ],
+            },
+            session_id="s1",
+            step=1,
+        )
+
+        assert len(msgs) == 2
+        store.put.assert_awaited_once()
+        stored_payload = store.put.call_args.kwargs["result"]
+        assert "attachments" not in stored_payload, "attachments must be stripped before persisting"
+
+    async def test_document_only_attachment_no_user_followup(self) -> None:
+        """Document attachments (no image data_url) don't trigger a follow-up."""
+        factory = ToolResultMessageFactory(
+            tool_result_store=None,
+            result_store_threshold=5000,
+            logger=_StubLogger(),
+        )
+
+        msgs = await factory.build_messages(
+            tool_call_id="call_doc",
+            tool_name="multimedia",
+            tool_result={
+                "success": True,
+                "output": "Loaded PDF",
+                "attachments": [
+                    {
+                        "type": "document",
+                        "file_path": "/tmp/foo.pdf",
+                        "file_name": "foo.pdf",
+                        "mime_type": "application/pdf",
+                    }
+                ],
+            },
+            session_id="s1",
+            step=1,
+        )
+
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "tool"

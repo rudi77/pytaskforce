@@ -20,7 +20,7 @@ This package now ships only:
 - `configs/custom/*.yaml` — sub-agent configs. Wired into the Butler:
   pc-agent, research_agent, research_specialist, browser-agent. Also
   shipped but not currently referenced by the Butler profile (kept for
-  reuse): accountant, vision_ocr.
+  reuse): accountant.
 - `configs/roles/*.{agent.md,yaml}` — role overlays (accountant, personal_assistant)
 - `src/taskforce_butler/__init__.py` — 5-line shim required by the
   Python entry-point that points the framework at this configs/ dir.
