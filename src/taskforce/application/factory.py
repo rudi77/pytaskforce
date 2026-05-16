@@ -543,6 +543,10 @@ class AgentFactory:
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
             "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
             "approval_bypass_tools": agent_config.get("approval_bypass_tools"),
+            "react_no_progress_threshold": agent_config.get("react_no_progress_threshold"),
+            "react_signature_repeat_threshold": agent_config.get(
+                "react_signature_repeat_threshold"
+            ),
         }
 
     def _instantiate_agent(
@@ -586,6 +590,8 @@ class AgentFactory:
             tool_message_max_chars=settings.get("tool_message_max_chars"),
             assistant_message_max_chars=settings.get("assistant_message_max_chars"),
             approval_bypass_tools=settings.get("approval_bypass_tools"),
+            react_no_progress_threshold=settings.get("react_no_progress_threshold"),
+            react_signature_repeat_threshold=settings.get("react_signature_repeat_threshold"),
         )
 
     async def _load_plugin_tools_for_definition(
@@ -1159,6 +1165,12 @@ class AgentFactory:
                 "tool_message_max_chars": agent_defaults.get("tool_message_max_chars"),
                 "assistant_message_max_chars": agent_defaults.get("assistant_message_max_chars"),
                 "approval_bypass_tools": agent_defaults.get("approval_bypass_tools"),
+                "react_no_progress_threshold": agent_defaults.get(
+                    "react_no_progress_threshold"
+                ),
+                "react_signature_repeat_threshold": agent_defaults.get(
+                    "react_signature_repeat_threshold"
+                ),
             },
         }
 
@@ -1271,6 +1283,10 @@ class AgentFactory:
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
             "assistant_message_max_chars": agent_config.get("assistant_message_max_chars"),
             "approval_bypass_tools": agent_config.get("approval_bypass_tools"),
+            "react_no_progress_threshold": agent_config.get("react_no_progress_threshold"),
+            "react_signature_repeat_threshold": agent_config.get(
+                "react_signature_repeat_threshold"
+            ),
         }
         plugin_work_dir = merged_config.get("persistence", {}).get("work_dir")
         plugin_wiki_store, plugin_wiki_cfg = self._build_wiki_injection(

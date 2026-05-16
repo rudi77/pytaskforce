@@ -81,6 +81,11 @@ class Agent:
     # Token budget defaults
     DEFAULT_MAX_INPUT_TOKENS = 100000  # ~100k tokens for input
     DEFAULT_COMPRESSION_TRIGGER = 40000  # Trigger compression at 40% - keep history lean
+    # ReAct stall detection defaults — override per agent for workloads
+    # that legitimately need many low-progress steps (browser DOM
+    # exploration, multi-stage RAG retrieval, …).
+    DEFAULT_REACT_NO_PROGRESS_THRESHOLD = 2
+    DEFAULT_REACT_SIGNATURE_REPEAT_THRESHOLD = 3
 
     def __init__(
         self,
@@ -106,6 +111,8 @@ class Agent:
         tool_message_max_chars: int | None = None,
         assistant_message_max_chars: int | None = None,
         approval_bypass_tools: list[str] | None = None,
+        react_no_progress_threshold: int | None = None,
+        react_signature_repeat_threshold: int | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -165,6 +172,19 @@ class Agent:
             tool_result_store_threshold
             if tool_result_store_threshold is not None
             else self.TOOL_RESULT_STORE_THRESHOLD
+        )
+
+        # ReAct stall detection thresholds (read by react_loop via
+        # getattr — keeps the loop loosely coupled to the agent class).
+        self.react_no_progress_threshold = (
+            react_no_progress_threshold
+            if react_no_progress_threshold is not None
+            else self.DEFAULT_REACT_NO_PROGRESS_THRESHOLD
+        )
+        self.react_signature_repeat_threshold = (
+            react_signature_repeat_threshold
+            if react_signature_repeat_threshold is not None
+            else self.DEFAULT_REACT_SIGNATURE_REPEAT_THRESHOLD
         )
 
         # Profile-level approval bypass: tool short-names listed here

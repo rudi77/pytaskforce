@@ -21,6 +21,12 @@ agent:
     reflect_every_step: false
   max_steps: 80
   llm_fallback: false
+  # Browser flows legitimately need many "no visible progress" steps
+  # (inspect, dismiss_overlays, wait_for_*, screenshot, autocomplete
+  # retries). The framework default of 2 kills the agent before it
+  # can call restart_headed to escalate to a visible window.
+  react_no_progress_threshold: 4
+  react_signature_repeat_threshold: 4
 
 persistence:
   type: file

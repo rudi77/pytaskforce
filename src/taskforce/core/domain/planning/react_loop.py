@@ -17,6 +17,7 @@ from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_inter
 from taskforce.core.domain.planning.llm_interactions import _salvage_answer
 from taskforce.core.domain.planning.tool_execution import _process_tool_calls
 from taskforce.core.domain.planning.utils import (
+    _build_pre_stall_nudge,
     _build_retry_nudge,
     _ensure_event_type,
     _is_no_progress_tool_output,
@@ -169,6 +170,23 @@ async def _react_loop(
     tool_failure_counts: dict[str, int] = {}  # per-tool circuit breaker
     consecutive_llm_errors = 0  # abort after N hard LLM failures in a row
     _MAX_CONSECUTIVE_LLM_ERRORS = 3
+
+    # Stall-detection thresholds — read from the agent (configurable per
+    # profile) with class-level defaults as fallback. Workloads that
+    # legitimately need many low-progress steps (browser DOM exploration,
+    # multi-stage RAG) raise these in their config. Defensive isinstance
+    # check is necessary because test fixtures often substitute a
+    # MagicMock for ``agent``; ``int(MagicMock())`` silently returns 1
+    # and would lock the loop into kill-on-first-failure.
+    def _read_threshold(attr: str, default: int) -> int:
+        value = getattr(agent, attr, None)
+        return value if isinstance(value, int) and value > 0 else default
+
+    no_progress_threshold = _read_threshold("react_no_progress_threshold", 2)
+    signature_repeat_threshold = _read_threshold("react_signature_repeat_threshold", 3)
+    # Track whether we've already injected the pre-stall escalation
+    # nudge so we don't spam it every step.
+    pre_stall_nudge_injected = False
 
     while step < agent.max_steps:
         # Yield to the event loop once per iteration so that signal handlers
@@ -515,11 +533,48 @@ async def _react_loop(
                 repeated_signature_count = 0
             last_tool_signature = tool_signature or None
 
-            if consecutive_no_progress_steps >= 2 or repeated_signature_count >= 3:
+            # Pre-stall nudge: one step before we'd kill the loop,
+            # inject a system message pointing the agent at its
+            # escalation options. Gives the agent one last chance to
+            # call browser(action=restart_headed) or otherwise pivot
+            # before the salvage path kicks in.
+            approaching_no_progress_kill = (
+                consecutive_no_progress_steps == max(no_progress_threshold - 1, 1)
+            )
+            approaching_signature_kill = (
+                repeated_signature_count == max(signature_repeat_threshold - 1, 1)
+            )
+            if (
+                not pre_stall_nudge_injected
+                and (approaching_no_progress_kill or approaching_signature_kill)
+            ):
+                pre_stall_nudge_injected = True
+                has_browser_tool = "browser" in getattr(agent, "tools", {})
+                agent.context.append_message(
+                    _build_pre_stall_nudge(
+                        has_browser_tool=has_browser_tool,
+                        consecutive_no_progress_steps=consecutive_no_progress_steps,
+                        repeated_signature_count=repeated_signature_count,
+                    )
+                )
+                logger.info(
+                    "react_loop_pre_stall_nudge",
+                    consecutive_no_progress_steps=consecutive_no_progress_steps,
+                    repeated_signature_count=repeated_signature_count,
+                    has_browser_tool=has_browser_tool,
+                    session_id=session_id,
+                )
+
+            if (
+                consecutive_no_progress_steps >= no_progress_threshold
+                or repeated_signature_count >= signature_repeat_threshold
+            ):
                 logger.warning(
                     "react_loop_stalled",
                     consecutive_no_progress_steps=consecutive_no_progress_steps,
                     repeated_signature_count=repeated_signature_count,
+                    no_progress_threshold=no_progress_threshold,
+                    signature_repeat_threshold=signature_repeat_threshold,
                     session_id=session_id,
                 )
                 # Salvage: force a final answer from the LLM with available context

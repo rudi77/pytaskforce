@@ -170,6 +170,65 @@ def _build_retry_nudge(
     }
 
 
+def _build_pre_stall_nudge(
+    *,
+    has_browser_tool: bool,
+    consecutive_no_progress_steps: int,
+    repeated_signature_count: int,
+) -> dict[str, Any]:
+    """One last nudge before the react loop kills the run for stalling.
+
+    Tells the agent it's about to be salvaged, and points it at the
+    concrete escalation paths it should use instead of trying the
+    same thing again. For browser-agent, the canonical escape hatch
+    is ``browser(action=restart_headed)`` — open a visible window so
+    the user can take over the headless-hostile flow.
+
+    Args:
+        has_browser_tool: True when the agent has the ``browser`` tool
+            registered (i.e. it's a browser-agent and can escalate to
+            a visible window). When False, the nudge skips the
+            restart_headed suggestion.
+        consecutive_no_progress_steps: Current no-progress counter.
+        repeated_signature_count: Current signature-repeat counter.
+
+    Returns:
+        A user-role message dict.
+    """
+    diag = (
+        f"no-progress steps: {consecutive_no_progress_steps}, "
+        f"repeated tool signature: {repeated_signature_count}"
+    )
+    escalation_lines: list[str] = []
+    if has_browser_tool:
+        escalation_lines.append(
+            "- If browser interactions keep failing (clicks time out, "
+            "elements not visible, autocomplete not triggering): call "
+            "`browser(action=\"restart_headed\")` to open a real "
+            "Chromium window on the user's desktop. Then re-navigate "
+            "and continue. The user can watch and intervene."
+        )
+    escalation_lines.append(
+        "- If you genuinely cannot make progress: stop, return the best "
+        "answer you have so far, and state precisely which step blocked "
+        "you. Do NOT retry the same approach."
+    )
+    escalation_lines.append(
+        "- Do NOT start `web_search`ing for hidden APIs / URL parameters "
+        "as a workaround. That path almost never works and just burns "
+        "tokens."
+    )
+    return {
+        "role": MessageRole.USER.value,
+        "content": (
+            f"[System: Stall warning ({diag}). One more no-progress step "
+            "will end this run. Your options now:\n"
+            + "\n".join(escalation_lines)
+            + "]"
+        ),
+    }
+
+
 def _is_no_progress_tool_output(output: str) -> bool:
     """Heuristic detection for low-signal tool outputs.
 
