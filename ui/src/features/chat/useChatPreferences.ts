@@ -14,6 +14,7 @@ import { persist } from "zustand/middleware";
  * later if real usage shows the global default isn't enough.
  */
 export type ChatViewMode = "normal" | "verbose" | "summary";
+export type ChatPermissionMode = "ask" | "auto_accept_edits" | "plan" | "auto" | "bypass";
 
 export const CHAT_VIEW_MODES: { value: ChatViewMode; label: string; hint: string }[] = [
   { value: "normal", label: "Normal", hint: "Tool calls collapsed" },
@@ -23,14 +24,30 @@ export const CHAT_VIEW_MODES: { value: ChatViewMode; label: string; hint: string
 
 interface ChatPreferencesState {
   viewMode: ChatViewMode;
+  permissionMode: ChatPermissionMode;
   setViewMode: (mode: ChatViewMode) => void;
+  setPermissionMode: (mode: ChatPermissionMode) => void;
 }
+
+export const CHAT_PERMISSION_MODES: {
+  value: ChatPermissionMode;
+  label: string;
+  hint: string;
+}[] = [
+  { value: "ask", label: "Ask", hint: "Require approvals for risky actions" },
+  { value: "auto_accept_edits", label: "Auto-Edits", hint: "Auto-accept file edits" },
+  { value: "plan", label: "Plan", hint: "Plan first, then ask before acting" },
+  { value: "auto", label: "Auto", hint: "Run autonomously when possible" },
+  { value: "bypass", label: "Bypass", hint: "Bypass approvals (trusted use only)" },
+];
 
 export const useChatPreferences = create<ChatPreferencesState>()(
   persist(
     (set) => ({
       viewMode: "normal",
+      permissionMode: "ask",
       setViewMode: (mode) => set({ viewMode: mode }),
+      setPermissionMode: (mode) => set({ permissionMode: mode }),
     }),
     { name: "taskforce.chat.preferences" },
   ),

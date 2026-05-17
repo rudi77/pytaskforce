@@ -18,6 +18,7 @@ interface RightPanelProps {
   /** Whether the assistant stream is currently running. Drives the
    *  "in-progress" treatment of the next pending plan step. */
   streaming: boolean;
+  onOpenFile?: (path: string) => void;
 }
 
 /**
@@ -34,6 +35,7 @@ export function RightPanel({
   planSteps,
   toolCalls,
   streaming,
+  onOpenFile,
 }: RightPanelProps) {
   const files = useMemo(() => collectReferencedFiles(toolCalls), [toolCalls]);
   const toolStats = useMemo(() => summarizeTools(toolCalls), [toolCalls]);
@@ -56,7 +58,7 @@ export function RightPanel({
         toolCalls={toolCalls}
         streaming={streaming}
       />
-      <FilesCard projectName={projectName} files={files} />
+      <FilesCard projectName={projectName} files={files} onOpenFile={onOpenFile} />
       <ContextCard stats={toolStats} fileCount={files.length} />
     </aside>
   );
@@ -373,9 +375,11 @@ function collectReferencedFiles(toolCalls: ToolCallView[]): ReferencedFile[] {
 function FilesCard({
   projectName,
   files,
+  onOpenFile,
 }: {
   projectName: string | null | undefined;
   files: ReferencedFile[];
+  onOpenFile?: (path: string) => void;
 }) {
   return (
     <Card
@@ -402,7 +406,13 @@ function FilesCard({
               title={file.path}
             >
               <FileExtIcon ext={file.ext} />
-              <span className="truncate">{file.display}</span>
+              <button
+                type="button"
+                className="truncate text-left hover:underline"
+                onClick={() => onOpenFile?.(file.path)}
+              >
+                {file.display}
+              </button>
             </li>
           ))}
         </ul>

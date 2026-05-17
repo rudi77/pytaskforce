@@ -200,6 +200,38 @@ class TestWorkspaceExclude:
         assert "node_modules" not in names
 
 
+class TestWorkspaceFileReadWrite:
+    def test_reads_workspace_file_with_mtime(self, client):
+        resp = client.get("/api/v1/workspace/file", params={"path": "README.md"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["path"] == "README.md"
+        assert body["content"] == "hi"
+        assert isinstance(body["mtime_ns"], int)
+
+    def test_write_detects_conflict(self, client):
+        read = client.get("/api/v1/workspace/file", params={"path": "README.md"})
+        assert read.status_code == 200
+        stale = read.json()["mtime_ns"] - 1
+        resp = client.put(
+            "/api/v1/workspace/file",
+            json={"path": "README.md", "content": "changed", "expected_mtime_ns": stale},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "file_conflict"
+
+    def test_write_updates_file(self, client):
+        read = client.get("/api/v1/workspace/file", params={"path": "README.md"})
+        mtime = read.json()["mtime_ns"]
+        resp = client.put(
+            "/api/v1/workspace/file",
+            json={"path": "README.md", "content": "updated", "expected_mtime_ns": mtime},
+        )
+        assert resp.status_code == 200
+        reread = client.get("/api/v1/workspace/file", params={"path": "README.md"})
+        assert reread.json()["content"] == "updated"
+
+
 def test_falls_back_to_cwd_when_env_unset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

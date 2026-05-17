@@ -58,6 +58,7 @@ to clients via Server-Sent Events.
 - POST   /api/v1/conversations/{id}/messages → 400 on empty message or unknown attachment file_id
 - POST   /api/v1/conversations/{id}/messages/stream → 200 SSE stream (`message_persisted`, raw progress events, `assistant_persisted`, `error`)
 - POST   /api/v1/conversations/{id}/messages/stream → 400 on empty message
+- POST   /api/v1/conversations/{id}/messages/stream accepts optional `permission_mode` (`ask`, `auto_accept_edits`, `plan`, `auto`, `bypass`) as an execution hint
 - POST   /api/v1/conversations/{id}/archive → 204
 - DELETE /api/v1/conversations/{id} → 204
 - DELETE /api/v1/conversations/{id} → 404 if missing

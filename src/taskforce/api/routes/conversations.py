@@ -154,6 +154,14 @@ class AppendMessageRequest(BaseModel):
         default_factory=list,
         description="File ids of previously uploaded attachments (POST /api/v1/files).",
     )
+    permission_mode: str | None = Field(
+        default=None,
+        description=(
+            "Optional UI-provided permission mode hint (e.g. ask, plan, auto). "
+            "Currently accepted for forward compatibility and observability; "
+            "execution behavior remains profile/approval-service driven."
+        ),
+    )
 
 
 class AppendMessageResponse(BaseModel):
@@ -430,6 +438,9 @@ async def append_message(
         agent_id=request.agent_id,
         conversation_history=history,
         work_dir=work_dir,
+        user_context={"permission_mode": request.permission_mode}
+        if request.permission_mode
+        else None,
     )
 
     # Append assistant reply.
@@ -518,6 +529,9 @@ async def stream_message(
                     agent_id=request.agent_id,
                     conversation_history=history,
                     work_dir=work_dir,
+                    user_context={"permission_mode": request.permission_mode}
+                    if request.permission_mode
+                    else None,
                 ):
                     await queue.put(update)
             except Exception as exc:  # noqa: BLE001 — forwarded to consumer

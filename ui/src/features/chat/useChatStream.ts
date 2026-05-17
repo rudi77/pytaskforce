@@ -78,6 +78,7 @@ export interface SendStreamingArgs {
   attachments: { file_id: string }[];
   profile?: string;
   agentId?: string;
+  permissionMode?: string;
 }
 
 const EMPTY_STATE: AssistantStreamState = {
@@ -230,7 +231,7 @@ export function __resetChatStreamStore() {
 // ---------------------------------------------------------------------------
 
 async function drive(args: SendStreamingArgs): Promise<void> {
-  const { conversationId, message, attachments, profile, agentId } = args;
+  const { conversationId, message, attachments, profile, agentId, permissionMode } = args;
   const store = useChatStreamStore.getState();
 
   // Replace any in-flight controller for this conversation so a fresh send
@@ -266,6 +267,7 @@ async function drive(args: SendStreamingArgs): Promise<void> {
           message,
           ...(profile ? { profile } : {}),
           ...(agentId ? { agent_id: agentId } : {}),
+          ...(permissionMode ? { permission_mode: permissionMode } : {}),
           attachments,
         },
       },
@@ -358,6 +360,40 @@ export function useChatStream(conversationId?: string) {
   }, [activeId]);
 
   return { state, isStreaming, error, send, cancel, reset };
+}
+
+export type ConversationRuntimeStatus = "running" | "needs-input" | "error" | "done" | "idle";
+
+export function useConversationRuntimeStatusMap(): Record<string, ConversationRuntimeStatus> {
+  return useChatStreamStore((s) => {
+    const out: Record<string, ConversationRuntimeStatus> = {};
+    const ids = new Set<string>([
+      ...Object.keys(s.streams),
+      ...Object.keys(s.streamingByConversation),
+      ...Object.keys(s.errors),
+    ]);
+    for (const id of ids) {
+      if (s.streamingByConversation[id]) {
+        out[id] = "running";
+        continue;
+      }
+      const stream = s.streams[id];
+      if (stream?.pendingAskUser) {
+        out[id] = "needs-input";
+        continue;
+      }
+      if (s.errors[id]) {
+        out[id] = "error";
+        continue;
+      }
+      if (stream?.completed) {
+        out[id] = "done";
+        continue;
+      }
+      out[id] = "idle";
+    }
+    return out;
+  });
 }
 
 // ---------------------------------------------------------------------------
