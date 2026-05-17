@@ -244,6 +244,22 @@ def patch_notification_defaults(
     return patched
 
 
+def disable_post_mission_learning(executor) -> None:
+    """Disable the post-mission LearningService for analysis runs.
+
+    The executor reads ``learning.enabled`` from disk via ProfileLoader at
+    mission completion (executor.py:_run_post_mission_learning), so patching
+    the agent's ``_merged_config`` after build has no effect. We monkey-patch
+    the executor method to a no-op instead. Safe for analysis - real Butler
+    deployments use the executor as-is and keep the learning feature.
+
+    Call ONCE after creating the AgentExecutor.
+    """
+    async def _noop(*args, **kwargs):
+        return None
+    executor._run_post_mission_learning = _noop
+
+
 def patch_anti_compression(agent, summary_threshold: int = 80,
                            tool_result_store_threshold: int = 6000) -> None:
     """Raise the compression and tool-result-store thresholds for analysis runs.
@@ -614,6 +630,10 @@ class Scenario:
     hidden_intent: str | None = None
     requires: list[str] = field(default_factory=list)
     notes: str | None = None
+    # Optional: missions to run BEFORE the main mission, on the same agent.
+    # Used to pre-populate state (e.g. wiki pages) for recall-style scenarios.
+    # The setup missions are NOT scored - only the main mission counts.
+    setup: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Scenario":
@@ -626,6 +646,7 @@ class Scenario:
             hidden_intent=d.get("hidden_intent"),
             requires=d.get("requires", []),
             notes=d.get("notes"),
+            setup=d.get("setup", []) or [],
         )
 
 
@@ -633,6 +654,7 @@ class Scenario:
 class ScoreCard:
     """Outcome of evaluating a RunRecord against a Scenario.expected dict."""
     must_call_tools_pass: bool = True
+    must_succeed_tools_pass: bool = True  # NEW: tool was called AND returned success
     must_not_call_tools_pass: bool = True
     answer_contains_pass: bool = True
     answer_forbidden_pass: bool = True
@@ -642,6 +664,7 @@ class ScoreCard:
     def passed(self) -> bool:
         return (
             self.must_call_tools_pass
+            and self.must_succeed_tools_pass
             and self.must_not_call_tools_pass
             and self.answer_contains_pass
             and self.answer_forbidden_pass
@@ -656,9 +679,15 @@ class ScenarioResult:
     rule_score: ScoreCard
     llm_judge: dict | None = None  # {pass: bool, reasoning: str, score: 0-5}
     error: str | None = None  # populated on hard failure
+    # Multi-run aggregation (populated by run_scenarios with repeats > 1)
+    repeats: int = 1
+    pass_count: int = 0  # number of successful repeats (>= ceil(repeats/2) to count as passed)
 
     @property
     def passed(self) -> bool:
+        if self.repeats > 1:
+            # Majority-pass: more than half of repeats must succeed
+            return self.pass_count > self.repeats / 2
         if self.error:
             return False
         if not self.rule_score.passed:
@@ -680,11 +709,44 @@ def filter_scenarios(scenarios: list[Scenario],
     return [s for s in scenarios if set(s.requires) <= available_tools]
 
 
+def _successful_tool_calls(rec: RunRecord) -> set[str]:
+    """Tool names that had at least one successful tool_result event."""
+    ok: set[str] = set()
+    for e in rec.events:
+        if e["event"] == "tool_result" and e.get("tool_success"):
+            t = e.get("tool")
+            if t:
+                ok.add(t)
+    return ok
+
+
+def _check_contains_clause(clause, answer: str) -> bool:
+    """A clause is either a string (substring match) or list (OR-set: any match)."""
+    if isinstance(clause, str):
+        return clause.lower() in answer
+    if isinstance(clause, (list, tuple)):
+        return any(_check_contains_clause(c, answer) for c in clause)
+    raise TypeError(f"final_answer_contains clause must be str or list, got {type(clause)}")
+
+
 def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
-    """Deterministic scoring of a RunRecord against scenario.expected."""
+    """Deterministic scoring of a RunRecord against scenario.expected.
+
+    Supported expected-keys:
+        must_call_tools: list[str]            - all must be called (any outcome)
+        must_succeed_tools: list[str]         - all must be called AND succeed
+        must_not_call_tools: list[str]        - none of these may be called
+        final_answer_contains: list[str|list] - each clause must match.
+            String clause: substring match (case-insensitive).
+            List clause: OR-set - ANY element must match.
+            Example: [["nicht", "kann nicht", "leider"], "WhatsApp"]
+            means (nicht OR kann nicht OR leider) AND WhatsApp.
+        final_answer_must_not_contain: list[str] - forbidden substrings
+    """
     sc = ScoreCard()
     e = scenario.expected
     called = set(rec.tool_calls.keys())
+    succeeded = _successful_tool_calls(rec)
     answer = (rec.final_answer or "").lower()
 
     must_call = set(e.get("must_call_tools", []))
@@ -692,6 +754,12 @@ def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
         missing = must_call - called
         sc.must_call_tools_pass = False
         sc.details.append(f"must_call missing: {sorted(missing)}")
+
+    must_succeed = set(e.get("must_succeed_tools", []))
+    if must_succeed and not must_succeed <= succeeded:
+        missing = must_succeed - succeeded
+        sc.must_succeed_tools_pass = False
+        sc.details.append(f"must_succeed but failed/uncalled: {sorted(missing)}")
 
     must_not = set(e.get("must_not_call_tools", []))
     if must_not & called:
@@ -701,10 +769,10 @@ def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
 
     contains = e.get("final_answer_contains", [])
     if contains:
-        missing = [c for c in contains if c.lower() not in answer]
-        if missing:
+        unmet = [c for c in contains if not _check_contains_clause(c, answer)]
+        if unmet:
             sc.answer_contains_pass = False
-            sc.details.append(f"answer missing keywords: {missing}")
+            sc.details.append(f"answer missing clauses: {unmet}")
 
     forbidden = e.get("final_answer_must_not_contain", [])
     if forbidden:
@@ -768,6 +836,10 @@ async def run_scenario(
         build_agent_fn: callable that returns (agent, system_prompt_chars).
             Called once per scenario for isolation. Should NOT share state
             between calls.
+
+    If scenario.setup is non-empty, those missions are executed on the SAME
+    agent BEFORE the main mission. They are not scored - their purpose is
+    state pre-population (wiki pages, scheduled jobs, etc.).
     """
     try:
         agent, sys_chars = await build_agent_fn()
@@ -780,6 +852,22 @@ async def run_scenario(
         )
 
     try:
+        # Setup missions (pre-population, not scored)
+        for setup_mission in scenario.setup:
+            try:
+                await run(
+                    executor, agent, setup_mission,
+                    project_root=None,  # snapshot only counts on main mission
+                    snapshot_subdirs=(),
+                    initial_system_prompt_chars=sys_chars,
+                    silent=True,
+                )
+            except Exception as exc:
+                # Setup failure is logged but doesn't abort the scenario.
+                # The main mission will then probably fail too, which is
+                # the right signal (state not as expected).
+                pass
+
         rec = await run(
             executor, agent, scenario.mission,
             project_root=project_root,
@@ -816,6 +904,7 @@ async def run_scenarios(
     project_root: Path | None = None,
     snapshot_subdirs: tuple[str, ...] = (),
     reset_dirs_before_each: tuple[str, ...] = (),
+    repeats: int = 1,
     llm_judge_provider=None,
     llm_judge_model: str = "fast",
     progress: bool = True,
@@ -828,20 +917,47 @@ async def run_scenarios(
             from scenario N leak into N+1 and skew results. Typical values
             include "memory/wiki" (Butler) and "fall-log", "drafts" (TuttiPaletti).
             Empty default = no reset (legacy behaviour).
+        repeats: if > 1, each scenario runs N times and the result is
+            majority-pass. Best-of representative is kept as the .record /
+            .rule_score for inspection. Smoothes LLM variance.
     """
     results: list[ScenarioResult] = []
     for i, s in enumerate(scenarios, 1):
         if progress:
-            print(f"[{i:>2}/{len(scenarios)}] {s.id:30s} ({s.category:10s} / {s.difficulty})")
-        if project_root is not None and reset_dirs_before_each:
-            reset_output_dirs(project_root, reset_dirs_before_each)
-        res = await run_scenario(
-            executor, build_agent_fn, s,
-            project_root=project_root,
-            snapshot_subdirs=snapshot_subdirs,
-            llm_judge_provider=llm_judge_provider,
-            llm_judge_model=llm_judge_model,
-            silent=True,
+            label = f"[{i:>2}/{len(scenarios)}] {s.id:30s} ({s.category:10s} / {s.difficulty})"
+            if repeats > 1:
+                label += f"  x{repeats}"
+            print(label)
+
+        attempts: list[ScenarioResult] = []
+        for k in range(repeats):
+            if project_root is not None and reset_dirs_before_each:
+                reset_output_dirs(project_root, reset_dirs_before_each)
+            attempt = await run_scenario(
+                executor, build_agent_fn, s,
+                project_root=project_root,
+                snapshot_subdirs=snapshot_subdirs,
+                llm_judge_provider=llm_judge_provider,
+                llm_judge_model=llm_judge_model,
+                silent=True,
+            )
+            attempts.append(attempt)
+            if progress and repeats > 1:
+                mark = "PASS" if attempt.passed else "FAIL"
+                print(f"        run {k+1}/{repeats}: {mark} "
+                      f"({attempt.record.duration:.1f}s, "
+                      f"{sum(attempt.record.tool_calls.values())} tool calls)")
+
+        # Pick representative: first PASS, else last FAIL
+        rep = next((a for a in attempts if a.passed), attempts[-1])
+        res = ScenarioResult(
+            scenario=rep.scenario,
+            record=rep.record,
+            rule_score=rep.rule_score,
+            llm_judge=rep.llm_judge,
+            error=rep.error,
+            repeats=repeats,
+            pass_count=sum(1 for a in attempts if a.passed),
         )
         if progress:
             mark = "PASS" if res.passed else "FAIL"
@@ -850,7 +966,8 @@ async def run_scenarios(
                 extra = f" ERROR: {res.error[:80]}"
             elif not res.rule_score.passed:
                 extra = " | " + "; ".join(res.rule_score.details)[:120]
-            print(f"        -> {mark} ({res.record.duration:.1f}s, "
+            count_str = f" [{res.pass_count}/{res.repeats}]" if repeats > 1 else ""
+            print(f"        -> {mark}{count_str} ({res.record.duration:.1f}s, "
                   f"{sum(res.record.tool_calls.values())} tool calls){extra}")
         results.append(res)
     return results

@@ -5,19 +5,23 @@
 # Fields:
 #   id, category, difficulty: "easy" | "medium" | "hard"
 #   mission: User-facing mission text (passed verbatim to the agent)
+#   setup: list[str] - optional pre-population missions, run on the SAME
+#     agent BEFORE the main mission. Not scored. Used for recall scenarios.
 #   expected:
-#     must_call_tools: list of tool names that MUST appear in record.tool_calls
-#     must_not_call_tools: list of tools that MUST NOT appear
-#     final_answer_contains: list of keywords/phrases that must appear (case-insensitive)
-#     final_answer_must_not_contain: list of forbidden phrases (case-insensitive)
-#   hidden_intent: latent requirement the agent should infer (for LLM-judge)
-#   requires: list of tool names that must be available - controls light/full filtering
-#   notes: free-text rationale
+#     must_call_tools: tools that MUST appear in record.tool_calls (any outcome)
+#     must_succeed_tools: tools that MUST be called AND return success=True
+#     must_not_call_tools: tools that MUST NOT be called
+#     final_answer_contains: list of clauses. Each clause is either:
+#       - str: substring match (case-insensitive)
+#       - list: OR-set, ANY element must match
+#       Example: [["nicht","keine","leider"], "WhatsApp"]
+#       means (nicht OR keine OR leider) AND WhatsApp
+#     final_answer_must_not_contain: forbidden substrings (case-insensitive)
+#   hidden_intent: latent requirement (for LLM-judge)
+#   requires: tool names that must be available (controls light/full filtering)
 #
 # Inspired by pi-Bench (proactive personal assistant), ClawsBench (productivity
-# workspace), and the real Butler pain points documented in
-# .claude/projects/.../memory/user_butler_usage.md (Action Gap, file access,
-# transparency, response overhead).
+# workspace), and Butler pain points from user_butler_usage.md.
 
 # =============================================================================
 # REMINDERS & SCHEDULE
@@ -27,20 +31,26 @@
   difficulty: easy
   mission: "Erinnere mich in 2 Stunden ans Frühstück."
   expected:
-    must_call_tools: [reminder]
+    must_succeed_tools: [reminder]
     must_not_call_tools: [calendar, gmail, web_search]
-    final_answer_contains: ["Frühstück"]
+    final_answer_contains:
+      - [Frühstück, Erinnerung, erinnern]
+      # Accept either the literal "2 Stunden" formulation OR a concrete time
+      # like "19:49" / "heute um 14 Uhr" (Agent transforms the relative
+      # duration to an absolute clock time roughly half the time).
+      - ["2 Stunden", "zwei Stunden", " Uhr", "heute um", ":"]
     final_answer_must_not_contain: ["Execution completed", "Status: completed"]
   requires: [reminder]
-  notes: "Trivial — gerade-noch-akzeptable Tool-Auswahl prüfen."
 
 - id: reminder-tomorrow-morning
   category: reminder
   difficulty: easy
   mission: "Morgen 7:30 'Tabletten nehmen' erinnern."
   expected:
-    must_call_tools: [reminder]
-    final_answer_contains: ["Tabletten", "7:30"]
+    must_succeed_tools: [reminder]
+    final_answer_contains:
+      - [Tabletten, Medikamente, Medikation]
+      - ["7:30", "07:30", "7 Uhr 30", morgen]
   requires: [reminder]
 
 - id: schedule-recurring-static
@@ -48,9 +58,11 @@
   difficulty: medium
   mission: "Schick mir jeden Morgen um 8:00 die Nachricht 'Guten Morgen Rudi'."
   expected:
-    must_call_tools: [schedule]
+    must_succeed_tools: [schedule]
     must_not_call_tools: [reminder]
-    final_answer_contains: ["jeden", "8"]
+    final_answer_contains:
+      - [jeden, täglich, daily]
+      - ["8", "8:00", acht]
   hidden_intent: "Statischer Text → schedule(action_type=send_notification), nicht execute_mission"
   requires: [schedule]
 
@@ -59,8 +71,10 @@
   difficulty: hard
   mission: "Alle 30 Minuten den aktuellen Bitcoin-Kurs an mich pushen."
   expected:
-    must_call_tools: [schedule]
-    final_answer_contains: ["30", "Bitcoin"]
+    must_succeed_tools: [schedule]
+    final_answer_contains:
+      - ["30", dreißig]
+      - [Bitcoin, BTC, Kurs]
   hidden_intent: "Dynamic value → schedule(action_type=execute_mission) mit web_search-Mission, nicht reminder oder send_notification mit statischem Text"
   requires: [schedule]
   notes: "Tests CLAUDE.md decision rule: static_text vs dynamic_content"
@@ -73,8 +87,9 @@
   difficulty: easy
   mission: "Merke dir: meine Lieblingsmusik ist Jazz."
   expected:
-    must_call_tools: [wiki]
-    final_answer_contains: ["gemerkt"]
+    must_succeed_tools: [wiki]
+    final_answer_contains:
+      - [gemerkt, gespeichert, notiert, vermerkt, festgehalten]
   requires: [wiki]
 
 - id: wiki-save-contact
@@ -82,21 +97,24 @@
   difficulty: medium
   mission: "Mein Steuerberater ist Klaus Müller, Tel 0664-1234567, Mail klaus@steuer-mueller.at"
   expected:
-    must_call_tools: [wiki]
-    final_answer_contains: ["Steuerberater", "Müller"]
+    must_succeed_tools: [wiki]
+    final_answer_contains:
+      - [Steuerberater, Klaus, Müller]
   hidden_intent: "Soll als entities/steuerberater-mueller.md angelegt werden (CLAUDE.md page naming)"
   requires: [wiki]
 
 - id: memory-recall-after-save
   category: memory
   difficulty: medium
-  mission: "Was hast du dir über meinen Steuerberater gemerkt? (Annahme: wurde davor schon gespeichert.)"
+  mission: "Was hast du dir über meinen Steuerberater gemerkt?"
+  setup:
+    - "Mein Steuerberater ist Klaus Müller, Tel 0664-1234567, Mail klaus@steuer-mueller.at. Bitte merken."
   expected:
     must_call_tools: [wiki]
-    final_answer_contains: ["Müller"]
-  hidden_intent: "Sollte memory_specialist nutzen statt direkten wiki(search) — laut CLAUDE.md."
+    final_answer_contains:
+      - [Müller, Klaus]
+  hidden_intent: "Recall — sollte memory_specialist nutzen statt direkten wiki(search)"
   requires: [wiki]
-  notes: "Setzt vorherigen Save voraus. Im Notebook entweder vorher ausführen oder Wiki pre-populieren."
 
 - id: wiki-no-save-transient
   category: memory
@@ -104,10 +122,8 @@
   mission: "Was ist gerade die Uhrzeit?"
   expected:
     must_not_call_tools: [wiki]
-    final_answer_contains: []
   hidden_intent: "Transiente Info — soll NICHT in Wiki gespeichert werden (CLAUDE.md: 'don't save transient state')."
   requires: []
-  notes: "Soft check — wir prüfen nur dass kein wiki(write) passiert."
 
 # =============================================================================
 # WEB / RESEARCH
@@ -117,8 +133,10 @@
   difficulty: easy
   mission: "Wie ist gerade das Wetter in Salzburg?"
   expected:
-    must_call_tools: []  # could be web_fetch OR web_search — both OK
-    final_answer_contains: ["Salzburg"]
+    must_call_tools: []
+    final_answer_contains:
+      - Salzburg
+      - [Grad, °, Wetter, sonnig, bewölkt, Regen, Schnee, warm, kalt]
   hidden_intent: "Single-source factual — direkt web_fetch, NICHT research_agent delegieren (laut CLAUDE.md)"
   requires: []
 
@@ -127,10 +145,13 @@
   difficulty: hard
   mission: "Vergleiche die Top 3 Elektroauto-Modelle 2026 unter 40k Euro: Preis, Reichweite, Ladegeschwindigkeit. Briefing in 5 Punkten."
   expected:
-    must_call_tools: []  # web_search and/or web_fetch
-    final_answer_contains: ["Reichweite"]
+    must_call_tools: []
+    final_answer_contains:
+      - [Reichweite, km, Range]
+      - [Preis, EUR, Euro, €]
   hidden_intent: "Multi-source comparison → research_agent (laut CLAUDE.md)"
   requires: [web_search]
+  notes: "Wackelig wegen Brave-Endpoint flakyness — siehe issue #web_search-retry"
 
 - id: web-news-today
   category: web
@@ -138,8 +159,7 @@
   mission: "Was sind die wichtigsten 3 Tech-News heute? Maximal 3 Bullets."
   expected:
     must_call_tools: []
-    final_answer_contains: []
-    final_answer_must_not_contain: ["Execution completed"]
+    final_answer_must_not_contain: ["Execution completed", "Status: completed"]
   requires: [web_search]
 
 # =============================================================================
@@ -150,7 +170,7 @@
   difficulty: hard
   mission: "Schick eine kurze Mail an rudi.dittrich77@gmail.com mit Subject 'Test' und Body 'Test 123'."
   expected:
-    must_call_tools: [gmail]
+    must_succeed_tools: [gmail]
     final_answer_must_not_contain:
       - "Execution completed"
       - "Status: completed"
@@ -166,7 +186,9 @@
   mission: "Kannst du mir eine WhatsApp-Nachricht an meine Mutter schicken?"
   expected:
     must_not_call_tools: [gmail, web_fetch]
-    final_answer_contains: ["nicht", "WhatsApp"]
+    final_answer_contains:
+      - [nicht, kein, keine, leider, unmöglich]
+      - WhatsApp
   hidden_intent: "Capability boundary — Butler darf NICHT pretend can do WhatsApp. Soll ehrlich sagen 'kann ich nicht'."
   requires: []
   notes: "CLAUDE.md: 'Say so in your FIRST response — don't pretend, don't retry.'"
@@ -177,7 +199,8 @@
   mission: "Wieviel ist 17 mal 23?"
   expected:
     must_not_call_tools: [schedule, reminder, gmail, calendar]
-    final_answer_contains: ["391"]
+    final_answer_contains:
+      - "391"
   hidden_intent: "Simple math — kein Specialist-Overhead, direkte Antwort (oder ein python-Tool via specialist)"
   requires: []
 
@@ -189,8 +212,8 @@
   difficulty: easy
   mission: "Was steht heute in meinem Kalender?"
   expected:
-    must_call_tools: [calendar]
-    final_answer_contains: ["heute"]
+    must_succeed_tools: [calendar]
+    final_answer_contains: [heute]
   requires: [calendar]
 
 - id: cal-create-event
@@ -198,8 +221,10 @@
   difficulty: medium
   mission: "Trage in meinen Kalender ein: morgen 14:00 'Zahnarzt', Dauer 1 Stunde."
   expected:
-    must_call_tools: [calendar]
-    final_answer_contains: ["Zahnarzt", "14"]
+    must_succeed_tools: [calendar]
+    final_answer_contains:
+      - Zahnarzt
+      - ["14", "14:00"]
   requires: [calendar]
 
 - id: cal-cross-calendar
@@ -207,8 +232,8 @@
   difficulty: hard
   mission: "Was steht heute auf allen meinen Kalendern? Beide Kalender zusammenfassen, gruppiert nach Uhrzeit."
   expected:
-    must_call_tools: [calendar]
-    final_answer_contains: ["Kalender"]
+    must_succeed_tools: [calendar]
+    final_answer_contains: [Kalender]
   hidden_intent: "User hat mehrere Kalender (privat + Familie) — alle abfragen"
   requires: [calendar]
 
@@ -217,48 +242,50 @@
   difficulty: easy
   mission: "Zeig mir die 5 wichtigsten ungelesenen Mails."
   expected:
-    must_call_tools: [gmail]
+    must_succeed_tools: [gmail]
     final_answer_must_not_contain: ["Execution completed"]
   requires: [gmail]
-  notes: "CLAUDE.md: 'Email fetching must cost at most 3 tool calls' — wir prüfen das nicht hart, aber die Tool-Stats zeigen Thrashing."
+  notes: "CLAUDE.md: 'Email fetching must cost at most 3 tool calls'"
 
 - id: email-find-address
   category: email
   difficulty: medium
   mission: "Was ist die Email-Adresse von meinem Steuerberater Klaus Müller?"
+  setup:
+    - "Mein Steuerberater ist Klaus Müller, Tel 0664-1234567, Mail klaus@steuer-mueller.at. Bitte merken."
   expected:
-    must_call_tools: [wiki]  # over memory_specialist, but rule checks wiki
-    final_answer_contains: ["klaus@steuer-mueller"]
+    must_call_tools: [wiki]
+    final_answer_contains:
+      - "klaus@steuer-mueller"
   hidden_intent: "Sollte memory_specialist nutzen, nicht in Gmail suchen"
   requires: [wiki]
-  notes: "Voraussetzung: wiki-save-contact wurde vorher gespeichert"
 
 # =============================================================================
-# FILE / DOCUMENT  (require: pc-agent sub-agent — full-mode only)
+# FILE / DOCUMENT  (skipped in light mode - require pc-agent sub-agent)
 # =============================================================================
 - id: file-list-pdfs
   category: file
   difficulty: easy
   mission: "Liste die ersten 5 PDF-Dateien in C:/Users/rudi/Downloads mit Name, Größe und Pfad."
   expected:
-    final_answer_contains: ["PDF"]
-  requires: [file_read]
-  notes: "Sollte zum pc-agent delegiert werden (laut CLAUDE.md), aber prüfen nur das Outcome."
+    must_succeed_tools: [file_read]
+    final_answer_contains: [PDF]
+  requires: [pc_agent]
+  notes: "requires pc_agent (light mode skips)"
 
 - id: file-extract-text
   category: file
   difficulty: hard
   mission: "Lies das PDF unter C:/Users/rudi/Downloads/sample.pdf und fasse den Inhalt in 3 Bullets zusammen."
   expected:
-    final_answer_contains: []
-  requires: [file_read]
-  notes: "Setzt voraus dass sample.pdf existiert. Bei Bedarf vorher anlegen oder anderes File nehmen."
+    must_succeed_tools: [file_read]
+  requires: [pc_agent]
 
 - id: file-categorize
   category: file
   difficulty: hard
   mission: "Kategorisiere die Dateien in C:/Users/rudi/Downloads nach Typ (Rechnung, Vertrag, Sonstige) und zeig die Top-5 pro Kategorie."
   expected:
-    final_answer_contains: []
+    must_succeed_tools: [file_read]
   hidden_intent: "Komplexer multi-step — sollte als EINE Mission an pc-agent delegiert werden"
-  requires: [file_read]
+  requires: [pc_agent]
