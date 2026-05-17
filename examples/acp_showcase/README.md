@@ -148,3 +148,19 @@ taskforce acp call researcher "Who are you?" --profile showcase_orchestrator
 - The agent loops on `web_fetch` errors → some search results may be
   unreachable; that's expected noise, the research step should still
   produce a briefing from the reachable sources.
+- `UnicodeEncodeError: 'charmap' codec can't encode characters` on
+  Windows → Rich's box-drawing output can't be encoded with the
+  default cp1252 codepage. `run_demo.ps1` sets `$env:PYTHONIOENCODING =
+  'utf-8'` (and `[Console]::OutputEncoding = UTF8`) before launching
+  the peers so every child process inherits a UTF-8 stdout. If you
+  invoke `taskforce acp start` / `taskforce run mission` directly,
+  do the same in your shell.
+- Orchestrator answers without actually delegating → the
+  `showcase_orchestrator` profile ships with a strict `system_prompt`
+  that *requires* every research / coding step to go through
+  `call_acp_agent`. Without that prompt, small models (the default
+  `azure/gpt-5.4-mini`) tend to ignore `call_acp_agent` and answer
+  from their own training data, defeating the demo. If you copy the
+  profile, keep the `system_prompt` block — or watch
+  `examples/acp_showcase/logs/researcher.log` to confirm the peer
+  actually receives runs.

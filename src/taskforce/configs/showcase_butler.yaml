@@ -1,0 +1,73 @@
+# Showcase Butler — Chat-style agent with ACP delegation.
+#
+# Companion profile to showcase_orchestrator (which uses
+# plan_and_execute). This one is the "personal assistant" pattern:
+# native_react loop, kept simple, designed for an interactive
+# chat / mission turn that offloads heavy research to the
+# showcase_researcher peer over ACP.
+#
+# Demonstrates that ACP delegation works outside the planned-mission
+# context — i.e. for the practical Butler-on-Telegram use case
+# where the user asks a single question that ends up calling
+# `call_acp_agent` once and synthesising the reply locally.
+#
+# Run it after `showcase_researcher` is already up on :8801:
+#   taskforce acp start --profile showcase_researcher           # terminal A
+#   taskforce run mission --profile showcase_butler "..."       # terminal B
+
+profile: showcase_butler
+
+system_prompt: |
+  You are a personal assistant agent (Butler-style). You have NO web
+  access yourself. For ANY question that needs current facts (news,
+  prices, library versions, schedules, …) you MUST delegate to the
+  `researcher` peer via `call_acp_agent`. After it answers, synthesise
+  a concise reply in the user's language and quote URLs / numbers
+  verbatim from the briefing — never invent new ones.
+
+  For everything else (formatting the answer, doing arithmetic,
+  storing a fact for next time) use the local tools directly.
+
+  Do not ask the user to confirm before delegating — the researcher
+  call is read-only and cheap; just do it.
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_butler
+
+agent:
+  planning_strategy: native_react
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 6
+    reflect_every_step: false
+  max_steps: 10
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - file_read
+  - file_write
+  - ask_user
+  - wiki
+  - call_acp_agent
+
+acp:
+  server:
+    enabled: false
+  peers:
+    - name: researcher
+      base_url: http://localhost:8801
+      agent: researcher
+      description: Web research peer (showcase_researcher).

@@ -15,6 +15,20 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Force UTF-8 for Python's stdout/stderr in every child process we spawn.
+# Without this, Rich's progress bars / boxes (U+2554 etc.) crash with
+# UnicodeEncodeError under the default Windows cp1252 codepage. Setting
+# PYTHONIOENCODING via .env is too late — Python binds sys.stdout before
+# dotenv loads — so we set it here in the parent shell so every child
+# inherits it.
+$env:PYTHONIOENCODING = 'utf-8'
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    # Best-effort; consoles without a writable encoding (e.g. some CI
+    # runners) silently keep their default.
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot  = Resolve-Path (Join-Path $scriptDir '..\..')
 $logDir    = Join-Path $scriptDir 'logs'

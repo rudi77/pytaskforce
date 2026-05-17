@@ -119,6 +119,48 @@ embedded `acp_sdk.server.Server` on the port you configure under
 - **mTLS** is planned as a follow-up; the config schema already carries
   `cert_path` / `key_path` fields so profiles can be prepared ahead of time.
 
+## End-to-end demo
+
+The repo ships a multi-profile showcase under `examples/acp_showcase/`
+that brings up three real Taskforce peers (orchestrator, researcher,
+coder) and runs a mission that delegates over ACP. Quick start:
+
+```bash
+uv sync --extra acp
+./examples/acp_showcase/run_demo.sh        # Linux/macOS
+.\examples\acp_showcase\run_demo.ps1       # Windows / PowerShell
+```
+
+The companion `showcase_butler` profile (`src/taskforce/configs/`) is a
+single-peer variant for the chat-style "Butler-on-Telegram" use case:
+a native-ReAct agent that delegates every research-flavoured question
+to `showcase_researcher` via `call_acp_agent` and synthesises the reply
+locally. Bring up the researcher peer separately first:
+
+```bash
+taskforce acp start --profile showcase_researcher                       # terminal A
+taskforce run mission --profile showcase_butler "Was steht heute in den News zu Bitcoin?"   # terminal B
+```
+
+A second showcase pair, `showcase_bus_publisher` /
+`showcase_bus_subscriber`, demonstrates `acp.message_bus.transport:
+acp`: the publisher's in-process bus fans `publish(topic, payload)`
+calls out to the subscriber peer's auto-registered `bus_<topic>` inbox
+agent. The unit tests in
+`tests/unit/infrastructure/acp/test_acp_message_bus.py` cover the
+mocked path; the integration test
+`tests/integration/test_acp_message_bus_e2e.py` exercises the same
+flow against two real loopback ACP servers.
+
+> **Prompt-engineering tip.** Small models (the default
+> `azure/gpt-5.4-mini`) tend to ignore `call_acp_agent` and answer
+> research questions from training data unless the profile's
+> `system_prompt` explicitly *requires* delegation. Both
+> `showcase_orchestrator` and `showcase_butler` ship with such a
+> prompt — keep it if you copy them. Confirm the peers actually
+> received runs by watching `.taskforce/showcase_*/` logs or the
+> peer process's stderr.
+
 ## Limitations
 
 - Pub/sub semantics are emulated over ACP runs — acceptable for low/medium

@@ -94,6 +94,17 @@ class AcpMessageBus(MessageBusProtocol):
         return envelope
 
     async def subscribe(self, topic: str) -> AsyncIterator[MessageEnvelope]:
+        # NOTE: ``_ensure_registered`` calls
+        # ``AcpServer.register_agent``, which raises if the server is
+        # already running. Because this method is an async generator,
+        # the call below only executes on the *first iteration* — so
+        # iterating ``subscribe(topic)`` for the first time after
+        # ``runtime.start()`` will fail. The framework's
+        # ``application/acp_service.py::build_message_bus`` works around
+        # this by calling ``_ensure_registered`` directly for every
+        # configured ``subscribe_topics`` entry before the runtime is
+        # started. Callers driving the bus from their own code should
+        # do the same.
         queue = self._queues.setdefault(topic, asyncio.Queue())
         self._ensure_registered(topic, queue)
         while True:

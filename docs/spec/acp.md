@@ -98,6 +98,7 @@ embedded `acp_sdk.server.Server` on the port configured under
 - spec("acp.test_peer_missing_returns_404")
 - spec("acp.message_bus_publish_fans_out_to_publish_peers")
 - spec("acp.message_bus_subscribe_registers_inbox_agent")
+- spec("acp.message_bus_publish_crosses_acp_network_to_subscriber")  # integration test, two loopback runtimes
 
 ## Known gaps
 

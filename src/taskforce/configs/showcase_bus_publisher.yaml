@@ -1,0 +1,54 @@
+# Showcase Bus Publisher — half of the ACP message-bus demo pair.
+#
+# Profile pair (showcase_bus_publisher + showcase_bus_subscriber) that
+# demonstrates `acp.message_bus.transport: acp`: this peer's in-process
+# bus fans publish() calls out to the subscriber peer's `bus_<topic>`
+# inbox agent over the network.
+#
+# This profile is not meant to be started with `taskforce run mission`
+# — it's a bus host. Bring it up alongside the subscriber:
+#
+#   taskforce acp start --profile showcase_bus_subscriber   # terminal A
+#   taskforce acp start --profile showcase_bus_publisher    # terminal B
+#
+# Then use tests/integration/test_acp_message_bus_e2e.py (or your own
+# script) to programmatically publish on this peer's bus.
+
+profile: showcase_bus_publisher
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_bus_publisher
+
+agent:
+  planning_strategy: native_react
+  max_steps: 5
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+tools:
+  - file_read
+
+acp:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 8810
+    agent_name: bus_publisher
+    expose_profile: true
+  peers:
+    - name: subscriber
+      base_url: http://localhost:8811
+      agent: bus_publisher       # any-existing — bus overrides per-call
+      description: Bus subscriber peer (showcase_bus_subscriber).
+  message_bus:
+    transport: acp
+    publish_peers:
+      - subscriber
+    subscribe_topics: []

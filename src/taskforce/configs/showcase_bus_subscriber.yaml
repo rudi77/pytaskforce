@@ -1,0 +1,40 @@
+# Showcase Bus Subscriber — half of the ACP message-bus demo pair.
+#
+# Companion to showcase_bus_publisher. Auto-registers a `bus_demo_events`
+# inbox agent so the publisher peer can fan publish() runs in over
+# ACP. See showcase_bus_publisher.yaml for usage notes.
+
+profile: showcase_bus_subscriber
+
+persistence:
+  type: file
+  work_dir: .taskforce/showcase_bus_subscriber
+
+agent:
+  planning_strategy: native_react
+  max_steps: 5
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+tools:
+  - file_read
+
+acp:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 8811
+    agent_name: bus_subscriber
+    expose_profile: true
+  peers: []
+  message_bus:
+    transport: acp
+    publish_peers: []
+    subscribe_topics:
+      - demo_events
