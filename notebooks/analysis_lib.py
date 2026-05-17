@@ -1128,15 +1128,21 @@ def wiki_writes(rec: RunRecord) -> list[dict]:
             out.append({
                 "t": e["t"],
                 "action": action,
-                "page": args.get("page") or args.get("path"),
+                # Wiki tool uses `name` for the page-path arg (verified
+                # against infrastructure/tools/native/wiki_tool.py).
+                "page": args.get("name") or args.get("page") or args.get("path"),
                 "args": args,
             })
     return out
 
 
 def wiki_reads(rec: RunRecord) -> list[dict]:
-    """Wiki tool_call events that read state (search/get/list)."""
-    read_actions = {"search", "get_page", "list_pages", "list_index"}
+    """Wiki tool_call events that read state (search/read/list)."""
+    # Wiki actions: search, read_page, list_pages (verified against
+    # infrastructure/tools/native/wiki_tool.py). Legacy aliases kept
+    # for any schema drift.
+    read_actions = {"search", "read_page", "list_pages",
+                    "get_page", "list_index"}
     out = []
     for e in rec.events:
         if e["event"] != "tool_call" or e["tool"] != "wiki":
@@ -1377,15 +1383,21 @@ def _eval_skills(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
             notebook must pass agent into the scorer separately - we
             approximate from event metadata when available)
     """
+    # Case-insensitive comparison — agents often capitalise the skill
+    # name (e.g. "PDF-Processing") while the on-disk slug is lowercase
+    # ("pdf-processing"). We normalise both sides.
     activated = skills_activated(rec)
+    activated_lc = {n.lower() for n in activated}
 
     if "must_activate" in sub:
         for name in sub["must_activate"]:
-            _check(sc, f"skills.must_activate.{name}", name in activated,
+            _check(sc, f"skills.must_activate.{name}",
+                   name.lower() in activated_lc,
                    f"skill {name!r} never activated; got {activated}")
     if "must_not_activate" in sub:
         for name in sub["must_not_activate"]:
-            _check(sc, f"skills.must_not_activate.{name}", name not in activated,
+            _check(sc, f"skills.must_not_activate.{name}",
+                   name.lower() not in activated_lc,
                    f"skill {name!r} activated but should not be")
     if "min_injection_delta_chars" in sub:
         delta = rec.extra.get("system_prompt_delta_chars", 0)

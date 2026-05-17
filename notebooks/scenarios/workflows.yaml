@@ -22,7 +22,9 @@
   difficulty: easy
   mission: "Sende eine Email."
   expected:
-    must_succeed_tools: [ask_user]
+    # ask_user pauses the agent and does NOT emit a tool_result event,
+    # so must_succeed_tools would always fail. Use must_call_tools.
+    must_call_tools: [ask_user]
     workflow:
       min_ask_user_prompts: 1
       must_ask_about: ["empfänger", "an wen", "wem", "adresse"]
