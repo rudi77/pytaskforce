@@ -149,6 +149,9 @@ dev = [
     "ruff>=0.1.0",
     "black>=23.0",
     "mypy>=1.7",
+    "notebook>=7.5.6",
+    "matplotlib>=3.8",          # for notebooks/analysis_lib.py plots
+    "nest-asyncio>=1.6",        # for top-level await guards in notebooks
     "types-PyYAML>=6.0",
     "pyinstaller>=6.0.0",
     # Bundled agent packages — installed editable from the workspace so
