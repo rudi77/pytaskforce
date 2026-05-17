@@ -1250,6 +1250,15 @@ is importable, otherwise falls back to `dev`. The framework-only fallback CLI
 (`src/taskforce/api/cli/main.py`) always defaults to `dev`. Override with
 `--profile <name>` or `TASKFORCE_PROFILE`.
 
+**Programmatic / from-scratch default:** When you create an agent with
+`AgentFactory.create_agent(system_prompt=..., tools=[...])` (inline params, no
+profile) or call `AgentExecutor.execute_mission(...)` without `profile=`, the
+framework falls back to **`default`** — i.e. `src/taskforce/configs/default.yaml`.
+That file is therefore **required and must not be renamed/removed**; the header
+comment in `default.yaml` itself reiterates this. Post-mission learning reads
+the resolved profile's `learning.*` config, so a missing fallback would warn
+on every run.
+
 ### Deployment Manifest (visible-agents allowlist)
 
 `src/taskforce/configs/deployment.yaml` is an allowlist of agent ids

@@ -1179,7 +1179,12 @@ class AgentFactory:
             name=f"Inline Agent ({specialist or 'default'})",
             source=AgentSource.PROFILE,
             specialist=specialist,
-            base_profile="butler",
+            # Inline-Agent ohne Profil-Bezug: "default" ist die framework-
+            # eigene Fallback-Profile (src/taskforce/configs/default.yaml) und
+            # immer verfügbar. Früher stand hier "butler" — das hat auf
+            # Setups ohne taskforce-butler-Package Post-Mission-Learning-
+            # Warnings produziert ("Profile 'butler' not found").
+            base_profile="default",
             work_dir=work_dir,
             tools=effective_tools,
             mcp_servers=[MCPServerConfig.from_dict(s) for s in (mcp_servers or [])],

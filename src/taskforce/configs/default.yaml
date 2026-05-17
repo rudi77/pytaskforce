@@ -1,5 +1,14 @@
 # Default Agent Profile
 # A general-purpose agent with essential tools for common tasks.
+#
+# REQUIRED: This file is the framework-wide fallback profile used by
+# AgentFactory and AgentExecutor when no explicit profile is given
+# (e.g. for inline `create_agent(system_prompt=..., tools=[...])` calls
+# and as the default for `executor.execute_mission(profile=...)`).
+# Do not rename or delete without also updating the hardcoded
+# `"default"` defaults in `application/factory.py` and
+# `application/executor.py`. Post-mission learning loads this profile
+# to read its `learning.*` config.
 
 profile: default
 
@@ -54,7 +63,8 @@ tools:
   - file_read
   - file_write
   - edit
-  - pythons
+  - multimedia
+  - python
   - powershell
   - grep
   - glob

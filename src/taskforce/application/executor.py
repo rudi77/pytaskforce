@@ -139,7 +139,7 @@ class AgentExecutor:
     async def execute_mission(
         self,
         mission: str,
-        profile: str = "butler",
+        profile: str = "default",
         session_id: str | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
         progress_callback: Callable[[ProgressUpdate], None] | None = None,
@@ -295,7 +295,7 @@ class AgentExecutor:
     async def execute_mission_streaming(
         self,
         mission: str,
-        profile: str = "butler",
+        profile: str = "default",
         session_id: str | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
         user_context: dict[str, Any] | None = None,
