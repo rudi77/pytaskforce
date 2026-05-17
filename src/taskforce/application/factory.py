@@ -1194,11 +1194,19 @@ class AgentFactory:
             system_prompt=system_prompt,
         )
 
-        return await self.create(
+        agent = await self.create(
             definition,
             user_context=user_context,
             base_config_override=base_config_override,
         )
+
+        # Issue #382: inline-built agents opt out of post-mission-learning by
+        # default. The executor reads learning.enabled from the on-disk profile
+        # (default.yaml has it true), so the inline path used to silently write
+        # wiki pages no caller asked for. The executor checks this attribute
+        # before falling back to the profile config.
+        agent._learning_enabled = False
+        return agent
 
     async def create_agent_with_plugin(
         self,

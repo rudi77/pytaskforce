@@ -783,6 +783,11 @@ class AgentExecutor:
         """
         if agent is None or not profile:
             return
+        # Issue #382: inline-built agents (factory.create_agent with inline
+        # params, no profile=) opt out of learning by default. Set
+        # agent._learning_enabled = True to opt back in.
+        if getattr(agent, "_learning_enabled", None) is False:
+            return
         try:
             from taskforce.application.profile_loader import ProfileLoader
 
