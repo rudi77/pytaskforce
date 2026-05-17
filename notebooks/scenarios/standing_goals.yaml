@@ -1,0 +1,45 @@
+# Standing Goals test scenarios (issue #389)
+# -------------------------------------------
+# Tests the proactive layer (ADR-024): heartbeat ticks, cron pre-filter
+# (saves LLM calls), evaluator decisions, and goal mutation persistence.
+#
+# This notebook is structurally different from the mission-driven Tier-1
+# notebooks - the standing-goals service runs without a mission. The
+# notebook must inject a fake clock + count ticks + count LLM calls
+# itself, then stash those numbers into `rec.extra` so the
+# `standing_goals` evaluator can score them.
+#
+# Required `rec.extra` keys (populated by the notebook):
+#   heartbeat_ticks         - total number of heartbeat invocations
+#   standing_goals_decisions - LLM evaluator decisions (== LLM calls)
+#
+# Evaluator keys: min_ticks, max_ticks, max_llm_calls_per_tick,
+# min_decisions.
+
+# =============================================================================
+# CRON PRE-FILTER (saves LLM calls)
+# =============================================================================
+- id: sg-cron-prefilter-saves-llm
+  category: efficiency
+  difficulty: medium
+  mission: "(notebook-driven: 60 heartbeat ticks, 2 goals, one fires once)"
+  expected:
+    standing_goals:
+      min_ticks: 60
+      max_ticks: 60
+      max_llm_calls_per_tick: 0.05   # most ticks must NOT call LLM
+      min_decisions: 1
+  hidden_intent: "Cron pre-filter prevents per-tick LLM calls (ADR-024)."
+  requires: []
+
+# =============================================================================
+# DUE GOAL EVALUATION
+# =============================================================================
+# TODO: goal with frequency='*/5 * * * *' over a 30-min simulated window
+# - expect ~6 decisions, all with last_evaluated_at advanced.
+
+# =============================================================================
+# GOAL MUTATION PERSISTENCE
+# =============================================================================
+# TODO: PATCH a goal's enabled=false, run more ticks, verify no
+# further decisions for that goal.

@@ -1,0 +1,43 @@
+# MCP test scenarios (issue #384)
+# --------------------------------
+# Drives the agent against one or more MCP servers (stdio or http) and
+# verifies it actually uses them. The `mcp` evaluator scores against
+# `expected.mcp:` keys: must_use_servers, min_mcp_calls, max_mcp_calls,
+# must_use_native_only. The tool source ('mcp:<server>') is captured
+# from ProgressUpdate.details.source.
+#
+# Prereq: at least one MCP server configured in the profile/agent
+# (e.g. `servers/document-extraction-mcp`).
+
+# =============================================================================
+# DISCOVERY
+# =============================================================================
+- id: mcp-list-server-tools
+  category: discovery
+  difficulty: easy
+  mission: "Welche Tools stehen dir aus MCP-Servern zur Verfügung?"
+  expected:
+    final_answer_contains:
+      - [mcp, server, tool]
+  hidden_intent: "Agent kennt MCP-Tools im Tool-Registry."
+  requires: []
+
+# =============================================================================
+# EXECUTION via MCP
+# =============================================================================
+- id: mcp-document-extract
+  category: exec
+  difficulty: medium
+  mission: "Extrahiere den Text aus einem PDF mit dem document-extraction MCP-Server."
+  expected:
+    mcp:
+      must_use_servers: ["document-extraction"]   # adjust to your config
+      min_mcp_calls: 1
+  requires: []
+  notes: "Requires document-extraction MCP server running"
+
+# TODO add scenarios for:
+#   - approval flow when MCP tool requires_approval
+#   - failure / reconnect when server crashes mid-mission
+#   - max_mcp_calls upper bound to detect runaway loops
+#   - must_use_native_only=true to detect unwanted MCP delegation
