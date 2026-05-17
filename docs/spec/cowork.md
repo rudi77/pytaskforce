@@ -2,7 +2,7 @@
 feature: cowork
 status: shipped
 since: 2026-05-15
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 owner: rudi77
 ---
 
@@ -49,6 +49,7 @@ keep working with the global work directory — projects are opt-in.
 ## Extension points
 
 - `set_project_store_override` — enterprise plugins replace the default file-backed registry with a tenant-scoped store. Resolved per-request (not cached), so installs and uninstalls take effect immediately.
+- `set_workspace_context_provider` (`application/infrastructure_overrides.py`) — per-request workspace-context factory consumed by the agent execution path. Scopes path-aware tools (`file_read`, `file_write`, `edit`, ...) to the agent's writable workspace and rejects `..` traversal. Required in multi-tenant deployments so the agent's working directory and path validation are scoped to the current `(tenant, user)`; without it the framework default (no scoping) applies.
 
 ## Tests (must exist and pass)
 
