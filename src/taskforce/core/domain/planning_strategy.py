@@ -1,12 +1,14 @@
 """Planning strategies for Agent execution.
 
-Defines the :class:`PlanningStrategy` protocol and four concrete
+Defines the :class:`PlanningStrategy` protocol and five concrete
 implementations:
 
 * :class:`NativeReActStrategy` — pure ReAct loop
 * :class:`PlanAndExecuteStrategy` — plan first, execute sequentially
 * :class:`PlanAndReactStrategy` — alias for NativeReAct with plan
 * :class:`SparStrategy` — Sense → Plan → Act → Reflect cycle
+* :class:`AdaptivePlanningStrategy` — LLM-classified routing between a
+  cheap "simple" strategy and an expensive "complex" strategy per mission
 
 Shared helpers live in :mod:`taskforce.core.domain.planning` to keep
 this module focused on strategy orchestration.
@@ -612,3 +614,102 @@ async def _run_reflection_cycle(
             # "error" or "empty" → continue to next reflection iteration
 
     return used_tools, False, all_events
+
+
+# ---------------------------------------------------------------------------
+# AdaptivePlanningStrategy
+# ---------------------------------------------------------------------------
+
+
+class AdaptivePlanningStrategy:
+    """Routes each mission to a cheap or expensive sub-strategy based on
+    LLM classification.
+
+    Motivation (butler-benchmark): plan_and_react incurs ~5-7x overhead on
+    trivial missions ("17 times 23" needs no plan). Adaptive routing keeps
+    plan_and_react for the missions that benefit from it (multi-source
+    research, multi-step scheduling, comparisons) and falls back to
+    native_react for the rest.
+
+    The classifier is invoked once at mission start and adds ~200-400ms +
+    a small token cost. Net win because the saved overhead on simple
+    missions is on the order of 5-10 seconds.
+
+    On classifier failure the strategy uses ``fallback_level`` (default
+    ``complex``) so a hard task is never accidentally routed to a single-
+    pass strategy.
+
+    Args:
+        simple: the strategy to use for SIMPLE missions (typically
+            ``NativeReActStrategy``).
+        complex_strategy: the strategy for COMPLEX missions (typically
+            ``PlanAndReactStrategy`` or ``SparStrategy``).
+        classifier: a ``MissionComplexityClassifier`` (or anything with the
+            same ``async classify(mission) -> ComplexityVerdict`` shape).
+        fallback_level: routing decision when ``classifier`` returns a
+            zero-confidence verdict. ``"complex"`` is safer; ``"simple"``
+            optimises for latency.
+        logger: optional structured logger; if omitted, a default is built
+            on first use.
+    """
+
+    name = "adaptive"
+
+    def __init__(
+        self,
+        simple: PlanningStrategy,
+        complex_strategy: PlanningStrategy,
+        classifier: Any,
+        *,
+        fallback_level: str = "complex",
+        logger: LoggerProtocol | None = None,
+    ) -> None:
+        self.simple = simple
+        self.complex = complex_strategy
+        self.classifier = classifier
+        self.fallback_level = (
+            fallback_level if fallback_level in {"simple", "complex"} else "complex"
+        )
+        self._logger = logger
+
+    def _get_logger(self):
+        if self._logger is not None:
+            return self._logger
+        import structlog
+
+        return structlog.get_logger(__name__)
+
+    async def _route(self, mission: str) -> PlanningStrategy:
+        """Run the classifier, log the verdict, return the chosen substrategy."""
+        verdict = await self.classifier.classify(mission)
+        log = self._get_logger()
+
+        # Zero-confidence -> classifier failed, use fallback. Non-zero +
+        # known level -> trust the verdict.
+        if verdict.confidence <= 0.0:
+            effective_level = self.fallback_level
+        else:
+            effective_level = verdict.level
+
+        chosen = self.simple if effective_level == "simple" else self.complex
+        log.info(
+            "adaptive_strategy.routed",
+            verdict_level=verdict.level,
+            verdict_confidence=verdict.confidence,
+            verdict_reason=verdict.reason,
+            effective_level=effective_level,
+            chosen=chosen.name,
+            mission_chars=len(mission),
+        )
+        return chosen
+
+    async def execute(self, agent: Agent, mission: str, session_id: str) -> ExecutionResult:
+        chosen = await self._route(mission)
+        return await chosen.execute(agent, mission, session_id)
+
+    async def execute_stream(
+        self, agent: Agent, mission: str, session_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        chosen = await self._route(mission)
+        async for ev in chosen.execute_stream(agent, mission, session_id):
+            yield ev

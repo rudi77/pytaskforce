@@ -10,13 +10,16 @@ from typing import Any
 
 import structlog
 
+from taskforce.core.domain.complexity_classifier import MissionComplexityClassifier
 from taskforce.core.domain.planning_strategy import (
+    AdaptivePlanningStrategy,
     NativeReActStrategy,
     PlanAndExecuteStrategy,
     PlanAndReactStrategy,
     PlanningStrategy,
     SparStrategy,
 )
+from taskforce.core.interfaces.llm import LLMProviderProtocol
 
 
 def _coerce_bool(value: Any, default: bool) -> bool:
@@ -33,20 +36,26 @@ def _coerce_bool(value: Any, default: bool) -> bool:
 def select_planning_strategy(
     strategy_name: str | None = None,
     params: dict[str, Any] | None = None,
+    *,
+    llm_provider: LLMProviderProtocol | None = None,
 ) -> PlanningStrategy:
     """Select and instantiate a planning strategy.
 
     Args:
         strategy_name: Strategy name. One of ``native_react``,
-            ``plan_and_execute``, ``plan_and_react``, ``spar``.
+            ``plan_and_execute``, ``plan_and_react``, ``spar``, ``adaptive``.
             Defaults to ``native_react``.
         params: Optional strategy-specific parameters.
+        llm_provider: Required when ``strategy_name == "adaptive"`` so the
+            built-in MissionComplexityClassifier has an LLM for routing.
+            Ignored for all other strategies.
 
     Returns:
         PlanningStrategy instance.
 
     Raises:
-        ValueError: If strategy name is invalid or params are malformed.
+        ValueError: If strategy name is invalid, params are malformed, or
+            ``adaptive`` is requested without an llm_provider.
     """
     normalized = (
         (strategy_name or "native_react").strip().lower().replace("-", "_")
@@ -95,7 +104,42 @@ def select_planning_strategy(
             logger=logger,
         )
 
+    if normalized == "adaptive":
+        if llm_provider is None:
+            raise ValueError(
+                "planning_strategy='adaptive' requires llm_provider — pass it "
+                "via select_planning_strategy(..., llm_provider=...). The "
+                "AgentFactory does this automatically."
+            )
+        simple_name = params.get("simple", "native_react")
+        complex_name = params.get("complex", "plan_and_react")
+        fallback_level = params.get("fallback", "complex")
+        classification_model = params.get("classifier_model", "fast")
+        max_mission_chars = int(params.get("max_mission_chars", 500))
+
+        # Sub-strategies recursively use the same factory so they pick up
+        # their own param defaults. They themselves are non-adaptive, so
+        # llm_provider isn't propagated further (would only matter if a
+        # user nested adaptive inside adaptive, which we don't support).
+        simple_params = params.get("simple_params") or {}
+        complex_params = params.get("complex_params") or {}
+        simple = select_planning_strategy(simple_name, simple_params)
+        complex_strategy = select_planning_strategy(complex_name, complex_params)
+
+        classifier = MissionComplexityClassifier(
+            llm_provider,
+            classification_model=classification_model,
+            max_mission_chars=max_mission_chars,
+        )
+        return AdaptivePlanningStrategy(
+            simple=simple,
+            complex_strategy=complex_strategy,
+            classifier=classifier,
+            fallback_level=fallback_level,
+            logger=logger,
+        )
+
     raise ValueError(
         "Invalid planning_strategy. Supported values: "
-        "native_react, plan_and_execute, plan_and_react, spar"
+        "native_react, plan_and_execute, plan_and_react, spar, adaptive"
     )

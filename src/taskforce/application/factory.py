@@ -309,6 +309,7 @@ class AgentFactory:
             definition,
             definition.planning_strategy,
             definition.planning_strategy_params,
+            llm_provider=infra["llm_provider"],
         )
 
         self.logger.debug(
@@ -527,8 +528,15 @@ class AgentFactory:
         definition: AgentDefinition | None,
         planning_strategy: str | None,
         planning_strategy_params: dict[str, Any] | None,
+        *,
+        llm_provider: LLMProviderProtocol | None = None,
     ) -> dict[str, Any]:
-        """Extract agent settings (max_steps, strategy, etc.) from config and definition."""
+        """Extract agent settings (max_steps, strategy, etc.) from config and definition.
+
+        ``llm_provider`` is forwarded to ``select_planning_strategy`` so the
+        ``adaptive`` strategy can build a MissionComplexityClassifier. Other
+        strategies ignore it.
+        """
         agent_config = config.get("agent", {})
         def_max_steps = definition.max_steps if definition else None
         max_steps = def_max_steps or agent_config.get("max_steps")
@@ -537,7 +545,9 @@ class AgentFactory:
         return {
             "max_steps": max_steps,
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
-            "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
+            "planning_strategy": select_planning_strategy(
+                strategy_name, strategy_params, llm_provider=llm_provider,
+            ),
             "model_alias": config.get("llm", {}).get("default_model", "main"),
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
@@ -1290,7 +1300,9 @@ class AgentFactory:
         settings = {
             "max_steps": agent_config.get("max_steps"),
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
-            "planning_strategy": select_planning_strategy(strategy_name, strategy_params),
+            "planning_strategy": select_planning_strategy(
+                strategy_name, strategy_params, llm_provider=llm_provider,
+            ),
             "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
             "tool_message_max_chars": agent_config.get("tool_message_max_chars"),
