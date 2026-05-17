@@ -187,6 +187,61 @@ class TestProjectRootSkillDiscovery:
         called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
         assert str(claude_skills) in called_dirs
 
+    def test_cowork_skills_anchor_under_project_root_is_searched(
+        self, tmp_path: Path
+    ) -> None:
+        """CoWork-spec anchor (``<project_root>/skills/``) is probed.
+
+        ``POST /api/v1/projects`` creates this folder per
+        ``docs/spec/cowork.md`` invariant. Without this probe, users
+        who drop a SKILL.md under ``<project>/skills/`` see nothing
+        happen — the regression behind issue #378.
+        """
+        cowork_skills = tmp_path / "skills"
+        cowork_skills.mkdir(parents=True)
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=False,
+                project_root=str(tmp_path),
+            )
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        assert str(cowork_skills) in called_dirs
+
+    def test_project_root_skill_dirs_priority_order(
+        self, tmp_path: Path
+    ) -> None:
+        """All three project-local locations coexist with stable priority.
+
+        Order: ``skills/`` > ``.taskforce/skills/`` > ``.claude/skills/``.
+        The CoWork-spec anchor wins because it's the location the
+        framework itself creates and documents; the other two are
+        compatibility probes.
+        """
+        cowork_skills = tmp_path / "skills"
+        taskforce_skills = tmp_path / ".taskforce" / "skills"
+        claude_skills = tmp_path / ".claude" / "skills"
+        for d in (cowork_skills, taskforce_skills, claude_skills):
+            d.mkdir(parents=True)
+        with patch(
+            "taskforce.application.skill_manager.FileSkillRegistry"
+        ) as MockRegistry:
+            MockRegistry.return_value = _make_mock_registry()
+            SkillManager(
+                skills_path=None,
+                include_global_skills=False,
+                project_root=str(tmp_path),
+            )
+        called_dirs = MockRegistry.call_args.kwargs["skill_directories"]
+        assert called_dirs == [
+            str(cowork_skills),
+            str(taskforce_skills),
+            str(claude_skills),
+        ]
+
     def test_missing_project_skill_dirs_are_silently_skipped(
         self, tmp_path: Path
     ) -> None:

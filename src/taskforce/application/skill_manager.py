@@ -165,11 +165,13 @@ class SkillManager:
             directories.append(str(self._skills_path))
 
         # Project-local skills, when the agent is scoped to a project
-        # (e.g. project-linked conversation). We probe both conventions
-        # so users with existing Claude-Code projects get their skills
-        # picked up automatically.
+        # (e.g. project-linked conversation). Probe three locations:
+        # ``skills/`` is the CoWork-spec anchor created by
+        # ``POST /api/v1/projects`` (docs/spec/cowork.md). The other two
+        # cover .taskforce-native and Claude-Code projects so users with
+        # an existing layout get their skills picked up automatically.
         if self._project_root is not None:
-            for sub in (".taskforce/skills", ".claude/skills"):
+            for sub in ("skills", ".taskforce/skills", ".claude/skills"):
                 candidate = self._project_root / sub
                 if candidate.exists():
                     directories.append(str(candidate))
