@@ -1,0 +1,76 @@
+# Wiki / Memory test scenarios (issue #387)
+# ------------------------------------------
+# Extends the memory section from scenarios/butler.yaml with deeper
+# checks on page-naming, recall accuracy, and transient-filter
+# behaviour (ADR-020).
+#
+# The `wiki` evaluator scores against `expected.wiki:` keys:
+#   min_pages_created, max_pages_created, must_call_actions,
+#   page_name_matches (regex), min_reads.
+
+# =============================================================================
+# SAVE + NAMING
+# =============================================================================
+- id: wiki-save-contact-naming
+  category: save
+  difficulty: medium
+  mission: "Mein Steuerberater ist Klaus Müller, klaus@steuer-mueller.at. Bitte merken."
+  expected:
+    must_succeed_tools: [wiki]
+    wiki:
+      min_pages_created: 1
+      must_call_actions: [write_page]
+      page_name_matches: ["entities/.*mueller", "entities/.*klaus"]
+  hidden_intent: "Pages unter entities/<slug>.md anlegen (CLAUDE.md naming convention)."
+  requires: [wiki]
+
+- id: wiki-save-preference
+  category: save
+  difficulty: easy
+  mission: "Merke dir: ich trinke morgens immer Espresso."
+  expected:
+    must_succeed_tools: [wiki]
+    wiki:
+      min_pages_created: 1
+      must_call_actions: [write_page]
+      page_name_matches: ["preferences/.*", "user/.*", ".*espresso.*"]
+  requires: [wiki]
+
+# =============================================================================
+# RECALL
+# =============================================================================
+- id: wiki-recall-after-save
+  category: recall
+  difficulty: medium
+  mission: "Wie heißt mein Steuerberater?"
+  setup:
+    - "Mein Steuerberater ist Klaus Müller, klaus@steuer-mueller.at. Bitte merken."
+  expected:
+    wiki:
+      min_reads: 1
+      must_call_actions: [search]
+    final_answer_contains:
+      - [Müller, Mueller]
+      - [Klaus]
+  hidden_intent: "Search statt direkte get_page wenn der Pfad nicht bekannt ist."
+  requires: [wiki]
+
+# =============================================================================
+# TRANSIENT FILTER (must NOT save)
+# =============================================================================
+- id: wiki-no-save-transient-time
+  category: transient
+  difficulty: medium
+  mission: "Wie spät ist es?"
+  expected:
+    must_not_call_tools: [wiki]
+    wiki:
+      max_pages_created: 0
+  hidden_intent: "Transiente Info wie Uhrzeit nicht ins Wiki schreiben."
+  requires: []
+
+# TODO add scenarios for:
+#   - update_page (existing entity gets new attribute)
+#   - delete_page (cleanup outdated info)
+#   - log action (append-only diary entries)
+#   - memory_specialist sub-agent vs direct wiki access

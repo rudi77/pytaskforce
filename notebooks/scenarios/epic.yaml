@@ -1,0 +1,53 @@
+# Epic Orchestrator test scenarios (issue #390)
+# ----------------------------------------------
+# Drives the EpicOrchestrator (planner/worker/judge loop) and the
+# auto-epic complexity classifier. The notebook must populate
+# `rec.extra` with the round/approval/sub-agent counts so the `epic`
+# evaluator can score them.
+#
+# Required `rec.extra` keys:
+#   epic_rounds            - number of planner→worker→judge rounds
+#   epic_judge_approvals   - number of judge approve verdicts
+#   epic_subagents         - number of distinct sub-agents spawned
+#
+# Evaluator keys: max_rounds, min_judge_approvals, min_subagents,
+# max_subagents.
+
+# =============================================================================
+# AUTO-EPIC CLASSIFICATION
+# =============================================================================
+- id: epic-trivial-no-epic
+  category: classification
+  difficulty: easy
+  mission: "Wieviel ist 5 plus 7?"
+  expected:
+    epic:
+      max_rounds: 0      # trivial - should NOT escalate to epic
+      max_subagents: 0
+  hidden_intent: "Auto-epic classifier erkennt triviale Tasks und delegiert nicht."
+  requires: []
+
+- id: epic-complex-escalates
+  category: classification
+  difficulty: hard
+  mission: "Baue ein REST-API für User-Management mit Auth, Tests und CI-Pipeline."
+  expected:
+    epic:
+      min_subagents: 2   # mindestens Planner + Worker
+      max_rounds: 4
+      min_judge_approvals: 1
+  hidden_intent: "Komplexer Task eskaliert zu Epic mit planner/worker/judge."
+  requires: []
+
+# =============================================================================
+# CONVERGENCE
+# =============================================================================
+# TODO: scenario that needs exactly 2 judge rounds (first reject,
+# second approve) - verifies the judge feedback loop works.
+
+# =============================================================================
+# SUB-AGENT CONTEXT CAPTURE
+# =============================================================================
+# TODO: verify sub-agent context snapshots are stored on the parent
+# agent's ContextManager (ADR-016) - inspect agent.context.sub_agents
+# after the run.

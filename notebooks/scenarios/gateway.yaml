@@ -1,0 +1,52 @@
+# Communication Gateway test scenarios (issue #388)
+# ---------------------------------------------------
+# Tests inbound routing, outbound sending, channel linking, and
+# proactive push notifications via the unified gateway (ADR-009).
+#
+# The notebook is expected to spin up an in-memory CommunicationGateway
+# with mock InboundAdapter + OutboundSender (no live Telegram/Teams
+# credentials needed). The `gateway` evaluator scores against
+# `expected.gateway:` keys: must_use_senders, min_outbound,
+# max_outbound, recipient_channel.
+
+# =============================================================================
+# PROACTIVE PUSH (send_notification tool)
+# =============================================================================
+- id: gateway-push-simple
+  category: push
+  difficulty: easy
+  mission: "Schick mir eine Push-Nachricht: 'Test geht durch'."
+  expected:
+    must_succeed_tools: [send_notification]
+    gateway:
+      must_use_senders: [send_notification]
+      min_outbound: 1
+      max_outbound: 1
+  hidden_intent: "Genau EINE Push-Nachricht, nicht 3x."
+  requires: [send_notification]
+
+- id: gateway-push-channel-specific
+  category: push
+  difficulty: medium
+  mission: "Sende eine Telegram-Nachricht an mich: 'Build fertig'."
+  expected:
+    gateway:
+      must_use_senders: [send_notification]
+      recipient_channel: "telegram"
+      min_outbound: 1
+  requires: [send_notification]
+
+# =============================================================================
+# CHANNEL LINKING (/link <code> flow)
+# =============================================================================
+# TODO: link-code lifecycle scenarios. Requires the notebook to mint a
+# link code via /api/v1/gateway/{channel}/link-codes, simulate an
+# inbound /link <code> message, and assert the ChannelLinkRegistry has
+# the new (channel, sender_id, tenant_id, user_id) row.
+
+# =============================================================================
+# INBOUND ROUTING
+# =============================================================================
+# TODO: scenarios that drive InboundMessage through CommunicationGateway
+# and assert the correct session is reused / created. Need a mock
+# ConversationStore that the notebook inspects.

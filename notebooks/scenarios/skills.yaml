@@ -1,0 +1,53 @@
+# Skills test scenarios (issue #386)
+# -----------------------------------
+# Tests skill discovery + activation across the three skill types:
+#   - context: activated via `activate_skill` tool, injects into system prompt
+#   - prompt: invoked via /slash-command, one-shot prompt template
+#   - agent:  invoked via /slash-command, overrides agent config
+#
+# The `skills` evaluator scores against `expected.skills:` keys:
+#   must_activate, must_not_activate, min_injection_delta_chars.
+# For prompt/agent skills the slash-name is intercepted before the
+# agent sees the message - check `rec.events` for the routing event.
+
+# =============================================================================
+# CONTEXT SKILLS (activate_skill tool path)
+# =============================================================================
+- id: skills-activate-pdf-processing
+  category: context
+  difficulty: easy
+  mission: "Aktiviere die PDF-Processing-Skill und liste deren Capabilities."
+  expected:
+    skills:
+      must_activate: ["pdf-processing"]
+    must_succeed_tools: [activate_skill]
+  hidden_intent: "Agent ruft activate_skill mit korrektem Skill-Namen auf."
+  requires: [activate_skill]
+
+# =============================================================================
+# PROMPT SKILLS (/slash invocation)
+# =============================================================================
+# TODO: prompt-skill scenarios. Requires routing the slash command
+# through skill_service before the agent sees the message. Notebook
+# needs an explicit SkillService.invoke() call rather than going via
+# executor.execute_mission.
+
+# =============================================================================
+# AGENT SKILLS (profile override)
+# =============================================================================
+# TODO: agent-skill scenarios. Verify profile fields swap correctly
+# (tools, mcp_servers, system_prompt) when /agent-skill-name is used.
+
+# =============================================================================
+# CAPABILITY BOUNDARY
+# =============================================================================
+- id: skills-no-unrelated-activation
+  category: context
+  difficulty: medium
+  mission: "Was ist 2 plus 2?"
+  expected:
+    skills:
+      must_not_activate: ["pdf-processing", "code-review", "data-analysis"]
+    must_not_call_tools: [activate_skill]
+  hidden_intent: "Simple math - keine Skill-Aktivierung nötig."
+  requires: [activate_skill]

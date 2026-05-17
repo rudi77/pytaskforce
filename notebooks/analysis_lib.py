@@ -1,6 +1,6 @@
 """Reusable building blocks for Taskforce-Agent analysis notebooks.
 
-Four logical sections in one file (single-file is simpler to import from a
+Five logical sections in one file (single-file is simpler to import from a
 notebook than a package):
 
     1. RunRecord + run()       - mission execution with full event capture
@@ -10,6 +10,10 @@ notebook than a package):
                                  compare, scenario matrix, role distribution
     4. Scenarios               - YAML loader, batch runner, rule-based +
                                  optional LLM-judge scoring
+    5. Feature evaluators      - per-feature evaluators (workflow, wiki, mcp,
+                                 gateway, skills, standing_goals, epic) +
+                                 helper extractors that pull feature-relevant
+                                 data out of the captured events.
 
 Important conventions baked in (lessons from tutti_paletti_analysis.ipynb):
 
@@ -25,12 +29,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -44,6 +49,14 @@ import yaml
 INTERESTING_EVENTS = {
     "step_start", "tool_call", "tool_result",
     "final_answer", "complete", "error",
+}
+
+# Events captured into RunRecord.events. Superset of INTERESTING_EVENTS - the
+# feature evaluators (workflow, ADR-025, ...) read these from the events list
+# AFTER the run completes. Adding an event here is back-compat for legacy
+# consumers because the events list is iterated by type.
+CAPTURED_EVENTS = INTERESTING_EVENTS | {
+    "ask_user", "plan_updated", "llm_stream_restart",
 }
 
 
@@ -87,6 +100,15 @@ class RunRecord:
     files_before: dict = field(default_factory=dict)
     files_after: dict = field(default_factory=dict)
     initial_system_prompt_chars: int = 0
+    # Workflow / HITL (ADR-014): every ask_user event is captured with its
+    # question and the step index it appeared in.
+    ask_user_prompts: list[dict] = field(default_factory=list)
+    # Content-filter recovery (ADR-025): each stream_restart event with stage.
+    stream_restarts: list[dict] = field(default_factory=list)
+    # Plan updates emitted by planning strategies (plan_and_execute, spar).
+    plan_updates: list[dict] = field(default_factory=list)
+    # Escape hatch for feature-specific data (notebooks can stash anything).
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 def _snapshot_outputs(root: Path, subdirs: tuple[str, ...]) -> dict:
@@ -143,15 +165,19 @@ async def run(
         details = ev.details or {}
         t = time.time() - started
 
-        if et in {"step_start", "tool_call", "tool_result", "final_answer", "error"}:
+        if et in CAPTURED_EVENTS:
             rec.events.append({
                 "t": t,
                 "event": et,
                 "tool": details.get("tool"),
                 "tool_args": details.get("args"),
                 "tool_success": details.get("success"),
+                "tool_source": details.get("source"),  # 'mcp:<server>' or None
                 "output": details.get("output") if et == "tool_result" else None,
                 "message": ev.message,
+                "details": details if et in {
+                    "ask_user", "llm_stream_restart", "plan_updated",
+                } else None,
             })
 
         # Step approximation: transition (tool_result|start) -> tool_call = new step
@@ -167,6 +193,22 @@ async def run(
                     rec.plan_history.append(out[:3000])
         elif et == "final_answer":
             rec.final_answer = str(details.get("content") or ev.message or "")
+        elif et == "ask_user":
+            rec.ask_user_prompts.append({
+                "t": t,
+                "step": rec.step_count,
+                "question": details.get("question") or details.get("prompt")
+                            or ev.message or "",
+                "details": details,
+            })
+        elif et == "llm_stream_restart":
+            rec.stream_restarts.append({
+                "t": t,
+                "stage": details.get("stage"),
+                "reason": details.get("reason"),
+            })
+        elif et == "plan_updated":
+            rec.plan_updates.append({"t": t, "details": details})
 
         if not silent and et in INTERESTING_EVENTS:
             if shown < max_print_events:
@@ -652,13 +694,23 @@ class Scenario:
 
 @dataclass
 class ScoreCard:
-    """Outcome of evaluating a RunRecord against a Scenario.expected dict."""
+    """Outcome of evaluating a RunRecord against a Scenario.expected dict.
+
+    Legacy named booleans cover the flat keys (must_call_tools,
+    final_answer_contains, ...) that have been supported since v1 of the
+    notebook lib. Feature evaluators (`expected.workflow`, `expected.wiki`,
+    ...) populate `extra_checks` instead - one bool per check name, with
+    a corresponding `details` entry on failure.
+    """
     must_call_tools_pass: bool = True
-    must_succeed_tools_pass: bool = True  # NEW: tool was called AND returned success
+    must_succeed_tools_pass: bool = True  # tool was called AND returned success
     must_not_call_tools_pass: bool = True
     answer_contains_pass: bool = True
     answer_forbidden_pass: bool = True
     details: list[str] = field(default_factory=list)
+    # Per-feature checks populated by the evaluator registry. Key is
+    # "<feature>.<check_name>" (e.g. "workflow.min_ask_user_prompts").
+    extra_checks: dict[str, bool] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -668,6 +720,7 @@ class ScoreCard:
             and self.must_not_call_tools_pass
             and self.answer_contains_pass
             and self.answer_forbidden_pass
+            and all(self.extra_checks.values())
         )
 
 
@@ -729,10 +782,18 @@ def _check_contains_clause(clause, answer: str) -> bool:
     raise TypeError(f"final_answer_contains clause must be str or list, got {type(clause)}")
 
 
+# Legacy flat keys handled directly by score_rule_based(); anything else under
+# scenario.expected is dispatched to the evaluator registry.
+LEGACY_FLAT_KEYS = {
+    "must_call_tools", "must_succeed_tools", "must_not_call_tools",
+    "final_answer_contains", "final_answer_must_not_contain",
+}
+
+
 def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
     """Deterministic scoring of a RunRecord against scenario.expected.
 
-    Supported expected-keys:
+    Supported legacy flat keys:
         must_call_tools: list[str]            - all must be called (any outcome)
         must_succeed_tools: list[str]         - all must be called AND succeed
         must_not_call_tools: list[str]        - none of these may be called
@@ -742,6 +803,11 @@ def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
             Example: [["nicht", "kann nicht", "leider"], "WhatsApp"]
             means (nicht OR kann nicht OR leider) AND WhatsApp.
         final_answer_must_not_contain: list[str] - forbidden substrings
+
+    Feature sub-blocks (any other top-level key in `expected:`) are dispatched
+    to the evaluator registry. Built-in feature evaluators live in section 5
+    (workflow, wiki, mcp, gateway, skills, standing_goals, epic). Unknown
+    keys produce a warning in `scorecard.details` so typos surface.
     """
     sc = ScoreCard()
     e = scenario.expected
@@ -780,6 +846,24 @@ def score_rule_based(rec: RunRecord, scenario: Scenario) -> ScoreCard:
         if hit:
             sc.answer_forbidden_pass = False
             sc.details.append(f"answer contains forbidden: {hit}")
+
+    # Dispatch feature sub-blocks to registered evaluators.
+    for key, sub in e.items():
+        if key in LEGACY_FLAT_KEYS:
+            continue
+        fn = _evaluators.get(key)
+        if fn is None:
+            sc.details.append(f"unknown expected sub-block: {key!r} (typo?)")
+            continue
+        if not isinstance(sub, dict):
+            sc.details.append(f"expected.{key} must be a dict, got {type(sub).__name__}")
+            sc.extra_checks[f"{key}.__shape__"] = False
+            continue
+        try:
+            fn(rec, sub, sc)
+        except Exception as exc:
+            sc.details.append(f"evaluator {key!r} crashed: {exc}")
+            sc.extra_checks[f"{key}.__crashed__"] = False
 
     return sc
 
@@ -988,3 +1072,415 @@ def print_scenario_summary(results: list[ScenarioResult]) -> None:
     print("-" * 80)
     print(f"Total: {n_pass}/{len(results)} passed "
           f"({n_pass*100/max(1,len(results)):.0f}%)")
+
+
+# =============================================================================
+# SECTION 5 - Feature evaluators + helper extractors
+# =============================================================================
+# Each feature evaluator handles one top-level sub-block in `scenario.expected`
+# (e.g. `expected.workflow: {...}`) and mutates a ScoreCard in place. The
+# helper extractors are pure functions over RunRecord and live next to the
+# evaluator that needs them, so a notebook can render the data even without
+# YAML scoring.
+
+EvaluatorFn = Callable[[RunRecord, dict, ScoreCard], None]
+_evaluators: dict[str, EvaluatorFn] = {}
+
+
+def register_evaluator(key: str, fn: EvaluatorFn) -> None:
+    """Register an evaluator for `expected.<key>` sub-blocks.
+
+    Notebooks may add custom evaluators at the top of the notebook for
+    ad-hoc checks. The function receives (record, sub_block, scorecard)
+    and should mutate `scorecard.extra_checks` + `scorecard.details`.
+    """
+    _evaluators[key] = fn
+
+
+def list_evaluators() -> list[str]:
+    """Names of currently registered feature evaluators."""
+    return sorted(_evaluators.keys())
+
+
+def _check(sc: ScoreCard, name: str, ok: bool, detail: str = "") -> None:
+    """Record a check in the ScoreCard. `name` is namespaced (`feature.check`)."""
+    sc.extra_checks[name] = ok
+    if not ok and detail:
+        sc.details.append(f"{name}: {detail}")
+
+
+# ---------- Helper extractors (pure functions over RunRecord) -----------
+
+def wiki_writes(rec: RunRecord) -> list[dict]:
+    """All wiki tool_call events that mutated state.
+
+    Returns dicts with keys: t, action, page, args. `action` is
+    {write_page, update_page, log, delete_page}.
+    """
+    write_actions = {"write_page", "update_page", "log", "delete_page"}
+    out = []
+    for e in rec.events:
+        if e["event"] != "tool_call" or e["tool"] != "wiki":
+            continue
+        args = e.get("tool_args") or {}
+        action = args.get("action")
+        if action in write_actions:
+            out.append({
+                "t": e["t"],
+                "action": action,
+                "page": args.get("page") or args.get("path"),
+                "args": args,
+            })
+    return out
+
+
+def wiki_reads(rec: RunRecord) -> list[dict]:
+    """Wiki tool_call events that read state (search/get/list)."""
+    read_actions = {"search", "get_page", "list_pages", "list_index"}
+    out = []
+    for e in rec.events:
+        if e["event"] != "tool_call" or e["tool"] != "wiki":
+            continue
+        args = e.get("tool_args") or {}
+        action = args.get("action")
+        if action in read_actions:
+            out.append({"t": e["t"], "action": action, "args": args})
+    return out
+
+
+def mcp_calls(rec: RunRecord) -> Counter:
+    """Counter of MCP-server tool calls keyed by server name.
+
+    Relies on event detail `source = 'mcp:<server>'` populated by the MCP
+    tool wrapper. Tools without an explicit MCP source are ignored.
+    """
+    c: Counter = Counter()
+    for e in rec.events:
+        if e["event"] != "tool_call":
+            continue
+        src = e.get("tool_source") or ""
+        if src.startswith("mcp:"):
+            c[src[4:]] += 1
+    return c
+
+
+def gateway_events(rec: RunRecord) -> list[dict]:
+    """Tool calls that touch the Communication Gateway."""
+    gateway_tools = {"send_notification", "ask_user"}  # extend per scenario
+    return [
+        {"t": e["t"], "tool": e["tool"], "args": e.get("tool_args") or {}}
+        for e in rec.events
+        if e["event"] == "tool_call" and e["tool"] in gateway_tools
+    ]
+
+
+def skills_activated(rec: RunRecord) -> list[str]:
+    """Skill names from `activate_skill` tool calls (in order)."""
+    out = []
+    for e in rec.events:
+        if e["event"] == "tool_call" and e["tool"] == "activate_skill":
+            args = e.get("tool_args") or {}
+            name = args.get("skill_name") or args.get("name")
+            if name:
+                out.append(str(name))
+    return out
+
+
+def slash_skill_invocations(rec: RunRecord) -> list[str]:
+    """Slash-command-style skill invocations parsed from the initial user
+    message (best-effort - the framework strips slash names before reaching
+    the agent, so we look at the raw event message as a fallback).
+    """
+    out = []
+    for e in rec.events:
+        msg = e.get("message") or ""
+        for m in re.findall(r"/([\w\-:]+)", msg or ""):
+            out.append(m)
+    return out
+
+
+def schedule_jobs_registered(rec: RunRecord) -> list[dict]:
+    """Schedule-tool calls that registered a job."""
+    out = []
+    for e in rec.events:
+        if e["event"] != "tool_call" or e["tool"] != "schedule":
+            continue
+        args = e.get("tool_args") or {}
+        if (args.get("action") or "add") in {"add", "create", "register"}:
+            out.append({"t": e["t"], "args": args})
+    return out
+
+
+# ---------- Built-in feature evaluators ---------------------------------
+
+def _eval_workflow(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.workflow keys:
+        min_ask_user_prompts, max_ask_user_prompts: int bounds on ask_user
+        must_ask_about: list[str] - each clause must be substring of some
+            ask_user question (case-insensitive)
+        min_resume_count: int - lower bound on resume cycles (= ask_user
+            prompts since each resume is preceded by an ask_user wait)
+    """
+    n = len(rec.ask_user_prompts)
+
+    if "min_ask_user_prompts" in sub:
+        lo = int(sub["min_ask_user_prompts"])
+        _check(sc, "workflow.min_ask_user_prompts", n >= lo,
+               f"got {n}, need >= {lo}")
+    if "max_ask_user_prompts" in sub:
+        hi = int(sub["max_ask_user_prompts"])
+        _check(sc, "workflow.max_ask_user_prompts", n <= hi,
+               f"got {n}, need <= {hi}")
+
+    if "must_ask_about" in sub:
+        questions = " ".join(
+            (p.get("question") or "").lower() for p in rec.ask_user_prompts
+        )
+        for clause in sub["must_ask_about"]:
+            ok = clause.lower() in questions
+            _check(sc, f"workflow.must_ask_about.{clause}", ok,
+                   f"no ask_user question mentions {clause!r}")
+
+    if "min_resume_count" in sub:
+        lo = int(sub["min_resume_count"])
+        _check(sc, "workflow.min_resume_count", n >= lo,
+               f"resumed {n}x, need >= {lo}")
+
+
+def _eval_wiki(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.wiki keys:
+        min_pages_created, max_pages_created: int bounds (write_page actions)
+        must_call_actions: list[str] - actions that must appear (write_page,
+            update_page, search, ...)
+        page_name_matches: list[str|regex] - each pattern must match a page
+            name written by a write_page/update_page action
+        min_reads: int - lower bound on read actions (search/get_page/list)
+    """
+    writes = wiki_writes(rec)
+    reads = wiki_reads(rec)
+    pages_written = [w for w in writes if w["action"] == "write_page"]
+    actions_called = {w["action"] for w in writes} | {r["action"] for r in reads}
+
+    if "min_pages_created" in sub:
+        lo = int(sub["min_pages_created"])
+        _check(sc, "wiki.min_pages_created", len(pages_written) >= lo,
+               f"got {len(pages_written)}, need >= {lo}")
+    if "max_pages_created" in sub:
+        hi = int(sub["max_pages_created"])
+        _check(sc, "wiki.max_pages_created", len(pages_written) <= hi,
+               f"got {len(pages_written)}, need <= {hi}")
+    if "must_call_actions" in sub:
+        for action in sub["must_call_actions"]:
+            _check(sc, f"wiki.must_call_actions.{action}",
+                   action in actions_called,
+                   f"wiki action {action!r} never called")
+    if "page_name_matches" in sub:
+        pages = [str(w.get("page") or "") for w in writes]
+        for pattern in sub["page_name_matches"]:
+            try:
+                rx = re.compile(pattern, re.IGNORECASE)
+                ok = any(rx.search(p) for p in pages)
+            except re.error:
+                ok = any(pattern.lower() in p.lower() for p in pages)
+            _check(sc, f"wiki.page_name_matches.{pattern}", ok,
+                   f"no page name matches {pattern!r}; got {pages}")
+    if "min_reads" in sub:
+        lo = int(sub["min_reads"])
+        _check(sc, "wiki.min_reads", len(reads) >= lo,
+               f"got {len(reads)}, need >= {lo}")
+
+
+def _eval_mcp(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.mcp keys:
+        must_use_servers: list[str] - MCP server names that must produce calls
+        min_mcp_calls: int - lower bound on total MCP tool calls
+        max_mcp_calls: int - upper bound
+        must_use_native_only: bool - if True, no MCP source allowed
+    """
+    calls = mcp_calls(rec)
+    total = sum(calls.values())
+
+    if sub.get("must_use_native_only"):
+        _check(sc, "mcp.must_use_native_only", total == 0,
+               f"unexpected MCP calls: {dict(calls)}")
+    if "must_use_servers" in sub:
+        for srv in sub["must_use_servers"]:
+            _check(sc, f"mcp.must_use_servers.{srv}", calls.get(srv, 0) > 0,
+                   f"server {srv!r} produced no tool_call (have {dict(calls)})")
+    if "min_mcp_calls" in sub:
+        lo = int(sub["min_mcp_calls"])
+        _check(sc, "mcp.min_mcp_calls", total >= lo,
+               f"got {total}, need >= {lo}")
+    if "max_mcp_calls" in sub:
+        hi = int(sub["max_mcp_calls"])
+        _check(sc, "mcp.max_mcp_calls", total <= hi,
+               f"got {total}, need <= {hi}")
+
+
+def _eval_gateway(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.gateway keys:
+        must_use_senders: list[str] - tool names that must appear (e.g.
+            send_notification)
+        min_outbound: int - lower bound on send_notification calls
+        max_outbound: int - upper bound
+        recipient_channel: str - if set, send_notification args.channel
+            must match
+    """
+    events = gateway_events(rec)
+    outbound = [e for e in events if e["tool"] == "send_notification"]
+
+    if "must_use_senders" in sub:
+        called = {e["tool"] for e in events}
+        for t in sub["must_use_senders"]:
+            _check(sc, f"gateway.must_use_senders.{t}", t in called,
+                   f"sender {t!r} never called")
+    if "min_outbound" in sub:
+        lo = int(sub["min_outbound"])
+        _check(sc, "gateway.min_outbound", len(outbound) >= lo,
+               f"got {len(outbound)} send_notification calls, need >= {lo}")
+    if "max_outbound" in sub:
+        hi = int(sub["max_outbound"])
+        _check(sc, "gateway.max_outbound", len(outbound) <= hi,
+               f"got {len(outbound)} send_notification calls, need <= {hi}")
+    if "recipient_channel" in sub:
+        want = str(sub["recipient_channel"])
+        ok = all(str(e["args"].get("channel", "")) == want for e in outbound)
+        _check(sc, "gateway.recipient_channel", ok and bool(outbound),
+               f"not all outbound use channel={want!r}")
+
+
+def _eval_skills(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.skills keys:
+        must_activate: list[str] - skill names that must appear in
+            activate_skill calls
+        must_not_activate: list[str] - skills that must NOT be activated
+        min_injection_delta_chars: int - lower bound on system-prompt delta
+            attributable to skill injection (computed against
+            rec.initial_system_prompt_chars and a final snapshot, so the
+            notebook must pass agent into the scorer separately - we
+            approximate from event metadata when available)
+    """
+    activated = skills_activated(rec)
+
+    if "must_activate" in sub:
+        for name in sub["must_activate"]:
+            _check(sc, f"skills.must_activate.{name}", name in activated,
+                   f"skill {name!r} never activated; got {activated}")
+    if "must_not_activate" in sub:
+        for name in sub["must_not_activate"]:
+            _check(sc, f"skills.must_not_activate.{name}", name not in activated,
+                   f"skill {name!r} activated but should not be")
+    if "min_injection_delta_chars" in sub:
+        delta = rec.extra.get("system_prompt_delta_chars", 0)
+        lo = int(sub["min_injection_delta_chars"])
+        _check(sc, "skills.min_injection_delta_chars", delta >= lo,
+               f"delta={delta}, need >= {lo} "
+               "(notebook must populate rec.extra['system_prompt_delta_chars'])")
+
+
+def _eval_standing_goals(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.standing_goals keys (notebook-populated via rec.extra):
+        min_ticks: int - lower bound on heartbeat ticks
+        max_ticks: int - upper bound
+        max_llm_calls_per_tick: float - ratio guardrail (proves cron
+            pre-filter saves LLM calls)
+        min_decisions: int - lower bound on evaluator decisions (per
+            rec.extra['standing_goals_decisions'])
+    """
+    ticks = int(rec.extra.get("heartbeat_ticks", 0))
+    decisions = int(rec.extra.get("standing_goals_decisions", 0))
+    llm_calls = rec.llm_calls
+
+    if "min_ticks" in sub:
+        _check(sc, "standing_goals.min_ticks",
+               ticks >= int(sub["min_ticks"]),
+               f"ticks={ticks}, need >= {sub['min_ticks']}")
+    if "max_ticks" in sub:
+        _check(sc, "standing_goals.max_ticks",
+               ticks <= int(sub["max_ticks"]),
+               f"ticks={ticks}, need <= {sub['max_ticks']}")
+    if "max_llm_calls_per_tick" in sub and ticks > 0:
+        ratio = llm_calls / ticks
+        cap = float(sub["max_llm_calls_per_tick"])
+        _check(sc, "standing_goals.max_llm_calls_per_tick", ratio <= cap,
+               f"ratio={ratio:.2f}, cap={cap}")
+    if "min_decisions" in sub:
+        _check(sc, "standing_goals.min_decisions",
+               decisions >= int(sub["min_decisions"]),
+               f"decisions={decisions}, need >= {sub['min_decisions']}")
+
+
+def _eval_epic(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
+    """expected.epic keys (notebook-populated via rec.extra):
+        max_rounds: int - upper bound on planner/worker/judge rounds
+        min_judge_approvals: int - lower bound on judge approve verdicts
+        min_subagents: int - lower bound on sub-agents spawned
+        max_subagents: int - upper bound
+    """
+    rounds = int(rec.extra.get("epic_rounds", 0))
+    approvals = int(rec.extra.get("epic_judge_approvals", 0))
+    subagents = int(rec.extra.get("epic_subagents", 0))
+
+    if "max_rounds" in sub:
+        _check(sc, "epic.max_rounds", rounds <= int(sub["max_rounds"]),
+               f"rounds={rounds}, cap={sub['max_rounds']}")
+    if "min_judge_approvals" in sub:
+        _check(sc, "epic.min_judge_approvals",
+               approvals >= int(sub["min_judge_approvals"]),
+               f"approvals={approvals}, need >= {sub['min_judge_approvals']}")
+    if "min_subagents" in sub:
+        _check(sc, "epic.min_subagents",
+               subagents >= int(sub["min_subagents"]),
+               f"subagents={subagents}, need >= {sub['min_subagents']}")
+    if "max_subagents" in sub:
+        _check(sc, "epic.max_subagents",
+               subagents <= int(sub["max_subagents"]),
+               f"subagents={subagents}, cap={sub['max_subagents']}")
+
+
+# Register built-in evaluators at module import time. Notebooks may register
+# additional ones (or override these) by calling register_evaluator(...)
+# before they call score_rule_based / run_scenarios.
+register_evaluator("workflow", _eval_workflow)
+register_evaluator("wiki", _eval_wiki)
+register_evaluator("mcp", _eval_mcp)
+register_evaluator("gateway", _eval_gateway)
+register_evaluator("skills", _eval_skills)
+register_evaluator("standing_goals", _eval_standing_goals)
+register_evaluator("epic", _eval_epic)
+
+
+# ---------- Reporters for feature-specific data -------------------------
+
+def print_feature_checks(sc: ScoreCard) -> None:
+    """Print the extra_checks dict from a ScoreCard, grouped by feature."""
+    if not sc.extra_checks:
+        print("(no feature-specific checks ran)")
+        return
+    by_feature: dict[str, list[tuple[str, bool]]] = defaultdict(list)
+    for name, ok in sc.extra_checks.items():
+        feat = name.split(".", 1)[0]
+        by_feature[feat].append((name, ok))
+    for feat in sorted(by_feature):
+        print(f"  [{feat}]")
+        for name, ok in by_feature[feat]:
+            mark = "PASS" if ok else "FAIL"
+            print(f"    {mark}  {name}")
+
+
+def print_workflow_trace(rec: RunRecord) -> None:
+    """ask_user / stream_restart / plan_updated timeline for HITL diagnosis."""
+    print("=== Workflow trace ===")
+    if rec.ask_user_prompts:
+        print(f"ask_user prompts ({len(rec.ask_user_prompts)}):")
+        for i, p in enumerate(rec.ask_user_prompts, 1):
+            q = (p.get("question") or "")[:120].replace("\n", " ")
+            print(f"  {i}. [step {p['step']} @ {p['t']:.1f}s] {q}")
+    else:
+        print("(no ask_user events)")
+    if rec.plan_updates:
+        print(f"\nplan_updated events: {len(rec.plan_updates)}")
+    if rec.stream_restarts:
+        print(f"\nstream_restart events (ADR-025): {len(rec.stream_restarts)}")
+        for r in rec.stream_restarts:
+            print(f"  @ {r['t']:.1f}s stage={r['stage']} reason={r['reason']}")
