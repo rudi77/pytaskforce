@@ -1,0 +1,51 @@
+# PinchBench evaluation profile.
+#
+# Consumed by evals/pinchbench/solver.py — the pinchbench Inspect AI
+# solver instantiates Taskforce with this profile, then ``cd``\\s the
+# agent into a per-task workspace directory before delegating to
+# AgentExecutor.execute_mission_streaming.
+#
+# Mirrors the swe_bench profile shape (minimal tool surface, generous
+# context budget, native ReAct planner) but adds file_read / file_write
+# / grep / glob / python because pinchbench tasks routinely operate on
+# CSV / log / markdown fixtures placed in the workspace.
+
+profile: pinchbench
+specialist: null
+
+persistence:
+  type: file
+  work_dir: .taskforce_pinchbench
+
+agent:
+  planning_strategy: native_react
+  max_steps: 60
+  max_parallel_tools: 1
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+context_policy:
+  max_items: 30
+  max_chars_per_item: 15000
+  max_total_chars: 120000
+  include_latest_tool_previews_n: 12
+
+context_management:
+  summary_threshold: 95
+  compression_trigger: 128000
+  max_input_tokens: 128000
+
+logging:
+  level: INFO
+  format: console
+
+tools:
+  - shell
+  - edit
+  - file_read
+  - file_write
+  - grep
+  - glob
+  - python
