@@ -1,43 +1,54 @@
 # MCP test scenarios (issue #384)
 # --------------------------------
-# Drives the agent against one or more MCP servers (stdio or http) and
-# verifies it actually uses them. The `mcp` evaluator scores against
-# `expected.mcp:` keys: must_use_servers, min_mcp_calls, max_mcp_calls,
-# must_use_native_only. The tool source ('mcp:<server>') is captured
-# from ProgressUpdate.details.source.
+# Drives the agent against one or more MCP servers and verifies it
+# actually uses them. The `mcp` evaluator scores against `expected.mcp:`
+# keys: must_use_tools (by tool name, not server name —
+# MCPToolWrapper does not tag events with source today),
+# min_mcp_calls, max_mcp_calls, must_use_native_only.
 #
-# Prereq: at least one MCP server configured in the profile/agent
-# (e.g. `servers/document-extraction-mcp`).
+# **IMPORTANT** — the notebook MUST populate
+# `rec.extra['mcp_tool_names']` with the set of tool names exposed by
+# MCPToolWrapper instances after building the agent. Without that hint
+# the evaluator cannot distinguish MCP from native tools.
 
 # =============================================================================
-# DISCOVERY
+# NATIVE-ONLY (no MCP server configured)
 # =============================================================================
-- id: mcp-list-server-tools
-  category: discovery
+- id: mcp-native-only-simple
+  category: native
   difficulty: easy
-  mission: "Welche Tools stehen dir aus MCP-Servern zur Verfügung?"
+  mission: "Wie spät ist es?"
   expected:
-    final_answer_contains:
-      - [mcp, server, tool]
-  hidden_intent: "Agent kennt MCP-Tools im Tool-Registry."
+    mcp:
+      must_use_native_only: true
+  hidden_intent: "Ohne MCP-Server konfiguriert darf keine MCP-Tool gerufen werden."
   requires: []
 
+- id: mcp-native-only-search
+  category: native
+  difficulty: easy
+  mission: "Suche im Web nach Wetter in Berlin."
+  expected:
+    mcp:
+      must_use_native_only: true
+  hidden_intent: "Native web_search reicht — keine MCP-Delegation."
+  requires: [web_search]
+
 # =============================================================================
-# EXECUTION via MCP
+# WITH MCP SERVER (only run when an MCP server is wired into the notebook)
 # =============================================================================
 - id: mcp-document-extract
   category: exec
   difficulty: medium
-  mission: "Extrahiere den Text aus einem PDF mit dem document-extraction MCP-Server."
+  mission: "Extrahiere den Text aus einem PDF mit der document-extraction-mcp Toolchain."
   expected:
     mcp:
-      must_use_servers: ["document-extraction"]   # adjust to your config
       min_mcp_calls: 1
+      # must_use_tools: ["ocr_extract"]   # uncomment when MCP server is wired
   requires: []
-  notes: "Requires document-extraction MCP server running"
+  notes: "Requires document-extraction-mcp server actually running (heavy deps)."
 
 # TODO add scenarios for:
 #   - approval flow when MCP tool requires_approval
 #   - failure / reconnect when server crashes mid-mission
 #   - max_mcp_calls upper bound to detect runaway loops
-#   - must_use_native_only=true to detect unwanted MCP delegation

@@ -1148,20 +1148,29 @@ def wiki_reads(rec: RunRecord) -> list[dict]:
     return out
 
 
-def mcp_calls(rec: RunRecord) -> Counter:
-    """Counter of MCP-server tool calls keyed by server name.
+def mcp_calls(rec: RunRecord, mcp_tool_names: set[str] | None = None) -> Counter:
+    """Counter of MCP-tool calls.
 
-    Relies on event detail `source = 'mcp:<server>'` populated by the MCP
-    tool wrapper. Tools without an explicit MCP source are ignored.
+    `MCPToolWrapper` (infrastructure/tools/mcp/wrapper.py) does NOT tag
+    the event source today — MCP tools appear in ``tool_call`` events
+    under their bare tool name. Detection therefore needs an external
+    hint from the notebook:
+
+    1. Preferred: pass ``mcp_tool_names`` (set of names collected from
+       ``agent.tools`` after build by checking for ``MCPToolWrapper``
+       instances). Calls are counted by name.
+    2. Fallback: if ``mcp_tool_names`` is None, the function looks at
+       ``rec.extra['mcp_tool_names']`` — notebooks can stash it there
+       once and the evaluator picks it up automatically.
+
+    Returns an empty Counter if neither is provided.
     """
-    c: Counter = Counter()
-    for e in rec.events:
-        if e["event"] != "tool_call":
-            continue
-        src = e.get("tool_source") or ""
-        if src.startswith("mcp:"):
-            c[src[4:]] += 1
-    return c
+    names = mcp_tool_names
+    if names is None:
+        names = set(rec.extra.get("mcp_tool_names") or [])
+    if not names:
+        return Counter()
+    return Counter({n: c for n, c in rec.tool_calls.items() if n in names})
 
 
 def gateway_events(rec: RunRecord) -> list[dict]:
@@ -1292,10 +1301,18 @@ def _eval_wiki(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
 
 def _eval_mcp(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
     """expected.mcp keys:
-        must_use_servers: list[str] - MCP server names that must produce calls
+        must_use_tools: list[str] - MCP tool names that must be called
+            (MCPToolWrapper does NOT tag events with a server source, so
+            we check by tool name only)
         min_mcp_calls: int - lower bound on total MCP tool calls
         max_mcp_calls: int - upper bound
-        must_use_native_only: bool - if True, no MCP source allowed
+        must_use_native_only: bool - if True, no MCP tool may be called
+
+    The notebook MUST populate `rec.extra['mcp_tool_names']` with the
+    set of tool names that originate from MCP wrappers (collected from
+    `agent.tools` post-build by class-checking for MCPToolWrapper).
+    Without that hint the evaluator has no way to distinguish MCP from
+    native tools.
     """
     calls = mcp_calls(rec)
     total = sum(calls.values())
@@ -1303,10 +1320,10 @@ def _eval_mcp(rec: RunRecord, sub: dict, sc: ScoreCard) -> None:
     if sub.get("must_use_native_only"):
         _check(sc, "mcp.must_use_native_only", total == 0,
                f"unexpected MCP calls: {dict(calls)}")
-    if "must_use_servers" in sub:
-        for srv in sub["must_use_servers"]:
-            _check(sc, f"mcp.must_use_servers.{srv}", calls.get(srv, 0) > 0,
-                   f"server {srv!r} produced no tool_call (have {dict(calls)})")
+    if "must_use_tools" in sub:
+        for name in sub["must_use_tools"]:
+            _check(sc, f"mcp.must_use_tools.{name}", calls.get(name, 0) > 0,
+                   f"MCP tool {name!r} never called (have {dict(calls)})")
     if "min_mcp_calls" in sub:
         lo = int(sub["min_mcp_calls"])
         _check(sc, "mcp.min_mcp_calls", total >= lo,
