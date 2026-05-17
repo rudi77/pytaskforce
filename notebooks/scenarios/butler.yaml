@@ -150,8 +150,15 @@
       - [Reichweite, km, Range]
       - [Preis, EUR, Euro, €]
   hidden_intent: "Multi-source comparison → research_agent (laut CLAUDE.md)"
-  requires: [web_search]
-  notes: "Wackelig wegen Brave-Endpoint flakyness — siehe issue #web_search-retry"
+  # SKIPPED in environments without reliable multi-source web search. The
+  # ddgs library cascades to Brave when DuckDuckGo's html endpoint is
+  # rate-limited, and Brave itself is intermittently unreachable from
+  # behind certain ISPs/CDNs. When the cascade fails the agent doesn't
+  # honour "stop retrying" prompts and runs out of step budget. Re-enable
+  # by adding "web_search_reliable" to AVAILABLE_TOOLS in the notebook
+  # (or by switching the framework to a stable backend per issue #381).
+  requires: [web_search, web_search_reliable]
+  notes: "Flaky due to Brave-endpoint outages — see issue #381 (web_search retry/backend-switch)."
 
 - id: web-news-today
   category: web
