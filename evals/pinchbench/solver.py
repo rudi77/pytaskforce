@@ -1,23 +1,25 @@
 """Inspect AI solver that runs Taskforce against a single pinchbench task.
 
-Differs from ``evals/bridge/taskforce_bridge.py:taskforce_solver`` in three
+Differs from ``evals/bridge/taskforce_bridge.py:taskforce_solver`` in two
 ways tailored to pinchbench:
 
 1. Provisions an isolated workspace directory (with any fixture files
    declared in the task frontmatter copied from ``skill/assets/``) and
-   ``cd``\\s into it for the duration of the agent run, so the agent's
+   tells the agent to use it via prompt augmentation, so the agent's
    file tools land their writes where the grader will look.
-2. Augments the prompt with the workspace path so the agent can use it
-   in absolute paths if needed.
-3. Captures the full Taskforce event stream and converts it into the
+2. Captures the full Taskforce event stream and converts it into the
    pinchbench transcript shape (see ``transcript.py``), stashing the
    result plus the workspace path in ``state.metadata`` for the scorer.
+
+The solver does **not** ``chdir`` into the workspace — Inspect AI runs
+samples concurrently and ``os.chdir`` is process-wide, which would let
+parallel samples step on each other. The agent gets the workspace path
+in the prompt and uses absolute paths.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -53,16 +55,31 @@ def _provision_workspace(workspace_files: list[str]) -> Path:
 def _augment_prompt(prompt: str, workspace: Path) -> str:
     return (
         f"{prompt}\n\n"
-        f"---\nYour task workspace is `{workspace}`. "
-        f"Read, write, and create any files inside that directory. "
-        f"Treat it as your current working directory."
+        f"---\nYour task workspace is `{workspace}` (absolute path). "
+        f"Read, write, and create any files inside that directory using "
+        f"absolute paths. Treat it as your working directory; do not assume "
+        f"the process CWD points there."
     )
+
+
+def _extract_final_text(events: list[Any]) -> str:
+    """Pull a final assistant message off the COMPLETE event if present."""
+    from taskforce.core.domain.enums import EventType
+
+    for evt in reversed(events):
+        evt_type = evt.event_type
+        evt_str = evt_type.value if hasattr(evt_type, "value") else str(evt_type)
+        if evt_str == EventType.COMPLETE.value:
+            return getattr(evt, "message", "") or ""
+        if evt_str == EventType.FINAL_ANSWER.value:
+            return (getattr(evt, "details", {}) or {}).get("content", "") or ""
+    return ""
 
 
 @solver
 def pinchbench_solver(
     profile: str = "pinchbench",
-    max_steps: int | None = None,
+    max_steps: int | None = None,  # noqa: ARG001
 ) -> Solver:
     """Run a Taskforce agent against one pinchbench sample."""
 
@@ -71,18 +88,24 @@ def pinchbench_solver(
         from taskforce.application.factory import AgentFactory
 
         meta = state.metadata or {}
+
+        if meta.get("pinchbench_multi_session_prompts"):
+            logger.warning(
+                "pinchbench task %s has multi_session_prompts; running "
+                "as a single session (multi-session execution not yet "
+                "implemented). Score may underrepresent capability.",
+                meta.get("pinchbench_task_id", "<unknown>"),
+            )
+
         workspace_files: list[str] = list(meta.get("pinchbench_workspace_files") or [])
         workspace = _provision_workspace(workspace_files)
-
         prompt = _augment_prompt(state.input_text, workspace)
 
         factory = AgentFactory()
         executor = AgentExecutor(factory)
         events: list[Any] = []
 
-        original_cwd = Path.cwd()
         try:
-            os.chdir(workspace)
             async for update in executor.execute_mission_streaming(
                 mission=prompt,
                 profile=profile,
@@ -100,22 +123,9 @@ def pinchbench_solver(
                 "pinchbench_transcript": build_transcript(events, prompt),
             }
             return state
-        finally:
-            os.chdir(original_cwd)
 
         transcript = build_transcript(events, prompt)
-
-        # Extract a short final-message for inspect_ai's completion field.
-        final_text = ""
-        for entry in reversed(transcript):
-            msg = entry.get("message") or {}
-            if msg.get("role") == "assistant":
-                for item in msg.get("content", []) or []:
-                    if item.get("type") == "text" and item.get("text"):
-                        final_text = item["text"]
-                        break
-                if final_text:
-                    break
+        final_text = _extract_final_text(events)
 
         state.output = state.output.model_copy(update={"completion": final_text})
         state.metadata = {

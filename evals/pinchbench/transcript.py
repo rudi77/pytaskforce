@@ -84,20 +84,19 @@ def build_transcript(events: list[Any], prompt: str) -> list[dict[str, Any]]:
 
         elif evt_str == EventType.TOOL_CALL.value:
             flush_text()
-            tool_name = (
-                details.get("tool")
-                or details.get("name")
-                or details.get("tool_name")
-                or ""
-            )
-            params = details.get("params") or details.get("input") or {}
-            transcript.append(_tool_use_entry(tool_name, params))
+            # Taskforce ProgressUpdate keys are ``tool`` / ``args``
+            # (see core/domain/planning/tool_execution.py:280-287).
+            tool_name = details.get("tool", "")
+            args = details.get("args") or {}
+            transcript.append(_tool_use_entry(tool_name, args))
 
         elif evt_str == EventType.TOOL_RESULT.value:
-            result = details.get("result")
-            if result is None:
-                result = getattr(evt, "message", "") or ""
-            transcript.append(_tool_result_entry(result))
+            # Tool output key is ``output``, alongside ``success`` /
+            # optional ``error_kind`` (tool_execution.py:223-230).
+            output = details.get("output")
+            if output is None:
+                output = getattr(evt, "message", "") or ""
+            transcript.append(_tool_result_entry(output))
 
         elif evt_str == EventType.FINAL_ANSWER.value:
             content = details.get("content") or ""
@@ -106,16 +105,11 @@ def build_transcript(events: list[Any], prompt: str) -> list[dict[str, Any]]:
 
         elif evt_str == EventType.COMPLETE.value:
             flush_text()
-            final = details.get("final_message") or getattr(evt, "message", "")
-            if final and not any(
-                e.get("type") == "message"
-                and e["message"].get("role") == "assistant"
-                and any(
-                    c.get("type") == "text" and c.get("text", "").strip() == str(final).strip()
-                    for c in e["message"].get("content", [])
-                )
-                for e in transcript[-3:]
-            ):
+            # COMPLETE's final message lives on the ProgressUpdate's
+            # ``message`` attribute (see
+            # application/progress_update_builder.py:build_completion_update).
+            final = getattr(evt, "message", "") or details.get("final_message", "")
+            if final:
                 transcript.append(_text_entry("assistant", str(final)))
 
     flush_text()

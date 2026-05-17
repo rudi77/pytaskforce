@@ -145,20 +145,13 @@ def _load_manifest(tasks_dir: Path) -> dict:
     return yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
 
 
-def _flatten_manifest_section(section: object) -> set[str]:
-    """Pull task IDs out of nested manifest blocks (handles dict/list/str)."""
-    ids: set[str] = set()
-    if section is None:
-        return ids
-    if isinstance(section, str):
-        ids.add(section)
-    elif isinstance(section, list):
-        for item in section:
-            ids.update(_flatten_manifest_section(item))
-    elif isinstance(section, dict):
-        for value in section.values():
-            ids.update(_flatten_manifest_section(value))
-    return ids
+def _str_list(value: object) -> list[str]:
+    """Coerce a manifest section to a list of strings, dropping unknowns."""
+    if isinstance(value, list):
+        return [str(v) for v in value if isinstance(v, str)]
+    if isinstance(value, str):
+        return [value]
+    return []
 
 
 def load_tasks(
@@ -171,7 +164,8 @@ def load_tasks(
 
     ``suite`` accepts:
       - ``"all"`` / ``"full"`` — every task in ``tasks/``
-      - ``"core"`` — IDs listed under the ``core`` key in ``manifest.yaml``
+      - ``"core"`` — task IDs listed under ``core`` (plus ``run_first``)
+        in ``manifest.yaml``
       - any category name (e.g. ``"coding"``, ``"productivity"``) — tasks
         whose frontmatter ``category`` matches
       - a comma-separated list of explicit task IDs
@@ -191,11 +185,15 @@ def load_tasks(
         selected = all_files
     elif suite_norm == "core":
         manifest = _load_manifest(tasks_dir)
-        core_ids = _flatten_manifest_section(manifest.get("core"))
-        # ``run_first`` (e.g. task_sanity) is always included so smoke tests
-        # land on a deterministic task.
-        core_ids.update(_flatten_manifest_section(manifest.get("run_first")))
-        selected = [by_id[t] for t in sorted(core_ids) if t in by_id]
+        core_ids = _str_list(manifest.get("run_first")) + _str_list(manifest.get("core"))
+        # Deduplicate while preserving manifest order.
+        seen: set[str] = set()
+        selected = []
+        for tid in core_ids:
+            if tid in seen or tid not in by_id:
+                continue
+            seen.add(tid)
+            selected.append(by_id[tid])
     elif "," in suite:
         ids = [s.strip() for s in suite.split(",") if s.strip()]
         selected = [by_id[t] for t in ids if t in by_id]

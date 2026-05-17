@@ -8,11 +8,19 @@ and lets us enforce a wall-clock cap per task.
 ``run_llm_judge`` builds a rubric-anchored prompt, sends it through the
 Taskforce LLM provider, and parses a ``{"score": float, "reasoning": str}``
 JSON reply.
+
+Security note: ``run_automated_check`` executes Python code authored
+upstream in the pinchbench/skill repository. The subprocess inherits
+the parent's environment and Python interpreter (so it has the same
+filesystem and network reach as the eval harness). Pinchbench tasks
+ship Stdlib-only graders today; if that ever changes, sandbox this
+further (Docker, ``resource`` rlimits, restricted ``PYTHONHOME``).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -88,6 +96,7 @@ def run_automated_check(
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            env=os.environ.copy(),
         )
     except subprocess.TimeoutExpired:
         return {
@@ -189,24 +198,30 @@ async def run_llm_judge(
     )
 
     try:
-        from taskforce.application.factory import AgentFactory
+        from taskforce.application.infrastructure_builder import InfrastructureBuilder
     except ImportError as exc:
         return {"ok": False, "error": f"taskforce not importable: {exc}"}
 
-    factory = AgentFactory()
     try:
-        llm = factory.create_llm_provider()  # type: ignore[attr-defined]
+        llm = InfrastructureBuilder().build_llm_provider({"llm": {}})
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"could not build LLM provider: {exc}"}
 
     try:
-        response = await llm.complete(  # type: ignore[attr-defined]
+        response = await llm.complete(
             messages=[{"role": "user", "content": judge_prompt}],
             model=judge_model,
             temperature=0,
         )
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"judge LLM call failed: {exc}"}
+
+    if isinstance(response, dict) and response.get("success") is False:
+        return {
+            "ok": False,
+            "error": f"LLM provider returned failure: {response.get('error', '')}",
+            "error_type": response.get("error_type", ""),
+        }
 
     text = (
         response.get("content", "")

@@ -22,7 +22,9 @@ test.
    `<category>`, or `task_a,task_b,...`.
 3. **Solver** (`solver.py`): provisions an isolated workspace dir
    (with any `workspace_files:` fixtures copied from `skill/assets/`),
-   ``cd``s the agent into it, runs Taskforce via
+   passes its absolute path to the agent via prompt augmentation
+   (no `os.chdir` — Inspect AI runs samples concurrently and process-
+   wide CWD changes are unsafe), runs Taskforce via
    `AgentExecutor.execute_mission_streaming`, and translates the event
    stream into pinchbench's transcript format.
 4. **Scorer** (`scorer.py` + `grading.py`):
@@ -97,10 +99,24 @@ agents/pinchbench-agent/
   message shape on a best-effort basis. Automated graders that inspect
   fine-grained OpenClaw-only fields (skill activation events, internal
   workflow state) will under-count; the LLM judge picks up the slack
-  in `hybrid` mode.
+  in `hybrid` mode. When the automated check errors inside a hybrid
+  task, the scorer falls back to judge-only and tags the result as
+  `hybrid_degraded_to_judge_only` so analysis can filter those rows.
 * Multi-session tasks (`multi_session_prompts:`) are parsed into
   metadata but currently executed as a single session — extending the
-  solver to honour the session-reset semantics is a follow-up.
+  solver to honour the session-reset semantics is a follow-up. A WARN
+  is logged at sample-build time so users know which tasks are
+  affected.
 * Workspace fixtures named in `workspace_files:` are copied flat into
   the temp workspace; tasks that expect nested asset paths may need
   loader tweaks.
+
+## Security boundary
+
+`grading.py:run_automated_check` executes Python authored upstream in
+the pinchbench/skill repo. The subprocess inherits the eval-harness's
+environment and interpreter (same filesystem + network reach), so the
+trust boundary is the same as cloning any third-party repo and
+running its scripts. Today every pinchbench grader is Stdlib-only;
+if that ever changes, sandbox further (Docker, `resource` rlimits,
+restricted `PYTHONHOME`).

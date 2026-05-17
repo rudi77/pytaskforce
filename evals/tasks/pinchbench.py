@@ -31,6 +31,8 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
@@ -40,6 +42,8 @@ from evals.pinchbench.scorer import pinchbench_scorer
 from evals.pinchbench.solver import pinchbench_solver
 
 setup_azure_env()
+
+logger = logging.getLogger(__name__)
 
 
 def _sample_from_task(t: PinchbenchTask) -> Sample:
@@ -59,6 +63,7 @@ def _sample_from_task(t: PinchbenchTask) -> Sample:
             "pinchbench_grading_type": t.grading_type,
             "pinchbench_timeout_seconds": t.timeout_seconds,
             "pinchbench_workspace_files": t.workspace_files,
+            "pinchbench_multi_session_prompts": t.multi_session_prompts,
             "pinchbench_prompt": t.prompt,
             "pinchbench_expected_behavior": t.expected_behavior,
             "pinchbench_grading_criteria": t.grading_criteria,
@@ -74,6 +79,16 @@ def _build_task(suite: str, *, limit: int | None = None) -> Task:
         raise RuntimeError(
             f"No pinchbench tasks matched suite={suite!r}. "
             "Check evals/pinchbench/skill/tasks/ or pass a valid category."
+        )
+    multi_session = [t.id for t in tasks if t.multi_session_prompts]
+    if multi_session:
+        logger.warning(
+            "pinchbench suite=%s contains %d multi-session task(s) which "
+            "will execute as a single session (multi-session support is "
+            "not yet implemented). Affected: %s",
+            suite,
+            len(multi_session),
+            ", ".join(multi_session[:5]) + (" ..." if len(multi_session) > 5 else ""),
         )
     samples = [_sample_from_task(t) for t in tasks]
     return Task(
