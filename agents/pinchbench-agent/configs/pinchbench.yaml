@@ -1,0 +1,48 @@
+# PinchBench evaluation profile
+#
+# PinchBench drives the agent through the `openclaw` CLI for every task,
+# so the current integration (see evals/pinchbench/run_pinchbench.py)
+# does NOT consume this profile — it forwards directly to the upstream
+# runner. The profile is reserved for a future variant that exposes
+# Taskforce as an OpenClaw-compatible agent (CLI shim).
+#
+# It mirrors the swe_bench profile shape so the two evaluations stay
+# easy to compare: minimal tool surface, generous context budget, and
+# the native ReAct planner.
+
+profile: pinchbench
+specialist: null
+
+persistence:
+  type: file
+  work_dir: .taskforce_pinchbench
+
+agent:
+  planning_strategy: native_react
+  max_steps: 60
+  max_parallel_tools: 1
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+context_policy:
+  max_items: 30
+  max_chars_per_item: 15000
+  max_total_chars: 120000
+  include_latest_tool_previews_n: 12
+
+context_management:
+  summary_threshold: 95
+  compression_trigger: 128000
+  max_input_tokens: 128000
+
+logging:
+  level: INFO
+  format: console
+
+tools:
+  - shell
+  - edit
+  - file_read
+  - file_write

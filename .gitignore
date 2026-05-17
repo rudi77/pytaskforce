@@ -245,6 +245,10 @@ logs/
 
 # GAIA eval provisioned files
 shared_files/
+
+# PinchBench eval artifacts (upstream checkout + per-run results)
+evals/pinchbench/skill/
+evals/pinchbench/results/
 examples/ap_ledger_agent/db/ap-ledger.db
 examples/ap_ledger_agent/reports/
 
