@@ -10,7 +10,11 @@ from typing import Any
 
 import structlog
 
-from taskforce.core.domain.complexity_classifier import MissionComplexityClassifier
+from taskforce.core.domain.complexity_classifier import (
+    HeuristicComplexityClassifier,
+    MissionComplexityClassifier,
+    TwoStageComplexityClassifier,
+)
 from taskforce.core.domain.planning_strategy import (
     AdaptivePlanningStrategy,
     NativeReActStrategy,
@@ -116,6 +120,11 @@ def select_planning_strategy(
         fallback_level = params.get("fallback", "complex")
         classification_model = params.get("classifier_model", "fast")
         max_mission_chars = int(params.get("max_mission_chars", 500))
+        # classifier_mode:
+        #   "two_stage" (default) — heuristic pre-filter + LLM on UNKNOWN
+        #   "llm"                 — LLM only, every mission
+        #   "heuristic"           — heuristic only, no LLM (fallback on UNKNOWN)
+        classifier_mode = params.get("classifier_mode", "two_stage")
 
         # Sub-strategies recursively use the same factory so they pick up
         # their own param defaults. They themselves are non-adaptive, so
@@ -126,11 +135,30 @@ def select_planning_strategy(
         simple = select_planning_strategy(simple_name, simple_params)
         complex_strategy = select_planning_strategy(complex_name, complex_params)
 
-        classifier = MissionComplexityClassifier(
-            llm_provider,
-            classification_model=classification_model,
-            max_mission_chars=max_mission_chars,
-        )
+        if classifier_mode == "llm":
+            classifier: Any = MissionComplexityClassifier(
+                llm_provider,
+                classification_model=classification_model,
+                max_mission_chars=max_mission_chars,
+            )
+        elif classifier_mode == "heuristic":
+            classifier = HeuristicComplexityClassifier()
+        elif classifier_mode == "two_stage":
+            llm = MissionComplexityClassifier(
+                llm_provider,
+                classification_model=classification_model,
+                max_mission_chars=max_mission_chars,
+            )
+            classifier = TwoStageComplexityClassifier(
+                heuristic=HeuristicComplexityClassifier(),
+                llm_fallback=llm,
+            )
+        else:
+            raise ValueError(
+                f"Invalid classifier_mode={classifier_mode!r}. "
+                "Supported: two_stage (default), llm, heuristic"
+            )
+
         return AdaptivePlanningStrategy(
             simple=simple,
             complex_strategy=complex_strategy,
