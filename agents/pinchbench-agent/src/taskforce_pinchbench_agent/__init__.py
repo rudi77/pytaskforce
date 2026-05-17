@@ -1,9 +1,9 @@
-"""Taskforce PinchBench Agent — real-world agent benchmark evaluation.
+"""Taskforce PinchBench Agent — pinchbench evaluation profile.
 
-See ``evals/pinchbench/README.md`` for usage. The current integration runs
-the upstream pinchbench/skill benchmark against a chosen LLM model; this
-package is a placeholder so a future Taskforce-as-agent variant has a
-home parallel to ``taskforce-swe-bench-agent``.
+See ``evals/pinchbench/README.md`` for the full integration story. This
+package ships the YAML profile (``configs/pinchbench.yaml``) that the
+pinchbench Inspect AI solver loads when running the agent against
+pinchbench tasks. Mirrors ``taskforce-swe-bench-agent`` in scope.
 """
 
 __version__ = "0.1.0"

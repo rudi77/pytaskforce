@@ -1,14 +1,14 @@
-# PinchBench evaluation profile
+# PinchBench evaluation profile.
 #
-# PinchBench drives the agent through the `openclaw` CLI for every task,
-# so the current integration (see evals/pinchbench/run_pinchbench.py)
-# does NOT consume this profile — it forwards directly to the upstream
-# runner. The profile is reserved for a future variant that exposes
-# Taskforce as an OpenClaw-compatible agent (CLI shim).
+# Consumed by evals/pinchbench/solver.py — the pinchbench Inspect AI
+# solver instantiates Taskforce with this profile, then ``cd``\\s the
+# agent into a per-task workspace directory before delegating to
+# AgentExecutor.execute_mission_streaming.
 #
-# It mirrors the swe_bench profile shape so the two evaluations stay
-# easy to compare: minimal tool surface, generous context budget, and
-# the native ReAct planner.
+# Mirrors the swe_bench profile shape (minimal tool surface, generous
+# context budget, native ReAct planner) but adds file_read / file_write
+# / grep / glob / python because pinchbench tasks routinely operate on
+# CSV / log / markdown fixtures placed in the workspace.
 
 profile: pinchbench
 specialist: null
@@ -46,3 +46,6 @@ tools:
   - edit
   - file_read
   - file_write
+  - grep
+  - glob
+  - python

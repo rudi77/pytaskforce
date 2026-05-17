@@ -36,6 +36,20 @@ TASK_REGISTRY: dict[str, tuple[str, str]] = {
     "swe_bench_verified_mini": ("swe_bench.py", "SWE-bench Verified Mini (20 instances)"),
     "swe_bench_lite": ("swe_bench.py", "SWE-bench Lite (300 instances)"),
     "swe_bench_verified": ("swe_bench.py", "SWE-bench Verified (~500 instances)"),
+    # --- PinchBench (real-world agent tasks; clones pinchbench/skill on first run) ---
+    "pinchbench_smoke": ("pinchbench.py", "PinchBench Smoke (5 core tasks)"),
+    "pinchbench_core": ("pinchbench.py", "PinchBench Core (~25 representative tasks)"),
+    "pinchbench_full": ("pinchbench.py", "PinchBench Full (~180 tasks, slow)"),
+    "pinchbench_productivity": ("pinchbench.py", "PinchBench: productivity category"),
+    "pinchbench_research": ("pinchbench.py", "PinchBench: research category"),
+    "pinchbench_writing": ("pinchbench.py", "PinchBench: writing category"),
+    "pinchbench_coding": ("pinchbench.py", "PinchBench: coding category"),
+    "pinchbench_analysis": ("pinchbench.py", "PinchBench: analysis category"),
+    "pinchbench_csv_analysis": ("pinchbench.py", "PinchBench: csv_analysis category"),
+    "pinchbench_log_analysis": ("pinchbench.py", "PinchBench: log_analysis category"),
+    "pinchbench_meeting_analysis": ("pinchbench.py", "PinchBench: meeting_analysis category"),
+    "pinchbench_memory": ("pinchbench.py", "PinchBench: memory category"),
+    "pinchbench_skills": ("pinchbench.py", "PinchBench: skills category"),
     # --- GAIA (General AI Assistant) ---
     "gaia_quick": ("gaia.py", "GAIA Quick (10 Level-1 questions, smoke test)"),
     "gaia_level1": ("gaia.py", "GAIA Level 1 (simple, <5 steps)"),
@@ -71,6 +85,10 @@ def print_help() -> None:
     print("\n--- SWE-bench (real-world GitHub issues, requires Docker) ---")
     for name, (_, desc) in TASK_REGISTRY.items():
         if name.startswith("swe_"):
+            print(f"  {name:30s} {desc}")
+    print("\n--- PinchBench (real-world agent tasks; clones pinchbench/skill on first run) ---")
+    for name, (_, desc) in TASK_REGISTRY.items():
+        if name.startswith("pinchbench_"):
             print(f"  {name:30s} {desc}")
     print("\n--- InstructEval Baselines (tests the underlying model) ---")
     for name, (_, desc) in TASK_REGISTRY.items():

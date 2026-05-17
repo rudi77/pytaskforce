@@ -1,84 +1,106 @@
 # PinchBench integration
 
-[PinchBench](https://github.com/pinchbench/skill) evaluates LLM models as
-OpenClaw coding agents on ~180 real-world tasks across 10 categories
-(productivity, research, writing, coding, analysis, CSV / log / meeting
-parsing, memory, skills, integrations).
+Runs [pinchbench](https://github.com/pinchbench/skill) task definitions
+against the Taskforce agent through Inspect AI.
 
-## How this differs from the SWE-bench setup
+This integration deliberately **does not** depend on the upstream
+`openclaw` CLI or pinchbench's own `scripts/benchmark.py` runner — both
+of those treat pinchbench as a "test a model via OpenClaw" benchmark.
+We instead vendor only what's stable (the task markdowns + manifest +
+fixtures) and own the loop end-to-end so Taskforce is the agent under
+test.
 
-SWE-bench plugs into Taskforce through `inspect-evals[swe_bench]` — the
-benchmark framework owns task definitions and scoring while we provide a
-custom solver (`taskforce_swebench_solver`) that runs the Taskforce agent
-inside the SWE-bench Docker sandbox.
+## How it works
 
-PinchBench has no Inspect AI adapter. Its runner shells out to the
-`openclaw agent` CLI for every task and grades the resulting transcripts.
-This integration therefore **does not** wire pinchbench through Inspect
-AI; instead it clones the upstream `pinchbench/skill` repository and
-forwards arguments to its `scripts/benchmark.py`, with the model and
-suite selected by us. It evaluates the **model** (and OpenClaw's harness),
-not the Taskforce agent framework directly.
+1. **Task source**: `loader.ensure_skill_checkout()` shallow-clones
+   `pinchbench/skill` into `evals/pinchbench/skill/` on first use
+   (gitignored). Pass `update=True` (or wipe the directory) to refresh.
+2. **Task loader** (`loader.py`): parses each `task_*.md` file
+   (YAML frontmatter + `## Prompt | Expected Behavior | Grading Criteria
+   | Automated Checks | LLM Judge Rubric` sections) into a
+   `PinchbenchTask` dataclass. Suites supported: `all`, `core`,
+   `<category>`, or `task_a,task_b,...`.
+3. **Solver** (`solver.py`): provisions an isolated workspace dir
+   (with any `workspace_files:` fixtures copied from `skill/assets/`),
+   ``cd``s the agent into it, runs Taskforce via
+   `AgentExecutor.execute_mission_streaming`, and translates the event
+   stream into pinchbench's transcript format.
+4. **Scorer** (`scorer.py` + `grading.py`):
+   * `grading_type=automated` → execute the task's `def grade(transcript,
+     workspace_path)` function in a subprocess with a wall-clock cap,
+     mean-aggregate the returned criterion scores.
+   * `grading_type=llm_judge` → call a Taskforce LLM with the task's
+     rubric and the rendered transcript, parse `{"score": float, ...}`.
+   * `grading_type=hybrid` → run both, then average. This matches
+     pinchbench's intent that automated and judge signals should agree.
 
-If a Taskforce-as-agent evaluation is needed later, the natural next
-step is to add an `openclaw` shim that translates pinchbench's subprocess
-calls into Taskforce mission invocations and writes OpenClaw-compatible
-transcripts. That is intentionally out of scope here.
+The whole thing plugs into Inspect AI like the existing GAIA and
+SWE-bench tasks, so `inspect view` shows results the same way.
 
 ## Prerequisites
 
-- `uv` on PATH (the upstream runner uses `uv run`)
-- `openclaw` CLI on PATH (pinchbench drives the agent via subprocess)
-- API key for the chosen provider:
-  - `OPENROUTER_API_KEY` for `openrouter/*` models (default)
-  - `ANTHROPIC_API_KEY` for `anthropic/*` models
-  - `OPENAI_API_KEY` for `openai/*` models
-  - For Azure / custom OpenAI-compatible endpoints pass
-    `-- --base-url <url> --api-key <key>`
+* `uv sync --extra evals` — installs Inspect AI
+* `git` — used to clone the skill repo on first run
+* LLM credentials for whichever `--model` you pass (Azure / OpenAI /
+  OpenRouter / Anthropic), exposed through `.env`
 
 ## Usage
 
 ```bash
-# ~25 representative core tasks (quick smoke test)
-python evals/pinchbench/run_pinchbench.py --suite core
+# Quick smoke test — first 5 core tasks
+python evals/run_eval.py pinchbench_smoke
 
-# Single category against a specific OpenRouter model
-python evals/pinchbench/run_pinchbench.py \
-    --model openrouter/anthropic/claude-sonnet-4 --suite coding
+# ~25 representative core tasks
+python evals/run_eval.py pinchbench_core
 
-# Full benchmark (slow, ~180 tasks)
-python evals/pinchbench/run_pinchbench.py --suite all
+# Single category
+python evals/run_eval.py pinchbench_coding --model openai/azure/gpt-5.4-mini
 
-# Bash variant (analogous to evals/wsl_run_swebench.sh)
-bash evals/pinchbench/wsl_run_pinchbench.sh core openrouter/anthropic/claude-sonnet-4
+# Full benchmark (~180 tasks, slow)
+python evals/run_eval.py pinchbench_full
 ```
 
-Forward additional flags through to upstream `scripts/benchmark.py`
-after a `--` separator:
+Tasks register with Inspect AI via `evals/tasks/pinchbench.py`; the
+`run_eval.py` shortcuts (`pinchbench_smoke`, `pinchbench_core`,
+`pinchbench_<category>`, `pinchbench_full`) cover the common entry
+points. Drop into `inspect_ai` directly for ad-hoc filters:
 
 ```bash
-python evals/pinchbench/run_pinchbench.py --suite coding -- \
-    --verbose --judge openrouter/openai/gpt-4o --no-judge-cache
+inspect eval evals/tasks/pinchbench.py@pinchbench_core \
+    --model openai/azure/gpt-5.4-mini --max-samples 4
 ```
 
-## Outputs
+## Layout
 
-- `evals/pinchbench/skill/` — upstream checkout (gitignored)
-- `evals/pinchbench/results/<run_id>_<model>.json` — task scores, category
-  rollups, efficiency metrics
-- `evals/pinchbench/results/<run_id>_transcripts/` — per-task execution
-  transcripts
-- `evals/pinchbench/results/.judge_cache/` — cached LLM-judge results
-  (gitignored)
+```
+evals/pinchbench/
+├── __init__.py
+├── README.md           ← you are here
+├── loader.py           ← clone + parse task markdowns
+├── transcript.py       ← Taskforce events → pinchbench transcript
+├── grading.py          ← subprocess-isolated automated check + LLM judge
+├── solver.py           ← Inspect AI solver wrapping AgentExecutor
+├── scorer.py           ← Inspect AI scorer applying hybrid grading
+└── skill/              ← upstream pinchbench/skill checkout (gitignored)
 
-## Suite reference
+evals/tasks/pinchbench.py
+    @task pinchbench_smoke / pinchbench_core / pinchbench_full /
+          pinchbench_<category>
 
-| Suite | What it runs |
-| --- | --- |
-| `core` | ~25 representative tasks across all categories (quick smoke test) |
-| `all`  | Full benchmark (~180 tasks, slow) |
-| `automated-only` | Tasks with deterministic graders (no LLM judge) |
-| `productivity` / `research` / `writing` / `coding` / `analysis` | Single category |
-| `csv_analysis` / `log_analysis` / `meeting_analysis` | Single category |
-| `memory` / `skills` / `integrations` | Single category |
-| `task_xxx,task_yyy` | Comma-separated list of specific task IDs |
+agents/pinchbench-agent/
+    configs/pinchbench.yaml  ← profile consumed by pinchbench_solver
+```
+
+## Limitations
+
+* The transcript translation maps Taskforce events to OpenClaw's
+  message shape on a best-effort basis. Automated graders that inspect
+  fine-grained OpenClaw-only fields (skill activation events, internal
+  workflow state) will under-count; the LLM judge picks up the slack
+  in `hybrid` mode.
+* Multi-session tasks (`multi_session_prompts:`) are parsed into
+  metadata but currently executed as a single session — extending the
+  solver to honour the session-reset semantics is a follow-up.
+* Workspace fixtures named in `workspace_files:` are copied flat into
+  the temp workspace; tasks that expect nested asset paths may need
+  loader tweaks.
