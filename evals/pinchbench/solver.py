@@ -116,6 +116,50 @@ def _extract_final_text(events: list[Any]) -> str:
     return ""
 
 
+def _derive_run_status(events: list[Any]) -> tuple[str, str]:
+    """Derive ``(status, error_kind)`` from the executor's event stream.
+
+    Reads the final COMPLETE event's ``status`` field (which honours
+    salvaged finals from ``_react_loop`` — see #407). Returns
+    ``("completed", "")`` for a clean run, ``("failed", "<reason>")``
+    otherwise. The salvage reason / error message is captured from the
+    final FINAL_ANSWER metadata when available (``salvage_reason``,
+    ``missing_deliverables``) and falls back to the COMPLETE message.
+    """
+    from taskforce.core.domain.enums import EventType, ExecutionStatus
+
+    status = "completed"
+    error_kind = ""
+    for evt in reversed(events):
+        evt_str = (
+            evt.event_type.value if hasattr(evt.event_type, "value") else str(evt.event_type)
+        )
+        details = getattr(evt, "details", {}) or {}
+        if evt_str == EventType.COMPLETE.value:
+            raw_status = str(details.get("status") or "").lower()
+            if raw_status == ExecutionStatus.FAILED.value:
+                status = "failed"
+                error_kind = error_kind or (getattr(evt, "message", "") or "")
+            break
+    if status == "failed":
+        # Walk forward to find the salvage marker on the final answer.
+        for evt in events:
+            evt_str = (
+                evt.event_type.value
+                if hasattr(evt.event_type, "value")
+                else str(evt.event_type)
+            )
+            details = getattr(evt, "details", {}) or {}
+            if evt_str == EventType.FINAL_ANSWER.value and details.get("salvaged"):
+                reason = details.get("salvage_reason") or "salvaged"
+                missing = details.get("missing_deliverables")
+                error_kind = (
+                    f"{reason}: missing {missing}" if missing else str(reason)
+                )
+                break
+    return status, error_kind
+
+
 @solver
 def pinchbench_solver(
     profile: str = "pinchbench",
@@ -166,11 +210,16 @@ def pinchbench_solver(
 
         transcript = build_transcript(events, prompt)
         final_text = _extract_final_text(events)
+        run_status, run_error = _derive_run_status(events)
 
         state.output = state.output.model_copy(update={"completion": final_text})
         state.metadata = {
             **meta,
-            "pinchbench_status": "completed",
+            # #407: honour the executor's FAILED status — was always
+            # "completed" before, which made mid-run aborts invisible to
+            # downstream analysis.
+            "pinchbench_status": run_status,
+            "pinchbench_error": run_error,
             "pinchbench_workspace": str(workspace),
             "pinchbench_transcript": transcript,
             "pinchbench_event_count": len(events),

@@ -94,12 +94,24 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
         EventType.INTERRUPTED,
     }
 
+    salvaged = False
+    salvage_reason = ""
+
     async for e in events:
         event_type = _ensure_event_type(e)
         if event_type in track:
             history.append({"type": event_type.value, **e.data})
         if event_type == EventType.FINAL_ANSWER:
             final_msg = e.data.get("content", "")
+            # Mission-level failure marker (#407). The salvage paths
+            # (stall, max_steps, ignored-deliverable-nudge) wrap a final
+            # answer to keep downstream consumers from crashing, but the
+            # mission did not succeed — propagate that distinction.
+            if e.data.get("salvaged"):
+                salvaged = True
+                salvage_reason = str(
+                    e.data.get("salvage_reason") or salvage_reason or "salvaged"
+                )
         elif event_type == EventType.ASK_USER:
             pending = dict(e.data)
             final_msg = final_msg or e.data.get("question", "Waiting for input")
@@ -118,10 +130,16 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
 
     if pending or interrupted:
         status = ExecutionStatus.PAUSED
-    elif error or not final_msg:
+    elif error or not final_msg or salvaged:
         status = ExecutionStatus.FAILED
     else:
         status = ExecutionStatus.COMPLETED
+
+    # Surface the salvage reason as an error string when no harder error
+    # was captured. Lets dashboards / eval scorers distinguish a clean
+    # mid-run abort from a generic FAILED.
+    if salvaged and not error:
+        error = f"salvaged: {salvage_reason}"
 
     # Build a user-facing message: prefer final answer, then a
     # category-specific message (content filter etc.), then the wrapped
@@ -613,7 +631,13 @@ async def _react_loop(
                     )
                     yield StreamEvent(
                         event_type=EventType.FINAL_ANSWER,
-                        data={"content": salvage},
+                        data={
+                            "content": salvage,
+                            # #407: salvage path → mission-level failure even
+                            # though we produced a user-facing reply.
+                            "salvaged": True,
+                            "salvage_reason": "stall",
+                        },
                     )
                 else:
                     error_data: dict[str, Any] = {
@@ -669,13 +693,34 @@ async def _react_loop(
                         missing=missing,
                     )
                     continue
+
+            # #407: if we already nudged once and the deliverable is STILL
+            # missing, accept the LLM's final answer but mark the mission
+            # as salvaged so the executor reports a FAILED status. Without
+            # this, an ignored nudge looks identical to a clean completion.
+            answer_data: dict[str, Any] = {"content": content}
+            if deliverable_nudge_injected and deliverables:
+                still_missing = _find_missing_deliverables(
+                    deliverables, deliverable_search_roots
+                )
+                if still_missing:
+                    answer_data["salvaged"] = True
+                    answer_data["salvage_reason"] = "deliverable_missing"
+                    answer_data["missing_deliverables"] = still_missing
+                    logger.warning(
+                        "react_loop.deliverable_still_missing_after_nudge",
+                        session_id=session_id,
+                        step=step,
+                        missing=still_missing,
+                    )
+
             final = content
             agent.context.append_message(
                 {"role": MessageRole.ASSISTANT.value, "content": content},
             )
             yield StreamEvent(
                 event_type=EventType.FINAL_ANSWER,
-                data={"content": content},
+                data=answer_data,
             )
             break
         else:
@@ -698,7 +743,12 @@ async def _react_loop(
             )
             yield StreamEvent(
                 event_type=EventType.FINAL_ANSWER,
-                data={"content": salvage},
+                data={
+                    "content": salvage,
+                    # #407: max_steps salvage → mission-level failure.
+                    "salvaged": True,
+                    "salvage_reason": "max_steps",
+                },
             )
         else:
             error_data: dict[str, Any] = {

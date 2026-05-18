@@ -185,6 +185,45 @@ async def test_nudge_fires_only_once_per_mission(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ignored_nudge_marks_final_answer_as_salvaged(tmp_path: Path) -> None:
+    """#407: deliverable still missing after the nudge → FINAL_ANSWER carries
+    ``salvaged=True`` + ``salvage_reason='deliverable_missing'``."""
+    from taskforce.core.domain.enums import EventType
+
+    agent = _make_agent(max_steps=4)
+    logger = _make_logger()
+
+    async def fake_complete(**_: Any) -> dict[str, Any]:
+        # Agent never writes the file — both attempts emit content only.
+        return {"success": True, "tool_calls": None, "content": "Status: failed."}
+
+    agent.llm_provider = MagicMock()
+    agent.llm_provider.complete = AsyncMock(side_effect=fake_complete)
+    if hasattr(agent.llm_provider, "complete_stream"):
+        del agent.llm_provider.complete_stream
+
+    mission = f"Write `report.md` in `{tmp_path.as_posix()}`."
+    messages = agent.context.messages
+    messages.extend(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": mission},
+        ]
+    )
+
+    events: list[StreamEvent] = []
+    async for evt in _react_loop(agent, mission, "sess-1", messages, {}, 0, logger):
+        events.append(evt)
+
+    final_events = [e for e in events if e.event_type == EventType.FINAL_ANSWER]
+    assert len(final_events) == 1
+    data = final_events[0].data
+    assert data.get("salvaged") is True
+    assert data.get("salvage_reason") == "deliverable_missing"
+    assert "report.md" in data.get("missing_deliverables", [])
+
+
+@pytest.mark.asyncio
 async def test_no_nudge_when_mission_has_no_deliverable() -> None:
     agent = _make_agent(max_steps=3)
     logger = _make_logger()
