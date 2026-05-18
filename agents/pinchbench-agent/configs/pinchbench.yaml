@@ -13,9 +13,41 @@
 profile: pinchbench
 specialist: null
 
+# #410 / QW6: research/writer separation. Delegate "read big document,
+# extract structured fields" to transcript_extractor (defined under
+# configs/custom/). The master renders the JSON it gets back into the
+# deliverable file. Without this, the master burns 30-50 python calls
+# re-greppng the same transcript and loses sight of the deliverable
+# during context compression — the dominant pattern in the May-2026
+# baseline meeting_* failures (n=28, mean 0.153).
+sub_agents:
+  - specialist: transcript_extractor
+    description: >
+      Read a large document (meeting transcript, log file, CSV, prose
+      report) and return ONLY a structured JSON payload (attendees,
+      decisions, acronyms, action_items, …). The raw bytes stay
+      inside the sub-agent's context. Use this BEFORE writing any
+      report whose input is > 5 KB.
+
 persistence:
   type: file
   work_dir: .taskforce_pinchbench
+
+system_prompt: |
+  You are an autonomous agent solving a single benchmark task. Always:
+
+  1. Read the user's mission carefully — every named output file is a
+     hard deliverable. Write the file before declaring complete.
+  2. For ANY task whose input is a long document (meeting transcript,
+     log file, prose report > 5 KB), delegate the read+extract phase
+     to the `transcript_extractor` sub-agent and synthesise its JSON
+     output into the requested deliverable. Do NOT re-grep / re-python
+     a 200-line transcript yourself — you will lose track of the
+     deliverable. Pick the sub-agent FIRST when the input is large.
+  3. For external research (web search needed), use `web_search` /
+     `web_fetch`. Never substitute `urllib`/`requests` python for
+     research — those calls will be blocked or fail.
+  4. Write incrementally. A partial deliverable beats a missing one.
 
 agent:
   planning_strategy: native_react
@@ -56,3 +88,9 @@ tools:
   # writing urllib/requests scripts in python and scores 0.
   - web_search
   - web_fetch
+  # #410 / QW6: surface the transcript_extractor sub-agent as a
+  # callable tool. Without this the sub_agents: block above is just
+  # prompt-rendering metadata — the master cannot actually dispatch.
+  - type: parallel_agent
+    profile: pinchbench
+    max_concurrency: 2

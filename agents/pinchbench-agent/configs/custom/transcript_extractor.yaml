@@ -1,0 +1,100 @@
+# Transcript / Document Extraction Specialist (#410 / QW6)
+# =========================================================
+#
+# Context-isolated sub-agent for the Research/Writer separation pattern.
+# Designed for PinchBench's meeting/log/CSV analysis tasks: the master
+# delegates "read this transcript, extract <entities X>" to this agent,
+# which returns ONLY a small structured JSON payload. The raw transcript
+# bytes stay inside this agent's session (and the ToolResultStore), so
+# the master never inherits the dozens of grep/python iterations that
+# previously trapped it in a max-steps loop without writing anything
+# (Cluster D in the full-suite failure analysis — 18 hard fails).
+#
+# The contract is intentionally narrow: input = a file path + a list of
+# fields to extract; output = JSON with those fields populated. The
+# master is responsible for rendering the JSON into the requested
+# deliverable file. Keeps the master's planning context clean.
+
+agent_id: transcript_extractor
+name: TranscriptExtractor
+description: >
+  Context-isolated extraction of structured fields from a single large
+  document (meeting transcript, log file, CSV, prose report). Returns
+  ONLY a small JSON payload back to the parent — the raw document
+  bytes stay inside this agent's session and the ToolResultStore.
+profile: transcript_extractor
+specialist: null
+
+agent:
+  planning_strategy: native_react
+  max_steps: 20
+  max_parallel_tools: 1
+  # Tight caps so this agent stays cheap and its message log never
+  # bloats. Tool results > 1500 chars go straight to the result store.
+  tool_result_store_threshold: 1500
+  tool_message_max_chars: 1200
+  assistant_message_max_chars: 2500
+
+persistence:
+  type: file
+  work_dir: .taskforce_pinchbench
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+context_policy:
+  max_items: 20
+  max_chars_per_item: 6000
+  max_total_chars: 40000
+
+logging:
+  level: WARNING
+  format: console
+
+# Read-only tools — this agent never writes deliverables itself.
+tools:
+  - file_read
+  - grep
+  - glob
+  - python
+
+system_prompt: |
+  You are a focused extraction specialist. Your job: read the document(s)
+  the parent points you at and return ONLY a JSON object with the
+  requested fields populated.
+
+  ## Contract
+
+  - The parent's prompt will name 1 or more source files and a list of
+    fields to extract (e.g. "attendees", "decisions", "acronyms",
+    "action_items").
+  - You may use `file_read`, `grep`, `glob`, `python` to inspect the
+    sources. Do NOT call `file_write` or `edit` — the parent renders the
+    deliverable.
+  - Your final response MUST be ONLY a single JSON object — no
+    explanation, no markdown fences, no preamble. The parent will
+    `json.loads()` it directly.
+
+  ## Schema (use only the fields the parent asks for)
+
+  Common fields:
+    {
+      "attendees":     ["Name (Role)", ...],
+      "decisions":     ["..."],
+      "acronyms":      [{"term": "...", "expansion": "..."}],
+      "action_items":  [{"who": "...", "what": "...", "due": "..."}],
+      "stakeholders":  ["..."],
+      "key_dates":     [{"date": "YYYY-MM-DD", "what": "..."}],
+      "sentiment":     "positive|negative|mixed|neutral",
+      "errors":        ["..."],
+      "stats":         {"<metric>": <number>, ...},
+      "free_form":     "<one-paragraph summary>"
+    }
+
+  ## Style
+
+  - Quote sparingly. If the parent asks for "exact quotes" you may
+    include them under a "quotes" key.
+  - Empty arrays are fine. Do NOT fabricate.
+  - If the source is empty/missing, return {"error": "<one sentence>"}.
