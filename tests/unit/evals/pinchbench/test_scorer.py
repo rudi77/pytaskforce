@@ -205,3 +205,87 @@ def test_stderr_excluding_skipped_ignores_nan() -> None:
     metric_fn = scorer_module.stderr_excluding_skipped()
     result = metric_fn([_ss(0.0), _ss(1.0), _ss(float("nan"))])
     assert result == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# QW9 (#413): content-filter on LLM judge → NaN instead of 0
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pure_judge_content_filter_blocks_score_returns_nan() -> None:
+    """llm_judge-only task whose judge call is content-filter blocked
+    must return NaN (skipped from aggregate), not 0."""
+    import math
+
+    state = _make_state(
+        _base_meta(
+            pinchbench_grading_type="llm_judge",
+            pinchbench_grade_function="",
+        )
+    )
+    with patch.object(
+        scorer_module,
+        "run_llm_judge",
+        return_value={
+            "ok": False,
+            "error": "litellm.ContentPolicyViolationError: ...",
+            "content_filter": True,
+        },
+    ):
+        result = await scorer_module._score_impl(state, state.metadata)
+    assert math.isnan(result.value)
+    assert result.metadata.get("skipped") is True
+    assert result.metadata.get("skip_reason") == "content_filter"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_content_filter_judge_falls_back_to_automated() -> None:
+    """Hybrid task: judge content-filtered but auto succeeded → use
+    auto score; sample still counts (NOT skipped)."""
+    state = _make_state(
+        _base_meta(
+            pinchbench_grading_type="hybrid",
+            pinchbench_grade_function="def grade(t,w): return {'k': 0.8}",
+        )
+    )
+    with patch.object(
+        scorer_module,
+        "run_automated_check",
+        return_value={"ok": True, "scores": {"k": 0.8}},
+    ), patch.object(
+        scorer_module,
+        "run_llm_judge",
+        return_value={
+            "ok": False,
+            "error": "ContentPolicyViolationError",
+            "content_filter": True,
+        },
+    ):
+        result = await scorer_module._score_impl(state, state.metadata)
+    # Final score is the mean of {auto: 0.8} = 0.8 — judge dropped silently.
+    assert result.value == pytest.approx(0.8)
+    assert result.metadata.get("judge_content_filter") is True
+
+
+@pytest.mark.asyncio
+async def test_non_content_filter_judge_failure_still_returns_zero() -> None:
+    """Generic judge failures (timeout, parse error) still score 0 —
+    only structural content-filter blocks get NaN treatment."""
+    state = _make_state(
+        _base_meta(
+            pinchbench_grading_type="llm_judge",
+            pinchbench_grade_function="",
+        )
+    )
+    with patch.object(
+        scorer_module,
+        "run_llm_judge",
+        return_value={
+            "ok": False,
+            "error": "timeout",
+            "content_filter": False,
+        },
+    ):
+        result = await scorer_module._score_impl(state, state.metadata)
+    assert result.value == 0.0

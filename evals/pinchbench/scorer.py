@@ -184,6 +184,7 @@ async def _score_impl(state: TaskState, meta: dict) -> Score:
             # hybrid → mark the degraded path so analysis can filter
             details["grading_type"] = "hybrid_degraded_to_judge_only"
 
+    judge_blocked_by_content_filter = False
     if grading_type in {"llm_judge", "hybrid"}:
         judge = await run_llm_judge(
             prompt=prompt,
@@ -197,8 +198,26 @@ async def _score_impl(state: TaskState, meta: dict) -> Score:
             details["judge_reasoning"] = judge.get("reasoning", "")
         else:
             details["judge_error"] = judge.get("error", "unknown")
+            if judge.get("content_filter"):
+                judge_blocked_by_content_filter = True
+                details["judge_content_filter"] = True
 
     if not components:
+        # #413 / QW9: if the only reason we have no grader is a
+        # structural content-filter block on the judge, the sample is
+        # ungradable rather than failing — return NaN so it drops from
+        # mean/stderr (same path as #414 / QW10) instead of unfairly
+        # contributing a 0.
+        if judge_blocked_by_content_filter:
+            return Score(
+                value=float("nan"),
+                answer="",
+                explanation=(
+                    f"judge unavailable (content_filter) for task {task_id}; "
+                    "sample skipped from aggregate"
+                ),
+                metadata={**details, "skipped": True, "skip_reason": "content_filter"},
+            )
         return Score(
             value=0.0,
             answer="",

@@ -225,13 +225,34 @@ async def run_llm_judge(
             temperature=0,
         )
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": f"judge LLM call failed: {exc}"}
-
-    if isinstance(response, dict) and response.get("success") is False:
+        exc_text = str(exc)
+        is_content_filter = (
+            "ContentPolicyViolationError" in exc_text
+            or "content_filter" in exc_text.lower()
+            or "content policy" in exc_text.lower()
+        )
         return {
             "ok": False,
-            "error": f"LLM provider returned failure: {response.get('error', '')}",
+            "error": f"judge LLM call failed: {exc}",
+            "content_filter": is_content_filter,
+        }
+
+    if isinstance(response, dict) and response.get("success") is False:
+        err_text = str(response.get("error", "") or "")
+        # #413 / QW9: explicitly tag content-filter blocks so the scorer
+        # can drop the sample (NaN) instead of scoring 0. LiteLLMService
+        # already runs its 4-stage recovery cascade — if we still got
+        # here, the filter is structurally unavoidable for this prompt.
+        is_content_filter = (
+            "ContentPolicyViolationError" in err_text
+            or "content_filter" in err_text.lower()
+            or "content policy" in err_text.lower()
+        )
+        return {
+            "ok": False,
+            "error": f"LLM provider returned failure: {err_text}",
             "error_type": response.get("error_type", ""),
+            "content_filter": is_content_filter,
         }
 
     text = (
