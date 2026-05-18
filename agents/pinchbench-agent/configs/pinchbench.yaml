@@ -51,8 +51,14 @@ system_prompt: |
 
 agent:
   planning_strategy: native_react
-  max_steps: 60
-  max_parallel_tools: 1
+  max_steps: 180
+  max_parallel_tools: 4
+  # Anti-compression: keep tool results inline (up to 6 KB) so the
+  # agent does not lose sight of read data when the message history
+  # compresses. Default is ~2 KB which pushed almost every meaningful
+  # tool output into the result store and forced the agent to fetch_result
+  # repeatedly — common pattern in the post-mortem.
+  tool_result_store_threshold: 6000
 
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
@@ -65,7 +71,10 @@ context_policy:
   include_latest_tool_previews_n: 12
 
 context_management:
-  summary_threshold: 95
+  # Compress when the message-count exceeds this — was 95 (very lenient),
+  # 80 keeps it bounded for the long meeting / log tasks that now run to
+  # max_steps=180 without dropping the head-of-conversation deliverable.
+  summary_threshold: 80
   compression_trigger: 128000
   max_input_tokens: 128000
 
@@ -93,4 +102,4 @@ tools:
   # prompt-rendering metadata — the master cannot actually dispatch.
   - type: parallel_agent
     profile: pinchbench
-    max_concurrency: 2
+    max_concurrency: 4
