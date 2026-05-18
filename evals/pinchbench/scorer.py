@@ -24,13 +24,15 @@ import logging
 import shutil
 from pathlib import Path
 
+import math
+
 from inspect_ai.scorer import (
+    Metric,
     Score,
     Scorer,
     Target,
-    mean,
+    metric,
     scorer,
-    stderr,
 )
 from inspect_ai.solver import TaskState
 
@@ -41,6 +43,52 @@ from evals.pinchbench.grading import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# #414 / QW10: Multi-session tasks (and any future "intentionally
+# unscored" sample type) emit Score(value=NaN). The stdlib ``mean()``
+# and ``stderr()`` metrics use ``np.mean`` which propagates NaN and
+# poisons the entire aggregate. These wrappers filter NaN before
+# computing so a single skipped sample does not blank the report.
+
+
+def _finite_floats(scores: list) -> list[float]:
+    out: list[float] = []
+    for s in scores:
+        try:
+            v = s.score.as_float()
+        except Exception:  # noqa: BLE001 — defensive: never crash a metric
+            continue
+        if not math.isnan(v):
+            out.append(v)
+    return out
+
+
+@metric
+def mean_excluding_skipped() -> Metric:
+    """Mean of finite scores; NaN samples (skipped) are excluded."""
+
+    def _m(scores: list) -> float:
+        vals = _finite_floats(scores)
+        return sum(vals) / len(vals) if vals else float("nan")
+
+    return _m
+
+
+@metric
+def stderr_excluding_skipped() -> Metric:
+    """Standard error of the mean over finite scores only."""
+
+    def _m(scores: list) -> float:
+        vals = _finite_floats(scores)
+        n = len(vals)
+        if n < 2:
+            return 0.0
+        m = sum(vals) / n
+        var = sum((v - m) ** 2 for v in vals) / (n - 1)
+        return math.sqrt(var / n)
+
+    return _m
 
 
 def _cleanup_workspace(workspace_path: str | None) -> None:
@@ -54,13 +102,33 @@ def _cleanup_workspace(workspace_path: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-@scorer(metrics=[mean(), stderr()])
+@scorer(metrics=[mean_excluding_skipped(), stderr_excluding_skipped()])
 def pinchbench_scorer() -> Scorer:
     """Score a pinchbench sample using the hybrid grading policy."""
 
     async def score(state: TaskState, target: Target) -> Score:  # noqa: ARG001
         meta = state.metadata or {}
         workspace_path = meta.get("pinchbench_workspace")
+        # #414 / QW10: skipped samples (multi-session, etc.) score
+        # NaN so they drop out of mean/stderr instead of counting as
+        # 0 and dragging the aggregate down. The metadata flag stays
+        # so analysis tooling can list them.
+        if meta.get("pinchbench_status") == "skipped":
+            try:
+                return Score(
+                    value=float("nan"),
+                    answer="",
+                    explanation=(
+                        meta.get("pinchbench_error")
+                        or "skipped: capability not supported by harness"
+                    ),
+                    metadata={
+                        "skipped": True,
+                        "task_id": meta.get("pinchbench_task_id", ""),
+                    },
+                )
+            finally:
+                _cleanup_workspace(workspace_path)
         try:
             return await _score_impl(state, meta)
         finally:

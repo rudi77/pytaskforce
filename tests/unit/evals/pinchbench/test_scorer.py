@@ -146,3 +146,62 @@ def test_cleanup_workspace_handles_none_and_missing(tmp_path: Path) -> None:
     scorer_module._cleanup_workspace(None)  # no-op
     scorer_module._cleanup_workspace("")  # no-op
     scorer_module._cleanup_workspace(str(tmp_path / "pinchbench_ws_does_not_exist"))  # no-op
+
+
+# ---------------------------------------------------------------------------
+# QW10 (#414): skipped samples → NaN, dropped from mean
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_skipped_sample_returns_nan_and_skipped_flag() -> None:
+    """Multi-session (or other capability-gap) samples score NaN."""
+    import math
+
+    state = _make_state(
+        _base_meta(
+            pinchbench_status="skipped",
+            pinchbench_error="multi_session_prompts not supported by solver",
+        )
+    )
+    scorer_fn = scorer_module.pinchbench_scorer()
+    result = await scorer_fn(state, target=None)
+    assert math.isnan(result.value)
+    assert result.metadata["skipped"] is True
+    assert "multi_session" in result.explanation
+
+
+def test_mean_excluding_skipped_ignores_nan() -> None:
+    import math
+    from types import SimpleNamespace
+
+    def _ss(v: float) -> Any:
+        return SimpleNamespace(score=SimpleNamespace(as_float=lambda v=v: v))
+
+    metric_fn = scorer_module.mean_excluding_skipped()
+    result = metric_fn([_ss(1.0), _ss(0.5), _ss(float("nan")), _ss(0.0)])
+    assert result == pytest.approx(0.5)  # (1.0 + 0.5 + 0.0) / 3
+
+
+def test_mean_excluding_skipped_all_nan_returns_nan() -> None:
+    import math
+    from types import SimpleNamespace
+
+    def _ss(v: float) -> Any:
+        return SimpleNamespace(score=SimpleNamespace(as_float=lambda v=v: v))
+
+    metric_fn = scorer_module.mean_excluding_skipped()
+    result = metric_fn([_ss(float("nan")), _ss(float("nan"))])
+    assert math.isnan(result)
+
+
+def test_stderr_excluding_skipped_ignores_nan() -> None:
+    from types import SimpleNamespace
+
+    def _ss(v: float) -> Any:
+        return SimpleNamespace(score=SimpleNamespace(as_float=lambda v=v: v))
+
+    # stderr of [0, 1] = sqrt(0.5 / 2) ≈ 0.5
+    metric_fn = scorer_module.stderr_excluding_skipped()
+    result = metric_fn([_ss(0.0), _ss(1.0), _ss(float("nan"))])
+    assert result == pytest.approx(0.5)

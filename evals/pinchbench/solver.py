@@ -173,13 +173,26 @@ def pinchbench_solver(
 
         meta = state.metadata or {}
 
+        # #414 / QW10: multi-session tasks require a runner that
+        # iterates the ``sessions`` frontmatter, which the bench
+        # solver does not implement yet. Running them anyway burns
+        # API budget and produces unfair zeros (3/148 hard-failures
+        # in the May-2026 baseline). Mark as ``skipped`` so the
+        # scorer can drop them from mean/stderr via NaN.
         if meta.get("pinchbench_multi_session_prompts"):
-            logger.warning(
-                "pinchbench task %s has multi_session_prompts; running "
-                "as a single session (multi-session execution not yet "
-                "implemented). Score may underrepresent capability.",
-                meta.get("pinchbench_task_id", "<unknown>"),
+            task_id = meta.get("pinchbench_task_id", "<unknown>")
+            logger.info(
+                "pinchbench task %s has multi_session_prompts; skipping "
+                "(multi-session execution not implemented in solver).",
+                task_id,
             )
+            state.metadata = {
+                **meta,
+                "pinchbench_status": "skipped",
+                "pinchbench_error": "multi_session_prompts not supported by solver",
+                "pinchbench_event_count": 0,
+            }
+            return state
 
         workspace_files: list[str] = list(meta.get("pinchbench_workspace_files") or [])
         workspace = _provision_workspace(workspace_files)
