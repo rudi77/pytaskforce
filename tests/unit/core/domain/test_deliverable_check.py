@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from taskforce.core.domain.planning.deliverable_check import (
+    build_checklist_section,
     build_nudge,
     extract_candidate_dirs,
+    extract_checklist_bullets,
     extract_deliverables,
     find_missing,
 )
@@ -146,3 +148,85 @@ class TestBuildNudge:
 def test_each_output_verb_triggers_detection(verb: str) -> None:
     prompt = f"{verb} the result to `result.md`."
     assert "result.md" in extract_deliverables(prompt)
+
+
+class TestExtractChecklistBullets:
+    def test_numbered_bolded_bullets(self) -> None:
+        """Real PinchBench syslog_boot prompt structure."""
+        prompt = (
+            "Write your findings as a markdown document.\n\n"
+            "1. **System identification**: kernel version, CPU model, RAM\n"
+            "2. **Storage**: hard drive model, capacity, filesystem\n"
+            "3. **Boot timeline**: timestamp, duration\n"
+            "4. **Services**: count and list\n"
+            "5. **Errors and warnings**: identify failures\n"
+            "6. **Network**: NIC, IP addresses\n"
+        )
+        bullets = extract_checklist_bullets(prompt)
+        assert bullets == [
+            "System identification",
+            "Storage",
+            "Boot timeline",
+            "Services",
+            "Errors and warnings",
+            "Network",
+        ]
+
+    def test_dashed_bolded_bullets(self) -> None:
+        """Real PinchBench csv_iris_summary prompt structure."""
+        prompt = (
+            "Your report should include:\n\n"
+            "- **Dataset overview**: total rows, columns\n"
+            "- **Overall statistics**: mean, median\n"
+            "- **Per-species statistics**: grouped by species\n"
+            "- **Correlation insight**: strongest pair\n"
+            "- **Key findings**: notable patterns\n"
+        )
+        bullets = extract_checklist_bullets(prompt)
+        assert "Dataset overview" in bullets
+        assert "Key findings" in bullets
+        assert len(bullets) == 5
+
+    def test_single_bullet_does_not_trigger(self) -> None:
+        """One bolded bullet is not a checklist."""
+        prompt = "Just one thing:\n- **Single Item**: do it."
+        assert extract_checklist_bullets(prompt) == []
+
+    def test_unbolded_bullets_are_ignored(self) -> None:
+        prompt = "1. do x\n2. do y\n3. do z"
+        assert extract_checklist_bullets(prompt) == []
+
+    def test_strips_trailing_colon(self) -> None:
+        prompt = (
+            "- **Item One**: description\n"
+            "- **Item Two**: description\n"
+        )
+        assert extract_checklist_bullets(prompt) == ["Item One", "Item Two"]
+
+    def test_dedupes(self) -> None:
+        prompt = "- **A**\n- **B**\n- **A**\n"
+        assert extract_checklist_bullets(prompt) == ["A", "B"]
+
+    def test_empty_or_none(self) -> None:
+        assert extract_checklist_bullets("") == []
+        assert extract_checklist_bullets(None) == []
+
+    def test_caps_at_20_items(self) -> None:
+        prompt = "\n".join(f"- **Item {i}**: x" for i in range(50))
+        assert len(extract_checklist_bullets(prompt)) == 20
+
+
+class TestBuildChecklistSection:
+    def test_renders_checkboxes(self) -> None:
+        section = build_checklist_section(["A", "B", "C"])
+        assert "## Required Deliverables" in section
+        assert "- [ ] A" in section
+        assert "- [ ] B" in section
+        assert "- [ ] C" in section
+
+    def test_empty_bullets_yields_empty_string(self) -> None:
+        assert build_checklist_section([]) == ""
+
+    def test_instructs_to_treat_as_checklist(self) -> None:
+        section = build_checklist_section(["X", "Y"])
+        assert "checklist" in section.lower()

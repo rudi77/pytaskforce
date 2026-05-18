@@ -7,6 +7,10 @@ from typing import Any
 
 from taskforce.core.domain.context_builder import ContextBuilder
 from taskforce.core.domain.context_policy import ContextPolicy
+from taskforce.core.domain.planning.deliverable_check import (
+    build_checklist_section,
+    extract_checklist_bullets,
+)
 from taskforce.core.interfaces.logging import LoggerProtocol
 from taskforce.core.tools.planner_tool import PlannerTool
 
@@ -71,6 +75,15 @@ class LeanPromptBuilder:
         if workspace_section:
             prompt += workspace_section
 
+        # Mandatory-deliverables checklist (#406). When the mission
+        # contains an enumerated list of bolded bullets (PinchBench
+        # rubrics use 4–7), reify it as a checkbox section the agent
+        # can tick off — prevents partial completions that skip 1–2
+        # named items.
+        checklist_section = self._build_checklist_section(mission)
+        if checklist_section:
+            prompt += checklist_section
+
         plan_section = self._build_plan_section()
         if plan_section:
             prompt += plan_section
@@ -84,6 +97,19 @@ class LeanPromptBuilder:
             prompt += context_section
 
         return prompt
+
+    def _build_checklist_section(self, mission: str | None) -> str:
+        """Extract enumerated bullets from the mission into a checklist.
+
+        Returns the empty string when the mission has fewer than 2
+        bolded bullet titles (i.e. is not structured as a rubric).
+        Cheap regex; safe to call on every prompt rebuild.
+        """
+        bullets = extract_checklist_bullets(mission)
+        if not bullets:
+            return ""
+        self._logger.debug("checklist_section_injected", item_count=len(bullets))
+        return build_checklist_section(bullets)
 
     def _build_workspace_section(self) -> str:
         """Build the workspace + project-guidance section.

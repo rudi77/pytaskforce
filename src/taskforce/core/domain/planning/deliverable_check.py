@@ -138,3 +138,63 @@ def build_nudge(missing: list[str]) -> str:
         "`file_write` or `edit` tool to create them now. Do not declare "
         "the task complete until they exist.]"
     )
+
+
+# ---------------------------------------------------------------------------
+# Mandatory-deliverables checklist (issue #406 / QW2)
+# ---------------------------------------------------------------------------
+
+# Pattern: ``1. **Title**`` or ``- **Title**`` at the start of a line.
+# Capture the bolded title (no newlines, no nested bold).
+_CHECKLIST_RE = re.compile(
+    r"^[\t ]*(?:\d+\.|[-*+])[\t ]+\*\*([^*\n]+?)\*\*",
+    re.MULTILINE,
+)
+# Avoid injecting a single-item "checklist" — anything 1 item or fewer is
+# noise. Two or more bolded bullets is a strong signal of an enumerated
+# requirement list (PinchBench rubrics consistently use 4–7).
+_MIN_CHECKLIST_ITEMS = 2
+# Hard cap to keep the system prompt bounded if a mission embeds a long
+# table of contents disguised as bullets.
+_MAX_CHECKLIST_ITEMS = 20
+
+
+def extract_checklist_bullets(mission: str | None) -> list[str]:
+    """Return bolded bullet titles from enumerated lists in the mission.
+
+    Matches both ``1. **Title**`` (numbered) and ``- **Title**`` (dashed)
+    line starts. The trailing colon (``**Title**:``) is stripped so the
+    output is the clean title text. Strict: only items where the title is
+    wrapped in ``**`` are picked up — plain bullets are likely
+    explanatory text, not the rubric.
+    """
+    if not mission:
+        return []
+    bullets: list[str] = []
+    seen: set[str] = set()
+    for match in _CHECKLIST_RE.finditer(mission):
+        title = match.group(1).strip().rstrip(":").strip()
+        if title and title not in seen:
+            seen.add(title)
+            bullets.append(title)
+            if len(bullets) >= _MAX_CHECKLIST_ITEMS:
+                break
+    return bullets if len(bullets) >= _MIN_CHECKLIST_ITEMS else []
+
+
+def build_checklist_section(bullets: list[str]) -> str:
+    """Render a markdown ``## Required Deliverables`` section.
+
+    Returns the empty string when ``bullets`` is empty, so callers can
+    unconditionally concatenate the result to a system prompt.
+    """
+    if not bullets:
+        return ""
+    items = "\n".join(f"- [ ] {b}" for b in bullets)
+    return (
+        "\n\n## Required Deliverables\n"
+        "The user's request contains an enumerated list of items below. "
+        "Treat it as a checklist: address every item explicitly in your "
+        "output, and confirm each is covered before declaring complete.\n\n"
+        f"{items}"
+    )

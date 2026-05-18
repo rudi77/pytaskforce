@@ -80,6 +80,39 @@ class TestPlanSectionCaching:
         assert "CURRENT PLAN STATUS" not in prompt
 
 
+class TestChecklistSectionInjection:
+    """Test that enumerated mission bullets surface as a required-deliverables block (#406)."""
+
+    def test_numbered_bullets_become_checklist(self):
+        builder = _make_builder()
+        mission = (
+            "Analyze logs.\n\n"
+            "1. **System identification**: kernel and CPU\n"
+            "2. **Storage**: drive model\n"
+            "3. **Boot timeline**: timing\n"
+        )
+        prompt = builder.build_system_prompt(mission=mission)
+        assert "## Required Deliverables" in prompt
+        assert "- [ ] System identification" in prompt
+        assert "- [ ] Storage" in prompt
+        assert "- [ ] Boot timeline" in prompt
+
+    def test_no_checklist_when_mission_is_unstructured(self):
+        builder = _make_builder()
+        prompt = builder.build_system_prompt(mission="What is 2+2?")
+        assert "Required Deliverables" not in prompt
+
+    def test_no_checklist_when_mission_is_none(self):
+        builder = _make_builder()
+        prompt = builder.build_system_prompt(mission=None)
+        assert "Required Deliverables" not in prompt
+
+    def test_single_bullet_does_not_trigger(self):
+        builder = _make_builder()
+        prompt = builder.build_system_prompt(mission="Just do this:\n- **One thing**: x")
+        assert "Required Deliverables" not in prompt
+
+
 class TestContextPackSectionCaching:
     """Test context pack section caching in LeanPromptBuilder."""
 
