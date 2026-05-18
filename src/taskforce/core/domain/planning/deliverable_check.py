@@ -129,14 +129,35 @@ def find_missing(deliverables: list[str], search_roots: list[Path]) -> list[str]
     return missing
 
 
-def build_nudge(missing: list[str]) -> str:
-    """One-line system reminder injected when deliverables are still missing."""
+def build_nudge(missing: list[str], attempt: int = 1) -> str:
+    """System reminder injected when deliverables are still missing.
+
+    ``attempt`` (1-based) controls escalation: nudge #1 is a polite
+    reminder; nudge #2 is firm; nudge #3 is final. Escalation is
+    visible enough to break the LLM out of an analysis loop, while
+    bounded so the loop can still terminate (#408 / QW4).
+    """
     files = ", ".join(f"`{m}`" for m in missing)
+    if attempt <= 1:
+        return (
+            "[System: The user explicitly asked you to write the following "
+            f"file(s) but they do not exist on disk: {files}. Use the "
+            "`file_write` or `edit` tool to create them now. Do not declare "
+            "the task complete until they exist.]"
+        )
+    if attempt == 2:
+        return (
+            "[System: REMINDER #2 — the required file(s) are STILL missing: "
+            f"{files}. Stop analysing and write them NOW. Even an incomplete "
+            "first version is better than no file. Call `file_write` (or "
+            "`edit`) on your very next turn — no further analysis tool calls "
+            "until the file exists.]"
+        )
     return (
-        "[System: The user explicitly asked you to write the following "
-        f"file(s) but they do not exist on disk: {files}. Use the "
-        "`file_write` or `edit` tool to create them now. Do not declare "
-        "the task complete until they exist.]"
+        "[System: FINAL REMINDER — you have ignored two previous instructions "
+        f"to write {files}. This is your last chance: call `file_write` (or "
+        "`edit`) on your next turn. If you do not, the mission will be "
+        "recorded as FAILED regardless of your reply.]"
     )
 
 

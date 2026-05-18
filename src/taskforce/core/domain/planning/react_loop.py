@@ -231,7 +231,14 @@ async def _react_loop(
         except Exception:  # noqa: BLE001 — never break the loop over a workspace lookup
             pass
         deliverable_search_roots.extend(_extract_candidate_dirs(mission))
-    deliverable_nudge_injected = False
+    # #408 / QW4: escalate the deliverable nudge up to N times instead
+    # of the single-shot QW1 baseline. After ``_DELIVERABLE_MAX_NUDGES``
+    # the loop still terminates (final answer flagged ``salvaged=True``
+    # so the executor maps it to FAILED) — the goal is to give the LLM
+    # multiple visible chances to break out of an analysis loop, not
+    # to spin forever.
+    deliverable_nudge_count = 0
+    _DELIVERABLE_MAX_NUDGES = 3
 
     # #411 / QW7: mid-loop pivot nudge. When the agent has burned many
     # steps in analysis tools (python/grep/file_read) without ever
@@ -713,23 +720,29 @@ async def _react_loop(
             step += 1
         elif content:
             step += 1
-            # Pre-finalize deliverable check (#405). If the user named
-            # output files in the mission and at least one is still
-            # missing on disk, inject one reminder and let the loop run
-            # another step instead of accepting this as the final answer.
-            if deliverables and not deliverable_nudge_injected:
+            # Pre-finalize deliverable check (#405 → #408). The user
+            # named output files in the mission and at least one is
+            # still missing on disk → escalate the nudge up to
+            # ``_DELIVERABLE_MAX_NUDGES`` times instead of accepting
+            # this as the final answer.
+            if (
+                deliverables
+                and deliverable_nudge_count < _DELIVERABLE_MAX_NUDGES
+            ):
                 missing = _find_missing_deliverables(
                     deliverables, deliverable_search_roots
                 )
                 if missing:
-                    deliverable_nudge_injected = True
+                    deliverable_nudge_count += 1
                     agent.context.append_message(
                         {"role": MessageRole.ASSISTANT.value, "content": content},
                     )
                     agent.context.append_message(
                         {
                             "role": MessageRole.USER.value,
-                            "content": _build_deliverable_nudge(missing),
+                            "content": _build_deliverable_nudge(
+                                missing, attempt=deliverable_nudge_count
+                            ),
                         },
                     )
                     logger.info(
@@ -737,27 +750,39 @@ async def _react_loop(
                         session_id=session_id,
                         step=step,
                         missing=missing,
+                        attempt=deliverable_nudge_count,
+                        max_nudges=_DELIVERABLE_MAX_NUDGES,
                     )
                     continue
 
-            # #407: if we already nudged once and the deliverable is STILL
-            # missing, accept the LLM's final answer but mark the mission
-            # as salvaged so the executor reports a FAILED status. Without
-            # this, an ignored nudge looks identical to a clean completion.
+            # #407 / #408: if we already nudged AND the deliverable is
+            # STILL missing, accept the LLM's final answer but mark the
+            # mission as salvaged so the executor reports a FAILED
+            # status. The ``salvage_reason`` carries the nudge count so
+            # analysis tooling can distinguish "ignored 1 nudge" from
+            # "exhausted 3 nudges" — the latter is the hard-block path.
             answer_data: dict[str, Any] = {"content": content}
-            if deliverable_nudge_injected and deliverables:
+            if deliverable_nudge_count > 0 and deliverables:
                 still_missing = _find_missing_deliverables(
                     deliverables, deliverable_search_roots
                 )
                 if still_missing:
                     answer_data["salvaged"] = True
-                    answer_data["salvage_reason"] = "deliverable_missing"
+                    exhausted = deliverable_nudge_count >= _DELIVERABLE_MAX_NUDGES
+                    answer_data["salvage_reason"] = (
+                        f"deliverable_missing_after_{deliverable_nudge_count}_nudges"
+                        if exhausted
+                        else "deliverable_missing"
+                    )
                     answer_data["missing_deliverables"] = still_missing
-                    logger.warning(
+                    log = logger.warning if exhausted else logger.info
+                    log(
                         "react_loop.deliverable_still_missing_after_nudge",
                         session_id=session_id,
                         step=step,
                         missing=still_missing,
+                        nudge_count=deliverable_nudge_count,
+                        nudges_exhausted=exhausted,
                     )
 
             final = content

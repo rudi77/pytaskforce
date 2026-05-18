@@ -150,9 +150,10 @@ async def test_no_nudge_when_deliverable_exists(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_nudge_fires_only_once_per_mission(tmp_path: Path) -> None:
-    """LLM ignores the nudge and re-finalizes → loop accepts and exits."""
-    agent = _make_agent(max_steps=5)
+async def test_nudges_escalate_up_to_three_times_then_terminate(tmp_path: Path) -> None:
+    """LLM ignores every nudge → loop fires 3 escalating nudges then
+    accepts the 4th finalize as salvaged. #408 / QW4."""
+    agent = _make_agent(max_steps=8)
     logger = _make_logger()
 
     async def fake_complete(**_: Any) -> dict[str, Any]:
@@ -179,9 +180,17 @@ async def test_nudge_fires_only_once_per_mission(tmp_path: Path) -> None:
         m
         for m in messages
         if m.get("role") == MessageRole.USER.value
-        and "do not exist on disk" in m.get("content", "")
+        and (
+            "do not exist on disk" in m.get("content", "")
+            or "REMINDER #2" in m.get("content", "")
+            or "FINAL REMINDER" in m.get("content", "")
+        )
     ]
-    assert len(nudges) == 1, "nudge must fire exactly once even if LLM ignores it"
+    assert len(nudges) == 3, f"expected exactly 3 escalating nudges, got {len(nudges)}"
+    # Escalation: polite → firm → final
+    assert "do not exist on disk" in nudges[0]["content"]
+    assert "REMINDER #2" in nudges[1]["content"]
+    assert "FINAL REMINDER" in nudges[2]["content"]
 
 
 @pytest.mark.asyncio
@@ -219,7 +228,9 @@ async def test_ignored_nudge_marks_final_answer_as_salvaged(tmp_path: Path) -> N
     assert len(final_events) == 1
     data = final_events[0].data
     assert data.get("salvaged") is True
-    assert data.get("salvage_reason") == "deliverable_missing"
+    # #408 / QW4: with 3 nudges allowed, the salvage reason carries the
+    # exhaustion count when the LLM ignores every reminder.
+    assert "deliverable_missing" in data.get("salvage_reason", "")
     assert "report.md" in data.get("missing_deliverables", [])
 
 

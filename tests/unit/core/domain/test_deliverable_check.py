@@ -140,6 +140,21 @@ class TestBuildNudge:
         nudge = build_nudge(["x.md"])
         assert "complete" in nudge.lower()
 
+    def test_attempt_two_is_firmer_than_attempt_one(self) -> None:
+        a1 = build_nudge(["x.md"], attempt=1)
+        a2 = build_nudge(["x.md"], attempt=2)
+        # #408 / QW4: nudge 2 carries the REMINDER #2 marker.
+        assert "REMINDER #2" in a2
+        assert "REMINDER #2" not in a1
+
+    def test_attempt_three_is_final_warning(self) -> None:
+        nudge = build_nudge(["x.md"], attempt=3)
+        assert "FINAL REMINDER" in nudge
+
+    def test_attempt_zero_or_negative_treated_as_first(self) -> None:
+        assert "REMINDER" not in build_nudge(["x.md"], attempt=0)
+        assert "REMINDER" not in build_nudge(["x.md"], attempt=-5)
+
 
 @pytest.mark.parametrize(
     "verb",
