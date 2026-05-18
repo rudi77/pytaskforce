@@ -123,51 +123,77 @@ class WebSearchTool(ToolProtocol):
             )
             return tool_error_payload(tool_error)
 
+    # Issue #381: stable backend cascade. ddgs's "auto" mode runs all
+    # backends in parallel (slow) and includes Brave (whose
+    # search.brave.com endpoint is intermittently unreachable from
+    # behind common ISPs/CDNs). We instead try a curated ordered list of
+    # backends that are individually reliable. First one with results
+    # wins; if all fail, we return a structured error_type_hint so
+    # prompts can teach agents not to retry-loop.
+    #
+    # Order: duckduckgo (fastest ~0.8s), then mojeek + yahoo as fallback.
+    # Brave deliberately excluded — see investigation notes in PR thread.
+    STABLE_BACKENDS: tuple[str, ...] = ("duckduckgo", "mojeek", "yahoo")
+
     async def _search_with_retry(
         self, query: str, num_results: int, snippet_max_chars: int
     ) -> dict[str, Any]:
-        """Issue #381: retry web_search once on transient connection errors.
+        """Issue #381: cascade through reliable backends, one retry per backend.
 
-        The ddgs library tries multiple backends internally (DuckDuckGo HTML,
-        Brave, Bing). When the primary backend is flaky, ddgs surfaces a raw
-        ConnectError/TimeoutError. Without a retry layer, the agent sees this
-        as a definitive failure and tends to spin up query variations, each
-        hitting the same broken endpoint. One short retry catches the common
-        case (intermittent flakiness) and a clean structured error on the
-        second failure lets prompts say "if search_backend_unavailable, don't
-        retry-loop".
+        The ddgs library's default "auto" backend runs every engine in
+        parallel — including search.brave.com, which is intermittently
+        unreachable. We instead iterate a curated list of stable backends
+        sequentially. Each gets one retry on transient errors, then we
+        move on. If all backends fail, return a structured ToolError with
+        error_type_hint=search_backend_unavailable so callers can teach
+        their agent not to retry-loop.
         """
-        # Errors we treat as transient and worth one retry.
-        TRANSIENT = (
-            ConnectionError,
-            TimeoutError,
-            OSError,  # covers many low-level network errors
-        )
-        try:
-            return await self._search_ddgs(query, num_results, snippet_max_chars)
-        except TRANSIENT as exc:
-            # One retry with a small backoff. Tight on purpose - if the
-            # backend is truly down, retrying for minutes wastes the agent's
-            # step budget.
-            await asyncio.sleep(1.5)
+        TRANSIENT = (ConnectionError, TimeoutError, OSError)
+        last_error: Exception | None = None
+        attempted: list[str] = []
+
+        for backend in self.STABLE_BACKENDS:
+            attempted.append(backend)
             try:
-                return await self._search_ddgs(query, num_results, snippet_max_chars)
-            except TRANSIENT as exc2:
-                tool_error = ToolError(
-                    "Search backend temporarily unreachable - try again "
-                    "later or use web_fetch directly with a known URL. "
-                    f"Last error: {type(exc2).__name__}: {exc2}",
-                    tool_name=self.name,
-                    details={
-                        "query": query,
-                        "num_results": num_results,
-                        "first_error": f"{type(exc).__name__}: {exc}",
-                        "error_type_hint": "search_backend_unavailable",
-                    },
+                return await self._search_ddgs(
+                    query, num_results, snippet_max_chars, backend=backend,
                 )
-                return tool_error_payload(tool_error)
-        # Non-transient errors (e.g. ValueError from a malformed response)
-        # bubble up to the caller's generic except clause - no retry.
+            except ImportError:
+                # ddgs not installed at all — propagate so execute() can
+                # fall back to the duckduckgo Instant Answer API path.
+                raise
+            except TRANSIENT as exc:
+                last_error = exc
+                # One quick retry on the same backend (often resolves
+                # transient DNS/TLS hiccups). If that also fails, move on.
+                await asyncio.sleep(0.5)
+                try:
+                    return await self._search_ddgs(
+                        query, num_results, snippet_max_chars, backend=backend,
+                    )
+                except TRANSIENT as exc2:
+                    last_error = exc2
+                    continue
+            except Exception as exc:
+                # Non-transient (e.g. "No results found" from a single
+                # backend) — try next backend instead of giving up.
+                last_error = exc
+                continue
+
+        # All backends exhausted
+        tool_error = ToolError(
+            "Search backend temporarily unreachable - try again later or "
+            "use web_fetch directly with a known URL. "
+            f"Last error: {type(last_error).__name__}: {last_error}",
+            tool_name=self.name,
+            details={
+                "query": query,
+                "num_results": num_results,
+                "attempted_backends": attempted,
+                "error_type_hint": "search_backend_unavailable",
+            },
+        )
+        return tool_error_payload(tool_error)
 
     @staticmethod
     def _shape_result(title: str, url: str, snippet: str, snippet_max_chars: int) -> dict[str, str]:
@@ -181,14 +207,28 @@ class WebSearchTool(ToolProtocol):
         return entry
 
     async def _search_ddgs(
-        self, query: str, num_results: int, snippet_max_chars: int
+        self,
+        query: str,
+        num_results: int,
+        snippet_max_chars: int,
+        *,
+        backend: str = "auto",
     ) -> dict[str, Any]:
-        """Search using the duckduckgo_search library (real web results)."""
+        """Search via the ddgs library, optionally pinned to a specific backend.
+
+        Args:
+            backend: ddgs backend name (e.g. "duckduckgo", "mojeek", "yahoo",
+                "brave", "auto"). Defaults to "auto" for backward compat with
+                older direct callers; the production path goes through
+                _search_with_retry which iterates STABLE_BACKENDS explicitly.
+        """
         from ddgs import DDGS  # noqa: WPS433
 
         # DDGS is synchronous — run in a thread to avoid blocking the event loop.
         def _run() -> list[dict[str, str]]:
-            return DDGS().text(query, max_results=num_results)
+            return DDGS(timeout=10).text(
+                query, max_results=num_results, backend=backend,
+            )
 
         raw_results = await asyncio.to_thread(_run)
 

@@ -137,39 +137,81 @@ class TestWebFetchPdfIssue380:
 
 
 # ---------------------------------------------------------------------------
-# #381 - web_search retries once on ConnectError
+# #381 - web_search cascades through stable backends, retries each once
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 class TestWebSearchRetryIssue381:
-    """Issue #381: transient ConnectError should be retried once."""
+    """Issue #381: cascade through reliable backends, one retry per backend.
 
-    async def test_retry_on_first_failure_then_succeed(self):
-        """ConnectError on first attempt, success on second - returns results."""
+    Stable backend order is ``WebSearchTool.STABLE_BACKENDS``
+    (duckduckgo, mojeek, yahoo). Each backend gets one retry on transient
+    errors before moving to the next.
+    """
+
+    async def test_first_backend_succeeds_no_cascade(self):
+        """duckduckgo returns results — mojeek/yahoo never called."""
         tool = WebSearchTool()
-        call_count = {"n": 0}
+        calls: list[str] = []
 
-        async def flaky_search(query, num_results, snippet_max_chars):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                raise ConnectionError("brave endpoint flake")
+        async def first_succeeds(query, num_results, snippet_max_chars, *, backend):
+            calls.append(backend)
             return {"success": True, "query": query, "results": [], "count": 0}
 
-        with patch.object(tool, "_search_ddgs", side_effect=flaky_search):
-            # Patch asyncio.sleep so the retry is instant
+        with patch.object(tool, "_search_ddgs", side_effect=first_succeeds):
+            result = await tool.execute(query="test query")
+
+        assert result["success"] is True
+        assert calls == ["duckduckgo"]
+
+    async def test_first_backend_retry_succeeds(self):
+        """duckduckgo transient on attempt 1, OK on attempt 2 — no cascade."""
+        tool = WebSearchTool()
+        calls: list[str] = []
+        n = {"i": 0}
+
+        async def flaky_first(query, num_results, snippet_max_chars, *, backend):
+            calls.append(backend)
+            n["i"] += 1
+            if n["i"] == 1:
+                raise ConnectionError("ddg endpoint flake")
+            return {"success": True, "query": query, "results": [], "count": 0}
+
+        with patch.object(tool, "_search_ddgs", side_effect=flaky_first):
             with patch("taskforce.infrastructure.tools.native.web_tools.asyncio.sleep",
                        new=AsyncMock()):
                 result = await tool.execute(query="test query")
 
         assert result["success"] is True
-        assert call_count["n"] == 2, "should have retried exactly once"
+        # Two calls, both to first backend (one initial + one retry).
+        assert calls == ["duckduckgo", "duckduckgo"]
 
-    async def test_two_failures_return_structured_error(self):
-        """Both attempts fail - return structured error_type_hint, no retry-loop."""
+    async def test_cascades_to_next_backend_on_failure(self):
+        """duckduckgo always fails (both attempts) → mojeek succeeds."""
+        tool = WebSearchTool()
+        calls: list[str] = []
+
+        async def cascade(query, num_results, snippet_max_chars, *, backend):
+            calls.append(backend)
+            if backend == "duckduckgo":
+                raise ConnectionError("ddg down")
+            return {"success": True, "query": query, "results": [], "count": 0}
+
+        with patch.object(tool, "_search_ddgs", side_effect=cascade):
+            with patch("taskforce.infrastructure.tools.native.web_tools.asyncio.sleep",
+                       new=AsyncMock()):
+                result = await tool.execute(query="test query")
+
+        assert result["success"] is True
+        # ddg called twice (initial + retry), then mojeek succeeds
+        assert calls == ["duckduckgo", "duckduckgo", "mojeek"]
+
+    async def test_all_backends_fail_returns_structured_error(self):
+        """All STABLE_BACKENDS fail → structured error with attempted list."""
         tool = WebSearchTool()
 
-        async def always_fail(query, num_results, snippet_max_chars):
-            raise ConnectionError("brave endpoint flake")
+        async def always_fail(query, num_results, snippet_max_chars, *, backend):
+            raise ConnectionError(f"{backend} unreachable")
 
         with patch.object(tool, "_search_ddgs", side_effect=always_fail):
             with patch("taskforce.infrastructure.tools.native.web_tools.asyncio.sleep",
@@ -177,24 +219,26 @@ class TestWebSearchRetryIssue381:
                 result = await tool.execute(query="test query")
 
         assert result["success"] is False
-        assert "error" in result
-        # The structured error should carry the hint so prompts can teach
-        # agents not to retry-loop.
-        assert "details" in result
         assert result["details"].get("error_type_hint") == "search_backend_unavailable"
+        assert result["details"].get("attempted_backends") == list(
+            WebSearchTool.STABLE_BACKENDS
+        )
 
-    async def test_non_transient_error_no_retry(self):
-        """ValueError etc. should NOT trigger the retry path."""
+    async def test_non_transient_error_moves_to_next_backend(self):
+        """ValueError on duckduckgo (e.g. "No results") → try mojeek, not retry."""
         tool = WebSearchTool()
-        call_count = {"n": 0}
+        calls: list[str] = []
 
-        async def value_error_search(query, num_results, snippet_max_chars):
-            call_count["n"] += 1
-            raise ValueError("malformed response")
+        async def first_value_error_then_ok(query, num_results, snippet_max_chars, *, backend):
+            calls.append(backend)
+            if backend == "duckduckgo":
+                raise ValueError("No results found.")
+            return {"success": True, "query": query, "results": [], "count": 0}
 
-        with patch.object(tool, "_search_ddgs", side_effect=value_error_search):
+        with patch.object(tool, "_search_ddgs", side_effect=first_value_error_then_ok):
             result = await tool.execute(query="test query")
 
-        # ValueError bubbles to the generic handler; only 1 call
-        assert call_count["n"] == 1
-        assert result["success"] is False
+        assert result["success"] is True
+        # ddg called once (no retry for non-transient), then mojeek
+        assert calls == ["duckduckgo", "mojeek"]
+
