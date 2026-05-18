@@ -140,6 +140,24 @@ def build_nudge(missing: list[str]) -> str:
     )
 
 
+def build_pivot_nudge(deliverables: list[str], step: int) -> str:
+    """System reminder injected mid-loop when the agent is stuck analysing.
+
+    Issue #411 / QW7. Fired when ``step >= pivot_threshold`` and the
+    agent has called neither ``file_write`` nor ``edit`` despite the
+    mission declaring output files. Phrased to push toward an
+    incremental write rather than another analysis pass.
+    """
+    files = ", ".join(f"`{m}`" for m in deliverables)
+    return (
+        f"[System: You are {step} steps in and have not yet written "
+        f"the required file(s): {files}. Stop analysing and write the "
+        "first version now with whatever results you already have — "
+        "even an incomplete draft is better than a missing file. You "
+        "can refine it in subsequent steps if needed.]"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Mandatory-deliverables checklist (issue #406 / QW2)
 # ---------------------------------------------------------------------------

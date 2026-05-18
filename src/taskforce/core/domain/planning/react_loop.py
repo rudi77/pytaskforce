@@ -16,6 +16,7 @@ from taskforce.core.domain.enums import (
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
 from taskforce.core.domain.planning.deliverable_check import (
     build_nudge as _build_deliverable_nudge,
+    build_pivot_nudge as _build_pivot_nudge,
     extract_candidate_dirs as _extract_candidate_dirs,
     extract_deliverables as _extract_deliverables,
     find_missing as _find_missing_deliverables,
@@ -232,6 +233,17 @@ async def _react_loop(
         deliverable_search_roots.extend(_extract_candidate_dirs(mission))
     deliverable_nudge_injected = False
 
+    # #411 / QW7: mid-loop pivot nudge. When the agent has burned many
+    # steps in analysis tools (python/grep/file_read) without ever
+    # writing the declared deliverable, fire up to ``_PIVOT_MAX``
+    # reminders to write the first version now. Fires only when
+    # deliverables were declared in the mission.
+    write_tool_calls_seen = 0
+    pivot_nudge_count = 0
+    _PIVOT_STEP_THRESHOLD = 30  # first check after 30 react steps
+    _PIVOT_STEP_INTERVAL = 20  # subsequent checks every 20 steps
+    _PIVOT_MAX = 2  # hard cap so the loop still terminates
+
     while step < agent.max_steps:
         # Yield to the event loop once per iteration so that signal handlers
         # (SIGINT/SIGBREAK) and other async tasks always get a chance to run,
@@ -268,6 +280,33 @@ async def _react_loop(
                         "answer without them.]"
                     ),
                 }
+            )
+
+        # #411 / QW7: pivot-nudge — if the agent has burned a lot of
+        # steps in analysis tools without ever writing the declared
+        # deliverable, push it toward an incremental write. Bounded by
+        # ``_PIVOT_MAX`` so the loop still terminates if the LLM keeps
+        # ignoring the suggestion.
+        if (
+            deliverables
+            and write_tool_calls_seen == 0
+            and pivot_nudge_count < _PIVOT_MAX
+            and step >= _PIVOT_STEP_THRESHOLD
+            and (step - _PIVOT_STEP_THRESHOLD) % _PIVOT_STEP_INTERVAL == 0
+        ):
+            pivot_nudge_count += 1
+            agent.context.append_message(
+                {
+                    "role": MessageRole.USER.value,
+                    "content": _build_pivot_nudge(deliverables, step),
+                }
+            )
+            logger.info(
+                "react_loop.pivot_nudge_injected",
+                session_id=session_id,
+                step=step,
+                deliverables=deliverables,
+                nudge_count=pivot_nudge_count,
             )
 
         await agent.context.prepare_for_llm(mission=mission, state=state)
@@ -562,6 +601,13 @@ async def _react_loop(
                         tool_failure_counts[tool_name] = 0  # reset on success
                         if _is_no_progress_tool_output(output):
                             no_progress_tool_results += 1
+                        # #411 / QW7: count successful write-ish tools so
+                        # the pivot-nudge knows whether the agent has
+                        # produced anything tangible yet. ``edit`` and
+                        # ``file_write`` are the obvious deliverable-
+                        # producing tools.
+                        if tool_name in {"file_write", "edit"}:
+                            write_tool_calls_seen += 1
                 yield evt
             if paused:
                 return
