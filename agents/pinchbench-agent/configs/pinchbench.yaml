@@ -49,3 +49,10 @@ tools:
   - grep
   - glob
   - python
+  # #409 / QW5: PinchBench includes ~8 web-research tasks
+  # (competitive_research, oss_alternative_research, it_procurement,
+  # deep_research, events, polymarket_briefing, earnings_analysis,
+  # openclaw_landscape). Without these tools the agent falls back to
+  # writing urllib/requests scripts in python and scores 0.
+  - web_search
+  - web_fetch

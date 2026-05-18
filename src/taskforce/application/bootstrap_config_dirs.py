@@ -32,6 +32,11 @@ _KNOWN_AGENT_PACKAGES: tuple[tuple[str, str], ...] = (
     ("taskforce_butler", "configs"),
     ("taskforce_coding_agent", "configs"),
     ("taskforce_rag_agent", "configs"),
+    # #409 / QW5: eval-only agent profiles need discovery too. Without
+    # this the bench runners silently fall back to defaults — which
+    # silently broke the bench-profile tool list before May 2026.
+    ("taskforce_pinchbench_agent", "configs"),
+    ("taskforce_swe_bench_agent", "configs"),
 )
 
 # Subdirs of each agent-package ``configs/`` dir that also hold YAML

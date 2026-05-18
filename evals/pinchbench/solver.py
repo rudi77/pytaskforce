@@ -168,8 +168,16 @@ def pinchbench_solver(
     """Run a Taskforce agent against one pinchbench sample."""
 
     async def solve(state: TaskState, generate: Any) -> TaskState:  # noqa: ARG001
+        from taskforce.application.bootstrap_config_dirs import bootstrap_config_dirs
         from taskforce.application.executor import AgentExecutor
         from taskforce.application.factory import AgentFactory
+
+        # #409 / QW5: ensure the pinchbench-agent config dir is on the
+        # ProfileLoader search path. Without this the loader falls back
+        # to the framework defaults and the bench-specific tool list
+        # (incl. web_search / web_fetch) is silently ignored.
+        # Idempotent — only the first call does work.
+        bootstrap_config_dirs()
 
         meta = state.metadata or {}
 
