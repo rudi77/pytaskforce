@@ -55,7 +55,15 @@ class FileToolResultStore:
             store_dir: Directory for storing results
                       (default: ./tool_results).
         """
-        self.store_dir = Path(store_dir)
+        # Resolve to an absolute path immediately so subsequent CWD
+        # changes don't make stored paths un-findable. Without this,
+        # tool-result file paths leaked into the message log as relative
+        # strings (".taskforce/tool_results/results/<uuid>.json") and
+        # agents running with a separate "workspace root" prompt
+        # (e.g. pinchbench solver) resolved them against the workspace
+        # instead of the original cwd, producing File-not-found cascades
+        # that ate the next 4 react steps and tripped the content filter.
+        self.store_dir = Path(store_dir).resolve()
         self.results_dir = self.store_dir / "results"
         self.handles_dir = self.store_dir / "handles"
         self.logger = structlog.get_logger().bind(component="tool_result_store")

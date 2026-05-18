@@ -304,3 +304,38 @@ async def test_error_result_storage(store):
     assert fetched["success"] is False
     assert fetched["error"] == "Tool execution failed"
 
+
+
+@pytest.mark.asyncio
+async def test_store_dir_resolved_to_absolute_path(tmp_path, monkeypatch):
+    """Regression: store_dir must be absolute so that paths leaked into
+    messages are still findable after CWD changes (e.g. pinchbench
+    solver re-resolves agent paths against its temp workspace).
+    See per-task post-mortem for ``task_competitive_research`` and
+    ``task_oss_alternative_research`` — both failed because the agent
+    received a relative ``.taskforce_pinchbench/tool_results/...`` path
+    and tried to read it under the workspace, not the cwd."""
+    import os
+    from pathlib import Path
+
+    relative_dir = Path("./relative_store_test")
+    store = FileToolResultStore(store_dir=relative_dir)
+
+    # Store path must be absolute even though we passed a relative one.
+    assert store.store_dir.is_absolute(), (
+        f"store_dir should be absolute, got {store.store_dir}"
+    )
+    assert store.results_dir.is_absolute()
+    assert store.handles_dir.is_absolute()
+
+    # And _result_path / _handle_path must yield absolute paths too.
+    rp = store._result_path("abc")
+    hp = store._handle_path("abc")
+    assert rp.is_absolute() and hp.is_absolute()
+
+    # Critical guarantee: after a CWD change, the absolute paths still
+    # point at the originally-resolved location.
+    original_path = str(rp)
+    monkeypatch.chdir(tmp_path)
+    rp_after = store._result_path("abc")
+    assert str(rp_after) == original_path
