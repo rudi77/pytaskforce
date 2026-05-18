@@ -53,12 +53,15 @@ agent:
   planning_strategy: native_react
   max_steps: 180
   max_parallel_tools: 4
-  # Anti-compression: keep tool results inline (up to 6 KB) so the
+  # Anti-compression: keep tool results inline (up to 3 KB) so the
   # agent does not lose sight of read data when the message history
   # compresses. Default is ~2 KB which pushed almost every meaningful
   # tool output into the result store and forced the agent to fetch_result
-  # repeatedly — common pattern in the post-mortem.
-  tool_result_store_threshold: 6000
+  # repeatedly. 6000 regressed research (web_fetch HTML landed inline
+  # and triggered content filters); 3000 is the compromise — still
+  # bigger than default, small enough that whole HTML pages stay in
+  # the result store.
+  tool_result_store_threshold: 3000
 
 llm:
   config_path: src/taskforce/configs/llm_config.yaml
