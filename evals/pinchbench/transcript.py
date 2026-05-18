@@ -16,6 +16,15 @@ functions consume a list of dicts shaped like OpenClaw's JSONL session log:
      "message": {"role": "user",
                  "content": [{"type": "tool_result", "content": "..."}]}}
 
+Upstream tasks are inconsistent about the inner content-type spelling — 6
+tasks use ``tool_use`` / ``tool_result`` (OpenClaw / Anthropic snake_case),
+9 tasks use ``toolCall`` and 1 uses ``toolResult`` (camelCase). Without
+matching both spellings, transcript-aware graders (e.g.
+``task_market_research``'s ``used_web_search`` criterion) silently score
+0.0 even when the agent obviously invoked the tool. We emit each content
+item in BOTH spellings inside the same content array; no upstream grader
+counts items, so duplication is safe.
+
 We accumulate Taskforce ``ProgressUpdate`` events and emit the equivalent
 structure so existing pinchbench ``grade()`` functions Just Work.
 """
@@ -33,12 +42,14 @@ def _text_entry(role: str, text: str) -> dict[str, Any]:
 
 
 def _tool_use_entry(name: str, params: Any) -> dict[str, Any]:
+    params = params or {}
     return {
         "type": "message",
         "message": {
             "role": "assistant",
             "content": [
-                {"type": "tool_use", "name": name, "input": params or {}}
+                {"type": "tool_use", "name": name, "input": params},
+                {"type": "toolCall", "name": name, "arguments": params},
             ],
         },
     }
@@ -49,7 +60,10 @@ def _tool_result_entry(content: Any) -> dict[str, Any]:
         "type": "message",
         "message": {
             "role": "user",
-            "content": [{"type": "tool_result", "content": content}],
+            "content": [
+                {"type": "tool_result", "content": content},
+                {"type": "toolResult", "content": content},
+            ],
         },
     }
 

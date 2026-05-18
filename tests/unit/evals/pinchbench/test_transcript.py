@@ -119,3 +119,37 @@ def test_event_type_accepts_enum_or_string(evt_type_value: Any) -> None:
     events = [FakeEvent(evt_type_value, {"content": "x"})]
     transcript = build_transcript(events, prompt="p")
     assert transcript[1]["message"]["content"][0]["text"] == "x"
+
+
+def test_tool_call_emits_both_snake_case_and_camel_case_aliases() -> None:
+    """9 upstream PinchBench graders look for ``toolCall`` instead of
+    ``tool_use``. Emit both shapes inside the same content array so any
+    grader spelling matches."""
+    events = [
+        FakeEvent(
+            EventType.TOOL_CALL,
+            {"tool": "web_search", "args": {"query": "datadog"}},
+        ),
+    ]
+    transcript = build_transcript(events, prompt="research")
+    content = transcript[1]["message"]["content"]
+    types = [item.get("type") for item in content]
+    assert "tool_use" in types and "toolCall" in types
+
+    tool_use = next(c for c in content if c["type"] == "tool_use")
+    tool_call = next(c for c in content if c["type"] == "toolCall")
+    assert tool_use == {"type": "tool_use", "name": "web_search", "input": {"query": "datadog"}}
+    assert tool_call == {"type": "toolCall", "name": "web_search", "arguments": {"query": "datadog"}}
+
+
+def test_tool_result_emits_both_snake_case_and_camel_case_aliases() -> None:
+    events = [
+        FakeEvent(
+            EventType.TOOL_RESULT,
+            {"tool": "web_search", "success": True, "output": "5 results"},
+        ),
+    ]
+    transcript = build_transcript(events, prompt="research")
+    content = transcript[1]["message"]["content"]
+    types = [item.get("type") for item in content]
+    assert "tool_result" in types and "toolResult" in types
