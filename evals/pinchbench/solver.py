@@ -33,18 +33,58 @@ from evals.pinchbench.transcript import build_transcript
 logger = logging.getLogger(__name__)
 
 
-def _provision_workspace(workspace_files: list[str]) -> Path:
-    """Create a temp workspace and copy any required fixture files."""
+def _provision_workspace(workspace_files: list[Any]) -> Path:
+    """Create a temp workspace and materialise any declared fixture files.
+
+    Supports three ``workspace_files`` shapes in task frontmatter:
+
+    1. ``["data.csv", "fixtures/x.json"]`` — relative paths copied from
+       ``skill/assets/`` to ``workspace/<basename>``.
+    2. ``[{"path": "data.csv", "content": "..."}]`` — inline file written
+       directly into the workspace at the given path.
+    3. ``[{"source": "csvs/x.csv", "dest": "x.csv"}]`` — asset copied from
+       ``skill/assets/<source>`` to ``workspace/<dest>`` (preserves rename).
+    """
     workspace = Path(tempfile.mkdtemp(prefix="pinchbench_ws_"))
     assets_dir = SKILL_DIR / "assets"
-    for rel in workspace_files or []:
-        src = assets_dir / rel
+    for entry in workspace_files or []:
+        if isinstance(entry, dict):
+            if "content" in entry and entry.get("path"):
+                dest = workspace / entry["path"]
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(entry["content"], encoding="utf-8")
+                continue
+            source = entry.get("source")
+            dest_rel = entry.get("dest") or source
+            if not source:
+                logger.warning(
+                    "pinchbench workspace_files dict missing 'source'/'content': %r "
+                    "(workspace %s)",
+                    entry,
+                    workspace,
+                )
+                continue
+            src = assets_dir / source
+            if not src.exists():
+                logger.warning(
+                    "pinchbench fixture not found: %s (workspace %s)", src, workspace
+                )
+                continue
+            dest = workspace / dest_rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dest)
+            continue
+
+        src = assets_dir / entry
         if not src.exists():
             logger.warning(
                 "pinchbench fixture not found: %s (workspace %s)", src, workspace
             )
             continue
-        dest = workspace / Path(rel).name
+        dest = workspace / Path(entry).name
         if src.is_dir():
             shutil.copytree(src, dest, dirs_exist_ok=True)
         else:
