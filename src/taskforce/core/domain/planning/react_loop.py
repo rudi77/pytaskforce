@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from taskforce.core.domain.enums import (
@@ -13,6 +14,12 @@ from taskforce.core.domain.enums import (
     MessageRole,
 )
 from taskforce.core.domain.models import ExecutionResult, StreamEvent, TokenUsage
+from taskforce.core.domain.planning.deliverable_check import (
+    build_nudge as _build_deliverable_nudge,
+    extract_candidate_dirs as _extract_candidate_dirs,
+    extract_deliverables as _extract_deliverables,
+    find_missing as _find_missing_deliverables,
+)
 from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_interrupt_requested
 from taskforce.core.domain.planning.llm_interactions import _salvage_answer
 from taskforce.core.domain.planning.tool_execution import _process_tool_calls
@@ -187,6 +194,25 @@ async def _react_loop(
     # Track whether we've already injected the pre-stall escalation
     # nudge so we don't spam it every step.
     pre_stall_nudge_injected = False
+
+    # Pre-finalize deliverable check (#405). Extract once, reuse each
+    # step. Search roots: the workspace context (project root) plus any
+    # backtick-quoted absolute dirs in the prompt (pinchbench per-mission
+    # temp workspace). The check fires at most once per mission so the
+    # loop still terminates if the LLM ignores the nudge.
+    deliverables = _extract_deliverables(mission)
+    deliverable_search_roots: list[Path] = []
+    if deliverables:
+        try:
+            from taskforce.core.interfaces.workspace import get_workspace_context
+
+            ws_ctx = get_workspace_context()
+            if ws_ctx is not None:
+                deliverable_search_roots.append(Path(ws_ctx.root()))
+        except Exception:  # noqa: BLE001 — never break the loop over a workspace lookup
+            pass
+        deliverable_search_roots.extend(_extract_candidate_dirs(mission))
+    deliverable_nudge_injected = False
 
     while step < agent.max_steps:
         # Yield to the event loop once per iteration so that signal handlers
@@ -617,6 +643,32 @@ async def _react_loop(
             step += 1
         elif content:
             step += 1
+            # Pre-finalize deliverable check (#405). If the user named
+            # output files in the mission and at least one is still
+            # missing on disk, inject one reminder and let the loop run
+            # another step instead of accepting this as the final answer.
+            if deliverables and not deliverable_nudge_injected:
+                missing = _find_missing_deliverables(
+                    deliverables, deliverable_search_roots
+                )
+                if missing:
+                    deliverable_nudge_injected = True
+                    agent.context.append_message(
+                        {"role": MessageRole.ASSISTANT.value, "content": content},
+                    )
+                    agent.context.append_message(
+                        {
+                            "role": MessageRole.USER.value,
+                            "content": _build_deliverable_nudge(missing),
+                        },
+                    )
+                    logger.info(
+                        "react_loop.deliverable_nudge_injected",
+                        session_id=session_id,
+                        step=step,
+                        missing=missing,
+                    )
+                    continue
             final = content
             agent.context.append_message(
                 {"role": MessageRole.ASSISTANT.value, "content": content},
