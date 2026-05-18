@@ -74,11 +74,24 @@ class TestBuildPivotNudge:
         nudge = build_pivot_nudge(["x.md"], step=42)
         assert "42" in nudge
 
-    def test_pushes_toward_incremental_write(self) -> None:
-        nudge = build_pivot_nudge(["x.md"], step=30)
-        # Heuristic: must instruct to write now, even if incomplete.
+    def test_attempt_one_pushes_toward_incremental_write(self) -> None:
+        nudge = build_pivot_nudge(["x.md"], step=30, attempt=1)
         assert "now" in nudge.lower()
-        assert "incomplete" in nudge.lower() or "draft" in nudge.lower()
+        assert "draft" in nudge.lower() or "incomplete" in nudge.lower()
+
+    def test_attempt_two_is_a_warning(self) -> None:
+        nudge = build_pivot_nudge(["x.md"], step=30, attempt=2)
+        assert "PIVOT WARNING" in nudge
+        assert "MUST" in nudge
+
+    def test_attempt_three_is_force_write(self) -> None:
+        nudge = build_pivot_nudge(["x.md"], step=30, attempt=3)
+        assert "FORCE WRITE" in nudge
+        assert "FAILED" in nudge
+
+    def test_research_count_mentioned_when_nonzero(self) -> None:
+        nudge = build_pivot_nudge(["x.md"], step=30, research_calls=12)
+        assert "12" in nudge
 
 
 @pytest.mark.asyncio
@@ -129,14 +142,20 @@ async def test_pivot_nudge_fires_when_agent_loops_without_writing(tmp_path: Path
     async for _ in _react_loop(agent, mission, "sess-1", messages, {}, 0, logger):
         pass
 
+    # Pivot-specific markers (deliverable-finalize nudge has different
+    # wording — see _build_deliverable_nudge).
     pivot_nudges = [
         m
         for m in messages
         if m.get("role") == MessageRole.USER.value
-        and "have not yet written" in m.get("content", "")
+        and any(marker in m.get("content", "") for marker in (
+            "Stop researching",
+            "PIVOT WARNING",
+            "FORCE WRITE",
+        ))
     ]
     assert len(pivot_nudges) >= 1, "expected at least one pivot nudge"
-    assert len(pivot_nudges) <= 2, "pivot nudges must be hard-capped at 2"
+    assert len(pivot_nudges) <= 3, "pivot nudges must be hard-capped at _PIVOT_MAX=3"
     assert "report.md" in pivot_nudges[0]["content"]
 
 
@@ -214,9 +233,137 @@ async def test_no_pivot_when_agent_writes_early(tmp_path: Path) -> None:
         m
         for m in messages
         if m.get("role") == MessageRole.USER.value
-        and "have not yet written" in m.get("content", "")
+        and ("still missing" in m.get("content", "") or "STILL missing" in m.get("content", ""))
     ]
     assert pivot_nudges == [], "no pivot nudge expected when agent wrote early"
+
+
+@pytest.mark.asyncio
+async def test_pivot_fires_on_research_burst_without_step_threshold(tmp_path: Path) -> None:
+    """10 web_search calls in 5 react bursts → pivot fires via research counter
+    even though step count is well below _PIVOT_STEP_FALLBACK=25."""
+    import json
+    agent = _make_agent(max_steps=40)
+    logger = _logger()
+
+    call_count = 0
+
+    async def fake_complete(**_: Any) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 10:
+            # 2 web_search per step → research counter climbs fast
+            return {
+                "success": True,
+                "tool_calls": [
+                    {
+                        "id": f"tc_{call_count}_a",
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "arguments": json.dumps({"query": f"q{call_count}a"}),
+                        },
+                    },
+                    {
+                        "id": f"tc_{call_count}_b",
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "arguments": json.dumps({"query": f"q{call_count}b"}),
+                        },
+                    },
+                ],
+                "content": "",
+            }
+        return {"success": True, "tool_calls": None, "content": "done"}
+
+    agent.llm_provider = MagicMock()
+    agent.llm_provider.complete = AsyncMock(side_effect=fake_complete)
+    if hasattr(agent.llm_provider, "complete_stream"):
+        del agent.llm_provider.complete_stream
+    # max_parallel_tools needs to allow 2 simultaneous calls.
+    agent.max_parallel_tools = 4
+
+    mission = f"Research things. Write `out.md` in `{tmp_path.as_posix()}`."
+    messages = agent.context.messages
+    messages.extend(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": mission},
+        ]
+    )
+
+    async for _ in _react_loop(agent, mission, "sess-1", messages, {}, 0, logger):
+        pass
+
+    pivot_nudges = [
+        m
+        for m in messages
+        if m.get("role") == MessageRole.USER.value
+        and ("first version NOW" in m.get("content", "") or "PIVOT WARNING" in m.get("content", "") or "FORCE WRITE" in m.get("content", ""))
+    ]
+    assert len(pivot_nudges) >= 1, "research-burst should trigger pivot"
+    # Escalating cap at 3.
+    assert len(pivot_nudges) <= 3
+
+
+@pytest.mark.asyncio
+async def test_pivot_skipped_when_deliverable_exists_via_python_write(tmp_path: Path) -> None:
+    """Agent writes the file via python (not file_write), then does many
+    python calls. Disk-check sees the file → no pivot fires."""
+    import json
+    # Pre-create the deliverable to simulate a python write completing.
+    (tmp_path / "out.md").write_text("done", encoding="utf-8")
+
+    agent = _make_agent(max_steps=45)
+    logger = _logger()
+
+    call_count = 0
+
+    async def fake_complete(**_: Any) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 40:
+            return {
+                "success": True,
+                "tool_calls": [
+                    {
+                        "id": f"tc_{call_count}",
+                        "type": "function",
+                        "function": {
+                            "name": "python",
+                            "arguments": json.dumps({"code": f"x = {call_count}"}),
+                        },
+                    }
+                ],
+                "content": "",
+            }
+        return {"success": True, "tool_calls": None, "content": "done"}
+
+    agent.llm_provider = MagicMock()
+    agent.llm_provider.complete = AsyncMock(side_effect=fake_complete)
+    if hasattr(agent.llm_provider, "complete_stream"):
+        del agent.llm_provider.complete_stream
+
+    mission = f"Write `out.md` in `{tmp_path.as_posix()}`."
+    messages = agent.context.messages
+    messages.extend(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": mission},
+        ]
+    )
+
+    async for _ in _react_loop(agent, mission, "sess-1", messages, {}, 0, logger):
+        pass
+
+    pivot_nudges = [
+        m
+        for m in messages
+        if m.get("role") == MessageRole.USER.value
+        and "first version NOW" in m.get("content", "")
+    ]
+    assert pivot_nudges == [], "no pivot expected when deliverable already on disk"
 
 
 @pytest.mark.asyncio
@@ -268,6 +415,6 @@ async def test_no_pivot_for_mission_without_deliverable() -> None:
         m
         for m in messages
         if m.get("role") == MessageRole.USER.value
-        and "have not yet written" in m.get("content", "")
+        and ("still missing" in m.get("content", "") or "STILL missing" in m.get("content", ""))
     ]
     assert pivot_nudges == []

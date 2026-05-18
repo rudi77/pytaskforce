@@ -161,21 +161,55 @@ def build_nudge(missing: list[str], attempt: int = 1) -> str:
     )
 
 
-def build_pivot_nudge(deliverables: list[str], step: int) -> str:
+def build_pivot_nudge(
+    deliverables: list[str],
+    step: int,
+    attempt: int = 1,
+    research_calls: int = 0,
+) -> str:
     """System reminder injected mid-loop when the agent is stuck analysing.
 
-    Issue #411 / QW7. Fired when ``step >= pivot_threshold`` and the
-    agent has called neither ``file_write`` nor ``edit`` despite the
-    mission declaring output files. Phrased to push toward an
-    incremental write rather than another analysis pass.
+    Three escalating variants:
+
+    * ``attempt == 1`` (soft): "you've done a lot of analysis, write a
+      first draft now".
+    * ``attempt == 2`` (firm): "analysis-only tools no longer allowed
+      until the file exists".
+    * ``attempt >= 3`` (force-write): "next tool call MUST be write or
+      the loop terminates as FAILED".
+
+    Bounded by ``_PIVOT_MAX`` in ``_react_loop``. After the cap the
+    loop terminates and tags the final answer ``salvaged=True``.
     """
     files = ", ".join(f"`{m}`" for m in deliverables)
+    research_clause = (
+        f" After {research_calls} research/analysis calls you still "
+        f"haven't produced anything tangible."
+        if research_calls > 0
+        else ""
+    )
+    if attempt <= 1:
+        return (
+            f"[System: You are {step} steps in and the required "
+            f"file(s) {files} are still missing.{research_clause} "
+            "Stop researching and write the first version NOW with "
+            "whatever results you already have. Even an incomplete "
+            "draft beats a missing file — you can iterate later.]"
+        )
+    if attempt == 2:
+        return (
+            "[System: PIVOT WARNING #2 — the required file(s) "
+            f"{files} are STILL missing.{research_clause} No more "
+            "web_search / web_fetch / read-only analysis until you "
+            "have written the file. Your next tool call MUST be "
+            "`file_write`, `edit`, or `python` with `open(path, 'w')`. "
+            "Use the data you've already gathered.]"
+        )
     return (
-        f"[System: You are {step} steps in and have not yet written "
-        f"the required file(s): {files}. Stop analysing and write the "
-        "first version now with whatever results you already have — "
-        "even an incomplete draft is better than a missing file. You "
-        "can refine it in subsequent steps if needed.]"
+        f"[System: FORCE WRITE — {files} still missing after two "
+        "ignored pivot nudges. This is the final one: call "
+        "`file_write` / `edit` / `python` with `open(path, 'w')` on "
+        "your very next turn or the mission terminates as FAILED.]"
     )
 
 
