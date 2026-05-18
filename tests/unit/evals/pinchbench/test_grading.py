@@ -86,3 +86,30 @@ def test_run_automated_check_accepts_numeric_return(tmp_path: Path) -> None:
     grader = "def grade(transcript, workspace_path):\n    return 0.75\n"
     result = run_automated_check(grader, [], tmp_path)
     assert result == {"ok": True, "scores": {"score": 0.75}}
+
+
+def test_grader_handles_utf8_files_on_windows_default_codec(tmp_path: Path) -> None:
+    """#412 / QW8: smart quotes (0x9d in cp1252) must not crash the grader.
+
+    Repros the Windows-cp1252 UnicodeDecodeError that silently zeroed
+    auto-component scores for 6 meeting/research samples in the full
+    PinchBench run.
+    """
+    # File contains an en-dash (U+2013 = UTF-8 bytes E2 80 93) and a
+    # right-double-quotation-mark (U+201D = UTF-8 bytes E2 80 9D — the
+    # 0x9D byte is undefined in cp1252 and raises UnicodeDecodeError
+    # when the grader's open() falls back to that codec.
+    target = tmp_path / "report.md"
+    target.write_text("Sales – “Q3” results\n", encoding="utf-8")
+
+    grader = dedent(
+        """\
+        def grade(transcript, workspace_path):
+            from pathlib import Path
+            text = (Path(workspace_path) / "report.md").read_text()
+            return {"has_text": 1.0 if "Q3" in text else 0.0}
+        """
+    )
+    result = run_automated_check(grader, [], tmp_path)
+    assert result["ok"] is True, result
+    assert result["scores"] == {"has_text": 1.0}

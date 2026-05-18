@@ -89,6 +89,16 @@ def run_automated_check(
         fh.write(runner_src)
         runner_path = Path(fh.name)
 
+    # Force UTF-8 everywhere in the grader subprocess (#412 / QW8). On
+    # Windows the stdlib default codec is cp1252, which crashes on the
+    # smart-quotes / em-dashes that LLM-generated markdown reports
+    # routinely contain (UnicodeDecodeError on byte 0x9d). Setting
+    # PYTHONUTF8=1 makes every ``open()`` and stdio stream default to
+    # UTF-8 in the child interpreter (Python 3.7+ UTF-8 mode).
+    grader_env = os.environ.copy()
+    grader_env["PYTHONUTF8"] = "1"
+    grader_env["PYTHONIOENCODING"] = "utf-8"
+
     try:
         proc = subprocess.run(
             [sys.executable, str(runner_path)],
@@ -96,7 +106,8 @@ def run_automated_check(
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
-            env=os.environ.copy(),
+            env=grader_env,
+            encoding="utf-8",
         )
     except subprocess.TimeoutExpired:
         return {
