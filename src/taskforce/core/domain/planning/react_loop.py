@@ -707,6 +707,46 @@ async def _react_loop(
                 consecutive_no_progress_steps >= no_progress_threshold
                 or repeated_signature_count >= signature_repeat_threshold
             ):
+                # Pre-salvage force-write: when the loop is about to give
+                # up but the user requested a file we haven't written
+                # yet, inject the strongest pivot nudge and let the loop
+                # run ONE more step. Catches the apache-error-summary
+                # case where the agent gathered all data in memory and
+                # only needed file_write to finish — the stall detector
+                # was killing it before the LLM produced a content reply
+                # so QW1/QW4 finalize-nudges never fired.
+                if (
+                    deliverables
+                    and pivot_nudge_count < _PIVOT_MAX
+                    and _find_missing_deliverables(
+                        deliverables, deliverable_search_roots
+                    )
+                ):
+                    pivot_nudge_count = _PIVOT_MAX  # last chance — burn the budget
+                    consecutive_no_progress_steps = 0
+                    repeated_signature_count = 0
+                    agent.context.append_message(
+                        {
+                            "role": MessageRole.USER.value,
+                            "content": _build_pivot_nudge(
+                                deliverables,
+                                step,
+                                attempt=3,  # force-write language
+                                research_calls=research_calls_since_check,
+                            ),
+                        }
+                    )
+                    logger.info(
+                        "react_loop.pre_salvage_force_write",
+                        session_id=session_id,
+                        step=step,
+                        deliverables=deliverables,
+                        consecutive_no_progress_steps=(
+                            consecutive_no_progress_steps
+                        ),
+                    )
+                    step += 1
+                    continue
                 logger.warning(
                     "react_loop_stalled",
                     consecutive_no_progress_steps=consecutive_no_progress_steps,
