@@ -261,12 +261,20 @@ async def _react_loop(
     # property to ~30 BaseTool subclasses is a separate refactor.
     _RESEARCH_TOOL_NAMES = frozenset({"web_search", "web_fetch", "browser"})
     _WRITE_TOOL_NAMES = frozenset({"file_write", "edit"})
+    # Tools that should be IGNORED by both counters (overhead /
+    # bookkeeping calls that don't reflect real work-without-write).
+    _PIVOT_IGNORE_TOOL_NAMES = frozenset({"planner", "ask_user", "fetch_result"})
 
     research_calls_since_check = 0
+    # Broader counter: any tool call that isn't a write or pure overhead.
+    # Catches analysis-heavy meeting/log loops where the agent does
+    # python/grep/file_read without producing the deliverable.
+    nonwrite_calls_since_check = 0
     pivot_nudge_count = 0
     _PIVOT_RESEARCH_THRESHOLD = 8  # fire after 8 research calls w/o write
-    _PIVOT_STEP_FALLBACK = 25  # also fire on step count for non-research tasks
-    _PIVOT_INTERVAL = 8  # subsequent checks every 8 research calls / 15 steps
+    _PIVOT_NONWRITE_THRESHOLD = 15  # also fire after 15 non-write calls (covers analysis)
+    _PIVOT_STEP_FALLBACK = 25  # final fallback on step count
+    _PIVOT_INTERVAL = 8  # subsequent checks every 8 calls
     _PIVOT_MAX = 3  # 3 escalating attempts before salvage
 
     while step < agent.max_steps:
@@ -314,14 +322,15 @@ async def _react_loop(
         # is the source of truth; the counters only decide WHEN to run
         # the check (avoids stat-ing the workspace every step).
         if deliverables and pivot_nudge_count < _PIVOT_MAX:
+            offset = pivot_nudge_count * _PIVOT_INTERVAL
             research_trigger = research_calls_since_check >= (
-                _PIVOT_RESEARCH_THRESHOLD
-                + pivot_nudge_count * _PIVOT_INTERVAL
+                _PIVOT_RESEARCH_THRESHOLD + offset
             )
-            step_trigger = step >= (
-                _PIVOT_STEP_FALLBACK + pivot_nudge_count * _PIVOT_INTERVAL
+            nonwrite_trigger = nonwrite_calls_since_check >= (
+                _PIVOT_NONWRITE_THRESHOLD + offset
             )
-            if research_trigger or step_trigger:
+            step_trigger = step >= (_PIVOT_STEP_FALLBACK + offset)
+            if research_trigger or nonwrite_trigger or step_trigger:
                 if _find_missing_deliverables(
                     deliverables, deliverable_search_roots
                 ):
@@ -333,10 +342,17 @@ async def _react_loop(
                                 deliverables,
                                 step,
                                 attempt=pivot_nudge_count,
-                                research_calls=research_calls_since_check,
+                                research_calls=research_calls_since_check
+                                or nonwrite_calls_since_check,
                             ),
                         }
                     )
+                    if research_trigger:
+                        trigger = "research"
+                    elif nonwrite_trigger:
+                        trigger = "nonwrite"
+                    else:
+                        trigger = "step"
                     logger.info(
                         "react_loop.pivot_nudge_injected",
                         session_id=session_id,
@@ -344,11 +360,13 @@ async def _react_loop(
                         deliverables=deliverables,
                         nudge_count=pivot_nudge_count,
                         research_calls=research_calls_since_check,
-                        trigger="research" if research_trigger else "step",
+                        nonwrite_calls=nonwrite_calls_since_check,
+                        trigger=trigger,
                     )
-                    # Reset counter so the next nudge fires only after
-                    # another research burst (not on the very next step).
+                    # Reset counters so the next nudge fires only after
+                    # another burst, not on the very next step.
                     research_calls_since_check = 0
+                    nonwrite_calls_since_check = 0
                 else:
                     # Deliverable exists — disable further pivot nudges
                     # for the rest of the mission.
@@ -654,8 +672,12 @@ async def _react_loop(
                         # counter only decides WHEN to run the check.
                         if tool_name in _WRITE_TOOL_NAMES:
                             research_calls_since_check = 0
-                        elif tool_name in _RESEARCH_TOOL_NAMES:
-                            research_calls_since_check += 1
+                            nonwrite_calls_since_check = 0
+                        else:
+                            if tool_name in _RESEARCH_TOOL_NAMES:
+                                research_calls_since_check += 1
+                            if tool_name not in _PIVOT_IGNORE_TOOL_NAMES:
+                                nonwrite_calls_since_check += 1
                 yield evt
             if paused:
                 return
