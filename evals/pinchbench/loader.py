@@ -127,7 +127,15 @@ def parse_task(path: Path) -> PinchbenchTask:
         grading_type=str(frontmatter.get("grading_type", "llm_judge")),
         timeout_seconds=int(frontmatter.get("timeout_seconds", 300)),
         workspace_files=list(frontmatter.get("workspace_files") or []),
-        multi_session_prompts=list(frontmatter.get("multi_session_prompts") or []),
+        # Upstream uses two competing shapes:
+        # - older: ``multi_session_prompts: [<prompts>]``
+        # - newer: ``multi_session: true`` + ``sessions: [<session dicts>]``
+        # Accept both so the QW10 skip logic catches both.
+        multi_session_prompts=list(
+            frontmatter.get("multi_session_prompts")
+            or frontmatter.get("sessions")
+            or []
+        ),
         prompt=sections.get("prompt", ""),
         expected_behavior=sections.get("expected behavior", ""),
         grading_criteria=sections.get("grading criteria", ""),
