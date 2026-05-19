@@ -200,10 +200,64 @@ Ordered by expected effort:lift ratio. None are PinchBench-specific.
   via Inspect AI, not retrofitted estimates.
 - Sample-level data lives in `logs/*.eval` files (zipped JSONL).
 - The per-task notebook (`notebooks/pinchbench_analysis.ipynb`) was
-  used for ~12 individual investigations. It runs a single task
+  used for ~14 individual investigations. It runs a single task
   end-to-end with full event capture, charts, and grading — exactly
   the same code path as the `pinchbench_solver` minus the Inspect AI
   wrapper.
-- Variance: research-style tasks (llm_judge) show ±15 ppt per
-  sample between runs. Local-file tasks (csv/log/automated) show
-  ±5 ppt. Aggregate stderr is 0.030 after the fixes.
+- Aggregate stderr is 0.030 after the fixes — but see the per-task
+  variance section below: single-task scores are far noisier than
+  the aggregate suggests.
+
+---
+
+## Post-sprint addendum — per-task variance measurement
+
+Two tasks were re-run 5× with identical settings to quantify how
+much of a single score is signal vs noise.
+
+| Task | Grader | 5-run scores | Mean | Stdev | Range |
+|---|---|---|---:|---:|---:|
+| `task_csv_finance_report` | llm_judge | 90, 90, **0**, 100, 95 | 75% | **42 pp** | 100 pp |
+| `task_log_apache_top_errors` | hybrid | 0, 29, 5, 0, **95** | 26% | **40 pp** | 95 pp |
+
+**Two distinct variance patterns:**
+
+- **Pure judge noise** (csv_finance_report): the agent does the
+  same work every run, the LLM judge rates it inconsistently. 4 of
+  5 runs near the true ~90-95%; 1 in 5 catastrophically zeros
+  despite identical-quality agent output.
+- **Bimodal agent effort** (log_apache_top_errors, hybrid graded):
+  the agent quits early in 4 of 5 runs (20-27 events / 9-12 tools)
+  but in 1 of 5 invests substantially more (80 events / 39 tools)
+  and scores 95%. Both automated and judge components track this.
+
+**Implications:**
+
+1. The 148-sample aggregate has ±3 pp stderr because per-task noise
+   averages out — aggregate is trustworthy.
+2. Per-task scores are NOT trustworthy at single-run resolution.
+   ±20 pp 95% CI on a single measurement of a single task.
+3. "0% on a single full-suite run" does NOT mean the agent can't do
+   the task. ~20% of apparent "hard zeros" are likely noise.
+4. Future optimization sprints should average each candidate-failure
+   task over 3-5 runs BEFORE diagnosing root cause.
+
+**Bug found while measuring variance:** the loader was checking the
+older ``multi_session_prompts`` frontmatter key but upstream
+PinchBench migrated to ``multi_session: true`` + ``sessions:``.
+Three tasks (iterative_code_refine, second_brain,
+session_chain_analysis) had been silently running as single-session
+since the migration, producing artificial zeros every run. Fixed in
+commit ``3559bdc`` — they now skip cleanly via QW10 and drop out of
+the mean.
+
+The most leveraged framework follow-ups now target the bimodal
+pattern, not the noise pattern:
+
+- What makes the agent commit to extra effort? The 95%-run for
+  log_apache_top_errors used 39 tool calls vs 9-12 in failures. If
+  we can identify the heuristic that flipped that single run, we
+  can encode it deterministically.
+- Judge noise can't be eliminated framework-side, but PinchBench
+  could ensemble 3 judge calls per task and average — orthogonal
+  improvement that belongs in the eval scorer.
