@@ -99,6 +99,11 @@ class ContextBuilder:
             if plan_summary:
                 sections.append(plan_summary)
 
+        # Section 4: Run-local evidence cache
+        evidence_summary = self._build_evidence_cache_summary(state)
+        if evidence_summary:
+            sections.append(evidence_summary)
+
         # Combine sections with budget enforcement
         context_pack = self._combine_sections(sections)
 
@@ -297,6 +302,52 @@ class ContextBuilder:
             summary = summary[: self.policy.max_chars_per_item] + "..."
 
         return summary
+
+    def _build_evidence_cache_summary(
+        self,
+        state: dict[str, Any],
+    ) -> str | None:
+        """Build a compact list of sources already read in this run."""
+        cache = state.get("evidence_cache")
+        if not isinstance(cache, dict) or not cache:
+            return None
+
+        entries = [entry for entry in cache.values() if isinstance(entry, dict)]
+        if not entries:
+            return None
+
+        entries.sort(key=lambda item: int(item.get("step", 0)), reverse=True)
+        lines = [
+            "**Already read this run:**",
+            "Use this run-local evidence instead of re-reading unchanged files.",
+        ]
+        remaining_budget = max(
+            self.policy.max_chars_per_item - len("\n".join(lines)),
+            0,
+        )
+        for entry in entries[: self.policy.max_items]:
+            path = str(
+                entry.get("path") or entry.get("normalized_path") or ""
+            ).strip()
+            if not path:
+                continue
+            size = entry.get("size")
+            step = entry.get("step")
+            preview = str(entry.get("preview") or "").replace("\n", " ").strip()
+            max_preview = min(180, max(remaining_budget // 2, 0))
+            if preview and max_preview > 0:
+                preview = preview[:max_preview]
+            item = f"- `{path}` (step {step}, {size} chars)"
+            if preview:
+                item += f": {preview}"
+            if len(item) + 1 > remaining_budget:
+                break
+            lines.append(item)
+            remaining_budget -= len(item) + 1
+
+        if len(lines) <= 2:
+            return None
+        return "\n".join(lines)
 
     def _combine_sections(self, sections: list[str]) -> str:
         """

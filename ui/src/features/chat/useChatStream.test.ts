@@ -550,6 +550,55 @@ describe("useChatStream — state survives unmount (#274)", () => {
     await sendPromise;
   });
 
+  it("hydrates progress state from sessionStorage after a page reload", async () => {
+    const stream = createControllableStream();
+    sseStreamMock.mockReturnValueOnce(stream.iterable);
+
+    const first = renderHook(() => useChatStream("conv-reload"));
+    const sendPromise = first.result.current.send({
+      conversationId: "conv-reload",
+      message: "hi",
+      attachments: [],
+    });
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "tool_call",
+        details: {
+          tool_call_id: "tc-reload",
+          tool: "file_read",
+          arguments: { path: "test-mails/mail.eml" },
+        },
+      }),
+    });
+    stream.push({
+      event: "message",
+      data: JSON.stringify({
+        event_type: "plan_updated",
+        details: { plan: "[ ] 1. read mail\n[ ] 2. write draft" },
+      }),
+    });
+    await waitFor(() => {
+      expect(first.result.current.state.toolCalls).toHaveLength(1);
+      expect(first.result.current.state.planSteps).toHaveLength(2);
+    });
+    first.unmount();
+
+    __resetChatStreamStore({ clearPersisted: false });
+
+    const second = renderHook(() => useChatStream("conv-reload"));
+    await waitFor(() => {
+      expect(second.result.current.state.toolCalls[0].name).toBe("file_read");
+      expect(second.result.current.state.planSteps[1]).toEqual({
+        description: "write draft",
+        done: false,
+      });
+    });
+
+    stream.close();
+    await sendPromise;
+  });
+
   it("scopes state per conversationId so chats don't leak into each other", async () => {
     const streamA = createControllableStream();
     sseStreamMock.mockReturnValueOnce(streamA.iterable);

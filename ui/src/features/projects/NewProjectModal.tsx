@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderPlus, FolderOpen, X } from "lucide-react";
+import { FolderPlus, FolderOpen, FolderSearch, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
   type Project,
 } from "@/api/queries";
 import { cn } from "@/lib/utils";
+import { FolderBrowserPanel } from "./FolderBrowserPanel";
 
 interface Props {
   open: boolean;
@@ -25,7 +26,7 @@ interface Props {
   onCreated?: (project: Project) => void;
 }
 
-type Step = "choose" | "form";
+type Step = "choose" | "form" | "browse";
 
 interface ModeMeta {
   key: CreateProjectMode;
@@ -98,9 +99,21 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
       onOpenChange(false);
       onCreated?.(project);
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : (err as Error).message;
-      setError(msg || "Projekt konnte nicht erstellt werden.");
+      if (err instanceof ApiError) {
+        const resolved =
+          typeof err.details === "object" && err.details !== null
+            ? (err.details as { path?: string }).path
+            : undefined;
+        setError(
+          resolved && resolved !== trimmedPath
+            ? `${err.message} (aufgelöst zu: ${resolved})`
+            : err.message,
+        );
+      } else {
+        setError(
+          (err as Error).message || "Projekt konnte nicht erstellt werden.",
+        );
+      }
     }
   };
 
@@ -109,7 +122,25 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
-        {step === "choose" ? (
+        {step === "browse" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Ordner auswählen</DialogTitle>
+              <DialogDescription>
+                Navigiere durch dein Dateisystem oder tippe einen Pfad direkt
+                ein. Doppelklick öffnet einen Ordner.
+              </DialogDescription>
+            </DialogHeader>
+            <FolderBrowserPanel
+              initialPath={path}
+              onCancel={() => setStep("form")}
+              onSelect={(chosen) => {
+                setPath(chosen);
+                setStep("form");
+              }}
+            />
+          </>
+        ) : step === "choose" ? (
           <>
             <DialogHeader>
               <DialogTitle>Neues Projekt erstellen</DialogTitle>
@@ -173,14 +204,25 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="project-path">Verzeichnis</Label>
-              <Input
-                id="project-path"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder={activeMeta.pathHint}
-                spellCheck={false}
-                required
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="project-path"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder={activeMeta.pathHint}
+                  spellCheck={false}
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStep("browse")}
+                >
+                  <FolderSearch className="h-4 w-4" />
+                  Durchsuchen…
+                </Button>
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Absoluter Pfad. {mode === "scratch"
                   ? "Wenn das Verzeichnis nicht existiert, wird es angelegt."

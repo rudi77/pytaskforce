@@ -85,13 +85,22 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: false,
+    strictPort: true,
     headers: {
       "Cache-Control": "no-store",
     },
     proxy: {
-      "/api": { target: BACKEND, changeOrigin: true },
-      "/health": { target: BACKEND, changeOrigin: true },
+      "^/api/.*": {
+        target: BACKEND,
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+      "^/health$": {
+        target: BACKEND,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   build: {

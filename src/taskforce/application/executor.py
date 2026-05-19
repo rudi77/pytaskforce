@@ -439,6 +439,7 @@ class AgentExecutor:
 
         execution_failed = False
         _failure_error: str | None = None
+        final_answer_succeeded = False
         # Install the workspace context so path-aware tools resolve
         # relative paths under the project root and reject ``..``
         # traversal. Skipped when no project is linked (work_dir is
@@ -480,6 +481,18 @@ class AgentExecutor:
                             )
                         except Exception:  # noqa: BLE001
                             pass
+                    evt = update.event_type
+                    evt_str = evt.value if hasattr(evt, "value") else str(evt)
+                    details = getattr(update, "details", None) or {}
+                    if evt_str == EventType.FINAL_ANSWER.value:
+                        if details.get("salvaged"):
+                            execution_failed = True
+                            _failure_error = str(
+                                details.get("salvage_reason") or "salvaged"
+                            )
+                            final_answer_succeeded = False
+                        else:
+                            final_answer_succeeded = True
                     yield update
 
             self.logger.info(
@@ -489,12 +502,21 @@ class AgentExecutor:
                 plugin_path=plugin_path,
             )
 
-            await self._run_post_mission_learning(
-                mission=mission,
-                agent=agent,
-                profile=profile,
-                session_id=resolved_session_id,
-            )
+            if final_answer_succeeded and not execution_failed:
+                await self._run_post_mission_learning(
+                    mission=mission,
+                    agent=agent,
+                    profile=profile,
+                    session_id=resolved_session_id,
+                    mission_success=True,
+                )
+            else:
+                self.logger.info(
+                    "post_mission_learning_skipped",
+                    session_id=resolved_session_id,
+                    reason="mission_not_successful",
+                    error=_failure_error,
+                )
 
         except asyncio.CancelledError as e:
             execution_failed = True
@@ -774,6 +796,7 @@ class AgentExecutor:
         agent: Agent | None,
         profile: str | None,
         session_id: str,
+        mission_success: bool = True,
     ) -> None:
         """Optionally extract reusable knowledge into the wiki.
 
@@ -781,6 +804,13 @@ class AgentExecutor:
         ``learning.enabled: true``. All exceptions are swallowed so
         learning never breaks the mission flow.
         """
+        if not mission_success:
+            self.logger.info(
+                "post_mission_learning_skipped",
+                session_id=session_id,
+                reason="mission_not_successful",
+            )
+            return
         if agent is None or not profile:
             return
         # Issue #382: inline-built agents (factory.create_agent with inline

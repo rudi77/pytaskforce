@@ -86,6 +86,39 @@ class TestProfileLoaderLoad:
         assert config["profile"] == "butler"
         assert config["agent"]["max_steps"] == 30
 
+    def test_tutti_clerk_profile_is_draft_only(self) -> None:
+        config_dir = Path("src/taskforce/configs")
+        config = ProfileLoader(config_dir).load("tutti-clerk")
+
+        assert config["profile"] == "tutti-clerk"
+        assert config["learning"]["enabled"] is False
+        assert config["tools"] == [
+            "file_read",
+            "file_write",
+            "edit",
+            "grep",
+            "glob",
+            "activate_skill",
+            "ask_user",
+        ]
+        forbidden_tools = (
+            "browser",
+            "web_search",
+            "web_fetch",
+            "gmail",
+            "python",
+            "powershell",
+            "shell",
+        )
+        for tool_name in forbidden_tools:
+            assert tool_name not in config["tools"]
+        system_prompt = config["system_prompt"]
+        assert (
+            "read inbound emails exclusively from `test-mails/*.eml`"
+            in system_prompt
+        )
+        assert "never navigate to Gmail" in system_prompt
+
     def test_load_returns_all_keys(self, loader: ProfileLoader) -> None:
         config = loader.load("butler")
         assert "tools" in config

@@ -10,7 +10,15 @@ from typing import TYPE_CHECKING, Any
 
 from taskforce.core.domain.enums import EventType, MessageRole
 from taskforce.core.domain.models import StreamEvent
-from taskforce.core.domain.planning.types import ToolCallRequest, ToolCallStatus
+from taskforce.core.domain.planning.evidence_cache import (
+    cached_file_read_result,
+    invalidate_file_read_evidence,
+    record_file_read_evidence,
+)
+from taskforce.core.domain.planning.types import (
+    ToolCallRequest,
+    ToolCallStatus,
+)
 from taskforce.core.domain.planning.utils import (
     _extract_tool_output,
     _parse_tool_args,
@@ -23,6 +31,13 @@ if TYPE_CHECKING:
     from taskforce.core.domain.agent import Agent
 
 
+def _sync_planner_state(agent: Agent, state: dict[str, Any]) -> None:
+    """Keep run state aligned with the live planner tool."""
+    planner = getattr(agent, "_planner", None)
+    if planner is not None:
+        state["planner_state"] = planner.get_state()
+
+
 @dataclass
 class _ToolCallBatchResults:
     """Per-tool results from a batch tool execution.
@@ -31,10 +46,15 @@ class _ToolCallBatchResults:
     after all sub-agent stream events have been emitted live.
     """
 
-    tool_results: list[tuple[ToolCallRequest, dict[str, Any]]] = field(default_factory=list)
+    tool_results: list[tuple[ToolCallRequest, dict[str, Any]]] = field(
+        default_factory=list
+    )
 
 
-def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> None:
+def _collect_sub_agent_snapshots(
+    agent: Agent,
+    tool_result: dict[str, Any],
+) -> None:
     """Extract and register sub-agent context snapshots from tool results.
 
     Orchestration tools (call_agents_parallel) attach ``_context_snapshot``
@@ -59,6 +79,7 @@ def _collect_sub_agent_snapshots(agent: Agent, tool_result: dict[str, Any]) -> N
 async def _execute_tool_calls(
     agent: Agent,
     requests: list[ToolCallRequest],
+    state: dict[str, Any],
     session_id: str | None = None,
 ) -> list[tuple[ToolCallRequest, dict[str, Any]]]:
     """Execute tools with optional parallelism."""
@@ -75,12 +96,20 @@ async def _execute_tool_calls(
             return await agent._execute_tool(name, args, session_id=session_id)
 
     for req in requests:
+        if req.tool_name == "file_read":
+            cached = cached_file_read_result(state, req.tool_args)
+            if cached is not None:
+                results[req.tool_call_id] = cached
+                continue
         tool = agent.tools.get(req.tool_name)
         can_parallel = (
-            tool and getattr(tool, "supports_parallelism", False) and not tool.requires_approval
+            tool
+            and getattr(tool, "supports_parallelism", False)
+            and not tool.requires_approval
         )
         if can_parallel and max_p > 1:
-            tasks.append((req, asyncio.create_task(run(req.tool_name, req.tool_args))))
+            task = asyncio.create_task(run(req.tool_name, req.tool_args))
+            tasks.append((req, task))
         else:
             results[req.tool_call_id] = await agent._execute_tool(
                 req.tool_name, req.tool_args, session_id=session_id
@@ -97,6 +126,7 @@ async def _execute_tool_calls(
 async def _stream_tool_calls_with_event_pump(
     agent: Agent,
     requests: list[ToolCallRequest],
+    state: dict[str, Any],
     session_id: str | None,
     sub_event_sink: asyncio.Queue[StreamEvent] | None,
 ) -> AsyncIterator[StreamEvent | _ToolCallBatchResults]:
@@ -112,12 +142,12 @@ async def _stream_tool_calls_with_event_pump(
     final ``_ToolCallBatchResults`` is yielded.
     """
     if sub_event_sink is None:
-        tool_results = await _execute_tool_calls(agent, requests, session_id)
+        tool_results = await _execute_tool_calls(agent, requests, state, session_id)
         yield _ToolCallBatchResults(tool_results=tool_results)
         return
 
     tools_task: asyncio.Task[list[tuple[ToolCallRequest, dict[str, Any]]]] = asyncio.create_task(
-        _execute_tool_calls(agent, requests, session_id)
+        _execute_tool_calls(agent, requests, state, session_id)
     )
 
     # Race the tool task against the queue; emit events as they arrive.
@@ -302,9 +332,9 @@ async def _process_tool_calls(
             # Append a synthetic "skipped" tool result for each so the
             # contract is satisfied. The LLM can decide on resume
             # whether to re-issue them.
-            skipped_ids: list[str] = [r.tool_call_id for r in requests] + [
-                t["id"] for t in tool_calls[idx + 1 :]
-            ]
+            skipped_ids: list[str] = [
+                r.tool_call_id for r in requests
+            ] + [t["id"] for t in tool_calls[idx + 1:]]
             for sid in skipped_ids:
                 agent.context.append_message(
                     {
@@ -365,6 +395,7 @@ async def _process_tool_calls(
         async for item in _stream_tool_calls_with_event_pump(
             agent,
             requests,
+            state,
             session_id,
             sub_event_sink if owns_sink else None,
         ):
@@ -378,11 +409,50 @@ async def _process_tool_calls(
             # Defensive: the pump always yields exactly one batch result as
             # its final item.  A None here means the contract was violated
             # (e.g. someone refactored the pump and forgot the final yield).
-            raise RuntimeError("tool-call event pump did not yield a _ToolCallBatchResults")
+            raise RuntimeError(
+                "tool-call event pump did not yield a _ToolCallBatchResults"
+            )
         for req, res in batch_results.tool_results:
             async for e in _emit_tool_result(agent, req, res):
                 yield e
-            # Capture sub-agent context snapshots before they're lost to serialization
+            if req.tool_name == "file_read":
+                entry = record_file_read_evidence(
+                    state,
+                    req.tool_args,
+                    res,
+                    step,
+                )
+                if entry is not None:
+                    cache = state.get("evidence_cache") or {}
+                    metrics = state.get("file_read_metrics") or {}
+                    logger.info(
+                        "evidence_cache.file_read_recorded",
+                        session_id=session_id,
+                        path=entry.get("path"),
+                        evidence_cache_items=len(cache)
+                        if isinstance(cache, dict)
+                        else 0,
+                        file_read_unique_paths=metrics.get("unique_paths", 0)
+                        if isinstance(metrics, dict)
+                        else 0,
+                        file_read_repeat_count=metrics.get("repeat_count", 0)
+                        if isinstance(metrics, dict)
+                        else 0,
+                    )
+            elif req.tool_name in ("file_write", "edit") and res.get(
+                "success"
+            ):
+                changed_path = req.tool_args.get("path") or req.tool_args.get(
+                    "file_path"
+                )
+                if isinstance(changed_path, str):
+                    invalidate_file_read_evidence(state, changed_path)
+            if (
+                req.tool_name in ("planner", "manage_plan")
+                and res.get("success")
+            ):
+                _sync_planner_state(agent, state)
+            # Capture sub-agent context snapshots before serialization.
             _collect_sub_agent_snapshots(agent, res)
             # build_messages returns [tool_msg, *multimodal_followups] so
             # tools that produce images (multimedia, future audio/video)

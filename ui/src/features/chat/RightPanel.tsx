@@ -24,10 +24,9 @@ interface RightPanelProps {
  * Cowork-style three-card side panel: Progress / Files / Context.
  *
  * Cards collapse independently and remember their open state in component
- * memory. Each card is self-contained and can be empty; we hide the whole
- * panel when *nothing* is running yet so an empty side panel doesn't take
- * up screen real-estate on the very first turn — once any signal arrives
- * (plan step, tool call) it pops in.
+ * memory. The shell stays visible whenever the user opens the side panel,
+ * even before the first tool event arrives, so CoWork progress never looks
+ * like it disappeared.
  */
 export function RightPanel({
   projectName,
@@ -37,17 +36,6 @@ export function RightPanel({
 }: RightPanelProps) {
   const files = useMemo(() => collectReferencedFiles(toolCalls), [toolCalls]);
   const toolStats = useMemo(() => summarizeTools(toolCalls), [toolCalls]);
-
-  // When the conversation hasn't kicked off any work yet (and nothing
-  // is streaming), hide the panel altogether. The chat surface is the
-  // primary thing the user wants to see; an empty 3-card sidebar is
-  // visual noise.
-  const isEmpty =
-    !streaming &&
-    planSteps.length === 0 &&
-    toolCalls.length === 0 &&
-    files.length === 0;
-  if (isEmpty) return null;
 
   return (
     <aside className="hidden w-80 shrink-0 flex-col gap-3 border-l border-border bg-card/40 p-3 lg:flex">

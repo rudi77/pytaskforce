@@ -88,6 +88,13 @@ class _PlaywrightWorker:
 _session: "_BrowserSession | None" = None
 
 
+def _get_async_playwright() -> Any:
+    """Load Playwright lazily so the module can be tested without it."""
+    from playwright.async_api import async_playwright  # type: ignore[import]
+
+    return async_playwright
+
+
 class _BrowserSession:
     """Manages a persistent Playwright browser session."""
 
@@ -111,7 +118,7 @@ class _BrowserSession:
         desktop window opens and the user can complete the flow
         manually if needed.
         """
-        from playwright.async_api import async_playwright  # type: ignore[import]
+        async_playwright = _get_async_playwright()
 
         self._playwright = await async_playwright().start()
 
@@ -383,11 +390,14 @@ class BrowserTool(ToolProtocol):
         except ImportError:
             return {
                 "success": False,
+                "error_kind": "tool_unavailable",
+                "terminal_failure": True,
                 "error": (
                     "Playwright is part of the core install but the import failed. "
                     "Run 'uv sync' to repair the venv, then "
                     "'playwright install chromium' to download the browser binary."
                 ),
+                "details": {"action": action, "dependency": "playwright"},
             }
         except Exception as e:
             safe_kwargs = {k: v for k, v in kwargs.items() if k != "script"}

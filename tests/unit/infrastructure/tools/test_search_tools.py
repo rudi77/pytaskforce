@@ -415,6 +415,31 @@ class TestGlobToolExecution:
         assert result["success"] is True
         assert result["count"] == 2
 
+    async def test_absolute_glob_pattern_is_split_into_path_and_pattern(
+        self, tool, project_dir
+    ):
+        """Absolute patterns are accepted instead of failing in Path.glob."""
+        pattern = str(project_dir / "src" / "**" / "*.py")
+
+        result = await tool.execute(pattern=pattern)
+
+        assert result["success"] is True
+        assert result["count"] == 2
+        assert result["search_path"] == str((project_dir / "src").absolute())
+        assert all(f.endswith(".py") for f in result["files"])
+
+    async def test_absolute_file_pattern_matches_exact_file(
+        self, tool, project_dir
+    ):
+        """A full absolute file path works as a one-file glob."""
+        pattern = str(project_dir / "src" / "main.py")
+
+        result = await tool.execute(pattern=pattern)
+
+        assert result["success"] is True
+        assert result["count"] == 1
+        assert result["files"][0].endswith("main.py")
+
     async def test_find_markdown_files(self, tool, project_dir):
         """Test finding markdown files."""
         result = await tool.execute(pattern="**/*.md", path=str(project_dir))

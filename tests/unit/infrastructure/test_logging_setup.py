@@ -40,9 +40,10 @@ def test_configure_logging_attaches_file_and_console_handlers(tmp_path: Path) ->
     configure_logging(log_dir=tmp_path, log_name="out.log")
 
     root = logging.getLogger()
-    handler_types = [type(h) for h in root.handlers]
-    assert logging.handlers.RotatingFileHandler in handler_types
-    assert logging.StreamHandler in handler_types
+    assert any(
+        isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers
+    )
+    assert any(type(h) is logging.StreamHandler for h in root.handlers)
 
 
 def test_configure_logging_without_console(tmp_path: Path) -> None:

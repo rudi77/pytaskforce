@@ -347,7 +347,8 @@ class GlobTool(ToolProtocol):
         return (
             "Find files by name patterns using glob syntax. "
             "Returns matching file paths sorted by modification time. "
-            "Supports patterns like '**/*.py' or 'src/**/*.ts'."
+            "Supports relative patterns like '**/*.py' or 'src/**/*.ts'. "
+            "Absolute patterns are accepted and split into path + pattern."
         )
 
     @property
@@ -357,7 +358,11 @@ class GlobTool(ToolProtocol):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern to match files (e.g., '**/*.py', 'src/**/*.ts')",
+                    "description": (
+                        "Glob pattern to match files (e.g., '**/*.py', "
+                        "'src/**/*.ts'). If an absolute pattern is supplied, "
+                        "the non-glob prefix is used as the search path."
+                    ),
                 },
                 "path": {
                     "type": "string",
@@ -425,7 +430,7 @@ class GlobTool(ToolProtocol):
             Dictionary with matching file paths
         """
         try:
-            search_path = Path(path)
+            search_path, glob_pattern = self._normalise_search(path, pattern)
             if not search_path.exists():
                 return {"success": False, "error": f"Path not found: {path}"}
             if not search_path.is_dir():
@@ -435,7 +440,7 @@ class GlobTool(ToolProtocol):
             skip_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv", ".tox", "dist", "build"}
 
             matches = []
-            for match in search_path.glob(pattern):
+            for match in search_path.glob(glob_pattern):
                 # Skip common non-essential directories
                 if any(skip_dir in match.parts for skip_dir in skip_dirs):
                     continue
@@ -475,6 +480,37 @@ class GlobTool(ToolProtocol):
                 details={"pattern": pattern, "path": path},
             )
             return tool_error_payload(tool_error)
+
+    def _normalise_search(self, path: str, pattern: str) -> tuple[Path, str]:
+        """Return a directory path and a relative glob pattern.
+
+        ``Path.glob`` intentionally rejects absolute patterns. LLMs still
+        often pass one when they already know the full target path. Accept
+        that form by moving the stable prefix into ``path`` while preserving
+        unrestricted filesystem semantics.
+        """
+        raw_pattern = Path(pattern)
+        if not raw_pattern.is_absolute():
+            return Path(path), pattern
+
+        parts = raw_pattern.parts
+        first_glob_part = next(
+            (
+                idx
+                for idx, part in enumerate(parts)
+                if any(char in part for char in "*?[")
+            ),
+            None,
+        )
+        if first_glob_part is None:
+            return raw_pattern.parent, raw_pattern.name
+
+        if first_glob_part == 0:
+            return Path(path), pattern
+
+        search_path = Path(*parts[:first_glob_part])
+        glob_pattern = str(Path(*parts[first_glob_part:]))
+        return search_path, glob_pattern
 
     def validate_params(self, **kwargs: Any) -> tuple[bool, str | None]:
         """Validate parameters before execution."""

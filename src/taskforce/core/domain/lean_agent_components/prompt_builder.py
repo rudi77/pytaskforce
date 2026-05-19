@@ -153,12 +153,14 @@ class LeanPromptBuilder:
 
         parts: list[str] = [
             "\n\n## WORKSPACE\n",
-            f"You are working inside the project directory:\n  `{root}`\n",
-            "Relative paths passed to file/shell/python/edit tools resolve under "
-            "this root, and absolute paths outside it are rejected. Treat this "
-            "directory as your default workspace — do NOT claim you have no "
-            "filesystem access; use the file/shell/edit tools to explore and "
-            "modify it.",
+            f"You are working with the project directory:\n  `{root}`\n",
+            "Treat this directory as your default workspace and follow the "
+            "project guidance below for project-specific rules. Some "
+            "workspace-aware file/edit tools may scope relative paths to this "
+            "root; other tools "
+            "keep their own semantics. Do NOT claim you have no filesystem "
+            "access; use the available tools to explore and modify permitted "
+            "project files.",
         ]
 
         if mtime_ns is not None:

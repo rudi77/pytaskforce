@@ -15,6 +15,7 @@ without try/except wrapping.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import structlog
@@ -33,8 +34,10 @@ produced any *reusable* fact that should go into the butler's long-term \
 wiki.
 
 Reusable means: still useful in a week or a month, for similar future \
-questions. NOT reusable: the specific answer to a one-off question \
-(today's price, the next bus, this week's weather).
+questions. This wiki is long-term memory, not a scratchpad. NOT reusable: \
+the specific answer to a one-off question, temporary working state, tool \
+errors, concrete email drafts, case logs, fall-log artifacts, "I read file X", \
+or anything that only matters for this single run.
 
 Concrete reusable categories you should harvest:
 - working data source for a recurring topic (URL/API/site that delivered \
@@ -55,7 +58,8 @@ Output strict JSON with the schema:
       "title": "Human Title",
       "body": "Markdown body, terse, with a ## Quelle section if a URL \
 applies",
-      "tags": ["tag1", "tag2"]
+      "tags": ["tag1", "tag2"],
+      "future_relevance": "One sentence explaining why this will matter later"
     }}
   ]
 }}
@@ -67,6 +71,8 @@ Rules:
 - Body must be markdown, ≤ 600 characters.
 - Do not invent facts. Only extract what the mission's tool results \
   actually demonstrate.
+- Only write facts with explicit future relevance. If the candidate is \
+  merely ephemeral run state, leave ``facts`` empty.
 
 Mission text:
 {mission}
@@ -132,6 +138,16 @@ class LlmExtractingLearningService:
 
             written: list[str] = []
             for fact in facts[:3]:
+                if not self._is_future_relevant_fact(fact):
+                    logger.info(
+                        "learning.fact_rejected",
+                        session_id=session_id,
+                        reason="not_future_relevant",
+                        title=str(fact.get("title", ""))[:80]
+                        if isinstance(fact, dict)
+                        else "",
+                    )
+                    continue
                 page_name = await self._persist_fact(fact, session_id)
                 if page_name:
                     written.append(page_name)
@@ -158,6 +174,40 @@ class LlmExtractingLearningService:
                 error=repr(e),
             )
             return LearningResult(0, [], f"exception: {e!r}")
+
+    def _is_future_relevant_fact(self, fact: dict[str, Any]) -> bool:
+        """Reject obvious scratchpad/case-specific candidates before wiki writes."""
+        if not isinstance(fact, dict):
+            return False
+        text = " ".join(
+            str(fact.get(key, ""))
+            for key in ("kind", "slug", "title", "body", "future_relevance")
+        ).lower()
+        if not text.strip():
+            return False
+        ephemeral_patterns = (
+            r"\bemail draft\b",
+            r"\bmail draft\b",
+            r"\bconcrete draft\b",
+            r"\bcase log\b",
+            r"\bfall-log\b",
+            r"\btool error\b",
+            r"\btool failure\b",
+            r"\btemporary\b",
+            r"\bscratchpad\b",
+            r"\bthis session\b",
+            r"\bthis run\b",
+            r"\bi read file\b",
+            r"\bfile_read\b",
+            r"\bzwischenstand\b",
+            r"\bfallakte\b",
+        )
+        if any(re.search(pattern, text) for pattern in ephemeral_patterns):
+            return False
+        future_relevance = str(fact.get("future_relevance", "")).strip()
+        if not future_relevance:
+            return False
+        return len(future_relevance) >= 12
 
     async def _persist_fact(
         self, fact: dict[str, Any], session_id: str

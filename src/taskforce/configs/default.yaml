@@ -61,6 +61,7 @@ tools:
   - web_fetch
   - browser
   - file_read
+  - fetch_result
   - file_write
   - edit
   - multimedia

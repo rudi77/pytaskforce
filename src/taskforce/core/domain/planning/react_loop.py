@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,10 @@ from taskforce.core.domain.planning.deliverable_check import (
     extract_candidate_dirs as _extract_candidate_dirs,
     extract_deliverables as _extract_deliverables,
     find_missing as _find_missing_deliverables,
+)
+from taskforce.core.domain.planning.evidence_cache import (
+    build_repeat_read_nudge,
+    normalize_source_path,
 )
 from taskforce.core.domain.planning.interrupt import _handle_interrupt, is_interrupt_requested
 from taskforce.core.domain.planning.llm_interactions import _salvage_answer
@@ -75,6 +80,21 @@ def build_user_message_for_error(error_kind: str, raw_error: str) -> str:
             "Bitte versuche es noch einmal oder formuliere die Anfrage anders."
         )
     return "Ich konnte leider keine Antwort generieren. Bitte versuche es noch einmal."
+
+
+def _extract_file_read_path(tool_call: dict[str, Any]) -> str:
+    """Extract and normalize the path from a ``file_read`` tool call."""
+    function = tool_call.get("function", {})
+    if function.get("name") != "file_read":
+        return ""
+    raw_args = function.get("arguments") or "{}"
+    try:
+        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(args, dict):
+        return ""
+    return normalize_source_path(str(args.get("path") or ""))
 
 
 async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -> ExecutionResult:
@@ -276,6 +296,8 @@ async def _react_loop(
     _PIVOT_STEP_FALLBACK = 25  # final fallback on step count
     _PIVOT_INTERVAL = 8  # subsequent checks every 8 calls
     _PIVOT_MAX = 3  # 3 escalating attempts before salvage
+    file_read_counts: dict[str, int] = {}
+    file_read_nudges: set[str] = set()
 
     while step < agent.max_steps:
         # Yield to the event loop once per iteration so that signal handlers
@@ -637,6 +659,31 @@ async def _react_loop(
                 f"{tc.get('function', {}).get('name', '')}:{tc.get('function', {}).get('arguments', '')}"
                 for tc in tool_calls
             )
+            for tc in tool_calls:
+                normalized_path = _extract_file_read_path(tc)
+                if not normalized_path:
+                    continue
+                file_read_counts[normalized_path] = (
+                    file_read_counts.get(normalized_path, 0) + 1
+                )
+                if (
+                    file_read_counts[normalized_path] == 2
+                    and normalized_path not in file_read_nudges
+                ):
+                    file_read_nudges.add(normalized_path)
+                    agent.context.append_message(
+                        {
+                            "role": MessageRole.USER.value,
+                            "content": build_repeat_read_nudge(normalized_path),
+                        }
+                    )
+                    logger.info(
+                        "react_loop.repeat_file_read_nudge_injected",
+                        session_id=session_id,
+                        step=step,
+                        path=normalized_path,
+                        file_read_repeat_count=file_read_counts[normalized_path] - 1,
+                    )
             async for evt in _process_tool_calls(
                 agent,
                 tool_calls,
@@ -656,7 +703,12 @@ async def _react_loop(
                     if not evt.data.get("success", False):
                         no_progress_tool_results += 1
                         failed_tool_names.append(tool_name)
-                        tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                        if evt.data.get("terminal_failure"):
+                            tool_failure_counts[tool_name] = 3
+                        else:
+                            tool_failure_counts[tool_name] = (
+                                tool_failure_counts.get(tool_name, 0) + 1
+                            )
                         kind = evt.data.get("error_kind")
                         if isinstance(kind, str):
                             failure_error_kinds[tool_name] = kind
@@ -887,6 +939,14 @@ async def _react_loop(
                         nudge_count=deliverable_nudge_count,
                         nudges_exhausted=exhausted,
                     )
+            if deliverables and not answer_data.get("missing_deliverables"):
+                answer_data["deliverables_written"] = deliverables
+                logger.info(
+                    "react_loop.mission_deliverables_verified",
+                    session_id=session_id,
+                    step=step,
+                    deliverables_written=deliverables,
+                )
 
             final = content
             agent.context.append_message(
@@ -1028,7 +1088,12 @@ async def _llm_call_and_process(
                 tool_name = str(e.data.get("tool", "unknown"))
                 if not e.data.get("success", False):
                     failed_tool_names.append(tool_name)
-                    tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
+                    if e.data.get("terminal_failure"):
+                        tool_failure_counts[tool_name] = 3
+                    else:
+                        tool_failure_counts[tool_name] = (
+                            tool_failure_counts.get(tool_name, 0) + 1
+                        )
                     kind = e.data.get("error_kind")
                     if isinstance(kind, str):
                         failure_error_kinds[tool_name] = kind

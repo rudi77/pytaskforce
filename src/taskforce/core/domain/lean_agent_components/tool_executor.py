@@ -227,15 +227,20 @@ class ToolResultMessageFactory:
                 },
             )
 
-            # Return a simple file reference — agent uses file_read to get full data
+            # Return an opaque handle. Internal cache paths may sit outside
+            # the active workspace, so agents must use fetch_result instead
+            # of file_read to retrieve full stored data.
             result_file = self._tool_result_store._result_path(handle.id)
             file_ref = {
                 "success": tool_result.get("success", False),
-                "result_file": str(result_file),
+                "truncated": True,
+                "handle_id": handle.id,
                 "size_chars": result_size,
                 "message": (
-                    f"Result too large for inline response ({result_size} chars). "
-                    f"Full data saved to: {result_file} — use file_read to access."
+                    "Result too large for inline response "
+                    f"({result_size} chars). "
+                    f"Use fetch_result with handle_id={handle.id!r} to access "
+                    "the full result."
                 ),
             }
 

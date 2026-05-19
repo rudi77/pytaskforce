@@ -7,6 +7,8 @@ master agent can still extend a hidden sub-agent by id.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import yaml
 
 from taskforce.core.domain.deployment import DeploymentManifest
@@ -21,7 +23,10 @@ def _write_profile(configs_dir, name: str) -> None:
         "specialist": "generic",
         "tools": [],
         "mcp_servers": [],
-        "llm": {"config_path": "configs/llm_config.yaml", "default_model": "main"},
+        "llm": {
+            "config_path": "configs/llm_config.yaml",
+            "default_model": "main",
+        },
         "persistence": {"type": "file", "work_dir": ".taskforce"},
     }
     with open(configs_dir / f"{name}.yaml", "w", encoding="utf-8") as f:
@@ -52,7 +57,9 @@ def test_list_agents_filters_by_deployment_manifest(tmp_path) -> None:
     _write_profile(configs_dir, "showcase_coder")
     _write_profile(configs_dir, "ap_poc_agent")
 
-    manifest = DeploymentManifest(visible_agents=frozenset({"butler", "rag_agent"}))
+    manifest = DeploymentManifest(
+        visible_agents=frozenset({"butler", "rag_agent"})
+    )
     registry = FileAgentRegistry(
         configs_dir=str(configs_dir),
         deployment_manifest=manifest,
@@ -77,7 +84,9 @@ def test_list_agents_include_hidden_returns_all(tmp_path) -> None:
     )
 
     profiles_default = {a.profile for a in registry.list_agents()}
-    profiles_unfiltered = {a.profile for a in registry.list_agents(include_hidden=True)}
+    profiles_unfiltered = {
+        a.profile for a in registry.list_agents(include_hidden=True)
+    }
 
     assert profiles_default == {"butler"}
     assert profiles_unfiltered == {"butler", "showcase_coder"}
@@ -117,6 +126,24 @@ def test_load_deployment_manifest_reads_yaml(tmp_path) -> None:
     assert manifest.visible_agents == frozenset({"butler", "rag_agent"})
     assert manifest.is_visible("butler")
     assert not manifest.is_visible("showcase_coder")
+
+
+def test_shipped_deployment_manifest_exposes_tutti_clerk() -> None:
+    """The draft-only profile must be selectable in the chat agent picker."""
+    from taskforce.core.domain.deployment import load_deployment_manifest
+
+    manifest_path = (
+        Path(__file__).parents[4]
+        / "src"
+        / "taskforce"
+        / "configs"
+        / "deployment.yaml"
+    )
+
+    manifest = load_deployment_manifest(manifest_path)
+
+    assert manifest is not None
+    assert manifest.is_visible("tutti-clerk")
 
 
 def test_load_deployment_manifest_missing_file_returns_none(tmp_path) -> None:

@@ -90,6 +90,7 @@ def _parse_plan_steps(content: str, logger: LoggerProtocol) -> list[str]:
 
 
 _TERMINAL_APPROVAL_ERROR_KINDS = frozenset({"approval_denied", "approval_timeout"})
+_TERMINAL_TOOL_ERROR_KINDS = frozenset({"tool_unavailable"})
 
 
 def _build_retry_nudge(
@@ -143,6 +144,24 @@ def _build_retry_nudge(
                 "the same effect. In your next reply, tell the user in "
                 "plain language that the action was not permitted and "
                 "ask what they would prefer instead.]"
+            ),
+        }
+
+    unavailable_tools = [
+        t
+        for t in dict.fromkeys(failed_tool_names)
+        if error_kinds.get(t) in _TERMINAL_TOOL_ERROR_KINDS
+    ]
+    if unavailable_tools:
+        unavailable_str = ", ".join(unavailable_tools)
+        return {
+            "role": MessageRole.USER.value,
+            "content": (
+                f"[System: {unavailable_str} is unavailable in this runtime. "
+                "Do NOT call it again in this run. If the unavailable tool is "
+                "required to finish the task, stop and tell the user exactly "
+                "which setup command or manual action is needed. Otherwise, "
+                "finish with the artifacts and evidence already available.]"
             ),
         }
 

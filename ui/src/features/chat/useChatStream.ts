@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { create } from "zustand";
 
 import { apiFetch, sseStream } from "@/api/client";
@@ -90,6 +90,62 @@ const EMPTY_STATE: AssistantStreamState = {
   pendingAskUser: null,
 };
 
+const STREAM_STATE_STORAGE_KEY = "taskforce.chat.streamState.v1";
+
+function readPersistedStreams(): Record<string, AssistantStreamState> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(STREAM_STATE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, AssistantStreamState>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistStreamState(
+  conversationId: string,
+  state: AssistantStreamState,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const streams = readPersistedStreams();
+    streams[conversationId] = state;
+    window.sessionStorage.setItem(
+      STREAM_STATE_STORAGE_KEY,
+      JSON.stringify(streams),
+    );
+  } catch {
+    /* sessionStorage is best-effort UI state */
+  }
+}
+
+function removePersistedStreamState(conversationId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const streams = readPersistedStreams();
+    delete streams[conversationId];
+    window.sessionStorage.setItem(
+      STREAM_STATE_STORAGE_KEY,
+      JSON.stringify(streams),
+    );
+  } catch {
+    /* sessionStorage is best-effort UI state */
+  }
+}
+
+function clearPersistedStreamState(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(STREAM_STATE_STORAGE_KEY);
+  } catch {
+    /* sessionStorage is best-effort UI state */
+  }
+}
+
 /** Parse the PlannerTool's Markdown checklist (e.g. ``"[x] 1. fetch\n[ ] 2. write"``)
  *  into a structured plan-step list. Lines that don't match the checkbox shape
  *  are kept as plain pending entries so we never silently drop content. */
@@ -166,6 +222,7 @@ const useChatStreamStore = create<ChatStreamStore>((set) => ({
     set((state) => {
       const prev = state.streams[conversationId] ?? EMPTY_STATE;
       const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+      persistStreamState(conversationId, next);
       return {
         streams: { ...state.streams, [conversationId]: next },
       };
@@ -191,6 +248,7 @@ const useChatStreamStore = create<ChatStreamStore>((set) => ({
       delete streams[conversationId];
       delete streaming[conversationId];
       delete errors[conversationId];
+      removePersistedStreamState(conversationId);
       return {
         streams,
         streamingByConversation: streaming,
@@ -213,7 +271,9 @@ const useChatStreamStore = create<ChatStreamStore>((set) => ({
 const _abortControllers = new Map<string, AbortController>();
 
 /** Test-only reset. Wipes all stream state AND in-flight controllers. */
-export function __resetChatStreamStore() {
+export function __resetChatStreamStore(
+  options: { clearPersisted?: boolean } = {},
+) {
   for (const ctrl of _abortControllers.values()) {
     try {
       ctrl.abort();
@@ -222,6 +282,9 @@ export function __resetChatStreamStore() {
     }
   }
   _abortControllers.clear();
+  if (options.clearPersisted !== false) {
+    clearPersistedStreamState();
+  }
   useChatStreamStore.getState().resetAll();
 }
 
@@ -334,7 +397,11 @@ export function useChatStream(conversationId?: string) {
   const activeId = conversationId ?? currentFromStore;
 
   const state = useChatStreamStore((s) =>
-    activeId ? s.streams[activeId] ?? EMPTY_STATE : EMPTY_STATE,
+    activeId
+      ? s.streams[activeId] ??
+        readPersistedStreams()[activeId] ??
+        EMPTY_STATE
+      : EMPTY_STATE,
   );
   const isStreaming = useChatStreamStore((s) =>
     activeId ? !!s.streamingByConversation[activeId] : false,
@@ -342,6 +409,16 @@ export function useChatStream(conversationId?: string) {
   const error = useChatStreamStore((s) =>
     activeId ? s.errors[activeId] ?? null : null,
   );
+
+  useEffect(() => {
+    if (!activeId) return;
+    const store = useChatStreamStore.getState();
+    if (store.streams[activeId]) return;
+    const persisted = readPersistedStreams()[activeId];
+    if (persisted) {
+      store.patchStream(activeId, persisted);
+    }
+  }, [activeId]);
 
   const send = useCallback(async (args: SendStreamingArgs) => {
     await drive(args);

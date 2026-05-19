@@ -186,7 +186,7 @@ class TestWorkspaceSection:
         assert "## WORKSPACE" in prompt
         assert str(tmp_path) in prompt
         # The anti-hallucination nudge — the whole reason this section exists.
-        assert "do NOT claim you have no" in prompt
+        assert "Do NOT claim you have no" in prompt
 
     def test_claude_md_injected_when_present(
         self, tmp_path: Path, clear_workspace_after_test

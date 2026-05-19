@@ -199,6 +199,8 @@ export const queryKeys = {
   conversationMessages: (id: string) => ["conversations", "messages", id] as const,
   projects: ["projects", "list"] as const,
   project: (id: string) => ["projects", "detail", id] as const,
+  filesystemBrowse: (path: string, includeHidden: boolean) =>
+    ["filesystem", "browse", path, includeHidden] as const,
   settings: ["settings", "list"] as const,
   settingsSection: (section: string) => ["settings", "section", section] as const,
   oauthConnections: ["oauth", "connections"] as const,
@@ -595,6 +597,41 @@ export function useDeleteProject() {
         method: "DELETE",
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projects }),
+  });
+}
+
+export interface FilesystemEntry {
+  name: string;
+  path: string;
+}
+
+export interface FilesystemBrowseResponse {
+  path: string;
+  parent: string | null;
+  entries: FilesystemEntry[];
+  drives: string[];
+  is_windows: boolean;
+}
+
+export function useBrowseFilesystem(
+  path: string,
+  options: { includeHidden?: boolean; enabled?: boolean } = {},
+) {
+  const includeHidden = options.includeHidden ?? false;
+  const enabled = options.enabled ?? true;
+  return useQuery<FilesystemBrowseResponse, ApiError>({
+    queryKey: queryKeys.filesystemBrowse(path, includeHidden),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (path) params.set("path", path);
+      if (includeHidden) params.set("include_hidden", "true");
+      const qs = params.toString();
+      return apiFetch<FilesystemBrowseResponse>(
+        `/api/v1/filesystem/browse${qs ? `?${qs}` : ""}`,
+      );
+    },
+    enabled,
+    staleTime: 10_000,
   });
 }
 

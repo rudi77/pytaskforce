@@ -15,6 +15,29 @@ from typing import Any
 import structlog
 
 
+class _ConcurrentSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that tolerates rollover races on Windows.
+
+    Why: under ``uvicorn --reload`` on Windows the parent reloader and the
+    worker subprocess both hold a handle to the same ``api.log``. When a
+    process triggers rollover, ``os.rename(api.log, api.log.1)`` raises
+    PermissionError because the other process still has the file open.
+    The race is harmless — we just skip rotation for this round and keep
+    writing to the existing file; the next process that hits the size
+    threshold without contention will rotate cleanly.
+    """
+
+    def doRollover(self) -> None:  # type: ignore[override]
+        try:
+            super().doRollover()
+        except (PermissionError, OSError):
+            if self.stream is None:
+                try:
+                    self.stream = self._open()
+                except OSError:
+                    pass
+
+
 def configure_logging(
     *,
     log_dir: str | Path,
@@ -87,11 +110,12 @@ def configure_logging(
         ],
     )
 
-    file_handler = logging.handlers.RotatingFileHandler(
+    file_handler = _ConcurrentSafeRotatingFileHandler(
         log_path,
         maxBytes=max_bytes,
         backupCount=backup_count,
         encoding="utf-8",
+        delay=True,
     )
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.DEBUG)

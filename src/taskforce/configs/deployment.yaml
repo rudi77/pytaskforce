@@ -36,5 +36,8 @@ visible_agents:
   # RAG ------------------------------------------------------------
   - rag_agent
 
+  # Draft-only local workflows ------------------------------------
+  - tutti-clerk
+
   # Standalone accounting agent (example-derived, shipped product) -
   - accounting_agent

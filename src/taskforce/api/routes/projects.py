@@ -211,6 +211,21 @@ This is the entry point for the **{name}** project. Edit this file to
 describe what the project is, what the agent is allowed to do here, and
 what the agent must escalate.
 
+## CoWork baseline rules
+- Treat this directory as the CoWork project home. Start each task from
+  this `CLAUDE.md`, then use `skills/` for workflow-specific instructions.
+- For project work, prefer relative paths from this directory when using
+  file, search, edit, shell, or Python tools.
+- Search, read, and write inside this project unless the user explicitly
+  asks for an external path or source. If an external path is needed,
+  explain why before using it.
+- Never delete, move, or overwrite user files unless the user explicitly
+  asks for that exact change.
+- When information is missing or ambiguous, create a proposal or draft and
+  escalate the open question instead of guessing.
+- Customer-specific rules and workflow details belong below this baseline
+  and may make these rules stricter for the use case.
+
 ## What the agent does
 - ...
 

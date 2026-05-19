@@ -363,7 +363,7 @@ class TestToolResultMessageFactoryBuildMessage:
         assert result["content"].startswith("x" * 100)
 
     async def test_handle_based_message_for_large_result(self) -> None:
-        """Large results use the tool result store and produce file reference.
+        """Large results use the tool result store and expose fetch_result handle.
 
         Note: file_read results are never stored (to avoid infinite loops),
         so we use a different tool name here.
@@ -397,10 +397,13 @@ class TestToolResultMessageFactoryBuildMessage:
         put_kwargs = store.put.call_args
         assert put_kwargs.kwargs["tool_name"] == "shell"
 
-        # Content should contain file reference
+        # Content should contain an opaque fetch_result handle.
         content = json.loads(result["content"])
-        assert "result_file" in content
+        assert "result_file" not in content
+        assert content["truncated"] is True
+        assert content["handle_id"] == "handle-large-1"
         assert "size_chars" in content
+        assert "fetch_result" in content["message"]
 
     async def test_store_not_used_for_small_result(self) -> None:
         """Store is not called when result is below threshold."""
@@ -534,7 +537,10 @@ class TestToolResultMessageFactoryPerToolThreshold:
 
         store.put.assert_awaited_once()
         content = json.loads(result["content"])
-        assert "result_file" in content
+        assert "result_file" not in content
+        assert content["truncated"] is True
+        assert content["handle_id"] == "handle-pertool-1"
+        assert "fetch_result" in content["message"]
 
     async def test_no_override_falls_back_to_global_default(self) -> None:
         """Tool without ``tool_result_store_threshold`` uses the global value."""

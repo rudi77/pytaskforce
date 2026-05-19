@@ -45,7 +45,13 @@ class TestCreateProject:
         assert body["path"] == str(target.resolve())
         assert body["project_id"]
 
-        assert (target / "CLAUDE.md").exists()
+        claude_md = target / "CLAUDE.md"
+        assert claude_md.exists()
+        claude_text = claude_md.read_text(encoding="utf-8")
+        assert "## CoWork baseline rules" in claude_text
+        assert "prefer relative paths from this directory" in claude_text
+        assert "external path or source" in claude_text
+        assert "Never delete, move, or overwrite user files" in claude_text
         assert (target / "skills").is_dir()
 
     def test_existing_mode_requires_existing_directory(
@@ -91,7 +97,9 @@ class TestCreateProject:
             json={"name": "X", "path": str(target), "mode": "existing"},
         )
         assert resp.status_code == 201
-        assert (target / "CLAUDE.md").read_text() == "# Hands off"
+        assert (
+            (target / "CLAUDE.md").read_text(encoding="utf-8") == "# Hands off"
+        )
 
     def test_duplicate_path_returns_409(
         self, client: TestClient, tmp_path: Path

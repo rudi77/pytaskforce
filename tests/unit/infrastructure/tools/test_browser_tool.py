@@ -234,6 +234,23 @@ class TestExecuteActions:
         assert result["success"] is False
         assert "url" in result["error"].lower()
 
+    async def test_import_error_is_terminal_tool_unavailable(
+        self, tool: BrowserTool
+    ) -> None:
+        worker = MagicMock()
+        worker.submit = AsyncMock(side_effect=ImportError())
+
+        with patch(
+            "taskforce.infrastructure.tools.native.browser_tool._PlaywrightWorker.get",
+            return_value=worker,
+        ):
+            result = await tool.execute(action="navigate", url="https://example.com")
+
+        assert result["success"] is False
+        assert result["error_kind"] == "tool_unavailable"
+        assert result["terminal_failure"] is True
+        assert result["details"]["dependency"] == "playwright"
+
     # --- click ---
 
     async def test_click_success(
@@ -638,8 +655,8 @@ class TestHeadlessFallback:
         async_pw.start = AsyncMock(return_value=playwright_obj)
 
         with patch(
-            "playwright.async_api.async_playwright",
-            return_value=async_pw,
+            "taskforce.infrastructure.tools.native.browser_tool._get_async_playwright",
+            return_value=MagicMock(return_value=async_pw),
         ):
             session = _BrowserSession()
             await session.start(headless=True)
@@ -662,8 +679,8 @@ class TestHeadlessFallback:
         async_pw.start = AsyncMock(return_value=playwright_obj)
 
         with patch(
-            "playwright.async_api.async_playwright",
-            return_value=async_pw,
+            "taskforce.infrastructure.tools.native.browser_tool._get_async_playwright",
+            return_value=MagicMock(return_value=async_pw),
         ):
             session = _BrowserSession()
             with pytest.raises(RuntimeError, match="display unavailable"):

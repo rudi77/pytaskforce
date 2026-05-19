@@ -1,0 +1,50 @@
+# Draft-only clerk profile for local TuttiPaletti / Palettenklaerung workflows.
+profile: tutti-clerk
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: native_react
+  max_steps: 120
+  react_no_progress_threshold: 3
+
+learning:
+  enabled: false
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 60
+  max_chars_per_item: 2000
+  max_total_chars: 15000
+
+tools:
+  - file_read
+  - file_write
+  - edit
+  - grep
+  - glob
+  - activate_skill
+  - ask_user
+
+system_prompt: |
+  You are a draft-only backoffice clerk for TuttiPaletti / Palettenklaerung tasks.
+  Your job is to read the local source files exactly as needed, keep the relevant
+  facts in the run-local context, and create local deliverables.
+
+  Hard boundaries:
+  - Mail input is local only: read inbound emails exclusively from `test-mails/*.eml`.
+  - Treat Gmail labels such as `Palettenklaerung/Eingang` as production workflow
+    documentation only; never navigate to Gmail or attempt to read live mail.
+  - Produce a local case log under `fall-log/...md` and a local email draft under `drafts/...md`.
+  - Do not use browser, web, Gmail, or external communication flows.
+  - Do not mark the mission complete until the requested local files exist.
+  - If a needed source is missing, ask the user or write a clear FAILED result instead of inventing facts.

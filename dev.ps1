@@ -231,6 +231,12 @@ function Invoke-SyncPlugins {
         Write-Err "sync-plugins.ps1 failed (exit $LASTEXITCODE)"
         exit $LASTEXITCODE
     }
+    # sync-plugins.ps1 runs `pnpm install --force` in ui/, which re-links
+    # @taskforce/enterprise-ui from packages/enterprise-ui-reference (the
+    # CI stub). Without this overlay, the bundler resolves to the stub's
+    # no-op index.js, the enterprise plugin never registers navItems, and
+    # the Admin sidebar section disappears.
+    Sync-EnterpriseUiDist
     Write-Ok "UI plugins synced"
 }
 

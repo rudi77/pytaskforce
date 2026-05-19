@@ -113,6 +113,28 @@ function persistAgentKey(conversationId: string | undefined, key: string): void 
   }
 }
 
+function loadRightPanelOpen(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const storage = window.localStorage;
+    if (typeof storage.getItem !== "function") return true;
+    return storage.getItem(RIGHT_PANEL_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function persistRightPanelOpen(open: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    const storage = window.localStorage;
+    if (typeof storage.setItem !== "function") return;
+    storage.setItem(RIGHT_PANEL_KEY, open ? "1" : "0");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Breadcrumb header
 // ---------------------------------------------------------------------------
@@ -441,11 +463,10 @@ export default function ChatPage() {
   // survives page reloads but isn't synced across devices (it's a
   // viewport-level affordance, not a setting).
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(RIGHT_PANEL_KEY) !== "0";
+    return loadRightPanelOpen();
   });
   useEffect(() => {
-    window.localStorage.setItem(RIGHT_PANEL_KEY, rightPanelOpen ? "1" : "0");
+    persistRightPanelOpen(rightPanelOpen);
   }, [rightPanelOpen]);
 
   // The "project name" shown in the breadcrumb only appears when the
@@ -526,6 +547,7 @@ export default function ChatPage() {
 
   const onSend = async (text: string, attachments: FileMetadata[]) => {
     if (!conversationId) return;
+    setRightPanelOpen(true);
     queryClient.setQueryData<ChatMessageT[]>(
       queryKeys.conversationMessages(conversationId),
       (prev) => [
