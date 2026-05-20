@@ -208,7 +208,8 @@
       "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_message_history_manager.py -v)",
       "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
       "Bash(xargs grep:*)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell(Get-Command *)"
     ],
     "deny": [
       ".env",

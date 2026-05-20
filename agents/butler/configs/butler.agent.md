@@ -32,6 +32,7 @@ tools:
   - wiki
   - web_fetch
   - web_search
+  - fetch_result
   - send_notification
   - gmail
   - google_drive
