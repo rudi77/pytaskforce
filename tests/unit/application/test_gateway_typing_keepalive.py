@@ -143,6 +143,38 @@ async def test_keepalive_cancelled_when_executor_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_keepalive_skipped_for_legacy_sender_without_send_typing() -> None:
+    """Senders that pre-date the ``send_typing`` Protocol addition must
+    not trigger the keepalive loop. Otherwise the loop's broad
+    ``except Exception`` would silently catch an ``AttributeError`` on
+    every 4 s tick — no behavioural impact, but DEBUG-log spam per
+    active chat for third-party / older integrations.
+    """
+
+    class _LegacySender:
+        """Implements ``send`` but not ``send_typing`` (pre-typing API)."""
+
+        @property
+        def channel(self) -> str:
+            return "telegram"
+
+        async def send(self, **kwargs: Any) -> None:
+            self.last = kwargs
+
+    sender = _LegacySender()
+    gateway = _build_gateway(_SlowExecutor(), sender)
+
+    response = await gateway.handle_message(_inbound())
+    assert response.status == "completed"
+
+    # No keepalive task was ever created.
+    pending = [
+        t for t in asyncio.all_tasks() if t.get_name().startswith("typing-keepalive:")
+    ]
+    assert pending == [], f"unexpected keepalive task: {pending}"
+
+
+@pytest.mark.asyncio
 async def test_keepalive_swallows_per_iteration_errors() -> None:
     """A flaky sender.send_typing must NOT propagate into the main path."""
 

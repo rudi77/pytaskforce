@@ -1486,13 +1486,15 @@ class CommunicationGateway:
         """Start a background task that refreshes the channel typing indicator.
 
         Returns ``None`` when no outbound sender is configured for the
-        channel (e.g. a bot-less REST integration) — callers must handle
-        that path. The caller owns the returned task and is responsible
-        for cancelling it.
+        channel, or when the sender pre-dates the ``send_typing`` addition
+        to :class:`OutboundSenderProtocol`. The keepalive loop's broad
+        ``except`` would otherwise swallow an ``AttributeError`` on every
+        4 s tick, polluting logs with no benefit. The caller owns the
+        returned task and is responsible for cancelling it.
         """
         senders = self._resolve_outbound_senders()
         sender = senders.get(channel)
-        if sender is None:
+        if sender is None or not hasattr(sender, "send_typing"):
             return None
         return asyncio.create_task(
             _typing_keepalive_loop(sender, recipient_id),

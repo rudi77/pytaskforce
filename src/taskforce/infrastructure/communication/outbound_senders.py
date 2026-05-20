@@ -564,5 +564,11 @@ class TeamsOutboundSender:
         wiring it here requires the same full Bot Framework client the
         ``send`` placeholder is also still missing. No-op for now so the
         gateway keepalive loop does not raise.
+
+        TODO: when the real Teams sender lands, ``recipient_id`` here is
+        the flat gateway ``conversation_id``, not a serialized
+        ``ConversationReference``. The Teams adapter will need a lookup
+        (same one the eventual ``send()`` will use) before invoking
+        ``continueConversation``.
         """
         del recipient_id
