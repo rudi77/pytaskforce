@@ -98,8 +98,21 @@ class TestProfileLoaderLoad:
             "edit",
             "grep",
             "glob",
+            "call_agents_parallel",
             "activate_skill",
             "ask_user",
+        ]
+        assert config["sub_agents"] == [
+            {
+                "specialist": "tutti-clerk",
+                "description": (
+                    "Draft-only mail worker for exactly one local "
+                    "TuttiPaletti / Palettenklaerung email. Use one "
+                    "worker per `test-mails/*.eml` file when processing "
+                    "multiple mails; the worker writes only its own "
+                    "`fall-log/...md` and `drafts/...md` outputs.\n"
+                ),
+            }
         ]
         forbidden_tools = (
             "browser",

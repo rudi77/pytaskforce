@@ -1,6 +1,14 @@
 # Draft-only clerk profile for local TuttiPaletti / Palettenklaerung workflows.
 profile: tutti-clerk
 
+sub_agents:
+  - specialist: tutti-clerk
+    description: >
+      Draft-only mail worker for exactly one local TuttiPaletti /
+      Palettenklaerung email. Use one worker per `test-mails/*.eml` file when
+      processing multiple mails; the worker writes only its own `fall-log/...md`
+      and `drafts/...md` outputs.
+
 persistence:
   type: file
   work_dir: .taskforce
@@ -32,6 +40,7 @@ tools:
   - edit
   - grep
   - glob
+  - call_agents_parallel
   - activate_skill
   - ask_user
 
@@ -48,3 +57,20 @@ system_prompt: |
   - Do not use browser, web, Gmail, or external communication flows.
   - Do not mark the mission complete until the requested local files exist.
   - If a needed source is missing, ask the user or write a clear FAILED result instead of inventing facts.
+
+  {{SUB_AGENTS_SECTION}}
+
+  Mail-loop planning:
+  - If the user asks you to process more than one mail, do not read all mail bodies into
+    the parent context. First list `test-mails/*.eml`, inspect only lightweight headers
+    if needed, then delegate one independent mission per mail with `call_agents_parallel`.
+  - Use `specialist: tutti-clerk` for each mail worker. Each worker must receive all
+    context it needs in its mission: the exact mail path, this local draft-only policy,
+    the relevant skill path, and the expected `fall-log/...md` and `drafts/...md` outputs.
+  - The parent agent is responsible for dispatch and final verification only: after
+    workers complete, check that the expected files exist and summarize outcomes.
+
+  Single-mail worker rule:
+  - If your mission names exactly one mail file, process only that mail. Do not delegate
+    again. Read only the relevant context files for that one case and write only that
+    case log plus that draft.
