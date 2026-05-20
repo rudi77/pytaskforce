@@ -13,6 +13,7 @@ cross-session conversations.
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -74,6 +75,35 @@ def _extract_agent_mention(text: str) -> tuple[str | None, str]:
     if match is None:
         return (None, text)
     return (match.group(1), match.group(2))
+
+
+# Telegram's ``sendChatAction`` indicator lasts ~5 s server-side; refresh
+# every 4 s while the agent composes a reply so the user keeps seeing
+# "typing…" without gaps. Channels with longer-lived indicators (Teams,
+# Discord) tolerate the same cadence.
+_TYPING_KEEPALIVE_INTERVAL_S = 4.0
+
+
+async def _typing_keepalive_loop(
+    sender: OutboundSenderProtocol,
+    recipient_id: str,
+    *,
+    interval: float = _TYPING_KEEPALIVE_INTERVAL_S,
+) -> None:
+    """Re-send a typing indicator on ``sender`` until cancelled.
+
+    Fires once immediately so the user sees "typing…" without waiting
+    for the first interval, then loops. Each per-iteration error is
+    swallowed (the protocol contract says ``send_typing`` does that
+    itself; this is defence in depth) — a flaky indicator must never
+    block the surrounding execution.
+    """
+    while True:
+        try:
+            await sender.send_typing(recipient_id)
+        except Exception:  # noqa: BLE001 — best-effort signal
+            pass
+        await asyncio.sleep(interval)
 
 
 # Patterns that indicate a status-string response rather than a real answer.
@@ -1413,6 +1443,13 @@ class CommunicationGateway:
             )
             progress_callback = _make_recorder_callback(recorder)
 
+        typing_task: asyncio.Task[None] | None = None
+        if source_channel and source_conversation_id:
+            typing_task = self._start_typing_keepalive(
+                channel=source_channel,
+                recipient_id=source_conversation_id,
+            )
+
         try:
             return await self._executor.execute_mission(
                 mission=message,
@@ -1427,12 +1464,40 @@ class CommunicationGateway:
                 plugin_path=options.plugin_path,
             )
         finally:
+            if typing_task is not None:
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
             if recorder is not None and source_channel and source_conversation_id:
                 self._store_action_log(
                     channel=source_channel,
                     conversation_id=source_conversation_id,
                     log=recorder.finalize(),
                 )
+
+    def _start_typing_keepalive(
+        self,
+        *,
+        channel: str,
+        recipient_id: str,
+    ) -> asyncio.Task[None] | None:
+        """Start a background task that refreshes the channel typing indicator.
+
+        Returns ``None`` when no outbound sender is configured for the
+        channel (e.g. a bot-less REST integration) — callers must handle
+        that path. The caller owns the returned task and is responsible
+        for cancelling it.
+        """
+        senders = self._resolve_outbound_senders()
+        sender = senders.get(channel)
+        if sender is None:
+            return None
+        return asyncio.create_task(
+            _typing_keepalive_loop(sender, recipient_id),
+            name=f"typing-keepalive:{channel}:{recipient_id}",
+        )
 
     async def _finalize_response(
         self,

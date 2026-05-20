@@ -433,6 +433,41 @@ class TelegramOutboundSender:
             f"{self._max_retries + 1} attempts: {last_error}"
         ) from last_error
 
+    async def send_typing(self, recipient_id: str) -> None:
+        """Show a transient "typing…" indicator in the recipient's chat.
+
+        Uses Telegram's ``sendChatAction`` endpoint. The indicator lasts
+        ~5 s server-side, so the gateway's keepalive loop re-invokes this
+        every ~4 s while the agent composes a reply. Fire-and-forget by
+        design: no retry, short timeout, and any error is logged but
+        swallowed — a flaky indicator must never block message delivery.
+        """
+        if not recipient_id:
+            return
+        url = f"{self._api_base}/sendChatAction"
+        payload = {"chat_id": recipient_id, "action": "typing"}
+        try:
+            session = await self._get_session()
+            async with session.post(
+                url,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as response:
+                if response.status >= 400:
+                    body = await response.text()
+                    self._logger.debug(
+                        "telegram.typing_failed",
+                        status=response.status,
+                        response=body[:200],
+                        recipient_id=recipient_id,
+                    )
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            self._logger.debug(
+                "telegram.typing_network_error",
+                error=str(exc),
+                recipient_id=recipient_id,
+            )
+
     async def close(self) -> None:
         """Close the underlying HTTP session."""
         await self._close_session()
@@ -520,3 +555,14 @@ class TeamsOutboundSender:
             "File upload for Teams is not implemented. "
             "Use a document link in the message text instead."
         )
+
+    async def send_typing(self, recipient_id: str) -> None:
+        """Placeholder — Bot Framework typing activity is not yet implemented.
+
+        Bot Framework supports a ``typing`` activity dispatched via
+        ``continueConversation`` against a stored ``ConversationReference``;
+        wiring it here requires the same full Bot Framework client the
+        ``send`` placeholder is also still missing. No-op for now so the
+        gateway keepalive loop does not raise.
+        """
+        del recipient_id

@@ -107,6 +107,10 @@ class AcpOutboundSender:
     ) -> None:
         raise NotImplementedError("ACP file attachments are not supported by the current transport")
 
+    async def send_typing(self, recipient_id: str) -> None:
+        """ACP has no human-facing UI — typing indicators are a no-op."""
+        del recipient_id
+
     def _resolve(self, recipient_id: str) -> AcpPeer:
         peer = self._runtime.peers.get(recipient_id)
         if peer is None:

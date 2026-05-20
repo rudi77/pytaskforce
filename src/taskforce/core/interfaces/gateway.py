@@ -76,6 +76,26 @@ class OutboundSenderProtocol(Protocol):
         """
         ...
 
+    async def send_typing(self, recipient_id: str) -> None:
+        """Signal that a reply is being composed (e.g. Telegram "typing…").
+
+        Channels with a transient indicator (Telegram's ``sendChatAction``,
+        Teams' ``typing`` activity) implement this; channels without a
+        native indicator should make it a no-op.
+
+        Semantics:
+            * The indicator is short-lived (Telegram: ~5 s). The gateway's
+              keepalive loop re-invokes this method every ~4 s while the
+              agent is composing a reply.
+            * Failures must be swallowed inside the implementation — a
+              flaky indicator must never block message delivery.
+
+        Args:
+            recipient_id: Channel-specific recipient (chat_id, conversation
+                reference, etc.) — the same value passed to :meth:`send`.
+        """
+        ...
+
 
 class InboundAdapterProtocol(Protocol):
     """Normalize raw webhook payloads from an external channel.
