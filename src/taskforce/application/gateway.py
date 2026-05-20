@@ -1167,8 +1167,27 @@ class CommunicationGateway:
             metadata=queue_metadata,
         )
 
-        future = await self._request_queue.enqueue(request)
-        result = await future
+        # ADR-016 Phase 4: when the queue path is taken the actual agent
+        # run happens in a separate ``RequestProcessor`` (typically the
+        # butler daemon's ``PersistentAgentService``), so the typing
+        # wiring inside ``_execute_agent`` never runs. Start the
+        # keepalive here so users see "typing…" while their request is
+        # queued AND while it executes — same lifetime as ``await
+        # future``.
+        typing_task: asyncio.Task[None] | None = self._start_typing_keepalive(
+            channel=message.channel,
+            recipient_id=message.conversation_id,
+        )
+        try:
+            future = await self._request_queue.enqueue(request)
+            result = await future
+        finally:
+            if typing_task is not None:
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
 
         # Sync to legacy store for backward compatibility.
         final_history = await conversation_manager.get_messages(conv_id)

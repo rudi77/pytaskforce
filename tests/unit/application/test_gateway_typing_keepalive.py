@@ -190,3 +190,58 @@ async def test_keepalive_swallows_per_iteration_errors() -> None:
     response = await gateway.handle_message(_inbound())
     assert response.status == "completed"
     assert sender.typing_calls, "send_typing was still invoked despite errors"
+
+
+@pytest.mark.asyncio
+async def test_keepalive_fires_on_queue_path(tmp_path) -> None:
+    """Regression: ADR-016 Phase 4 routes through ``_handle_via_queue``
+    which bypasses ``_execute_agent``. Without explicit wiring on the
+    queue path the typing indicator never fires for the live
+    Butler+PersistentAgentService deployment — exactly the symptom
+    reported by users running ``dev.ps1``. This test pins typing on
+    the queue path so the regression cannot silently come back.
+    """
+    from taskforce.application.conversation_manager import ConversationManager
+    from taskforce.application.request_queue import RequestProcessor, RequestQueue
+    from taskforce.infrastructure.persistence.file_conversation_store import (
+        FileConversationStore,
+    )
+
+    conv_store = FileConversationStore(work_dir=str(tmp_path))
+    conv_manager = ConversationManager(conv_store)
+    sender = _RecordingSender()
+    executor = _SlowExecutor()
+    queue = RequestQueue(max_size=10)
+
+    gateway = CommunicationGateway(
+        executor=executor,
+        conversation_store=InMemoryGatewayConversationStore(),
+        recipient_registry=InMemoryRecipientRegistry(),
+        outbound_senders={"telegram": sender},
+        conversation_manager=conv_manager,
+        request_queue=queue,
+    )
+
+    processor = RequestProcessor(queue, executor, conversation_manager=conv_manager)
+    consumer = asyncio.create_task(processor.run())
+    try:
+        response = await asyncio.wait_for(
+            gateway.handle_message(_inbound()), timeout=5.0
+        )
+    finally:
+        consumer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await consumer
+
+    assert response.status == "completed"
+    assert sender.typing_calls, (
+        "queue path must also fire send_typing — without this wiring the "
+        "live Butler/PersistentAgentService deployment shows no indicator"
+    )
+    assert sender.typing_calls[0] == "chat-42"
+
+    # And no leaked keepalive tasks after the handler returned.
+    pending = [
+        t for t in asyncio.all_tasks() if t.get_name().startswith("typing-keepalive:")
+    ]
+    assert pending == [], f"leaked typing-keepalive tasks: {pending}"
