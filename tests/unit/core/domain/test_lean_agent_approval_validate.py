@@ -113,7 +113,7 @@ async def test_validator_failure_short_circuits_approval() -> None:
 
     assert outcome is not None
     assert outcome["success"] is False
-    assert outcome["approval_status"] == "error"
+    assert outcome["error_kind"] == "invalid_params"
     assert "missing remind_at" in outcome["error"]
 
 
@@ -143,7 +143,7 @@ async def test_validator_can_return_plain_bool() -> None:
 
     assert outcome is not None
     assert outcome["success"] is False
-    assert outcome["approval_status"] == "error"
+    assert outcome["error_kind"] == "invalid_params"
 
 
 @pytest.mark.asyncio
@@ -220,9 +220,7 @@ async def test_scheduled_workflow_origin_auto_approves_opted_in_tool() -> None:
         )
 
     assert outcome is None, "auto-approve must let the call proceed"
-    assert approver.calls == [], (
-        "approval service must not be consulted on the auto-approve path"
-    )
+    assert approver.calls == [], "approval service must not be consulted on the auto-approve path"
 
 
 @pytest.mark.asyncio
@@ -404,9 +402,9 @@ async def test_validate_fail_payload_carries_error_kind() -> None:
     )
 
     assert outcome is not None
-    assert outcome["approval_status"] == "error"
-    assert outcome["error_kind"] == "approval_error"
-    # Validation failures are RETRYABLE — re-issuing with corrected
-    # args is fine, hence terminal_failure=False here. The error_kind
-    # still marks the gate-level classification.
+    # Validation failures use a distinct ``invalid_params`` kind — NOT the
+    # terminal ``approval_error`` (which the spec reserves for a genuine
+    # approval-service crash). Re-issuing with corrected args is fine, so
+    # terminal_failure stays False (see approval-gating.md invariants / F3).
+    assert outcome["error_kind"] == "invalid_params"
     assert outcome["terminal_failure"] is False
