@@ -209,7 +209,9 @@
       "Bash(PYTHONPATH=src pytest -q tests/unit/core/domain/test_token_analytics.py tests/unit/infrastructure/llm/test_token_analytics_callback.py -v)",
       "Bash(xargs grep:*)",
       "Bash(git push *)",
-      "PowerShell(Get-Command *)"
+      "PowerShell(Get-Command *)",
+      "PowerShell(gh project *)",
+      "PowerShell(gh label *)"
     ],
     "deny": [
       ".env",

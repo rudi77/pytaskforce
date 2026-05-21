@@ -63,8 +63,9 @@ technical:
     # native_react still does a single loop for simple tasks — these are caps,
     # not a fixed budget.
     max_steps: 60
-    planning_strategy_params:
-      max_step_iterations: 3
+    enable_fast_path: true
+    planning_strategy: native_react
+    max_parallel_tools: 3
 ---
 
 # Butler Coordinator

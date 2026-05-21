@@ -50,7 +50,15 @@ system_prompt: |
   4. Write incrementally. A partial deliverable beats a missing one.
 
 agent:
-  planning_strategy: native_react
+  # Trial: SPAR (Sense -> Plan -> Act -> Reflect) instead of native_react
+  # to test whether the explicit Reflect phase fixes the "agent forgets
+  # to write deliverable" pattern more cleanly than the heuristic
+  # pivot-nudges built on top of native_react.
+  planning_strategy: spar
+  planning_strategy_params:
+    max_step_iterations: 3
+    max_plan_steps: 12
+    reflect_every_step: true
   max_steps: 180
   max_parallel_tools: 4
   # Anti-compression: keep tool results inline (up to 3 KB) so the
