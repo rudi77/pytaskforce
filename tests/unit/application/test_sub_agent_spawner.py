@@ -210,6 +210,7 @@ class TestSpecialistResolution:
         factory.create_agent = AsyncMock(return_value=FakeAgent())
         return factory
 
+    @pytest.mark.spec("sub-agents.unknown_specialist_raises_not_falls_back_to_parent")
     async def test_unresolvable_specialist_raises_instead_of_using_parent(
         self, fake_factory: MagicMock
     ) -> None:
@@ -301,6 +302,7 @@ class _RecoveringAgent(FakeAgent):
         )
 
 
+@pytest.mark.spec("sub-agents.success_result_clears_error_and_error_kind")
 @pytest.mark.asyncio
 async def test_successful_outcome_clears_transient_error_kind() -> None:
     """A transient mid-run ERROR must not bleed into a successful result."""
@@ -320,3 +322,82 @@ async def test_successful_outcome_clears_transient_error_kind() -> None:
     # if the specialist had failed.
     assert result.error is None
     assert result.error_kind is None
+
+
+class _SnapshotAgent(FakeAgent):
+    """Agent whose context yields a snapshot and records snapshot-vs-close order."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[str] = []
+        self.skill_manager = None
+        ctx = MagicMock()
+        ctx.is_initialized = True
+
+        def _snap(**_kwargs: Any) -> str:
+            self.events.append("snapshot")
+            return "CTX_SNAPSHOT"
+
+        ctx.snapshot = MagicMock(side_effect=_snap)
+        self.context = ctx
+
+    async def close(self) -> None:
+        self.events.append("close")
+
+
+@pytest.mark.spec("sub-agents.context_snapshot_captured_before_close")
+@pytest.mark.asyncio
+async def test_context_snapshot_captured_before_agent_close() -> None:
+    """The sub-agent's context snapshot is taken while the context is still
+    live — strictly before ``agent.close()`` runs."""
+    agent = _SnapshotAgent()
+    factory = MagicMock()
+    factory.config_dir = "/tmp/configs"
+    factory.create_agent = AsyncMock(return_value=agent)
+
+    spawner = SubAgentSpawner(agent_factory=factory)
+    result = await spawner.spawn(
+        SubAgentSpec(mission="do work", parent_session_id="p")
+    )
+
+    assert result.context_snapshot == "CTX_SNAPSHOT"
+    assert agent.events == ["snapshot", "close"]
+
+
+class _StaleStateAgent(FakeAgent):
+    """Agent whose state manager holds a stale ask_user pause."""
+
+    def __init__(self, initial_state: dict[str, Any]) -> None:
+        super().__init__()
+        self.state_manager = MagicMock()
+        self.state_manager.load_state = AsyncMock(return_value=initial_state)
+        self.state_manager.save_state = AsyncMock()
+
+
+@pytest.mark.spec("sub-agents.stale_ask_user_state_cleared_on_reuse")
+@pytest.mark.asyncio
+async def test_stale_ask_user_state_cleared_on_session_reuse() -> None:
+    """A reused deterministic sub-agent session must not replay a previous
+    ask_user pause as the answer to the new mission — the stale pause keys
+    are cleared and persisted before execution starts."""
+    stale_state: dict[str, Any] = {
+        "pending_question": {"question": "Which file?", "missing": ["path"]},
+        "paused_messages": [{"role": "user", "content": "old mission"}],
+        "paused_tool_call_id": "tc_old",
+        "paused_step": 2,
+    }
+    agent = _StaleStateAgent(stale_state)
+    factory = MagicMock()
+    factory.config_dir = "/tmp/configs"
+    factory.create_agent = AsyncMock(return_value=agent)
+
+    spawner = SubAgentSpawner(agent_factory=factory)
+    await spawner.spawn(
+        SubAgentSpec(mission="a brand new mission", parent_session_id="p")
+    )
+
+    agent.state_manager.save_state.assert_awaited_once()
+    saved_state = agent.state_manager.save_state.await_args.args[1]
+    assert "pending_question" not in saved_state
+    assert "paused_messages" not in saved_state
+    assert "paused_tool_call_id" not in saved_state

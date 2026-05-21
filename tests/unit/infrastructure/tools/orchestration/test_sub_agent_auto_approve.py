@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from taskforce.infrastructure.tools.orchestration.agent_tool import AgentTool
 from taskforce.infrastructure.tools.orchestration.sub_agent_tool import SubAgentTool
 
@@ -60,11 +62,13 @@ class TestAgentToolAutoApprove:
 class TestSubAgentToolAutoApprove:
     """Tests for SubAgentTool auto_approve flag."""
 
+    @pytest.mark.spec("sub-agents.auto_approve_disables_parent_approval_only")
     def test_requires_approval_default(self) -> None:
         """By default, SubAgentTool requires approval."""
         tool = _make_sub_agent_tool()
         assert tool.requires_approval is True
 
+    @pytest.mark.spec("sub-agents.auto_approve_disables_parent_approval_only")
     def test_requires_approval_with_auto_approve(self) -> None:
         """When auto_approve is True, approval is not required."""
         tool = _make_sub_agent_tool(auto_approve=True)

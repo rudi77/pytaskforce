@@ -144,6 +144,7 @@ class TestParallelAgentToolExecution:
         assert result["failed"] == 0
         assert len(spawner.calls) == 3
 
+    @pytest.mark.spec("sub-agents.parallel_partial_failure_keeps_siblings_running")
     @pytest.mark.asyncio
     async def test_partial_failure(self) -> None:
         """One failing mission does not cancel others."""
@@ -169,6 +170,43 @@ class TestParallelAgentToolExecution:
         failed = [r for r in result["results"] if not r.get("success")]
         assert len(failed) == 1
         assert "Spawner failed" in failed[0]["error"]
+
+    @pytest.mark.spec("sub-agents.oversized_parallel_result_persisted_with_pointer")
+    @pytest.mark.asyncio
+    async def test_oversized_result_persisted_with_pointer(self, tmp_path) -> None:
+        """A sub-result larger than the inline limit is persisted to disk and
+        replaced inline with a file pointer — the full text is never lost."""
+        big_text = "X" * 5000
+        spawner = FakeSpawner(
+            results=[
+                SubAgentResult(
+                    session_id="sess-bigresult",
+                    status="completed",
+                    success=True,
+                    final_message=big_text,
+                )
+            ]
+        )
+        tool = ParallelAgentTool(
+            sub_agent_spawner=spawner,
+            profile="dev",
+            work_dir=str(tmp_path),
+        )
+
+        result = await tool.execute(
+            missions=[{"mission": "produce a long report"}],
+            _parent_session_id="parent-1",
+        )
+
+        assert result["success"] is True
+        inline = result["results"][0]["result"]
+        # The inline copy is truncated with a pointer, not the full 5000 chars.
+        assert len(inline) < 5000
+        assert "truncated at 3000 chars" in inline
+        # The full result is persisted under <work_dir>/sub_agent_results/.
+        persisted = list((tmp_path / "sub_agent_results").glob("*.md"))
+        assert len(persisted) == 1
+        assert persisted[0].read_text(encoding="utf-8") == big_text
 
     @pytest.mark.asyncio
     async def test_specialist_passed_to_spawner(self) -> None:
@@ -198,6 +236,7 @@ class TestParallelAgentToolExecution:
 
         assert spawner.calls[0].spec.planning_strategy == "plan_and_execute"
 
+    @pytest.mark.spec("sub-agents.parallel_respects_max_concurrency")
     @pytest.mark.asyncio
     async def test_concurrency_limit_respected(self) -> None:
         """Concurrency limit controls max parallel sub-agents."""

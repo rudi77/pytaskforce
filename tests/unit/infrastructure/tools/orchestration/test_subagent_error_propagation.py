@@ -85,6 +85,7 @@ class _FakeSpawner:
         return self._result
 
 
+@pytest.mark.spec("sub-agents.sub_agent_failure_does_not_crash_parent")
 @pytest.mark.asyncio
 async def test_parallel_tool_propagates_content_filter_kind() -> None:
     spawner = _FakeSpawner(
@@ -114,6 +115,7 @@ async def test_parallel_tool_propagates_content_filter_kind() -> None:
     assert entry["error"]
 
 
+@pytest.mark.spec("sub-agents.success_result_clears_error_and_error_kind")
 @pytest.mark.asyncio
 async def test_parallel_tool_passes_through_none_kind_on_success() -> None:
     spawner = _FakeSpawner(
@@ -141,6 +143,7 @@ async def test_parallel_tool_passes_through_none_kind_on_success() -> None:
     assert entry["result"] == "all done"
 
 
+@pytest.mark.spec("sub-agents.sub_agent_failure_does_not_crash_parent")
 @pytest.mark.asyncio
 async def test_parallel_tool_tags_unhandled_exception_as_kind_exception() -> None:
     """Spawner exceptions get the explicit ``exception`` kind, not silently ''."""

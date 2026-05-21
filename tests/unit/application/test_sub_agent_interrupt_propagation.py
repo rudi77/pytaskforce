@@ -34,6 +34,7 @@ def setup_function() -> None:
 
 
 @pytest.mark.spec("interruption.interrupt_propagates_to_sub_agents")
+@pytest.mark.spec("sub-agents.parent_interrupt_propagates_to_children")
 def test_interrupt_signals_every_active_child() -> None:
     parent = "session-A"
     child_a = _make_child()
@@ -61,6 +62,7 @@ def test_interrupt_isolated_per_parent() -> None:
     b_child.request_interrupt.assert_not_called()
 
 
+@pytest.mark.spec("sub-agents.late_child_spawn_after_interrupt_is_signalled")
 def test_late_child_inherits_interrupt() -> None:
     """A child registered *after* request_interrupt_for_parent must be flagged."""
     parent = "session-A"
