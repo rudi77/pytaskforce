@@ -261,6 +261,32 @@ class TestSlashCommandSkills:
         with pytest.raises(ValueError, match="Expected command starting with"):
             svc.resolve_slash_command("no-slash")
 
+    @pytest.mark.spec("skills.slash_name_override_resolves")
+    def test_resolve_slash_command_honours_slash_name_override(self) -> None:
+        """A skill with a `slash-name` override resolves via `/slash-name`."""
+        skill = _make_skill(
+            "code-review-deep",
+            slash_name="review",
+            skill_type=SkillType.PROMPT,
+        )
+        svc = _make_service([skill])
+
+        result_skill, args = svc.resolve_slash_command("/review def foo(): pass")
+        assert result_skill is not None
+        assert result_skill.name == "code-review-deep"
+        assert args == "def foo(): pass"
+
+    @pytest.mark.spec("skills.hierarchical_colon_name_resolves")
+    def test_resolve_slash_command_hierarchical_colon_name(self) -> None:
+        """A `:`-hierarchical skill name resolves as `/group:leaf`."""
+        skill = _make_skill("agents:reviewer", skill_type=SkillType.PROMPT)
+        svc = _make_service([skill])
+
+        result_skill, args = svc.resolve_slash_command("/agents:reviewer check this")
+        assert result_skill is not None
+        assert result_skill.name == "agents:reviewer"
+        assert args == "check this"
+
 
 # ---------------------------------------------------------------------------
 # Prompt Preparation
@@ -270,6 +296,7 @@ class TestSlashCommandSkills:
 class TestPromptPreparation:
     """Tests for prepare_skill_prompt."""
 
+    @pytest.mark.spec("skills.prompt_skill_substitutes_arguments")
     def test_prepare_prompt_substitutes_arguments(self) -> None:
         """prepare_skill_prompt replaces $ARGUMENTS in instructions."""
         skill = _make_skill(
@@ -311,6 +338,7 @@ class TestPromptPreparation:
 class TestSkillActivation:
     """Tests for skill activation/deactivation lifecycle."""
 
+    @pytest.mark.spec("skills.context_skill_activated_via_slash")
     def test_activate_skill_success(self) -> None:
         """Activating a known skill returns True."""
         skill = _make_skill("my-skill")
@@ -502,6 +530,7 @@ class TestRefreshDynamicSkillDirsWatcher:
         reset_skill_service()
         clear_extra_skill_dirs()
 
+    @pytest.mark.spec("skills.mtime_change_triggers_reload_on_next_list")
     def test_refresh_triggered_when_skill_file_changes(self, tmp_path) -> None:
         """A newly written SKILL.md under a registered dir triggers a refresh."""
         from taskforce.application.skill_service import (

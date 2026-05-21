@@ -103,6 +103,7 @@ class TestSkillLoader:
         assert "code-review" in skill_names
         assert "data-analysis" in skill_names
 
+    @pytest.mark.spec("skills.discovery_skips_broken_skill")
     def test_discover_metadata(self, skill_directory):
         """Should discover metadata from valid skills only."""
         loader = SkillLoader([str(skill_directory)])
@@ -152,6 +153,7 @@ class TestSkillLoader:
 
         assert skill is None
 
+    @pytest.mark.spec("skills.discovery_skips_broken_skill")
     def test_load_all_skills(self, skill_directory):
         """Load all skills should return list of valid skills."""
         loader = SkillLoader([str(skill_directory)])

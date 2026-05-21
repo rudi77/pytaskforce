@@ -99,6 +99,7 @@ class TestActivateSkillTool:
         # Verify auto-refresh was attempted via public method
         mock_skill_manager.refresh.assert_called_once()
 
+    @pytest.mark.spec("skills.activate_skill_auto_refreshes_registry")
     @pytest.mark.asyncio
     async def test_execute_skill_found_after_auto_refresh(self, tool):
         """Test that a newly created skill is found after auto-refresh."""
