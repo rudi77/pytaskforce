@@ -70,6 +70,7 @@ async def _stream(chunks):
         yield chunk
 
 
+@pytest.mark.spec("llm-service.stream_tool_call_start_emits_after_id_or_name_known")
 @pytest.mark.asyncio
 async def test_tool_call_start_emitted_when_id_arrives_after_arguments(
     temp_config_file,

@@ -334,6 +334,7 @@ class TestCompleteStreamDoneEvent:
 class TestCompleteStreamErrorHandling:
     """Test error handling - yields error events, no exceptions raised."""
 
+    @pytest.mark.spec("llm-service.complete_stream_yields_error_event_not_exception")
     async def test_complete_stream_api_error_yields_error_event(self, temp_config_file):
         """Test that API errors yield error events instead of raising."""
         service = LiteLLMService(config_path=temp_config_file)
@@ -354,6 +355,7 @@ class TestCompleteStreamErrorHandling:
             assert events[0]["type"] == "error"
             assert "Rate limit exceeded" in events[0]["message"]
 
+    @pytest.mark.spec("llm-service.complete_stream_yields_error_event_not_exception")
     async def test_complete_stream_no_exception_propagation(self, temp_config_file):
         """Test that exceptions during streaming are caught and yielded."""
         service = LiteLLMService(config_path=temp_config_file)

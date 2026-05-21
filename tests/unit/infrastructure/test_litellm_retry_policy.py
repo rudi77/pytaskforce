@@ -72,6 +72,7 @@ def test_transient_errors_are_retryable(exc: Exception) -> None:
         _FakeProviderError("402 billing hard-limit reached"),
     ],
 )
+@pytest.mark.spec("llm-service.auth_errors_are_non_retryable")
 def test_permanent_errors_are_not_retryable(exc: Exception) -> None:
     """4xx auth/quota errors must NOT trigger the retry path."""
     assert LiteLLMService._should_retry(exc) is False
@@ -120,6 +121,7 @@ def test_non_retryable_keywords_take_priority_over_retryable_signal() -> None:
         ),
     ],
 )
+@pytest.mark.spec("llm-service.transient_5xx_with_4xx_in_body_stays_retryable")
 def test_spurious_keyword_in_5xx_body_stays_retryable(exc: Exception) -> None:
     """5xx errors whose body merely *mentions* a previously-classified
     non-retryable keyword must stay retryable. Pinning the fix from
