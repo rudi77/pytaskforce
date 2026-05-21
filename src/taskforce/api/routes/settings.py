@@ -15,6 +15,7 @@ All endpoints require the ``system:config`` permission.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
@@ -69,6 +70,70 @@ def _rehydrate_for_section(section: str, store) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Secret redaction (#281)
+# ---------------------------------------------------------------------------
+
+_SECRET_KEY_RE = re.compile(r"(password|secret|token|api[_-]?key|apikey)", re.IGNORECASE)
+
+
+def _is_secret_key(key: str) -> bool:
+    """True when a settings field name denotes a secret value."""
+    return key.lower() == "key" or bool(_SECRET_KEY_RE.search(key))
+
+
+def _mask_secret(value: str) -> str:
+    """Mask a secret so logs / proxies / devtools never see the plaintext.
+
+    Keeps the first 3 + last 4 characters for recognisability
+    (``abc...wxyz``); values of 8 chars or fewer are fully masked.
+    """
+    if len(value) <= 8:
+        return "********"
+    return f"{value[:3]}...{value[-4:]}"
+
+
+def _redact_secrets(obj: Any) -> Any:
+    """Recursively mask secret-valued fields in a settings payload."""
+    if isinstance(obj, dict):
+        return {
+            k: (
+                _mask_secret(v)
+                if _is_secret_key(k) and isinstance(v, str) and v
+                else _redact_secrets(v)
+            )
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact_secrets(item) for item in obj]
+    return obj
+
+
+def _restore_redacted(new_obj: Any, stored_obj: Any) -> Any:
+    """Substitute still-masked secret values with the stored plaintext.
+
+    A GET returns secrets masked, so a GET -> edit -> PUT round-trip sends
+    untouched secret fields back as their masked form. Writing that mask
+    verbatim would corrupt the secret, so any secret field whose incoming
+    value equals the mask of the stored value is restored to the original.
+    """
+    if isinstance(new_obj, dict) and isinstance(stored_obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in new_obj.items():
+            sv = stored_obj.get(k)
+            if (
+                _is_secret_key(k)
+                and isinstance(v, str)
+                and isinstance(sv, str)
+                and v == _mask_secret(sv)
+            ):
+                out[k] = sv
+            else:
+                out[k] = _restore_redacted(v, sv)
+        return out
+    return new_obj
+
+
+# ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
 
@@ -114,9 +179,7 @@ class ChannelTestRequest(BaseModel):
     """Request body for sending a channel test message."""
 
     recipient: str = Field(
-        description=(
-            "Channel-specific recipient identifier (e.g. Telegram chat_id)."
-        ),
+        description=("Channel-specific recipient identifier (e.g. Telegram chat_id)."),
     )
     message: str = Field(
         default="Taskforce test message — channel is wired up.",
@@ -157,9 +220,9 @@ def list_settings(
     summary="Read a settings section",
     description=(
         "Return the JSON payload of `section`. Returns 404 if the section "
-        "has never been written. The payload is returned as-is — secret "
-        "fields are not redacted by the framework, so consumers that need "
-        "to render them in a UI must mask them client-side."
+        "has never been written. Secret fields (api keys, tokens, "
+        "passwords) are server-side masked (`abc...wxyz`) so plaintext "
+        "credentials never reach HTTP logs, proxy caches, or devtools."
     ),
 )
 def get_settings_section(
@@ -176,7 +239,7 @@ def get_settings_section(
         )
     return SettingsSectionResponse(
         name=section,
-        data=data,
+        data=_redact_secrets(data),
         is_known=section in KNOWN_SECTIONS,
     )
 
@@ -196,13 +259,17 @@ def put_settings_section(
     _permission: None = Depends(require_permission("tenant:manage")),
     store=Depends(get_settings_store),
 ) -> SettingsSectionResponse:
-    store.put(section, body.data)
+    # A GET returns secrets masked; on a GET -> edit -> PUT round-trip the
+    # untouched secret fields come back masked. Restore those to the stored
+    # plaintext so writing the section back never corrupts a secret (#281).
+    merged = _restore_redacted(body.data, store.get(section) or {})
+    store.put(section, merged)
     _rehydrate_for_section(section, store)
-    # Reflect the just-written value back so the client gets a fresh
-    # snapshot without a second round-trip.
+    # Reflect the just-written value back (secrets masked) so the client
+    # gets a fresh snapshot without a second round-trip.
     return SettingsSectionResponse(
         name=section,
-        data=store.get(section) or {},
+        data=_redact_secrets(store.get(section) or {}),
         is_known=section in KNOWN_SECTIONS,
     )
 
@@ -371,9 +438,7 @@ def _can_manage_bot(request: Request, bot: BotConfig) -> bool:
     return False
 
 
-def _bot_to_payload(
-    bot: BotConfig, *, mask_token: bool
-) -> BotConfigPayload:
+def _bot_to_payload(bot: BotConfig, *, mask_token: bool) -> BotConfigPayload:
     raw = bot.mask_token() if mask_token else bot.to_dict()
     return BotConfigPayload(**raw)
 
@@ -436,17 +501,11 @@ def _validate_payload(payload: BotConfigPayload, *, request: Request) -> BotConf
             code="tenant_manage_required",
             message="Creating tenant-owned bots requires tenant:manage permission.",
         )
-    if (
-        bot.owner_kind is BotOwnerKind.USER
-        and not is_admin
-        and bot.owner_user_id != caller_uid
-    ):
+    if bot.owner_kind is BotOwnerKind.USER and not is_admin and bot.owner_user_id != caller_uid:
         raise _http_exception(
             status_code=status.HTTP_403_FORBIDDEN,
             code="cross_user_bot_forbidden",
-            message=(
-                "Non-admins can only create user-owned bots for their own user_id."
-            ),
+            message=("Non-admins can only create user-owned bots for their own user_id."),
         )
     return bot
 

@@ -89,9 +89,7 @@ class TestCreateConversation:
         data = resp.json()
         assert data["conversation_id"] == "abc123def456789012345678abcdef00"
         assert data["channel"] == "rest"
-        mock_conversation_manager.create_new.assert_called_once_with(
-            "rest", None, project_id=None
-        )
+        mock_conversation_manager.create_new.assert_called_once_with("rest", None, project_id=None)
 
 
 class TestListConversations:
@@ -194,9 +192,7 @@ class TestListConversations:
 
 
 class TestAppendMessage:
-    def test_sends_message_and_gets_reply(
-        self, client, mock_conversation_manager, mock_executor
-    ):
+    def test_sends_message_and_gets_reply(self, client, mock_conversation_manager, mock_executor):
         # After append, get_messages should return updated messages.
         mock_conversation_manager.get_messages = AsyncMock(
             side_effect=[
@@ -208,7 +204,7 @@ class TestAppendMessage:
             ]
         )
         resp = client.post(
-            "/api/v1/conversations/conv-123/messages",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
             json={"message": "Hello"},
         )
         assert resp.status_code == 200
@@ -219,7 +215,7 @@ class TestAppendMessage:
 
     def test_empty_message_rejected(self, client):
         resp = client.post(
-            "/api/v1/conversations/conv-123/messages",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
             json={"message": "   "},
         )
         assert resp.status_code == 400
@@ -239,7 +235,7 @@ class TestAppendMessage:
         mock_conversation_manager.list_active = AsyncMock(
             return_value=[
                 ConversationInfo(
-                    conversation_id="conv-123",
+                    conversation_id="abc123def456789012345678abcdef00",
                     channel="rest",
                     started_at=datetime(2026, 3, 18, tzinfo=UTC),
                     last_activity=datetime(2026, 3, 18, tzinfo=UTC),
@@ -268,7 +264,7 @@ class TestAppendMessage:
         )
 
         resp = client.post(
-            "/api/v1/conversations/conv-123/messages",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
             json={"message": "Hi"},
         )
         assert resp.status_code == 200
@@ -293,7 +289,7 @@ class TestAppendMessage:
         mock_conversation_manager.list_active = AsyncMock(
             return_value=[
                 ConversationInfo(
-                    conversation_id="conv-123",
+                    conversation_id="abc123def456789012345678abcdef00",
                     channel="rest",
                     started_at=datetime(2026, 3, 18, tzinfo=UTC),
                     last_activity=datetime(2026, 3, 18, tzinfo=UTC),
@@ -315,7 +311,7 @@ class TestAppendMessage:
         )
 
         resp = client.post(
-            "/api/v1/conversations/conv-123/messages",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
             json={"message": "Hi"},
         )
         assert resp.status_code == 200
@@ -331,7 +327,7 @@ class TestGetMessages:
                 {"role": "assistant", "content": "Hello!"},
             ]
         )
-        resp = client.get("/api/v1/conversations/conv-123/messages")
+        resp = client.get("/api/v1/conversations/abc123def456789012345678abcdef00/messages")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -341,31 +337,47 @@ class TestGetMessages:
         mock_conversation_manager.get_messages = AsyncMock(
             return_value=[{"role": "assistant", "content": "Last"}]
         )
-        resp = client.get("/api/v1/conversations/conv-123/messages?limit=1")
+        resp = client.get("/api/v1/conversations/abc123def456789012345678abcdef00/messages?limit=1")
         assert resp.status_code == 200
-        mock_conversation_manager.get_messages.assert_called_once_with("conv-123", 1)
+        mock_conversation_manager.get_messages.assert_called_once_with(
+            "abc123def456789012345678abcdef00", 1
+        )
+
+    def test_unknown_conversation_returns_404(self, client):
+        """A conversation_id outside the caller's scoped manager is 404 —
+        the cross-tenant / cross-user ownership guard (#279). The mock
+        manager's active + archived lists do not contain this id."""
+        resp = client.get("/api/v1/conversations/not-my-conversation/messages")
+        assert resp.status_code == 404
+        assert "conversation_not_found" in resp.text
 
 
 class TestArchiveConversation:
     def test_archive(self, client, mock_conversation_manager):
         resp = client.post(
-            "/api/v1/conversations/conv-123/archive",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/archive",
             json={"summary": "Done"},
         )
         assert resp.status_code == 204
-        mock_conversation_manager.archive.assert_called_once_with("conv-123", "Done")
+        mock_conversation_manager.archive.assert_called_once_with(
+            "abc123def456789012345678abcdef00", "Done"
+        )
 
     def test_archive_without_summary(self, client, mock_conversation_manager):
-        resp = client.post("/api/v1/conversations/conv-123/archive")
+        resp = client.post("/api/v1/conversations/abc123def456789012345678abcdef00/archive")
         assert resp.status_code == 204
-        mock_conversation_manager.archive.assert_called_once_with("conv-123", None)
+        mock_conversation_manager.archive.assert_called_once_with(
+            "abc123def456789012345678abcdef00", None
+        )
 
 
 class TestDeleteConversation:
     def test_delete_returns_204(self, client, mock_conversation_manager):
-        resp = client.delete("/api/v1/conversations/conv-123")
+        resp = client.delete("/api/v1/conversations/abc123def456789012345678abcdef00")
         assert resp.status_code == 204
-        mock_conversation_manager.delete.assert_awaited_once_with("conv-123")
+        mock_conversation_manager.delete.assert_awaited_once_with(
+            "abc123def456789012345678abcdef00"
+        )
 
     def test_delete_unknown_returns_404(self, client, mock_conversation_manager):
         mock_conversation_manager.delete = AsyncMock(return_value=False)
@@ -378,33 +390,31 @@ class TestForkConversation:
     def test_forks_full_transcript(self, client, mock_conversation_manager):
         mock_conversation_manager.fork = AsyncMock(return_value=("new-conv-id", 2))
         resp = client.post(
-            "/api/v1/conversations/conv-source/fork",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/fork",
             json={"up_to_index": None, "channel": "rest"},
         )
         assert resp.status_code == 201
         body = resp.json()
         assert body["conversation_id"] == "new-conv-id"
-        assert body["source_id"] == "conv-source"
+        assert body["source_id"] == "abc123def456789012345678abcdef00"
         assert body["messages_copied"] == 2
         mock_conversation_manager.fork.assert_called_once()
 
     def test_forks_partial_transcript(self, client, mock_conversation_manager):
         mock_conversation_manager.fork = AsyncMock(return_value=("forked", 2))
         resp = client.post(
-            "/api/v1/conversations/source/fork",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/fork",
             json={"up_to_index": 2},
         )
         assert resp.status_code == 201
         assert resp.json()["messages_copied"] == 2
 
-    def test_messages_copied_is_actual_count_not_request(
-        self, client, mock_conversation_manager
-    ):
+    def test_messages_copied_is_actual_count_not_request(self, client, mock_conversation_manager):
         """``up_to_index`` may exceed the source length; reported count must
         be what was actually copied."""
         mock_conversation_manager.fork = AsyncMock(return_value=("forked", 3))
         resp = client.post(
-            "/api/v1/conversations/source/fork",
+            "/api/v1/conversations/abc123def456789012345678abcdef00/fork",
             json={"up_to_index": 999},
         )
         assert resp.status_code == 201
@@ -459,9 +469,7 @@ class TestCompactConversation:
         assert callable(args[1])
         assert kwargs["keep_last_n"] == 4
 
-    def test_returns_404_for_unknown_conversation(
-        self, client, mock_conversation_manager
-    ):
+    def test_returns_404_for_unknown_conversation(self, client, mock_conversation_manager):
         # No active conversations match the id; existence check fails.
         mock_conversation_manager.get_messages = AsyncMock(return_value=[])
         mock_conversation_manager.list_active = AsyncMock(return_value=[])
@@ -473,9 +481,7 @@ class TestCompactConversation:
         assert resp.status_code == 404
         assert "conversation_not_found" in resp.text
 
-    def test_skipped_status_passes_through(
-        self, client, mock_conversation_manager, monkeypatch
-    ):
+    def test_skipped_status_passes_through(self, client, mock_conversation_manager, monkeypatch):
         """When the manager returns skipped, the route should NOT call the
         LLM but still return 200 with the skip details."""
         monkeypatch.setattr(

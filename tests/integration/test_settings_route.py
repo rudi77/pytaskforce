@@ -40,17 +40,49 @@ def test_get_missing_section_returns_404(client):
 
 
 def test_put_then_get_round_trip(client):
-    payload = {"data": {"openai": {"api_key": "sk-test"}}}
+    payload = {"data": {"openai": {"api_key": "sk-secret-value-1234"}}}
     put_response = client.put("/api/v1/settings/llm_providers", json=payload)
     assert put_response.status_code == 200
     body = put_response.json()
     assert body["name"] == "llm_providers"
-    assert body["data"] == payload["data"]
     assert body["is_known"] is True
+    # Secret fields are server-side masked in the response (#281): the
+    # plaintext key must never travel back over the wire — not in the PUT
+    # echo and not in the GET.
+    assert body["data"]["openai"]["api_key"] == "sk-...1234"
 
     get_response = client.get("/api/v1/settings/llm_providers")
     assert get_response.status_code == 200
-    assert get_response.json()["data"] == payload["data"]
+    assert get_response.json()["data"]["openai"]["api_key"] == "sk-...1234"
+
+
+@pytest.fixture
+def client_and_store(tmp_path):
+    from cryptography.fernet import Fernet
+
+    store = FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())
+    app = create_app()
+    app.dependency_overrides[get_settings_store] = lambda: store
+    try:
+        yield TestClient(app), store
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_put_with_masked_secret_preserves_stored_value(client_and_store):
+    """A GET -> edit -> PUT round-trip that re-sends the masked secret
+    unchanged must not overwrite the real stored value (#281)."""
+    client, store = client_and_store
+    client.put(
+        "/api/v1/settings/llm_providers",
+        json={"data": {"openai": {"api_key": "sk-secret-value-1234"}}},
+    )
+    # The UI re-PUTs what it GET'd: the secret arrives back masked.
+    masked = client.get("/api/v1/settings/llm_providers").json()["data"]
+    assert masked["openai"]["api_key"] == "sk-...1234"
+    client.put("/api/v1/settings/llm_providers", json={"data": masked})
+    # The real plaintext key survived in the encrypted store.
+    assert store.get("llm_providers")["openai"]["api_key"] == "sk-secret-value-1234"
 
 
 def test_put_unknown_section_marks_is_known_false(client):
