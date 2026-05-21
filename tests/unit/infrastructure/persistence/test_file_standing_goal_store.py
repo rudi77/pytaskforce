@@ -85,6 +85,7 @@ async def test_mark_evaluated_persists_action(store: FileStandingGoalStore) -> N
     assert fetched.last_action_taken == "sent summary"
 
 
+@pytest.mark.spec("standing-goals.store_concurrent_mark_evaluated_serialized")
 @pytest.mark.asyncio
 async def test_concurrent_mark_evaluated_does_not_lose_writes(
     store: FileStandingGoalStore,
@@ -106,6 +107,7 @@ async def test_concurrent_mark_evaluated_does_not_lose_writes(
     assert fetched[goal_b.goal_id].last_action_taken == "b-action"
 
 
+@pytest.mark.spec("standing-goals.store_writes_are_atomic")
 @pytest.mark.asyncio
 async def test_atomic_write_leaves_no_temp_files(
     tmp_path: Path,
@@ -116,6 +118,7 @@ async def test_atomic_write_leaves_no_temp_files(
     assert leftovers == []
 
 
+@pytest.mark.spec("standing-goals.store_writes_are_atomic")
 @pytest.mark.asyncio
 async def test_corrupt_file_returns_empty_list_not_crash(
     tmp_path: Path,

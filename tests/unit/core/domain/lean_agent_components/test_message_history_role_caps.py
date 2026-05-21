@@ -10,6 +10,7 @@ independently tunable.
 
 from __future__ import annotations
 
+import pytest
 import structlog
 
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
@@ -44,6 +45,7 @@ def _make_manager(
     )
 
 
+@pytest.mark.spec("context-manager.role_caps_truncate_with_marker")
 def test_tool_message_truncated_at_cap() -> None:
     """An oversized tool message is hard-capped with a truncation marker."""
     manager = _make_manager(tool_message_max_chars=100)
@@ -78,6 +80,7 @@ def test_short_tool_message_passes_through_unchanged() -> None:
     assert capped[1]["content"] == short
 
 
+@pytest.mark.spec("context-manager.role_caps_truncate_with_marker")
 def test_assistant_cap_is_independent_of_tool_cap() -> None:
     """Tool and assistant caps apply independently."""
     manager = _make_manager(
@@ -116,6 +119,7 @@ def test_input_messages_are_not_mutated() -> None:
     assert "[truncated" in capped[0]["content"]
 
 
+@pytest.mark.spec("context-manager.role_caps_truncate_with_marker")
 def test_zero_cap_disables_truncation() -> None:
     """A cap of ``0`` disables truncation for that role (escape hatch)."""
     manager = _make_manager(tool_message_max_chars=0)

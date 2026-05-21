@@ -9,6 +9,8 @@ Tests cover:
 - Rule ordering (first match wins)
 - build_llm_router factory function
 - Backward compatibility (empty routing config)
+
+Spec: docs/spec/llm-router.md — tests tagged @pytest.mark.spec("llm-router.*").
 """
 
 from __future__ import annotations
@@ -87,53 +89,64 @@ def empty_router(mock_delegate):
 class TestSelectModel:
     """Tests for the internal _select_model routing logic."""
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     def test_hint_planning_routes_to_powerful(self, router):
         result = router._select_model("planning", [], None)
         assert result == "powerful"
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     def test_hint_reasoning_routes_to_powerful(self, router):
         result = router._select_model("reasoning", [], None)
         assert result == "powerful"
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     def test_hint_reflecting_routes_to_powerful(self, router):
         result = router._select_model("reflecting", [], None)
         assert result == "powerful"
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     def test_hint_summarizing_routes_to_fast(self, router):
         result = router._select_model("summarizing", [], None)
         assert result == "fast"
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     def test_hint_acting_routes_to_main(self, router):
         result = router._select_model("acting", [], None)
         assert result == "main"
 
+    @pytest.mark.spec("llm-router.known_alias_bypasses_rules")
     def test_known_alias_passes_through(self, router):
         """Explicit known aliases bypass all routing rules."""
         result = router._select_model("fast", [], None)
         assert result == "fast"
 
+    @pytest.mark.spec("llm-router.known_alias_bypasses_rules")
     def test_known_alias_with_tools(self, router):
         """Even with tools, explicit alias wins."""
         tools = [{"type": "function", "function": {"name": "test"}}]
         result = router._select_model("powerful", [], tools)
         assert result == "powerful"
 
+    @pytest.mark.spec("llm-router.has_tools_matches_when_tools_present")
     def test_has_tools_matches(self, router):
         """When no hint is given and tools are present, has_tools matches."""
         tools = [{"type": "function", "function": {"name": "test"}}]
         result = router._select_model(None, [], tools)
         assert result == "main"
 
+    @pytest.mark.spec("llm-router.no_tools_matches_when_tools_absent")
     def test_no_tools_matches(self, router):
         """When no hint is given and no tools, no_tools matches."""
         result = router._select_model(None, [], None)
         assert result == "fast"
 
+    @pytest.mark.spec("llm-router.no_tools_matches_when_tools_absent")
     def test_no_tools_empty_list(self, router):
         """Empty tools list also triggers no_tools."""
         result = router._select_model(None, [], [])
         assert result == "fast"
 
+    @pytest.mark.spec("llm-router.message_count_threshold_respected")
     def test_message_count_rule(self, mock_delegate):
         """message_count > N matches when messages exceed threshold."""
         router = LLMRouter(
@@ -148,6 +161,7 @@ class TestSelectModel:
         assert router._select_model(None, short_messages, None) == "main"
         assert router._select_model(None, long_messages, None) == "powerful"
 
+    @pytest.mark.spec("llm-router.message_count_threshold_respected")
     def test_message_count_boundary(self, mock_delegate):
         """Exact boundary: > 5 means 6 messages match, 5 don't."""
         router = LLMRouter(
@@ -162,6 +176,7 @@ class TestSelectModel:
         assert router._select_model(None, five_messages, None) == "main"
         assert router._select_model(None, six_messages, None) == "powerful"
 
+    @pytest.mark.spec("llm-router.first_matching_rule_wins")
     def test_first_rule_wins(self, mock_delegate):
         """When multiple rules could match, first one wins."""
         router = LLMRouter(
@@ -184,16 +199,19 @@ class TestSelectModel:
         # With no tools, "no_tools" matches → fast
         assert result == "fast"
 
+    @pytest.mark.spec("llm-router.empty_rules_pass_through_to_default")
     def test_none_model_with_no_rules_returns_default(self, empty_router):
         """With no rules and no hint, return default_model."""
         result = empty_router._select_model(None, [], None)
         assert result == "main"
 
+    @pytest.mark.spec("llm-router.unknown_hint_falls_back_to_default")
     def test_hint_with_no_rules_returns_default(self, empty_router):
         """With no rules, hints fall back to default_model."""
         result = empty_router._select_model("reasoning", [], None)
         assert result == "main"
 
+    @pytest.mark.spec("llm-router.malformed_condition_is_ignored")
     def test_invalid_message_count_rule(self, mock_delegate):
         """Malformed message_count condition is ignored gracefully."""
         router = LLMRouter(
@@ -213,6 +231,7 @@ class TestSelectModel:
 class TestComplete:
     """Tests for the routed complete() method."""
 
+    @pytest.mark.spec("llm-router.hint_routes_via_matching_rule")
     @pytest.mark.asyncio
     async def test_routes_hint_to_correct_model(self, router, mock_delegate):
         await router.complete(
@@ -223,6 +242,7 @@ class TestComplete:
         call_kwargs = mock_delegate.complete.call_args
         assert call_kwargs.kwargs["model"] == "powerful"
 
+    @pytest.mark.spec("llm-router.has_tools_matches_when_tools_present")
     @pytest.mark.asyncio
     async def test_routes_with_tools(self, router, mock_delegate):
         tools = [{"type": "function", "function": {"name": "test"}}]
@@ -260,16 +280,19 @@ class TestComplete:
 class TestGenerate:
     """Tests for the routed generate() method."""
 
+    @pytest.mark.spec("llm-router.generate_does_not_apply_routing_rules")
     @pytest.mark.asyncio
     async def test_known_alias_passes_through(self, router, mock_delegate):
         await router.generate(prompt="test", model="fast")
         assert mock_delegate.generate.call_args.kwargs["model"] == "fast"
 
+    @pytest.mark.spec("llm-router.generate_does_not_apply_routing_rules")
     @pytest.mark.asyncio
     async def test_unknown_model_uses_default(self, router, mock_delegate):
         await router.generate(prompt="test", model="unknown")
         assert mock_delegate.generate.call_args.kwargs["model"] == "main"
 
+    @pytest.mark.spec("llm-router.generate_does_not_apply_routing_rules")
     @pytest.mark.asyncio
     async def test_none_model_uses_default(self, router, mock_delegate):
         await router.generate(prompt="test", model=None)
@@ -279,6 +302,7 @@ class TestGenerate:
 class TestCompleteStream:
     """Tests for the routed complete_stream() method."""
 
+    @pytest.mark.spec("llm-router.complete_stream_preserves_chunk_order")
     @pytest.mark.asyncio
     async def test_routes_hint_and_yields_chunks(self, mock_delegate):
         """Verify routing and that all chunks are yielded."""
@@ -318,6 +342,7 @@ class TestCompleteStream:
 class TestBuildLlmRouter:
     """Tests for the build_llm_router factory function."""
 
+    @pytest.mark.spec("llm-router.empty_rules_pass_through_to_default")
     def test_returns_router_with_empty_config(self, mock_delegate):
         """Empty config → router with no rules (pass-through)."""
         router = build_llm_router(mock_delegate, {}, default_model="main")
@@ -325,6 +350,7 @@ class TestBuildLlmRouter:
         assert len(router.rules) == 0
         assert router.default_model == "main"
 
+    @pytest.mark.spec("llm-router.empty_rules_pass_through_to_default")
     def test_returns_router_when_routing_disabled(self, mock_delegate):
         """Explicitly disabled routing → router with no rules."""
         config = {"enabled": False}
@@ -388,6 +414,7 @@ class TestBuildLlmRouter:
 class TestBackwardCompatibility:
     """Ensure the router is backward-compatible with existing agent usage."""
 
+    @pytest.mark.spec("llm-router.unknown_hint_falls_back_to_default")
     @pytest.mark.asyncio
     async def test_no_routing_config_uses_default_for_hints(self, mock_delegate):
         """Without routing rules, phase hints fall back to default model."""
@@ -400,6 +427,7 @@ class TestBackwardCompatibility:
         )
         assert mock_delegate.complete.call_args.kwargs["model"] == "main"
 
+    @pytest.mark.spec("llm-router.empty_rules_pass_through_to_default")
     @pytest.mark.asyncio
     async def test_no_routing_config_preserves_known_alias(self, mock_delegate):
         """Without routing rules, known aliases still pass through."""
@@ -411,6 +439,7 @@ class TestBackwardCompatibility:
         )
         assert mock_delegate.complete.call_args.kwargs["model"] == "fast"
 
+    @pytest.mark.spec("llm-router.unknown_hint_falls_back_to_default")
     @pytest.mark.asyncio
     async def test_all_strategy_hints_resolve(self, mock_delegate):
         """All strategy phase hints are handled without error."""
@@ -483,6 +512,7 @@ class TestRoutingConfigFromDelegate:
         )
         assert delegate.complete.call_args.kwargs["model"] == "main"
 
+    @pytest.mark.spec("llm-router.alias_named_like_hint_takes_priority_over_rule")
     def test_alias_named_like_hint_takes_priority(self):
         """If a model alias matches a hint name, the alias wins."""
         delegate = MagicMock()

@@ -10,6 +10,8 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
+
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
     MessageHistoryManager,
 )
@@ -261,6 +263,7 @@ class TestBuildInitialMessages:
 class TestPreflightBudgetCheck:
     """Tests for MessageHistoryManager.preflight_budget_check."""
 
+    @pytest.mark.spec("context-manager.preflight_truncates_when_over_max_input_tokens")
     def test_under_budget_returns_unchanged(self) -> None:
         """Messages under budget are returned unchanged."""
         mgr = _make_manager(max_input_tokens=100_000)
@@ -268,6 +271,7 @@ class TestPreflightBudgetCheck:
         result = mgr.preflight_budget_check(messages)
         assert result == messages
 
+    @pytest.mark.spec("context-manager.preflight_truncates_when_over_max_input_tokens")
     def test_over_budget_sanitizes_and_truncates(self) -> None:
         """Messages over budget are sanitized and possibly truncated."""
         # Create a manager with a very small token budget
@@ -285,6 +289,7 @@ class TestPreflightBudgetCheck:
         # First message should still be the system prompt
         assert result[0]["role"] == "system"
 
+    @pytest.mark.spec("context-manager.preflight_truncates_when_over_max_input_tokens")
     def test_over_budget_emergency_truncation_keeps_recent(self) -> None:
         """Emergency truncation keeps the most recent messages."""
         mgr = _make_manager(max_input_tokens=10)
@@ -350,6 +355,7 @@ class TestCompressMessages:
         result = await mgr.compress_messages(messages)
         assert len(result) < len(messages)
 
+    @pytest.mark.spec("context-manager.deterministic_fallback_runs_when_llm_summary_fails")
     async def test_compression_fallback_on_llm_failure(self) -> None:
         """Falls back to deterministic compression when LLM fails."""
         llm = _make_llm_provider(success=False, content="")
@@ -364,6 +370,7 @@ class TestCompressMessages:
         # Should still produce compressed output (deterministic fallback)
         assert len(result) < len(messages)
 
+    @pytest.mark.spec("context-manager.deterministic_fallback_runs_when_llm_summary_fails")
     async def test_compression_fallback_on_llm_exception(self) -> None:
         """Falls back to deterministic compression when LLM raises."""
         llm = AsyncMock()
@@ -378,6 +385,7 @@ class TestCompressMessages:
         result = await mgr.compress_messages(messages)
         assert len(result) < len(messages)
 
+    @pytest.mark.spec("context-manager.deterministic_fallback_runs_when_llm_summary_fails")
     async def test_compression_fallback_on_context_length_error(self) -> None:
         """Falls back when LLM returns context length exceeded error."""
         llm = _make_llm_provider(success=True, content="")
@@ -408,6 +416,7 @@ class TestCompressMessages:
 class TestDeterministicCompression:
     """Tests for MessageHistoryManager.deterministic_compression."""
 
+    @pytest.mark.spec("context-manager.system_prompt_always_at_index_zero")
     def test_preserves_system_prompt(self) -> None:
         """System prompt is always preserved as first message."""
         mgr = _make_manager()
@@ -454,6 +463,8 @@ class TestDeterministicCompression:
         result = mgr.deterministic_compression([])
         assert result[0]["role"] == "system"
 
+    @pytest.mark.spec("context-manager.orphan_tool_messages_dropped")
+    @pytest.mark.spec("context-manager.tool_call_pairs_preserved_on_trim")
     def test_preserves_tool_call_pairs(self) -> None:
         """Tool call + tool result pairs are preserved together."""
         mgr = _make_manager()

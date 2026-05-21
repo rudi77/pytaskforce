@@ -37,6 +37,7 @@ def loader(store: FileWikiStore) -> WikiContextLoader:
     )
 
 
+@pytest.mark.spec("wiki-memory.default_config_does_not_inject_wiki_into_system_prompt")
 async def test_default_config_disables_auto_injection(
     store: FileWikiStore,
 ) -> None:
@@ -63,6 +64,7 @@ async def test_default_config_disables_auto_injection(
     assert result is None
 
 
+@pytest.mark.spec("wiki-memory.default_config_does_not_inject_wiki_into_system_prompt")
 async def test_from_dict_defaults_disable_injection() -> None:
     """``WikiContextConfig.from_dict`` with an empty dict gives the
     same no-injection defaults as ``WikiContextConfig()``.
@@ -94,6 +96,7 @@ async def test_index_and_relevant_combined(store: FileWikiStore, loader: WikiCon
     assert "Potentially relevant pages" in result
 
 
+@pytest.mark.spec("wiki-memory.opt_in_injection_respects_max_total_chars")
 async def test_respects_char_budget(store: FileWikiStore) -> None:
     for i in range(30):
         await store.write_page(

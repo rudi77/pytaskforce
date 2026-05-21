@@ -21,6 +21,7 @@ configured" when their dependencies are missing — that's the expected
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 
@@ -79,3 +80,64 @@ def test_daemon_supervisor_legacy_import_is_gone() -> None:
     """Phase 2 clean break: old supervisor path is gone."""
     with pytest.raises(ModuleNotFoundError):
         import taskforce_butler.daemon_supervisor  # noqa: F401
+
+
+@pytest.mark.spec("standing-goals.daemon_seeds_yaml_goals_idempotent")
+@pytest.mark.asyncio
+async def test_daemon_seeds_standing_goals_idempotently(tmp_path: Path) -> None:
+    """``_setup_proactive_layer`` seeds ``proactive.standing_goals`` from YAML;
+    a second run (daemon restart) skips goals that already exist by goal_id, so
+    the seed list does not duplicate across restarts."""
+    from taskforce.api.dependencies import (
+        set_goal_evaluator,
+        set_standing_goal_store,
+    )
+    from taskforce.infrastructure.persistence.file_standing_goal_store import (
+        FileStandingGoalStore,
+    )
+
+    config = {
+        "proactive": {
+            "enabled": True,
+            "heartbeat_minutes": 100_000,  # never ticks during the test
+            "standing_goals": [
+                {
+                    "goal_id": "seed-weekly",
+                    "description": "Weekly summary",
+                    "evaluation_prompt": "Prepare a weekly summary.",
+                    "frequency": "0 9 * * 1",
+                }
+            ],
+        }
+    }
+
+    daemon = AgentDaemon(
+        profile="dev", work_dir=str(tmp_path), persistent_agent=False
+    )
+    tasks: list[asyncio.Task[None] | None] = []
+    try:
+        # First boot: seeds the goal. Cancel the heartbeat task synchronously
+        # (no await in between) so it never runs a tick.
+        await daemon._setup_proactive_layer(config)
+        tasks.append(daemon._proactive_task)
+        if daemon._proactive_task is not None:
+            daemon._proactive_task.cancel()
+
+        # Second boot (simulated daemon restart): must not duplicate the seed.
+        await daemon._setup_proactive_layer(config)
+        tasks.append(daemon._proactive_task)
+        if daemon._proactive_task is not None:
+            daemon._proactive_task.cancel()
+
+        store = FileStandingGoalStore(work_dir=str(tmp_path))
+        goals = await store.list()
+        assert len(goals) == 1
+        assert goals[0].goal_id == "seed-weekly"
+    finally:
+        for task in tasks:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        set_standing_goal_store(None)
+        set_goal_evaluator(None)

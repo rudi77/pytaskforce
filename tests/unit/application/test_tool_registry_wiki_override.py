@@ -30,6 +30,7 @@ def _reset_overrides():
     clear_infrastructure_overrides()
 
 
+@pytest.mark.spec("wiki-memory.store_override_is_consulted_per_build")
 def test_wikitool_uses_override_when_installed(tmp_path):
     """An installed wiki-store override is consulted when WikiTool is built."""
     sentinel_store = MagicMock(name="tenant-scoped-wiki-store")
@@ -54,6 +55,7 @@ def test_wikitool_uses_override_when_installed(tmp_path):
     assert provider.called_with is not None  # provider was actually invoked
 
 
+@pytest.mark.spec("wiki-memory.store_override_is_consulted_per_build")
 def test_wikitool_falls_back_to_store_dir_without_override(tmp_path):
     """Without an override, the legacy ``store_dir`` injection still wins."""
     store_dir = str(tmp_path / "memory" / "wiki")

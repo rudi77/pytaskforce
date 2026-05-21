@@ -15,6 +15,7 @@ def store(tmp_path: Path) -> FileWikiStore:
     return FileWikiStore(tmp_path / "wiki")
 
 
+@pytest.mark.spec("wiki-memory.write_page_creates_file_and_refreshes_index")
 async def test_write_and_read_page(store: FileWikiStore) -> None:
     page = WikiPage(
         name="entities/steuerberater-mueller",
@@ -44,6 +45,7 @@ async def test_list_pages_skips_index_and_log(
     assert (tmp_path / "wiki" / "log.md").exists()
 
 
+@pytest.mark.spec("wiki-memory.write_page_creates_file_and_refreshes_index")
 async def test_write_refreshes_index(store: FileWikiStore) -> None:
     await store.write_page(WikiPage(name="entities/mueller", title="Mueller", body="x"))
     await store.write_page(
@@ -54,6 +56,60 @@ async def test_write_refreshes_index(store: FileWikiStore) -> None:
     assert "[Formats](preferences/formats.md)" in index
 
 
+@pytest.mark.spec("wiki-memory.update_section_append_keeps_other_sections")
+async def test_update_section_append_keeps_other_sections(store: FileWikiStore) -> None:
+    """Appending to one section leaves every other section intact."""
+    await store.write_page(
+        WikiPage(
+            name="entities/mueller",
+            title="Mueller",
+            body="## Kontakt\n- Tel: 0664-1234567\n\n## Notizen\n- mag PDF-Rechnungen\n",
+        )
+    )
+    updated = await store.update_section(
+        "entities/mueller", "Kontakt", "- Fax: 0664-9999", mode="append"
+    )
+    assert updated is not None
+    assert "0664-9999" in updated.body            # appended content
+    assert "0664-1234567" in updated.body         # original target content kept
+    assert "mag PDF-Rechnungen" in updated.body   # sibling section untouched
+
+
+@pytest.mark.spec("wiki-memory.update_section_replace_overwrites_only_target")
+async def test_update_section_replace_overwrites_only_target(
+    store: FileWikiStore,
+) -> None:
+    """Replace mode overwrites only the target section, not its siblings."""
+    await store.write_page(
+        WikiPage(
+            name="entities/mueller",
+            title="Mueller",
+            body="## Kontakt\n- Tel: alt\n\n## Notizen\n- bevorzugt E-Mail\n",
+        )
+    )
+    updated = await store.update_section(
+        "entities/mueller", "Kontakt", "- Tel: neu", mode="replace"
+    )
+    assert updated is not None
+    assert "alt" not in updated.body              # target section overwritten
+    assert "neu" in updated.body
+    assert "bevorzugt E-Mail" in updated.body     # sibling section preserved
+
+
+@pytest.mark.spec("wiki-memory.delete_page_removes_file_and_refreshes_index")
+async def test_delete_page_refreshes_index(store: FileWikiStore) -> None:
+    """Deleting a page drops it from index.md but leaves other pages listed."""
+    await store.write_page(WikiPage(name="entities/keep", title="Keep", body="x"))
+    await store.write_page(WikiPage(name="entities/drop", title="Drop", body="y"))
+
+    assert await store.delete_page("entities/drop") is True
+
+    index = await store.read_index()
+    assert "entities/keep.md" in index
+    assert "entities/drop.md" not in index
+
+
+@pytest.mark.spec("wiki-memory.update_section_append_keeps_other_sections")
 async def test_update_section_append(store: FileWikiStore) -> None:
     await store.write_page(
         WikiPage(
@@ -70,6 +126,7 @@ async def test_update_section_append(store: FileWikiStore) -> None:
     assert "0664-9999" in updated.body
 
 
+@pytest.mark.spec("wiki-memory.update_section_replace_overwrites_only_target")
 async def test_update_section_replace(store: FileWikiStore) -> None:
     await store.write_page(
         WikiPage(
@@ -91,6 +148,7 @@ async def test_update_section_on_missing_page_returns_none(store: FileWikiStore)
     assert result is None
 
 
+@pytest.mark.spec("wiki-memory.delete_page_removes_file_and_refreshes_index")
 async def test_delete_page(store: FileWikiStore) -> None:
     await store.write_page(WikiPage(name="entities/x", title="X", body="body"))
     assert await store.delete_page("entities/x") is True
@@ -98,6 +156,7 @@ async def test_delete_page(store: FileWikiStore) -> None:
     assert await store.delete_page("entities/x") is False
 
 
+@pytest.mark.spec("wiki-memory.search_ranks_title_hits_above_body_hits")
 async def test_search_ranks_title_matches_higher(store: FileWikiStore) -> None:
     await store.write_page(
         WikiPage(name="entities/mueller", title="Steuerberater Mueller", body="x")
@@ -110,11 +169,14 @@ async def test_search_ranks_title_matches_higher(store: FileWikiStore) -> None:
     assert results[0].name == "entities/mueller"
 
 
+@pytest.mark.spec("wiki-memory.empty_query_returns_no_results")
 async def test_search_empty_query_returns_empty(store: FileWikiStore) -> None:
     await store.write_page(WikiPage(name="entities/a", title="A", body="body"))
     assert await store.search("") == []
 
 
+@pytest.mark.spec("wiki-memory.page_name_rejects_reserved_names")
+@pytest.mark.spec("wiki-memory.page_name_rejects_path_traversal")
 async def test_rejects_reserved_names(store: FileWikiStore) -> None:
     with pytest.raises(ValueError):
         await store.write_page(WikiPage(name="index", title="oops", body=""))
@@ -134,11 +196,13 @@ async def test_rejects_reserved_names(store: FileWikiStore) -> None:
         "",                           # empty
     ],
 )
+@pytest.mark.spec("wiki-memory.page_name_rejects_path_traversal")
 async def test_rejects_malicious_names(store: FileWikiStore, bad_name: str) -> None:
     with pytest.raises(ValueError):
         await store.write_page(WikiPage(name=bad_name, title="oops", body=""))
 
 
+@pytest.mark.spec("wiki-memory.log_is_append_only_and_timestamped")
 async def test_append_log(store: FileWikiStore, tmp_path: Path) -> None:
     await store.append_log("first")
     await store.append_log("second")
@@ -148,6 +212,7 @@ async def test_append_log(store: FileWikiStore, tmp_path: Path) -> None:
     assert log.count("\n## [") == 2
 
 
+@pytest.mark.spec("wiki-memory.write_page_preserves_created_at_on_overwrite")
 async def test_write_preserves_created_at_on_rewrite(store: FileWikiStore) -> None:
     page = WikiPage(name="entities/x", title="X", body="first")
     await store.write_page(page)

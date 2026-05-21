@@ -28,6 +28,7 @@ def app(tmp_path) -> FastAPI:
     set_goal_evaluator(None)
 
 
+@pytest.mark.spec("standing-goals.rest_crud_roundtrip")
 def test_create_list_get_round_trip(app: FastAPI) -> None:
     client = TestClient(app)
 
@@ -52,11 +53,13 @@ def test_create_list_get_round_trip(app: FastAPI) -> None:
     assert one.json()["priority"] == 3
 
 
+@pytest.mark.spec("standing-goals.rest_crud_roundtrip")
 def test_get_unknown_returns_404(app: FastAPI) -> None:
     response = TestClient(app).get("/api/v1/standing-goals/does-not-exist")
     assert response.status_code == 404
 
 
+@pytest.mark.spec("standing-goals.rest_crud_roundtrip")
 def test_patch_partial_update(app: FastAPI) -> None:
     client = TestClient(app)
     create = client.post(
@@ -80,6 +83,7 @@ def test_patch_partial_update(app: FastAPI) -> None:
     assert body["description"] == "x"  # untouched
 
 
+@pytest.mark.spec("standing-goals.rest_crud_roundtrip")
 def test_delete_returns_204_then_404(app: FastAPI) -> None:
     client = TestClient(app)
     create = client.post(
@@ -95,6 +99,7 @@ def test_delete_returns_204_then_404(app: FastAPI) -> None:
     assert client.delete(f"/api/v1/standing-goals/{goal_id}").status_code == 404
 
 
+@pytest.mark.spec("standing-goals.evaluate_now_returns_503_without_daemon")
 def test_evaluate_now_503_without_evaluator(app: FastAPI) -> None:
     client = TestClient(app)
     create = client.post(

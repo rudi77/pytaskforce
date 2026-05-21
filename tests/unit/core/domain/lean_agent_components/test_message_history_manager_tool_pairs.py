@@ -1,3 +1,4 @@
+import pytest
 import structlog
 
 from taskforce.core.domain.lean_agent_components.message_history_manager import (
@@ -26,6 +27,8 @@ def _make_manager() -> MessageHistoryManager:
     )
 
 
+@pytest.mark.spec("context-manager.orphan_tool_messages_dropped")
+@pytest.mark.spec("context-manager.tool_call_pairs_preserved_on_trim")
 def test_deterministic_compression_preserves_tool_call_pair() -> None:
     """
     Regression test: trimming must not keep a tool message without its matching

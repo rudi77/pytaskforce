@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -85,6 +86,7 @@ def test_not_initialized_by_default(ctx: ContextManager) -> None:
     assert ctx.system_prompt == ""
 
 
+@pytest.mark.spec("context-manager.system_prompt_always_at_index_zero")
 def test_initialize_builds_messages(ctx: ContextManager) -> None:
     ctx.initialize(mission="Hello", state={}, base_system_prompt="You are helpful.")
 
@@ -95,6 +97,7 @@ def test_initialize_builds_messages(ctx: ContextManager) -> None:
     assert ctx.system_prompt == "You are helpful."
 
 
+@pytest.mark.spec("context-manager.restore_recovers_full_message_list")
 def test_restore_replaces_messages(ctx: ContextManager) -> None:
     restored = [
         {"role": "system", "content": "Restored prompt"},
@@ -108,6 +111,7 @@ def test_restore_replaces_messages(ctx: ContextManager) -> None:
     assert ctx.system_prompt == "Restored prompt"
 
 
+@pytest.mark.spec("context-manager.restore_recovers_full_message_list")
 def test_restore_handles_no_system_message(ctx: ContextManager) -> None:
     ctx.restore([{"role": "user", "content": "orphan"}])
 
@@ -120,6 +124,7 @@ def test_restore_handles_no_system_message(ctx: ContextManager) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("context-manager.system_prompt_always_at_index_zero")
 def test_set_system_prompt_updates_first_message(ctx: ContextManager) -> None:
     ctx.initialize(mission="test", state={}, base_system_prompt="old")
 
@@ -129,6 +134,7 @@ def test_set_system_prompt_updates_first_message(ctx: ContextManager) -> None:
     assert ctx.system_prompt == "new prompt"
 
 
+@pytest.mark.spec("context-manager.system_prompt_always_at_index_zero")
 def test_set_system_prompt_on_empty_messages(ctx: ContextManager) -> None:
     ctx.set_system_prompt("fresh prompt")
 
@@ -146,6 +152,7 @@ def test_append_message(ctx: ContextManager) -> None:
     assert ctx.messages[-1]["content"] == "nudge"
 
 
+@pytest.mark.spec("context-manager.compression_mutates_in_place")
 def test_messages_property_returns_same_list_object(ctx: ContextManager) -> None:
     """External code holding a reference to messages must see mutations."""
     ctx.initialize(mission="test", state={}, base_system_prompt="sys")
@@ -162,6 +169,7 @@ def test_messages_property_returns_same_list_object(ctx: ContextManager) -> None
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("context-manager.compression_mutates_in_place")
 async def test_compress_mutates_in_place(ctx: ContextManager) -> None:
     ctx.initialize(mission="test", state={}, base_system_prompt="sys")
     ref = ctx.messages
@@ -171,6 +179,7 @@ async def test_compress_mutates_in_place(ctx: ContextManager) -> None:
     assert ref is ctx.messages  # Same list object
 
 
+@pytest.mark.spec("context-manager.compression_mutates_in_place")
 async def test_compress_replaces_content_when_new_list_returned(
     ctx: ContextManager,
     mock_history_manager: Mock,
@@ -351,6 +360,7 @@ def ctx_with_callback(
     )
 
 
+@pytest.mark.spec("context-manager.system_prompt_always_at_index_zero")
 async def test_prepare_for_llm_rebuilds_system_prompt(
     ctx_with_callback: ContextManager,
 ) -> None:
@@ -418,6 +428,7 @@ async def test_prepare_for_llm_without_callback(ctx: ContextManager) -> None:
     assert ctx.system_prompt == "original"
 
 
+@pytest.mark.spec("context-manager.compression_mutates_in_place")
 async def test_prepare_for_llm_preserves_message_identity(
     ctx_with_callback: ContextManager,
 ) -> None:
@@ -432,6 +443,7 @@ async def test_prepare_for_llm_preserves_message_identity(
     assert ref is ctx_with_callback.messages
 
 
+@pytest.mark.spec("context-manager.prepare_for_llm_before_init_is_noop_warning")
 async def test_prepare_for_llm_on_uninitialized_context(
     ctx: ContextManager, mock_logger: Mock,
 ) -> None:
@@ -472,6 +484,7 @@ def test_register_sub_agent_context_stores_entry(ctx: ContextManager) -> None:
     assert result.sub_agents[0].snapshot is snap
 
 
+@pytest.mark.spec("context-manager.sub_agent_snapshots_capped_at_ten")
 def test_register_sub_agent_context_respects_max(ctx: ContextManager) -> None:
     snap = _make_dummy_snapshot()
 
@@ -484,6 +497,7 @@ def test_register_sub_agent_context_respects_max(ctx: ContextManager) -> None:
     assert len(result.sub_agents) == ctx.MAX_SUB_AGENT_SNAPSHOTS
 
 
+@pytest.mark.spec("context-manager.sub_agent_snapshots_cleared_on_initialize")
 def test_initialize_clears_sub_agent_entries(ctx: ContextManager) -> None:
     snap = _make_dummy_snapshot()
     ctx.register_sub_agent_context(
@@ -494,3 +508,36 @@ def test_initialize_clears_sub_agent_entries(ctx: ContextManager) -> None:
 
     result = ctx.snapshot()
     assert len(result.sub_agents) == 0
+
+
+# ---------------------------------------------------------------------------
+# Snapshot immutability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.spec("context-manager.snapshot_is_frozen_tree")
+def test_snapshot_root_is_frozen(ctx: ContextManager) -> None:
+    """The ContextSnapshot returned by snapshot() is a frozen dataclass."""
+    ctx.initialize(mission="test", state={}, base_system_prompt="You are helpful.")
+
+    snap = ctx.snapshot()
+
+    with pytest.raises(FrozenInstanceError):
+        snap.total_tokens = 0  # type: ignore[misc]
+
+
+@pytest.mark.spec("context-manager.snapshot_is_frozen_tree")
+def test_snapshot_nested_items_are_frozen(ctx: ContextManager) -> None:
+    """Nested ContextItem / SubAgentContextEntry nodes are frozen too —
+    mutating any part of the snapshot tree does not affect the live context."""
+    ctx.initialize(mission="test", state={}, base_system_prompt="You are helpful.")
+    ctx.register_sub_agent_context(
+        specialist="research", session_id="sess-1", snapshot=_make_dummy_snapshot(),
+    )
+
+    snap = ctx.snapshot()
+
+    with pytest.raises(FrozenInstanceError):
+        snap.system_prompt[0].title = "mutated"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        snap.sub_agents[0].specialist = "mutated"  # type: ignore[misc]
