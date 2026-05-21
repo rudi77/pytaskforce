@@ -89,12 +89,14 @@ def test_collect_ui_manifests_skips_plugins_without_method(isolated_registry):
     assert collect_ui_manifests() == []
 
 
+@pytest.mark.spec("plugins.ui_manifest_invalid_payload_is_dropped")
 def test_collect_ui_manifests_skips_plugin_returning_none(isolated_registry):
     _register_loaded(isolated_registry, "quiet", _StubPlugin("quiet", None))
 
     assert collect_ui_manifests() == []
 
 
+@pytest.mark.spec("plugins.ui_manifest_getter_exception_is_skipped")
 def test_collect_ui_manifests_swallows_plugin_errors(isolated_registry):
     """A buggy plugin must not break the manifest endpoint for everyone else."""
     _register_loaded(isolated_registry, "broken", _StubPlugin("broken", None, raises=True))

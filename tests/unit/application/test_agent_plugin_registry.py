@@ -64,6 +64,7 @@ def test_iter_entry_points_yields_group(monkeypatch: pytest.MonkeyPatch) -> None
     assert result == expected
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
 def test_iter_entry_points_handles_metadata_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """A metadata error becomes a logged warning + empty iterator."""
 
@@ -115,6 +116,7 @@ def test_load_tool_descriptors_returns_descriptor_shape(
     }
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
 def test_load_tool_descriptors_skips_malformed_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -129,6 +131,7 @@ def test_load_tool_descriptors_skips_malformed_value(
     assert registry.load_tool_descriptors() == {}
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
 def test_load_tool_descriptors_skips_unimportable_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -150,6 +153,7 @@ def test_load_tool_descriptors_skips_unimportable_module(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("plugins.entry_point_cli_app_adds_subcommand")
 def test_load_cli_apps_returns_loaded_typer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Successful ep.load returns the loaded attribute under its name."""
     sentinel = object()
@@ -165,6 +169,7 @@ def test_load_cli_apps_returns_loaded_typer(monkeypatch: pytest.MonkeyPatch) -> 
     assert result == {"butler": sentinel}
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
 def test_load_cli_apps_skips_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failing ep.load is logged and skipped."""
 
@@ -185,6 +190,8 @@ def test_load_cli_apps_skips_load_failure(monkeypatch: pytest.MonkeyPatch) -> No
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("plugins.entry_point_config_dir_resolves_profile")
+@pytest.mark.spec("plugins.config_dir_probes_three_candidate_paths")
 def test_load_config_dirs_resolves_relative_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -219,6 +226,8 @@ def test_load_config_dirs_resolves_relative_path(
     assert result["fake"].resolve() == configs_dir.resolve()
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
+@pytest.mark.spec("plugins.config_dir_probes_three_candidate_paths")
 def test_load_config_dirs_skips_missing_dir(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -249,6 +258,7 @@ def test_load_config_dirs_skips_missing_dir(
     assert result == {}
 
 
+@pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
 def test_load_config_dirs_skips_unimportable_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -265,11 +275,50 @@ def test_load_config_dirs_skips_unimportable_module(
     assert registry.load_config_dirs() == {}
 
 
+@pytest.mark.spec("plugins.config_dir_probes_three_candidate_paths")
+def test_load_config_dirs_probes_parent_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Resolution falls through to ``package_dir.parent.parent/relpath`` —
+    the editable-install layout ``agents/<name>/configs`` where the package
+    lives at ``agents/<name>/src/<pkg>``."""
+    package_dir = tmp_path / "agent_root" / "src" / "fake_pkg2"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("")
+    # configs/ sits two levels above the package — neither the first nor the
+    # second probe candidate, so this only resolves if all three are tried.
+    configs_dir = package_dir.parent.parent / "configs"
+    configs_dir.mkdir()
+
+    mod_name = "_taskforce_test_fake_config_pkg2"
+    mod = types.ModuleType(mod_name)
+    mod.__file__ = str(package_dir / "__init__.py")
+    sys.modules[mod_name] = mod
+    try:
+        monkeypatch.setattr(
+            registry,
+            "iter_entry_points",
+            lambda group: iter(
+                [_ep("fake2", f"{mod_name}:configs", registry.GROUP_CONFIG_DIRS)]
+            )
+            if group == registry.GROUP_CONFIG_DIRS
+            else iter([]),
+        )
+        result = registry.load_config_dirs()
+    finally:
+        sys.modules.pop(mod_name, None)
+
+    assert "fake2" in result
+    assert result["fake2"].resolve() == configs_dir.resolve()
+
+
 # ---------------------------------------------------------------------------
 # Integration: registry merge picks up entry-point tools
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("plugins.entry_point_tool_appears_in_registry")
 def test_tool_registry_picks_up_entry_point_tools(
     monkeypatch: pytest.MonkeyPatch,
     fake_tool_module: types.ModuleType,
@@ -301,6 +350,7 @@ def test_tool_registry_picks_up_entry_point_tools(
         tool_registry._invalidate_caches()
 
 
+@pytest.mark.spec("plugins.entry_point_tool_overrides_builtin")
 def test_entry_point_overrides_builtin(
     monkeypatch: pytest.MonkeyPatch,
     fake_tool_module: types.ModuleType,
