@@ -369,6 +369,7 @@ async def get_messages(
     manager=Depends(get_conversation_manager),
 ) -> list[MessageResponse]:
     """Get messages for a conversation."""
+    await _require_conversation_access(manager, conversation_id)
     messages = await manager.get_messages(conversation_id, limit)
     return [
         MessageResponse(
@@ -396,6 +397,7 @@ async def append_message(
 
     Appends the user message, runs the agent, and appends the reply.
     """
+    await _require_conversation_access(manager, conversation_id)
     if not request.message.strip():
         raise _error_response(
             status_code=400,
@@ -472,6 +474,7 @@ async def stream_message(
     a cancelled or failed stream leaves the conversation in a sane
     state (with a ``[partial]`` marker if the run did not complete).
     """
+    await _require_conversation_access(manager, conversation_id)
     if not request.message.strip():
         raise _error_response(
             status_code=400,
@@ -634,6 +637,7 @@ async def archive_conversation(
     manager=Depends(get_conversation_manager),
 ) -> None:
     """Archive a conversation with an optional summary."""
+    await _require_conversation_access(manager, conversation_id)
     summary = request.summary if request else None
     await manager.archive(conversation_id, summary)
 
@@ -701,6 +705,7 @@ async def fork_conversation(
     LLM model without mutating the original transcript.
     """
     body = request or ForkConversationRequest()
+    await _require_conversation_access(manager, conversation_id)
     new_id, copied = await manager.fork(
         conversation_id,
         up_to_index=body.up_to_index,
@@ -884,3 +889,29 @@ async def _conversation_exists(manager: Any, conversation_id: str) -> bool:
     except Exception:  # noqa: BLE001 — defensive
         return False
     return any(c.conversation_id == conversation_id for c in active)
+
+
+async def _require_conversation_access(manager: Any, conversation_id: str) -> None:
+    """Enforce that ``conversation_id`` belongs to the caller's scope.
+
+    The ``ConversationManager`` is per-(tenant, user) scoped by the
+    ``InfrastructureBuilder`` conversation-store override in multi-tenant
+    deployments, so its active + archived lists are exactly the
+    conversations the current caller may see. A ``conversation_id``
+    outside that set is treated as non-existent (404) — the route-level
+    ownership check that closes the cross-tenant / cross-user read
+    described in #279. In a single-tenant build the manager sees every
+    conversation, so any valid id passes and behaviour is unchanged.
+    """
+    active = await manager.list_active()
+    if any(c.conversation_id == conversation_id for c in active):
+        return
+    archived = await manager.list_archived(limit=10_000)
+    if any(c.conversation_id == conversation_id for c in archived):
+        return
+    raise _error_response(
+        status_code=404,
+        code="conversation_not_found",
+        message=f"No conversation with id {conversation_id!r}.",
+        details={"conversation_id": conversation_id},
+    )

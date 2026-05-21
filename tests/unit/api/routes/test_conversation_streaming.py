@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -29,16 +30,37 @@ class _Update:
 class _RecordingConversationManager:
     """Plain async manager double — avoids AsyncMock side-effect quirks."""
 
+    # Conversation ids the streaming tests operate on; the stream route's
+    # ownership guard (#279) resolves the path id against list_active().
+    _KNOWN_IDS = ("conv-1", "conv-2", "conv-3", "conv-keepalive")
+
     def __init__(self) -> None:
         self.persisted: list[dict[str, Any]] = []
 
     async def append_message(self, _conv_id: str, msg: dict[str, Any]) -> None:
         self.persisted.append(msg)
 
-    async def get_messages(
-        self, _conv_id: str, _limit: int | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_messages(self, _conv_id: str, _limit: int | None = None) -> list[dict[str, Any]]:
         return list(self.persisted)
+
+    async def list_active(self) -> list[Any]:
+        from taskforce.core.interfaces.conversation import ConversationInfo
+
+        _t = datetime(2026, 4, 29, tzinfo=UTC)
+        return [
+            ConversationInfo(
+                conversation_id=cid,
+                channel="rest",
+                started_at=_t,
+                last_activity=_t,
+                message_count=0,
+                topic=None,
+            )
+            for cid in self._KNOWN_IDS
+        ]
+
+    async def list_archived(self, limit: int = 20) -> list[Any]:
+        return []
 
 
 class _StreamingExecutor:
@@ -47,12 +69,8 @@ class _StreamingExecutor:
     def execute_mission_streaming(self, **_kwargs) -> AsyncIterator[_Update]:
         async def _stream() -> AsyncIterator[_Update]:
             yield _Update(event_type=EventType.STARTED.value, message="started")
-            yield _Update(
-                event_type=EventType.LLM_TOKEN.value, details={"token": "Hello "}
-            )
-            yield _Update(
-                event_type=EventType.LLM_TOKEN.value, details={"token": "world"}
-            )
+            yield _Update(event_type=EventType.LLM_TOKEN.value, details={"token": "Hello "})
+            yield _Update(event_type=EventType.LLM_TOKEN.value, details={"token": "world"})
             yield _Update(
                 event_type=EventType.FINAL_ANSWER.value,
                 details={"content": "Hello world"},

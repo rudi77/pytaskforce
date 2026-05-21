@@ -23,6 +23,7 @@ from taskforce.api.dependencies import (
     get_channel_link_registry,
     get_gateway,
     get_inbound_adapters,
+    require_permission,
 )
 from taskforce.api.errors import http_exception as _error_response
 from taskforce.api.schemas.errors import ErrorResponse
@@ -67,18 +68,6 @@ class GatewayMessageRequest(BaseModel):
     profile: str = Field(
         default="butler",
         description="Agent profile to use.",
-    )
-    user_id: str | None = Field(
-        default=None,
-        description="User ID for RAG security filtering.",
-    )
-    org_id: str | None = Field(
-        default=None,
-        description="Organization ID for RAG security filtering.",
-    )
-    scope: str | None = Field(
-        default=None,
-        description="Access scope for RAG security filtering.",
     )
     agent_id: str | None = Field(
         default=None,
@@ -200,14 +189,27 @@ class LinkDeleteResponse(BaseModel):
 # ------------------------------------------------------------------
 
 
-def _build_user_context(request: GatewayMessageRequest) -> dict[str, Any] | None:
-    if not any([request.user_id, request.org_id, request.scope]):
+def _build_user_context() -> dict[str, Any] | None:
+    """Derive the RAG/identity context from the *verified* caller identity.
+
+    The user/org are never read from the request body — a client-supplied
+    identity is an identity-spoofing vector (#280): it would let any caller
+    pose as another user/org and extract their RAG hits. The values are
+    resolved from the framework's identity resolvers, which auth middleware
+    populates. Single-tenant builds with no auth middleware resolve to the
+    framework default (user ``None``, tenant ``"default"``) and return
+    ``None`` here — bit-for-bit unchanged single-tenant behaviour.
+    """
+    from taskforce.application.infrastructure_overrides import (
+        get_current_tenant_id,
+        get_current_user_id,
+    )
+
+    user_id = get_current_user_id()
+    tenant_id = get_current_tenant_id()
+    if user_id is None and tenant_id == "default":
         return None
-    return {
-        "user_id": request.user_id,
-        "org_id": request.org_id,
-        "scope": request.scope,
-    }
+    return {"user_id": user_id, "org_id": tenant_id, "scope": None}
 
 
 # ------------------------------------------------------------------
@@ -250,7 +252,7 @@ async def handle_message(
     options = GatewayOptions(
         profile=request.profile,
         session_id=request.session_id,
-        user_context=_build_user_context(request),
+        user_context=_build_user_context(),
         agent_id=request.agent_id,
         planning_strategy=request.planning_strategy,
         planning_strategy_params=request.planning_strategy_params,
@@ -365,9 +367,16 @@ async def handle_webhook(
 )
 async def send_notification(
     request: NotificationRequestSchema,
+    _permission: None = Depends(require_permission("tenant:manage")),
     gateway=Depends(get_gateway),
 ) -> NotificationResponseSchema:
-    """Send a proactive push notification to a registered recipient."""
+    """Send a proactive push notification to a registered recipient.
+
+    Gated by the ``tenant:manage`` permission (#278): an unauthenticated
+    caller in a multi-tenant deployment must not be able to push arbitrary
+    messages. In a single-tenant build with no auth middleware the guard
+    is a no-op, so behaviour is unchanged.
+    """
     if not request.message.strip():
         raise _error_response(
             status_code=400,
@@ -400,9 +409,16 @@ async def send_notification(
 )
 async def broadcast(
     request: BroadcastRequestSchema,
+    _permission: None = Depends(require_permission("tenant:manage")),
     gateway=Depends(get_gateway),
 ) -> BroadcastResponseSchema:
-    """Broadcast a message to all registered recipients on a channel."""
+    """Broadcast a message to all registered recipients on a channel.
+
+    Gated by the ``tenant:manage`` permission (#278) — broadcast reaches
+    every recipient on a channel, so it must not be callable without
+    authorization in a multi-tenant deployment. No-op guard in
+    single-tenant builds with no auth middleware.
+    """
     if not request.message.strip():
         raise _error_response(
             status_code=400,
