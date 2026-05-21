@@ -125,7 +125,11 @@ def main(
         None,
         "--profile",
         "-p",
-        help="Configuration profile (default: 'butler' if installed, else 'dev')",
+        envvar="TASKFORCE_PROFILE",
+        help=(
+            "Configuration profile. Falls back to the TASKFORCE_PROFILE env var, "
+            "then 'butler' if installed, else 'dev'."
+        ),
     ),
     debug: bool = typer.Option(
         False,

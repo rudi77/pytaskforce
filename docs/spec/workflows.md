@@ -39,7 +39,7 @@ a REST + UI CRUD surface; the scheduler integration is automatic.
 - Saving a `schedule` workflow registers exactly one scheduler job per `workflow_id`; re-saving with a different cron replaces the prior job atomically (no orphans).
 - Deleting a definition also unregisters its scheduled job.
 - Changing a definition's trigger away from `schedule` removes any previously registered scheduler job for that workflow.
-- Steps within a dependency level run concurrently via `asyncio.gather`; levels are awaited in order so a downstream step always sees every dependency's `final_message` in its mission text.
+- Steps within a dependency level run concurrently via `asyncio.gather`; levels are awaited in order so that — when every dependency completes successfully — a downstream step sees each dependency's `final_message` in its mission text. (On a sibling failure within a level, see *Known gaps* — `gather` propagates eagerly and downstream steps may not run.)
 - A webhook trigger with a configured HMAC secret rejects requests whose signature is missing or wrong with HTTP 401 — the workflow never runs.
 - A webhook trigger with no configured secret is an open endpoint by operator choice (`secret` and `secret_env` both absent).
 - Webhook path matching is case-insensitive and leading-slash-insensitive on both the definition's `trigger_config.path` and the request URL tail.

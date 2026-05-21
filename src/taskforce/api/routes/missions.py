@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
 from taskforce.api.dependencies import get_persistent_agent_service
+from taskforce.api.errors import http_exception
 
 router = APIRouter()
 
@@ -49,9 +50,10 @@ class CancelResponse(BaseModel):
 def _require_service() -> Any:
     service = get_persistent_agent_service()
     if service is None:
-        raise HTTPException(
+        raise http_exception(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
+            code="service_unavailable",
+            message=(
                 "No PersistentAgentService is registered with this API "
                 "process. Start the butler daemon or call "
                 "`set_persistent_agent_service` from the embedding host."
@@ -85,8 +87,9 @@ def cancel_mission(
     """
     result = service.cancel_request(request_id)
     if result["status"] == "not_found":
-        raise HTTPException(
+        raise http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No queued or in-flight request with id {request_id!r}",
+            code="not_found",
+            message=f"No queued or in-flight request with id {request_id!r}",
         )
     return CancelResponse(**result)

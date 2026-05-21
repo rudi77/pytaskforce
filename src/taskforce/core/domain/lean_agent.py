@@ -761,8 +761,7 @@ class Agent:
                     "success": False,
                     "tool_name": tool_name,
                     "error": f"invalid params: {exc}",
-                    "approval_status": "error",
-                    "error_kind": "approval_error",
+                    "error_kind": "invalid_params",
                     "terminal_failure": False,
                 }
             # ToolProtocol.validate_params returns (is_valid, error_msg).
@@ -783,8 +782,7 @@ class Agent:
                     "success": False,
                     "tool_name": tool_name,
                     "error": f"invalid params: {error_msg or 'validation failed'}",
-                    "approval_status": "error",
-                    "error_kind": "approval_error",
+                    "error_kind": "invalid_params",
                     "terminal_failure": False,
                 }
 

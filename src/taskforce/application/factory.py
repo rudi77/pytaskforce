@@ -150,6 +150,13 @@ class AgentFactory:
                 OAuth2DeviceFlow,
             )
 
+            # Route token-store construction through the InfrastructureBuilder
+            # so plugins (e.g. taskforce-enterprise) can install a
+            # per-(tenant, user) backend via set_token_store_override.
+            # Defaults to the legacy ``~/.taskforce/auth`` EncryptedTokenStore
+            # when no override is installed.
+            token_store = self.infra_builder.build_token_store()
+
             auth_flows: dict[str, Any] = {"oauth2_device": OAuth2DeviceFlow()}
             try:
                 from taskforce.infrastructure.auth.oauth2_auth_code_flow import (
@@ -160,17 +167,23 @@ class AgentFactory:
             except ImportError:
                 pass
 
+            # Credential (username/password) flow — shares the token store.
+            try:
+                from taskforce.infrastructure.auth.credential_store import (
+                    CredentialFlow,
+                    CredentialStore,
+                )
+
+                auth_flows["credential"] = CredentialFlow(CredentialStore(token_store))
+            except ImportError:
+                pass
+
             # Try to extract Google client credentials from legacy token file
             # so the authenticate tool can run device flows.
             provider_configs = self._load_google_provider_config()
 
-            # Route token-store construction through the InfrastructureBuilder
-            # so plugins (e.g. taskforce-enterprise) can install a
-            # per-(tenant, user) backend via set_token_store_override.
-            # Defaults to the legacy ``~/.taskforce/auth`` EncryptedTokenStore
-            # when no override is installed.
             self._auth_manager = AuthManager(
-                token_store=self.infra_builder.build_token_store(),
+                token_store=token_store,
                 auth_flows=auth_flows,
                 gateway=self._gateway,
                 provider_configs=provider_configs,

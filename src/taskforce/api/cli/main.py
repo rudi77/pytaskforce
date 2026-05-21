@@ -54,7 +54,13 @@ except ImportError:
     @app.callback()
     def main(
         ctx: typer.Context,
-        profile: str = typer.Option("dev", "--profile", "-p", help="Configuration profile"),
+        profile: str = typer.Option(
+            "dev",
+            "--profile",
+            "-p",
+            envvar="TASKFORCE_PROFILE",
+            help="Configuration profile (env: TASKFORCE_PROFILE)",
+        ),
         debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug output"),
     ):
         """Taskforce Agent CLI."""

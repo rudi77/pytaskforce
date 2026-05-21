@@ -213,6 +213,7 @@ asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "spec: ties a test to a docs/spec claim, e.g. @pytest.mark.spec('gateway.handle_message')",
 ]
 addopts = [
     "--strict-markers",

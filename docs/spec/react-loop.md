@@ -29,12 +29,12 @@ source of truth, and the blocking one collects from it.
 
 ## Invariants (what must always be true)
 
-- Every execution emits events in this lifecycle order: `STARTED` first, exactly one terminal event from `{FINAL_ANSWER, ASK_USER, INTERRUPTED, ERROR}`, followed by `COMPLETE`. Intermediate events (`STEP_START`, `LLM_TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `PLAN_UPDATED`, `TOKEN_USAGE`) appear between `STARTED` and the terminal event.
+- Every execution emits exactly one terminal event from `{FINAL_ANSWER, ASK_USER, INTERRUPTED, ERROR}`, followed by `COMPLETE` as the final event of the stream. Intermediate events (`STEP_START`, `LLM_TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `PLAN_UPDATED`, `TOKEN_USAGE`) appear before the terminal event.
 - A `COMPLETE` event is always the last event in the stream, regardless of success or failure.
 - The loop terminates as soon as `step >= agent.max_steps`, even if the agent has not produced a final answer; the terminal event in that case is `ERROR` with a `max_steps_reached` kind, never an empty completion.
 - An `ASK_USER` event pauses the execution; the loop does not advance until the answer is supplied (status becomes `paused`, not `failed`).
 - An `INTERRUPTED` event is emitted on cooperative cancellation; the resulting `ExecutionResult.status` is `paused`, not `failed`, so the conversation can be resumed.
-- `LLM_STREAM_RESTART` signals to consumers that all tokens received since the previous restart marker (or `STARTED`) must be discarded — they belong to a failed attempt being retried (e.g. after a content-filter block).
+- `LLM_STREAM_RESTART` signals to consumers that all tokens received since the previous restart marker (or the start of the stream) must be discarded — they belong to a failed attempt being retried (e.g. after a content-filter block).
 - Tool errors are converted to structured payloads (`{success: false, error, error_type}`), never raw exceptions reaching the LLM.
 - Both `Agent.execute()` (blocking) and `Agent.execute_stream()` (streaming) must produce equivalent results for the same input — blocking is implemented by collecting from streaming, so a divergence is a bug.
 - Every concrete `PlanningStrategy` implements both `execute()` and `execute_stream()` — the protocol does not allow either to be optional.
@@ -45,9 +45,9 @@ source of truth, and the blocking one collects from it.
 
 - `agent.planning_strategy: <name>` where `<name>` ∈ `{native_react, plan_and_execute, plan_and_react, spar}` (default: `native_react`)
 - `agent.planning_strategy_params: dict` with strategy-specific keys:
-  - `max_step_iterations: int` (default 4) — per-step LLM retry budget within `plan_and_execute` / `spar`
+  - `max_step_iterations: int` (default 4 for `plan_and_execute`, 3 for `spar`) — per-step LLM retry budget
   - `max_plan_steps: int` (default 12) — cap on TodoList plan length
-  - `reflect_every_step: bool` (default false, SPAR-only) — run reflect phase after each act
+  - `reflect_every_step: bool` (default true, SPAR-only) — run reflect phase after each act
   - `generate_plan_first: bool` (default false, native_react-only) — emit an upfront plan before looping
 - `agent.max_steps: int` — hard ceiling on iterations across all strategies
 
@@ -55,7 +55,7 @@ source of truth, and the blocking one collects from it.
 
 Events that any caller (UI, SSE consumer, CLI) must handle as part of the public contract:
 
-- `STARTED` — execution began (always first)
+- `STARTED` — reserved event type: defined in the `EventType` enum but not currently emitted by the ReAct loop; the first event a caller actually sees is `STEP_START`
 - `STEP_START` — a new reasoning step begins (paired with one ore more LLM_TOKEN / TOOL_CALL / TOOL_RESULT events)
 - `LLM_TOKEN` — token from the streaming LLM response (consumers may render or buffer)
 - `LLM_STREAM_RESTART` — discard partial tokens since the last restart marker
