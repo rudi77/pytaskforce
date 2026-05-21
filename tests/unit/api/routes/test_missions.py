@@ -82,6 +82,7 @@ def test_list_missions_returns_records(app: FastAPI) -> None:
     assert body["missions"][0]["status"] == "queued"
 
 
+@pytest.mark.spec("interruption.rest_cancel_inflight_returns_202_interrupt_requested")
 def test_cancel_returns_202_for_known_request(app: FastAPI) -> None:
     service = _StubService(
         cancel_result={
@@ -99,6 +100,26 @@ def test_cancel_returns_202_for_known_request(app: FastAPI) -> None:
     assert service.cancel_calls == ["req-1"]
 
 
+@pytest.mark.spec("interruption.rest_cancel_unknown_returns_404")
+@pytest.mark.spec("interruption.rest_cancel_queued_returns_202_cancelled")
+def test_cancel_queued_returns_202_cancelled(app: FastAPI) -> None:
+    """Cancelling a queued (not-yet-started) mission returns 202 + status=cancelled."""
+    service = _StubService(
+        cancel_result={
+            "request_id": "req-2",
+            "session_id": None,
+            "status": "cancelled",
+        }
+    )
+    set_persistent_agent_service(service)
+    response = TestClient(app).post("/api/v1/missions/req-2/cancel")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "cancelled"
+    assert service.cancel_calls == ["req-2"]
+
+
+@pytest.mark.spec("interruption.rest_cancel_unknown_returns_404")
 def test_cancel_returns_404_for_unknown_request(app: FastAPI) -> None:
     set_persistent_agent_service(
         _StubService(

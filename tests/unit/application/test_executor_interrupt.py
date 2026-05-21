@@ -74,6 +74,8 @@ class TestRegistryLifecycle:
         assert session_id not in executor._active_agents
         mock_agent.clear_interrupt.assert_called()
 
+    @pytest.mark.spec("interruption.programmatic_request_sets_paused_status")
+    @pytest.mark.spec("interruption.interrupt_emits_interrupted_event_then_complete")
     @pytest.mark.asyncio
     async def test_interrupt_during_streaming_is_visible(self) -> None:
         """While a mission is running, interrupt(session_id) finds the agent."""

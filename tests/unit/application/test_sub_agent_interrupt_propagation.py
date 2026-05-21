@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from taskforce.application.sub_agent_spawner import (
     _ACTIVE_CHILDREN,
     _INTERRUPTED_PARENTS,
@@ -31,6 +33,7 @@ def setup_function() -> None:
     _INTERRUPTED_PARENTS.clear()
 
 
+@pytest.mark.spec("interruption.interrupt_propagates_to_sub_agents")
 def test_interrupt_signals_every_active_child() -> None:
     parent = "session-A"
     child_a = _make_child()
@@ -45,6 +48,7 @@ def test_interrupt_signals_every_active_child() -> None:
     child_b.request_interrupt.assert_called_once()
 
 
+@pytest.mark.spec("interruption.interrupt_propagates_to_sub_agents")
 def test_interrupt_isolated_per_parent() -> None:
     a_child = _make_child()
     b_child = _make_child()

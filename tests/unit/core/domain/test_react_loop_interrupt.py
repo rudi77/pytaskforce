@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -68,7 +69,40 @@ def _make_agent(interrupted: bool = False) -> MagicMock:
     return agent
 
 
+def _make_stepping_agent() -> MagicMock:
+    """Mock agent that can run a full ReAct step (LLM call + tool call).
+
+    Adds the tool-execution surface on top of ``_make_agent`` so a test
+    can drive one complete step and then observe an interrupt at the
+    next loop boundary.
+    """
+    agent = _make_agent()
+    agent._openai_tools = [{"type": "function", "function": {"name": "file_read"}}]
+    agent._prompt_cache = None
+    agent.message_history_manager = MagicMock()
+    agent.message_history_manager.compress_messages = AsyncMock(side_effect=lambda m: m)
+    agent.message_history_manager.preflight_budget_check = MagicMock(
+        side_effect=lambda m: m
+    )
+    agent.tool_result_message_factory = AsyncMock()
+    agent.tool_result_message_factory.build_message = AsyncMock(
+        return_value={"role": "tool", "content": "result"}
+    )
+    agent._execute_tool = AsyncMock(return_value={"success": True, "output": "ok"})
+
+    # Non-streaming LLM provider (no complete_stream → react loop uses complete()).
+    provider = MagicMock()
+    del provider.complete_stream
+    provider.complete = AsyncMock()
+    agent.llm_provider = provider
+
+    return agent
+
+
 class TestReactLoopInterrupt:
+    @pytest.mark.spec("interruption.interrupt_emits_interrupted_event_then_complete")
+    @pytest.mark.spec("interruption.paused_state_persisted_for_resume")
+    @pytest.mark.spec("interruption.interrupt_flag_cleared_after_handling")
     @pytest.mark.asyncio
     async def test_loop_exits_when_interrupt_requested_before_first_step(self) -> None:
         """Interrupt flag set before the loop starts → immediate pause + INTERRUPTED event."""
@@ -106,6 +140,7 @@ class TestReactLoopInterrupt:
 
 
 class TestHandleInterrupt:
+    @pytest.mark.spec("interruption.paused_state_persisted_for_resume")
     @pytest.mark.asyncio
     async def test_persists_full_state_snapshot(self) -> None:
         agent = _make_agent()
@@ -149,6 +184,7 @@ class TestHandleInterrupt:
 
 
 class TestResumeFromPauseInterrupt:
+    @pytest.mark.spec("interruption.resume_after_interrupt_continues_session")
     def test_interrupt_resume_restores_messages_and_appends_new_turn(self) -> None:
         state: dict[str, Any] = {
             "pending_interrupt": {"reason": "user_requested", "timestamp": "t"},
@@ -217,6 +253,8 @@ class TestResumeFromPauseInterrupt:
 class TestAgentInterruptFlag:
     """LeanAgent.request_interrupt/clear_interrupt behaviour."""
 
+    @pytest.mark.spec("interruption.programmatic_request_sets_paused_status")
+    @pytest.mark.spec("interruption.interrupt_flag_cleared_after_handling")
     @pytest.mark.asyncio
     async def test_request_and_clear_flag(self) -> None:
         # Import lazily so the module-level Agent alias doesn't pull heavy
@@ -244,3 +282,75 @@ class TestAgentInterruptFlag:
         # Calling into the lazy getter must return a real asyncio.Event.
         agent.request_interrupt()
         assert isinstance(agent._interrupt_event, asyncio.Event)
+
+
+class TestInterruptObservedAtBoundary:
+    """The interrupt is observed at the next loop boundary — never mid-step."""
+
+    @pytest.mark.spec("interruption.interrupt_observed_after_inflight_step_finishes")
+    @pytest.mark.asyncio
+    async def test_inflight_step_finishes_before_interrupt_is_observed(self) -> None:
+        """An interrupt raised mid-step (here: during tool execution) is only
+        observed at the *next* ReAct loop boundary — the in-flight LLM call and
+        tool call run to completion first, and the following step never starts.
+        """
+        agent = _make_stepping_agent()
+        logger = _make_logger()
+
+        llm_calls = {"n": 0}
+
+        async def fake_complete(**kwargs: Any) -> dict[str, Any]:
+            llm_calls["n"] += 1
+            if llm_calls["n"] == 1:
+                return {
+                    "success": True,
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "tc_1",
+                            "type": "function",
+                            "function": {
+                                "name": "file_read",
+                                "arguments": json.dumps({"path": "x.txt"}),
+                            },
+                        }
+                    ],
+                }
+            # Step 2 must never run — but return something safe if it does.
+            return {"success": True, "tool_calls": None, "content": "done"}
+
+        agent.llm_provider.complete = AsyncMock(side_effect=fake_complete)
+
+        tool_runs = {"n": 0}
+
+        async def tool_exec(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            tool_runs["n"] += 1
+            # Caller (web Stop button / CLI Ctrl+C) raises the interrupt
+            # while the tool call is still in flight.
+            agent._interrupt_event.set()
+            return {"success": True, "output": "file contents"}
+
+        agent._execute_tool = AsyncMock(side_effect=tool_exec)
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "read a file"},
+        ]
+        agent.context.messages.extend(messages)
+        state: dict[str, Any] = {}
+
+        events: list[StreamEvent] = []
+        async for evt in _react_loop(
+            agent, "read a file", "sess-mid-step", messages, state, 0, logger
+        ):
+            events.append(evt)
+
+        # The in-flight step ran to completion: exactly one LLM call + one tool call.
+        assert llm_calls["n"] == 1
+        assert tool_runs["n"] == 1
+
+        # Interrupt observed at the NEXT boundary (step 1), not mid-step.
+        interrupt_events = [e for e in events if e.event_type == EventType.INTERRUPTED]
+        assert len(interrupt_events) == 1
+        assert interrupt_events[0].data["step"] == 1
+        assert "pending_interrupt" in state
