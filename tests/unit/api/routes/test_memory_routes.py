@@ -36,11 +36,26 @@ async def _seed(tmp_path: Path) -> None:
 
 @pytest.fixture
 def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+    # The framework default wiki store is FileWikiStore. An installed
+    # wiki-store override (e.g. the taskforce-enterprise plugin present in a
+    # dev venv) would otherwise hijack the route and serve a tenant-scoped
+    # store instead. Clear it for the test so the *framework* contract is
+    # what gets exercised, then restore it afterwards.
+    from taskforce.application.infrastructure_overrides import (
+        get_wiki_store_override,
+        set_wiki_store_override,
+    )
+
+    saved_override = get_wiki_store_override()
+    set_wiki_store_override(None)
     monkeypatch.setenv("TASKFORCE_WORK_DIR", str(tmp_path))
     asyncio.run(_seed(tmp_path))
     application = FastAPI()
     application.include_router(memory.router, prefix="/api/v1")
-    return application
+    try:
+        yield application
+    finally:
+        set_wiki_store_override(saved_override)
 
 
 @pytest.mark.spec("wiki-memory.rest_memory_list_returns_page_summaries")
