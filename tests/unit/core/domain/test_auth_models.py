@@ -108,6 +108,21 @@ class TestCredentialData:
         assert restored.password == cred.password
         assert restored.metadata == cred.metadata
 
+    def test_password_excluded_from_repr(self):
+        """#284 — the password must never leak via repr()/str() into debug
+        logs, trace spans or exception reprs."""
+        cred = CredentialData(
+            provider="my_service",
+            username="user@example.com",
+            password="hunter2-super-secret",
+        )
+        assert "hunter2-super-secret" not in repr(cred)
+        assert "hunter2-super-secret" not in str(cred)
+        # The non-secret fields are still visible for debuggability.
+        assert "my_service" in repr(cred)
+        # to_dict still carries the real value — needed for encrypted storage.
+        assert cred.to_dict()["password"] == "hunter2-super-secret"
+
 
 class TestAuthFlowRequest:
     def test_defaults(self):

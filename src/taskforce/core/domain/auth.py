@@ -133,13 +133,15 @@ class CredentialData:
         provider: Identifier for the target service.
         username: The login username or email.
         password: The login password (encrypted at rest by the token store).
+            Excluded from ``repr()`` so it never leaks into debug logs,
+            trace spans, or exception reprs (#284).
         metadata: Optional extra data (e.g. login URL, notes).
         created_at: When this credential was stored (UTC).
     """
 
     provider: str
     username: str
-    password: str
+    password: str = field(repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=utc_now)
 
