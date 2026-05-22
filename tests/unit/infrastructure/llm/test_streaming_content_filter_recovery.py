@@ -57,6 +57,7 @@ _CONTENT_FILTER_MSG = (
 )
 
 
+@pytest.mark.spec("content-filter-recovery.stages_run_in_order_until_success")
 @pytest.mark.asyncio
 async def test_recovery_succeeds_after_content_filter(temp_config_file: str) -> None:
     """First call raises content filter, retry on stripped history succeeds."""
@@ -137,6 +138,7 @@ async def test_recovery_failure_surfaces_content_filter_error(temp_config_file: 
     assert err.get("non_retryable") is True
 
 
+@pytest.mark.spec("content-filter-recovery.tool_results_only_runs_first")
 @pytest.mark.asyncio
 async def test_recovery_stages_succeed_in_first_stage(temp_config_file: str) -> None:
     """The cheaper ``tool_results_only`` stage runs first; if it succeeds,
@@ -170,6 +172,7 @@ async def test_recovery_stages_succeed_in_first_stage(temp_config_file: str) -> 
     assert any(e.get("type") == "done" for e in events)
 
 
+@pytest.mark.spec("content-filter-recovery.rephrase_stage_off_when_disabled")
 @pytest.mark.asyncio
 async def test_rephrase_stage_explicit_off_is_respected(temp_config_file: str) -> None:
     """Opting out of rephrase via ``recover_via_rephrase=False`` short-circuits
@@ -266,6 +269,7 @@ async def test_rephrase_stage_runs_when_enabled(temp_config_file: str) -> None:
     assert any(e.get("type") == "done" for e in events)
 
 
+@pytest.mark.spec("content-filter-recovery.tool_results_only_drops_orphan_tool_call_assistants")
 def test_tool_results_only_strip_drops_pre_existing_orphan_tool_messages(
     temp_config_file: str,
 ) -> None:
@@ -297,6 +301,7 @@ def test_tool_results_only_strip_drops_pre_existing_orphan_tool_messages(
             assert not m.get("tool_calls")
 
 
+@pytest.mark.spec("content-filter-recovery.empty_strip_skips_stage")
 @pytest.mark.asyncio
 async def test_no_recovery_when_history_cannot_be_stripped(temp_config_file: str) -> None:
     """If stripping doesn't reduce message count, skip recovery and surface immediately."""
@@ -387,6 +392,7 @@ async def test_successful_first_attempt_does_not_strip(temp_config_file: str) ->
     assert "stream_restart" not in types
 
 
+@pytest.mark.spec("content-filter-recovery.stream_restart_emitted_before_each_retry")
 @pytest.mark.asyncio
 async def test_stream_restart_emitted_before_recovery_tokens(
     temp_config_file: str,
@@ -616,6 +622,7 @@ async def test_no_tools_recovery_succeeds_after_strip_stages_fail(
     assert "error" not in types
 
 
+@pytest.mark.spec("content-filter-recovery.no_tools_stage_only_when_tools_supplied")
 @pytest.mark.asyncio
 async def test_no_tools_recovery_skipped_when_no_tools_originally(
     temp_config_file: str,
@@ -705,6 +712,7 @@ async def test_no_tools_recovery_skipped_when_strip_stage_succeeds(
     assert restart_stages == ["tool_results_only"]
 
 
+@pytest.mark.spec("content-filter-recovery.final_error_forced_to_content_filter_kind")
 @pytest.mark.asyncio
 async def test_recovery_non_filter_secondary_error_still_surfaces_content_filter(
     temp_config_file: str,

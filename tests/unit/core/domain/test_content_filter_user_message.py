@@ -32,6 +32,9 @@ from taskforce.core.domain.planning.react_loop import build_user_message_for_err
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec(
+    "content-filter-recovery.build_user_message_returns_actionable_german_guidance"
+)
 def test_content_filter_kind_returns_specific_message() -> None:
     msg = build_user_message_for_error("content_filter", "Azure rejected prompt")
 
