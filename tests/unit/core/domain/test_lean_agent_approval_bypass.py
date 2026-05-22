@@ -81,6 +81,7 @@ def _reset_overrides():
 
 
 @pytest.mark.spec("tools.approval_bypass_list_skips_gate")
+@pytest.mark.spec("approval-gating.profile_bypass_list_skips_gate")
 @pytest.mark.asyncio
 async def test_bypass_list_skips_approval_service_entirely() -> None:
     """Tool in bypass list → gate returns None, service never consulted."""
@@ -182,6 +183,7 @@ def test_hydrate_approval_drops_non_string_entries() -> None:
     assert get_approval_bypass_override() == frozenset({"python", "shell"})
 
 
+@pytest.mark.spec("approval-gating.tenant_bypass_list_skips_gate")
 @pytest.mark.asyncio
 async def test_tenant_override_bypasses_even_with_empty_profile_list() -> None:
     """UI-edited bypass must work for agents with no profile-level config."""
@@ -202,6 +204,7 @@ async def test_tenant_override_bypasses_even_with_empty_profile_list() -> None:
     assert denier.calls == [], "approval service must not be called when bypassed"
 
 
+@pytest.mark.spec("approval-gating.bypass_sources_combine_as_union")
 @pytest.mark.asyncio
 async def test_profile_and_tenant_bypass_are_unioned() -> None:
     """Either source alone bypasses; together both still work independently."""

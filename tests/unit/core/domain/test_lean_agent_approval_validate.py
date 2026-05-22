@@ -97,6 +97,7 @@ async def test_validator_receives_kwargs_not_positional_dict() -> None:
     assert tool.calls == [{"foo": 1, "bar": "baz"}]
 
 
+@pytest.mark.spec("approval-gating.invalid_params_short_circuit_before_prompt")
 @pytest.mark.asyncio
 async def test_validator_failure_short_circuits_approval() -> None:
     """A False (is_valid, error_msg) result rejects without asking the admin."""
@@ -146,6 +147,7 @@ async def test_validator_can_return_plain_bool() -> None:
     assert outcome["error_kind"] == "invalid_params"
 
 
+@pytest.mark.spec("approval-gating.no_service_installed_runs_tool_anyway")
 @pytest.mark.asyncio
 async def test_no_approval_service_skips_validation_entirely() -> None:
     """Sanity: with no approver installed, the gate is skipped."""
@@ -200,6 +202,7 @@ class _ScheduledOptInTool:
 
 
 @pytest.mark.spec("tools.auto_approve_for_origin_skips_gate")
+@pytest.mark.spec("approval-gating.auto_approve_for_origin_skips_gate")
 @pytest.mark.asyncio
 async def test_scheduled_workflow_origin_auto_approves_opted_in_tool() -> None:
     """Issue #177: scheduler-fired calls bypass the human-decision queue."""
@@ -331,6 +334,7 @@ class _SimpleApprovalTool:
         return "preview"
 
 
+@pytest.mark.spec("approval-gating.denied_decision_returns_terminal_failure")
 @pytest.mark.asyncio
 async def test_denied_approval_payload_carries_error_kind() -> None:
     set_approval_service(_DenyingApprover())
@@ -352,6 +356,7 @@ async def test_denied_approval_payload_carries_error_kind() -> None:
     assert outcome["error_kind"] == "approval_denied"
 
 
+@pytest.mark.spec("approval-gating.timed_out_decision_distinct_from_denied")
 @pytest.mark.asyncio
 async def test_timed_out_approval_payload_carries_error_kind() -> None:
     set_approval_service(_TimingOutApprover())
@@ -370,6 +375,7 @@ async def test_timed_out_approval_payload_carries_error_kind() -> None:
     assert outcome["terminal_failure"] is True
 
 
+@pytest.mark.spec("approval-gating.service_exception_yields_error_kind_approval_error")
 @pytest.mark.asyncio
 async def test_service_crash_payload_carries_error_kind() -> None:
     set_approval_service(_CrashingApprover())

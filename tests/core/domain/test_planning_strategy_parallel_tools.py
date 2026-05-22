@@ -184,6 +184,7 @@ def test_execute_tool_calls_preserves_order_for_mixed_tools() -> None:
 
 
 @pytest.mark.spec("tools.parallel_execution_skips_tools_needing_approval")
+@pytest.mark.spec("approval-gating.gated_tool_forced_onto_serial_path")
 def test_execute_tool_calls_forces_approval_tools_serial() -> None:
     """A tool with ``requires_approval=True`` never runs in parallel — even
     when it also sets ``supports_parallelism=True``."""
