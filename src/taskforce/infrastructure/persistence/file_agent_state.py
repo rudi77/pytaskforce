@@ -18,6 +18,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.interfaces.agent_state import AgentStateProtocol
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 logger = structlog.get_logger(__name__)
 
@@ -49,14 +50,9 @@ class FileAgentState:
             state_copy["_updated_at"] = self._time_provider().isoformat()
 
             payload = json.dumps(state_copy, indent=2, ensure_ascii=False)
-            temp_file = self._state_file.with_suffix(".json.tmp")
 
             try:
-                async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
-                    await f.write(payload)
-                if self._state_file.exists():
-                    self._state_file.unlink()
-                temp_file.rename(self._state_file)
+                await atomic_write_text(self._state_file, payload)
                 logger.info("agent_state.saved", version=state_copy["_version"])
             except OSError as exc:
                 logger.error("agent_state.save_failed", error=str(exc))

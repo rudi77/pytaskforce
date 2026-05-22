@@ -24,6 +24,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.interfaces.state import StateManagerProtocol
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 
 class FileStateManager(StateManagerProtocol):
@@ -127,23 +128,17 @@ class FileStateManager(StateManagerProtocol):
 
     async def _write_state_file(
         self,
-        temp_file: Path,
         state_file: Path,
         payload_json: str,
     ) -> None:
         """
-        Write the state payload to disk atomically.
+        Write the state payload to disk atomically and durably.
 
         Args:
-            temp_file: Temporary file path
             state_file: Final file path
             payload_json: JSON payload string
         """
-        async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
-            await f.write(payload_json)
-        if state_file.exists():
-            state_file.unlink()
-        temp_file.rename(state_file)
+        await atomic_write_text(state_file, payload_json)
 
     async def _get_lock(self, session_id: str) -> asyncio.Lock:
         """Get or create a lock for a session.
@@ -180,7 +175,6 @@ class FileStateManager(StateManagerProtocol):
         """
         async with await self._get_lock(session_id):
             state_file = self.states_dir / f"{session_id}.json"
-            temp_file = self.states_dir / f"{session_id}.json.tmp"
 
             try:
                 payload_json, version = self._serialize_state_payload(session_id, state_data)
@@ -193,7 +187,7 @@ class FileStateManager(StateManagerProtocol):
                 return False
 
             try:
-                await self._write_state_file(temp_file, state_file, payload_json)
+                await self._write_state_file(state_file, payload_json)
             except OSError as exc:
                 self.logger.error(
                     "state_save_failed",

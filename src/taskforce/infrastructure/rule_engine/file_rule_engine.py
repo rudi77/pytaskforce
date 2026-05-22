@@ -15,6 +15,7 @@ import structlog
 
 from taskforce.core.domain.agent_event import AgentEvent
 from taskforce.core.domain.trigger_rule import RuleAction, TriggerRule
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 logger = structlog.get_logger(__name__)
 
@@ -132,10 +133,7 @@ class FileRuleEngine:
         self._store_path.parent.mkdir(parents=True, exist_ok=True)
         data = [r.to_dict() for r in self._rules.values()]
         raw = json.dumps(data, indent=2, default=str)
-        tmp = self._store_path.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(raw)
-        tmp.replace(self._store_path)
+        await atomic_write_text(self._store_path, raw)
 
     async def add_rule(self, rule: TriggerRule) -> str:
         """Add a new trigger rule."""

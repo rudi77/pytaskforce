@@ -9,6 +9,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.domain.schedule import ScheduleJob
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 logger = structlog.get_logger(__name__)
 
@@ -35,10 +36,7 @@ class FileJobStore:
         await self._ensure_dir()
         path = self._dir / f"{job.job_id}.json"
         data = json.dumps(job.to_dict(), indent=2, default=str)
-        tmp = path.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(data)
-        tmp.replace(path)
+        await atomic_write_text(path, data)
         logger.debug("job_store.saved", job_id=job.job_id, name=job.name)
 
     async def load(self, job_id: str) -> ScheduleJob | None:

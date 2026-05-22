@@ -25,6 +25,8 @@ from typing import Any
 import aiofiles
 import structlog
 
+from taskforce.core.utils.atomic_io import atomic_write_text
+
 
 @dataclass(frozen=True)
 class ConversationRecord:
@@ -153,12 +155,11 @@ class GatewayConversationStore:
             "history": history,
             "updated_at": self._now_isoformat(),
         }
-        temp_path = path.with_suffix(".json.tmp")
         async with self._get_lock(str(path)):
             try:
-                async with aiofiles.open(temp_path, "w", encoding="utf-8") as handle:
-                    await handle.write(json.dumps(payload, indent=2, ensure_ascii=False))
-                temp_path.replace(path)
+                await atomic_write_text(
+                    path, json.dumps(payload, indent=2, ensure_ascii=False)
+                )
             except OSError as exc:
                 self._logger.error(
                     "conversation_store.save_failed",

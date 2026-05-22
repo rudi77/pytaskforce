@@ -32,6 +32,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.domain.tool_result import ToolResultHandle
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 
 class FileToolResultStore:
@@ -148,16 +149,14 @@ class FileToolResultStore:
                 metadata=full_metadata,
             )
 
-            # Write result file
+            # Write result file atomically
             result_path = self._result_path(handle_id)
-            async with aiofiles.open(result_path, "w", encoding="utf-8") as f:
-                await f.write(result_json)
+            await atomic_write_text(result_path, result_json)
 
-            # Write handle file
+            # Write handle file atomically
             handle_path = self._handle_path(handle_id)
             handle_json = json.dumps(handle.to_dict())
-            async with aiofiles.open(handle_path, "w", encoding="utf-8") as f:
-                await f.write(handle_json)
+            await atomic_write_text(handle_path, handle_json)
 
             self.logger.info(
                 "tool_result_stored",
