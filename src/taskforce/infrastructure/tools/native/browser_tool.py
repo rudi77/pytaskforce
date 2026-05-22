@@ -77,8 +77,27 @@ class _PlaywrightWorker:
         self._ready.wait()
 
     async def submit(self, coro_factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
-        """Schedule a coroutine on the worker loop and await its result."""
+        """Schedule a coroutine on the worker loop and await its result.
+
+        Raises ``RuntimeError`` if invoked re-entrantly from a coroutine
+        already running *on* the worker loop. Scheduling onto your own
+        loop via ``run_coroutine_threadsafe`` and then waiting for it is a
+        textbook self-deadlock; this guard (#308) turns that into an
+        immediate, diagnosable error instead of a hung worker. A browser
+        operation must therefore never submit another browser operation
+        from inside the worker loop.
+        """
         assert self._loop is not None
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is self._loop:
+            raise RuntimeError(
+                "BrowserTool worker invoked re-entrantly from its own event "
+                "loop — this would deadlock. A browser operation must not "
+                "submit another browser operation."
+            )
         future = asyncio.run_coroutine_threadsafe(coro_factory(), self._loop)
         return await asyncio.wrap_future(future)
 

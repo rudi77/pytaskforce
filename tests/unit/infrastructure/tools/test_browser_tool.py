@@ -713,3 +713,37 @@ class TestBrowserToolRegistry:
         spec = resolve_tool_spec("browser")
         assert spec is not None
         assert spec["type"] == "BrowserTool"
+
+
+# ---------------------------------------------------------------------------
+# Worker re-entrancy guard (#308)
+# ---------------------------------------------------------------------------
+
+
+class TestPlaywrightWorkerReentrancy:
+    """The worker must reject re-entrant submits instead of deadlocking."""
+
+    async def test_submit_runs_coro_from_main_loop(self) -> None:
+        """A normal submit from the main loop runs the coroutine and returns."""
+        worker = browser_module._PlaywrightWorker.get()
+
+        async def _coro() -> int:
+            return 42
+
+        assert await worker.submit(lambda: _coro()) == 42
+
+    async def test_submit_rejects_reentrant_call(self) -> None:
+        """A submit() issued from inside the worker loop raises immediately
+        instead of deadlocking the worker (#308)."""
+        worker = browser_module._PlaywrightWorker.get()
+
+        async def _inner() -> int:
+            return 1
+
+        async def _reentrant() -> int:
+            # This coroutine runs ON the worker loop — re-submitting onto
+            # the same loop and waiting would self-deadlock.
+            return await worker.submit(lambda: _inner())
+
+        with pytest.raises(RuntimeError, match="re-entrantly"):
+            await worker.submit(lambda: _reentrant())
