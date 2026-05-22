@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,66 @@ async def test_append_log(store: FileWikiStore, tmp_path: Path) -> None:
     assert "first" in log
     assert "second" in log
     assert log.count("\n## [") == 2
+
+
+# ---------------------------------------------------------------------------
+# Concurrency (#307) — no lost updates under parallel writers
+# ---------------------------------------------------------------------------
+
+
+async def test_concurrent_update_section_no_lost_update(store: FileWikiStore) -> None:
+    """20 parallel appends to one section all survive — no lost update.
+
+    Without a per-page lock each ``update_section`` reads the page,
+    appends to its own copy and writes it back; concurrent writers
+    clobber each other and only a fraction of the lines survive.
+    """
+    await store.write_page(
+        WikiPage(name="entities/mueller", title="Mueller", body="## Notes\n")
+    )
+
+    await asyncio.gather(
+        *(
+            store.update_section(
+                "entities/mueller", "Notes", f"- entry {i}", mode="append"
+            )
+            for i in range(20)
+        )
+    )
+
+    final = await store.get_page("entities/mueller")
+    assert final is not None
+    for i in range(20):
+        assert f"- entry {i}" in final.body, f"lost update: entry {i} missing"
+
+
+async def test_concurrent_append_log_no_lost_entries(
+    store: FileWikiStore, tmp_path: Path
+) -> None:
+    """Parallel append_log calls all land — the log is read-modify-write."""
+    await asyncio.gather(*(store.append_log(f"entry-{i}") for i in range(20)))
+
+    log = (tmp_path / "wiki" / "log.md").read_text(encoding="utf-8")
+    for i in range(20):
+        assert f"entry-{i}" in log, f"lost log entry-{i}"
+
+
+async def test_concurrent_write_page_distinct_pages_all_indexed(
+    store: FileWikiStore,
+) -> None:
+    """Parallel writes of distinct pages all end up in the refreshed index."""
+    await asyncio.gather(
+        *(
+            store.write_page(
+                WikiPage(name=f"entities/p{i}", title=f"P{i}", body="x")
+            )
+            for i in range(20)
+        )
+    )
+
+    index = await store.read_index()
+    for i in range(20):
+        assert f"entities/p{i}.md" in index, f"page p{i} missing from index"
 
 
 @pytest.mark.spec("wiki-memory.write_page_preserves_created_at_on_overwrite")

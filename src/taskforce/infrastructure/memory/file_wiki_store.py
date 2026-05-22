@@ -11,6 +11,7 @@ The store performs no caching — wikis are expected to stay small
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ import yaml
 from taskforce.core.domain.wiki_page import WikiPage
 from taskforce.core.domain.wiki_service import apply_section_update, render_index
 from taskforce.core.interfaces.wiki_store import WikiStoreProtocol
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +30,9 @@ _FRONTMATTER_DELIM = "---"
 _INDEX_FILE = "index.md"
 _LOG_FILE = "log.md"
 _LOG_FORMAT = "## [%Y-%m-%d %H:%M]"
+# Lock key for append_log — contains ":" so it can never collide with a
+# real page name (``_validate_name`` rejects names containing ":").
+_LOG_LOCK_KEY = "::log"
 
 
 class FileWikiStore(WikiStoreProtocol):
@@ -40,6 +45,20 @@ class FileWikiStore(WikiStoreProtocol):
     def __init__(self, base_dir: str | Path) -> None:
         self._root = Path(base_dir)
         self._root.mkdir(parents=True, exist_ok=True)
+        # Per-page locks serialise read-modify-write mutations so a
+        # concurrent update cannot clobber another writer's change.
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()
+        self._index_lock = asyncio.Lock()
+
+    async def _get_lock(self, key: str) -> asyncio.Lock:
+        """Return the lock for *key* (a page name or ``_LOG_LOCK_KEY``)."""
+        async with self._locks_lock:
+            lock = self._locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._locks[key] = lock
+            return lock
 
     # -- reading ----------------------------------------------------------
 
@@ -87,13 +106,14 @@ class FileWikiStore(WikiStoreProtocol):
     async def write_page(self, page: WikiPage) -> WikiPage:
         self._validate_name(page.name)
         path = self._page_path(page.name)
-        if path.exists():
-            existing = self._read_file(path)
-            if existing is not None:
-                page.created_at = existing.created_at
-        page.touch()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self._serialise(page), encoding="utf-8")
+        async with await self._get_lock(page.name):
+            if path.exists():
+                existing = self._read_file(path)
+                if existing is not None:
+                    page.created_at = existing.created_at
+            page.touch()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            await atomic_write_text(path, self._serialise(page))
         await self._refresh_index()
         logger.info("wiki.write_page", name=page.name)
         return page
@@ -105,22 +125,26 @@ class FileWikiStore(WikiStoreProtocol):
         content: str,
         mode: str = "append",
     ) -> WikiPage | None:
-        page = await self.get_page(name)
-        if page is None:
-            return None
-        page.body = apply_section_update(page.body, section, content, mode)
-        page.touch()
-        path = self._page_path(name)
-        path.write_text(self._serialise(page), encoding="utf-8")
+        # The read (get_page) and the write must be one critical section,
+        # otherwise two concurrent section updates each read the same
+        # page and the second write silently drops the first's change.
+        async with await self._get_lock(name):
+            page = await self.get_page(name)
+            if page is None:
+                return None
+            page.body = apply_section_update(page.body, section, content, mode)
+            page.touch()
+            await atomic_write_text(self._page_path(name), self._serialise(page))
         await self._refresh_index()
         logger.info("wiki.update_section", name=name, section=section, mode=mode)
         return page
 
     async def delete_page(self, name: str) -> bool:
         path = self._page_path(name)
-        if not path.exists():
-            return False
-        path.unlink()
+        async with await self._get_lock(name):
+            if not path.exists():
+                return False
+            path.unlink()
         await self._refresh_index()
         logger.info("wiki.delete_page", name=name)
         return True
@@ -129,13 +153,14 @@ class FileWikiStore(WikiStoreProtocol):
         log_path = self._root / _LOG_FILE
         header = datetime.now(UTC).strftime(_LOG_FORMAT)
         line = f"{header} {entry.strip()}\n"
-        if log_path.exists():
-            existing = log_path.read_text(encoding="utf-8")
-            if not existing.endswith("\n"):
-                existing += "\n"
-            log_path.write_text(existing + line, encoding="utf-8")
-        else:
-            log_path.write_text(f"# Wiki Log\n\n{line}", encoding="utf-8")
+        async with await self._get_lock(_LOG_LOCK_KEY):
+            if log_path.exists():
+                existing = log_path.read_text(encoding="utf-8")
+                if not existing.endswith("\n"):
+                    existing += "\n"
+                await atomic_write_text(log_path, existing + line)
+            else:
+                await atomic_write_text(log_path, f"# Wiki Log\n\n{line}")
 
     # -- internals --------------------------------------------------------
 
@@ -203,8 +228,10 @@ class FileWikiStore(WikiStoreProtocol):
         return f"{_FRONTMATTER_DELIM}\n{yaml_block}\n{_FRONTMATTER_DELIM}\n\n{body}"
 
     async def _refresh_index(self) -> None:
-        pages = await self.list_pages()
-        (self._root / _INDEX_FILE).write_text(render_index(pages), encoding="utf-8")
+        # Serialised so two page mutations cannot race on index.md.
+        async with self._index_lock:
+            pages = await self.list_pages()
+            await atomic_write_text(self._root / _INDEX_FILE, render_index(pages))
 
 
 def _word_matches(word: str, haystack: str) -> bool:
