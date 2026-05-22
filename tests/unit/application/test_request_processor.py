@@ -148,6 +148,7 @@ class TestRequestProcessor:
         assert result.reply == "Processed!"
         assert result.request_id == request.request_id
 
+    @pytest.mark.spec("persistent-agent.requests_processed_sequentially")
     async def test_processor_sequential_execution(self):
         """Requests are processed one at a time, not in parallel."""
         queue = RequestQueue(max_size=10)
@@ -188,6 +189,7 @@ class TestRequestProcessor:
         assert order == ["msg-0", "msg-1", "msg-2"]
         assert all(r.status == "completed" for r in results)
 
+    @pytest.mark.spec("persistent-agent.exception_in_one_request_does_not_stop_processor")
     async def test_processor_handles_execution_failure(self):
         """A failing request doesn't stop the processing loop."""
         queue = RequestQueue(max_size=10)
@@ -275,6 +277,7 @@ class TestRequestProcessor:
 
         assert executor.calls[0]["session_id"] == "stable-sess-42"
 
+    @pytest.mark.spec("persistent-agent.session_id_falls_back_to_request_id")
     async def test_processor_falls_back_to_request_id_without_session_id(self):
         """When session_id is None, request_id is used."""
         queue = RequestQueue(max_size=10)

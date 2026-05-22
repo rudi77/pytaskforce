@@ -33,6 +33,7 @@ class TestRequestQueue:
         assert processed[0].message == "Hello"
         assert processed[1].message == "World"
 
+    @pytest.mark.spec("persistent-agent.requests_processed_sequentially")
     async def test_sequential_processing(self, queue):
         """Verify requests are processed one at a time, not in parallel."""
         processing_order = []
@@ -101,3 +102,64 @@ class TestRequestQueue:
             await task
 
         assert processed == ["drain-me"]
+
+    @pytest.mark.spec("persistent-agent.higher_priority_jumps_queue")
+    async def test_higher_priority_jumps_queue(self, queue):
+        """A lower priority number is processed before a higher one even
+        though it was enqueued later."""
+        processed = []
+
+        async def handler(req: AgentRequest):
+            processed.append(req.message)
+
+        # Enqueue low-priority first, high-priority second — both before the
+        # loop starts, so ordering is decided purely by priority.
+        await queue.enqueue(
+            AgentRequest(channel="cli", message="low", priority=10)
+        )
+        await queue.enqueue(
+            AgentRequest(channel="cli", message="high", priority=1)
+        )
+
+        task = asyncio.create_task(queue.process_loop(handler))
+        await queue.drain(timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert processed == ["high", "low"]
+
+    @pytest.mark.spec("persistent-agent.same_priority_preserves_fifo")
+    async def test_same_priority_preserves_fifo(self, queue):
+        """Two requests with equal priority are processed in submission order."""
+        processed = []
+
+        async def handler(req: AgentRequest):
+            processed.append(req.message)
+
+        for i in range(4):
+            await queue.enqueue(
+                AgentRequest(channel="cli", message=f"msg-{i}", priority=5)
+            )
+
+        task = asyncio.create_task(queue.process_loop(handler))
+        await queue.drain(timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert processed == ["msg-0", "msg-1", "msg-2", "msg-3"]
+
+    @pytest.mark.spec("persistent-agent.bounded_queue_applies_backpressure")
+    async def test_bounded_queue_applies_backpressure(self):
+        """When the bounded queue is full, enqueue awaits a free slot rather
+        than rejecting the request."""
+        full_queue = RequestQueue(max_size=1)
+        await full_queue.enqueue(AgentRequest(channel="cli", message="first"))
+
+        # The queue is now full; a second enqueue must block.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                full_queue.enqueue(AgentRequest(channel="cli", message="second")),
+                timeout=0.2,
+            )

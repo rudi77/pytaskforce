@@ -23,6 +23,7 @@ def _make_request(rid: str = "req-1", priority: int = 5) -> AgentRequest:
     )
 
 
+@pytest.mark.spec("persistent-agent.cancel_queued_resolves_future_and_skips_execution")
 @pytest.mark.asyncio
 async def test_cancel_queued_resolves_future_with_cancelled_status() -> None:
     """A queued request that is cancelled before being picked up resolves
@@ -46,6 +47,7 @@ async def test_cancel_unknown_returns_false() -> None:
     assert queue.cancel("never-existed") is False
 
 
+@pytest.mark.spec("persistent-agent.cancel_queued_resolves_future_and_skips_execution")
 @pytest.mark.asyncio
 async def test_processor_skips_cancelled_request() -> None:
     """The processor's dequeue path must drop cancelled items without

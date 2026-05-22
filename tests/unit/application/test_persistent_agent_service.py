@@ -21,6 +21,7 @@ class FakeExecutor:
     def __init__(self, reply: str = "Agent reply") -> None:
         self._reply = reply
         self.calls: list[dict[str, Any]] = []
+        self.interrupted: list[str] = []
 
     async def execute_mission(self, **kwargs: Any) -> ExecutionResult:
         self.calls.append(kwargs)
@@ -29,6 +30,10 @@ class FakeExecutor:
             status="completed",
             final_message=self._reply,
         )
+
+    def interrupt(self, session_id: str) -> bool:
+        self.interrupted.append(session_id)
+        return True
 
 
 class SlowExecutor:
@@ -91,6 +96,7 @@ class TestLifecycle:
         await service.stop()
         assert not service.running
 
+    @pytest.mark.spec("persistent-agent.start_rejects_double_start")
     async def test_start_twice_raises(self, service):
         await service.start()
         try:
@@ -102,6 +108,7 @@ class TestLifecycle:
     async def test_stop_when_not_started_is_noop(self, service):
         await service.stop()  # Should not raise
 
+    @pytest.mark.spec("persistent-agent.stop_drains_queue_then_saves_state")
     async def test_state_saved_on_stop(self, service_parts):
         executor, agent_state, conv_manager = service_parts
         service = PersistentAgentService(
@@ -153,6 +160,7 @@ class TestSubmit:
         finally:
             await service.stop()
 
+    @pytest.mark.spec("persistent-agent.submit_before_start_raises")
     async def test_submit_when_not_running_raises(self, service):
         with pytest.raises(RuntimeError, match="not running"):
             await service.submit(AgentRequest(channel="cli", message="test"))
@@ -201,6 +209,7 @@ class TestSubmit:
         finally:
             await service.stop()
 
+    @pytest.mark.spec("persistent-agent.exception_in_one_request_does_not_stop_processor")
     async def test_failed_request_doesnt_crash_service(self, service_parts):
         _, agent_state, conv_manager = service_parts
         executor = FailingExecutor()
@@ -282,6 +291,7 @@ class TestStatus:
 
 
 class TestDrain:
+    @pytest.mark.spec("persistent-agent.stop_drains_queue_then_saves_state")
     async def test_drain_on_stop(self, service_parts):
         _, agent_state, conv_manager = service_parts
         executor = SlowExecutor()
@@ -309,4 +319,64 @@ class TestDrain:
 
     async def test_queue_property(self, service):
         assert service.queue is not None
+
+
+class TestCancelAndListMissions:
+    """cancel_request / list_missions on the service."""
+
+    @pytest.mark.spec("persistent-agent.cancel_in_flight_calls_executor_interrupt")
+    async def test_cancel_in_flight_forwards_executor_interrupt(self, service, service_parts):
+        executor, _, _ = service_parts
+        # Simulate a request the processor has already picked up.
+        service._processor._in_flight["req-flight"] = "sess-flight"
+
+        result = service.cancel_request("req-flight")
+
+        assert result["status"] == "interrupt_requested"
+        assert result["session_id"] == "sess-flight"
+        assert executor.interrupted == ["sess-flight"]
+
+    @pytest.mark.spec("persistent-agent.cancel_unknown_returns_not_found")
+    async def test_cancel_unknown_returns_not_found(self, service):
+        result = service.cancel_request("never-existed")
+        assert result["status"] == "not_found"
+
+    @pytest.mark.spec("persistent-agent.list_missions_marks_in_flight_vs_queued")
+    async def test_list_missions_marks_in_flight_vs_queued(self, service):
+        await service.queue.enqueue(
+            AgentRequest(request_id="req-queued", channel="cli", message="waiting")
+        )
+        await service.queue.enqueue(
+            AgentRequest(request_id="req-flight", channel="cli", message="running")
+        )
+        service._processor._in_flight["req-flight"] = "sess-flight"
+
+        missions = {m["request_id"]: m for m in service.list_missions()}
+
+        assert missions["req-queued"]["status"] == "queued"
+        assert missions["req-flight"]["status"] == "in_flight"
+
+    @pytest.mark.spec("persistent-agent.stop_saves_state_even_when_drain_times_out")
+    async def test_stop_saves_state_even_when_drain_times_out(
+        self, service_parts, monkeypatch
+    ):
+        executor, agent_state, conv_manager = service_parts
+        service = PersistentAgentService(
+            executor=executor,
+            agent_state=agent_state,
+            conversation_manager=conv_manager,
+        )
+        await service.start()
+
+        # Force the drain phase to time out.
+        async def _drain_timeout(*_args, **_kwargs):
+            raise asyncio.TimeoutError
+
+        monkeypatch.setattr(service._queue, "drain", _drain_timeout)
+        await service.stop()
+
+        # State is persisted regardless of the drain timeout.
+        state = await agent_state.load()
+        assert state is not None
+        assert state["_version"] >= 1
         assert service.queue.size == 0
