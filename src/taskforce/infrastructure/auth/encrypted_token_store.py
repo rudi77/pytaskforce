@@ -20,6 +20,7 @@ import aiofiles
 import structlog
 
 from taskforce.core.interfaces.auth import TokenStoreProtocol
+from taskforce.core.utils.secure_file import write_private_bytes
 
 logger = structlog.get_logger(__name__)
 
@@ -160,7 +161,9 @@ class EncryptedTokenStore:
 
         self._store_dir.mkdir(parents=True, exist_ok=True)
         key = Fernet.generate_key()
-        key_path.write_bytes(key)
+        # Owner-only perms from creation — the Fernet master key must not
+        # be world-readable on either POSIX or Windows (#282).
+        write_private_bytes(key_path, key)
         logger.warning(
             "auth.key_auto_generated",
             path=str(key_path),

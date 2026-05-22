@@ -9,6 +9,7 @@ from threading import RLock
 
 from taskforce.application.infrastructure_overrides import get_current_tenant_id
 from taskforce.core.domain.acp import AcpAuth, AcpAuthType, AcpPeer
+from taskforce.core.utils.secure_file import write_private_text
 
 
 class InMemoryPeerRegistry:
@@ -60,12 +61,9 @@ class FilePeerRegistry(InMemoryPeerRegistry):
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"peers": [_peer_to_dict(p) for p in self._peers.values()]}
-        self._path.write_text(json.dumps(payload, indent=2))
-        # The file may hold literal bearer tokens when callers skip token_env.
-        try:
-            self._path.chmod(0o600)
-        except OSError:  # pragma: no cover - non-POSIX filesystems
-            pass
+        # The file may hold literal bearer tokens when callers skip
+        # token_env, so write it owner-only on POSIX and Windows (#282).
+        write_private_text(self._path, json.dumps(payload, indent=2))
 
     def register(self, peer: AcpPeer) -> None:
         super().register(peer)
