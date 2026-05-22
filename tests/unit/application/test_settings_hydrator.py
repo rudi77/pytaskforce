@@ -39,6 +39,7 @@ def _store(tmp_path):
     return FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())
 
 
+@pytest.mark.spec("settings-store.put_llm_providers_hydrates_env")
 def test_hydrate_llm_providers_writes_env(tmp_path, monkeypatch) -> None:
     store = _store(tmp_path)
     store.put(
@@ -75,6 +76,26 @@ def test_hydrate_skips_blank_values(tmp_path) -> None:
     import os
 
     assert "OPENAI_API_KEY" not in os.environ
+
+
+@pytest.mark.spec("settings-store.hydration_does_not_clear_external_env_vars")
+def test_hydration_does_not_clear_external_env_vars(tmp_path, monkeypatch) -> None:
+    """Hydration is additive — an externally-set env var is never cleared
+    just because the settings store has no value for it."""
+    import os
+
+    # Operator sets a key directly in the environment …
+    monkeypatch.setenv("OPENAI_API_KEY", "externally-set-key")
+
+    # … and the settings store has no openai section at all.
+    store = _store(tmp_path)
+    store.put(LLM_PROVIDERS, {"anthropic": {"api_key": "sk-ant"}})
+
+    hydrate_llm_providers_env(store)
+
+    # The externally-set var survives; the store value is layered on top.
+    assert os.environ["OPENAI_API_KEY"] == "externally-set-key"
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant"
 
 
 def test_hydrate_unknown_provider_is_ignored(tmp_path) -> None:

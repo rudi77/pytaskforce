@@ -21,6 +21,7 @@ from taskforce.infrastructure.persistence.file_settings_store import (
 )
 
 
+@pytest.mark.spec("settings-store.put_then_get_round_trips_payload")
 def test_put_and_get_round_trip(tmp_path) -> None:
     store = FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())
     store.put("llm_providers", {"openai": {"api_key": "sk-test"}})
@@ -65,6 +66,7 @@ def test_put_rejects_non_dict_value(tmp_path) -> None:
         store.put("bad", ["list", "not", "dict"])  # type: ignore[arg-type]
 
 
+@pytest.mark.spec("settings-store.document_is_fernet_encrypted_at_rest")
 def test_blob_is_actually_encrypted(tmp_path) -> None:
     """The on-disk file must not contain the plaintext payload."""
     store = FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())
@@ -85,6 +87,7 @@ def test_wrong_key_raises_settings_store_error(tmp_path) -> None:
         store_b.get("anything")
 
 
+@pytest.mark.spec("settings-store.env_key_overrides_work_dir_key_file")
 def test_master_key_from_env(tmp_path, monkeypatch) -> None:
     key = Fernet.generate_key()
     monkeypatch.setenv(SECRETS_KEY_ENV, key.decode("utf-8"))
@@ -118,6 +121,7 @@ def test_auto_generated_key_has_restrictive_permissions(tmp_path, monkeypatch) -
     assert mode == (stat_mod.S_IRUSR | stat_mod.S_IWUSR)
 
 
+@pytest.mark.spec("settings-store.write_is_atomic_under_simulated_crash")
 def test_atomic_write_leaves_no_temp_files(tmp_path) -> None:
     """A successful write must not leave ``.tmp`` siblings around."""
     store = FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())

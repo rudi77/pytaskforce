@@ -60,6 +60,7 @@ def test_oauth_connections_requires_tenant_manage() -> None:
 
 
 @pytest.mark.spec("auth.oauth_revoke_without_auth_manager_returns_503")
+@pytest.mark.spec("settings-store.oauth_revoke_without_auth_manager_returns_503")
 def test_oauth_revoke_without_auth_manager_returns_503() -> None:
     """DELETE on a connection returns 503 when no AuthManager is configured."""
     app = _build_app(auth_manager=None)
