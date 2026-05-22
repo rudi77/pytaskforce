@@ -1,8 +1,17 @@
 """
 Python Code Execution Tool
 
-Executes Python code in an isolated namespace with pre-imported libraries.
-Migrated from Agent V2 with full preservation of execution semantics.
+Executes Python code with a set of pre-imported libraries (including
+``os``, ``sys`` and ``subprocess``).
+
+Security note (#276):
+    This is a **trusted, full-capability** execution tool, NOT a
+    sandbox. ``subprocess``/``os`` are pre-imported by design, so the
+    curated ``__builtins__`` subset is a convenience list, not a
+    security boundary. The real control is the mandatory HIGH-risk
+    approval gate (``requires_approval = True``) — a human reviews the
+    code before it runs. For untrusted execution, run inside a
+    container/VM.
 """
 
 import contextlib
@@ -41,7 +50,7 @@ class PythonTool(ToolProtocol):
             "base64, hashlib, tempfile, csv, pandas as pd, matplotlib.pyplot as plt, and typing types (Dict, List, Any, Optional); "
             "from datetime: datetime, timedelta. "
             "Builtins available include common utilities (print, len, range, enumerate, str, int, float, bool, list, dict, set, tuple, "
-            "sum, min, max, abs, round, sorted, reversed, zip, map, filter, next, any, all, isinstance, open, __import__, locals). "
+            "sum, min, max, abs, round, sorted, reversed, zip, map, filter, next, any, all, isinstance, open, __import__). "
             "If you need input variables (e.g., 'data'), pass them in via the 'context' dict; its keys are exposed as top-level variables."
         )
         if self._tool_bridge:
@@ -193,7 +202,9 @@ except ImportError:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-        # Build safe namespace with restricted builtins
+        # Build the execution namespace. The builtins subset is a
+        # curated convenience list, NOT a security boundary (#276) —
+        # subprocess/os are pre-imported and the tool is HIGH-approval.
         safe_namespace = {
             "__builtins__": {
                 # Basic functions
@@ -225,7 +236,6 @@ except ImportError:
                 "isinstance": isinstance,
                 "open": open,
                 "__import__": __import__,
-                "locals": locals,
                 # Exception classes
                 "Exception": Exception,
                 "ImportError": ImportError,

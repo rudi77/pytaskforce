@@ -285,3 +285,29 @@ class TestPythonToolWithBridge:
         )
         assert result["success"] is True
         assert result["result"] == "file contents"
+
+
+# ---------------------------------------------------------------------------
+# Trusted-tool posture (#276)
+# ---------------------------------------------------------------------------
+
+
+class TestPythonToolApprovalPosture:
+    """The python tool is a trusted, full-capability execution tool — the
+    HIGH approval gate is its real control, not the builtins subset (#276)."""
+
+    def test_requires_high_approval(self) -> None:
+        from taskforce.core.interfaces.tools import ApprovalRiskLevel
+
+        tool = PythonTool()
+        assert tool.requires_approval is True
+        assert tool.approval_risk_level == ApprovalRiskLevel.HIGH
+
+    async def test_locals_builtin_is_removed(self) -> None:
+        """`locals` was dropped from the builtins subset (#276) — it leaked
+        the whole execution namespace and served no legitimate purpose."""
+        tool = PythonTool()
+        result = await tool.execute(code="result = locals()")
+        assert result["success"] is False
+        # locals() is no longer a name in the execution namespace.
+        assert "locals" in (result.get("error", "") + result.get("type", ""))
