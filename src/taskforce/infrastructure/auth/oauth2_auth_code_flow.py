@@ -12,6 +12,8 @@ For headless / remote agent scenarios prefer the Device Flow instead.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import secrets
 from datetime import timedelta
 from typing import Any
@@ -50,6 +52,19 @@ _PROVIDER_ENDPOINTS: dict[str, dict[str, str]] = {
 
 _DEFAULT_REDIRECT_HOST = "127.0.0.1"
 _CALLBACK_TIMEOUT = 300  # 5 minutes
+
+
+def _generate_pkce_pair() -> tuple[str, str]:
+    """Generate a PKCE ``code_verifier`` and its S256 ``code_challenge``.
+
+    Per RFC 7636: the verifier is 43-128 chars from the unreserved set
+    (``token_urlsafe(64)`` yields ~86 such chars); the challenge is the
+    base64url-encoded, unpadded SHA-256 of the verifier.
+    """
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return verifier, challenge
 
 
 class OAuth2AuthCodeFlow:
@@ -91,6 +106,7 @@ class OAuth2AuthCodeFlow:
         """
         endpoints = self._resolve_endpoints(provider, metadata)
         state = secrets.token_urlsafe(32)
+        code_verifier, code_challenge = _generate_pkce_pair()
 
         code_future: asyncio.Future[str] = asyncio.get_event_loop().create_future()
         server, port = await self._start_callback_server(state, code_future)
@@ -98,7 +114,13 @@ class OAuth2AuthCodeFlow:
         try:
             redirect_uri = f"http://{_DEFAULT_REDIRECT_HOST}:{port}/callback"
             auth_url = self._build_auth_url(
-                endpoints["auth_url"], client_id, redirect_uri, scopes, state, provider
+                endpoints["auth_url"],
+                client_id,
+                redirect_uri,
+                scopes,
+                state,
+                provider,
+                code_challenge,
             )
             await user_interaction(f"Please open this URL to authenticate:\n{auth_url}")
             code = await asyncio.wait_for(code_future, timeout=_CALLBACK_TIMEOUT)
@@ -113,6 +135,7 @@ class OAuth2AuthCodeFlow:
             code,
             redirect_uri,
             provider,
+            code_verifier,
         )
         return token_data
 
@@ -128,13 +151,16 @@ class OAuth2AuthCodeFlow:
         scopes: list[str],
         state: str,
         provider: str,
+        code_challenge: str,
     ) -> str:
-        """Build the authorization URL with query parameters."""
+        """Build the authorization URL with query parameters (incl. PKCE)."""
         params: dict[str, str] = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "state": state,
             "response_type": "code",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
         if scopes:
             params["scope"] = " ".join(scopes)
@@ -208,14 +234,16 @@ class OAuth2AuthCodeFlow:
         code: str,
         redirect_uri: str,
         provider: str,
+        code_verifier: str,
     ) -> dict[str, Any]:
-        """Exchange the authorization code for tokens."""
+        """Exchange the authorization code for tokens (with PKCE verifier)."""
         payload = {
             "client_id": client_id,
             "client_secret": client_secret,
             "code": code,
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
         }
 
         headers: dict[str, str] = {}
