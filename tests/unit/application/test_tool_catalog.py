@@ -8,6 +8,8 @@ Story: 8.2 - Tool Catalog + Allowlist Validation
 """
 
 
+import pytest
+
 from taskforce.application.tool_registry import ToolRegistry, get_tool_registry
 
 
@@ -19,6 +21,7 @@ def test_tool_registry_returns_instance():
     assert isinstance(registry2, ToolRegistry)
 
 
+@pytest.mark.spec("tools.catalog_listing_does_not_require_di")
 def test_list_native_tools_returns_list():
     """Test list_native_tools returns list of tool definitions."""
     registry = ToolRegistry()
@@ -28,6 +31,7 @@ def test_list_native_tools_returns_list():
     assert len(tools) > 0
 
 
+@pytest.mark.spec("tools.catalog_listing_does_not_require_di")
 def test_native_tool_structure():
     """Test that native tools have required fields."""
     registry = ToolRegistry()

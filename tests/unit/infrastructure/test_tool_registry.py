@@ -71,6 +71,7 @@ def test_resolve_tool_spec_module_override():
     assert resolved["module"] == "taskforce.infrastructure.tools.native.python_tool"
 
 
+@pytest.mark.spec("tools.unknown_tool_name_returns_none")
 def test_resolve_tool_spec_invalid():
     """Invalid specs should return None."""
     assert resolve_tool_spec("unknown_tool") is None

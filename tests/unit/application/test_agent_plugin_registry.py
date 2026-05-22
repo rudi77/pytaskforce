@@ -351,6 +351,7 @@ def test_tool_registry_picks_up_entry_point_tools(
 
 
 @pytest.mark.spec("plugins.entry_point_tool_overrides_builtin")
+@pytest.mark.spec("tools.entry_point_tool_overrides_builtin")
 def test_entry_point_overrides_builtin(
     monkeypatch: pytest.MonkeyPatch,
     fake_tool_module: types.ModuleType,

@@ -60,6 +60,7 @@ async def test_put_and_fetch_small_result(store):
     assert fetched["data"] == result["data"]
 
 
+@pytest.mark.spec("tools.tool_result_store_returns_handle_with_size")
 @pytest.mark.asyncio
 async def test_put_large_result(store):
     """Test storing a large tool result."""
@@ -159,6 +160,7 @@ async def test_delete_nonexistent_result(store):
     assert deleted is False
 
 
+@pytest.mark.spec("tools.cleanup_session_deletes_only_matching_handles")
 @pytest.mark.asyncio
 async def test_cleanup_session(store):
     """Test cleaning up all results for a session."""

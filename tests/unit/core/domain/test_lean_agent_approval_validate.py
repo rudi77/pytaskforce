@@ -199,6 +199,7 @@ class _ScheduledOptInTool:
         return "preview"
 
 
+@pytest.mark.spec("tools.auto_approve_for_origin_skips_gate")
 @pytest.mark.asyncio
 async def test_scheduled_workflow_origin_auto_approves_opted_in_tool() -> None:
     """Issue #177: scheduler-fired calls bypass the human-decision queue."""

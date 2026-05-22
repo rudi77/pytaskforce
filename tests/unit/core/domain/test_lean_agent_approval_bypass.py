@@ -80,6 +80,7 @@ def _reset_overrides():
     clear_infrastructure_overrides()
 
 
+@pytest.mark.spec("tools.approval_bypass_list_skips_gate")
 @pytest.mark.asyncio
 async def test_bypass_list_skips_approval_service_entirely() -> None:
     """Tool in bypass list → gate returns None, service never consulted."""

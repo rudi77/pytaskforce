@@ -108,11 +108,13 @@ class TestValidateParams:
         assert ok is True
         assert err is None
 
+    @pytest.mark.spec("tools.validate_params_rejects_missing_required")
     def test_missing_required_param(self, tool):
         ok, err = tool.validate_params(count=5)
         assert ok is False
         assert "Missing required parameter: message" in err
 
+    @pytest.mark.spec("tools.validate_params_rejects_wrong_type")
     def test_wrong_type_string(self, tool):
         ok, err = tool.validate_params(message=123)
         assert ok is False
@@ -149,6 +151,7 @@ class TestValidateParams:
         assert ok is True
         assert err is None
 
+    @pytest.mark.spec("tools.validate_params_rejects_wrong_type")
     def test_enum_invalid(self, tool):
         ok, err = tool.validate_params(message="hi", mode="turbo")
         assert ok is False
@@ -183,6 +186,7 @@ class TestExecution:
         assert result["success"] is True
         assert result["echo"] == "hello"
 
+    @pytest.mark.spec("tools.base_tool_exception_becomes_error_payload")
     async def test_execute_safe_catches_exception(self):
         tool = FailingTool()
         result = await tool.execute()

@@ -152,6 +152,7 @@ async def test_factory_handles_missing_mcp_config(temp_config_dir: Path):
     assert len(agent._mcp_contexts) == 0
 
 
+@pytest.mark.spec("tools.mcp_connection_failure_is_non_fatal")
 @pytest.mark.asyncio
 async def test_factory_handles_mcp_connection_failure(
     temp_config_dir: Path, mock_mcp_config: Path

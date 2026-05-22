@@ -10,6 +10,8 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from taskforce.core.domain.lean_agent_components.tool_executor import (
     MAX_LOGGED_STRING_CHARS,
     ToolExecutor,
@@ -508,6 +510,7 @@ class TestToolResultMessageFactoryBuildMessage:
 class TestToolResultMessageFactoryPerToolThreshold:
     """A tool exposing ``tool_result_store_threshold`` overrides the global default."""
 
+    @pytest.mark.spec("tools.tool_result_threshold_per_tool_overrides_profile")
     async def test_per_tool_override_triggers_storage_below_global(self) -> None:
         """Tool with low threshold stores results that the global default would inline."""
         handle = _make_handle("handle-pertool-1", "web_search")
