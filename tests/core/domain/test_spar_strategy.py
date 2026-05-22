@@ -12,12 +12,15 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from taskforce.core.domain.enums import EventType
 from taskforce.core.domain.planning_strategy import SparStrategy
 
 # mock_agent fixture is provided by tests/conftest.py
 
 
+@pytest.mark.spec("react-loop.spar_reflect_phase_runs_when_enabled")
 def test_spar_executes_reflection(mock_agent: MagicMock) -> None:
     """Ensure SPAR runs plan, act, reflect, and final response."""
     mock_agent.llm_provider = SimpleNamespace(

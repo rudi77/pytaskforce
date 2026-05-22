@@ -135,6 +135,7 @@ class TestToolExecutorExecute:
         assert "not found" in result["error"].lower()
         assert "nonexistent" in result["error"]
 
+    @pytest.mark.spec("react-loop.tool_error_returns_structured_payload")
     async def test_tool_exception_returns_error(self) -> None:
         """execute catches exceptions and returns error dict."""
         tool = _make_mock_tool(

@@ -367,6 +367,7 @@ async def test_role_user_after_tool_failure_is_unchanged() -> None:
     assert nudges, "expected a retry nudge after tool failure"
 
 
+@pytest.mark.spec("react-loop.llm_stream_restart_emitted_on_content_filter")
 @pytest.mark.asyncio
 async def test_stream_restart_resets_accumulators_and_yields_downstream_event() -> None:
     """Issue #159 sub-item (a): when the LLM provider yields a

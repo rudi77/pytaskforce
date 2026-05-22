@@ -49,6 +49,7 @@ class TestCoerceBool:
 class TestSelectPlanningStrategy:
     """Tests for select_planning_strategy."""
 
+    @pytest.mark.spec("react-loop.native_react_is_default_strategy")
     def test_default_returns_native_react(self) -> None:
         strategy = select_planning_strategy()
         assert isinstance(strategy, NativeReActStrategy)
