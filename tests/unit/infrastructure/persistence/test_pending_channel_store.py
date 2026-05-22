@@ -97,6 +97,7 @@ class TestResolve:
         )
         assert result is None
 
+    @pytest.mark.spec("channel-ask.response_matched_by_channel_and_sender_id")
     @pytest.mark.asyncio
     async def test_resolve_wrong_channel(self, store):
         await store.register(
@@ -113,6 +114,7 @@ class TestResolve:
         )
         assert result is None
 
+    @pytest.mark.spec("channel-ask.pending_entry_single_resolve")
     @pytest.mark.asyncio
     async def test_resolve_already_resolved(self, store):
         await store.register(
@@ -287,6 +289,36 @@ class TestMetadata:
             channel="telegram", sender_id="user-42", response="Here you go"
         )
         assert result == "sess-1"
+
+
+class TestPersistence:
+    """Test that pending questions survive a process restart."""
+
+    @pytest.mark.spec("channel-ask.pending_entry_survives_restart")
+    @pytest.mark.asyncio
+    async def test_pending_question_survives_restart(self, tmp_path):
+        """A question registered before restart is still resolvable afterwards.
+
+        The store is file-backed by default, so a fresh instance pointed at
+        the same work_dir must see the pending entry registered earlier.
+        """
+        work_dir = str(tmp_path)
+        store_before = FilePendingChannelQuestionStore(work_dir=work_dir)
+        await store_before.register(
+            session_id="sess-1",
+            channel="telegram",
+            recipient_id="user-42",
+            question="Invoice date?",
+        )
+
+        # Simulate a process restart: brand-new store, same work_dir.
+        store_after = FilePendingChannelQuestionStore(work_dir=work_dir)
+        result = await store_after.resolve(
+            channel="telegram", sender_id="user-42", response="2026-01-15"
+        )
+
+        assert result == "sess-1"
+        assert await store_after.get_response(session_id="sess-1") == "2026-01-15"
 
 
 class TestEdgeCases:

@@ -541,6 +541,7 @@ def test_build_channel_response_received_update():
     assert "user-42" in update.message
 
 
+@pytest.mark.spec("channel-ask.response_clears_pending_entry")
 @pytest.mark.asyncio
 async def test_route_channel_question_success():
     """Test that ChannelAskRouter.route_channel_question sends and polls via gateway."""
@@ -565,6 +566,7 @@ async def test_route_channel_question_success():
     mock_gateway.clear_channel_question.assert_called_once_with(session_id="sess-1")
 
 
+@pytest.mark.spec("channel-ask.send_failure_returns_none")
 @pytest.mark.asyncio
 async def test_route_channel_question_send_fails():
     """When sending the question fails, return None."""
@@ -586,6 +588,7 @@ async def test_route_channel_question_send_fails():
     mock_gateway.poll_channel_response.assert_not_called()
 
 
+@pytest.mark.spec("channel-ask.channel_ask_routes_via_gateway")
 @pytest.mark.asyncio
 async def test_execute_streaming_intercepts_channel_ask():
     """Executor handles channel-targeted ASK_USER and resumes agent."""
@@ -683,3 +686,97 @@ async def test_execute_streaming_no_gateway_yields_raw_ask():
     assert len(updates) == 1
     assert updates[0].details.get("channel") == "telegram"
     assert updates[0].details.get("channel_routed") is None
+
+
+@pytest.mark.spec("channel-ask.plain_ask_uses_session_pause")
+@pytest.mark.asyncio
+async def test_execute_streaming_plain_ask_not_routed():
+    """A plain ASK_USER (no channel) is yielded for session pause, never routed.
+
+    Spec invariant: an ``ask_user`` event with no ``channel`` AND no
+    ``recipient_id`` always goes through the normal session pause/resume,
+    even when a gateway is configured.
+    """
+
+    async def fake_stream(mission, session_id):
+        yield StreamEvent(
+            event_type=EventType.ASK_USER,
+            data={"question": "Which account should I use?"},
+        )
+
+    mock_agent = MagicMock()
+    mock_agent.execute_stream = fake_stream
+
+    mock_gateway = AsyncMock()
+    executor = AgentExecutor(gateway=mock_gateway)
+
+    updates: list[ProgressUpdate] = []
+    async for update in executor._execute_streaming(mock_agent, "Do work", "s1"):
+        updates.append(update)
+
+    # Plain ask is yielded raw — not intercepted, gateway never touched.
+    assert len(updates) == 1
+    assert updates[0].details.get("channel_routed") is None
+    mock_gateway.send_channel_question.assert_not_called()
+
+
+@pytest.mark.spec("channel-ask.missing_recipient_filled_from_source")
+def test_ensure_channel_complete_fills_missing_recipient():
+    """An ask_user with channel set but no recipient_id is completed from source.
+
+    Spec invariant: the router never sends a question without a recipient —
+    a missing ``recipient_id`` is filled from the source conversation before
+    routing.
+    """
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    event = StreamEvent(
+        event_type=EventType.ASK_USER,
+        data={"question": "Invoice date?", "channel": "telegram"},
+    )
+    router = ChannelAskRouter(gateway=AsyncMock())
+
+    modified = router.ensure_channel_complete(
+        event, source_channel="teams", source_conversation_id="user-99"
+    )
+
+    assert modified is True
+    # Explicit channel is preserved; only the missing recipient is filled.
+    assert event.data["channel"] == "telegram"
+    assert event.data["recipient_id"] == "user-99"
+    assert ChannelAskRouter.is_channel_targeted_ask(event) is True
+
+
+@pytest.mark.spec("channel-ask.timeout_clears_pending_entry")
+@pytest.mark.asyncio
+async def test_route_channel_question_timeout_clears_pending(monkeypatch):
+    """On poll timeout the router clears the pending entry and returns None.
+
+    Spec invariant: the pending entry is cleared on timeout so a later
+    unrelated message from the same sender is not consumed as a stale answer.
+    """
+    from taskforce.application import channel_ask_router as car_mod
+    from taskforce.application.channel_ask_router import ChannelAskRouter
+
+    # Collapse the 600s / 2s poll loop so the test runs instantly.
+    async def _instant_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(car_mod.asyncio, "sleep", _instant_sleep)
+
+    mock_gateway = AsyncMock()
+    mock_gateway.send_channel_question.return_value = True
+    mock_gateway.poll_channel_response.return_value = None  # never answered
+    mock_gateway.clear_channel_question.return_value = None
+
+    router = ChannelAskRouter(mock_gateway)
+
+    response = await router.route_channel_question(
+        session_id="sess-1",
+        channel="telegram",
+        recipient_id="user-42",
+        question="Invoice date?",
+    )
+
+    assert response is None
+    mock_gateway.clear_channel_question.assert_called_once_with(session_id="sess-1")
