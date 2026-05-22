@@ -63,11 +63,6 @@ def test_error_envelope_has_code_and_message() -> None:
 
 
 @pytest.mark.spec("api.error_envelope_marked_with_x_taskforce_error_header")
-@pytest.mark.xfail(
-    reason="#428 — taskforce_http_exception_handler drops the X-Taskforce-Error "
-    "response header (consumed for the decision, not propagated to the response)",
-    strict=True,
-)
 def test_error_envelope_marked_with_x_taskforce_error_header() -> None:
     """A taskforce error response carries the X-Taskforce-Error: 1 header so
     middleware can distinguish it from FastAPI defaults."""

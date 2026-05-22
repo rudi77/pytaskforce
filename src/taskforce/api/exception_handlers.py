@@ -25,5 +25,9 @@ async def taskforce_http_exception_handler(
     default handler for everything else.
     """
     if exc.headers and exc.headers.get("X-Taskforce-Error") == "1" and isinstance(exc.detail, dict):
-        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.detail,
+            headers=exc.headers,
+        )
     return await http_exception_handler(request, exc)
