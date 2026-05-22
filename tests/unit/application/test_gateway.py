@@ -1355,6 +1355,7 @@ class _ComponentsLike:
     outbound_senders: dict[str, object]
 
 
+@pytest.mark.spec("gateway.outbound_sender_reread_per_call")
 @pytest.mark.asyncio
 async def test_components_provider_swaps_recipient_registry_per_call() -> None:
     """A provider that returns different components per call must let

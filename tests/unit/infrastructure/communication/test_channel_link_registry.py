@@ -42,6 +42,7 @@ async def test_create_pending_code_returns_numeric_six_digit_code(registry) -> N
     assert code.expires_at > _now_utc()
 
 
+@pytest.mark.spec("gateway.link_code_single_use")
 async def test_consume_code_creates_link_and_invalidates_code(registry) -> None:
     code = await registry.create_pending_code(channel="telegram", tenant_id="tid", user_id="uid")
     link = await registry.consume_code(channel="telegram", code=code.code, sender_id="11111")
@@ -59,6 +60,7 @@ async def test_consume_code_unknown_returns_none(registry) -> None:
     assert await registry.consume_code(channel="telegram", code="000000", sender_id="1") is None
 
 
+@pytest.mark.spec("gateway.link_code_expires_after_ttl")
 async def test_consume_code_expired_returns_none(registry) -> None:
     code = await registry.create_pending_code(
         channel="telegram", tenant_id="tid", user_id="uid", ttl_seconds=60
@@ -124,6 +126,7 @@ async def test_list_links_filters_by_tenant_and_user(registry) -> None:
     assert by_alice_tenant_a[0].channel == "telegram"
 
 
+@pytest.mark.spec("gateway.relink_overwrites_existing")
 async def test_new_link_for_same_sender_overwrites(registry) -> None:
     c1 = await registry.create_pending_code(channel="telegram", tenant_id="tid", user_id="alice")
     await registry.consume_code(channel="telegram", code=c1.code, sender_id="s")

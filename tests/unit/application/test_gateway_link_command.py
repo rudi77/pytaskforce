@@ -64,6 +64,7 @@ def _build_gateway(
     return gateway, executor
 
 
+@pytest.mark.spec("gateway.link_command_intercepted_before_resolver")
 @pytest.mark.asyncio
 async def test_link_command_pairs_sender_and_does_not_reach_agent() -> None:
     registry = InMemoryChannelLinkRegistry()
