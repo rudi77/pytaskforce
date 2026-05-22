@@ -81,6 +81,7 @@ class TestDelete:
         await store.delete(project.project_id)
         assert await store.get(project.project_id) is None
 
+    @pytest.mark.spec("cowork.delete_keeps_directory")
     async def test_does_not_remove_directory_on_disk(
         self, store: FileProjectStore, tmp_path: Path
     ) -> None:
@@ -111,6 +112,7 @@ class TestPersistenceAcrossInstances:
         assert loaded is not None
         assert loaded.path == str(a.resolve())
 
+    @pytest.mark.spec("cowork.concurrent_create_serialized")
     async def test_concurrent_creates_with_same_path_only_one_wins(
         self, tmp_path: Path
     ) -> None:

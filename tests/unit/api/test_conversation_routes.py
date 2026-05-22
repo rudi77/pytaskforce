@@ -119,6 +119,7 @@ class TestListConversations:
         assert len(data) == 1
         assert data[0]["topic"] == "Test topic"
 
+    @pytest.mark.spec("cowork.list_filtered_by_project_id")
     def test_list_active_filters_by_project(self, client, mock_conversation_manager):
         """``?project_id`` keeps only conversations linked to the project."""
         mock_conversation_manager.list_active = AsyncMock(
@@ -221,6 +222,7 @@ class TestAppendMessage:
         assert resp.status_code == 400
 
     @pytest.mark.spec("conversations.project_bound_conversation_routes_workdir_to_project_path")
+    @pytest.mark.spec("cowork.conversation_with_project_id_routes_to_project_path")
     def test_runs_with_project_work_dir(
         self,
         client,
@@ -318,6 +320,30 @@ class TestAppendMessage:
         assert resp.status_code == 200
         _, kwargs = mock_executor.execute_mission.call_args
         assert kwargs["work_dir"] is None
+
+    @pytest.mark.spec("cowork.conversation_without_project_id_uses_global_workdir")
+    def test_no_project_id_uses_default_work_dir(
+        self,
+        client,
+        mock_conversation_manager,
+        mock_executor,
+        mock_project_store,
+    ):
+        """A conversation with no ``project_id`` runs with ``work_dir=None``.
+
+        Project binding is strictly opt-in: an unbound conversation falls
+        back to the profile's global work directory, and the project store
+        is never consulted.
+        """
+        # Default fixture conversation carries no project_id.
+        resp = client.post(
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
+            json={"message": "Hi"},
+        )
+        assert resp.status_code == 200
+        _, kwargs = mock_executor.execute_mission.call_args
+        assert kwargs["work_dir"] is None
+        mock_project_store.get.assert_not_called()
 
 
 class TestGetMessages:

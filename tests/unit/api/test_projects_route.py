@@ -29,6 +29,7 @@ def client(tmp_path: Path) -> TestClient:
 
 
 class TestCreateProject:
+    @pytest.mark.spec("cowork.create_scratch_creates_anchors")
     def test_scratch_mode_creates_dir_and_anchors(
         self, client: TestClient, tmp_path: Path
     ) -> None:
@@ -54,6 +55,7 @@ class TestCreateProject:
         assert "Never delete, move, or overwrite user files" in claude_text
         assert (target / "skills").is_dir()
 
+    @pytest.mark.spec("cowork.create_existing_rejects_missing_dir")
     def test_existing_mode_requires_existing_directory(
         self, client: TestClient, tmp_path: Path
     ) -> None:
@@ -101,6 +103,7 @@ class TestCreateProject:
             (target / "CLAUDE.md").read_text(encoding="utf-8") == "# Hands off"
         )
 
+    @pytest.mark.spec("cowork.create_duplicate_path_returns_409")
     def test_duplicate_path_returns_409(
         self, client: TestClient, tmp_path: Path
     ) -> None:
