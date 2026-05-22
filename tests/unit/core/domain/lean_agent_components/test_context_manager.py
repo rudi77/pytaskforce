@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import FrozenInstanceError
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -541,3 +542,44 @@ def test_snapshot_nested_items_are_frozen(ctx: ContextManager) -> None:
         snap.system_prompt[0].title = "mutated"  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         snap.sub_agents[0].specialist = "mutated"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Concurrency (#306) — compress() is serialised
+# ---------------------------------------------------------------------------
+
+
+async def test_compress_is_serialised_under_concurrent_calls(
+    openai_tools: list[dict[str, Any]],
+    mock_token_budgeter: TokenBudgeter,
+    mock_logger: Mock,
+) -> None:
+    """compress() reads the messages list, awaits, then clear()+extend()s.
+
+    Two concurrent calls must not interleave that critical section — the
+    _compress_lock serialises them so neither drops messages.
+    """
+    concurrent = 0
+    max_concurrent = 0
+
+    async def _slow_compress(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        nonlocal concurrent, max_concurrent
+        concurrent += 1
+        max_concurrent = max(max_concurrent, concurrent)
+        await asyncio.sleep(0.01)
+        concurrent -= 1
+        return msgs
+
+    history_manager = Mock(spec=MessageHistoryManager)
+    history_manager.compress_messages = _slow_compress
+
+    cm = ContextManager(
+        message_history_manager=history_manager,
+        openai_tools=openai_tools,
+        token_budgeter=mock_token_budgeter,
+        logger=mock_logger,
+    )
+
+    await asyncio.gather(cm.compress(), cm.compress(), cm.compress())
+
+    assert max_concurrent == 1, "compress() must be serialised by _compress_lock"

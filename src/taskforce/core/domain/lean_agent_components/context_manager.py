@@ -7,6 +7,7 @@ messages list and exposes snapshot generation for CLI commands.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from typing import Any
@@ -50,6 +51,14 @@ class ContextManager:
         self._last_system_prompt: str = ""
         self._initialized = False
         self._sub_agent_entries: list[SubAgentContextEntry] = []
+        # Guards compress(): it is the only mutation that reads the
+        # messages list, awaits, then clear()+extend()s — so two
+        # concurrent compress() calls could interleave and drop messages.
+        # The synchronous mutations (append_message, initialize, restore,
+        # set_system_prompt, preflight_check) have no await point, so each
+        # already runs to completion atomically within the event loop and
+        # needs no lock.
+        self._compress_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Properties
@@ -188,12 +197,15 @@ class ContextManager:
         """Run message compression if budget thresholds are exceeded.
 
         Mutates the internal messages list in-place so all external
-        references remain valid.
+        references remain valid. Serialised via ``_compress_lock`` so two
+        concurrent calls cannot interleave their clear()+extend() and
+        drop messages.
         """
-        new_messages = await self._history_manager.compress_messages(self._messages)
-        if new_messages is not self._messages:
-            self._messages.clear()
-            self._messages.extend(new_messages)
+        async with self._compress_lock:
+            new_messages = await self._history_manager.compress_messages(self._messages)
+            if new_messages is not self._messages:
+                self._messages.clear()
+                self._messages.extend(new_messages)
 
     def preflight_check(self) -> None:
         """Run emergency budget check and truncation in-place."""
