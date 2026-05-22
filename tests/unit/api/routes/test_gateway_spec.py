@@ -239,11 +239,6 @@ def test_channels_list_sorted() -> None:
 
 
 @pytest.mark.spec("gateway.link_code_invalid_ttl_returns_400")
-@pytest.mark.xfail(
-    reason="#429 — link-code mint rejects out-of-range TTL with Pydantic's 422 "
-    "instead of the spec-mandated 400 invalid_request envelope",
-    strict=True,
-)
 def test_link_code_invalid_ttl_returns_400() -> None:
     """A TTL outside 60–3600 must be rejected with 400 per the API surface."""
     client = _build_client()

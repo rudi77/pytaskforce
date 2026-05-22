@@ -358,7 +358,8 @@ class TestLinkCodeEndpoints:
             "/api/v1/gateway/telegram/link-codes",
             json={"ttl_seconds": 10},
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
+        assert response.json()["code"] == "invalid_request"
 
     def test_mint_then_consume_writes_to_registry(self, link_client):
         client, registry = link_client

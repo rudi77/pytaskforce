@@ -158,12 +158,15 @@ class ChannelsResponseSchema(BaseModel):
 
 
 class LinkCodeRequest(BaseModel):
-    """Optional body for the link-code mint endpoint (issue #162)."""
+    """Optional body for the link-code mint endpoint (issue #162).
+
+    The 60–3600 range is validated in the route handler (not via Pydantic
+    ``ge``/``le``) so an out-of-range TTL surfaces as the spec-mandated
+    400 ``invalid_request`` envelope rather than Pydantic's 422.
+    """
 
     ttl_seconds: int | None = Field(
         default=None,
-        ge=60,
-        le=3600,
         description="Code lifetime in seconds (60–3600). Defaults to 600 (10 minutes).",
     )
 
@@ -489,6 +492,13 @@ async def mint_link_code(
     tenant_id = get_current_tenant_id()
     user_id = get_current_user_id() or "default"
     ttl_seconds = body.ttl_seconds or 600
+    if not 60 <= ttl_seconds <= 3600:
+        raise _error_response(
+            status_code=400,
+            code="invalid_request",
+            message="ttl_seconds must be between 60 and 3600",
+            details={"field": "ttl_seconds", "value": ttl_seconds},
+        )
 
     pending = await link_registry.create_pending_code(
         channel=channel,
