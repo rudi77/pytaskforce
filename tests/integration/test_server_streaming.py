@@ -246,6 +246,7 @@ class TestServerSSEStreaming:
             assert len(complete_events) == 1
             assert complete_events[0]["details"]["status"] == "completed"
 
+    @pytest.mark.spec("api.sse_stream_emits_terminal_error_frame_on_producer_exception")
     @pytest.mark.integration
     def test_sse_yields_error_events(self, app, client):
         """Test that SSE endpoint yields error events when errors occur."""

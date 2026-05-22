@@ -40,6 +40,7 @@ def test_cancel_returns_202_when_agent_is_running(app, client):
     mock_executor.interrupt.assert_called_once_with("sess-abc")
 
 
+@pytest.mark.spec("api.execute_cancel_unknown_session_returns_404")
 @pytest.mark.integration
 def test_cancel_returns_404_when_no_active_session(app, client):
     mock_executor = MagicMock()

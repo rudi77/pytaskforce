@@ -52,6 +52,7 @@ class _StubService:
         return {**self._cancel_result, "request_id": request_id}
 
 
+@pytest.mark.spec("api.missions_list_returns_503_when_no_persistent_agent_service")
 def test_list_missions_returns_503_when_no_service(app: FastAPI) -> None:
     set_persistent_agent_service(None)
     response = TestClient(app).get("/api/v1/missions")
@@ -120,6 +121,7 @@ def test_cancel_queued_returns_202_cancelled(app: FastAPI) -> None:
 
 
 @pytest.mark.spec("interruption.rest_cancel_unknown_returns_404")
+@pytest.mark.spec("api.missions_cancel_unknown_request_id_returns_404")
 def test_cancel_returns_404_for_unknown_request(app: FastAPI) -> None:
     set_persistent_agent_service(
         _StubService(

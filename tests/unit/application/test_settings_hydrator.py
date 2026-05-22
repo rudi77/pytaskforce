@@ -117,6 +117,7 @@ def test_disabled_channel_is_skipped(tmp_path) -> None:
     assert "TELEGRAM_BOT_TOKEN" not in os.environ
 
 
+@pytest.mark.spec("api.settings_hydration_runs_before_first_request")
 def test_hydrate_all_runs_both_sections(tmp_path) -> None:
     store = _store(tmp_path)
     store.put(LLM_PROVIDERS, {"openai": {"api_key": "k"}})
