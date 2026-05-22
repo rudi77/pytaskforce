@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("inspect_ai", reason="requires the 'evals' extra (uv sync --extra evals)")
+
 from evals.pinchbench import scorer as scorer_module
 
 
