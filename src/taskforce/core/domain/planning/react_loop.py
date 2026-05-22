@@ -990,6 +990,8 @@ async def _react_loop(
             }
             if content_filter_blocked:
                 error_data["error_kind"] = "content_filter"
+            else:
+                error_data["error_kind"] = "max_steps_reached"
             yield StreamEvent(
                 event_type=EventType.ERROR,
                 data=error_data,

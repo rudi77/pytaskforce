@@ -163,11 +163,6 @@ async def _always_tool_call_stream(**_kwargs: Any):
 
 
 @pytest.mark.spec("react-loop.max_steps_terminates_with_error_kind")
-@pytest.mark.xfail(
-    reason="#430 — the max_steps ERROR event carries only `message`, not the "
-    "spec-mandated `error_kind='max_steps_reached'`",
-    strict=True,
-)
 @pytest.mark.asyncio
 async def test_max_steps_terminates_with_error_kind() -> None:
     """Hitting max_steps without an answer emits ERROR tagged max_steps_reached."""
