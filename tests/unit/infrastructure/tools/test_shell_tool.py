@@ -476,3 +476,61 @@ class TestPowerShellToolExecution:
                 result = await tool.execute(command="cmd", timeout=5)
                 assert result["success"] is False
                 assert "cancelled" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Dangerous-command blocklist hardening (#277)
+# ---------------------------------------------------------------------------
+
+
+class TestDangerousCommandBlocklist:
+    """The blocklist is defence-in-depth (the HIGH approval gate is the real
+    control), but it must still resist the trivial obfuscations from #277."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rm -rf /",
+            "rm -rf /*",
+            "rm -rf  /*",          # extra whitespace bypass
+            "rm  -rf  /",          # extra whitespace bypass
+            "RM -RF /",            # case bypass
+            "rm -rf '/'",          # single-quote bypass
+            'rm -rf "/"',          # double-quote bypass
+            "rm -r -f /",          # split-flags bypass
+            "dd if=/dev/zero of=/dev/sda",
+            "dd if=/dev/urandom of=disk",
+            "mkfs.ext4 /dev/sda1",
+            ":(){ :|:& };:",       # fork bomb
+            "format c:",
+            "del /f /s /q C:\\",
+        ],
+    )
+    def test_blocks_dangerous_commands(self, command: str) -> None:
+        from taskforce.infrastructure.tools.native.shell_tool import _is_dangerous_command
+
+        assert _is_dangerous_command(command) is True, command
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls -la",
+            "echo hello world",
+            "rm -rf ./build",          # relative path — not root
+            "rm -rf node_modules",
+            "git status",
+            "python script.py",
+            "cat /etc/hostname",       # read, not a destructive op
+            "mkdir -p /tmp/work",
+        ],
+    )
+    def test_allows_benign_commands(self, command: str) -> None:
+        from taskforce.infrastructure.tools.native.shell_tool import _is_dangerous_command
+
+        assert _is_dangerous_command(command) is False, command
+
+    async def test_execute_blocks_whitespace_obfuscated_rm(self) -> None:
+        """An obfuscated catastrophe is rejected by ShellTool.execute, not run."""
+        result = await ShellTool().execute(command="rm -rf  '/'*")
+        assert result["success"] is False
+        assert "blocked" in result["error"].lower()

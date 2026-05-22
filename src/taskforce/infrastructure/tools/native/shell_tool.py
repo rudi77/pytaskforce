@@ -14,6 +14,7 @@ Security note:
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -130,18 +131,44 @@ async def _run_via_sandbox(
     return payload
 
 
-# Dangerous command patterns shared across shell tools
-_DANGEROUS_PATTERNS = [
-    "rm -rf /",
-    "rm -rf /*",
-    "dd if=/dev/zero",
-    "dd if=/dev/random",
-    "format c:",
-    "del /f /s /q",
-    ":(){ :|:& };:",  # Fork bomb
-    "> /dev/sda",
-    "mkfs.",
+# Defence-in-depth blocklist of obviously-catastrophic commands.
+#
+# This is NOT a security boundary. A substring/regex blocklist cannot
+# catch command substitution (``$(...)``, backticks), ``eval``, aliases
+# or PATH tricks — the issue #277 bypasses. The real control is the
+# mandatory HIGH-risk approval gate (``requires_approval = True``): a
+# human sees and approves every command. The blocklist only exists to
+# stop the agent from *accidentally* generating a destructive command.
+#
+# Matching runs against a normalised form of the command (lowercased,
+# quotes stripped, whitespace collapsed) so the trivial obfuscations
+# (``rm -rf  /*``, ``rm -rf '/'``) no longer slip through.
+_DANGEROUS_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\brm\s+(?:-\S+\s+)+/"),          # rm <flags> /<path>
+    re.compile(r"\bdd\s+if=/dev/(?:zero|u?random)"),
+    re.compile(r"\bmkfs\b"),
+    re.compile(r":\(\)\s*\{.*&.*\}\s*;?\s*:"),    # fork bomb
+    re.compile(r">\s*/dev/sd[a-z]"),
+    re.compile(r"\bformat\s+[a-z]:"),
+    re.compile(r"\bdel\s+/[a-z]"),
 ]
+
+
+def _normalise_for_blocklist(command: str) -> str:
+    """Lowercase, strip quotes/backticks, collapse whitespace.
+
+    Defeats the trivial blocklist bypasses (extra spaces, quoting). It
+    does NOT defeat command substitution or ``eval`` — those are the
+    approval gate's job, not the blocklist's.
+    """
+    no_quotes = command.lower().replace("'", "").replace('"', "").replace("`", " ")
+    return re.sub(r"\s+", " ", no_quotes).strip()
+
+
+def _is_dangerous_command(command: str) -> bool:
+    """True when *command* matches a known-catastrophic pattern."""
+    normalised = _normalise_for_blocklist(command)
+    return any(pattern.search(normalised) for pattern in _DANGEROUS_PATTERNS)
 
 
 class ShellTool(ToolProtocol):
@@ -221,7 +248,7 @@ class ShellTool(ToolProtocol):
             - error: str - Error message (if failed)
         """
         # Safety check - block dangerous commands
-        if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
+        if _is_dangerous_command(command):
             return {"success": False, "error": "Command blocked for safety reasons"}
 
         return await _run_via_sandbox(
@@ -313,7 +340,7 @@ class BashTool(ToolProtocol):
         Returns:
             Dictionary with success, stdout, stderr, returncode, command keys.
         """
-        if any(pattern in command.lower() for pattern in _DANGEROUS_PATTERNS):
+        if _is_dangerous_command(command):
             return {"success": False, "error": "Command blocked for safety reasons"}
 
         # ``_run_via_sandbox`` already wraps every non-cancellation exception
