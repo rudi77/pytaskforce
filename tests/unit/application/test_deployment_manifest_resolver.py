@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from cryptography.fernet import Fernet
 
 from taskforce.application.deployment_manifest_resolver import (
@@ -20,6 +21,7 @@ def _store(tmp_path):
     return FileSettingsStore(work_dir=tmp_path, key=Fernet.generate_key())
 
 
+@pytest.mark.spec("profiles.settings_store_visible_agents_beats_yaml")
 def test_settings_takes_precedence_over_yaml(tmp_path) -> None:
     store = _store(tmp_path)
     store.put(VISIBLE_AGENTS, {"agents": ["butler", "rag_agent"]})
@@ -49,6 +51,7 @@ def test_falls_back_to_yaml_when_settings_empty(tmp_path) -> None:
     assert resolved is yaml_manifest
 
 
+@pytest.mark.spec("profiles.missing_manifest_falls_back_to_unfiltered")
 def test_returns_none_when_neither_source_resolves(tmp_path) -> None:
     store = _store(tmp_path)
     with patch(

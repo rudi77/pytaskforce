@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from taskforce.core.domain.deployment import DeploymentManifest
@@ -33,6 +34,7 @@ def _write_profile(configs_dir, name: str) -> None:
         yaml.safe_dump(profile_data, f)
 
 
+@pytest.mark.spec("profiles.missing_manifest_falls_back_to_unfiltered")
 def test_list_agents_without_manifest_returns_all(tmp_path) -> None:
     """Backward compatibility: no manifest → no filtering."""
     configs_dir = tmp_path / "configs"
@@ -47,6 +49,7 @@ def test_list_agents_without_manifest_returns_all(tmp_path) -> None:
     assert profiles == {"butler", "showcase_coder"}
 
 
+@pytest.mark.spec("profiles.deployment_manifest_filters_list_agents")
 def test_list_agents_filters_by_deployment_manifest(tmp_path) -> None:
     """With a manifest installed, only allowlisted profiles surface."""
     configs_dir = tmp_path / "configs"
@@ -69,6 +72,7 @@ def test_list_agents_filters_by_deployment_manifest(tmp_path) -> None:
     assert profiles == {"butler", "rag_agent"}
 
 
+@pytest.mark.spec("profiles.include_hidden_query_bypasses_manifest")
 def test_list_agents_include_hidden_returns_all(tmp_path) -> None:
     """``include_hidden=True`` bypasses the manifest filter."""
     configs_dir = tmp_path / "configs"
@@ -92,6 +96,7 @@ def test_list_agents_include_hidden_returns_all(tmp_path) -> None:
     assert profiles_unfiltered == {"butler", "showcase_coder"}
 
 
+@pytest.mark.spec("profiles.hidden_agent_still_loadable_by_id")
 def test_get_agent_unaffected_by_manifest(tmp_path) -> None:
     """Sub-agent resolution by id keeps working even for hidden agents."""
     configs_dir = tmp_path / "configs"

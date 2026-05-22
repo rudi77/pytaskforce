@@ -14,6 +14,8 @@ from taskforce.application.profile_loader import (
     _FALLBACK_CONFIG,
     DEFAULT_TOOL_NAMES,
     ProfileLoader,
+    clear_extra_config_dirs,
+    register_config_dir,
 )
 
 
@@ -137,10 +139,12 @@ class TestProfileLoaderLoad:
         assert "tools" in config
         assert config["tools"] == DEFAULT_TOOL_NAMES
 
+    @pytest.mark.spec("profiles.unknown_profile_raises_filenotfound")
     def test_load_missing_profile_raises(self, loader: ProfileLoader) -> None:
         with pytest.raises(FileNotFoundError, match="not found"):
             loader.load("nonexistent")
 
+    @pytest.mark.spec("profiles.unknown_profile_raises_filenotfound")
     def test_load_missing_profile_error_includes_both_paths(self, config_dir: Path) -> None:
         """Error message should mention both standard and custom paths."""
         loader = ProfileLoader(config_dir)
@@ -150,6 +154,7 @@ class TestProfileLoaderLoad:
         assert "missing_profile" in msg
         assert str(config_dir) in msg
 
+    @pytest.mark.spec("profiles.custom_subdir_probed_after_root")
     def test_load_custom_profile(self, config_dir: Path) -> None:
         custom_dir = config_dir / "custom"
         custom_dir.mkdir()
@@ -161,6 +166,7 @@ class TestProfileLoaderLoad:
         assert config["profile"] == "my_custom"
         assert config["agent"]["max_steps"] == 5
 
+    @pytest.mark.spec("profiles.custom_subdir_probed_after_root")
     def test_standard_profile_takes_precedence_over_custom(self, config_dir: Path) -> None:
         """If both {config_dir}/foo.yaml and {config_dir}/custom/foo.yaml exist,
         the standard location wins."""
@@ -176,6 +182,7 @@ class TestProfileLoaderLoad:
         config = loader.load("foo")
         assert config["source"] == "standard"
 
+    @pytest.mark.spec("profiles.schema_validation_failure_warns_does_not_reject")
     def test_load_profile_with_validation_warning_still_returns_config(
         self, config_dir: Path
     ) -> None:
@@ -214,6 +221,103 @@ class TestProfileLoaderLoad:
         loader = ProfileLoader(config_dir)
         config = loader.load("minimal")
         assert config["profile"] == "minimal"
+
+
+# ------------------------------------------------------------------
+# ProfileLoader.load() — .agent.md resolution
+# ------------------------------------------------------------------
+
+
+class TestProfileLoaderAgentMd:
+    """`.agent.md` profiles: defaults → extends → frontmatter → technical → body."""
+
+    @pytest.mark.spec("profiles.agent_md_body_becomes_system_prompt")
+    def test_agent_md_body_becomes_system_prompt(self, config_dir: Path) -> None:
+        (config_dir / "md_agent.agent.md").write_text(
+            "---\nprofile: md_agent\n---\n\nYou are a careful assistant.\n",
+            encoding="utf-8",
+        )
+        config = ProfileLoader(config_dir).load("md_agent")
+        assert "You are a careful assistant." in config["system_prompt"]
+
+    @pytest.mark.spec("profiles.defaults_yaml_applied_as_baseline")
+    def test_defaults_yaml_applied_as_baseline(self, config_dir: Path) -> None:
+        (config_dir / "defaults.yaml").write_text(
+            yaml.dump({"agent": {"max_steps": 99}, "logging": {"level": "DEBUG"}})
+        )
+        (config_dir / "md_agent.agent.md").write_text(
+            "---\nprofile: md_agent\n---\n\nBody.\n", encoding="utf-8"
+        )
+        config = ProfileLoader(config_dir).load("md_agent")
+        # Keys not set by the .agent.md fall through to the defaults.yaml baseline.
+        assert config["agent"]["max_steps"] == 99
+        assert config["logging"]["level"] == "DEBUG"
+
+    @pytest.mark.spec("profiles.extends_chain_applies_left_to_right")
+    def test_extends_chain_applies_left_to_right(self, config_dir: Path) -> None:
+        presets = config_dir / "presets"
+        presets.mkdir()
+        (presets / "base.yaml").write_text(
+            yaml.dump({"shared_key": "from_base", "base_only": "kept"})
+        )
+        (presets / "override.yaml").write_text(
+            yaml.dump({"shared_key": "from_override"})
+        )
+        (config_dir / "md_agent.agent.md").write_text(
+            "---\nprofile: md_agent\nextends: [base, override]\n---\n\nBody.\n",
+            encoding="utf-8",
+        )
+        config = ProfileLoader(config_dir).load("md_agent")
+        # The rightmost preset wins on a shared key …
+        assert config["shared_key"] == "from_override"
+        # … but a key unique to the leftmost preset survives.
+        assert config["base_only"] == "kept"
+
+    @pytest.mark.spec("profiles.technical_block_flattens_onto_top_level")
+    def test_technical_block_flattens_onto_top_level(self, config_dir: Path) -> None:
+        (config_dir / "md_agent.agent.md").write_text(
+            "---\n"
+            "profile: md_agent\n"
+            "technical:\n"
+            "  runtime: taskforce\n"
+            "  context_policy:\n"
+            "    max_items: 5\n"
+            "---\n\nBody.\n",
+            encoding="utf-8",
+        )
+        config = ProfileLoader(config_dir).load("md_agent")
+        # technical: keys are lifted to the top level; the block itself is consumed.
+        assert config["runtime"] == "taskforce"
+        assert config["context_policy"]["max_items"] == 5
+        assert "technical" not in config
+
+    @pytest.mark.spec("profiles.extra_config_dirs_probed_after_framework_dir")
+    def test_extra_config_dirs_probed_after_framework_dir(
+        self, config_dir: Path, tmp_path: Path
+    ) -> None:
+        """A profile in a registered extra dir resolves; when the same name
+        also exists in the framework dir, the framework dir wins."""
+        extra_dir = tmp_path / "extra_configs"
+        extra_dir.mkdir()
+        (extra_dir / "extra_only.yaml").write_text(
+            yaml.dump({"profile": "extra_only", "source": "extra"})
+        )
+        (config_dir / "shared.yaml").write_text(
+            yaml.dump({"profile": "shared", "source": "framework"})
+        )
+        (extra_dir / "shared.yaml").write_text(
+            yaml.dump({"profile": "shared", "source": "extra"})
+        )
+        clear_extra_config_dirs()
+        register_config_dir(extra_dir)
+        try:
+            loader = ProfileLoader(config_dir)
+            # Present only in the extra dir → still resolves.
+            assert loader.load("extra_only")["source"] == "extra"
+            # Present in both → the framework dir is probed first and wins.
+            assert loader.load("shared")["source"] == "framework"
+        finally:
+            clear_extra_config_dirs()
 
 
 # ------------------------------------------------------------------
@@ -323,6 +427,7 @@ class TestProfileLoaderMergePluginConfig:
         assert merged["persistence"]["work_dir"] == ".plugin_data"
         assert merged["persistence"]["type"] == "file"
 
+    @pytest.mark.spec("profiles.plugin_cannot_override_persistence_type")
     def test_merge_persistence_type_not_overridden(self, loader: ProfileLoader) -> None:
         """Plugin cannot override persistence type (security constraint)."""
         base: dict[str, Any] = {"persistence": {"type": "file", "work_dir": ".taskforce"}}

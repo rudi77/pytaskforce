@@ -192,6 +192,7 @@ def test_load_cli_apps_skips_load_failure(monkeypatch: pytest.MonkeyPatch) -> No
 
 @pytest.mark.spec("plugins.entry_point_config_dir_resolves_profile")
 @pytest.mark.spec("plugins.config_dir_probes_three_candidate_paths")
+@pytest.mark.spec("profiles.entry_point_packages_register_config_dirs")
 def test_load_config_dirs_resolves_relative_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
