@@ -413,6 +413,19 @@ class TestDeleteConversation:
         assert resp.status_code == 404
         assert "conversation_not_found" in resp.text
 
+    def test_delete_out_of_scope_id_blocked_before_delete(
+        self, client, mock_conversation_manager
+    ):
+        """#279 — delete_conversation enforces the same ownership/scope check
+        as the other conversation routes: an id outside the caller's scope
+        404s and the manager's delete is never reached."""
+        # This id is in neither list_active (only abc123...) nor list_archived.
+        foreign_id = "ffffffffffffffffffffffffffffffff"
+        resp = client.delete(f"/api/v1/conversations/{foreign_id}")
+        assert resp.status_code == 404
+        # The access check gated the route before the destructive delete ran.
+        mock_conversation_manager.delete.assert_not_awaited()
+
 
 class TestForkConversation:
     def test_forks_full_transcript(self, client, mock_conversation_manager):

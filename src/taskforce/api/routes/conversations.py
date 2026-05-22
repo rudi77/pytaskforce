@@ -658,6 +658,9 @@ async def delete_conversation(
     user explicitly removes a past chat. Returns 404 when the
     conversation does not exist so the UI can detect double-clicks.
     """
+    # Ownership / tenant-scope check — same guard as the other
+    # conversation routes; closes the cross-tenant delete in #279.
+    await _require_conversation_access(manager, conversation_id)
     removed = await manager.delete(conversation_id)
     if not removed:
         raise _error_response(
