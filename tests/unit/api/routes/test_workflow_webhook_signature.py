@@ -20,6 +20,7 @@ def _sign(body: bytes, secret: str, algo: str = "sha256") -> str:
     return hmac.new(secret.encode(), body, getattr(hashlib, algo)).hexdigest()
 
 
+@pytest.mark.spec("workflows.webhook_no_secret_accepts_open")
 def test_no_secret_means_open_webhook() -> None:
     """No secret configured → webhook is intentionally open."""
     assert _verify_webhook_signature(b"any-body", {}, {}) is True
@@ -65,6 +66,7 @@ def test_missing_signature_with_secret_configured_is_rejected() -> None:
     assert _verify_webhook_signature(b"hi", {"secret": "x"}, {}) is False
 
 
+@pytest.mark.spec("workflows.webhook_invalid_signature_returns_401")
 def test_wrong_signature_is_rejected() -> None:
     assert _verify_webhook_signature(b"hi", {"secret": "x"}, {"X-Signature": "deadbeef"}) is False
 

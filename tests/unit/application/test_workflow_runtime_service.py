@@ -1,5 +1,7 @@
 """Unit tests for WorkflowRuntimeService."""
 
+import pytest
+
 from taskforce.application.workflow_runtime_service import WorkflowRuntimeService
 from taskforce.core.domain.workflow_checkpoint import ResumeEvent
 from taskforce.core.domain.workflow_definition import WorkflowDefinition, WorkflowStep
@@ -39,6 +41,7 @@ def test_create_wait_checkpoint_and_resume(tmp_path):
     )
 
 
+@pytest.mark.spec("workflows.resume_missing_required_input_returns_400")
 def test_resume_rejects_missing_required_fields(tmp_path):
     store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     service = WorkflowRuntimeService(store)
@@ -114,6 +117,7 @@ def test_workflow_definition_steps_are_dependency_ordered(tmp_path):
     assert [step.step_id for step in ordered] == ["draft", "publish"]
 
 
+@pytest.mark.spec("workflows.save_rejects_cyclic_depends_on_400")
 def test_save_definition_rejects_dependency_cycles(tmp_path):
     checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
@@ -137,6 +141,7 @@ def test_save_definition_rejects_dependency_cycles(tmp_path):
     assert service.get_definition("cycle") is None
 
 
+@pytest.mark.spec("workflows.save_rejects_dangling_depends_on_400")
 def test_save_definition_rejects_dangling_depends_on(tmp_path):
     checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
@@ -158,6 +163,7 @@ def test_save_definition_rejects_dangling_depends_on(tmp_path):
     assert service.get_definition("dangling") is None
 
 
+@pytest.mark.spec("workflows.save_rejects_empty_steps_400")
 def test_save_definition_rejects_empty_steps(tmp_path):
     checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
@@ -173,6 +179,7 @@ def test_save_definition_rejects_empty_steps(tmp_path):
     assert service.get_definition("nada") is None
 
 
+@pytest.mark.spec("workflows.save_rejects_malformed_cron_400")
 def test_save_definition_rejects_malformed_cron(tmp_path):
     checkpoint_store = FileWorkflowCheckpointStore(work_dir=str(tmp_path))
     definition_store = FileWorkflowDefinitionStore(work_dir=str(tmp_path))
@@ -216,8 +223,6 @@ def test_save_definition_accepts_valid_cron(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-import pytest
-
 from taskforce.core.domain.schedule import ScheduleActionType, ScheduleJob
 
 
@@ -239,6 +244,7 @@ class _FakeScheduler:
         return self.jobs.pop(job_id, None) is not None
 
 
+@pytest.mark.spec("workflows.save_schedule_trigger_registers_cron_job")
 @pytest.mark.asyncio
 async def test_register_schedule_creates_execute_workflow_job(tmp_path):
     scheduler = _FakeScheduler()
@@ -265,6 +271,7 @@ async def test_register_schedule_creates_execute_workflow_job(tmp_path):
     assert job.expression == "0 8 * * *"
 
 
+@pytest.mark.spec("workflows.resave_schedule_replaces_prior_job")
 @pytest.mark.asyncio
 async def test_register_schedule_replaces_previous_job(tmp_path):
     scheduler = _FakeScheduler()
@@ -432,6 +439,7 @@ def test_find_webhook_workflow_normalises_leading_slashes(tmp_path):
     assert runtime.find_webhook_workflow("/hooks/run") is not None
 
 
+@pytest.mark.spec("workflows.webhook_unknown_path_returns_404")
 def test_find_webhook_workflow_returns_none_for_unknown_path(tmp_path):
     runtime = WorkflowRuntimeService(
         store=FileWorkflowCheckpointStore(work_dir=str(tmp_path)),
@@ -505,6 +513,7 @@ async def test_save_then_register_schedule_idempotent_round_trip(tmp_path) -> No
     assert "workflow__wf-3" in scheduler.jobs
 
 
+@pytest.mark.spec("workflows.delete_definition_unregisters_cron_job")
 @pytest.mark.asyncio
 async def test_delete_definition_then_unregister_clears_the_schedule(tmp_path) -> None:
     scheduler = _FakeScheduler()
@@ -573,6 +582,7 @@ def test_dependency_levels_rejects_cycles() -> None:
         _dependency_levels(steps)
 
 
+@pytest.mark.spec("workflows.run_executes_levels_in_parallel")
 @pytest.mark.asyncio
 async def test_independent_steps_run_in_parallel(tmp_path) -> None:
     """A workflow with two independent slow steps must finish in ~max(step),
@@ -615,6 +625,7 @@ async def test_independent_steps_run_in_parallel(tmp_path) -> None:
     assert elapsed < 0.25, f"steps did not run in parallel (elapsed={elapsed:.3f}s)"
 
 
+@pytest.mark.spec("workflows.run_passes_dependency_final_message_to_downstream")
 @pytest.mark.asyncio
 async def test_dependency_results_visible_to_join_step(tmp_path) -> None:
     """A step that depends_on its predecessors must see their final_messages."""
@@ -743,6 +754,7 @@ async def test_acp_step_permission_denied_yields_failed_result(tmp_path) -> None
     assert "denied" in results[0]["error"].lower()
 
 
+@pytest.mark.spec("workflows.acp_peer_step_without_runtime_returns_failed")
 @pytest.mark.asyncio
 async def test_acp_step_fails_closed_when_no_runtime_wired(tmp_path) -> None:
     """An ACP step without an ACP runtime must not silently run locally."""
