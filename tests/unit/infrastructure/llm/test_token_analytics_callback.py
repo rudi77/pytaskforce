@@ -142,6 +142,7 @@ class TestTokenAnalyticsCallback:
         assert "gpt-4o" in summary.model_breakdown
         assert "gpt-4o-mini" in summary.model_breakdown
 
+    @pytest.mark.spec("observability.token_callback_never_raises_into_llm_path")
     def test_error_in_callback_does_not_propagate(self, callback):
         """Callback must never break LLM calls, even with bad input."""
         # Pass garbage - should not raise

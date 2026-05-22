@@ -43,6 +43,7 @@ def _record(ledger: token_ledger.TokenLedger) -> None:
     )
 
 
+@pytest.mark.spec("observability.token_ledger_attaches_run_context")
 def test_per_session_aggregates_records_made_inside_run_context(ledger) -> None:
     with token_ledger.run_context(
         session_id="sess-eval-1",
