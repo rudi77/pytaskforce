@@ -61,6 +61,7 @@ async def test_call_acp_agent_sync_returns_payload() -> None:
     assert result["output_text"] == "hello"
 
 
+@pytest.mark.spec("acp.call_acp_agent_failure_returns_payload_not_raises")
 @pytest.mark.asyncio
 async def test_call_acp_agent_unknown_peer_returns_error_payload() -> None:
     tool = AcpAgentTool(_runtime())

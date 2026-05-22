@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from taskforce.application.acp_service import build_acp_service, list_persisted_peers
 from taskforce.application.config_schema import AcpConfigSchema
 from taskforce.core.domain.acp import AcpAuth, AcpAuthType, AcpPeer
@@ -59,6 +61,7 @@ def test_list_persisted_peers_returns_file_backed_peers(tmp_path: Path) -> None:
     assert [p.name for p in peers] == ["alpha"]
 
 
+@pytest.mark.spec("acp.peers_file_chmod_0600_on_posix")
 def test_file_peer_registry_sets_restrictive_permissions(tmp_path: Path) -> None:
     """Registry file must be readable only by the owner (token exposure risk)."""
     import os

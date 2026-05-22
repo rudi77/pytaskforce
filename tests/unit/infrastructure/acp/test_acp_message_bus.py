@@ -63,6 +63,7 @@ async def test_publish_delivers_to_local_subscribers() -> None:
     assert received.payload == {"hello": "world"}
 
 
+@pytest.mark.spec("acp.message_bus_publish_fans_out_to_publish_peers")
 @pytest.mark.asyncio
 async def test_publish_forwards_to_remote_peers() -> None:
     client = MagicMock()

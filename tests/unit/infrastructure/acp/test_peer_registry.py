@@ -46,6 +46,7 @@ def test_file_registry_round_trips_to_disk(tmp_path: Path) -> None:
     assert beta.auth.token_env == "ACP_TOKEN_BETA"
 
 
+@pytest.mark.spec("acp.bearer_token_env_resolved_at_call_time")
 def test_env_registry_resolves_bearer_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -94,6 +95,7 @@ def _reset_resolver():
     clear_infrastructure_overrides()
 
 
+@pytest.mark.spec("acp.tenant_scoped_registry_hides_other_tenants")
 def test_tenant_scoped_registry_filters_by_current_tenant(_reset_resolver) -> None:
     inner = InMemoryPeerRegistry()
     inner.register(_tenant_peer("alpha", tenant_id="tenant-a"))

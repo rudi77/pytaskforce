@@ -133,6 +133,7 @@ def test_test_peer_unknown_returns_404(client: TestClient) -> None:
     assert response.json()["code"] == "peer_not_found"
 
 
+@pytest.mark.spec("acp.ping_reports_ok_false_on_auth_failure")
 @pytest.mark.asyncio
 async def test_ping_peer_treats_401_as_failure_for_bearer_auth(
     acp_dir: Path, monkeypatch: pytest.MonkeyPatch

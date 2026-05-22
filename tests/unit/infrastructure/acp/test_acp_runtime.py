@@ -31,6 +31,7 @@ def _runtime(client: Any | None = None) -> AcpRuntime:
     return AcpRuntime(server=server, client=client, peers=peers)
 
 
+@pytest.mark.spec("acp.unknown_peer_raises_not_falls_back")
 @pytest.mark.asyncio
 async def test_call_unknown_peer_raises() -> None:
     rt = _runtime()
@@ -87,6 +88,7 @@ def test_registered_manifests_is_on_server_protocol() -> None:
     assert rt.server.registered_manifests() == []
 
 
+@pytest.mark.spec("acp.cross_tenant_call_denied_without_flag")
 @pytest.mark.asyncio
 async def test_call_rejects_cross_tenant_peer_without_opt_in() -> None:
     peers = InMemoryPeerRegistry(
@@ -143,6 +145,7 @@ def _reset_authorizer():
     clear_infrastructure_overrides()
 
 
+@pytest.mark.spec("acp.cross_tenant_authorizer_consulted_per_call")
 @pytest.mark.asyncio
 async def test_cross_tenant_call_consults_authorizer(_reset_authorizer) -> None:
     """allow_cross_tenant=True peer + authorizer that says no → PermissionError."""

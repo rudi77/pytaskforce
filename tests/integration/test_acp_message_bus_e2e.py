@@ -30,6 +30,7 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+@pytest.mark.spec("acp.message_bus_publish_crosses_acp_network_to_subscriber")
 @pytest.mark.asyncio
 @pytest.mark.timeout(60)
 async def test_publish_crosses_acp_network_to_subscriber() -> None:
