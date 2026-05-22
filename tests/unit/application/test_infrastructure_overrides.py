@@ -63,6 +63,7 @@ def test_defaults_are_unset() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("multi-tenant.no_overrides_returns_default_tenant")
 def test_get_current_tenant_id_returns_default_without_resolver() -> None:
     """Single-tenant builds: no resolver installed → ``"default"``."""
     assert get_current_tenant_id() == "default"
@@ -80,6 +81,7 @@ def test_get_current_tenant_id_falls_back_when_resolver_returns_empty() -> None:
     assert get_current_tenant_id() == "default"
 
 
+@pytest.mark.spec("multi-tenant.tenant_resolver_exception_falls_back_to_default")
 def test_get_current_tenant_id_falls_back_when_resolver_raises() -> None:
     """A buggy resolver must not break the framework — fall back to default."""
 
@@ -102,6 +104,7 @@ def test_clear_resets_tenant_resolver() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("multi-tenant.no_overrides_returns_none_user")
 def test_get_current_user_id_returns_none_without_resolver() -> None:
     """Single-tenant builds: no user resolver installed → ``None``."""
     assert get_current_user_id() is None
@@ -117,6 +120,7 @@ def test_get_current_user_id_falls_back_when_resolver_returns_empty() -> None:
     assert get_current_user_id() is None
 
 
+@pytest.mark.spec("multi-tenant.user_resolver_exception_falls_back_to_none")
 def test_get_current_user_id_falls_back_when_resolver_raises() -> None:
     def boom() -> str:
         raise RuntimeError("boom")
@@ -188,6 +192,7 @@ def test_acp_tenant_id_provider_round_trip() -> None:
     assert get_acp_tenant_id_provider() is None
 
 
+@pytest.mark.spec("multi-tenant.override_resolved_per_call_not_cached")
 def test_agent_registry_override_invoked_per_call() -> None:
     """Override is consulted on every call (no caching by the builder)."""
     counter = {"n": 0}
@@ -347,6 +352,7 @@ def test_gateway_components_override_exception_propagates() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spec("multi-tenant.clear_infrastructure_overrides_resets_every_slot")
 def test_clear_resets_all_overrides() -> None:
     """clear_infrastructure_overrides removes every installed override."""
     set_agent_registry_override(lambda: "a")
@@ -451,6 +457,7 @@ def test_warn_silent_when_sandbox_installed() -> None:
     assert captured == []
 
 
+@pytest.mark.spec("multi-tenant.multi_tenant_without_sandbox_warns_once")
 def test_warn_fires_once_in_multi_tenant_without_sandbox() -> None:
     """Multi-tenant resolver, no sandbox → one warning, then silent."""
     import warnings
