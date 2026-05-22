@@ -40,6 +40,7 @@ class TestEncryptedTokenStore:
         loaded = await store.load_token("google")
         assert loaded == token_data
 
+    @pytest.mark.spec("auth.token_store_load_missing_returns_none")
     async def test_load_nonexistent_returns_none(self, store: EncryptedTokenStore):
         result = await store.load_token("nonexistent")
         assert result is None
@@ -50,6 +51,7 @@ class TestEncryptedTokenStore:
         result = await store.load_token("google")
         assert result is None
 
+    @pytest.mark.spec("auth.token_store_delete_missing_is_noop")
     async def test_delete_nonexistent_no_error(self, store: EncryptedTokenStore):
         await store.delete_token("nonexistent")  # Should not raise.
 
@@ -74,6 +76,7 @@ class TestEncryptedTokenStore:
         key_path = Path(store._store_dir) / ".key"
         assert key_path.exists()
 
+    @pytest.mark.spec("auth.master_key_env_overrides_key_file")
     async def test_env_key_takes_precedence(
         self, store_with_env_key: EncryptedTokenStore
     ):

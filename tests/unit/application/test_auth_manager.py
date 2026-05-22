@@ -66,6 +66,7 @@ def auth_manager(
 
 
 class TestAuthManager:
+    @pytest.mark.spec("auth.authenticate_short_circuits_when_valid_token_present")
     async def test_authenticate_returns_existing_valid_token(
         self, auth_manager: AuthManager, mock_token_store: AsyncMock
     ):
@@ -83,6 +84,7 @@ class TestAuthManager:
         assert result.token.access_token == "valid_access"
         assert result.status == AuthStatus.ACTIVE
 
+    @pytest.mark.spec("auth.authenticate_uses_default_flow_from_provider_config")
     async def test_authenticate_runs_flow_when_no_token(
         self,
         auth_manager: AuthManager,
@@ -153,6 +155,7 @@ class TestAuthManager:
         assert not result.success
         assert "Unknown auth flow type" in result.error
 
+    @pytest.mark.spec("auth.get_token_returns_none_when_unknown")
     async def test_get_token_returns_none_when_not_stored(
         self, auth_manager: AuthManager, mock_token_store: AsyncMock
     ):
@@ -174,6 +177,45 @@ class TestAuthManager:
         assert result is not None
         assert result.access_token == "access"
 
+    @pytest.mark.spec("auth.get_token_refreshes_expired_token_transparently")
+    async def test_get_token_refreshes_expired_token_transparently(
+        self, auth_manager: AuthManager, mock_token_store: AsyncMock
+    ):
+        """``get_token`` transparently refreshes an expired token before returning."""
+        expired_token = TokenData(
+            provider=AuthProviderType.GOOGLE,
+            access_token="stale_access",
+            refresh_token="refresh_123",
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="cid",
+            client_secret="cs",
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        mock_token_store.load_token.return_value = expired_token.to_dict()
+
+        from unittest.mock import patch
+
+        mock_resp = AsyncMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json = AsyncMock(
+            return_value={"access_token": "fresh_access", "expires_in": 3600}
+        )
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.post = MagicMock(return_value=mock_resp)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await auth_manager.get_token("google")
+
+        assert result is not None
+        assert result.access_token == "fresh_access"
+        assert not result.is_expired
+
+    @pytest.mark.spec("auth.revoke_deletes_token_idempotently")
     async def test_revoke_deletes_token(
         self, auth_manager: AuthManager, mock_token_store: AsyncMock
     ):
@@ -181,6 +223,7 @@ class TestAuthManager:
         assert result is True
         mock_token_store.delete_token.assert_called_once_with("google")
 
+    @pytest.mark.spec("auth.refresh_failure_persists_failed_status")
     async def test_refresh_failure_marks_token_as_failed(
         self, auth_manager: AuthManager, mock_token_store: AsyncMock
     ):

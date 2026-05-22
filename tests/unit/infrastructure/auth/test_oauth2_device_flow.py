@@ -105,6 +105,7 @@ class TestOAuth2DeviceFlow:
             )
         assert result is None
 
+    @pytest.mark.spec("auth.device_flow_propagates_denied_error")
     async def test_token_request_denied_raises(self, device_flow: OAuth2DeviceFlow):
         """access_denied should raise RuntimeError."""
         mock_resp = AsyncMock()
