@@ -220,6 +220,7 @@ class TestAppendMessage:
         )
         assert resp.status_code == 400
 
+    @pytest.mark.spec("conversations.project_bound_conversation_routes_workdir_to_project_path")
     def test_runs_with_project_work_dir(
         self,
         client,
@@ -379,6 +380,7 @@ class TestDeleteConversation:
             "abc123def456789012345678abcdef00"
         )
 
+    @pytest.mark.spec("conversations.delete_returns_404_when_missing")
     def test_delete_unknown_returns_404(self, client, mock_conversation_manager):
         mock_conversation_manager.delete = AsyncMock(return_value=False)
         resp = client.delete("/api/v1/conversations/ghost")
@@ -469,6 +471,7 @@ class TestCompactConversation:
         assert callable(args[1])
         assert kwargs["keep_last_n"] == 4
 
+    @pytest.mark.spec("conversations.compact_returns_404_for_unknown_id")
     def test_returns_404_for_unknown_conversation(self, client, mock_conversation_manager):
         # No active conversations match the id; existence check fails.
         mock_conversation_manager.get_messages = AsyncMock(return_value=[])

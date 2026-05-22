@@ -48,6 +48,7 @@ class TestConversationManager:
         await manager.append_message("conv-123", msg)
         mock_store.append_message.assert_called_once_with("conv-123", msg)
 
+    @pytest.mark.spec("conversations.auto_archive_stale_on_get_or_create")
     async def test_auto_archive_stale_conversations(self, mock_store):
         stale_time = datetime.now(UTC) - timedelta(hours=25)
         mock_store.list_active = AsyncMock(
@@ -66,6 +67,8 @@ class TestConversationManager:
 
         mock_store.archive.assert_called_once_with("old-conv")
 
+    @pytest.mark.spec("conversations.fork_copies_messages_and_strips_volatile_fields")
+    @pytest.mark.spec("conversations.fork_preserves_tool_call_linkage")
     async def test_fork_preserves_tool_calls_and_strips_volatile_fields(
         self, manager, mock_store
     ):
@@ -157,6 +160,7 @@ class TestConversationManagerCompact:
     def manager(self, mock_store):
         return ConversationManager(mock_store)
 
+    @pytest.mark.spec("conversations.compact_below_threshold_is_noop")
     async def test_compact_skips_when_below_threshold(self, manager, mock_store):
         # 4 kept + 1 summary slot = 5 messages minimum to compact; 4 messages
         # is too few — must skip without calling the summarizer.
@@ -232,6 +236,7 @@ class TestConversationManagerCompact:
         assert len(new_messages) == 1  # just the summary
         assert "all of it" in new_messages[0]["content"]
 
+    @pytest.mark.spec("conversations.compact_rejects_empty_summary")
     async def test_compact_refuses_empty_summary(self, manager, mock_store):
         # Defence against silently destroying history when the LLM call
         # returns nothing usable.

@@ -92,6 +92,7 @@ def _persisted_assistant_message(manager: AsyncMock) -> str:
     raise AssertionError("no assistant message was persisted")
 
 
+@pytest.mark.spec("conversations.stream_persists_error_message_when_no_tokens")
 def test_content_filter_error_message_is_persisted_instead_of_no_response(
     mock_manager: AsyncMock,
 ) -> None:
@@ -120,6 +121,7 @@ def test_content_filter_error_message_is_persisted_instead_of_no_response(
     assert "Inhaltsfilter" in text or "content" in text.lower()
 
 
+@pytest.mark.spec("conversations.stream_persists_error_message_when_no_tokens")
 def test_generic_error_event_is_surfaced_with_raw_text(
     mock_manager: AsyncMock,
 ) -> None:
@@ -165,3 +167,59 @@ def test_no_response_placeholder_still_used_when_no_error_event(
 
     text = _persisted_assistant_message(mock_manager)
     assert text == "[no response]"
+
+
+@pytest.mark.spec("conversations.append_persists_user_message_before_agent_runs")
+def test_user_message_persisted_independently_of_agent_output(
+    mock_manager: AsyncMock,
+) -> None:
+    """The user's input is persisted as its own message — the SSE variant
+    persists it before the agent runs, so it survives even a silent run."""
+    updates = [
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.COMPLETE,
+            message="Done",
+            details={"status": "completed"},
+        ),
+    ]
+    client = _build_client(mock_manager, updates)
+
+    _post_stream(client)
+
+    user_msgs = [
+        (call.args[1] if len(call.args) > 1 else call.kwargs.get("message"))
+        for call in mock_manager.append_message.await_args_list
+        if isinstance(
+            (call.args[1] if len(call.args) > 1 else call.kwargs.get("message")), dict
+        )
+        and (call.args[1] if len(call.args) > 1 else call.kwargs.get("message")).get(
+            "role"
+        )
+        == "user"
+    ]
+    assert len(user_msgs) == 1
+    assert user_msgs[0]["content"] == "egal"
+
+
+@pytest.mark.spec("conversations.stream_persists_partial_on_cancel")
+def test_partial_tokens_persisted_with_interrupted_marker(
+    mock_manager: AsyncMock,
+) -> None:
+    """Tokens arrived but no COMPLETE event → the persisted assistant reply
+    carries the '[partial — interrupted]' marker."""
+    updates = [
+        ProgressUpdate(
+            timestamp=datetime.now(),
+            event_type=EventType.LLM_TOKEN,
+            message="Here is a partial answer",
+            details={},
+        ),
+    ]
+    client = _build_client(mock_manager, updates)
+
+    _post_stream(client)
+
+    text = _persisted_assistant_message(mock_manager)
+    assert "Here is a partial answer" in text
+    assert "[partial — interrupted]" in text

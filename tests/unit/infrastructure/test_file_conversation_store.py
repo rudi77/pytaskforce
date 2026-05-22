@@ -17,6 +17,7 @@ class TestFileConversationStore:
         assert conv_id
         assert len(conv_id) == 32  # uuid hex
 
+    @pytest.mark.spec("conversations.get_or_create_idempotent_per_channel_sender")
     async def test_get_or_create_returns_same_active(self, store):
         id1 = await store.get_or_create("cli")
         id2 = await store.get_or_create("cli")
@@ -27,6 +28,7 @@ class TestFileConversationStore:
         id_tg = await store.get_or_create("telegram")
         assert id_cli != id_tg
 
+    @pytest.mark.spec("conversations.create_archives_previous_active")
     async def test_create_new_archives_previous(self, store):
         id1 = await store.get_or_create("cli")
         id2 = await store.create_new("cli")
