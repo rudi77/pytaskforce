@@ -57,6 +57,7 @@ class _FakeDaemon:
         self.is_running = False
 
 
+@pytest.mark.spec("agent-daemon.supervisor_restarts_on_uncaught_exception")
 @pytest.mark.asyncio
 async def test_supervisor_catches_crash_logs_restarts_with_backoff() -> None:
     """A synthetic exception during start() must not bring the process down.
@@ -130,6 +131,7 @@ async def test_supervisor_does_not_restart_on_cancelled_error() -> None:
     assert len(built) == 1
 
 
+@pytest.mark.spec("agent-daemon.signal_handlers_request_graceful_shutdown")
 @pytest.mark.asyncio
 async def test_supervisor_signal_handler_triggers_graceful_shutdown() -> None:
     """Invoking the signal handler must flip the shutdown event and stop the daemon."""
@@ -157,6 +159,7 @@ async def test_supervisor_signal_handler_triggers_graceful_shutdown() -> None:
     assert supervisor.restart_count == 0
 
 
+@pytest.mark.spec("agent-daemon.supervisor_restarts_on_stalled_heartbeat")
 @pytest.mark.asyncio
 async def test_watchdog_detects_stalled_heartbeat_and_restarts() -> None:
     """If ``last_heartbeat`` falls behind the threshold, the watchdog must restart the daemon."""
@@ -268,6 +271,101 @@ def test_install_signal_handlers_under_proactor_event_loop() -> None:
     sigbreak = getattr(signal, "SIGBREAK", None)
     if sigbreak is not None:
         assert sigbreak in supervisor._installed_signals
+
+
+@pytest.mark.spec("agent-daemon.supervisor_propagates_keyboardinterrupt_without_restart")
+@pytest.mark.asyncio
+async def test_supervisor_propagates_keyboardinterrupt_without_restart() -> None:
+    """KeyboardInterrupt from inside the supervised loop skips the restart
+    path and lets the process exit cleanly."""
+
+    class _KbdDaemon(_FakeDaemon):
+        async def start(self) -> None:  # type: ignore[override]
+            await super().start()
+            raise KeyboardInterrupt()
+
+    built: list[_FakeDaemon] = []
+
+    def factory() -> _FakeDaemon:
+        d = _KbdDaemon()
+        built.append(d)
+        return d
+
+    supervisor = AgentDaemonSupervisor(
+        daemon_factory=factory,
+        initial_backoff_seconds=0.0,
+    )
+    await supervisor.run()
+
+    # KeyboardInterrupt → graceful shutdown, never a restart loop.
+    assert supervisor.restart_count == 0
+    assert len(built) == 1
+
+
+@pytest.mark.spec("agent-daemon.supervisor_resets_backoff_after_clean_run")
+@pytest.mark.asyncio
+async def test_supervisor_resets_backoff_after_clean_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After a clean restart cycle the backoff resets to its initial value,
+    so a later crash does not inherit stale (escalated) backoff."""
+    crash = RuntimeError("boom")
+    # Daemon sequence: crash, crash, clean (→ restart requested), crash.
+    seq: list[_FakeDaemon] = [
+        _FakeDaemon(crash_on_start=crash),
+        _FakeDaemon(crash_on_start=crash),
+        _FakeDaemon(idle_seconds=3600.0),
+        _FakeDaemon(crash_on_start=crash),
+    ]
+    built: list[_FakeDaemon] = []
+
+    def factory() -> _FakeDaemon:
+        d = (
+            seq[len(built)]
+            if len(built) < len(seq)
+            else _FakeDaemon(idle_seconds=3600.0)
+        )
+        built.append(d)
+        return d
+
+    supervisor = AgentDaemonSupervisor(
+        daemon_factory=factory,
+        watchdog_interval_seconds=60.0,
+        stall_threshold_seconds=3600.0,
+        initial_backoff_seconds=1.0,
+        max_backoff_seconds=100.0,
+        backoff_factor=2.0,
+    )
+
+    sleeps: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(supervisor, "_sleep_with_shutdown", _record_sleep)
+
+    async def driver() -> None:
+        # Once the clean (3rd) daemon is running, request a restart so the
+        # supervisor exits _start_and_wait cleanly and resets the backoff.
+        for _ in range(3000):
+            if len(built) >= 3 and built[2].is_running and len(sleeps) >= 2:
+                break
+            await asyncio.sleep(0.001)
+        supervisor.request_restart()
+        # Then wait for the 4th (crash) daemon's backoff sleep and stop.
+        for _ in range(3000):
+            if len(sleeps) >= 3:
+                break
+            await asyncio.sleep(0.001)
+        supervisor.request_shutdown()
+
+    await asyncio.gather(supervisor.run(), driver())
+
+    # crash1 → 1.0, crash2 → 2.0 (escalated); the clean restart resets the
+    # backoff, so crash3 sleeps 1.0 again rather than 4.0.
+    assert sleeps[0] == 1.0
+    assert sleeps[1] == 2.0
+    assert sleeps[2] == 1.0
 
 
 def test_install_signal_handlers_without_running_loop_uses_signal_signal() -> None:

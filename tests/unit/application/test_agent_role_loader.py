@@ -118,3 +118,68 @@ def test_first_match_wins_across_search_dirs(tmp_path: Path) -> None:
     loader = AgentRoleLoader(search_dirs=[proj_dir, pkg_dir])
     role = loader.load("tester")
     assert "project" in role.persona_prompt
+
+
+@pytest.mark.spec("agent-daemon.role_overlay_replaces_tools_and_sub_agents")
+def test_merge_replaces_tools_and_sub_agents(tmp_path: Path) -> None:
+    """A role overlay replaces the base profile's tools and sub_agents
+    wholesale; infrastructure keys stay from the base."""
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    (roles_dir / "specialist.yaml").write_text(
+        yaml.dump(
+            {
+                "name": "specialist",
+                "persona_prompt": "Role persona.",
+                "tools": ["memory", "wiki"],
+                "sub_agents": [{"specialist": "role_sub"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loader = AgentRoleLoader(search_dirs=[roles_dir])
+    role = loader.load("specialist")
+
+    base = {
+        "tools": ["python", "shell", "git"],
+        "sub_agents": [{"specialist": "base_sub"}],
+        "persistence": {"type": "file"},
+        "llm": {"default_model": "main"},
+    }
+    merged = loader.merge_into_config(base, role)
+
+    assert merged["tools"] == ["memory", "wiki"]
+    assert merged["sub_agents"] == [{"specialist": "role_sub"}]
+    assert merged["system_prompt"] == "Role persona."
+    # Infrastructure keys are untouched.
+    assert merged["persistence"] == {"type": "file"}
+    assert merged["llm"] == {"default_model": "main"}
+
+
+@pytest.mark.spec("agent-daemon.role_overlay_appends_event_sources_and_rules")
+def test_merge_appends_event_sources_and_rules(tmp_path: Path) -> None:
+    """A role overlay appends its event_sources and rules to the base set."""
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    (roles_dir / "watcher.yaml").write_text(
+        yaml.dump(
+            {
+                "name": "watcher",
+                "persona_prompt": "p",
+                "event_sources": [{"type": "calendar"}],
+                "rules": [{"name": "role_rule"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loader = AgentRoleLoader(search_dirs=[roles_dir])
+    role = loader.load("watcher")
+
+    base = {
+        "event_sources": [{"type": "webhook"}],
+        "rules": [{"name": "base_rule"}],
+    }
+    merged = loader.merge_into_config(base, role)
+
+    assert merged["event_sources"] == [{"type": "webhook"}, {"type": "calendar"}]
+    assert [r["name"] for r in merged["rules"]] == ["base_rule", "role_rule"]

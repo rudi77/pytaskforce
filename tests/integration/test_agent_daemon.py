@@ -30,6 +30,8 @@ import pytest
 from taskforce.application.agent_daemon import AgentDaemon
 
 
+@pytest.mark.spec("agent-daemon.start_writes_status_under_profile_subdir")
+@pytest.mark.spec("agent-daemon.status_file_writes_are_atomic")
 @pytest.mark.asyncio
 async def test_agent_daemon_writes_status_under_profile_subdir(
     tmp_path: Path,
@@ -141,3 +143,100 @@ async def test_daemon_seeds_standing_goals_idempotently(tmp_path: Path) -> None:
                     await task
         set_standing_goal_store(None)
         set_goal_evaluator(None)
+
+
+@pytest.mark.spec("agent-daemon.two_profiles_share_work_dir_without_collision")
+def test_two_profiles_share_work_dir_without_collision(tmp_path: Path) -> None:
+    """Two daemons on the same work_dir but different profiles write their
+    status files under distinct profile subdirectories."""
+    d1 = AgentDaemon(profile="dev", work_dir=str(tmp_path))
+    d2 = AgentDaemon(profile="butler", work_dir=str(tmp_path))
+
+    assert d1._status_path != d2._status_path
+    assert d1._status_path.parent.name == "dev"
+    assert d2._status_path.parent.name == "butler"
+
+
+@pytest.mark.spec("agent-daemon.missing_role_logs_but_does_not_abort_start")
+def test_missing_role_does_not_abort_load_config(tmp_path: Path) -> None:
+    """A role that resolves to no file is logged and the base profile keeps
+    running unchanged — no role overlay is applied."""
+    daemon = AgentDaemon(
+        profile="dev",
+        role="totally_missing_role_xyz",
+        work_dir=str(tmp_path),
+        persistent_agent=False,
+    )
+
+    config = daemon._load_config()
+
+    assert isinstance(config, dict)
+    # The role overlay annotates the config with _role_name; absent here
+    # because the role could not be resolved.
+    assert "_role_name" not in config
+
+
+@pytest.mark.spec("agent-daemon.proactive_disabled_when_block_absent")
+@pytest.mark.asyncio
+async def test_proactive_layer_disabled_without_block(tmp_path: Path) -> None:
+    """Without a `proactive:` block the daemon stays reactive — no heartbeat
+    task is started."""
+    daemon = AgentDaemon(
+        profile="dev", work_dir=str(tmp_path), persistent_agent=False
+    )
+
+    await daemon._setup_proactive_layer({})  # no 'proactive' key
+
+    assert daemon._proactive_task is None
+    assert daemon._proactive_evaluator is None
+
+
+@pytest.mark.spec("agent-daemon.stop_unregisters_active_event_sources")
+@pytest.mark.asyncio
+async def test_stop_unregisters_active_event_sources(tmp_path: Path) -> None:
+    """A daemon stop drops every active event source from the API registry."""
+    from taskforce.api.dependencies import (
+        list_active_event_sources,
+        register_active_event_source,
+    )
+
+    class _Src:
+        source_name = "daemon-stop-test-src"
+        is_running = True
+
+        async def start(self) -> None:
+            pass
+
+        async def stop(self) -> None:
+            pass
+
+    register_active_event_source("daemon-stop-test-src", _Src())
+    assert "daemon-stop-test-src" in list_active_event_sources()
+
+    daemon = AgentDaemon(
+        profile="dev", work_dir=str(tmp_path), persistent_agent=False
+    )
+    await daemon.stop()
+
+    assert "daemon-stop-test-src" not in list_active_event_sources()
+
+
+@pytest.mark.spec("agent-daemon.stop_drains_persistent_agent_queue")
+@pytest.mark.asyncio
+async def test_stop_drains_persistent_agent_queue(tmp_path: Path) -> None:
+    """A daemon stop drains the persistent agent queue by delegating to the
+    PersistentAgentService's own stop()."""
+    stopped: list[bool] = []
+
+    class _StubAgentService:
+        async def stop(self) -> None:
+            stopped.append(True)
+
+    daemon = AgentDaemon(
+        profile="dev", work_dir=str(tmp_path), persistent_agent=False
+    )
+    daemon._agent_service = _StubAgentService()
+
+    await daemon.stop()
+
+    assert stopped == [True]
