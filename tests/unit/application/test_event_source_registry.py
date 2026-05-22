@@ -52,6 +52,7 @@ def test_register_and_create_round_trip() -> None:
     assert source.extra == 1
 
 
+@pytest.mark.spec("events-scheduler.register_duplicate_source_raises_without_replace")
 def test_register_duplicate_without_replace_raises() -> None:
     registry = EventSourceRegistry()
     registry.register("fake", _FakeSource.from_config)

@@ -62,11 +62,13 @@ class _MinimalSource:
         )
 
 
+@pytest.mark.spec("events-scheduler.webhook_unknown_source_returns_404")
 def test_unknown_source_returns_404(app: FastAPI) -> None:
     response = TestClient(app).post("/api/v1/events/missing", json={"x": 1})
     assert response.status_code == 404
 
 
+@pytest.mark.spec("events-scheduler.webhook_non_json_returns_415")
 def test_invalid_json_returns_415(app: FastAPI) -> None:
     register_active_event_source("test", _MinimalSource())
     response = TestClient(app).post(
@@ -87,6 +89,7 @@ def test_minimal_source_receives_payload(app: FastAPI) -> None:
     assert body["status"] == "accepted"
 
 
+@pytest.mark.spec("events-scheduler.webhook_invalid_signature_returns_401")
 def test_github_webhook_invalid_signature_returns_401(app: FastAPI) -> None:
     register_active_event_source(
         "github",
@@ -102,6 +105,27 @@ def test_github_webhook_invalid_signature_returns_401(app: FastAPI) -> None:
         },
     )
     assert response.status_code == 401
+
+
+class _NonCapableSource:
+    """A registered source that cannot accept inbound HTTP — no handle_inbound."""
+
+    source_name = "non-webhook"
+    is_running = True
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+
+@pytest.mark.spec("events-scheduler.webhook_non_capable_source_returns_400")
+def test_non_capable_source_returns_400(app: FastAPI) -> None:
+    """A source that exists but has no handle_inbound returns HTTP 400."""
+    register_active_event_source("non-webhook", _NonCapableSource())
+    response = TestClient(app).post("/api/v1/events/non-webhook", json={"x": 1})
+    assert response.status_code == 400
 
 
 def test_github_webhook_valid_signature_returns_202(app: FastAPI) -> None:

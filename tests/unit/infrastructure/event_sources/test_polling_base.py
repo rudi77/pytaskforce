@@ -81,6 +81,7 @@ class TestPollingEventSource:
             await src.stop()
         assert received == [evt]
 
+    @pytest.mark.spec("events-scheduler.polling_loop_continues_after_poll_error")
     async def test_poll_errors_are_swallowed_and_loop_continues(self) -> None:
         src = _CrashingSource("boom", poll_interval_seconds=0.01)
         await src.start()

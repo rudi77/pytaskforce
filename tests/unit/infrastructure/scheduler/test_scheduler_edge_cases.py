@@ -36,6 +36,7 @@ from taskforce.infrastructure.scheduler.scheduler_service import (
 
 
 class TestCronTimezone:
+    @pytest.mark.spec("events-scheduler.cron_respects_job_timezone")
     def test_cron_in_vienna_local_8am_returns_correct_utc(self) -> None:
         """``0 8 * * *`` in Europe/Vienna at standard time fires 07:00 UTC."""
         # 5 February 2026 — Vienna is on CET (UTC+1).
@@ -70,6 +71,7 @@ class TestCronTimezone:
 
 
 class TestDstTransitions:
+    @pytest.mark.spec("events-scheduler.cron_skips_dst_forward_gap")
     def test_forward_jump_skips_nonexistent_local_time(self) -> None:
         """On 29 March 2026 the local clock skips 02:00 → 03:00.
 
@@ -146,6 +148,7 @@ async def _collect_first_event(fired: list[AgentEvent], timeout: float = 1.5) ->
 
 
 class TestCoalescePolicy:
+    @pytest.mark.spec("events-scheduler.coalesce_skip_drops_missed_runs")
     async def test_skip_does_not_fire_catch_up_for_interval(self) -> None:
         """``coalesce=skip``: 2 days of missed runs become zero firings."""
         fired: list[AgentEvent] = []
@@ -175,6 +178,7 @@ class TestCoalescePolicy:
         finally:
             await svc.stop()
 
+    @pytest.mark.spec("events-scheduler.coalesce_run_once_fires_single_catchup")
     async def test_run_once_fires_a_single_catch_up(self) -> None:
         """``coalesce=run_once``: any number of missed runs → exactly one fire."""
         fired: list[AgentEvent] = []
@@ -211,6 +215,7 @@ class TestCoalescePolicy:
 
 
 class TestOneShotIdempotency:
+    @pytest.mark.spec("events-scheduler.one_shot_already_fired_skipped_on_restart")
     async def test_one_shot_persisted_as_fired_does_not_refire(self, tmp_path: Path) -> None:
         """A one-shot job whose ``last_fired_at`` is set must not fire again
         when the scheduler reloads jobs from disk on startup.
@@ -242,6 +247,7 @@ class TestOneShotIdempotency:
         finally:
             await svc.stop()
 
+    @pytest.mark.spec("events-scheduler.fire_persists_last_fired_at_before_action")
     async def test_one_shot_persists_last_fired_before_dispatch(self, tmp_path: Path) -> None:
         """``last_fired_at`` is written *before* the event callback runs.
 

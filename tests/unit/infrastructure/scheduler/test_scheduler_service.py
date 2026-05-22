@@ -135,6 +135,7 @@ class TestSchedulerServiceLifecycle:
         assert await svc.resume_job(job.job_id) is True
         assert (await svc.get_job(job.job_id)).enabled is True
 
+    @pytest.mark.spec("events-scheduler.scheduler_persisted_jobs_resume_on_start")
     async def test_start_resumes_persisted_jobs(self, tmp_path: Path) -> None:
         svc1 = SchedulerService(work_dir=str(tmp_path))
         job = ScheduleJob(name="persisted", schedule_type=ScheduleType.CRON, expression="0 8 * * *")
