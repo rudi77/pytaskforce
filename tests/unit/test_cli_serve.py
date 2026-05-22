@@ -50,6 +50,7 @@ def test_serve_help_lists_options(runner):
     assert "--log-level" in out
 
 
+@pytest.mark.spec("cli.serve_binds_127_0_0_1_by_default")
 def test_serve_invokes_uvicorn_with_defaults(runner):
     cli_app = _import_cli_app()
     with patch("uvicorn.run") as mock_run:

@@ -16,6 +16,7 @@ from taskforce_cli.main import _detect_default_profile
 
 
 @pytest.mark.spec("profiles.cli_default_is_butler_when_installed_else_dev")
+@pytest.mark.spec("cli.default_profile_is_butler_when_taskforce_butler_installed")
 def test_default_profile_is_butler_when_config_dir_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -29,6 +30,7 @@ def test_default_profile_is_butler_when_config_dir_present(
 
 
 @pytest.mark.spec("profiles.cli_default_is_butler_when_installed_else_dev")
+@pytest.mark.spec("cli.default_profile_is_dev_when_taskforce_butler_missing")
 def test_default_profile_is_dev_when_butler_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

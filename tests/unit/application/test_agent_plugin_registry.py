@@ -154,6 +154,7 @@ def test_load_tool_descriptors_skips_unimportable_module(
 
 
 @pytest.mark.spec("plugins.entry_point_cli_app_adds_subcommand")
+@pytest.mark.spec("cli.cli_apps_entry_point_adds_subcommand")
 def test_load_cli_apps_returns_loaded_typer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Successful ep.load returns the loaded attribute under its name."""
     sentinel = object()
@@ -170,6 +171,7 @@ def test_load_cli_apps_returns_loaded_typer(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.spec("plugins.broken_entry_point_is_skipped_with_warning")
+@pytest.mark.spec("cli.broken_cli_apps_entry_point_is_skipped_with_warning")
 def test_load_cli_apps_skips_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failing ep.load is logged and skipped."""
 
