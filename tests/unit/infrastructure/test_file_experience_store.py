@@ -1,5 +1,6 @@
 """Tests for FileExperienceStore."""
 
+import asyncio
 from datetime import UTC, datetime
 
 import pytest
@@ -104,3 +105,27 @@ class TestFileExperienceStore:
         await store.save_experience(exp)
         loaded = await store.load_experience("../../../etc/passwd")
         assert loaded is not None
+
+    async def test_concurrent_mark_processed_no_lost_updates(self, store):
+        """Concurrent mark_processed on the same session must not lose updates."""
+        await store.save_experience(_make_experience("sess-1"))
+        consol_ids = [f"consol-{i}" for i in range(20)]
+        await asyncio.gather(*(store.mark_processed(["sess-1"], cid) for cid in consol_ids))
+        loaded = await store.load_experience("sess-1")
+        assert loaded is not None
+        assert sorted(loaded.processed_by) == sorted(consol_ids)
+
+    async def test_concurrent_save_experience_does_not_corrupt_file(self, store):
+        """Concurrent save_experience on the same session yields a valid JSON file."""
+        await asyncio.gather(
+            *(
+                store.save_experience(_make_experience("sess-1", mission=f"mission {i}"))
+                for i in range(20)
+            )
+        )
+        # File must be a valid SessionExperience after the storm — content
+        # is "one of the saves", but never half-written / corrupt.
+        loaded = await store.load_experience("sess-1")
+        assert loaded is not None
+        assert loaded.session_id == "sess-1"
+        assert loaded.mission.startswith("mission ")

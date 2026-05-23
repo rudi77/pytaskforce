@@ -13,6 +13,7 @@ Layout::
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -20,12 +21,18 @@ import structlog
 
 from taskforce.core.domain.experience import ConsolidationResult, SessionExperience
 from taskforce.core.interfaces.experience import ExperienceStoreProtocol
+from taskforce.core.utils.atomic_io import atomic_write_text
 
 logger = structlog.get_logger(__name__)
 
 
 class FileExperienceStore(ExperienceStoreProtocol):
     """Persist session experiences as JSON files.
+
+    Writes are atomic (tempfile + ``os.replace`` with ``fsync``) and
+    serialized per session-id through an ``asyncio.Lock`` registry, so
+    concurrent ``save_experience`` / ``mark_processed`` calls on the same
+    session cannot lose updates.
 
     Args:
         base_dir: Directory where experience files are stored.
@@ -36,6 +43,17 @@ class FileExperienceStore(ExperienceStoreProtocol):
         self._dir.mkdir(parents=True, exist_ok=True)
         self._consolidations_dir = self._dir / "_consolidations"
         self._consolidations_dir.mkdir(parents=True, exist_ok=True)
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()
+
+    async def _get_lock(self, key: str) -> asyncio.Lock:
+        """Get or create a per-key lock, protected by a master lock."""
+        async with self._locks_lock:
+            lock = self._locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._locks[key] = lock
+            return lock
 
     # ------------------------------------------------------------------
     # ExperienceStoreProtocol
@@ -44,10 +62,10 @@ class FileExperienceStore(ExperienceStoreProtocol):
     async def save_experience(self, experience: SessionExperience) -> None:
         """Persist a session experience record."""
         path = self._experience_path(experience.session_id)
-        path.write_text(
-            json.dumps(experience.to_dict(), indent=2, default=str),
-            encoding="utf-8",
-        )
+        payload = json.dumps(experience.to_dict(), indent=2, default=str)
+        lock = await self._get_lock(experience.session_id)
+        async with lock:
+            await atomic_write_text(path, payload)
 
     async def load_experience(self, session_id: str) -> SessionExperience | None:
         """Load a session experience by ID."""
@@ -93,26 +111,33 @@ class FileExperienceStore(ExperienceStoreProtocol):
             path = self._experience_path(sid)
             if not path.exists():
                 continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                processed = data.get("processed_by", [])
-                if consolidation_id not in processed:
+            lock = await self._get_lock(sid)
+            async with lock:
+                if not path.exists():
+                    continue
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    processed = data.get("processed_by", [])
+                    if consolidation_id in processed:
+                        continue
                     processed.append(consolidation_id)
                     data["processed_by"] = processed
-                    path.write_text(
+                    await atomic_write_text(
+                        path,
                         json.dumps(data, indent=2, default=str),
-                        encoding="utf-8",
                     )
-            except (json.JSONDecodeError, OSError):
-                logger.warning("experience.mark_processed_failed", session_id=sid)
+                except (json.JSONDecodeError, OSError):
+                    logger.warning("experience.mark_processed_failed", session_id=sid)
 
     async def delete_experience(self, session_id: str) -> bool:
         """Delete a session experience."""
         path = self._experience_path(session_id)
-        if not path.exists():
-            return False
-        path.unlink()
-        return True
+        lock = await self._get_lock(session_id)
+        async with lock:
+            if not path.exists():
+                return False
+            path.unlink()
+            return True
 
     # ------------------------------------------------------------------
     # Consolidation result persistence
@@ -125,10 +150,10 @@ class FileExperienceStore(ExperienceStoreProtocol):
             result: The consolidation result to save.
         """
         path = self._consolidation_path(result.consolidation_id)
-        path.write_text(
-            json.dumps(result.to_dict(), indent=2, default=str),
-            encoding="utf-8",
-        )
+        payload = json.dumps(result.to_dict(), indent=2, default=str)
+        lock = await self._get_lock(f"_consolidation:{result.consolidation_id}")
+        async with lock:
+            await atomic_write_text(path, payload)
 
     async def list_consolidations(self, limit: int = 10) -> list[ConsolidationResult]:
         """List past consolidation runs, most recent first.
