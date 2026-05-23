@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Path, status
 from pydantic import BaseModel, Field
 
 from taskforce.api.dependencies import get_auth_manager, require_permission
@@ -25,6 +25,11 @@ from taskforce.api.errors import http_exception as _http_exception
 from taskforce.core.domain.auth import TokenData
 
 router = APIRouter()
+
+# Provider identifiers are short, alphanumeric labels (e.g. "google",
+# "github", "azure_ad"). Bounding the path param keeps log lines and
+# any downstream token-store key derivation safe from flooding.
+_PROVIDER_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 
 
 class OAuthConnection(BaseModel):
@@ -110,7 +115,7 @@ async def list_oauth_connections(
     summary="Revoke and remove an OAuth connection",
 )
 async def revoke_oauth_connection(
-    provider: str,
+    provider: str = Path(..., pattern=_PROVIDER_PATTERN, max_length=64),
     _permission: None = Depends(require_permission("tenant:manage")),
     auth_manager=Depends(get_auth_manager),
 ) -> None:
