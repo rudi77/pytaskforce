@@ -15,6 +15,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from taskforce.application.executor import ProgressUpdate
+from taskforce.core.domain.enums import EventType
 
 
 class StreamingMissionRenderer:
@@ -42,9 +43,7 @@ class StreamingMissionRenderer:
             "total_tokens": 0,
         }
 
-    async def render(
-        self, event_stream: AsyncIterator[ProgressUpdate]
-    ) -> None:
+    async def render(self, event_stream: AsyncIterator[ProgressUpdate]) -> None:
         """Run the live display loop consuming the event stream."""
         with Live(
             self.build_display(),
@@ -64,35 +63,33 @@ class StreamingMissionRenderer:
         Returns True if the display should be refreshed.
         """
         event_type = update.event_type
-        if event_type == "started":
+        if event_type == EventType.STARTED.value:
             self.status_message = "Initializing..."
             return True
-        if event_type == "step_start":
+        if event_type == EventType.STEP_START.value:
             return self._handle_step_start(update)
-        if event_type == "tool_call":
+        if event_type == EventType.TOOL_CALL.value:
             return self._handle_tool_call(update)
-        if event_type == "tool_result":
+        if event_type == EventType.TOOL_RESULT.value:
             return self._handle_tool_result(update)
-        if event_type == "llm_token":
+        if event_type == EventType.LLM_TOKEN.value:
             return self._handle_llm_token(update)
-        if event_type == "plan_updated":
+        if event_type == EventType.PLAN_UPDATED.value:
             return self._handle_plan_updated(update)
-        if event_type == "token_usage":
+        if event_type == EventType.TOKEN_USAGE.value:
             return self._handle_token_usage(update)
-        if event_type == "final_answer":
+        if event_type == EventType.FINAL_ANSWER.value:
             return self._handle_final_answer(update)
-        if event_type == "complete":
+        if event_type == EventType.COMPLETE.value:
             return self._handle_complete(update)
-        if event_type == "error":
+        if event_type == EventType.ERROR.value:
             self.status_message = f"Error: {update.message}"
             self._console.print(f"[red]Error: {update.message}[/red]")
             return True
         return False
 
     def _handle_step_start(self, update: ProgressUpdate) -> bool:
-        self.current_step = update.details.get(
-            "step", self.current_step + 1
-        )
+        self.current_step = update.details.get("step", self.current_step + 1)
         self.current_tool = None
         self.status_message = "Thinking..."
         return True
@@ -133,23 +130,15 @@ class StreamingMissionRenderer:
         if update.details.get("step") and update.details.get("status"):
             step_index = update.details.get("step") - 1
             if 0 <= step_index < len(self.plan_steps):
-                self.plan_steps[step_index]["status"] = update.details.get(
-                    "status", "PENDING"
-                )
+                self.plan_steps[step_index]["status"] = update.details.get("status", "PENDING")
         self.status_message = f"Plan {action}"
         return True
 
     def _handle_token_usage(self, update: ProgressUpdate) -> bool:
         usage = update.details
-        self.total_token_usage["prompt_tokens"] += usage.get(
-            "prompt_tokens", 0
-        )
-        self.total_token_usage["completion_tokens"] += usage.get(
-            "completion_tokens", 0
-        )
-        self.total_token_usage["total_tokens"] += usage.get(
-            "total_tokens", 0
-        )
+        self.total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+        self.total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+        self.total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
         return True
 
     def _handle_final_answer(self, update: ProgressUpdate) -> bool:
@@ -182,23 +171,12 @@ class StreamingMissionRenderer:
         """Build Rich display group for current state."""
         elements: list[Any] = []
 
-        mission_display = (
-            self._mission[:60] + "..."
-            if len(self._mission) > 60
-            else self._mission
-        )
-        elements.append(
-            Text(f"\U0001f680 Mission: {mission_display}", style="bold cyan")
-        )
+        mission_display = self._mission[:60] + "..." if len(self._mission) > 60 else self._mission
+        elements.append(Text(f"\U0001f680 Mission: {mission_display}", style="bold cyan"))
 
-        status_line = (
-            f"\U0001f4cb Step: {self.current_step}  |  {self.status_message}"
-        )
+        status_line = f"\U0001f4cb Step: {self.current_step}  |  {self.status_message}"
         if self.total_token_usage["total_tokens"] > 0:
-            status_line += (
-                f"  |  \U0001f3af Tokens: "
-                f"{self.total_token_usage['total_tokens']}"
-            )
+            status_line += f"  |  \U0001f3af Tokens: " f"{self.total_token_usage['total_tokens']}"
         elements.append(Text(status_line, style="dim"))
         elements.append(Text())
 
@@ -247,9 +225,7 @@ class StreamingMissionRenderer:
         """Display final summary after the live display ends."""
         self._console.print()
         final_text = (
-            "".join(self.final_answer_tokens)
-            if self.final_answer_tokens
-            else "No answer generated"
+            "".join(self.final_answer_tokens) if self.final_answer_tokens else "No answer generated"
         )
         self._console.print(
             Panel(
