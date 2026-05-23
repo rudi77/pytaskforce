@@ -107,9 +107,7 @@ class TestFileConversationStore:
         conv_id = await store.get_or_create("cli")
         # Seed with 5 messages.
         for i in range(5):
-            await store.append_message(
-                conv_id, {"role": "user", "content": f"msg-{i}"}
-            )
+            await store.append_message(conv_id, {"role": "user", "content": f"msg-{i}"})
         # Replace with 2 messages (simulates compact: 1 summary + 1 kept).
         new_log = [
             {"role": "system", "content": "[summary] earlier turns…"},
@@ -126,9 +124,7 @@ class TestFileConversationStore:
         conv = next(c for c in active if c.conversation_id == conv_id)
         assert conv.message_count == 2
 
-    async def test_delete_removes_active_conversation_and_messages(
-        self, store, tmp_path
-    ):
+    async def test_delete_removes_active_conversation_and_messages(self, store, tmp_path):
         conv_id = await store.get_or_create("cli")
         await store.append_message(conv_id, {"role": "user", "content": "Hi"})
 
@@ -153,6 +149,30 @@ class TestFileConversationStore:
     async def test_delete_unknown_returns_false(self, store):
         removed = await store.delete("never-existed")
         assert removed is False
+
+    async def test_update_title_persists_on_active_conversation(self, store):
+        conv_id = await store.get_or_create("cli")
+        updated = await store.update_title(conv_id, "New title")
+        assert updated is True
+
+        active = await store.list_active()
+        info = next(c for c in active if c.conversation_id == conv_id)
+        assert info.topic == "New title"
+
+    async def test_update_title_persists_on_archived_conversation(self, store):
+        conv_id = await store.create_new("rest")
+        await store.archive(conv_id, summary="initial")
+
+        updated = await store.update_title(conv_id, "Renamed in archive")
+        assert updated is True
+
+        archived = await store.list_archived()
+        info = next(c for c in archived if c.conversation_id == conv_id)
+        assert info.topic == "Renamed in archive"
+
+    async def test_update_title_unknown_returns_false(self, store):
+        updated = await store.update_title("never-existed", "x")
+        assert updated is False
 
     async def test_list_archived_includes_project_id(self, store):
         """Archived summaries must carry ``project_id`` so the UI can

@@ -103,6 +103,142 @@ class ConversationManager:
         """
         return await self._store.delete(conversation_id)
 
+    # ------------------------------------------------------------------
+    # Title handling (auto-generate + user rename)
+    # ------------------------------------------------------------------
+
+    #: Hard cap on conversation titles. Picked so the sidebar
+    #: (`RecentItem` in `ui/src/app/AppShell.tsx`) doesn't have to
+    #: middle-truncate on common widths, but a one-line description still
+    #: fits. The auto-titler and `rename` both enforce this — anything
+    #: longer comes back as 400 (`invalid_title`) from the REST route.
+    TITLE_MAX_LENGTH: int = 80
+
+    @classmethod
+    def _normalize_title(cls, raw: str) -> str:
+        """Trim whitespace, collapse newlines, enforce the length cap.
+
+        Returns the cleaned title, or the empty string when nothing
+        substantive remains. The caller decides what to do with an
+        empty result (reject for user input, swallow for auto-titling).
+        """
+        if not isinstance(raw, str):
+            return ""
+        # Collapse any embedded newlines / tabs first so we don't truncate
+        # mid-paragraph and end up with a stray line break in the sidebar.
+        single_line = " ".join(raw.split())
+        clean = single_line.strip()
+        if len(clean) > cls.TITLE_MAX_LENGTH:
+            clean = clean[: cls.TITLE_MAX_LENGTH].rstrip()
+        return clean
+
+    async def rename(self, conversation_id: str, title: str) -> bool:
+        """User-initiated rename. Returns ``True`` when the store updated.
+
+        Raises ``ValueError`` (``empty`` or ``too_long``) when the title
+        is unusable — the REST route translates these into 400 responses.
+        Existence is checked at the store boundary: ``False`` means the
+        id was unknown and the route should map that to 404.
+        """
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("empty")
+        # Length check is on the *raw* input — silently truncating a 200-char
+        # title to 80 would surprise the user. Normalisation only fixes
+        # whitespace.
+        if len(title.strip()) > self.TITLE_MAX_LENGTH:
+            raise ValueError("too_long")
+        normalized = self._normalize_title(title)
+        if not normalized:
+            raise ValueError("empty")
+        return await self._store.update_title(conversation_id, normalized)
+
+    _AUTO_TITLE_SYSTEM_PROMPT = (
+        "You write a single short title (max 8 words, sentence case, no "
+        "quotes, no trailing punctuation) that describes what a user wants "
+        "from an assistant in the conversation snippet below. Reply with "
+        "ONLY the title — no preamble, no explanation."
+    )
+
+    async def maybe_generate_title(
+        self,
+        conversation_id: str,
+        summarizer: Any,
+    ) -> str | None:
+        """Generate a topic for the conversation if it doesn't have one yet.
+
+        Idempotent on success: only fires when ``topic is None`` and the
+        conversation has at least one user + one assistant message. Any
+        exception from the summarizer is swallowed and logged — the chat
+        reply must never fail because the LLM titler hiccupped.
+
+        Args:
+            conversation_id: Target conversation.
+            summarizer: Async callable
+                ``(messages: list[dict], system_prompt: str) -> str`` that
+                turns the first turn(s) into a short title. The route wires
+                this to a fast/cheap LLM (phase hint ``summarizing``); tests
+                pass a fake.
+
+        Returns:
+            The persisted title, or ``None`` when generation was skipped
+            or failed.
+        """
+        try:
+            active = await self._store.list_active()
+        except Exception:  # noqa: BLE001 — never block the chat reply
+            logger.warning("conversation.auto_title_list_failed", conversation_id=conversation_id)
+            return None
+        info = next(
+            (c for c in active if c.conversation_id == conversation_id),
+            None,
+        )
+        if info is None:
+            return None
+        if info.topic:  # already named (auto-set or user rename) — leave it.
+            return None
+        if info.message_count < 2:
+            return None
+
+        try:
+            messages = await self._store.get_messages(conversation_id, limit=4)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "conversation.auto_title_messages_failed",
+                conversation_id=conversation_id,
+            )
+            return None
+        if len(messages) < 2:
+            return None
+
+        try:
+            raw = await summarizer(messages, self._AUTO_TITLE_SYSTEM_PROMPT)
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            logger.warning(
+                "conversation.auto_title_summarizer_failed",
+                conversation_id=conversation_id,
+                error=str(exc),
+            )
+            return None
+
+        normalized = self._normalize_title(raw or "")
+        if not normalized:
+            return None
+        try:
+            await self._store.update_title(conversation_id, normalized)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "conversation.auto_title_persist_failed",
+                conversation_id=conversation_id,
+                error=str(exc),
+            )
+            return None
+        logger.info(
+            "conversation.auto_titled",
+            conversation_id=conversation_id,
+            title=normalized,
+        )
+        return normalized
+
     async def replace_messages(
         self,
         conversation_id: str,
@@ -246,11 +382,7 @@ class ConversationManager:
             slice_ = messages[: max(0, up_to_index)]
         new_id = await self._store.create_new(channel)
         for msg in slice_:
-            payload = {
-                k: v
-                for k, v in msg.items()
-                if k not in self._FORK_DROPPED_FIELDS
-            }
+            payload = {k: v for k, v in msg.items() if k not in self._FORK_DROPPED_FIELDS}
             await self._store.append_message(new_id, payload)
         logger.info(
             "conversation.forked",
@@ -311,9 +443,7 @@ class ConversationManager:
         # Close the current topic with a summary if it existed.
         previous_topic = conv.active_topic
         if previous_topic is not None:
-            segment_messages = await self._get_segment_messages(
-                conversation_id, previous_topic
-            )
+            segment_messages = await self._get_segment_messages(conversation_id, previous_topic)
             summary = await self._topic_detector.generate_summary(
                 segment_messages, previous_topic.label
             )
@@ -367,7 +497,7 @@ class ConversationManager:
             return None
 
         return (
-            f"[Context: The previous topic was \"{user_topic.label}\". "
+            f'[Context: The previous topic was "{user_topic.label}". '
             f"It was interrupted by a {previous_topic.source} event. "
             f"Summary of the previous topic: {user_topic.summary}]"
         )

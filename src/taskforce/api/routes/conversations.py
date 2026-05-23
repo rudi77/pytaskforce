@@ -171,6 +171,17 @@ class ArchiveRequest(BaseModel):
     summary: str | None = Field(default=None, description="Optional summary.")
 
 
+class RenameConversationRequest(BaseModel):
+    """User-supplied rename payload.
+
+    The ``title`` is normalised server-side (whitespace collapsed, length
+    cap enforced) — see ``ConversationManager._normalize_title`` and the
+    spec for the exact rules. Empty / oversized strings come back as 400.
+    """
+
+    title: str = Field(..., description="New conversation title.")
+
+
 class MessageResponse(BaseModel):
     """A single message in the conversation."""
 
@@ -418,9 +429,7 @@ async def append_message(
     history = await manager.get_messages(conversation_id)
 
     mission = _build_attachments_prefix(attachments) + request.message
-    work_dir = await _resolve_conversation_work_dir(
-        manager, project_store, conversation_id
-    )
+    work_dir = await _resolve_conversation_work_dir(manager, project_store, conversation_id)
     # Project-scoped conversations default to the ``default`` profile —
     # see ``_default_profile`` for why butler isn't a good fit here.
     resolved_profile = request.profile or _default_profile(in_project=work_dir is not None)
@@ -439,6 +448,9 @@ async def append_message(
         conversation_id,
         {"role": "assistant", "content": result.final_message},
     )
+
+    # Best-effort auto-title on the first turn — no-op once a title exists.
+    await _maybe_auto_title(manager, conversation_id)
 
     messages = await manager.get_messages(conversation_id)
     return AppendMessageResponse(
@@ -491,9 +503,7 @@ async def stream_message(
 
     history = await manager.get_messages(conversation_id)
     mission = _build_attachments_prefix(attachments) + request.message
-    work_dir = await _resolve_conversation_work_dir(
-        manager, project_store, conversation_id
-    )
+    work_dir = await _resolve_conversation_work_dir(manager, project_store, conversation_id)
     resolved_profile = request.profile or _default_profile(in_project=work_dir is not None)
 
     async def event_stream() -> AsyncIterator[bytes]:
@@ -536,9 +546,7 @@ async def stream_message(
             )
             while True:
                 try:
-                    item = await asyncio.wait_for(
-                        queue.get(), timeout=_ping_interval_seconds()
-                    )
+                    item = await asyncio.wait_for(queue.get(), timeout=_ping_interval_seconds())
                 except asyncio.TimeoutError:
                     # Reverse-proxy keepalive — yield an SSE comment so the
                     # connection stays warm across nginx / Cloudflare /
@@ -565,15 +573,11 @@ async def stream_message(
                     # the persisted reply is something they can act on (e.g.
                     # content-filter advice) rather than "[no response]".
                     details = update.details or {}
-                    error_kind = (
-                        details.get("error_kind") if isinstance(details, dict) else None
-                    )
+                    error_kind = details.get("error_kind") if isinstance(details, dict) else None
                     raw_error = update.message or (
                         details.get("error") if isinstance(details, dict) else ""
                     )
-                    error_text = _build_user_message_for_error(
-                        error_kind or "", raw_error or ""
-                    )
+                    error_text = _build_user_message_for_error(error_kind or "", raw_error or "")
                 if update.event_type == EventType.COMPLETE.value:
                     completed = True
                 payload = json.dumps(asdict(update), default=str)
@@ -594,7 +598,9 @@ async def stream_message(
                     await producer
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
-            assistant_text = (final_text if final_text is not None else "".join(accumulated_chunks)).strip()
+            assistant_text = (
+                final_text if final_text is not None else "".join(accumulated_chunks)
+            ).strip()
             if not completed and assistant_text:
                 assistant_text += "\n\n[partial — interrupted]"
             elif not assistant_text:
@@ -610,6 +616,9 @@ async def stream_message(
                 )
             except Exception:  # noqa: BLE001 — logging only
                 _chat_logger.exception("conversations.persist_assistant_failed")
+            # Auto-title in the same fire-and-forget shape as the REST
+            # path — never interferes with the assistant_persisted event.
+            await _maybe_auto_title(manager, conversation_id)
             persisted_payload = json.dumps(
                 {
                     "conversation_id": conversation_id,
@@ -640,6 +649,82 @@ async def archive_conversation(
     await _require_conversation_access(manager, conversation_id)
     summary = request.summary if request else None
     await manager.archive(conversation_id, summary)
+
+
+@router.patch(
+    "/{conversation_id}",
+    response_model=ConversationInfoResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def rename_conversation(
+    conversation_id: str,
+    request: RenameConversationRequest,
+    manager=Depends(get_conversation_manager),
+) -> ConversationInfoResponse:
+    """Rename a conversation. Works for both active and archived ones."""
+    await _require_conversation_access(manager, conversation_id)
+    try:
+        updated = await manager.rename(conversation_id, request.title)
+    except ValueError as exc:
+        # ``ValueError`` payload is the spec error key ("empty" / "too_long");
+        # we surface it as a stable code clients can branch on.
+        reason = str(exc)
+        message = (
+            "Title must not be empty."
+            if reason == "empty"
+            else f"Title must not exceed {80} characters."
+        )
+        raise _error_response(
+            status_code=400,
+            code="invalid_title",
+            message=message,
+            details={"reason": reason},
+        ) from exc
+    if not updated:
+        raise _error_response(
+            status_code=404,
+            code="conversation_not_found",
+            message=f"No conversation with id {conversation_id!r}.",
+            details={"conversation_id": conversation_id},
+        )
+
+    # Return refreshed metadata so the client doesn't need a follow-up GET.
+    # Look in both active + archived buckets — rename works on either.
+    active = await manager.list_active()
+    info = next((c for c in active if c.conversation_id == conversation_id), None)
+    if info is not None:
+        return ConversationInfoResponse(
+            conversation_id=info.conversation_id,
+            channel=info.channel,
+            started_at=info.started_at,
+            last_activity=info.last_activity,
+            message_count=info.message_count,
+            topic=info.topic,
+            project_id=info.project_id,
+        )
+    archived = await manager.list_archived(limit=10_000)
+    archived_info = next((c for c in archived if c.conversation_id == conversation_id), None)
+    if archived_info is not None:
+        return ConversationInfoResponse(
+            conversation_id=archived_info.conversation_id,
+            channel="",  # archived summaries don't carry the original channel
+            started_at=archived_info.started_at,
+            last_activity=archived_info.archived_at,
+            message_count=archived_info.message_count,
+            topic=archived_info.topic,
+            project_id=getattr(archived_info, "project_id", None),
+        )
+    # Should not happen — `update_title` returned True so the entry exists,
+    # but lists raced. Return what we know.
+    raise _error_response(
+        status_code=500,
+        code="internal_error",
+        message="Conversation renamed but not found in either list.",
+        details={"conversation_id": conversation_id},
+    )
 
 
 @router.delete(
@@ -752,9 +837,7 @@ class CompactRequest(BaseModel):
 class CompactResponse(BaseModel):
     """Result of a compact operation."""
 
-    status: str = Field(
-        ..., description="``compacted`` or ``skipped`` (see ``reason``)."
-    )
+    status: str = Field(..., description="``compacted`` or ``skipped`` (see ``reason``).")
     summarized: int = Field(
         default=0,
         description="Number of messages folded into the summary.",
@@ -784,6 +867,48 @@ def _build_default_llm_provider() -> Any:
     from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
     return InfrastructureBuilder().build_llm_provider({"llm": {}})
+
+
+async def _auto_title_summarizer(
+    messages: list[dict[str, Any]],
+    system_prompt: str,
+) -> str:
+    """Run the ``summarizing`` LLM hint over the first turn(s) for a title.
+
+    Kept module-level (not bound to a request) so the manager stays
+    infrastructure-agnostic and tests can pass their own callable.
+    """
+    provider = _build_default_llm_provider()
+    transcript = _format_transcript_for_summary(messages)
+    result = await provider.complete(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": transcript},
+        ],
+        model="summarizing",
+    )
+    if not isinstance(result, dict) or not result.get("success"):
+        raise RuntimeError("LLM auto-title call failed")
+    content = result.get("content") or ""
+    return content if isinstance(content, str) else str(content)
+
+
+async def _maybe_auto_title(manager: Any, conversation_id: str) -> None:
+    """Fire-and-forget auto-titling, swallowing every failure.
+
+    Manager-level safeguards already prevent overwrites and short-circuit
+    when there's nothing to summarise. This wrapper exists so the route
+    code path is a single line and the LLM-provider construction is
+    isolated from the chat reply path.
+    """
+    try:
+        await manager.maybe_generate_title(conversation_id, _auto_title_summarizer)
+    except Exception:  # noqa: BLE001 — never break the chat response
+        _chat_logger.warning(
+            "conversations.auto_title_failed",
+            conversation_id=conversation_id,
+            exc_info=True,
+        )
 
 
 async def _llm_summarizer(
@@ -859,7 +984,9 @@ async def compact_conversation(
     # Confirm the conversation exists; otherwise summarizing an empty
     # transcript is wasted work and the user gets a clearer error.
     existing = await manager.get_messages(conversation_id)
-    if existing is None or (not existing and not await _conversation_exists(manager, conversation_id)):
+    if existing is None or (
+        not existing and not await _conversation_exists(manager, conversation_id)
+    ):
         raise _error_response(
             status_code=404,
             code="conversation_not_found",

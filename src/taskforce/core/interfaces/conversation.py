@@ -186,3 +186,20 @@ class ConversationManagerProtocol(Protocol):
             conversation with that id existed.
         """
         ...
+
+    async def update_title(self, conversation_id: str, title: str) -> bool:
+        """Set the displayed title (``topic`` field) of a conversation.
+
+        Works on both active and archived conversations. The caller is
+        responsible for validating the title (length, non-empty); the
+        store only persists what it is given.
+
+        Args:
+            conversation_id: Conversation to rename.
+            title: The new title — written verbatim into ``topic``.
+
+        Returns:
+            ``True`` when the conversation existed and was updated,
+            ``False`` when no conversation with that id existed.
+        """
+        ...

@@ -119,3 +119,60 @@ def archive_conversation(
         console.print(f"[green]Conversation '{conversation_id}' archived.[/green]")
 
     asyncio.run(_archive())
+
+
+@app.command("rename")
+def rename_conversation(
+    conversation_id: str = typer.Argument(..., help="Conversation ID to rename"),
+    title: str = typer.Argument(..., help="New conversation title (max 80 chars)"),
+):
+    """Rename a conversation (works on active and archived ones)."""
+
+    async def _rename():
+        mgr = _get_conversation_manager()
+        try:
+            updated = await mgr.rename(conversation_id, title)
+        except ValueError as exc:
+            reason = str(exc)
+            console.print(
+                f"[red]Invalid title ({reason}). "
+                "Titles must be non-empty and at most 80 characters.[/red]"
+            )
+            raise typer.Exit(2) from exc
+        if not updated:
+            console.print(f"[red]No conversation with id '{conversation_id}'.[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]Conversation '{conversation_id}' renamed to:[/green] {title}")
+
+    asyncio.run(_rename())
+
+
+@app.command("delete")
+def delete_conversation(
+    conversation_id: str = typer.Argument(..., help="Conversation ID to delete"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the interactive confirmation.",
+    ),
+):
+    """Permanently delete a conversation (active or archived). Irreversible."""
+
+    async def _delete():
+        mgr = _get_conversation_manager()
+        if not yes:
+            confirmed = typer.confirm(
+                f"Permanently delete conversation '{conversation_id}'? " "This cannot be undone.",
+                default=False,
+            )
+            if not confirmed:
+                console.print("[dim]Aborted.[/dim]")
+                raise typer.Exit(1)
+        removed = await mgr.delete(conversation_id)
+        if not removed:
+            console.print(f"[red]No conversation with id '{conversation_id}'.[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]Conversation '{conversation_id}' deleted.[/green]")
+
+    asyncio.run(_delete())

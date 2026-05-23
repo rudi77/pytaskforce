@@ -187,9 +187,7 @@ class FileConversationStore:
     async def list_active(self) -> list[ConversationInfo]:
         """List active conversations ordered by last activity (newest first)."""
         index = await self._load_index()
-        active = [
-            c for c in index if c["status"] == ConversationStatus.ACTIVE.value
-        ]
+        active = [c for c in index if c["status"] == ConversationStatus.ACTIVE.value]
         active.sort(key=lambda c: c["last_activity"], reverse=True)
         return [
             ConversationInfo(
@@ -255,6 +253,25 @@ class FileConversationStore:
         logger.info("conversation.deleted", conversation_id=conversation_id)
         return True
 
+    async def update_title(self, conversation_id: str, title: str) -> bool:
+        """Persist ``title`` into the conversation's ``topic`` field.
+
+        Returns ``True`` when the index entry was found and rewritten,
+        ``False`` otherwise. Validation (length / non-empty) belongs
+        upstream — the store treats the title as opaque text.
+        """
+        index = await self._load_index()
+        for conv in index:
+            if conv["conversation_id"] == conversation_id:
+                conv["topic"] = title
+                await self._save_index(index)
+                logger.info(
+                    "conversation.title_updated",
+                    conversation_id=conversation_id,
+                )
+                return True
+        return False
+
     async def get_conversation(self, conversation_id: str) -> Conversation | None:
         """Load a full Conversation domain object.
 
@@ -273,11 +290,13 @@ class FileConversationStore:
                     conversation_id=entry["conversation_id"],
                     status=ConversationStatus(entry.get("status", "active")),
                     started_at=(
-                        dt.fromisoformat(started) if isinstance(started, str) and started
+                        dt.fromisoformat(started)
+                        if isinstance(started, str) and started
                         else datetime.now(UTC)
                     ),
                     last_activity=(
-                        dt.fromisoformat(last) if isinstance(last, str) and last
+                        dt.fromisoformat(last)
+                        if isinstance(last, str) and last
                         else datetime.now(UTC)
                     ),
                     message_count=entry.get("message_count", 0),

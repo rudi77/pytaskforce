@@ -321,6 +321,60 @@ class TestAppendMessage:
         _, kwargs = mock_executor.execute_mission.call_args
         assert kwargs["work_dir"] is None
 
+    @pytest.mark.spec("conversations.auto_title_generated_after_first_assistant_reply")
+    def test_append_invokes_auto_title_after_assistant_persisted(
+        self, client, mock_conversation_manager, mock_executor
+    ):
+        """The route must call ``maybe_generate_title`` after the assistant
+        reply has been appended. We don't care what title comes out — we
+        just need the wiring to fire once."""
+        mock_conversation_manager.maybe_generate_title = AsyncMock(return_value=None)
+        mock_conversation_manager.get_messages = AsyncMock(
+            side_effect=[
+                [{"role": "user", "content": "hi"}],
+                [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "Hello back!"},
+                ],
+            ]
+        )
+
+        resp = client.post(
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
+            json={"message": "hi"},
+        )
+        assert resp.status_code == 200
+        mock_conversation_manager.maybe_generate_title.assert_awaited_once()
+        # First positional arg is the conversation id; second is the summarizer callable.
+        args, _ = mock_conversation_manager.maybe_generate_title.await_args
+        assert args[0] == "abc123def456789012345678abcdef00"
+        assert callable(args[1])
+
+    @pytest.mark.spec("conversations.auto_title_failure_does_not_break_chat_reply")
+    def test_append_succeeds_even_when_auto_title_raises(
+        self, client, mock_conversation_manager, mock_executor
+    ):
+        """A throwing auto-titler must not leak into the response."""
+        mock_conversation_manager.maybe_generate_title = AsyncMock(
+            side_effect=RuntimeError("LLM down")
+        )
+        mock_conversation_manager.get_messages = AsyncMock(
+            side_effect=[
+                [{"role": "user", "content": "hi"}],
+                [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "Hello back!"},
+                ],
+            ]
+        )
+
+        resp = client.post(
+            "/api/v1/conversations/abc123def456789012345678abcdef00/messages",
+            json={"message": "hi"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["reply"] == "Hello back!"
+
     @pytest.mark.spec("cowork.conversation_without_project_id_uses_global_workdir")
     def test_no_project_id_uses_default_work_dir(
         self,
@@ -398,6 +452,90 @@ class TestArchiveConversation:
         )
 
 
+class TestRenameConversation:
+    """Tests for ``PATCH /api/v1/conversations/{id}``."""
+
+    CONV_ID = "abc123def456789012345678abcdef00"
+
+    @pytest.mark.spec("conversations.rename_updates_topic_for_active_and_archived")
+    def test_rename_returns_refreshed_info(self, client, mock_conversation_manager):
+        mock_conversation_manager.rename = AsyncMock(return_value=True)
+        mock_conversation_manager.list_active = AsyncMock(
+            return_value=[
+                ConversationInfo(
+                    conversation_id=self.CONV_ID,
+                    channel="rest",
+                    started_at=datetime(2026, 3, 18, tzinfo=UTC),
+                    last_activity=datetime(2026, 3, 18, tzinfo=UTC),
+                    message_count=4,
+                    topic="My new title",
+                ),
+            ]
+        )
+
+        resp = client.patch(
+            f"/api/v1/conversations/{self.CONV_ID}",
+            json={"title": "My new title"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["conversation_id"] == self.CONV_ID
+        assert body["topic"] == "My new title"
+        mock_conversation_manager.rename.assert_awaited_once_with(self.CONV_ID, "My new title")
+
+    @pytest.mark.spec("conversations.rename_rejects_empty_or_oversized_title")
+    def test_rename_empty_title_returns_400(self, client, mock_conversation_manager):
+        # Manager would raise ``ValueError("empty")`` for whitespace input.
+        from unittest.mock import AsyncMock as _AM
+
+        mock_conversation_manager.rename = _AM(side_effect=ValueError("empty"))
+        resp = client.patch(
+            f"/api/v1/conversations/{self.CONV_ID}",
+            json={"title": "   "},
+        )
+        assert resp.status_code == 400
+        assert "invalid_title" in resp.text
+
+    @pytest.mark.spec("conversations.rename_rejects_empty_or_oversized_title")
+    def test_rename_oversized_title_returns_400(self, client, mock_conversation_manager):
+        from unittest.mock import AsyncMock as _AM
+
+        mock_conversation_manager.rename = _AM(side_effect=ValueError("too_long"))
+        resp = client.patch(
+            f"/api/v1/conversations/{self.CONV_ID}",
+            json={"title": "x" * 200},
+        )
+        assert resp.status_code == 400
+        # FastAPI wraps HTTPException.detail under "detail" — our
+        # ErrorResponse payload sits inside it.
+        payload = resp.json()["detail"]
+        assert payload["code"] == "invalid_title"
+        assert payload["details"]["reason"] == "too_long"
+
+    @pytest.mark.spec("conversations.rename_returns_404_when_missing")
+    def test_rename_unknown_id_returns_404(self, client, mock_conversation_manager):
+        # The id is outside the active+archived lists in the fixture, so the
+        # `_require_conversation_access` guard 404s before `rename` runs.
+        mock_conversation_manager.rename = AsyncMock(return_value=True)
+        resp = client.patch(
+            "/api/v1/conversations/ffffffffffffffffffffffffffffffff",
+            json={"title": "Anything"},
+        )
+        assert resp.status_code == 404
+        mock_conversation_manager.rename.assert_not_awaited()
+
+    def test_rename_returns_404_when_store_says_missing(self, client, mock_conversation_manager):
+        # The access guard sees the id (it IS in list_active for this fixture)
+        # but a race between the access check and the store causes the
+        # update_title to come back False. Surface that as 404, not 500.
+        mock_conversation_manager.rename = AsyncMock(return_value=False)
+        resp = client.patch(
+            f"/api/v1/conversations/{self.CONV_ID}",
+            json={"title": "OK title"},
+        )
+        assert resp.status_code == 404
+
+
 class TestDeleteConversation:
     def test_delete_returns_204(self, client, mock_conversation_manager):
         resp = client.delete("/api/v1/conversations/abc123def456789012345678abcdef00")
@@ -413,9 +551,7 @@ class TestDeleteConversation:
         assert resp.status_code == 404
         assert "conversation_not_found" in resp.text
 
-    def test_delete_out_of_scope_id_blocked_before_delete(
-        self, client, mock_conversation_manager
-    ):
+    def test_delete_out_of_scope_id_blocked_before_delete(self, client, mock_conversation_manager):
         """#279 — delete_conversation enforces the same ownership/scope check
         as the other conversation routes: an id outside the caller's scope
         404s and the manager's delete is never reached."""

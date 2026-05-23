@@ -11,6 +11,8 @@ import {
   Minimize2,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,8 +28,10 @@ import {
   useConversationMessages,
   useConversations,
   useCreateConversation,
+  useDeleteConversation,
   useForkConversation,
   useHealth,
+  useRenameConversation,
   type AgentSummary,
   type ChatMessage as ChatMessageT,
   type ConversationInfo,
@@ -151,9 +155,13 @@ interface ChatHeaderProps {
   onArchive: () => void;
   onFork: () => void;
   onCompact: () => void;
+  onRename: () => void;
+  onDelete: () => void;
   archivePending: boolean;
   forkPending: boolean;
   compactPending: boolean;
+  renamePending: boolean;
+  deletePending: boolean;
   viewMode: ChatViewMode;
   onViewModeChange: (mode: ChatViewMode) => void;
   rightPanelOpen: boolean;
@@ -172,9 +180,13 @@ function ChatHeader({
   onArchive,
   onFork,
   onCompact,
+  onRename,
+  onDelete,
   archivePending,
   forkPending,
   compactPending,
+  renamePending,
+  deletePending,
   viewMode,
   onViewModeChange,
   rightPanelOpen,
@@ -250,12 +262,33 @@ function ChatHeader({
           <Button
             variant="ghost"
             size="sm"
+            onClick={onRename}
+            disabled={renamePending}
+            title="Rename this conversation"
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="hidden xl:inline">Rename</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onArchive}
             disabled={archivePending}
             title="Archive this conversation"
           >
             <Archive className="h-4 w-4" />
             <span className="hidden xl:inline">Archive</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDelete}
+            disabled={deletePending}
+            title="Permanently delete this conversation"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="hidden xl:inline">Delete</span>
           </Button>
           {/* Only visible at lg+; that's the breakpoint where the right
            *  panel itself starts rendering — hiding the toggle below it
@@ -438,6 +471,8 @@ export default function ChatPage() {
   const archive = useArchiveConversation();
   const fork = useForkConversation();
   const compact = useCompactConversation();
+  const rename = useRenameConversation();
+  const del = useDeleteConversation();
   // ``useChatStream(conversationId)`` scopes stream state per conversation
   // via the module-level zustand store, so navigating away from the chat
   // page mid-run no longer drops in-flight tool calls / plan steps —
@@ -570,6 +605,49 @@ export default function ChatPage() {
     await archive.mutateAsync({ id: conversationId });
   };
 
+  const onRename = async () => {
+    if (!conversationId) return;
+    const current = activeConversation?.topic ?? "";
+    const next = window.prompt("Rename conversation", current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) {
+      toast.error("Rename failed", "Title must not be empty.");
+      return;
+    }
+    if (trimmed === current) return;
+    try {
+      await rename.mutateAsync({ id: conversationId, title: trimmed });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not rename conversation.";
+      toast.error("Rename failed", message);
+    }
+  };
+
+  const onDelete = async () => {
+    if (!conversationId) return;
+    const label =
+      activeConversation?.topic || activeConversation?.channel || conversationId;
+    if (
+      !window.confirm(
+        `Permanently delete "${label}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await del.mutateAsync({ id: conversationId });
+      // The active conversation is gone — bounce to the chat root so the
+      // page doesn't render a stale 404 while React Query refetches.
+      navigate("/chat");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not delete conversation.";
+      toast.error("Delete failed", message);
+    }
+  };
+
   const onCompact = async () => {
     if (!conversationId) return;
     if (
@@ -645,9 +723,13 @@ export default function ChatPage() {
           onArchive={onArchive}
           onFork={onFork}
           onCompact={onCompact}
+          onRename={onRename}
+          onDelete={onDelete}
           archivePending={archive.isPending}
           forkPending={fork.isPending}
           compactPending={compact.isPending}
+          renamePending={rename.isPending}
+          deletePending={del.isPending}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           rightPanelOpen={rightPanelOpen}

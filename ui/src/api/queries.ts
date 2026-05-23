@@ -693,6 +693,22 @@ export function useDeleteConversation() {
   });
 }
 
+export function useRenameConversation() {
+  const qc = useQueryClient();
+  return useMutation<ConversationInfo, Error, { id: string; title: string }>({
+    mutationFn: ({ id, title }) =>
+      apiFetch<ConversationInfo>(
+        `/api/v1/conversations/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: { title } },
+      ),
+    // Rename may target an active OR archived conversation; invalidate
+    // every keyspace under "conversations" so both sidebar buckets refresh.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+}
+
 export interface CompactConversationResult {
   status: "compacted" | "skipped";
   summarized?: number;

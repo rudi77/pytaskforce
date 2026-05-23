@@ -2,7 +2,7 @@
 feature: conversations
 status: shipped
 since: 2026-03-18
-last_verified: 2026-05-16
+last_verified: 2026-05-23
 owner: rudi77
 adr: ADR-016
 ---
@@ -30,6 +30,8 @@ to clients via Server-Sent Events.
 - compact a conversation by summarizing earlier turns into a single system message
 - archive a conversation (optionally with a user-supplied summary)
 - hard-delete a conversation (irreversible — removes index entry and message log)
+- have the conversation **auto-titled** from the first user turn so the sidebar / picker shows something meaningful instead of a UUID prefix
+- **rename** an existing conversation to a user-chosen title at any time (active or archived)
 - bind a new conversation to a project so the agent's working directory becomes the project path (see related_spec: cowork.md)
 
 ## Invariants (what must always be true)
@@ -46,6 +48,10 @@ to clients via Server-Sent Events.
 - `compact` is refused (returns `status="skipped"`, `reason="below_threshold"`) when there are not enough messages to be worth summarizing (`len(messages) <= keep_last_n + 1`); it never produces a destructive write in that case.
 - `compact` rejects an empty/whitespace summary from the summarizer rather than silently destroying history.
 - `fork` strips volatile per-message fields (`message_id`, `timestamp`, `conversation_id`, `sequence`, ...) from the copied payloads so the new conversation's storage layout is internally consistent; tool-call linkage fields (`tool_calls`, `tool_call_id`, `name`) are preserved so the forked transcript still validates against provider APIs.
+- **Auto-titling fires at most once per conversation**, right after the first assistant reply has been persisted (`topic is None AND message_count >= 2`). Failures are swallowed — the conversation keeps `topic=None` and the UI falls back to the channel / `Untitled conversation` label. A user-supplied rename always wins over auto-titling: once `topic` is set, the auto-titler never overwrites it.
+- **Auto-generated and renamed titles are length-bounded** (max 80 characters, leading/trailing whitespace stripped). The summarizer / user input is normalized to a single line — embedded newlines collapse to spaces.
+- `rename` rejects empty/whitespace-only titles and titles exceeding 80 chars with 400 (`invalid_title`). Unknown ids return 404.
+- `rename` works on both active and archived conversations — neither lifecycle transition clears the user-chosen title.
 
 ## API surface (the contract clients depend on)
 
@@ -59,6 +65,9 @@ to clients via Server-Sent Events.
 - POST   /api/v1/conversations/{id}/messages/stream → 200 SSE stream (`message_persisted`, raw progress events, `assistant_persisted`, `error`)
 - POST   /api/v1/conversations/{id}/messages/stream → 400 on empty message
 - POST   /api/v1/conversations/{id}/archive → 204
+- PATCH  /api/v1/conversations/{id} → 200 with refreshed `ConversationInfoResponse` (body: `{title}`)
+- PATCH  /api/v1/conversations/{id} → 400 on empty or oversized title
+- PATCH  /api/v1/conversations/{id} → 404 if missing
 - DELETE /api/v1/conversations/{id} → 204
 - DELETE /api/v1/conversations/{id} → 404 if missing
 - POST   /api/v1/conversations/{id}/fork → 201 with `{conversation_id, source_id, messages_copied}`
@@ -100,6 +109,12 @@ The SSE stream forwards the agent's `StreamEvent`s as raw `data:` lines
 - spec("conversations.compact_rejects_empty_summary")
 - spec("conversations.compact_returns_404_for_unknown_id")
 - spec("conversations.project_bound_conversation_routes_workdir_to_project_path")
+- spec("conversations.auto_title_generated_after_first_assistant_reply")
+- spec("conversations.auto_title_does_not_overwrite_existing_topic")
+- spec("conversations.auto_title_failure_does_not_break_chat_reply")
+- spec("conversations.rename_updates_topic_for_active_and_archived")
+- spec("conversations.rename_rejects_empty_or_oversized_title")
+- spec("conversations.rename_returns_404_when_missing")
 
 ## Known gaps
 

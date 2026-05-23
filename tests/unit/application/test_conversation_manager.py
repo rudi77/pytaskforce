@@ -37,9 +37,7 @@ class TestConversationManager:
         mock_store.create_new.assert_called_once_with("telegram", "user_a", None)
 
     async def test_create_new_with_project_id(self, manager, mock_store):
-        result = await manager.create_new(
-            "rest", sender_id=None, project_id="proj-7"
-        )
+        result = await manager.create_new("rest", sender_id=None, project_id="proj-7")
         assert result == "conv-456"
         mock_store.create_new.assert_called_once_with("rest", None, "proj-7")
 
@@ -69,9 +67,7 @@ class TestConversationManager:
 
     @pytest.mark.spec("conversations.fork_copies_messages_and_strips_volatile_fields")
     @pytest.mark.spec("conversations.fork_preserves_tool_call_linkage")
-    async def test_fork_preserves_tool_calls_and_strips_volatile_fields(
-        self, manager, mock_store
-    ):
+    async def test_fork_preserves_tool_calls_and_strips_volatile_fields(self, manager, mock_store):
         """Fork must keep tool_calls / tool_call_id / name and drop volatile ids."""
         mock_store.get_messages = AsyncMock(
             return_value=[
@@ -184,9 +180,7 @@ class TestConversationManagerCompact:
 
     async def test_compact_summarizes_and_replaces(self, manager, mock_store):
         # 10 messages, keep last 4 → summarize the first 6.
-        original = [
-            {"role": "user", "content": f"msg {i}"} for i in range(10)
-        ]
+        original = [{"role": "user", "content": f"msg {i}"} for i in range(10)]
         mock_store.get_messages = AsyncMock(return_value=original)
 
         async def fake_summary(msgs):
@@ -216,9 +210,7 @@ class TestConversationManagerCompact:
             "msg 9",
         ]
 
-    async def test_compact_with_keep_last_n_zero_summarizes_everything(
-        self, manager, mock_store
-    ):
+    async def test_compact_with_keep_last_n_zero_summarizes_everything(self, manager, mock_store):
         original = [{"role": "user", "content": f"m{i}"} for i in range(8)]
         mock_store.get_messages = AsyncMock(return_value=original)
 
@@ -252,9 +244,159 @@ class TestConversationManagerCompact:
         mock_store.replace_messages.assert_not_awaited()
 
     async def test_replace_messages_delegates(self, manager, mock_store):
-        await manager.replace_messages(
-            "conv-1", [{"role": "system", "content": "x"}]
-        )
+        await manager.replace_messages("conv-1", [{"role": "system", "content": "x"}])
         mock_store.replace_messages.assert_awaited_once_with(
             "conv-1", [{"role": "system", "content": "x"}]
         )
+
+
+class TestConversationManagerRename:
+    """Tests for the user-facing rename operation (PATCH route)."""
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.update_title = AsyncMock(return_value=True)
+        return store
+
+    @pytest.fixture
+    def manager(self, mock_store):
+        return ConversationManager(mock_store)
+
+    @pytest.mark.spec("conversations.rename_updates_topic_for_active_and_archived")
+    async def test_rename_normalizes_and_persists(self, manager, mock_store):
+        ok = await manager.rename("conv-1", "  Hello   world\n")
+        assert ok is True
+        # Whitespace collapsed to single spaces, ends trimmed.
+        mock_store.update_title.assert_awaited_once_with("conv-1", "Hello world")
+
+    @pytest.mark.spec("conversations.rename_rejects_empty_or_oversized_title")
+    async def test_rename_rejects_empty_title(self, manager, mock_store):
+        with pytest.raises(ValueError, match="empty"):
+            await manager.rename("conv-1", "")
+        with pytest.raises(ValueError, match="empty"):
+            await manager.rename("conv-1", "   \n\t  ")
+        mock_store.update_title.assert_not_awaited()
+
+    @pytest.mark.spec("conversations.rename_rejects_empty_or_oversized_title")
+    async def test_rename_rejects_oversized_title(self, manager, mock_store):
+        with pytest.raises(ValueError, match="too_long"):
+            await manager.rename("conv-1", "x" * 81)
+        mock_store.update_title.assert_not_awaited()
+
+    @pytest.mark.spec("conversations.rename_returns_404_when_missing")
+    async def test_rename_returns_false_when_unknown(self, manager, mock_store):
+        mock_store.update_title = AsyncMock(return_value=False)
+        ok = await manager.rename("missing", "Some title")
+        assert ok is False
+
+
+class TestConversationManagerAutoTitle:
+    """Tests for ``maybe_generate_title`` (auto-titling on first turn)."""
+
+    @staticmethod
+    def _make_info(*, message_count: int, topic: str | None) -> ConversationInfo:
+        now = datetime.now(UTC)
+        return ConversationInfo(
+            conversation_id="conv-1",
+            channel="rest",
+            started_at=now,
+            last_activity=now,
+            message_count=message_count,
+            topic=topic,
+        )
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.update_title = AsyncMock(return_value=True)
+        store.get_messages = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "When is the next VAT deadline?"},
+                {"role": "assistant", "content": "April 15 in Austria."},
+            ]
+        )
+        return store
+
+    @pytest.fixture
+    def manager(self, mock_store):
+        return ConversationManager(mock_store)
+
+    @pytest.mark.spec("conversations.auto_title_generated_after_first_assistant_reply")
+    async def test_generates_and_persists_title(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=2, topic=None)]
+        )
+
+        async def summarizer(_msgs, _system_prompt):
+            return "VAT deadline question"
+
+        title = await manager.maybe_generate_title("conv-1", summarizer)
+
+        assert title == "VAT deadline question"
+        mock_store.update_title.assert_awaited_once_with("conv-1", "VAT deadline question")
+
+    @pytest.mark.spec("conversations.auto_title_does_not_overwrite_existing_topic")
+    async def test_skips_when_topic_already_set(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=2, topic="User chose this")]
+        )
+        summarizer = AsyncMock()
+
+        title = await manager.maybe_generate_title("conv-1", summarizer)
+
+        assert title is None
+        summarizer.assert_not_awaited()
+        mock_store.update_title.assert_not_awaited()
+
+    async def test_skips_when_too_few_messages(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=1, topic=None)]
+        )
+        summarizer = AsyncMock()
+
+        title = await manager.maybe_generate_title("conv-1", summarizer)
+
+        assert title is None
+        summarizer.assert_not_awaited()
+
+    @pytest.mark.spec("conversations.auto_title_failure_does_not_break_chat_reply")
+    async def test_summarizer_failure_is_swallowed(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=2, topic=None)]
+        )
+
+        async def boom(_msgs, _system_prompt):
+            raise RuntimeError("LLM down")
+
+        title = await manager.maybe_generate_title("conv-1", boom)
+
+        assert title is None
+        mock_store.update_title.assert_not_awaited()
+
+    async def test_truncates_oversized_summary(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=2, topic=None)]
+        )
+
+        async def long_summary(_msgs, _system_prompt):
+            return "x" * 200
+
+        title = await manager.maybe_generate_title("conv-1", long_summary)
+
+        assert title is not None
+        assert len(title) == ConversationManager.TITLE_MAX_LENGTH
+        mock_store.update_title.assert_awaited_once()
+
+    async def test_skips_when_summarizer_returns_blank(self, manager, mock_store):
+        mock_store.list_active = AsyncMock(
+            return_value=[self._make_info(message_count=2, topic=None)]
+        )
+
+        async def blank(_msgs, _system_prompt):
+            return "   \n  "
+
+        title = await manager.maybe_generate_title("conv-1", blank)
+
+        assert title is None
+        mock_store.update_title.assert_not_awaited()

@@ -16,9 +16,11 @@ import {
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
   Sparkles,
   Sun,
+  Trash2,
   User,
   Wand2,
   Workflow,
@@ -43,8 +45,11 @@ import {
   useArchivedConversations,
   useConversations,
   useCreateConversation,
+  useDeleteConversation,
+  useRenameConversation,
   type ConversationInfo,
 } from "@/api/queries";
+import { toast } from "@/components/ui/toast";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface NavItem {
@@ -301,6 +306,7 @@ function RecentsSection({
                       message_count: c.message_count,
                       last_activity: c.archived_at,
                       started_at: c.started_at,
+                      project_id: c.project_id ?? null,
                     }}
                     active={false}
                     muted
@@ -327,23 +333,105 @@ function RecentItem({
   muted?: boolean;
   onNavigate?: () => void;
 }) {
+  const navigate = useNavigate();
+  const rename = useRenameConversation();
+  const del = useDeleteConversation();
   const title = c.topic || c.channel || c.conversation_id;
+
+  // Rename / delete use `window.prompt` + `window.confirm` so we don't
+  // pull in a dropdown / dialog primitive just for two actions — matches
+  // the existing chat-header pattern (`window.confirm` in onArchive /
+  // onCompact). Clicking either button must not also follow the <Link>;
+  // each handler stops propagation and prevents the default href nav.
+  const stop = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const onRename = async (e: React.MouseEvent) => {
+    stop(e);
+    const next = window.prompt("Rename conversation", c.topic ?? "");
+    if (next === null) return; // user cancelled
+    const trimmed = next.trim();
+    if (!trimmed) {
+      toast.error("Rename failed", "Title must not be empty.");
+      return;
+    }
+    if (trimmed === c.topic) return; // no-op
+    try {
+      await rename.mutateAsync({ id: c.conversation_id, title: trimmed });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not rename.";
+      toast.error("Rename failed", message);
+    }
+  };
+
+  const onDelete = async (e: React.MouseEvent) => {
+    stop(e);
+    if (
+      !window.confirm(
+        `Permanently delete "${title}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await del.mutateAsync({ id: c.conversation_id });
+      if (active) {
+        // The conversation we were viewing just vanished — bounce to
+        // the chat root so the page doesn't render a 404.
+        navigate("/chat");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not delete.";
+      toast.error("Delete failed", message);
+    }
+  };
+
   return (
-    <Link
-      to={`/chat/${encodeURIComponent(c.conversation_id)}`}
-      onClick={onNavigate}
+    <div
       className={cn(
-        "block truncate rounded-md px-2.5 py-1.5 text-sm transition-colors",
+        "group relative flex items-center rounded-md transition-colors",
         active
           ? "bg-accent text-foreground"
           : muted
             ? "text-muted-foreground/70 hover:bg-accent/40 hover:text-foreground"
             : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
-      title={`${title} · ${formatRelativeTime(c.last_activity)}`}
     >
-      {title}
-    </Link>
+      <Link
+        to={`/chat/${encodeURIComponent(c.conversation_id)}`}
+        onClick={onNavigate}
+        className="block min-w-0 flex-1 truncate px-2.5 py-1.5 text-sm"
+        title={`${title} · ${formatRelativeTime(c.last_activity)}`}
+      >
+        {title}
+      </Link>
+      {/* Hover-revealed actions — opacity-0 keeps the row lean by default,
+       *  group-hover/focus-within reveals on pointer or keyboard reach. */}
+      <div className="flex shrink-0 items-center gap-0.5 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onClick={onRename}
+          disabled={rename.isPending}
+          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label="Rename conversation"
+          title="Rename"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={del.isPending}
+          className="rounded p-1 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+          aria-label="Delete conversation"
+          title="Delete"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 

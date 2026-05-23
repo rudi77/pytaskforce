@@ -76,3 +76,52 @@ class TestArchiveCommand:
         result = runner.invoke(app, ["archive", conv_id])
         assert result.exit_code == 0
         assert "archived" in result.output
+
+
+class TestRenameCommand:
+    def test_rename_updates_topic(self, populated_store):
+        conv_id, mgr = populated_store
+        result = runner.invoke(app, ["rename", conv_id, "Important chat"])
+        assert result.exit_code == 0, result.output
+        assert "renamed" in result.output.lower()
+        # Verify through the manager directly — the Rich table column truncates
+        # narrow widths in test output, so we can't assert via CLI list output.
+        active = asyncio.run(mgr.list_active())
+        match = next(c for c in active if c.conversation_id == conv_id)
+        assert match.topic == "Important chat"
+
+    def test_rename_unknown_id_exits_with_error(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TASKFORCE_WORK_DIR", str(tmp_path))
+        result = runner.invoke(app, ["rename", "ghost-id", "Title"])
+        assert result.exit_code == 1
+
+    def test_rename_empty_title_exits_with_invalid_input(self, populated_store):
+        conv_id, _ = populated_store
+        result = runner.invoke(app, ["rename", conv_id, "   "])
+        # Validation error => exit 2 (typer.Exit(2)).
+        assert result.exit_code == 2
+
+
+class TestDeleteCommand:
+    def test_delete_with_yes_skips_prompt(self, populated_store):
+        conv_id, mgr = populated_store
+        result = runner.invoke(app, ["delete", conv_id, "--yes"])
+        assert result.exit_code == 0, result.output
+        assert "deleted" in result.output.lower()
+        # No longer in active list.
+        list_result = runner.invoke(app, ["list"])
+        assert conv_id not in list_result.output
+
+    def test_delete_aborts_when_user_declines_confirmation(self, populated_store):
+        conv_id, _ = populated_store
+        # Send "n" to the typer confirm prompt.
+        result = runner.invoke(app, ["delete", conv_id], input="n\n")
+        assert result.exit_code == 1
+        # Conversation must still be there.
+        list_result = runner.invoke(app, ["list"])
+        assert conv_id in list_result.output
+
+    def test_delete_unknown_id_exits_with_error(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TASKFORCE_WORK_DIR", str(tmp_path))
+        result = runner.invoke(app, ["delete", "ghost-id", "--yes"])
+        assert result.exit_code == 1
