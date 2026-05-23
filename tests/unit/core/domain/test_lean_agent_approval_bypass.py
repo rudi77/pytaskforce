@@ -27,22 +27,37 @@ from taskforce.application.infrastructure_overrides import (
     set_approval_service,
 )
 from taskforce.application.settings_hydrator import hydrate_approval
-from taskforce.core.domain.settings import APPROVAL
 from taskforce.core.domain.approval import (
     ApprovalDecision,
     ApprovalRequest,
     ApprovalStatus,
 )
 from taskforce.core.domain.lean_agent import LeanAgent
+from taskforce.core.domain.settings import APPROVAL
 from taskforce.core.interfaces.tools import ApprovalRiskLevel
 
 
 class _StubAgent:
-    """Minimal agent stub: logger + bypass set."""
+    """Minimal agent stub: logger + bypass set + provider wiring.
+
+    Providers point at the same application-layer overrides the
+    framework factory wires, so tests can keep using
+    ``set_approval_service`` / ``set_approval_bypass_override`` to
+    drive the gate.
+    """
 
     def __init__(self, bypass: frozenset[str] = frozenset()) -> None:
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_bypass_override as _bypass_provider,
+        )
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_service as _service_provider,
+        )
+
         self.logger = structlog.get_logger("test")
         self._approval_bypass_tools = bypass
+        self._approval_service_provider = _service_provider
+        self._approval_bypass_provider = _bypass_provider
 
 
 class _ApprovalTool:

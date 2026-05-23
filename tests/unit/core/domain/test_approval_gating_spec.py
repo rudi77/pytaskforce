@@ -37,8 +37,17 @@ class _StubAgent:
     """Minimal agent stub carrying just a logger + (optional) bypass set."""
 
     def __init__(self, bypass: frozenset[str] = frozenset()) -> None:
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_bypass_override as _bypass_provider,
+        )
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_service as _service_provider,
+        )
+
         self.logger = structlog.get_logger("test")
         self._approval_bypass_tools = bypass
+        self._approval_service_provider = _service_provider
+        self._approval_bypass_provider = _bypass_provider
 
 
 class _RecordingApprover:
@@ -203,9 +212,7 @@ async def test_cli_prompts_serialised_under_concurrent_calls(monkeypatch) -> Non
     monkeypatch.setattr(cli_approval, "_ask", fake_ask)
 
     service = cli_approval.CLIApprovalService()
-    await asyncio.gather(
-        *(service.request_approval(_make_request(f"t{i}")) for i in range(4))
-    )
+    await asyncio.gather(*(service.request_approval(_make_request(f"t{i}")) for i in range(4)))
 
     assert state["peak"] == 1, "the stdin lock must keep prompts strictly serial"
 
@@ -249,9 +256,7 @@ async def test_mission_lifecycle_hook_errors_do_not_break_mission() -> None:
     executor = AgentExecutor()
 
     # Neither emit must raise — a broken audit hook cannot break a mission.
-    await executor._emit_mission_started(
-        mission="m", session_id="s1", profile="dev", agent_id=None
-    )
+    await executor._emit_mission_started(mission="m", session_id="s1", profile="dev", agent_id=None)
     await executor._emit_mission_completed(
         mission="m",
         session_id="s1",
