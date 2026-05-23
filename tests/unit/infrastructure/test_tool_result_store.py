@@ -124,6 +124,24 @@ async def test_fetch_nonexistent_handle(store):
 
 
 @pytest.mark.asyncio
+async def test_fetch_quarantines_corrupt_file(store):
+    """Corrupt JSON is moved aside instead of silently swallowed."""
+    handle = await store.put("test_tool", {"success": True, "output": "ok"}, "session_1")
+    result_path = store._result_path(handle.id)
+    result_path.write_text("{not json", encoding="utf-8")
+
+    # First fetch trips the corruption path and returns None.
+    fetched = await store.fetch(handle)
+    assert fetched is None
+
+    # The corrupt file has been renamed aside — a subsequent fetch is
+    # now an honest "not found", and the bytes survive for forensics.
+    assert not result_path.exists()
+    quarantined = list(result_path.parent.glob(f"{handle.id}.json.corrupt-*"))
+    assert len(quarantined) == 1
+
+
+@pytest.mark.asyncio
 async def test_delete_result(store):
     """Test deleting a stored result."""
     # Arrange
