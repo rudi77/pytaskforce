@@ -49,7 +49,7 @@ class EncryptedTokenStore:
 
     async def save_token(self, provider: str, token_data: dict[str, Any]) -> None:
         """Encrypt and persist token data for *provider*."""
-        fernet = self._get_fernet()
+        fernet = await self._get_fernet_async()
         payload = json.dumps(token_data, ensure_ascii=False).encode()
         encrypted = fernet.encrypt(payload)
 
@@ -71,7 +71,7 @@ class EncryptedTokenStore:
         if not target.exists():
             return None
 
-        fernet = self._get_fernet()
+        fernet = await self._get_fernet_async()
         lock = self._lock_for(provider)
         async with lock:
             async with aiofiles.open(target, "rb") as f:
@@ -122,7 +122,13 @@ class EncryptedTokenStore:
         return self._locks[provider]
 
     def _get_fernet(self) -> Any:
-        """Lazily initialise and return the Fernet cipher."""
+        """Lazily initialise and return the Fernet cipher.
+
+        Synchronous variant. Prefer :meth:`_get_fernet_async` from async
+        contexts — first-time initialisation runs ``icacls`` (subprocess
+        with 10s timeout) and ``fsync`` on Windows, which would stall
+        the event loop.
+        """
         if self._fernet is not None:
             return self._fernet
 
@@ -137,6 +143,17 @@ class EncryptedTokenStore:
         key = self._resolve_key()
         self._fernet = Fernet(key)
         return self._fernet
+
+    async def _get_fernet_async(self) -> Any:
+        """Async-safe variant of :meth:`_get_fernet`.
+
+        Memo-hit is a fast in-process check; cache miss offloads the
+        sync key-creation path (which may run ``icacls``/``fsync``) to a
+        worker thread so the event loop is not blocked.
+        """
+        if self._fernet is not None:
+            return self._fernet
+        return await asyncio.to_thread(self._get_fernet)
 
     def _resolve_key(self) -> bytes:
         """Resolve the Fernet encryption key.
