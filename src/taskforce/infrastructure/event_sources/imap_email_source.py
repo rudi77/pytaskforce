@@ -224,9 +224,7 @@ def _first_text_part(msg: Message) -> str:
         return ""
     payload = msg.get_payload(decode=True)
     if isinstance(payload, (bytes, bytearray)):
-        return payload.decode(
-            msg.get_content_charset() or "utf-8", errors="replace"
-        )
+        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
     return str(payload or "")
 
 
