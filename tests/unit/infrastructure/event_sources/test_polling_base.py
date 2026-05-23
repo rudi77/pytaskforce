@@ -105,3 +105,36 @@ class TestPollingEventSource:
     def test_source_name_property(self) -> None:
         src = _StubSource("my-source", events_per_poll=[])
         assert src.source_name == "my-source"
+
+
+async def test_async_context_manager_cancels_on_exit() -> None:
+    """``async with`` must stop the polling loop on exit, even on exception."""
+    source = _StubSource(
+        source_name="ctx",
+        poll_interval_seconds=0.01,
+        events_per_poll=[[_event()]],
+    )
+
+    async with source as src:
+        assert src.is_running
+        await asyncio.sleep(0.02)
+
+    assert not source.is_running
+    assert source._task is None
+
+
+async def test_async_context_manager_cancels_on_body_exception() -> None:
+    """Exception inside the async with body must still trigger stop()."""
+    source = _StubSource(
+        source_name="ctx-raise",
+        poll_interval_seconds=0.01,
+        events_per_poll=[[_event()]],
+    )
+
+    with pytest.raises(RuntimeError, match="supervisor crashed"):
+        async with source:
+            await asyncio.sleep(0)
+            raise RuntimeError("supervisor crashed")
+
+    assert not source.is_running
+    assert source._task is None
