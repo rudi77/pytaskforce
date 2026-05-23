@@ -187,9 +187,16 @@ class TelegramOutboundSender:
         if parse_mode == "HTML":
             try:
                 message = _markdown_to_telegram_html(message)
-            except Exception:
+            except (re.error, ValueError, TypeError) as exc:
                 # Fallback: send as plain text rather than failing.
-                self._logger.warning("telegram.html_conversion_failed")
+                # Narrow catch so unexpected types (AttributeError from
+                # a refactor, MemoryError on huge inputs) still surface
+                # rather than silently re-routing to plain-text mode.
+                self._logger.warning(
+                    "telegram.html_conversion_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
                 parse_mode = ""
 
         payload: dict[str, Any] = {"chat_id": recipient_id, "text": message}
@@ -325,8 +332,12 @@ class TelegramOutboundSender:
         if formatted_caption and parse_mode == "HTML":
             try:
                 formatted_caption = _markdown_to_telegram_html(formatted_caption)
-            except Exception:
-                self._logger.warning("telegram.html_conversion_failed")
+            except (re.error, ValueError, TypeError) as exc:
+                self._logger.warning(
+                    "telegram.html_conversion_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
                 parse_mode = None
 
         # Telegram caption limit is 1024 chars. Truncate with ellipsis if over.
