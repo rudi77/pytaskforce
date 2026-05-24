@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
+import { Badge, Button, Input } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   useSettingsSection,
   useUpdateSettingsSection,
@@ -154,9 +153,9 @@ export default function LLMProvidersTab() {
                 <CardDescription>{p.description}</CardDescription>
               </div>
               {Object.keys(stored[p.id] ?? {}).length > 0 ? (
-                <Badge variant="success">Configured</Badge>
+                <Badge color="success">Configured</Badge>
               ) : (
-                <Badge variant="secondary">Not configured</Badge>
+                <Badge appearance="tint" color="subtle">Not configured</Badge>
               )}
             </CardHeader>
             <CardContent className="space-y-3">
@@ -177,16 +176,20 @@ export default function LLMProvidersTab() {
                         : field.placeholder
                     }
                     value={current[field.name] ?? ""}
-                    onChange={(e) => setField(p.id, field.name, e.target.value)}
+                    onChange={(_, data) => setField(p.id, field.name, data.value)}
                   />
                 </div>
               ))}
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button onClick={() => saveProvider(p.id)} disabled={!dirty || update.isPending}>
+                <Button
+                  appearance="primary"
+                  onClick={() => saveProvider(p.id)}
+                  disabled={!dirty || update.isPending}
+                >
                   {update.isPending ? "Saving…" : "Save"}
                 </Button>
                 <Button
-                  variant="outline"
+                  appearance="outline"
                   onClick={() => testProvider(p.id)}
                   disabled={probe.isPending}
                 >
