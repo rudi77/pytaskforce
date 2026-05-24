@@ -1,50 +1,105 @@
 import * as React from "react";
-import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { TabList, Tab as FluentTab } from "@fluentui/react-components";
 import { cn } from "@/lib/utils";
 
-export const Tabs = TabsPrimitive.Root;
+/**
+ * shadcn-API-compatible Tabs wrapping FluentUI v9 TabList.
+ *
+ * Radix Tabs is uncontrolled-by-default (defaultValue) with multiple
+ * TabsContent that filter by matching `value`. Fluent TabList only
+ * provides the tab strip — the consumer renders the active body
+ * themselves. This wrapper bridges the two by holding the active
+ * value in a context and short-circuiting TabsContent for the
+ * non-matching values.
+ *
+ * The single consumer in this repo (SettingsPage already migrated
+ * to native Fluent; AgentProfileEditor still uses this) keeps the
+ * defaultValue/onValueChange/value triple.
+ */
 
-export const TabsList = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.List>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "inline-flex h-9 items-center gap-1 rounded-md bg-muted p-1 text-muted-foreground",
-      className,
-    )}
-    {...props}
-  />
-));
-TabsList.displayName = TabsPrimitive.List.displayName;
+interface TabsContextValue {
+  value: string;
+  setValue: (next: string) => void;
+}
 
-export const TabsTrigger = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded px-3 py-1 text-xs font-medium transition-all",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      "disabled:pointer-events-none disabled:opacity-50",
-      "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
-      className,
-    )}
-    {...props}
-  />
-));
-TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
+const TabsContext = React.createContext<TabsContextValue | null>(null);
 
-export const TabsContent = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content
-    ref={ref}
-    className={cn("mt-4 focus-visible:outline-none", className)}
-    {...props}
-  />
-));
-TabsContent.displayName = TabsPrimitive.Content.displayName;
+interface TabsProps extends React.HTMLAttributes<HTMLDivElement> {
+  defaultValue?: string;
+  value?: string;
+  onValueChange?: (next: string) => void;
+}
+
+export function Tabs({
+  defaultValue,
+  value,
+  onValueChange,
+  className,
+  children,
+  ...rest
+}: TabsProps) {
+  const [internal, setInternal] = React.useState(defaultValue ?? "");
+  const current = value ?? internal;
+  const setCurrent = React.useCallback(
+    (next: string) => {
+      if (value === undefined) setInternal(next);
+      onValueChange?.(next);
+    },
+    [value, onValueChange],
+  );
+  return (
+    <TabsContext.Provider value={{ value: current, setValue: setCurrent }}>
+      <div className={className} {...rest}>
+        {children}
+      </div>
+    </TabsContext.Provider>
+  );
+}
+
+interface TabsListProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+export const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
+  ({ className, children, ...rest }, ref) => {
+    const ctx = React.useContext(TabsContext);
+    if (!ctx) throw new Error("<TabsList> must be inside <Tabs>");
+    return (
+      <div ref={ref} className={className} {...rest}>
+        <TabList
+          selectedValue={ctx.value}
+          onTabSelect={(_, data) => ctx.setValue(String(data.value))}
+        >
+          {children}
+        </TabList>
+      </div>
+    );
+  },
+);
+TabsList.displayName = "TabsList";
+
+interface TabsTriggerProps extends React.HTMLAttributes<HTMLButtonElement> {
+  value: string;
+  disabled?: boolean;
+}
+
+export function TabsTrigger({ value, children, disabled, className }: TabsTriggerProps) {
+  return (
+    <FluentTab value={value} disabled={disabled} className={className}>
+      {children}
+    </FluentTab>
+  );
+}
+
+interface TabsContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  value: string;
+}
+
+export function TabsContent({ value, className, children, ...rest }: TabsContentProps) {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) throw new Error("<TabsContent> must be inside <Tabs>");
+  if (ctx.value !== value) return null;
+  return (
+    <div className={cn("mt-4 focus-visible:outline-none", className)} {...rest}>
+      {children}
+    </div>
+  );
+}
