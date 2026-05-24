@@ -21,9 +21,21 @@ export const CHAT_VIEW_MODES: { value: ChatViewMode; label: string; hint: string
   { value: "summary", label: "Summary", hint: "Final responses only" },
 ];
 
+/**
+ * Render the chat message list via FluentUI v9 + botframework-webchat
+ * (`<ReactWebChat>`), instead of the bespoke Cowork-style scroller.
+ *
+ * Opt-in for now while the WebChat integration matures. Default off so
+ * production users see the proven renderer; toggling on swaps the
+ * message-list section of ChatPage to the new component. AskUserCard,
+ * MentionPicker, RightPanel and the composer stay shared between both
+ * modes — only the message-history rendering layer differs.
+ */
 interface ChatPreferencesState {
   viewMode: ChatViewMode;
   setViewMode: (mode: ChatViewMode) => void;
+  useWebChatRenderer: boolean;
+  setUseWebChatRenderer: (enabled: boolean) => void;
 }
 
 export const useChatPreferences = create<ChatPreferencesState>()(
@@ -31,6 +43,8 @@ export const useChatPreferences = create<ChatPreferencesState>()(
     (set) => ({
       viewMode: "normal",
       setViewMode: (mode) => set({ viewMode: mode }),
+      useWebChatRenderer: false,
+      setUseWebChatRenderer: (enabled) => set({ useWebChatRenderer: enabled }),
     }),
     { name: "taskforce.chat.preferences" },
   ),
