@@ -1,19 +1,33 @@
 import * as React from "react";
+import { Input as FluentInput } from "@fluentui/react-components";
 import { cn } from "@/lib/utils";
 
-export type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
+export type InputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "size">;
 
+/**
+ * shadcn-API-compatible Input rendered via FluentUI v9.
+ *
+ * Native onChange `(e) => e.target.value` is preserved by forwarding
+ * Fluent's first callback arg (which IS a real ChangeEvent<HTMLInputElement>)
+ * straight through, so the ~30 unmigrated call sites keep working.
+ */
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => (
-    <input
-      type={type}
-      ref={ref}
-      className={cn(
-        "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  ({ className, type, onChange, value, ...rest }, ref) => {
+    // FluentInput accepts a stricter `type` union than React's native
+    // HTMLInputTypeAttribute (e.g. "reset", "submit", "button" aren't
+    // valid Fluent input types — they belong on <button>, not <input>).
+    // Cast via unknown so the rare caller passing those still type-checks;
+    // Fluent will ignore the unknown value at runtime.
+    return (
+      <FluentInput
+        ref={ref}
+        type={type as never}
+        value={value as string | undefined}
+        className={cn("w-full", className)}
+        onChange={(e) => onChange?.(e)}
+        {...(rest as Record<string, unknown>)}
+      />
+    );
+  },
 );
 Input.displayName = "Input";

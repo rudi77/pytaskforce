@@ -1,18 +1,25 @@
 import * as React from "react";
+import { Textarea as FluentTextarea } from "@fluentui/react-components";
 import { cn } from "@/lib/utils";
 
 export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
+/**
+ * shadcn-API-compatible Textarea rendered via FluentUI v9.
+ *
+ * Like Input, Fluent's onChange ev arg is a real React ChangeEvent so
+ * legacy `(e) => e.target.value` callers keep working unchanged.
+ * Monospace class kept (matches the pre-Fluent visual for JSON/YAML
+ * editing throughout the wizard / settings forms).
+ */
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => (
-    <textarea
+  ({ className, onChange, value, ...rest }, ref) => (
+    <FluentTextarea
       ref={ref}
-      className={cn(
-        "flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-        "scrollbar-thin font-mono",
-        className,
-      )}
-      {...props}
+      value={value as string | undefined}
+      className={cn("w-full font-mono", className)}
+      onChange={(e) => onChange?.(e)}
+      {...(rest as Record<string, unknown>)}
     />
   ),
 );
