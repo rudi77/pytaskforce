@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Bot20Regular } from "@fluentui/react-icons";
-import type { LucideIcon } from "lucide-react";
 
 import { capabilitiesSatisfied, registry } from "./registry";
 import type { UIPlugin } from "./types";
 
-// PluginNavItem.icon is still typed against LucideIcon in the upstream
-// @taskforce/ui-shell contract; cast here so the test does not need a
-// real lucide-react runtime dependency.
-const TestIcon = Bot20Regular as unknown as LucideIcon;
+// PluginNavItem.icon was widened in @taskforce/ui-shell to
+// ComponentType<SVGProps> so any icon family works — Fluent icons
+// are assignable directly with no cast.
+const TestIcon = Bot20Regular;
 
 function makePlugin(overrides: Partial<UIPlugin> = {}): UIPlugin {
   return {
