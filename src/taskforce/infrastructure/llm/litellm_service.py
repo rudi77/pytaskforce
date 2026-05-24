@@ -174,7 +174,6 @@ class LiteLLMService:
 
         self._sanitizer = MessageSanitizer(self.logger)
 
-
     # ------------------------------------------------------------------
     # Config attribute delegation — preserve existing public interface
     # ------------------------------------------------------------------
@@ -954,9 +953,7 @@ class LiteLLMService:
             # primary error is genuinely content-filter).
             if tools and stages:
                 base = stages[-1][1]
-                _, no_tools_kwargs = self._prepare_stream_request(
-                    base, model, None, None, **kwargs
-                )
+                _, no_tools_kwargs = self._prepare_stream_request(base, model, None, None, **kwargs)
                 self.logger.warning(
                     "llm_stream_content_filter_recovery",
                     stage="no_tools",
@@ -1288,57 +1285,129 @@ class LiteLLMService:
     ) -> dict[str, Any] | None:
         """Attempt recovery from Azure content-policy violation.
 
-        Stage 1: aggressive strip of message history (system + last
-        ``recovery_keep_last_n`` plain turns). Stage 2 (optional, when
-        ``recover_via_rephrase=True``): neutralise the last user turn
-        via a small LLM call and retry once. Returns the LLM result on
-        success, or ``None`` if all stages fail.
+        Mirrors the four-stage cascade used in the streaming path so a
+        blocking ``complete()`` caller sees the same recovery shape as a
+        ``complete_stream()`` caller. Stages, in order:
 
-        Mirrors the recovery cascade used in the streaming path so a
-        non-streaming ``complete()`` does not give up after one stage.
+        1. ``tool_results_only`` — drop ``role="tool"`` and tool-call-only
+           assistant turns (cheapest; the filter usually sits in older
+           tool output).
+        2. ``aggressive`` — keep system prompt plus the last
+           ``recovery_keep_last_n`` plain user/assistant turns.
+        3. ``no_tools`` — re-run on the most-stripped message list with
+           ``tools=None``; only attempted when tools were originally
+           supplied AND at least one strip stage shrank the history,
+           because an output-side filter (e.g. flagged tool-call args)
+           cannot be fixed by history stripping alone.
+        4. ``rephrase`` — neutralise the last user turn via a small LLM
+           call and retry once. Opt-out via ``recover_via_rephrase=False``.
+
+        Returns the LLM result on the first successful stage, or
+        ``None`` if every stage fails.
         """
-        stripped = self._strip_messages_for_content_recovery(messages, mode="aggressive")
-        if len(stripped) >= len(messages):
-            stripped = None  # Nothing left to strip — skip stage 1
+        # Build the candidate list of history-stripping stages, mirroring
+        # complete_stream's logic (each stage must shrink further than the
+        # previous one to be worth attempting).
+        stages: list[tuple[str, list[dict[str, Any]]]] = []
 
-        if stripped is not None:
+        tool_only = self._strip_messages_for_content_recovery(messages, mode="tool_results_only")
+        if len(tool_only) < len(messages):
+            stages.append(("tool_results_only", tool_only))
+
+        aggressive = self._strip_messages_for_content_recovery(messages, mode="aggressive")
+        if len(aggressive) < len(messages) and (not stages or len(aggressive) < len(stages[-1][1])):
+            stages.append(("aggressive", aggressive))
+
+        last_recovery_error: Exception | None = None
+
+        for stage_name, candidate in stages:
             logger.warning(
                 "llm_content_filter_recovery",
+                stage=stage_name,
                 original_messages=len(messages),
-                stripped_messages=len(stripped),
+                stripped_messages=len(candidate),
                 model=resolved_model,
             )
-
             _, _, litellm_kwargs = self._prepare_request(
-                stripped, model, tools, tool_choice, **kwargs
+                candidate, model, tools, tool_choice, **kwargs
             )
-
             try:
                 result = await self._attempt_completion(
-                    litellm_kwargs, resolved_model, stripped, tools, attempt=1
+                    litellm_kwargs, resolved_model, candidate, tools, attempt=1
                 )
                 logger.info(
                     "llm_content_filter_recovery_success",
+                    stage=stage_name,
                     model=resolved_model,
                 )
                 return result
             except Exception as recovery_error:
+                last_recovery_error = recovery_error
                 logger.warning(
                     "llm_content_filter_recovery_stage_failed",
-                    stage="aggressive",
+                    stage=stage_name,
                     model=resolved_model,
                     error=str(recovery_error)[:200],
                 )
+                if not self._is_content_filter_error(recovery_error):
+                    # Non-filter error during recovery means the pipeline
+                    # itself broke; stop escalating. The user-visible root
+                    # cause is still content_filter (we only entered this
+                    # branch because the primary attempt got filtered), so
+                    # callers/UI should still render the actionable filter
+                    # message rather than the generic fallback.
+                    return None
 
-        # Stage 2: rephrase the latest user turn neutrally and retry.
+        # Stage 3: tools-off fallback. Output-side filter triggers (the
+        # LLM emitting a flagged tool_call) cannot be fixed by stripping
+        # the input history. Re-attempting without tools forces a plain
+        # text response that cannot carry policy-flagged tool payloads.
+        # Only run when tools were originally provided AND at least one
+        # strip stage ran (so we know the primary error really was
+        # content-filter, not a malformed request).
+        if tools and stages:
+            base = stages[-1][1]
+            logger.warning(
+                "llm_content_filter_recovery",
+                stage="no_tools",
+                original_messages=len(messages),
+                stripped_messages=len(base),
+                model=resolved_model,
+            )
+            _, _, no_tools_kwargs = self._prepare_request(base, model, None, None, **kwargs)
+            try:
+                result = await self._attempt_completion(
+                    no_tools_kwargs, resolved_model, base, None, attempt=1
+                )
+                logger.info(
+                    "llm_content_filter_recovery_success",
+                    stage="no_tools",
+                    model=resolved_model,
+                )
+                return result
+            except Exception as recovery_error:
+                last_recovery_error = recovery_error
+                logger.warning(
+                    "llm_content_filter_recovery_stage_failed",
+                    stage="no_tools",
+                    model=resolved_model,
+                    error=str(recovery_error)[:200],
+                )
+                if not self._is_content_filter_error(recovery_error):
+                    return None
+
+        # Stage 4: rephrase the last user turn neutrally and retry once.
+        # Off-switchable via recover_via_rephrase=False (costs one extra
+        # small LLM call and changes the user's wording).
         if not self._recover_via_rephrase:
             logger.error(
                 "llm_content_filter_recovery_failed",
                 model=resolved_model,
+                error=str(last_recovery_error)[:200] if last_recovery_error else None,
             )
             return None
 
-        base = stripped if stripped is not None else messages
+        base = stages[-1][1] if stages else messages
         rephrased = await self._rephrase_user_message_for_recovery(base, resolved_model)
         if rephrased is None:
             logger.error(
@@ -1356,9 +1425,7 @@ class LiteLLMService:
             stripped_messages=len(rephrased),
             model=resolved_model,
         )
-        _, _, litellm_kwargs = self._prepare_request(
-            rephrased, model, tools, tool_choice, **kwargs
-        )
+        _, _, litellm_kwargs = self._prepare_request(rephrased, model, tools, tool_choice, **kwargs)
         try:
             result = await self._attempt_completion(
                 litellm_kwargs, resolved_model, rephrased, tools, attempt=1

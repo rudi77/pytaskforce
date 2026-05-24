@@ -21,9 +21,9 @@ agent can show what its children worked on.
 
 ## Capabilities (what the operator/profile-author can do)
 
-- bound the agent's input window with `agent.max_input_tokens` and start
-  compressing early with `agent.compression_trigger` (or the legacy
-  `agent.summary_threshold` message count)
+- bound the agent's input window with `context_management.max_input_tokens` and
+  start compressing early with `context_management.compression_trigger` (or the
+  legacy `context_management.summary_threshold` message count)
 - cap individual oversized messages with `agent.tool_message_max_chars` and
   `agent.assistant_message_max_chars` to keep one bad tool result from
   dominating the budget
@@ -73,19 +73,19 @@ agent can show what its children worked on.
 
 ## Configuration surface (the profile keys operators rely on)
 
-- `agent.max_input_tokens: int` (default `100000`) — hard ceiling on estimated
-  input tokens for one LLM call
-- `agent.compression_trigger: int` (default `40000`) — token threshold above
-  which compression runs before the next LLM call
-- `agent.summary_threshold: int` (default `20`) — message-count threshold for
-  the same compression decision (whichever trigger fires first wins)
+- `context_management.max_input_tokens: int` (default `100000`) — hard ceiling
+  on estimated input tokens for one LLM call. Read by `factory.py` from the
+  profile-root `context_management:` block and forwarded to the agent
+  constructor.
+- `context_management.compression_trigger: int` (default `40000`) — token
+  threshold above which compression runs before the next LLM call
+- `context_management.summary_threshold: int` (default `20`) — message-count
+  threshold for the same compression decision (whichever trigger fires first
+  wins)
 - `agent.tool_message_max_chars: int` (default `1500`) — per-message hard cap
   for `role="tool"` content; set to `0` to disable
 - `agent.assistant_message_max_chars: int` (default `4000`) — per-message hard
   cap for `role="assistant"` content; set to `0` to disable
-- `context_management.{max_input_tokens,compression_trigger,summary_threshold}`
-  — same three keys at the profile root, read by `factory.py` and forwarded to
-  the agent constructor
 
 ## Extension points
 
