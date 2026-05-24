@@ -1,8 +1,7 @@
 import { useState } from "react";
+import { Button, Input, Tab, TabList } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/app/theme-provider";
 import { useSettings } from "@/lib/settings";
 import LLMProvidersTab from "@/features/settings/LLMProvidersTab";
@@ -40,8 +39,8 @@ function GeneralTab() {
           {(["light", "dark", "system"] as const).map((option) => (
             <Button
               key={option}
-              variant={preference === option ? "default" : "outline"}
-              size="sm"
+              appearance={preference === option ? "primary" : "outline"}
+              size="small"
               onClick={() => setPreference(option)}
             >
               {option[0].toUpperCase() + option.slice(1)}
@@ -66,7 +65,7 @@ function GeneralTab() {
             <Input
               id="api-base-url"
               value={draftUrl}
-              onChange={(e) => setDraftUrl(e.target.value)}
+              onChange={(_, data) => setDraftUrl(data.value)}
               placeholder="http://localhost:8070"
               autoComplete="off"
             />
@@ -79,7 +78,7 @@ function GeneralTab() {
               id="api-token"
               type="password"
               value={draftToken}
-              onChange={(e) => setDraftToken(e.target.value)}
+              onChange={(_, data) => setDraftToken(data.value)}
               placeholder="Bearer token, sent as Authorization header"
               autoComplete="off"
             />
@@ -89,7 +88,7 @@ function GeneralTab() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button onClick={handleSave}>Save</Button>
+            <Button appearance="primary" onClick={handleSave}>Save</Button>
             {saved ? <span className="text-xs text-success">Saved.</span> : null}
           </div>
         </CardContent>
@@ -108,20 +107,24 @@ const TABS: Array<{ value: string; label: string; render: () => JSX.Element }> =
 ];
 
 export default function SettingsPage() {
+  // Fluent TabList is controlled (selectedValue + onTabSelect) whereas Radix
+  // Tabs was uncontrolled with defaultValue. State lives here now.
+  const [selected, setSelected] = useState<string>("general");
+  const active = TABS.find((t) => t.value === selected) ?? TABS[0];
+
   return (
-    <Tabs defaultValue="general" className="space-y-4">
-      <TabsList className="h-auto flex-wrap">
+    <div className="space-y-4">
+      <TabList
+        selectedValue={selected}
+        onTabSelect={(_, data) => setSelected(String(data.value))}
+      >
         {TABS.map((t) => (
-          <TabsTrigger key={t.value} value={t.value}>
+          <Tab key={t.value} value={t.value}>
             {t.label}
-          </TabsTrigger>
+          </Tab>
         ))}
-      </TabsList>
-      {TABS.map((t) => (
-        <TabsContent key={t.value} value={t.value}>
-          {t.render()}
-        </TabsContent>
-      ))}
-    </Tabs>
+      </TabList>
+      <div>{active.render()}</div>
+    </div>
   );
 }

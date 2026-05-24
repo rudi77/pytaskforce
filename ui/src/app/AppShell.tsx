@@ -1,40 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity,
-  Archive,
-  Beaker,
-  Bot,
-  ChevronDown,
-  Clock,
-  FolderOpen,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  MessageSquare,
-  Moon,
-  Network,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Pencil,
-  Plus,
-  Sparkles,
-  Sun,
-  Trash2,
-  User,
-  Wand2,
-  Workflow,
-} from "lucide-react";
+  Add16Regular,
+  Add20Regular,
+  Archive16Regular,
+  Beaker16Regular,
+  Board16Regular,
+  Bot16Regular,
+  Chat16Regular,
+  ChevronDown16Regular,
+  Clock16Regular,
+  Delete16Regular,
+  Edit16Regular,
+  Flow16Regular,
+  FolderOpen16Regular,
+  Navigation20Regular,
+  PanelLeftContract16Regular,
+  PanelLeftExpand16Regular,
+  Person16Regular,
+  PlugConnected16Regular,
+  Pulse20Regular,
+  SignOut20Regular,
+  Sparkle16Regular,
+  Sparkle20Regular,
+  Wand16Regular,
+  WeatherMoon16Regular,
+  WeatherSunny16Regular,
+} from "@fluentui/react-icons";
+import {
+  Button,
+  Drawer,
+  DrawerBody,
+  DrawerHeader,
+  DrawerHeaderTitle,
+} from "@fluentui/react-components";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
 import { useSettings } from "@/lib/settings";
@@ -55,6 +57,9 @@ import { formatRelativeTime } from "@/lib/utils";
 interface NavItem {
   to: string;
   label: string;
+  /** Component-as-icon. FluentUI icon components accept React.SVGProps —
+   *  the legacy shadcn signature ({ className?: string }) is a subset of
+   *  that, so plugin-supplied lucide icons keep rendering unchanged. */
   icon: React.ComponentType<{ className?: string }>;
   end?: boolean;
   section?: "main" | "admin";
@@ -66,22 +71,22 @@ interface NavItem {
 // ACP, Evals, Dashboard) get demoted to a collapsible "Workspace"
 // section underneath. This keeps the sidebar uncluttered like Cowork's.
 const PRIMARY_NAV_ITEMS: NavItem[] = [
-  { to: "/chat", label: "Chat", icon: MessageSquare, order: 0 },
-  { to: "/projects", label: "Projects", icon: FolderOpen, order: 10 },
-  { to: "/workflows", label: "Scheduled", icon: Clock, order: 20 },
-  { to: "/monitoring", label: "Live artifacts", icon: Activity, order: 30 },
-  { to: "/settings", label: "Customize", icon: Wand2, order: 40 },
+  { to: "/chat", label: "Chat", icon: Chat16Regular, order: 0 },
+  { to: "/projects", label: "Projects", icon: FolderOpen16Regular, order: 10 },
+  { to: "/workflows", label: "Scheduled", icon: Clock16Regular, order: 20 },
+  { to: "/monitoring", label: "Live artifacts", icon: Pulse20Regular, order: 30 },
+  { to: "/settings", label: "Customize", icon: Wand16Regular, order: 40 },
 ];
 
 // Secondary surfaces — kept reachable but folded into a small group so they
 // don't compete with the primary verbs.
 const WORKSPACE_NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, order: 0 },
-  { to: "/agents", label: "Agents", icon: Bot, order: 10 },
-  { to: "/capabilities", label: "Capabilities", icon: Sparkles, order: 20 },
-  { to: "/acp", label: "ACP Peers", icon: Network, order: 30 },
-  { to: "/workflows", label: "Workflows", icon: Workflow, order: 40 },
-  { to: "/evals", label: "Evals", icon: Beaker, order: 50 },
+  { to: "/", label: "Dashboard", icon: Board16Regular, end: true, order: 0 },
+  { to: "/agents", label: "Agents", icon: Bot16Regular, order: 10 },
+  { to: "/capabilities", label: "Capabilities", icon: Sparkle16Regular, order: 20 },
+  { to: "/acp", label: "ACP Peers", icon: PlugConnected16Regular, order: 30 },
+  { to: "/workflows", label: "Workflows", icon: Flow16Regular, order: 40 },
+  { to: "/evals", label: "Evals", icon: Beaker16Regular, order: 50 },
 ];
 
 const BUILTIN_PAGE_TITLES: Record<string, string> = {
@@ -113,16 +118,15 @@ const ADMIN_PATH_PERMISSIONS: Record<string, string> = {
 
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
+  const label = `Switch to ${theme === "dark" ? "light" : "dark"} theme`;
   return (
     <Button
-      variant="ghost"
-      size="icon"
+      appearance="subtle"
+      icon={theme === "dark" ? <WeatherSunny16Regular /> : <WeatherMoon16Regular />}
       onClick={toggle}
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-      title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-    >
-      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </Button>
+      aria-label={label}
+      title={label}
+    />
   );
 }
 
@@ -133,7 +137,7 @@ function ThemeToggle() {
 interface SidebarProps {
   collapsed: boolean;
   /** When omitted, the collapse toggle is hidden — used inside the
-   *  mobile Sheet, where Sheet's own close button already exists. */
+   *  mobile Drawer, where the drawer's own close affordance already exists. */
   onToggle?: () => void;
   primaryItems: NavItem[];
   workspaceItems: NavItem[];
@@ -165,7 +169,7 @@ function SidebarNavRow({
         )
       }
     >
-      <item.icon className="h-4 w-4 shrink-0" />
+      <item.icon />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
     </NavLink>
   );
@@ -218,24 +222,25 @@ function NewTaskButton({
   if (collapsed) {
     return (
       <Button
-        size="icon"
+        appearance="primary"
+        icon={<Add20Regular />}
         onClick={onClick}
         disabled={create.isPending}
+        aria-label="New task"
         title="New task"
         className="mx-auto"
-      >
-        <Plus className="h-4 w-4" />
-      </Button>
+      />
     );
   }
   return (
     <Button
+      appearance="primary"
+      icon={<Add16Regular />}
       onClick={onClick}
       disabled={create.isPending}
-      className="w-full justify-start gap-2"
-      size="sm"
+      size="small"
+      className="w-full justify-start"
     >
-      <Plus className="h-4 w-4" />
       New task
     </Button>
   );
@@ -291,7 +296,7 @@ function RecentsSection({
           <details className="mt-3 px-1">
             <summary className="cursor-pointer list-none rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/40 hover:text-foreground">
               <span className="inline-flex items-center gap-1.5">
-                <Archive className="h-3 w-3" />
+                <Archive16Regular />
                 Archived ({archived.data.length})
               </span>
             </summary>
@@ -418,7 +423,7 @@ function RecentItem({
           aria-label="Rename conversation"
           title="Rename"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Edit16Regular />
         </button>
         <button
           type="button"
@@ -428,7 +433,7 @@ function RecentItem({
           aria-label="Delete conversation"
           title="Delete"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Delete16Regular />
         </button>
       </div>
     </div>
@@ -479,11 +484,8 @@ function WorkspaceSection({
         aria-expanded={open}
       >
         <span>Workspace</span>
-        <ChevronDown
-          className={cn(
-            "h-3 w-3 transition-transform",
-            !open && "-rotate-90",
-          )}
+        <ChevronDown16Regular
+          className={cn("transition-transform", !open && "-rotate-90")}
           aria-hidden
         />
       </button>
@@ -546,14 +548,13 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
     return (
       <div className="flex flex-col items-center gap-1">
         <ThemeToggle />
-        <button
-          type="button"
+        <Button
+          appearance="subtle"
+          icon={<SignOut20Regular />}
           onClick={handleLogout}
+          aria-label="Sign out"
           title="Sign out"
-          className="flex w-full items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
+        />
       </div>
     );
   }
@@ -565,19 +566,18 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
       </div>
       <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-          <User className="h-3.5 w-3.5" />
+          <Person16Regular />
         </span>
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           Signed in
         </div>
-        <button
-          type="button"
+        <Button
+          appearance="subtle"
+          icon={<SignOut20Regular />}
           onClick={handleLogout}
+          aria-label="Sign out"
           title="Sign out"
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <LogOut className="h-3.5 w-3.5" />
-        </button>
+        />
       </div>
     </div>
   );
@@ -585,9 +585,9 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
 
 /**
  * Sidebar body — shared between the desktop ``<aside>`` and the mobile
- * Sheet drawer. The desktop variant supports a collapsed (icon-only)
- * mode; the mobile variant always renders fully expanded since the
- * Sheet itself provides the slim/expanded affordance.
+ * Drawer. The desktop variant supports a collapsed (icon-only) mode; the
+ * mobile variant always renders fully expanded since the Drawer itself
+ * provides the slim/expanded affordance.
  */
 function SidebarBody({
   collapsed,
@@ -618,7 +618,7 @@ function SidebarBody({
           collapsed ? "justify-center px-2" : "px-3",
         )}
       >
-        <Sparkles className="h-5 w-5 shrink-0 text-primary" />
+        <Sparkle20Regular className="text-primary" />
         {collapsed ? null : (
           <span className="text-base font-semibold tracking-tight">Taskforce</span>
         )}
@@ -669,25 +669,21 @@ function SidebarBody({
         <UserFooter collapsed={collapsed} />
         {showCollapseToggle && onToggle ? (
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
+            appearance="subtle"
+            icon={
+              collapsed ? (
+                <PanelLeftExpand16Regular />
+              ) : (
+                <PanelLeftContract16Regular />
+              )
+            }
             onClick={onToggle}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={cn(
-              "mt-2 w-full",
-              collapsed ? "h-8" : "h-7 justify-start gap-2 px-2.5",
-            )}
+            className={cn("mt-2 w-full", !collapsed && "justify-start")}
+            size="small"
           >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
-            ) : (
-              <>
-                <PanelLeftClose className="h-4 w-4" />
-                <span className="text-xs font-medium">Collapse</span>
-              </>
-            )}
+            {collapsed ? null : "Collapse"}
           </Button>
         ) : null}
       </div>
@@ -813,14 +809,19 @@ export function AppShell() {
         adminItems={adminItems}
       />
 
-      {/* Mobile sidebar drawer (below md). Always rendered so the
-       *  Radix Sheet handles its own enter/exit animation; the
-       *  ``open`` flag is the single source of truth. */}
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-72 max-w-[85vw] p-0">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Navigation</SheetTitle>
-          </SheetHeader>
+      {/* Mobile sidebar drawer (below md). FluentUI Drawer in overlay
+       *  type renders modally; `open` is the single source of truth. */}
+      <Drawer
+        type="overlay"
+        position="start"
+        size="medium"
+        open={mobileNavOpen}
+        onOpenChange={(_, { open }) => setMobileNavOpen(open)}
+      >
+        <DrawerHeader className="sr-only">
+          <DrawerHeaderTitle>Navigation</DrawerHeaderTitle>
+        </DrawerHeader>
+        <DrawerBody className="!p-0">
           <SidebarBody
             collapsed={false}
             primaryItems={primaryItems}
@@ -829,21 +830,19 @@ export function AppShell() {
             showCollapseToggle={false}
             onNavigate={() => setMobileNavOpen(false)}
           />
-        </SheetContent>
-      </Sheet>
+        </DrawerBody>
+      </Drawer>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar — always visible below ``md`` so the
          *  hamburger is reachable on every page (chat included). */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:hidden">
           <Button
-            variant="ghost"
-            size="icon"
+            appearance="subtle"
+            icon={<Navigation20Regular />}
             aria-label="Open navigation"
             onClick={() => setMobileNavOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
+          />
           <h1 className="truncate text-sm font-semibold tracking-tight">
             {title}
           </h1>
@@ -872,4 +871,3 @@ export function AppShell() {
     </div>
   );
 }
-

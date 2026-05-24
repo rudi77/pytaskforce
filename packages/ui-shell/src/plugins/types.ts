@@ -8,8 +8,15 @@
  * (`GET /api/v1/ui/manifest`): a plugin's nav item / route is only
  * mounted when every capability flag in `requires` is reported as active.
  */
-import type { ComponentType, ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
+
+/**
+ * Component that renders an icon. Accepts standard SVG props (className,
+ * style, aria-*). Compatible with both lucide-react components and
+ * @fluentui/react-icons components, so a plugin can ship either family
+ * without changing the contract.
+ */
+export type PluginIcon = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
 
 /** A sidebar entry contributed by a plugin. */
 export interface PluginNavItem {
@@ -17,8 +24,8 @@ export interface PluginNavItem {
   to: string;
   /** Display label rendered in the sidebar. */
   label: string;
-  /** Lucide icon component used for the leading glyph. */
-  icon: LucideIcon;
+  /** Icon component used for the leading glyph (lucide or Fluent). */
+  icon: PluginIcon;
   /**
    * Sidebar bucket. Plugin items default to `"admin"` when omitted so
    * they are visually separated from the built-in main navigation.

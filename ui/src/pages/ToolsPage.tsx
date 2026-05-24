@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import { Search, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  Search20Regular,
+  ShieldCheckmark20Regular,
+  ShieldError20Regular,
+} from "@fluentui/react-icons";
+import { Badge, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ToolSchemaView } from "@/features/tools/ToolSchemaView";
@@ -11,34 +14,36 @@ import { useTools, type ToolEntry } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 
-const RISK_VARIANTS: Record<string, { variant: "default" | "secondary" | "destructive" | "warning"; label: string }> = {
-  low: { variant: "secondary", label: "Low risk" },
-  medium: { variant: "warning", label: "Medium risk" },
-  high: { variant: "destructive", label: "High risk" },
+/** Maps legacy shadcn Badge variants to Fluent appearance + color. */
+const RISK_DEF: Record<
+  string,
+  { color: "subtle" | "warning" | "danger"; label: string }
+> = {
+  low: { color: "subtle", label: "Low risk" },
+  medium: { color: "warning", label: "Medium risk" },
+  high: { color: "danger", label: "High risk" },
 };
 
 function ToolBadges({ tool }: { tool: ToolEntry }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {tool.requires_approval ? (
-        <Badge variant="warning" className="gap-1 px-2 py-0.5">
-          <ShieldAlert className="h-3 w-3" />
+        <Badge color="warning" icon={<ShieldError20Regular />}>
           Needs approval
         </Badge>
       ) : (
-        <Badge variant="outline" className="gap-1 px-2 py-0.5 text-muted-foreground">
-          <ShieldCheck className="h-3 w-3" />
+        <Badge appearance="outline" color="subtle" icon={<ShieldCheckmark20Regular />}>
           Auto-run
         </Badge>
       )}
       {tool.approval_risk_level
         ? (() => {
-            const def = RISK_VARIANTS[tool.approval_risk_level.toLowerCase()];
-            return def ? <Badge variant={def.variant}>{def.label}</Badge> : null;
+            const def = RISK_DEF[tool.approval_risk_level.toLowerCase()];
+            return def ? <Badge color={def.color}>{def.label}</Badge> : null;
           })()
         : null}
       {tool.origin ? (
-        <Badge variant="outline" className="font-mono text-[10px]">
+        <Badge appearance="outline" color="subtle" className="font-mono text-[10px]">
           {tool.origin}
         </Badge>
       ) : null}
@@ -79,15 +84,12 @@ export default function ToolsPage() {
           </p>
         </CardHeader>
         <CardContent className="flex h-full min-h-0 flex-col gap-3 pt-0">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tools…"
-              className="pl-8"
-            />
-          </div>
+          <Input
+            contentBefore={<Search20Regular />}
+            value={search}
+            onChange={(_, data) => setSearch(data.value)}
+            placeholder="Search tools…"
+          />
 
           <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
             {isLoading ? (

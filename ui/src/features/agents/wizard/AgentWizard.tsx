@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import yaml from "js-yaml";
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  Save,
-  Settings2,
-} from "lucide-react";
+  Warning20Regular,
+  ArrowLeft20Regular,
+  ArrowRight20Regular,
+  Checkmark12Regular,
+  ChevronLeft20Regular,
+  Save20Regular,
+  Settings20Regular,
+} from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -189,13 +189,13 @@ export function AgentWizard() {
       <div className="flex items-center justify-between gap-4">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/agents">
-            <ChevronLeft className="mr-1 h-4 w-4" />
+            <ChevronLeft20Regular className="mr-1 h-4 w-4" />
             Back to list
           </Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
           <Link to="/agents/new?advanced=1">
-            <Settings2 className="mr-2 h-4 w-4" />
+            <Settings20Regular className="mr-2 h-4 w-4" />
             Open advanced editor
           </Link>
         </Button>
@@ -235,7 +235,7 @@ export function AgentWizard() {
                           : "bg-background",
                     )}
                   >
-                    {isDone ? <Check className="h-3 w-3" /> : s.id}
+                    {isDone ? <Checkmark12Regular className="h-3 w-3" /> : s.id}
                   </span>
                   {s.label}
                 </button>
@@ -275,7 +275,7 @@ export function AgentWizard() {
             role="alert"
             className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
           >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <Warning20Regular className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         ) : null}
@@ -287,7 +287,7 @@ export function AgentWizard() {
             onClick={() => setStep((s) => (s > 1 ? ((s - 1) as StepNumber) : s))}
             disabled={step === 1}
           >
-            <ArrowLeft className="mr-2 h-4 w-4" /> Zurück
+            <ArrowLeft20Regular className="mr-2 h-4 w-4" /> Zurück
           </Button>
 
           {step < 5 ? (
@@ -296,7 +296,7 @@ export function AgentWizard() {
               onClick={() => setStep((s) => (s < 5 ? ((s + 1) as StepNumber) : s))}
               disabled={!canAdvance}
             >
-              Weiter <ArrowRight className="ml-2 h-4 w-4" />
+              Weiter <ArrowRight20Regular className="ml-2 h-4 w-4" />
             </Button>
           ) : (
             <Button
@@ -304,7 +304,7 @@ export function AgentWizard() {
               onClick={handleCreate}
               disabled={!canAdvance || createMutation.isPending}
             >
-              <Save className="mr-2 h-4 w-4" />
+              <Save20Regular className="mr-2 h-4 w-4" />
               {createMutation.isPending ? "Lege an…" : "Anlegen"}
             </Button>
           )}

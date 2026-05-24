@@ -1,17 +1,17 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowDownAZ,
-  FolderOpen,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+  Add16Regular,
+  Add20Regular,
+  Chat16Regular,
+  Delete16Regular,
+  FolderOpen20Regular,
+  MoreHorizontal20Regular,
+  Search20Regular,
+  TextSortAscending20Regular,
+} from "@fluentui/react-icons";
+import { Button, Input } from "@fluentui/react-components";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { ApiError } from "@/api/client";
 import {
@@ -124,26 +124,27 @@ export default function ProjectsPage() {
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<TextSortAscending20Regular />}
             onClick={() => setSort((s) => (s === "recent" ? "name" : "recent"))}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground hover:text-foreground"
             title={`Sort by ${sort === "recent" ? "name" : "recent"}`}
           >
-            <ArrowDownAZ className="h-4 w-4" />
             {sort === "recent" ? "Recent" : "Name"}
-          </button>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search…"
-              className="h-9 w-48 pl-8"
-            />
-          </div>
-          <Button onClick={() => setModalOpen(true)}>
-            <Plus className="h-4 w-4" />
+          </Button>
+          <Input
+            contentBefore={<Search20Regular />}
+            value={query}
+            onChange={(_, data) => setQuery(data.value)}
+            placeholder="Search…"
+            className="w-48"
+          />
+          <Button
+            appearance="primary"
+            icon={<Add20Regular />}
+            onClick={() => setModalOpen(true)}
+          >
             New project
           </Button>
         </div>
@@ -178,8 +179,11 @@ export default function ProjectsPage() {
             }
             action={
               query ? undefined : (
-                <Button onClick={() => setModalOpen(true)}>
-                  <Plus className="h-4 w-4" />
+                <Button
+                  appearance="primary"
+                  icon={<Add20Regular />}
+                  onClick={() => setModalOpen(true)}
+                >
                   New project
                 </Button>
               )
@@ -284,7 +288,7 @@ function ProjectTile({
         }
       >
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <FolderOpen className="h-4 w-4" />
+          <FolderOpen20Regular />
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-foreground">
@@ -312,7 +316,7 @@ function ProjectTile({
                 className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                 title={c.topic || c.conversation_id}
               >
-                <MessageSquare className="h-3 w-3 shrink-0" />
+                <Chat16Regular />
                 <span className="min-w-0 flex-1 truncate">
                   {c.topic || `Conversation ${c.conversation_id.slice(0, 8)}`}
                 </span>
@@ -347,7 +351,7 @@ function ProjectTile({
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             title="View all conversations in this project"
           >
-            <MessageSquare className="h-3 w-3" />
+            <Chat16Regular />
             View all
           </Link>
           <button
@@ -359,9 +363,11 @@ function ProjectTile({
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             title="Start a new conversation in this project"
           >
-            <Plus className="h-3 w-3" />
+            <Add16Regular />
             New
           </button>
+          {/* Custom mini-menu kept raw — Fluent Menu would change focus
+           *  semantics for one disposable action; not worth the rewrite. */}
           <div className="relative">
             <button
               type="button"
@@ -372,7 +378,7 @@ function ProjectTile({
               aria-label="Menu"
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal20Regular />
             </button>
             {menuOpen ? (
               <div
@@ -385,7 +391,7 @@ function ProjectTile({
                   disabled={deleteProject.isPending}
                   className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Delete16Regular />
                   Aus Liste entfernen
                 </button>
               </div>

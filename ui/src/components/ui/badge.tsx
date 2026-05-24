@@ -1,28 +1,51 @@
 import * as React from "react";
-import { cva, type VariantProps } from "class-variance-authority";
+import {
+  Badge as FluentBadge,
+  type BadgeProps as FluentBadgeProps,
+} from "@fluentui/react-components";
 import { cn } from "@/lib/utils";
 
-const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
-  {
-    variants: {
-      variant: {
-        default: "border-transparent bg-primary text-primary-foreground",
-        secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground",
-        outline: "text-foreground",
-        success: "border-transparent bg-success text-success-foreground",
-        warning: "border-transparent bg-warning text-warning-foreground",
-      },
-    },
-    defaultVariants: { variant: "default" },
-  },
-);
+export type BadgeVariant =
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "outline"
+  | "success"
+  | "warning";
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+const VARIANT_MAP: Record<
+  BadgeVariant,
+  Pick<FluentBadgeProps, "appearance" | "color">
+> = {
+  default: { appearance: "filled", color: "brand" },
+  secondary: { appearance: "tint", color: "subtle" },
+  destructive: { appearance: "filled", color: "danger" },
+  outline: { appearance: "outline", color: "subtle" },
+  success: { appearance: "filled", color: "success" },
+  warning: { appearance: "filled", color: "warning" },
+};
 
-export function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+export interface BadgeProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "color"> {
+  variant?: BadgeVariant;
+}
+
+/**
+ * shadcn-API-compatible Badge. Internally renders FluentUI v9 Badge with
+ * appearance + color mapped from the legacy variant axis (default→brand,
+ * secondary→subtle/tint, destructive→danger, outline→outline/subtle,
+ * success→success, warning→warning).
+ *
+ * className passthrough is preserved so `className="font-mono text-[10px]"`
+ * etc. that callers add for ID-style badges keeps working.
+ */
+export function Badge({ className, variant = "default", ...props }: BadgeProps) {
+  const map = VARIANT_MAP[variant];
+  return (
+    <FluentBadge
+      appearance={map.appearance}
+      color={map.color}
+      className={cn(className)}
+      {...(props as Record<string, unknown>)}
+    />
+  );
 }

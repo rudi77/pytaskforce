@@ -1,8 +1,7 @@
 import { useState } from "react";
+import { Badge, Button, Input } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useChannelBots,
@@ -104,11 +103,11 @@ function BotRow({
   const isOwn = bot.owner_kind === "user" && bot.owner_user_id === currentUserId;
   const ownerBadge =
     bot.owner_kind === "tenant" ? (
-      <Badge variant="default">Tenant-shared</Badge>
+      <Badge color="brand">Tenant-shared</Badge>
     ) : isOwn ? (
-      <Badge variant="success">Mine</Badge>
+      <Badge color="success">Mine</Badge>
     ) : (
-      <Badge variant="secondary">User: {bot.owner_user_id?.slice(0, 8)}…</Badge>
+      <Badge appearance="tint" color="subtle">User: {bot.owner_user_id?.slice(0, 8)}…</Badge>
     );
 
   const handleTest = async () => {
@@ -134,16 +133,16 @@ function BotRow({
           <div className="flex items-center gap-2">
             <CardTitle className="text-base">{bot.id}</CardTitle>
             {ownerBadge}
-            <Badge variant="outline">{bot.channel_type}</Badge>
+            <Badge appearance="outline" color="subtle">{bot.channel_type}</Badge>
             {bot.pairing_mode ? (
-              <Badge variant="secondary">pairing: {bot.pairing_mode}</Badge>
+              <Badge appearance="tint" color="subtle">pairing: {bot.pairing_mode}</Badge>
             ) : null}
             {!bot.enabled ? (
-              <Badge variant="warning">disabled</Badge>
+              <Badge color="warning">disabled</Badge>
             ) : running ? (
-              <Badge variant="success">running</Badge>
+              <Badge color="success">running</Badge>
             ) : (
-              <Badge variant="warning">not running</Badge>
+              <Badge color="warning">not running</Badge>
             )}
           </div>
           <CardDescription>
@@ -157,10 +156,10 @@ function BotRow({
         <div className="flex gap-2">
           {canManage ? (
             <>
-              <Button variant="outline" size="sm" onClick={onEdit}>
+              <Button appearance="outline" size="small" onClick={onEdit}>
                 Edit
               </Button>
-              <Button variant="outline" size="sm" onClick={onDelete}>
+              <Button appearance="outline" size="small" onClick={onDelete}>
                 Delete
               </Button>
             </>
@@ -171,11 +170,15 @@ function BotRow({
         <div className="flex flex-wrap items-center gap-2">
           <Input
             value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
+            onChange={(_, data) => setRecipient(data.value)}
             placeholder="recipient id (e.g. Telegram chat_id)"
             className="max-w-xs"
           />
-          <Button variant="outline" onClick={handleTest} disabled={testing || !recipient}>
+          <Button
+            appearance="outline"
+            onClick={handleTest}
+            disabled={testing || !recipient}
+          >
             {testing ? "Sending…" : "Send test"}
           </Button>
           {result ? (
@@ -225,7 +228,7 @@ function BotForm({
           <Input
             id="bot-id"
             value={draft.id}
-            onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+            onChange={(_, data) => setDraft({ ...draft, id: data.value })}
             placeholder="rudi-butler"
             disabled={isEdit}
             autoComplete="off"
@@ -234,6 +237,9 @@ function BotForm({
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Channel type</label>
+          {/* Raw <select> kept — Fluent Dropdown has a different
+           *  controlled-state API (selectedOptions array + onOptionSelect)
+           *  that's a separate primitive migration. */}
           <select
             value={draft.channel_type}
             onChange={(e) => setDraft({ ...draft, channel_type: e.target.value })}
@@ -255,7 +261,7 @@ function BotForm({
             id="bot-token"
             type="password"
             value={draft.bot_token}
-            onChange={(e) => setDraft({ ...draft, bot_token: e.target.value })}
+            onChange={(_, data) => setDraft({ ...draft, bot_token: data.value })}
             placeholder="123456:ABC-…"
             autoComplete="off"
           />
@@ -264,6 +270,8 @@ function BotForm({
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Owner</label>
           <div className="flex gap-3">
+            {/* Raw radios kept — Fluent Radio/RadioGroup is its own
+             *  primitive sweep. */}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="radio"
@@ -296,7 +304,7 @@ function BotForm({
           <Input
             id="bot-default-agent"
             value={draft.default_agent}
-            onChange={(e) => setDraft({ ...draft, default_agent: e.target.value })}
+            onChange={(_, data) => setDraft({ ...draft, default_agent: data.value })}
             placeholder="butler"
             autoComplete="off"
           />
@@ -337,10 +345,14 @@ function BotForm({
         </label>
 
         <div className="flex items-center gap-2 border-t pt-3">
-          <Button onClick={onSave} disabled={saving || !draft.id || !draft.bot_token}>
+          <Button
+            appearance="primary"
+            onClick={onSave}
+            disabled={saving || !draft.id || !draft.bot_token}
+          >
             {saving ? "Saving…" : isEdit ? "Save changes" : "Add bot"}
           </Button>
-          <Button variant="outline" onClick={onCancel}>
+          <Button appearance="outline" onClick={onCancel}>
             Cancel
           </Button>
         </div>
@@ -457,7 +469,9 @@ export default function ChannelsTab() {
             <CardDescription>Only delivered to your user account.</CardDescription>
           </div>
           {!draft ? (
-            <Button onClick={() => startAdd("user")}>Add personal bot</Button>
+            <Button appearance="primary" onClick={() => startAdd("user")}>
+              Add personal bot
+            </Button>
           ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
@@ -489,7 +503,9 @@ export default function ChannelsTab() {
             </CardDescription>
           </div>
           {!draft && isAdmin ? (
-            <Button onClick={() => startAdd("tenant")}>Add shared bot</Button>
+            <Button appearance="primary" onClick={() => startAdd("tenant")}>
+              Add shared bot
+            </Button>
           ) : null}
         </CardHeader>
         <CardContent className="space-y-3">

@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Beaker, Play, Plus, Trash2 } from "lucide-react";
+import {
+  Add20Regular,
+  Beaker20Regular,
+  Delete20Regular,
+  Play20Regular,
+} from "@fluentui/react-icons";
+import { Badge, Button, Input, Textarea } from "@fluentui/react-components";
 
 import {
   Card,
@@ -8,10 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import {
@@ -25,16 +27,17 @@ import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils";
 
-const STATUS_VARIANT: Record<
+/** Maps run-cell status to Fluent Badge color. */
+const STATUS_COLOR: Record<
   string,
-  "default" | "secondary" | "outline" | "warning" | "destructive" | "success"
+  "subtle" | "warning" | "success" | "danger" | "brand"
 > = {
-  pending: "outline",
+  pending: "subtle",
   running: "warning",
   completed: "success",
-  failed: "destructive",
-  cancelled: "outline",
-  timeout: "destructive",
+  failed: "danger",
+  cancelled: "subtle",
+  timeout: "danger",
 };
 
 export default function EvalsPage() {
@@ -74,7 +77,7 @@ export default function EvalsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Beaker className="h-4 w-4 text-primary" />
+            <Beaker20Regular className="text-primary" />
             Run a comparison
           </CardTitle>
           <CardDescription>
@@ -89,11 +92,11 @@ export default function EvalsPage() {
                 <span className="text-sm font-medium">Missions</span>
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
+                  appearance="subtle"
+                  size="small"
+                  icon={<Add20Regular />}
                   onClick={() => setMissions((m) => [...m, ""])}
                 >
-                  <Plus className="h-3.5 w-3.5" />
                   Add
                 </Button>
               </div>
@@ -103,25 +106,24 @@ export default function EvalsPage() {
                     <Textarea
                       rows={2}
                       value={mission}
-                      onChange={(e) =>
+                      onChange={(_, data) =>
                         setMissions((m) =>
-                          m.map((v, j) => (j === i ? e.target.value : v)),
+                          m.map((v, j) => (j === i ? data.value : v)),
                         )
                       }
                       placeholder="Describe a mission to run…"
-                      className="font-sans"
+                      className="flex-1 font-sans"
                     />
                     {missions.length > 1 ? (
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
+                        appearance="subtle"
+                        icon={<Delete20Regular />}
+                        aria-label="Remove mission"
                         onClick={() =>
                           setMissions((m) => m.filter((_, j) => j !== i))
                         }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      />
                     ) : null}
                   </div>
                 ))}
@@ -176,9 +178,9 @@ export default function EvalsPage() {
                   type="number"
                   min={1}
                   max={8}
-                  value={parallelism}
-                  onChange={(e) =>
-                    setParallelism(Math.max(1, Math.min(8, Number(e.target.value))))
+                  value={String(parallelism)}
+                  onChange={(_, data) =>
+                    setParallelism(Math.max(1, Math.min(8, Number(data.value))))
                   }
                   className="w-20"
                 />
@@ -191,15 +193,19 @@ export default function EvalsPage() {
                   type="number"
                   min={5}
                   max={600}
-                  value={cellTimeout}
-                  onChange={(e) =>
-                    setCellTimeout(Math.max(5, Math.min(600, Number(e.target.value))))
+                  value={String(cellTimeout)}
+                  onChange={(_, data) =>
+                    setCellTimeout(Math.max(5, Math.min(600, Number(data.value))))
                   }
                   className="w-24"
                 />
               </label>
-              <Button type="submit" disabled={create.isPending || selected.length === 0}>
-                <Play className="h-4 w-4" />
+              <Button
+                type="submit"
+                appearance="primary"
+                icon={<Play20Regular />}
+                disabled={create.isPending || selected.length === 0}
+              >
                 {create.isPending ? "Starting…" : "Run comparison"}
               </Button>
               {create.error ? (
@@ -226,9 +232,9 @@ export default function EvalsPage() {
               </CardDescription>
             </div>
             {run.data?.finished ? (
-              <Badge variant="success">complete</Badge>
+              <Badge color="success">complete</Badge>
             ) : (
-              <Badge variant="warning">live</Badge>
+              <Badge color="warning">live</Badge>
             )}
           </CardHeader>
           <CardContent>
@@ -275,7 +281,7 @@ export default function EvalsPage() {
                         {formatRelativeTime(r.created_at)}
                       </span>
                     </div>
-                    <Badge variant={r.finished ? "success" : "warning"}>
+                    <Badge color={r.finished ? "success" : "warning"}>
                       {r.finished
                         ? "done"
                         : `${r.completed_cells}/${r.cell_count}`}
@@ -341,10 +347,10 @@ function ResultsMatrix({ run }: { run: ReturnType<typeof useEvalRun>["data"] & {
 }
 
 function CellView({ cell }: { cell: EvalCellResult }) {
-  const variant = STATUS_VARIANT[cell.status] ?? "outline";
+  const color = STATUS_COLOR[cell.status] ?? "subtle";
   return (
     <div className="space-y-1">
-      <Badge variant={variant} className="text-[10px]">
+      <Badge color={color} className="text-[10px]">
         {cell.status}
       </Badge>
       <div className="flex flex-col gap-0 text-[11px] tabular-nums text-muted-foreground">

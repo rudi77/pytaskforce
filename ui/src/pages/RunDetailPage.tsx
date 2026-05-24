@@ -1,18 +1,19 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  ArrowLeft,
-  Bot,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Coins,
-  Hash,
-  PlayCircle,
-  Wrench,
-  XCircle,
-} from "lucide-react";
+  ArrowLeft20Regular,
+  Bot20Regular,
+  CheckmarkCircle20Regular,
+  ChevronDown16Regular,
+  ChevronRight16Regular,
+  ChevronRight20Regular,
+  Clock20Regular,
+  Money20Regular,
+  NumberSymbol20Regular,
+  PlayCircle20Regular,
+  Wrench20Regular,
+  DismissCircle20Regular,
+} from "@fluentui/react-icons";
 
 import {
   Card,
@@ -88,20 +89,20 @@ function extractSourceAgent(event: TraceEvent): string | null {
 function eventIcon(eventType: string) {
   switch (eventType) {
     case "tool_call":
-      return Wrench;
+      return Wrench20Regular;
     case "tool_result":
-      return CheckCircle2;
+      return CheckmarkCircle20Regular;
     case "complete":
-      return CheckCircle2;
+      return CheckmarkCircle20Regular;
     case "error":
-      return XCircle;
+      return DismissCircle20Regular;
     case "started":
     case "step_start":
-      return PlayCircle;
+      return PlayCircle20Regular;
     case "final_answer":
-      return Bot;
+      return Bot20Regular;
     default:
-      return ChevronRight;
+      return ChevronRight20Regular;
   }
 }
 
@@ -152,7 +153,7 @@ export default function RunDetailPage() {
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link to="/monitoring">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft20Regular className="h-4 w-4" />
             Monitoring
           </Link>
         </Button>
@@ -189,7 +190,7 @@ export default function RunDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Hash className="h-4 w-4" />
+                <NumberSymbol20Regular className="h-4 w-4" />
                 <span className="font-mono text-sm">{trace.data.session_id}</span>
               </CardTitle>
               <CardDescription className="line-clamp-2">
@@ -205,7 +206,7 @@ export default function RunDetailPage() {
               <Stat
                 label="Started"
                 value={startedAt ? startedAt.toLocaleString() : "—"}
-                icon={Clock}
+                icon={Clock20Regular}
               />
               <Stat
                 label="Tokens"
@@ -215,7 +216,7 @@ export default function RunDetailPage() {
               <Stat
                 label="Cost"
                 value={`$${trace.data.total_cost_usd.toFixed(4)}`}
-                icon={Coins}
+                icon={Money20Regular}
               />
               <Stat
                 label="Events"
@@ -330,7 +331,7 @@ function TraceEventView({ event, base }: { event: TraceEvent; base: Date }) {
                 className="gap-1 border-primary/40 px-1.5 py-0 text-[10px] font-normal text-primary"
                 title={`Sub-agent: ${agentPath.join(" › ")}`}
               >
-                <Bot className="h-2.5 w-2.5" />
+                <Bot20Regular className="h-2.5 w-2.5" />
                 <span className="font-mono">
                   {sourceAgent ?? agentPath.join(" › ")}
                 </span>
@@ -346,9 +347,9 @@ function TraceEventView({ event, base }: { event: TraceEvent; base: Date }) {
         </span>
         {hasDetails ? (
           open ? (
-            <ChevronDown className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+            <ChevronDown16Regular className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+            <ChevronRight16Regular className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
           )
         ) : null}
       </button>

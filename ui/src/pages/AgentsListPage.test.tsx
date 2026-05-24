@@ -63,8 +63,11 @@ describe("AgentsListPage permissions", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("link", { name: /New Agent/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Advanced Editor/i })).not.toBeInTheDocument();
+    // Was role="link" (Button asChild + <Link>) before the FluentUI migration —
+    // the actions are now Fluent <Button onClick={() => navigate(...)}>, so
+    // their semantic role is "button". Behaviour is identical.
+    expect(screen.queryByRole("button", { name: /New Agent/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Advanced Editor/i })).not.toBeInTheDocument();
     expect(screen.getByText("Writer")).toBeInTheDocument();
   });
 
@@ -73,7 +76,7 @@ describe("AgentsListPage permissions", () => {
 
     renderPage();
 
-    expect(screen.getByRole("link", { name: /New Agent/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Advanced Editor/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New Agent/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Advanced Editor/i })).toBeInTheDocument();
   });
 });

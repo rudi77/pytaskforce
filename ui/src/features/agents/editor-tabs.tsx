@@ -2,15 +2,17 @@ import { useMemo, useState } from "react";
 import { Controller, useFieldArray } from "react-hook-form";
 import type { Control, UseFormRegister, UseFormReturn } from "react-hook-form";
 import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Plug,
-  Plus,
-  Search,
-  Trash2,
-  XCircle,
-} from "lucide-react";
+  Add16Regular,
+  Add20Regular,
+  CheckmarkCircle16Regular,
+  ChevronDown16Regular,
+  ChevronRight16Regular,
+  Delete16Regular,
+  Delete20Regular,
+  DismissCircle16Regular,
+  PlugConnected16Regular,
+  Search20Regular,
+} from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,7 +176,7 @@ export function ToolsTab({ form }: TabProps) {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1 lg:max-w-md">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search20Regular className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -325,9 +327,9 @@ function ToolCheck({
             className="flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           >
             {open ? (
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown16Regular className="h-3 w-3" />
             ) : (
-              <ChevronRight className="h-3 w-3" />
+              <ChevronRight16Regular className="h-3 w-3" />
             )}
             <span>{open ? "Hide" : "Show"} parameters schema</span>
           </button>
@@ -363,7 +365,7 @@ export function SubAgentsTab({ form, mode }: TabProps) {
           size="sm"
           onClick={() => append({ specialist: "", description: "" })}
         >
-          <Plus className="h-4 w-4" />
+          <Add20Regular className="h-4 w-4" />
           Add sub-agent
         </Button>
       </div>
@@ -418,7 +420,7 @@ export function SubAgentsTab({ form, mode }: TabProps) {
                   onClick={() => remove(index)}
                   aria-label="Remove sub-agent"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Delete20Regular className="h-4 w-4" />
                 </Button>
               </div>
             </li>
@@ -455,7 +457,7 @@ export function MCPTab({ form }: TabProps) {
             })
           }
         >
-          <Plus className="h-4 w-4" />
+          <Add20Regular className="h-4 w-4" />
           Add server
         </Button>
       </div>
@@ -554,11 +556,11 @@ function MCPRow({
             onClick={onProbe}
             disabled={probe.isPending}
           >
-            <Plug className="h-3.5 w-3.5" />
+            <PlugConnected16Regular className="h-3.5 w-3.5" />
             {probe.isPending ? "Probing…" : "Probe"}
           </Button>
           <Button type="button" variant="ghost" size="icon" onClick={onRemove}>
-            <Trash2 className="h-4 w-4" />
+            <Delete20Regular className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -574,7 +576,7 @@ function MCPRow({
         >
           {probeResult.ok ? (
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5" />
+              <CheckmarkCircle16Regular className="h-3.5 w-3.5" />
               <span className="font-medium">
                 {probeResult.tools.length} tool
                 {probeResult.tools.length === 1 ? "" : "s"} discovered
@@ -585,7 +587,7 @@ function MCPRow({
             </div>
           ) : (
             <div className="flex items-start gap-1.5">
-              <XCircle className="h-3.5 w-3.5 shrink-0" />
+              <DismissCircle16Regular className="h-3.5 w-3.5 shrink-0" />
               <span>{probeResult.error ?? "probe failed"}</span>
             </div>
           )}
@@ -629,7 +631,7 @@ function MCPRow({
                 size="sm"
                 onClick={() => argsFields.append({ value: "" })}
               >
-                <Plus className="h-3 w-3" /> add
+                <Add16Regular className="h-3 w-3" /> add
               </Button>
             </div>
             <div className="space-y-1.5">
@@ -645,7 +647,7 @@ function MCPRow({
                     size="icon"
                     onClick={() => argsFields.remove(ai)}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Delete16Regular className="h-3 w-3" />
                   </Button>
                 </div>
               ))}
@@ -679,7 +681,7 @@ function MCPRow({
             size="sm"
             onClick={() => envFields.append({ key: "", value: "" })}
           >
-            <Plus className="h-3 w-3" /> add
+            <Add16Regular className="h-3 w-3" /> add
           </Button>
         </div>
         <div className="space-y-1.5">
@@ -696,7 +698,7 @@ function MCPRow({
                 size="icon"
                 onClick={() => envFields.remove(ei)}
               >
-                <Trash2 className="h-3 w-3" />
+                <Delete16Regular className="h-3 w-3" />
               </Button>
             </div>
           ))}

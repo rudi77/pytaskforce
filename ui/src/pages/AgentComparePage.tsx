@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, GitCompare } from "lucide-react";
+import { ArrowLeft20Regular, BranchCompare20Regular } from "@fluentui/react-icons";
 
 import {
   Card,
@@ -80,12 +80,12 @@ export default function AgentComparePage() {
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link to="/agents">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft20Regular className="h-4 w-4" />
             All agents
           </Link>
         </Button>
         <h2 className="ml-1 flex items-center gap-2 text-base font-semibold">
-          <GitCompare className="h-4 w-4" />
+          <BranchCompare20Regular className="h-4 w-4" />
           Compare profiles
         </h2>
       </div>

@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Bot } from "lucide-react";
+import { Bot20Regular } from "@fluentui/react-icons";
 
 import { capabilitiesSatisfied, registry } from "./registry";
 import type { UIPlugin } from "./types";
+
+// PluginNavItem.icon was widened in @taskforce/ui-shell to
+// ComponentType<SVGProps> so any icon family works — Fluent icons
+// are assignable directly with no cast.
+const TestIcon = Bot20Regular;
 
 function makePlugin(overrides: Partial<UIPlugin> = {}): UIPlugin {
   return {
@@ -11,7 +16,7 @@ function makePlugin(overrides: Partial<UIPlugin> = {}): UIPlugin {
     version: overrides.version ?? "1.0.0",
     capabilities: overrides.capabilities ?? ["admin.users"],
     navItems: overrides.navItems ?? [
-      { to: "/admin/users", label: "Users", icon: Bot },
+      { to: "/admin/users", label: "Users", icon: TestIcon },
     ],
     routes: overrides.routes ?? [],
     ...overrides,

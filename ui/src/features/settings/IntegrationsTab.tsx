@@ -1,6 +1,6 @@
+import { Badge, Button } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOAuthConnections, useRevokeOAuthConnection } from "@/api/queries";
 import ForbiddenNotice, { isForbiddenError } from "@/features/settings/ForbiddenNotice";
@@ -69,14 +69,14 @@ export default function IntegrationsTab() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{c.provider}</span>
                       <Badge
-                        variant={
+                        color={
                           c.is_expired || c.status !== "active" ? "warning" : "success"
                         }
                       >
                         {c.is_expired ? "expired" : c.status}
                       </Badge>
                       {c.has_refresh_token ? (
-                        <Badge variant="secondary">refreshable</Badge>
+                        <Badge appearance="tint" color="subtle">refreshable</Badge>
                       ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -89,7 +89,7 @@ export default function IntegrationsTab() {
                     ) : null}
                   </div>
                   <Button
-                    variant="outline"
+                    appearance="outline"
                     onClick={() => revoke.mutate(c.provider)}
                     disabled={revoke.isPending}
                   >

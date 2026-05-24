@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight16Regular } from "@fluentui/react-icons";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,7 +93,7 @@ export function RecentRunsTable() {
                   to={`/monitoring/runs/${encodeURIComponent(run.session_id)}`}
                   className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
                 >
-                  trace <ChevronRight className="h-3 w-3" />
+                  trace <ChevronRight16Regular className="h-3 w-3" />
                 </Link>
               </td>
             </tr>

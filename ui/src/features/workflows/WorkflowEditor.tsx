@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Add16Regular, Delete20Regular } from "@fluentui/react-icons";
 
 import {
   Dialog,
@@ -418,7 +418,7 @@ export function WorkflowEditor({ open, mode, initial, onClose, onSubmit }: Props
                 size="sm"
                 onClick={() => setSteps((prev) => [...prev, emptyStep()])}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Add16Regular className="h-3.5 w-3.5" />
                 Add step
               </Button>
             </div>
@@ -443,7 +443,7 @@ export function WorkflowEditor({ open, mode, initial, onClose, onSubmit }: Props
                     disabled={steps.length === 1}
                     aria-label="Remove step"
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <Delete20Regular className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

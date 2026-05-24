@@ -2,10 +2,9 @@ import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "@taskforce/ui-shell";
-import { Button } from "@/components/ui/button";
+import { Button, Input, Label } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useSettings } from "@/lib/settings";
 
 interface LoginResponse {
@@ -58,6 +57,9 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      {/* Card primitive stays shadcn for now — Fluent's Card is slot-based
+       *  and would require restructuring CardHeader/Title/Description/Content.
+       *  Handled in a dedicated primitive migration. */}
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
@@ -73,7 +75,7 @@ export default function LoginPage() {
                 id="tenant_id"
                 autoComplete="organization"
                 value={tenantId}
-                onChange={(e) => setTenantId(e.target.value)}
+                onChange={(_, data) => setTenantId(data.value)}
                 disabled={submitting}
                 required
               />
@@ -85,7 +87,7 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(_, data) => setEmail(data.value)}
                 disabled={submitting}
                 required
               />
@@ -97,7 +99,7 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(_, data) => setPassword(data.value)}
                 disabled={submitting}
                 required
               />
@@ -107,7 +109,12 @@ export default function LoginPage() {
                 {error}
               </p>
             ) : null}
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Button
+              type="submit"
+              appearance="primary"
+              className="w-full"
+              disabled={submitting}
+            >
               {submitting ? "Signing in…" : "Sign in"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">

@@ -1,7 +1,28 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/**
+ * Inline X glyph — kept inline so ui-shell stays icon-library-agnostic.
+ * Hosts that want a Lucide or Fluent close button can swap their own
+ * DialogContent.
+ */
+function CloseGlyph(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -47,7 +68,7 @@ export const DialogContent = React.forwardRef<
         className="absolute right-4 top-4 rounded-sm text-muted-foreground transition-opacity hover:opacity-70 focus:outline-none"
         aria-label="Close"
       >
-        <X className="h-4 w-4" />
+        <CloseGlyph className="h-4 w-4" />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

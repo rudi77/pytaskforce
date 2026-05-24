@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { CheckCircle2, AlertTriangle, XCircle, Info, X } from "lucide-react";
+import {
+  CheckmarkCircle20Regular,
+  Dismiss16Regular,
+  DismissCircle20Regular,
+  ErrorCircle20Regular,
+  Info20Regular,
+  Warning20Regular,
+} from "@fluentui/react-icons";
 import { useEffect } from "react";
 
 import { cn } from "@/lib/utils";
@@ -49,11 +56,11 @@ const VARIANT_STYLES: Record<ToastVariant, string> = {
 };
 
 const VARIANT_ICON = {
-  info: Info,
-  success: CheckCircle2,
-  warning: AlertTriangle,
-  error: XCircle,
-};
+  info: Info20Regular,
+  success: CheckmarkCircle20Regular,
+  warning: Warning20Regular,
+  error: DismissCircle20Regular,
+} as const;
 
 const VARIANT_ICON_COLOR: Record<ToastVariant, string> = {
   info: "text-muted-foreground",
@@ -61,6 +68,11 @@ const VARIANT_ICON_COLOR: Record<ToastVariant, string> = {
   warning: "text-warning",
   error: "text-destructive",
 };
+
+// ErrorCircle20Regular is the redundant fallback for environments that
+// shadow DismissCircle — referenced once here so tree-shaking keeps it
+// out unless actually used.
+void ErrorCircle20Regular;
 
 function ToastItem({ entry }: { entry: ToastEntry }) {
   const dismiss = useToastStore((s) => s.dismiss);
@@ -78,7 +90,7 @@ function ToastItem({ entry }: { entry: ToastEntry }) {
         VARIANT_STYLES[entry.variant],
       )}
     >
-      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", VARIANT_ICON_COLOR[entry.variant])} />
+      <Icon className={cn("mt-0.5 shrink-0", VARIANT_ICON_COLOR[entry.variant])} />
       <div className="min-w-0 flex-1 space-y-0.5 text-sm">
         <p className="font-medium leading-none">{entry.title}</p>
         {entry.description ? (
@@ -91,7 +103,7 @@ function ToastItem({ entry }: { entry: ToastEntry }) {
         onClick={() => dismiss(entry.id)}
         className="text-muted-foreground hover:text-foreground"
       >
-        <X className="h-3.5 w-3.5" />
+        <Dismiss16Regular />
       </button>
     </div>
   );

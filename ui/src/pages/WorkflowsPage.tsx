@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pencil, Play, Plus, Trash2, Workflow } from "lucide-react";
+import {
+  Add20Regular,
+  Delete20Regular,
+  Edit16Regular,
+  Flow20Regular,
+  Play16Regular,
+} from "@fluentui/react-icons";
 
 import {
   Card,
@@ -164,7 +170,7 @@ export default function WorkflowsPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Workflow className="h-5 w-5" />
+              <Flow20Regular className="h-5 w-5" />
               Workflows
             </CardTitle>
             <CardDescription>
@@ -179,7 +185,7 @@ export default function WorkflowsPage() {
                 setDialog({ open: true, mode: "create", workflow: null })
               }
             >
-              <Plus className="h-4 w-4" />
+              <Add20Regular className="h-4 w-4" />
               New workflow
             </Button>
           ) : null}
@@ -211,7 +217,7 @@ export default function WorkflowsPage() {
                     setDialog({ open: true, mode: "create", workflow: null })
                   }
                 >
-                  <Plus className="h-4 w-4" />
+                  <Add20Regular className="h-4 w-4" />
                   New workflow
                 </Button>
                 ) : undefined
@@ -264,7 +270,7 @@ export default function WorkflowsPage() {
                             runPanel?.workflowId === wf.workflow_id
                           }
                         >
-                          <Play className="h-3.5 w-3.5" />
+                          <Play16Regular className="h-3.5 w-3.5" />
                           Run
                         </Button>
                       ) : null}
@@ -280,7 +286,7 @@ export default function WorkflowsPage() {
                             })
                           }
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Edit16Regular className="h-3.5 w-3.5" />
                           Edit
                         </Button>
                       ) : null}
@@ -292,7 +298,7 @@ export default function WorkflowsPage() {
                           disabled={deleteMutation.isPending}
                           aria-label="Delete workflow"
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Delete20Regular className="h-4 w-4 text-destructive" />
                         </Button>
                       ) : null}
                     </div>

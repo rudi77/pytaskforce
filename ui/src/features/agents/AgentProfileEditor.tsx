@@ -4,16 +4,17 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import yaml from "js-yaml";
 import {
-  AlertTriangle,
-  ArrowLeft,
-  Check,
-  Code2,
-  Copy,
-  Eye,
-  EyeOff,
-  Save,
-  Trash2,
-} from "lucide-react";
+  ArrowLeft20Regular,
+  Checkmark16Regular,
+  Code20Regular,
+  Copy20Regular,
+  Delete20Regular,
+  Eye20Regular,
+  EyeOff20Regular,
+  Save20Regular,
+  Warning16Regular,
+  Warning20Regular,
+} from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -176,20 +177,20 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm" type="button">
           <Link to="/agents">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft20Regular className="h-4 w-4" />
             All agents
           </Link>
         </Button>
         <div className="ml-auto flex items-center gap-2">
           {savedAt ? (
             <Badge variant="success" className="gap-1">
-              <Check className="h-3 w-3" />
+              <Checkmark16Regular className="h-3 w-3" />
               Saved
             </Badge>
           ) : null}
           {isReadOnlyProfile ? (
             <Badge variant="warning" className="gap-1">
-              <AlertTriangle className="h-3 w-3" />
+              <Warning16Regular className="h-3 w-3" />
               Read-only
             </Badge>
           ) : null}
@@ -201,18 +202,18 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               onClick={onClone}
               disabled={cloneMutation.isPending}
             >
-              <Copy className="h-4 w-4" />
+              <Copy20Regular className="h-4 w-4" />
               Clone to user profile
             </Button>
           ) : null}
           {mode === "edit" && !isReadOnlyProfile && canDeleteAgent ? (
             <Button type="button" variant="outline" size="sm" onClick={onDelete} disabled={isBusy}>
-              <Trash2 className="h-4 w-4" />
+              <Delete20Regular className="h-4 w-4" />
               Delete
             </Button>
           ) : null}
           <Button type="submit" disabled={isBusy || !isWritable}>
-            <Save className="h-4 w-4" />
+            <Save20Regular className="h-4 w-4" />
             {mode === "create" ? "Create" : "Save"}
           </Button>
         </div>
@@ -227,7 +228,7 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
       {isReadOnlyProfile ? (
         <Card className="border-warning/40 bg-warning/5">
           <CardContent className="flex flex-wrap items-center gap-2 py-3 text-sm">
-            <AlertTriangle className="h-4 w-4 text-warning" />
+            <Warning20Regular className="h-4 w-4 text-warning" />
             <span>
               This profile ships with an agent package and is{" "}
               <strong>read-only</strong>. Use{" "}
@@ -275,9 +276,9 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
               title={showPreview ? "Hide YAML preview" : "Show YAML preview"}
             >
               {showPreview ? (
-                <EyeOff className="h-4 w-4" />
+                <EyeOff20Regular className="h-4 w-4" />
               ) : (
-                <Eye className="h-4 w-4" />
+                <Eye20Regular className="h-4 w-4" />
               )}
               <span className="ml-1.5 text-xs font-medium">YAML preview</span>
             </Button>
@@ -357,7 +358,7 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Code2 className="h-4 w-4" />
+                <Code20Regular className="h-4 w-4" />
                 YAML preview
               </CardTitle>
               <CardDescription>
