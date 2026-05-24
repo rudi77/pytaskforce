@@ -2,9 +2,18 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkflowsPage from "./WorkflowsPage";
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <WorkflowsPage />
+    </MemoryRouter>,
+  );
+}
 
 const mocks = vi.hoisted(() => ({
   permissions: new Set<string>(),
@@ -72,7 +81,7 @@ describe("WorkflowsPage permissions and run results", () => {
   it("hides workflow mutation and run actions from read-only users", () => {
     mocks.permissions = new Set(["agent:read"]);
 
-    render(<WorkflowsPage />);
+    renderPage();
 
     expect(screen.getByText("Daily Report")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /new workflow/i })).not.toBeInTheDocument();
@@ -97,7 +106,7 @@ describe("WorkflowsPage permissions and run results", () => {
       ],
     });
 
-    render(<WorkflowsPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
 
