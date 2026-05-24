@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft20Regular, Delete20Regular } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,7 +139,7 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link to="/agents">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft20Regular className="h-4 w-4" />
             All agents
           </Link>
         </Button>
@@ -152,7 +152,7 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
             disabled={deleteMutation.isPending}
             className="ml-auto"
           >
-            <Trash2 className="h-4 w-4" />
+            <Delete20Regular className="h-4 w-4" />
             Delete
           </Button>
         ) : null}

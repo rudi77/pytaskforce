@@ -8,7 +8,14 @@
  * one-click rollback.
  */
 import { useState } from "react";
-import { CheckCircle2, History, RefreshCw, Rocket, ShieldAlert, Undo2 } from "lucide-react";
+import {
+  ArrowSync20Regular,
+  ArrowUndo16Regular,
+  CheckmarkCircle20Regular,
+  History16Regular,
+  Rocket20Regular,
+  ShieldError20Regular,
+} from "@fluentui/react-icons";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,7 +69,7 @@ function ActiveDeploymentSummary({ deployment }: { deployment: AgentDeployment }
   return (
     <div className="space-y-1.5 text-sm">
       <div className="flex items-center gap-2">
-        <CheckCircle2 className="h-4 w-4 text-success" />
+        <CheckmarkCircle20Regular className="h-4 w-4 text-success" />
         <span className="font-medium">Active version:</span>
         <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{deployment.version}</code>
         <StatusBadge status={deployment.status} />
@@ -81,7 +88,7 @@ function ActiveDeploymentSummary({ deployment }: { deployment: AgentDeployment }
 function NoActiveDeployment() {
   return (
     <div className="flex items-start gap-2 rounded-md border border-dashed border-warning/40 bg-warning/5 p-3 text-sm">
-      <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
+      <ShieldError20Regular className="mt-0.5 h-4 w-4 text-warning" />
       <div>
         <p className="font-medium">Not deployed yet.</p>
         <p className="text-xs text-muted-foreground">
@@ -128,7 +135,7 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Rocket className="h-4 w-4" />
+              <Rocket20Regular className="h-4 w-4" />
               Deployment
             </CardTitle>
             <CardDescription>
@@ -139,9 +146,9 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
           {canUpdateAgent ? (
             <Button onClick={onDeploy} disabled={isBusy} size="sm" data-testid="deploy-button">
               {deployMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
+                <ArrowSync20Regular className="h-4 w-4 animate-spin" />
               ) : (
-                <Rocket className="h-4 w-4" />
+                <Rocket20Regular className="h-4 w-4" />
               )}
               Deploy
             </Button>
@@ -165,7 +172,7 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
 
         <section className="space-y-2">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <History className="h-3.5 w-3.5" />
+            <History16Regular className="h-3.5 w-3.5" />
             History
           </p>
           {history.isLoading ? (
@@ -204,7 +211,7 @@ export function DeploymentPanel({ agentId, environment = "local" }: Props) {
                       onClick={() => onRollback(d.version)}
                       disabled={isBusy}
                     >
-                      <Undo2 className="h-3.5 w-3.5" />
+                      <ArrowUndo16Regular className="h-3.5 w-3.5" />
                       Roll back
                     </Button>
                   ) : null}

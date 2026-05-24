@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { AlertTriangle, Sparkles, Wand2 } from "lucide-react";
+import {
+  Warning20Regular,
+  Sparkle20Regular,
+  Wand20Regular,
+  Wand16Regular,
+} from "@fluentui/react-icons";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -126,7 +131,7 @@ export function Step4Personality({ state, onChange }: Props) {
             role="alert"
             className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
           >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <Warning20Regular className="mt-0.5 h-4 w-4 shrink-0" />
             <span>Fehler beim Erzeugen: {composeError}</span>
           </div>
         ) : null}
@@ -136,7 +141,7 @@ export function Step4Personality({ state, onChange }: Props) {
             role="status"
             className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
           >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <Warning20Regular className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{aiNotice}</span>
           </div>
         ) : null}
@@ -148,7 +153,7 @@ export function Step4Personality({ state, onChange }: Props) {
             onClick={() => handleCompose(false)}
             disabled={busyMode !== null}
           >
-            <Sparkles className="mr-2 h-4 w-4" />
+            <Sparkle20Regular className="mr-2 h-4 w-4" />
             {busyMode === "deterministic"
               ? "Erzeuge Prompt…"
               : state.systemPrompt
@@ -161,7 +166,7 @@ export function Step4Personality({ state, onChange }: Props) {
             onClick={() => handleCompose(true)}
             disabled={busyMode !== null}
           >
-            <Wand2 className="mr-2 h-4 w-4" />
+            <Wand20Regular className="mr-2 h-4 w-4" />
             {busyMode === "ai" ? "Verfeinere mit KI…" : "Mit KI verfeinern"}
           </Button>
         </div>
@@ -173,7 +178,7 @@ export function Step4Personality({ state, onChange }: Props) {
             <Label className="text-sm">System-Prompt</Label>
             {state.promptUsedAI ? (
               <Badge variant="default" className="gap-1">
-                <Wand2 className="h-3 w-3" /> Mit KI verfeinert
+                <Wand16Regular className="h-3 w-3" /> Mit KI verfeinert
               </Badge>
             ) : null}
           </div>

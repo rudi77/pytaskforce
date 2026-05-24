@@ -12,19 +12,19 @@
 
 import type { ComponentType } from "react";
 import {
-  BookOpen,
-  Briefcase,
-  Brain,
-  Code2,
-  FileText,
-  FolderOpen,
-  Globe,
-  Mail,
-  Plug,
-  ShieldAlert,
-  Sparkles,
-  Wrench,
-} from "lucide-react";
+  Book20Regular,
+  Briefcase20Regular,
+  Brain20Regular,
+  Code20Regular,
+  DocumentText20Regular,
+  FolderOpen20Regular,
+  Globe20Regular,
+  Mail20Regular,
+  PlugConnected20Regular,
+  ShieldError20Regular,
+  Sparkle20Regular,
+  Wrench20Regular,
+} from "@fluentui/react-icons";
 
 export type CapabilityGroupId =
   | "files"
@@ -49,28 +49,28 @@ export const CAPABILITY_GROUPS: readonly CapabilityGroup[] = [
     id: "files",
     label: "Dateien lesen & schreiben",
     description: "Texte, Tabellen und Dokumente öffnen, ändern und speichern",
-    icon: FolderOpen,
+    icon: FolderOpen20Regular,
     tools: ["file_read", "file_write", "edit", "grep", "glob"],
   },
   {
     id: "office",
     label: "Office-Dokumente",
     description: "Word, Excel und PowerPoint bearbeiten",
-    icon: FileText,
+    icon: DocumentText20Regular,
     tools: ["docx", "excel", "pptx"],
   },
   {
     id: "web",
     label: "Im Web recherchieren",
     description: "Google-Suche, Webseiten lesen, Browser-Automatisierung",
-    icon: Globe,
+    icon: Globe20Regular,
     tools: ["web_search", "web_fetch", "browser"],
   },
   {
     id: "communication",
     label: "E-Mail, Kalender & Termine",
     description: "Mail lesen/schreiben, Termine, Erinnerungen (benötigt Butler)",
-    icon: Mail,
+    icon: Mail20Regular,
     tools: [
       "gmail",
       "calendar",
@@ -84,28 +84,28 @@ export const CAPABILITY_GROUPS: readonly CapabilityGroup[] = [
     id: "knowledge",
     label: "Wissen merken",
     description: "Eigenes Wiki, Langzeit-Erinnerung, frühere Ergebnisse",
-    icon: Brain,
+    icon: Brain20Regular,
     tools: ["wiki", "memory", "fetch_result"],
   },
   {
     id: "code",
     label: "Code & Skripte ausführen",
     description: "Python-Code, Shell, Git — erfordert oft Genehmigung",
-    icon: Code2,
+    icon: Code20Regular,
     tools: ["python", "bash", "shell", "powershell", "git", "github"],
   },
   {
     id: "domain",
     label: "Buchhaltung & Auditing",
     description: "Spezialwerkzeuge für Belege und Compliance",
-    icon: Briefcase,
+    icon: Briefcase20Regular,
     tools: ["accounting_validate", "accounting_audit"],
   },
   {
     id: "other",
     label: "Weitere Werkzeuge",
     description: "Alles andere",
-    icon: Wrench,
+    icon: Wrench20Regular,
     tools: [],
   },
 ];
@@ -201,9 +201,9 @@ export function groupForSkill(skillName: string, skillType: string): CapabilityG
 }
 
 export const CAPABILITY_KIND_META = {
-  tool: { label: "Werkzeug", icon: Wrench },
-  skill: { label: "Workflow", icon: Sparkles },
-  mcp: { label: "Verbindung", icon: Plug },
-  warning: { label: "Erweitert", icon: ShieldAlert },
-  knowledge: { label: "Wissen", icon: BookOpen },
+  tool: { label: "Werkzeug", icon: Wrench20Regular },
+  skill: { label: "Workflow", icon: Sparkle20Regular },
+  mcp: { label: "Verbindung", icon: PlugConnected20Regular },
+  warning: { label: "Erweitert", icon: ShieldError20Regular },
+  knowledge: { label: "Wissen", icon: Book20Regular },
 } as const;

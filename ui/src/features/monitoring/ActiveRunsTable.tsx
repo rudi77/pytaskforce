@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ExternalLink, Square } from "lucide-react";
+import { Open16Regular, Stop16Regular } from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -104,12 +104,12 @@ function Row({
         <div className="flex items-center justify-end gap-1">
           <Button asChild variant="ghost" size="sm" title="Open trace">
             <Link to={`/monitoring/runs/${encodeURIComponent(run.session_id)}`}>
-              <ExternalLink className="h-3 w-3" />
+              <Open16Regular className="h-3 w-3" />
               Trace
             </Link>
           </Button>
           <Button variant="outline" size="sm" onClick={onCancel} disabled={cancelDisabled}>
-            <Square className="h-3 w-3" />
+            <Stop16Regular className="h-3 w-3" />
             Cancel
           </Button>
         </div>
