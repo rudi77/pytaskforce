@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { GitCompare, Search } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { BranchCompare20Regular, Search20Regular } from "@fluentui/react-icons";
+import { Badge, Button, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { AgentSourceBadge } from "@/components/AgentSourceBadge";
@@ -28,11 +26,16 @@ const FILTERS: { id: SourceFilter; label: string }[] = [
   { id: "plugin", label: "Plugin" },
 ];
 
-const STATUS_VARIANT: Record<DeploymentStatus, "success" | "warning" | "destructive" | "secondary"> = {
-  pending: "secondary",
+/**
+ * Maps the legacy shadcn-Badge deployment-status variants to Fluent's
+ * `color` axis. Keeps the meaning ("deployed" → green, "failed" → red,
+ * "validating/rolled_back" → amber, "pending" → neutral grey).
+ */
+const STATUS_COLOR: Record<DeploymentStatus, "success" | "warning" | "danger" | "subtle"> = {
+  pending: "subtle",
   validating: "warning",
   deployed: "success",
-  failed: "destructive",
+  failed: "danger",
   rolled_back: "warning",
 };
 
@@ -40,19 +43,20 @@ function CustomAgentDeploymentBadge({ agentId }: { agentId: string }) {
   const active = useActiveDeployment(agentId);
 
   if (active.isLoading) {
-    return <Badge variant="secondary">Deployment...</Badge>;
+    return <Badge appearance="tint" color="subtle">Deployment...</Badge>;
   }
   if (!active.data) {
-    return <Badge variant="warning">Not deployed</Badge>;
+    return <Badge color="warning">Not deployed</Badge>;
   }
   return (
-    <Badge variant={STATUS_VARIANT[active.data.status]}>
+    <Badge color={STATUS_COLOR[active.data.status]}>
       {active.data.environment}: {active.data.status}
     </Badge>
   );
 }
 
 export default function AgentsListPage() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useAgents();
   const permissions = useCurrentPermissions();
   const [filter, setFilter] = useState<SourceFilter>("all");
@@ -92,21 +96,31 @@ export default function AgentsListPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline">
-              <Link to="/agents/compare">
-                <GitCompare className="h-4 w-4" />
-                Compare
-              </Link>
+            {/* Fluent Button can't host React Router <Link> via asChild —
+             *  onClick + navigate keeps SPA routing (loses right-click
+             *  open-in-new-tab, accepted for internal nav). */}
+            <Button
+              appearance="outline"
+              icon={<BranchCompare20Regular />}
+              onClick={() => navigate("/agents/compare")}
+            >
+              Compare
             </Button>
             {canCreateAgent ? (
               <>
-                <Button asChild variant="outline" size="sm">
-                  <Link to="/agents/new?advanced=1" title="Advanced editor with all tabs">
-                    Advanced Editor
-                  </Link>
+                <Button
+                  appearance="outline"
+                  size="small"
+                  onClick={() => navigate("/agents/new?advanced=1")}
+                  title="Advanced editor with all tabs"
+                >
+                  Advanced Editor
                 </Button>
-                <Button asChild>
-                  <Link to="/agents/new">+ New Agent</Link>
+                <Button
+                  appearance="primary"
+                  onClick={() => navigate("/agents/new")}
+                >
+                  + New Agent
                 </Button>
               </>
             ) : null}
@@ -134,13 +148,15 @@ export default function AgentsListPage() {
                 </button>
               ))}
             </div>
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="flex-1">
+              {/* Fluent Input has a built-in `contentBefore` slot — cleaner
+               *  than the absolute-positioned search icon shadcn used. */}
               <Input
+                contentBefore={<Search20Regular />}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(_, data) => setSearch(data.value)}
                 placeholder="Search agents…"
-                className="pl-8"
+                className="w-full"
               />
             </div>
           </div>
@@ -190,7 +206,7 @@ export default function AgentsListPage() {
                         {agent.source === "custom" ? (
                           <CustomAgentDeploymentBadge agentId={agent.agent_id} />
                         ) : (
-                          <Badge variant="outline">
+                          <Badge appearance="outline" color="subtle">
                             {agent.source === "profile" ? "Profile runtime" : "Plugin runtime"}
                           </Badge>
                         )}

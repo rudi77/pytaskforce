@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Search, Sparkles } from "lucide-react";
+import { Search20Regular, Sparkle16Regular } from "@fluentui/react-icons";
+import { Badge, Input } from "@fluentui/react-components";
 
 import {
   Card,
@@ -8,8 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ApiError } from "@/api/client";
@@ -20,15 +19,17 @@ import {
 } from "@/api/queries";
 import { cn } from "@/lib/utils";
 
-const TYPE_VARIANT: Record<
+/** Maps legacy shadcn Badge variants to Fluent `color` (appearance defaults
+ *  to filled for the brand-style ones, outline for the muted ones). */
+const TYPE_COLOR: Record<
   string,
-  "default" | "secondary" | "outline" | "warning"
+  { color?: "subtle" | "warning" | "brand"; appearance?: "filled" | "outline" | "tint" }
 > = {
-  context: "secondary",
-  prompt: "default",
-  agent: "warning",
-  library: "outline",
-  integration: "outline",
+  context: { appearance: "tint", color: "subtle" },
+  prompt: { appearance: "filled", color: "brand" },
+  agent: { color: "warning" },
+  library: { appearance: "outline", color: "subtle" },
+  integration: { appearance: "outline", color: "subtle" },
 };
 
 export default function SkillsPage() {
@@ -62,7 +63,7 @@ export default function SkillsPage() {
       <Card className="lg:sticky lg:top-4 lg:self-start">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <Sparkle16Regular className="text-primary" />
             Skills
           </CardTitle>
           <CardDescription>
@@ -70,15 +71,12 @@ export default function SkillsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
-              className="pl-8"
-            />
-          </div>
+          <Input
+            contentBefore={<Search20Regular />}
+            value={search}
+            onChange={(_, data) => setSearch(data.value)}
+            placeholder="Search…"
+          />
           <div className="flex flex-wrap gap-1 rounded-md bg-muted p-1 text-xs">
             {types.map((t) => (
               <button
@@ -146,7 +144,7 @@ function SkillRow({
   active: boolean;
   onSelect: () => void;
 }) {
-  const variant = TYPE_VARIANT[skill.skill_type] ?? "secondary";
+  const def = TYPE_COLOR[skill.skill_type] ?? { appearance: "tint" as const, color: "subtle" as const };
   return (
     <li>
       <button
@@ -161,7 +159,7 @@ function SkillRow({
       >
         <div className="flex w-full items-center gap-2">
           <span className="truncate font-medium">{skill.name}</span>
-          <Badge variant={variant} className="ml-auto px-1.5 py-0 text-[10px]">
+          <Badge {...def} className="ml-auto px-1.5 py-0 text-[10px]">
             {skill.skill_type}
           </Badge>
         </div>

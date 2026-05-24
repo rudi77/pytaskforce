@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Search, Sparkles } from "lucide-react";
+import { Search20Regular, Sparkle16Regular } from "@fluentui/react-icons";
+import { Badge, Input } from "@fluentui/react-components";
 
 import {
   Card,
@@ -8,8 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ToolSchemaView } from "@/features/tools/ToolSchemaView";
@@ -104,7 +103,7 @@ function GroupSection({
           <h3 className="text-sm font-semibold leading-tight">{group.label}</h3>
           <p className="truncate text-xs text-muted-foreground">{group.description}</p>
         </div>
-        <Badge variant="outline" className="font-mono text-[10px]">
+        <Badge appearance="outline" color="subtle" className="font-mono text-[10px]">
           {rows.length}
         </Badge>
       </header>
@@ -148,21 +147,21 @@ function CapabilityTile({
         <p className="line-clamp-1 font-medium">{row.label}</p>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
           {row.kind === "skill" ? (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            <Badge appearance="tint" color="subtle" className="px-1.5 py-0 text-[10px]">
               Workflow
             </Badge>
           ) : (
-            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+            <Badge appearance="outline" color="subtle" className="px-1.5 py-0 text-[10px]">
               Werkzeug
             </Badge>
           )}
           {high ? (
-            <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
+            <Badge color="warning" className="px-1.5 py-0 text-[10px]">
               Erweitert
             </Badge>
           ) : null}
           {row.kind === "tool" && row.meta?.needsApproval ? (
-            <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
+            <Badge color="warning" className="px-1.5 py-0 text-[10px]">
               Genehmigung
             </Badge>
           ) : null}
@@ -186,16 +185,16 @@ function ToolDetail({ tool }: { tool: ToolEntry }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline">Werkzeug</Badge>
+        <Badge appearance="outline" color="subtle">Werkzeug</Badge>
         {tool.requires_approval ? (
-          <Badge variant="warning">Braucht Genehmigung</Badge>
+          <Badge color="warning">Braucht Genehmigung</Badge>
         ) : (
-          <Badge variant="secondary">Läuft automatisch</Badge>
+          <Badge appearance="tint" color="subtle">Läuft automatisch</Badge>
         )}
         {tool.approval_risk_level ? (
-          <Badge variant="outline">Risiko: {tool.approval_risk_level}</Badge>
+          <Badge appearance="outline" color="subtle">Risiko: {tool.approval_risk_level}</Badge>
         ) : null}
-        {isHighRiskTool(tool.name) ? <Badge variant="warning">Erweitert</Badge> : null}
+        {isHighRiskTool(tool.name) ? <Badge color="warning">Erweitert</Badge> : null}
       </div>
       {tool.description ? (
         <p className="text-sm text-muted-foreground">{tool.description}</p>
@@ -227,10 +226,10 @@ function SkillDetailView({ skillName }: { skillName: string }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="secondary">Workflow</Badge>
-        <Badge variant="outline">Typ: {data.skill_type}</Badge>
+        <Badge appearance="tint" color="subtle">Workflow</Badge>
+        <Badge appearance="outline" color="subtle">Typ: {data.skill_type}</Badge>
         {data.slash_name ? (
-          <Badge variant="outline" className="font-mono text-[10px]">
+          <Badge appearance="outline" color="subtle" className="font-mono text-[10px]">
             /{data.slash_name}
           </Badge>
         ) : null}
@@ -307,7 +306,7 @@ export default function CapabilitiesPage() {
       {/* Page header */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2 text-primary">
-          <Sparkles className="h-4 w-4" />
+          <Sparkle16Regular />
           <span className="text-xs font-semibold uppercase tracking-wider">
             Capabilities
           </span>
@@ -321,15 +320,13 @@ export default function CapabilitiesPage() {
 
       {/* Toolbar: search + filter chips */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search capabilities, tools or workflows…"
-            className="pl-9"
-          />
-        </div>
+        <Input
+          contentBefore={<Search20Regular />}
+          value={search}
+          onChange={(_, data) => setSearch(data.value)}
+          placeholder="Search capabilities, tools or workflows…"
+          className="w-full max-w-md"
+        />
         <div className="flex flex-wrap gap-1.5">
           <FilterChip
             active={activeGroup === "all"}

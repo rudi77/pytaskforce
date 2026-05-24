@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Network, Pencil, PlugZap, Plus, Trash2 } from "lucide-react";
+import {
+  Add20Regular,
+  Delete20Regular,
+  Edit20Regular,
+  PlugConnected20Regular,
+  PlugConnectedCheckmark20Regular,
+} from "@fluentui/react-icons";
+import { Badge, Button } from "@fluentui/react-components";
 
 import {
   Card,
@@ -8,8 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import {
@@ -112,7 +117,7 @@ export default function AcpPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Network className="h-5 w-5" />
+              <PlugConnected20Regular />
               ACP Peers
             </CardTitle>
             <CardDescription>
@@ -121,8 +126,11 @@ export default function AcpPage() {
             </CardDescription>
           </div>
           {canManagePeers ? (
-            <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
-              <Plus className="h-4 w-4" />
+            <Button
+              appearance="primary"
+              icon={<Add20Regular />}
+              onClick={() => setDialog({ open: true, mode: "create", peer: null })}
+            >
               Add peer
             </Button>
           ) : null}
@@ -149,8 +157,11 @@ export default function AcpPage() {
               description="Add a peer so this agent can call remote ACP-enabled agents."
               action={
                 canManagePeers ? (
-                  <Button onClick={() => setDialog({ open: true, mode: "create", peer: null })}>
-                    <Plus className="h-4 w-4" />
+                  <Button
+                    appearance="primary"
+                    icon={<Add20Regular />}
+                    onClick={() => setDialog({ open: true, mode: "create", peer: null })}
+                  >
                     Add peer
                   </Button>
                 ) : undefined
@@ -167,11 +178,11 @@ export default function AcpPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{peer.name}</span>
-                        <Badge variant="outline" className="font-mono text-[10px]">
+                        <Badge appearance="outline" color="subtle" className="font-mono text-[10px]">
                           {peer.auth_type}
                         </Badge>
                         {peer.token_env ? (
-                          <Badge variant="secondary" className="text-[10px]">
+                          <Badge appearance="tint" color="subtle" className="text-[10px]">
                             env:{peer.token_env}
                           </Badge>
                         ) : null}
@@ -188,35 +199,33 @@ export default function AcpPage() {
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
                       <Button
-                        variant="outline"
-                        size="sm"
+                        appearance="outline"
+                        size="small"
+                        icon={<PlugConnectedCheckmark20Regular />}
                         onClick={() => onTest(peer)}
                         disabled={testMutation.isPending}
                       >
-                        <PlugZap className="h-3.5 w-3.5" />
                         Test
                       </Button>
                       {canManagePeers ? (
                         <>
                           <Button
-                            variant="outline"
-                            size="sm"
+                            appearance="outline"
+                            size="small"
+                            icon={<Edit20Regular />}
                             onClick={() =>
                               setDialog({ open: true, mode: "edit", peer })
                             }
                           >
-                            <Pencil className="h-3.5 w-3.5" />
                             Edit
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
+                            appearance="subtle"
+                            icon={<Delete20Regular className="text-destructive" />}
                             onClick={() => onDelete(peer)}
                             disabled={deleteMutation.isPending}
                             aria-label="Delete peer"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          />
                         </>
                       ) : null}
                     </div>
