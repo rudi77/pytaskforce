@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/app/theme-provider";
 import { Toaster } from "@/components/ui/toast";
 import { getApiBaseUrl, getApiToken, useSettings } from "@/lib/settings";
 import { bootstrapPlugins } from "@/plugins/loader";
+import { FluentThemeBridge } from "@/theme/FluentThemeBridge";
 import "@/app/globals.css";
 
 // Wire the shared HTTP client to the host's settings store BEFORE any
@@ -54,12 +55,14 @@ async function main() {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <AppBootstrap>
-            <RouterProvider router={router} />
-          </AppBootstrap>
-          <Toaster />
-        </QueryClientProvider>
+        <FluentThemeBridge>
+          <QueryClientProvider client={queryClient}>
+            <AppBootstrap>
+              <RouterProvider router={router} />
+            </AppBootstrap>
+            <Toaster />
+          </QueryClientProvider>
+        </FluentThemeBridge>
       </ThemeProvider>
     </React.StrictMode>,
   );
