@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Add20Regular,
   BranchFork20Regular,
@@ -88,6 +88,7 @@ function describeTrigger(workflow: WorkflowDefinition): string {
 }
 
 export default function WorkflowsPage() {
+  const navigate = useNavigate();
   const workflows = useWorkflowDefinitions();
   const saveMutation = useSaveWorkflowDefinition();
   const deleteMutation = useDeleteWorkflowDefinition();
@@ -262,11 +263,16 @@ export default function WorkflowsPage() {
                       ) : null}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
-                      <Button asChild variant="outline" size="sm" title="Open visual graph">
-                        <Link to={`/workflows/${encodeURIComponent(wf.workflow_id)}/graph`}>
-                          <BranchFork20Regular className="h-3.5 w-3.5" />
-                          Graph
-                        </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Open visual graph"
+                        onClick={() =>
+                          navigate(`/workflows/${encodeURIComponent(wf.workflow_id)}/graph`)
+                        }
+                      >
+                        <BranchFork20Regular className="h-3.5 w-3.5" />
+                        Graph
                       </Button>
                       {canRunWorkflow ? (
                         <Button

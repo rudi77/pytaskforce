@@ -22,7 +22,7 @@
  * around their routes that supplies real claims.
  */
 import { useEffect, useRef, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useUserRoles } from "@taskforce/ui-shell";
 
 import { Button } from "@/components/ui/button";
@@ -43,15 +43,14 @@ interface RequireRoleProps {
 }
 
 function ForbiddenPage() {
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
       <h2 className="text-2xl font-semibold tracking-tight">Forbidden</h2>
       <p className="text-sm text-muted-foreground">
         Your account does not have access to this page.
       </p>
-      <Button asChild>
-        <Link to="/">Back to dashboard</Link>
-      </Button>
+      <Button onClick={() => navigate("/")}>Back to dashboard</Button>
     </div>
   );
 }

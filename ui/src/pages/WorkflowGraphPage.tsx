@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, List } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft20Regular,
+  TextBulletList20Regular,
+} from "@fluentui/react-icons";
 
 import {
   Card,
@@ -32,6 +35,7 @@ import { toast } from "@/components/ui/toast";
  * unchanged.
  */
 export default function WorkflowGraphPage() {
+  const navigate = useNavigate();
   const { workflowId = "" } = useParams<{ workflowId: string }>();
   const query = useWorkflowDefinition(workflowId);
   const saveMutation = useSaveWorkflowDefinition();
@@ -64,14 +68,12 @@ export default function WorkflowGraphPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/workflows">
-            <ArrowLeft className="h-4 w-4" />
-            All workflows
-          </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/workflows")}>
+          <ArrowLeft20Regular className="h-4 w-4" />
+          All workflows
         </Button>
         <Button variant="outline" size="sm" onClick={() => setEditorOpen(true)}>
-          <List className="h-4 w-4" />
+          <TextBulletList20Regular className="h-4 w-4" />
           Edit as list
         </Button>
       </div>

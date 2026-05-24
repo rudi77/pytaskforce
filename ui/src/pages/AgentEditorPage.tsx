@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft20Regular, Delete20Regular } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 
@@ -30,13 +30,14 @@ interface Props {
 }
 
 function ForbiddenAgentAction() {
+  const navigate = useNavigate();
   return (
     <EmptyState
       title="Forbidden"
       description="Your account can use agents, but it cannot create or modify them."
       action={
-        <Button asChild variant="outline">
-          <Link to="/agents">Back to agents</Link>
+        <Button variant="outline" onClick={() => navigate("/agents")}>
+          Back to agents
         </Button>
       }
     />
@@ -137,11 +138,9 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/agents">
-            <ArrowLeft20Regular className="h-4 w-4" />
-            All agents
-          </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/agents")}>
+          <ArrowLeft20Regular className="h-4 w-4" />
+          All agents
         </Button>
         {agent.source === "custom" && canDeleteAgent ? (
           <Button
@@ -175,6 +174,7 @@ function CustomOrPluginView({ agent }: { agent: AgentSummary }) {
 }
 
 function EditMode({ agentId }: { agentId: string }) {
+  const navigate = useNavigate();
   const agentQuery = useAgent(agentId);
 
   if (agentQuery.isLoading) return <Skeleton className="h-96 w-full" />;
@@ -189,8 +189,8 @@ function EditMode({ agentId }: { agentId: string }) {
             : "Backend returned an error."
         }
         action={
-          <Button asChild variant="outline">
-            <Link to="/agents">Back to agents</Link>
+          <Button variant="outline" onClick={() => navigate("/agents")}>
+            Back to agents
           </Button>
         }
       />

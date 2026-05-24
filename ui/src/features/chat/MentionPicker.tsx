@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronLeft,
-  CornerDownLeft,
-  File as FileIcon,
-  Folder,
-} from "lucide-react";
+  ChevronLeft20Regular,
+  ArrowEnter16Regular,
+  Document16Regular,
+  Folder16Regular,
+} from "@fluentui/react-icons";
 
 import { Badge } from "@/components/ui/badge";
 import { useWorkspaceBrowse, type WorkspaceEntry } from "@/api/queries";
@@ -155,7 +155,7 @@ export function MentionPicker({
             className="flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-accent"
             aria-label="Go up one directory"
           >
-            <ChevronLeft className="h-3 w-3" />
+            <ChevronLeft20Regular className="h-3 w-3" />
           </button>
         ) : (
           <span aria-hidden className="h-4 w-4" />
@@ -202,9 +202,9 @@ export function MentionPicker({
                 )}
               >
                 {entry.type === "dir" ? (
-                  <Folder className="h-3.5 w-3.5 text-amber-500" />
+                  <Folder16Regular className="h-3.5 w-3.5 text-amber-500" />
                 ) : (
-                  <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Document16Regular className="h-3.5 w-3.5 text-muted-foreground" />
                 )}
                 <span className="truncate font-mono">{entry.name}</span>
                 {entry.type === "dir" ? (
@@ -224,7 +224,7 @@ export function MentionPicker({
       <div className="flex items-center justify-between border-t border-border bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground">
         <span>↑↓ navigate · Enter pick · Backspace up</span>
         <span className="inline-flex items-center gap-1">
-          <CornerDownLeft className="h-3 w-3" />
+          <ArrowEnter16Regular className="h-3 w-3" />
           Esc to close
         </span>
       </div>
