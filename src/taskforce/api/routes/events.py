@@ -16,10 +16,11 @@ authentication (HMAC, JWT, ...).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Path, Request, status
 
 from taskforce.api.dependencies import (
     get_active_event_source,
@@ -30,10 +31,28 @@ from taskforce.core.interfaces.event_source import WebhookCapableEventSource
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+# Source-name path-param constraint. Bounded length + restricted charset
+# stops an attacker from flooding logs / disk with multi-MB names and
+# guarantees the value is safe to embed in log lines and error replies.
+# 64 chars matches the framework's other identifier limits.
+_SOURCE_NAME_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+_SOURCE_NAME_RE = re.compile(_SOURCE_NAME_PATTERN)
+
 
 @router.post("/events/{source_name}", status_code=status.HTTP_202_ACCEPTED)
-async def receive_event(source_name: str, request: Request) -> dict[str, Any]:
+async def receive_event(
+    source_name: str = Path(..., pattern=_SOURCE_NAME_PATTERN, max_length=64),
+    request: Request = ...,  # type: ignore[assignment]
+) -> dict[str, Any]:
     """Forward an inbound webhook to the registered event source."""
+    # Defense-in-depth: FastAPI already validates against the pattern,
+    # but a custom client that bypasses the route layer (in-process
+    # tests, ASGI middleware) gets the same rejection here.
+    if not _SOURCE_NAME_RE.fullmatch(source_name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source_name must match [A-Za-z0-9_-]{1,64}",
+        )
     source = get_active_event_source(source_name)
     if source is None:
         raise HTTPException(

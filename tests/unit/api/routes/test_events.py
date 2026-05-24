@@ -141,9 +141,7 @@ def test_github_webhook_valid_signature_returns_202(app: FastAPI) -> None:
         "sender": {"login": "alice"},
     }
     body = json.dumps(payload).encode("utf-8")
-    signature = "sha256=" + hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
+    signature = "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
     response = TestClient(app).post(
         "/api/v1/events/github",
@@ -156,3 +154,17 @@ def test_github_webhook_valid_signature_returns_202(app: FastAPI) -> None:
     )
     assert response.status_code == 202
     assert response.json()["source"] == "github"
+
+
+def test_invalid_source_name_rejected(app: FastAPI) -> None:
+    """Names exceeding 64 chars or containing slashes are rejected at 422/400."""
+    client = TestClient(app)
+
+    # Way too long — 100 chars
+    long_name = "a" * 100
+    response = client.post(f"/api/v1/events/{long_name}", json={})
+    assert response.status_code in (400, 422)
+
+    # Path traversal attempt (route-layer rejection — never reaches handler)
+    response = client.post("/api/v1/events/..%2Fetc%2Fpasswd", json={})
+    assert response.status_code in (400, 404, 422)

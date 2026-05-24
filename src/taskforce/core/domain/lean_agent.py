@@ -111,6 +111,8 @@ class Agent:
         tool_message_max_chars: int | None = None,
         assistant_message_max_chars: int | None = None,
         approval_bypass_tools: list[str] | None = None,
+        approval_service_provider: Callable[[], Any | None] | None = None,
+        approval_bypass_provider: Callable[[], frozenset[str]] | None = None,
         react_no_progress_threshold: int | None = None,
         react_signature_repeat_threshold: int | None = None,
     ):
@@ -193,8 +195,21 @@ class Agent:
         # workflows (local dev, scheduled butler runs) where a tool's
         # default HIGH risk level is overkill. The existing
         # ``auto_approve_for_origins`` trigger-origin path is unchanged.
-        self._approval_bypass_tools: frozenset[str] = frozenset(
-            approval_bypass_tools or ()
+        self._approval_bypass_tools: frozenset[str] = frozenset(approval_bypass_tools or ())
+
+        # Approval gate dependencies are passed in as callables (not
+        # service-located via application.infrastructure_overrides) to
+        # keep core/domain free of application-layer imports. The
+        # factory wires these to the global override lookups so tenant
+        # admins can still change approval policy at runtime — the
+        # callable is evaluated fresh on every gate check.
+        self._approval_service_provider: Callable[[], Any | None] = (
+            approval_service_provider if approval_service_provider is not None else lambda: None
+        )
+        self._approval_bypass_provider: Callable[[], frozenset[str]] = (
+            approval_bypass_provider
+            if approval_bypass_provider is not None
+            else lambda: frozenset()
         )
 
         # Context pack configuration (Story 9.2)
@@ -714,11 +729,11 @@ class Agent:
         # full Agent. The tenant-level override is read here (not cached
         # at __init__) so UI edits take effect on the next tool call.
         profile_bypass = getattr(self, "_approval_bypass_tools", frozenset())
-        from taskforce.application.infrastructure_overrides import (
-            get_approval_bypass_override,
-        )
-
-        tenant_bypass = get_approval_bypass_override()
+        # Stubs / subclasses that omit the provider default to "no
+        # tenant-level bypass" — same defensive pattern as
+        # ``_approval_bypass_tools`` above.
+        bypass_provider = getattr(self, "_approval_bypass_provider", None)
+        tenant_bypass = bypass_provider() if bypass_provider is not None else frozenset()
         if tool_name in profile_bypass or tool_name in tenant_bypass:
             self.logger.info(
                 "tool.approval.bypassed_by_profile",
@@ -731,11 +746,8 @@ class Agent:
             )
             return None
 
-        from taskforce.application.infrastructure_overrides import (
-            get_approval_service,
-        )
-
-        service = get_approval_service()
+        service_provider = getattr(self, "_approval_service_provider", None)
+        service = service_provider() if service_provider is not None else None
         if service is None:
             self.logger.debug(
                 "tool.approval.no_service_installed",

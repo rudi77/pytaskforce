@@ -17,6 +17,10 @@ import aiofiles
 import structlog
 import yaml
 
+from taskforce.application.infrastructure_overrides import (
+    get_approval_bypass_override,
+    get_approval_service,
+)
 from taskforce.application.planning_strategy_factory import select_planning_strategy
 from taskforce.application.plugin_loader import PluginLoader
 from taskforce.application.profile_loader import DEFAULT_TOOL_NAMES, ProfileLoader
@@ -334,9 +338,7 @@ class AgentFactory:
             planning_strategy=agent_settings["planning_strategy"].name,
         )
 
-        skill_manager = self._build_default_skill_manager(
-            project_root=definition.work_dir
-        )
+        skill_manager = self._build_default_skill_manager(project_root=definition.work_dir)
         activate_skill_tool = self._maybe_add_skill_tool_for_profile(skill_manager, all_tools)
         if activate_skill_tool is not None:
             # Re-assemble system prompt to include new tool description
@@ -438,9 +440,7 @@ class AgentFactory:
         # consulted. Without an override this falls back to a flat
         # FileWikiStore at ``<work_dir>/memory/wiki`` — bit-for-bit
         # single-tenant behaviour.
-        work_dir = work_dir_override or config.get("persistence", {}).get(
-            "work_dir", ".taskforce"
-        )
+        work_dir = work_dir_override or config.get("persistence", {}).get("work_dir", ".taskforce")
         wiki_store = self.infra_builder.build_wiki_store(work_dir=work_dir)
         injection_cfg = config.get("wiki", {}).get("context_injection")
         wiki_context_config = (
@@ -559,7 +559,9 @@ class AgentFactory:
             "max_steps": max_steps,
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
             "planning_strategy": select_planning_strategy(
-                strategy_name, strategy_params, llm_provider=llm_provider,
+                strategy_name,
+                strategy_params,
+                llm_provider=llm_provider,
             ),
             "model_alias": config.get("llm", {}).get("default_model", "main"),
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
@@ -613,6 +615,8 @@ class AgentFactory:
             tool_message_max_chars=settings.get("tool_message_max_chars"),
             assistant_message_max_chars=settings.get("assistant_message_max_chars"),
             approval_bypass_tools=settings.get("approval_bypass_tools"),
+            approval_service_provider=get_approval_service,
+            approval_bypass_provider=get_approval_bypass_override,
             react_no_progress_threshold=settings.get("react_no_progress_threshold"),
             react_signature_repeat_threshold=settings.get("react_signature_repeat_threshold"),
         )
@@ -1188,9 +1192,7 @@ class AgentFactory:
                 "tool_message_max_chars": agent_defaults.get("tool_message_max_chars"),
                 "assistant_message_max_chars": agent_defaults.get("assistant_message_max_chars"),
                 "approval_bypass_tools": agent_defaults.get("approval_bypass_tools"),
-                "react_no_progress_threshold": agent_defaults.get(
-                    "react_no_progress_threshold"
-                ),
+                "react_no_progress_threshold": agent_defaults.get("react_no_progress_threshold"),
                 "react_signature_repeat_threshold": agent_defaults.get(
                     "react_signature_repeat_threshold"
                 ),
@@ -1314,7 +1316,9 @@ class AgentFactory:
             "max_steps": agent_config.get("max_steps"),
             "max_parallel_tools": agent_config.get("max_parallel_tools"),
             "planning_strategy": select_planning_strategy(
-                strategy_name, strategy_params, llm_provider=llm_provider,
+                strategy_name,
+                strategy_params,
+                llm_provider=llm_provider,
             ),
             "model_alias": merged_config.get("llm", {}).get("default_model", "main"),
             "tool_result_store_threshold": agent_config.get("tool_result_store_threshold"),
@@ -1479,9 +1483,7 @@ class AgentFactory:
             self._configure_skill_switch_conditions(skill_manager, manifest.skill_names)
         return skill_manager
 
-    def _build_default_skill_manager(
-        self, project_root: str | None = None
-    ) -> SkillManager | None:
+    def _build_default_skill_manager(self, project_root: str | None = None) -> SkillManager | None:
         """Build a SkillManager for profile-based agents with project/user skills.
 
         When ``project_root`` is given (project-scoped conversation per

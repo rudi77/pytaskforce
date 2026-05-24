@@ -71,6 +71,22 @@ class PollingEventSource:
             self._task = None
         logger.info("event_source.stopped", source=self._source_name)
 
+    async def __aenter__(self) -> PollingEventSource:
+        """Start the polling loop on entry — pairs with ``__aexit__``.
+
+        Lets callers use the source in an ``async with`` block so the
+        task is guaranteed to be cancelled even if the surrounding
+        supervisor crashes mid-flight. Without this, an exception in
+        the supervisor leaves the task running until the event loop
+        eventually shuts down.
+        """
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        """Stop the polling loop on exit, even when the body raised."""
+        await self.stop()
+
     async def _poll_loop(self) -> None:
         """Run the polling loop, calling _poll_once each interval."""
         try:

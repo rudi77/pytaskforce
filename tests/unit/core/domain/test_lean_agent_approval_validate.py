@@ -33,13 +33,23 @@ from taskforce.core.interfaces.tools import ApprovalRiskLevel
 class _StubAgent:
     """Bare-minimum stand-in for LeanAgent that only carries a logger.
 
-    ``_maybe_request_approval`` only touches ``self.logger``, so we can
-    invoke the unbound coroutine with a stub instance and avoid wiring
-    up the full Agent constructor (LLM provider, state manager, …).
+    ``_maybe_request_approval`` only touches ``self.logger`` and the
+    approval-provider attributes, so we wire those to the application-
+    layer overrides (mirroring the framework factory) and avoid the
+    full Agent constructor (LLM provider, state manager, …).
     """
 
     def __init__(self) -> None:
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_bypass_override as _bypass_provider,
+        )
+        from taskforce.application.infrastructure_overrides import (
+            get_approval_service as _service_provider,
+        )
+
         self.logger = structlog.get_logger("test")
+        self._approval_service_provider = _service_provider
+        self._approval_bypass_provider = _bypass_provider
 
 
 class _RecordingValidator:

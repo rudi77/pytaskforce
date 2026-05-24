@@ -23,6 +23,7 @@ Directory Structure:
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -215,12 +216,36 @@ class FileToolResultStore:
             return result
 
         except (OSError, FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            self.logger.error(
-                "tool_result_fetch_failed",
-                handle_id=handle.id,
-                error=str(e),
-            )
+            # Quarantine the corrupt file so the next fetch surfaces "not
+            # found" honestly, the operator gets a loud ERROR, and the
+            # bytes stay on disk for forensics. Returning None silently
+            # while the file is still corrupt would re-fail every retry
+            # without trace.
+            self._quarantine(result_path, handle.id, e)
             return None
+
+    def _quarantine(self, path: Path, handle_id: str, exc: BaseException) -> None:
+        """Move a corrupt result file aside instead of silently dropping it."""
+        quarantine_path = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
+        try:
+            path.rename(quarantine_path)
+        except OSError as rename_exc:
+            self.logger.error(
+                "tool_result_quarantine_failed",
+                handle_id=handle_id,
+                path=str(path),
+                error=str(exc),
+                rename_error=str(rename_exc),
+            )
+            return
+        self.logger.error(
+            "tool_result_fetch_failed",
+            handle_id=handle_id,
+            path=str(path),
+            quarantined_to=str(quarantine_path),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     def _truncate_result(
         self,

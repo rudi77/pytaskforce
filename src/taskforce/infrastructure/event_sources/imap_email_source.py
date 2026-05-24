@@ -88,12 +88,26 @@ class IMAPEmailEventSource(PollingEventSource):
             return []
         try:
             return await asyncio.to_thread(self._poll_sync)
-        except Exception as exc:
+        except (imaplib.IMAP4.error, OSError, ValueError) as exc:
             logger.warning(
                 "imap_email_source.poll_failed",
                 host=self._host,
                 username=self._username,
                 error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            return []
+        except Exception as exc:  # noqa: BLE001 — last-resort guard, log loudly
+            # We still must not let a polling failure kill the daemon,
+            # but anything outside the expected protocol/network errors
+            # above is a real bug — log at ERROR with the type so it
+            # shows up in the operator dashboard.
+            logger.error(
+                "imap_email_source.poll_unexpected_error",
+                host=self._host,
+                username=self._username,
+                error=str(exc),
+                error_type=type(exc).__name__,
             )
             return []
 
@@ -136,7 +150,10 @@ class IMAPEmailEventSource(PollingEventSource):
                     conn.store(raw_id, "+FLAGS", "\\Seen")
             try:
                 conn.close()
-            except Exception:  # pragma: no cover — best-effort
+            except (imaplib.IMAP4.error, OSError):
+                # Server may already have closed the connection — not
+                # worth surfacing, but narrow the catch so a real bug
+                # (e.g. AttributeError on a refactor) is not swallowed.
                 pass
             return events
 
@@ -207,9 +224,7 @@ def _first_text_part(msg: Message) -> str:
         return ""
     payload = msg.get_payload(decode=True)
     if isinstance(payload, (bytes, bytearray)):
-        return payload.decode(
-            msg.get_content_charset() or "utf-8", errors="replace"
-        )
+        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
     return str(payload or "")
 
 
@@ -231,5 +246,8 @@ class _imap_connection:
             return
         try:
             self._conn.logout()
-        except Exception:  # pragma: no cover — best-effort cleanup
+        except (imaplib.IMAP4.error, OSError):
+            # Best-effort cleanup. Same narrowing rationale as
+            # ``conn.close()`` above: narrow the catch so unexpected
+            # exception types still surface in tests / logs.
             pass

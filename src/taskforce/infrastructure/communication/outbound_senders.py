@@ -60,9 +60,11 @@ def _markdown_to_telegram_html(text: str) -> str:
     def _replace_code_block(m: re.Match) -> str:
         lang = m.group(1) or ""
         code = html.escape(m.group(2).strip("\n"))
-        code_blocks.append(f"<pre><code>{code}</code></pre>" if not lang
-                           else f'<pre><code class="language-{html.escape(lang)}">'
-                                f"{code}</code></pre>")
+        code_blocks.append(
+            f"<pre><code>{code}</code></pre>"
+            if not lang
+            else f'<pre><code class="language-{html.escape(lang)}">' f"{code}</code></pre>"
+        )
         return f"\x00CODEBLOCK{len(code_blocks) - 1}\x00"
 
     def _replace_inline_code(m: re.Match) -> str:
@@ -89,9 +91,7 @@ def _markdown_to_telegram_html(text: str) -> str:
     # Links: [text](url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
     # Blockquotes: > text (at line start)
-    text = re.sub(
-        r"(?m)^&gt;\s?(.+)$", r"<blockquote>\1</blockquote>", text
-    )
+    text = re.sub(r"(?m)^&gt;\s?(.+)$", r"<blockquote>\1</blockquote>", text)
     # Merge adjacent blockquotes
     text = text.replace("</blockquote>\n<blockquote>", "\n")
     # Headers: ## text → bold (Telegram has no header tags)
@@ -170,9 +170,7 @@ class TelegramOutboundSender:
         if len(message) > max_len:
             chunks = _split_message(message, max_len)
             for chunk in chunks:
-                await self.send(
-                    recipient_id=recipient_id, message=chunk, metadata=metadata
-                )
+                await self.send(recipient_id=recipient_id, message=chunk, metadata=metadata)
             return
 
         # Determine parse mode: default to HTML for rich formatting.
@@ -187,9 +185,16 @@ class TelegramOutboundSender:
         if parse_mode == "HTML":
             try:
                 message = _markdown_to_telegram_html(message)
-            except Exception:
+            except (re.error, ValueError, TypeError) as exc:
                 # Fallback: send as plain text rather than failing.
-                self._logger.warning("telegram.html_conversion_failed")
+                # Narrow catch so unexpected types (AttributeError from
+                # a refactor, MemoryError on huge inputs) still surface
+                # rather than silently re-routing to plain-text mode.
+                self._logger.warning(
+                    "telegram.html_conversion_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
                 parse_mode = ""
 
         payload: dict[str, Any] = {"chat_id": recipient_id, "text": message}
@@ -251,7 +256,7 @@ class TelegramOutboundSender:
             except (TimeoutError, aiohttp.ClientError, OSError) as exc:
                 last_error = exc
                 if attempt < self._max_retries:
-                    backoff = self._base_backoff * (2 ** attempt)
+                    backoff = self._base_backoff * (2**attempt)
                     self._logger.warning(
                         "telegram.send_retry",
                         attempt=attempt + 1,
@@ -325,8 +330,12 @@ class TelegramOutboundSender:
         if formatted_caption and parse_mode == "HTML":
             try:
                 formatted_caption = _markdown_to_telegram_html(formatted_caption)
-            except Exception:
-                self._logger.warning("telegram.html_conversion_failed")
+            except (re.error, ValueError, TypeError) as exc:
+                self._logger.warning(
+                    "telegram.html_conversion_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
                 parse_mode = None
 
         # Telegram caption limit is 1024 chars. Truncate with ellipsis if over.
@@ -359,9 +368,7 @@ class TelegramOutboundSender:
                     )
                     # File uploads can be larger — use a longer timeout.
                     upload_timeout = aiohttp.ClientTimeout(total=60)
-                    async with session.post(
-                        url, data=form, timeout=upload_timeout
-                    ) as response:
+                    async with session.post(url, data=form, timeout=upload_timeout) as response:
                         if response.status >= 400:
                             body = await response.text()
                             self._logger.error(
@@ -378,13 +385,12 @@ class TelegramOutboundSender:
                                     f"{response.status}: {body}"
                                 )
                             last_error = ConnectionError(
-                                f"Telegram {endpoint} returned HTTP "
-                                f"{response.status}: {body}"
+                                f"Telegram {endpoint} returned HTTP " f"{response.status}: {body}"
                             )
                             # Retryable server-side error: back off before the
                             # next attempt so we don't hammer Telegram.
                             if attempt < self._max_retries:
-                                backoff = self._base_backoff * (2 ** attempt)
+                                backoff = self._base_backoff * (2**attempt)
                                 self._logger.warning(
                                     "telegram.send_file_retry",
                                     attempt=attempt + 1,
@@ -409,7 +415,7 @@ class TelegramOutboundSender:
             except (TimeoutError, aiohttp.ClientError, OSError) as exc:
                 last_error = exc
                 if attempt < self._max_retries:
-                    backoff = self._base_backoff * (2 ** attempt)
+                    backoff = self._base_backoff * (2**attempt)
                     self._logger.warning(
                         "telegram.send_file_retry",
                         attempt=attempt + 1,

@@ -71,3 +71,20 @@ class TestFileJobStore:
         await store.save(_make_job())
         tmp_files = list((tmp_path / "scheduler" / "jobs").glob("*.tmp"))
         assert tmp_files == []
+
+    async def test_load_all_quarantines_corrupt_files(self, tmp_path: Path) -> None:
+        """A corrupt job file is renamed aside, healthy jobs still load."""
+        store = FileJobStore(str(tmp_path))
+        await store.save(_make_job("healthy"))
+
+        jobs_dir = tmp_path / "scheduler" / "jobs"
+        corrupt_path = jobs_dir / "broken.json"
+        corrupt_path.write_text("{not json", encoding="utf-8")
+
+        loaded = await store.load_all()
+        assert {j.name for j in loaded} == {"healthy"}
+        # The corrupt file is gone (renamed), and a *.corrupt-* sibling
+        # exists in its place — no silent data loss.
+        assert not corrupt_path.exists()
+        quarantined = list(jobs_dir.glob("broken.json.corrupt-*"))
+        assert len(quarantined) == 1

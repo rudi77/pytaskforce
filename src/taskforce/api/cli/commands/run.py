@@ -10,6 +10,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from taskforce.api.cli.output_formatter import TaskforceConsole
 from taskforce.application.executor import AgentExecutor
+from taskforce.core.domain.enums import ExecutionStatus
 
 app = typer.Typer(help="Execute agent missions")
 
@@ -192,7 +193,7 @@ def _execute_standard_mission(
     tf_console.print_divider()
 
     # Display results
-    if result.status == "completed":
+    if result.status == ExecutionStatus.COMPLETED.value:
         tf_console.print_success("Mission completed!")
         tf_console.print_debug(f"Session ID: {result.session_id}")
         tf_console.print_agent_message(result.final_message)
@@ -392,7 +393,7 @@ async def _execute_skill_agent(
         result = await agent.execute(mission=mission, session_id=None)
 
         tf_console.print_divider()
-        if result.status == "completed":
+        if result.status == ExecutionStatus.COMPLETED.value:
             tf_console.print_success("Skill completed!")
             tf_console.print_agent_message(result.final_message)
         else:
