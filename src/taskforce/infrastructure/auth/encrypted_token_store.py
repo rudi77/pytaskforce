@@ -42,6 +42,7 @@ class EncryptedTokenStore:
         self._store_dir = Path(store_dir or (Path.home() / ".taskforce" / "auth"))
         self._locks: dict[str, asyncio.Lock] = {}
         self._fernet: Any | None = None
+        self._fernet_init_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # TokenStoreProtocol implementation
@@ -153,7 +154,14 @@ class EncryptedTokenStore:
         """
         if self._fernet is not None:
             return self._fernet
-        return await asyncio.to_thread(self._get_fernet)
+        # Serialize first-time init: two concurrent callers must not both
+        # race into _load_or_create_key_file() and clobber each other's
+        # freshly-generated .key file — tokens encrypted with the
+        # overwritten key would be unrecoverable.
+        async with self._fernet_init_lock:
+            if self._fernet is not None:
+                return self._fernet
+            return await asyncio.to_thread(self._get_fernet)
 
     def _resolve_key(self) -> bytes:
         """Resolve the Fernet encryption key.
