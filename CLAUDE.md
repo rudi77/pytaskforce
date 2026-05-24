@@ -116,6 +116,7 @@ Documentation is maintained **as Markdown in-repo**. Canonical entry points:
 | Location | Purpose |
 |----------|---------|
 | `README.md` | Main user entry point (Quick Start, CLI + API, links into `docs/`) |
+| `CONTRIBUTING.md` | **Canonical development cycle** — board-driven workflow, skills reference, branch policy, CI pipeline. Read this first when picking up work. |
 | `docs/index.md` | Docs navigation hub |
 | `docs/architecture.md` | Stable architecture entry-point (links into `docs/architecture/`) |
 | `docs/adr/` | Architecture Decision Records (index: `docs/adr/index.md`) |
@@ -947,6 +948,12 @@ transparently.
 ---
 
 ## Development Workflow
+
+> **Canonical reference:** `CONTRIBUTING.md` (repo root) describes the
+> full development cycle — board-driven work selection, spec-first
+> implementation, branch policy, skills mapping per phase, CI pipeline.
+> The subsections below cover only the mechanical setup / commands;
+> the *process* lives in `CONTRIBUTING.md`.
 
 ### Setup
 

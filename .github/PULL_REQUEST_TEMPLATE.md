@@ -1,3 +1,5 @@
+<!-- Full dev-cycle reference: /CONTRIBUTING.md -->
+
 ## Description
 Briefly describe the changes introduced by this Pull Request.
 
