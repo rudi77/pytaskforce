@@ -175,7 +175,9 @@ def _parse_api_routes(bullets: list[str]) -> tuple[list[dict], list[str]]:
 
 
 _CONFIG_KEY_RE = re.compile(
-    r"`(?P<key>[A-Za-z_][A-Za-z0-9_.]*)`(?:\s*:\s*(?P<type>[^()]+?))?"
+    r"`(?P<key>[A-Za-z_][A-Za-z0-9_.]*)"
+    r"(?:\s*:\s*(?P<type>[^`]+?))?"
+    r"`"
     r"(?:\s*\(default\s*[`\"]?(?P<default>[^`\")]+?)[`\"]?\))?"
 )
 _ENV_VAR_RE = re.compile(r"`(?P<env>[A-Z_][A-Z0-9_]*)`")
