@@ -43,6 +43,7 @@ import { ChatComposer } from "@/features/chat/ChatComposer";
 import { CoworkMessage } from "@/features/chat/CoworkMessageView";
 import { RightPanel } from "@/features/chat/RightPanel";
 import { useChatStream } from "@/features/chat/useChatStream";
+import { TaskforceWebChat } from "@/features/chat/webchat/TaskforceWebChat";
 import {
   CHAT_VIEW_MODES,
   useChatPreferences,
@@ -166,6 +167,8 @@ interface ChatHeaderProps {
   onViewModeChange: (mode: ChatViewMode) => void;
   rightPanelOpen: boolean;
   onRightPanelToggle: () => void;
+  useWebChatRenderer: boolean;
+  onUseWebChatRendererToggle: () => void;
 }
 
 function ChatHeader({
@@ -191,6 +194,8 @@ function ChatHeader({
   onViewModeChange,
   rightPanelOpen,
   onRightPanelToggle,
+  useWebChatRenderer,
+  onUseWebChatRendererToggle,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -237,6 +242,21 @@ function ChatHeader({
             disabled={isStreaming}
           />
           <ViewModePicker value={viewMode} onChange={onViewModeChange} />
+          <Button
+            variant={useWebChatRenderer ? "default" : "ghost"}
+            size="sm"
+            onClick={onUseWebChatRendererToggle}
+            title={
+              useWebChatRenderer
+                ? "Switch to the classic chat renderer (Cowork-style scroller)"
+                : "Switch to the FluentUI + botframework-webchat renderer (experimental)"
+            }
+          >
+            <span className="hidden xl:inline">
+              {useWebChatRenderer ? "WebChat (on)" : "WebChat"}
+            </span>
+            <span className="xl:hidden">WC</span>
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -493,6 +513,8 @@ export default function ChatPage() {
   );
   const viewMode = useChatPreferences((s) => s.viewMode);
   const setViewMode = useChatPreferences((s) => s.setViewMode);
+  const useWebChatRenderer = useChatPreferences((s) => s.useWebChatRenderer);
+  const setUseWebChatRenderer = useChatPreferences((s) => s.setUseWebChatRenderer);
 
   // Right-panel toggle. Persists per-browser so the user's preference
   // survives page reloads but isn't synced across devices (it's a
@@ -734,6 +756,8 @@ export default function ChatPage() {
           onViewModeChange={setViewMode}
           rightPanelOpen={rightPanelOpen}
           onRightPanelToggle={() => setRightPanelOpen((o) => !o)}
+          useWebChatRenderer={useWebChatRenderer}
+          onUseWebChatRendererToggle={() => setUseWebChatRenderer(!useWebChatRenderer)}
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -751,23 +775,40 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              <MessageList
-                messages={messages}
-                pending={
-                  // Show the live streaming entry only while the agent
-                  // is still working OR the assistant reply hasn't been
-                  // persisted yet. Once the ``completed`` flag flips, the
-                  // persisted reply takes over via ``messages`` and the
-                  // pending entry would otherwise duplicate it. Tool
-                  // calls + plan steps survive in the store and surface
-                  // via RightPanel — they're not lost, just rendered
-                  // through the side panel instead of the chat bubble.
-                  isStreaming || (!stream.state.completed && stream.state.text)
-                    ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
-                    : undefined
-                }
-                viewMode={viewMode}
-              />
+              {useWebChatRenderer ? (
+                // Experimental opt-in: render the message list via
+                // FluentUI v9 + botframework-webchat. Default off
+                // (Cowork-style scroller below stays the proven path).
+                // Toggle via the chat-preferences "WebChat" button in
+                // the header above.
+                <TaskforceWebChat
+                  conversationId={conversationId}
+                  messages={messages}
+                  pending={
+                    isStreaming || (!stream.state.completed && stream.state.text)
+                      ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
+                      : undefined
+                  }
+                />
+              ) : (
+                <MessageList
+                  messages={messages}
+                  pending={
+                    // Show the live streaming entry only while the agent
+                    // is still working OR the assistant reply hasn't been
+                    // persisted yet. Once the ``completed`` flag flips, the
+                    // persisted reply takes over via ``messages`` and the
+                    // pending entry would otherwise duplicate it. Tool
+                    // calls + plan steps survive in the store and surface
+                    // via RightPanel — they're not lost, just rendered
+                    // through the side panel instead of the chat bubble.
+                    isStreaming || (!stream.state.completed && stream.state.text)
+                      ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
+                      : undefined
+                  }
+                  viewMode={viewMode}
+                />
+              )}
               {stream.error ? (
                 <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
                   {stream.error}

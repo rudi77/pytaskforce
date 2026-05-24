@@ -82,10 +82,12 @@ export class TaskforceDirectLine {
   public readonly activity$ = new Subject<Activity>();
   public readonly signals$ = new Subject<AdapterSignal>();
   public readonly connectionStatus$ = new Subject<ConnectionStatus>();
+  public readonly conversationId: string;
 
   private mapping: { ctx: ReturnType<typeof createMappingContext>; assistantBuffer: string };
 
   constructor(conversationId: string) {
+    this.conversationId = conversationId;
     this.mapping = {
       ctx: createMappingContext(conversationId),
       assistantBuffer: "",
