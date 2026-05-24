@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  FolderOpen,
-  MessageSquare,
-  Plus,
-  Trash2,
-} from "lucide-react";
+  Add20Regular,
+  ArrowLeft20Regular,
+  Chat16Regular,
+  ChevronDown16Regular,
+  ChevronRight16Regular,
+  Delete20Regular,
+  FolderOpen20Regular,
+} from "@fluentui/react-icons";
+import { Button } from "@fluentui/react-components";
 
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { ApiError } from "@/api/client";
 import {
@@ -110,7 +110,7 @@ export default function ProjectDetailPage() {
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <FolderOpen className="h-5 w-5" />
+            <FolderOpen20Regular />
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">
@@ -127,10 +127,11 @@ export default function ProjectDetailPage() {
           </div>
         </div>
         <Button
+          appearance="primary"
+          icon={<Add20Regular />}
           onClick={startNewConversation}
           disabled={createConversation.isPending}
         >
-          <Plus className="h-4 w-4" />
           New conversation
         </Button>
       </header>
@@ -188,11 +189,7 @@ export default function ProjectDetailPage() {
           className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
           aria-expanded={archivedOpen}
         >
-          {archivedOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {archivedOpen ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
           Archived
           {archived.isSuccess ? (
             <span className="text-xs text-muted-foreground/70">
@@ -246,7 +243,7 @@ function BackLink() {
       to="/projects"
       className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeft className="h-3.5 w-3.5" />
+      <ArrowLeft20Regular />
       Back to projects
     </Link>
   );
@@ -271,7 +268,7 @@ function ActiveRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
         title="Continue this conversation"
       >
-        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Chat16Regular className="shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm">
             {conversation.topic ||
@@ -292,7 +289,7 @@ function ActiveRow({
         title="Delete conversation"
         className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
       >
-        <Trash2 className="h-4 w-4" />
+        <Delete20Regular />
       </button>
     </div>
   );
@@ -317,7 +314,7 @@ function ArchivedRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
         title="View archived conversation"
       >
-        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <Chat16Regular className="shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-muted-foreground">
             {conversation.topic ||
@@ -338,7 +335,7 @@ function ArchivedRow({
         title="Delete conversation"
         className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
       >
-        <Trash2 className="h-4 w-4" />
+        <Delete20Regular />
       </button>
     </div>
   );

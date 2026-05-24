@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import { FolderPlus, FolderOpen, FolderSearch, X } from "lucide-react";
+import {
+  Dismiss20Regular,
+  FolderAdd20Regular,
+  FolderOpen20Regular,
+  FolderSearch20Regular,
+} from "@fluentui/react-icons";
+import { Button, Input, Label } from "@fluentui/react-components";
 
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ApiError } from "@/api/client";
 import {
   useCreateProject,
@@ -33,7 +36,7 @@ interface ModeMeta {
   title: string;
   description: string;
   pathHint: string;
-  icon: typeof FolderPlus;
+  icon: React.ComponentType<{ className?: string }>;
 }
 
 const MODES: ModeMeta[] = [
@@ -43,7 +46,7 @@ const MODES: ModeMeta[] = [
     description:
       "Richte einen neuen Ordner mit CLAUDE.md und skills/ ein. Wenn der Ordner nicht existiert, wird er angelegt.",
     pathHint: "/home/user/projects/mein-projekt",
-    icon: FolderPlus,
+    icon: FolderAdd20Regular,
   },
   {
     key: "existing",
@@ -51,7 +54,7 @@ const MODES: ModeMeta[] = [
     description:
       "Zeige Claude auf ein Verzeichnis, mit dem du bereits arbeitest. CLAUDE.md und skills/ werden ergänzt, falls sie fehlen — bestehende Dateien bleiben unangetastet.",
     pathHint: "/home/user/Projects/TuttiPaletti",
-    icon: FolderOpen,
+    icon: FolderOpen20Regular,
   },
 ];
 
@@ -120,6 +123,9 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
   const activeMeta = MODES.find((m) => m.key === mode) ?? MODES[0];
 
   return (
+    // Dialog primitive stays shadcn — Fluent Dialog has a different
+    // composition (DialogSurface + DialogBody slot) that's a separate
+    // primitive migration.
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         {step === "browse" ? (
@@ -164,7 +170,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
                       )}
                     >
                       <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                        <Icon className="h-4 w-4" />
+                        <Icon />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground">
@@ -184,7 +190,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
             <DialogHeader>
               <div className="flex items-center gap-2">
-                <activeMeta.icon className="h-4 w-4 text-muted-foreground" />
+                <activeMeta.icon className="text-muted-foreground" />
                 <DialogTitle>{activeMeta.title}</DialogTitle>
               </div>
               <DialogDescription>{activeMeta.description}</DialogDescription>
@@ -195,7 +201,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
               <Input
                 id="project-name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(_, data) => setName(data.value)}
                 placeholder="TuttiPaletti"
                 autoFocus
                 required
@@ -208,18 +214,19 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
                 <Input
                   id="project-path"
                   value={path}
-                  onChange={(e) => setPath(e.target.value)}
+                  onChange={(_, data) => setPath(data.value)}
                   placeholder={activeMeta.pathHint}
                   spellCheck={false}
                   required
+                  className="flex-1"
                 />
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
+                  appearance="outline"
+                  size="small"
+                  icon={<FolderSearch20Regular />}
                   onClick={() => setStep("browse")}
                 >
-                  <FolderSearch className="h-4 w-4" />
                   Durchsuchen…
                 </Button>
               </div>
@@ -239,21 +246,25 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
             <div className="flex items-center justify-between gap-2 pt-2">
               <Button
                 type="button"
-                variant="ghost"
+                appearance="subtle"
+                icon={<Dismiss20Regular />}
                 onClick={() => setStep("choose")}
               >
-                <X className="h-4 w-4" />
                 Zurück
               </Button>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  variant="ghost"
+                  appearance="subtle"
                   onClick={() => onOpenChange(false)}
                 >
                   Abbrechen
                 </Button>
-                <Button type="submit" disabled={create.isPending}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={create.isPending}
+                >
                   {create.isPending ? "Lege an…" : "Projekt erstellen"}
                 </Button>
               </div>

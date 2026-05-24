@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, FolderOpen, HardDrive, RefreshCw } from "lucide-react";
+import {
+  ArrowSync20Regular,
+  ChevronLeft20Regular,
+  FolderOpen20Regular,
+  Storage20Regular,
+} from "@fluentui/react-icons";
+import { Button, Input, Label } from "@fluentui/react-components";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useBrowseFilesystem } from "@/api/queries";
 import { cn } from "@/lib/utils";
 
@@ -44,26 +47,25 @@ export function FolderBrowserPanel({
           <Input
             id="browse-path"
             value={pathDraft}
-            onChange={(e) => setPathDraft(e.target.value)}
+            onChange={(_, data) => setPathDraft(data.value)}
             spellCheck={false}
             placeholder="Pfad eingeben oder unten auswählen"
           />
         </div>
-        <Button type="submit" variant="outline" size="sm">
+        <Button type="submit" appearance="outline" size="small">
           Gehe zu
         </Button>
         <Button
           type="button"
-          variant="ghost"
-          size="sm"
+          appearance="subtle"
+          size="small"
+          icon={
+            <ArrowSync20Regular className={cn(isFetching && "animate-spin")} />
+          }
           onClick={() => refetch()}
           aria-label="Aktualisieren"
           disabled={isFetching}
-        >
-          <RefreshCw
-            className={cn("h-4 w-4", isFetching && "animate-spin")}
-          />
-        </Button>
+        />
       </form>
 
       {data?.is_windows && data.drives.length > 0 ? (
@@ -79,7 +81,7 @@ export function FolderBrowserPanel({
                 data.path === drive && "border-primary bg-accent/40",
               )}
             >
-              <HardDrive className="h-3 w-3" />
+              <Storage20Regular />
               {drive}
             </button>
           ))}
@@ -89,12 +91,12 @@ export function FolderBrowserPanel({
       <div className="flex items-center justify-between gap-2">
         <Button
           type="button"
-          variant="outline"
-          size="sm"
+          appearance="outline"
+          size="small"
+          icon={<ChevronLeft20Regular />}
           onClick={() => data?.parent && goTo(data.parent)}
           disabled={!data?.parent}
         >
-          <ChevronLeft className="h-4 w-4" />
           Übergeordnet
         </Button>
         <p className="truncate text-[11px] text-muted-foreground">
@@ -128,7 +130,7 @@ export function FolderBrowserPanel({
                   )}
                   title="Klicken zum Markieren, Doppelklick zum Öffnen"
                 >
-                  <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                  <FolderOpen20Regular className="text-muted-foreground" />
                   <span className="truncate">{entry.name}</span>
                 </button>
               </li>
@@ -138,11 +140,12 @@ export function FolderBrowserPanel({
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button type="button" appearance="subtle" onClick={onCancel}>
           Abbrechen
         </Button>
         <Button
           type="button"
+          appearance="primary"
           onClick={() => {
             const chosen = (pathDraft || data?.path || "").trim();
             if (chosen) onSelect(chosen);
