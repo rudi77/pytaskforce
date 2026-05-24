@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@fluentui/react-components";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentSourceBadge } from "@/components/AgentSourceBadge";
 import {
@@ -97,11 +98,11 @@ export default function AgentVisibilityTab() {
             Override: {overrideActive ? "active (settings)" : "none (using deployment.yaml)"}
           </span>
           <span className="ml-auto flex gap-2">
-            <Button onClick={save} disabled={update.isPending}>
+            <Button appearance="primary" onClick={save} disabled={update.isPending}>
               {update.isPending ? "Saving…" : "Save override"}
             </Button>
             <Button
-              variant="outline"
+              appearance="outline"
               onClick={resetToYaml}
               disabled={!overrideActive || reset.isPending}
             >
@@ -123,6 +124,9 @@ export default function AgentVisibilityTab() {
                   key={id}
                   className="flex items-start gap-3 rounded-md p-2 hover:bg-muted/40"
                 >
+                  {/* Raw <input type="checkbox"> kept; see Approvals
+                   *  rationale (Fluent Checkbox is a separate primitive
+                   *  sweep). */}
                   <input
                     type="checkbox"
                     checked={draftSet.has(id)}

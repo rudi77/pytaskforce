@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@fluentui/react-components";
+
 import {
   Card,
   CardContent,
@@ -6,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useSettingsSection,
@@ -102,11 +103,11 @@ export default function ApprovalsTab() {
               : "none (every approval-gated tool prompts)"}
           </span>
           <span className="ml-auto flex gap-2">
-            <Button onClick={save} disabled={update.isPending}>
+            <Button appearance="primary" onClick={save} disabled={update.isPending}>
               {update.isPending ? "Saving…" : "Save override"}
             </Button>
             <Button
-              variant="outline"
+              appearance="outline"
               onClick={resetToDefault}
               disabled={!overrideActive || reset.isPending}
             >
@@ -132,6 +133,9 @@ export default function ApprovalsTab() {
                   key={tool.name}
                   className="flex items-start gap-3 rounded-md p-2 hover:bg-muted/40"
                 >
+                  {/* Raw <input type="checkbox"> kept — Fluent Checkbox
+                   *  has its own onChange (_, data) signature and changes
+                   *  the focus model. Separate primitive sweep. */}
                   <input
                     type="checkbox"
                     checked={draftSet.has(tool.name)}
