@@ -61,9 +61,10 @@ class FileExperienceStore(ExperienceStoreProtocol):
 
     async def save_experience(self, experience: SessionExperience) -> None:
         """Persist a session experience record."""
-        path = self._experience_path(experience.session_id)
+        safe_id = self._safe_session_id(experience.session_id)
+        path = self._dir / f"{safe_id}.json"
         payload = json.dumps(experience.to_dict(), indent=2, default=str)
-        lock = await self._get_lock(experience.session_id)
+        lock = await self._get_lock(safe_id)
         async with lock:
             await atomic_write_text(path, payload)
 
@@ -108,10 +109,11 @@ class FileExperienceStore(ExperienceStoreProtocol):
     ) -> None:
         """Mark experiences as processed by a consolidation run."""
         for sid in session_ids:
-            path = self._experience_path(sid)
+            safe_id = self._safe_session_id(sid)
+            path = self._dir / f"{safe_id}.json"
             if not path.exists():
                 continue
-            lock = await self._get_lock(sid)
+            lock = await self._get_lock(safe_id)
             async with lock:
                 if not path.exists():
                     continue
@@ -131,13 +133,19 @@ class FileExperienceStore(ExperienceStoreProtocol):
 
     async def delete_experience(self, session_id: str) -> bool:
         """Delete a session experience."""
-        path = self._experience_path(session_id)
-        lock = await self._get_lock(session_id)
-        async with lock:
-            if not path.exists():
-                return False
-            path.unlink()
-            return True
+        safe_id = self._safe_session_id(session_id)
+        path = self._dir / f"{safe_id}.json"
+        lock = await self._get_lock(safe_id)
+        try:
+            async with lock:
+                if not path.exists():
+                    return False
+                path.unlink()
+                return True
+        finally:
+            # Prevent unbounded growth of self._locks in long-running daemons
+            # — matches FileStateManager.delete_state.
+            self._locks.pop(safe_id, None)
 
     # ------------------------------------------------------------------
     # Consolidation result persistence
@@ -185,10 +193,14 @@ class FileExperienceStore(ExperienceStoreProtocol):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _safe_session_id(session_id: str) -> str:
+        """Sanitize a session id for use as a file name and lock key."""
+        return session_id.replace("/", "_").replace("..", "_")
+
     def _experience_path(self, session_id: str) -> Path:
         """Get the file path for a session experience."""
-        safe_id = session_id.replace("/", "_").replace("..", "_")
-        return self._dir / f"{safe_id}.json"
+        return self._dir / f"{self._safe_session_id(session_id)}.json"
 
     def _consolidation_path(self, consolidation_id: str) -> Path:
         """Get the file path for a consolidation result."""

@@ -1,5 +1,6 @@
 """Tests for encrypted token store."""
 
+import asyncio
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -77,9 +78,7 @@ class TestEncryptedTokenStore:
         assert key_path.exists()
 
     @pytest.mark.spec("auth.master_key_env_overrides_key_file")
-    async def test_env_key_takes_precedence(
-        self, store_with_env_key: EncryptedTokenStore
-    ):
+    async def test_env_key_takes_precedence(self, store_with_env_key: EncryptedTokenStore):
         """Store using TASKFORCE_AUTH_KEY should not create a .key file."""
         await store_with_env_key.save_token("test", {"access_token": "x"})
         key_path = Path(store_with_env_key._store_dir) / ".key"
@@ -95,3 +94,22 @@ class TestEncryptedTokenStore:
         await store.save_token("my/provider", {"access_token": "x"})
         loaded = await store.load_token("my/provider")
         assert loaded is not None
+
+    async def test_concurrent_first_save_uses_single_key(self, tmp_path: Path):
+        """First-boot race must not generate two different .key files.
+
+        Regression test for the Fernet-key race: without serialization
+        around the lazy ``_get_fernet_async`` init, concurrent
+        ``save_token`` calls on a fresh store could each generate their
+        own key in a worker thread and clobber the .key file, leaving
+        the token written with the earlier key unrecoverable. The fan-
+        out of N concurrent saves makes the race likely to trigger on
+        buggy builds.
+        """
+        store = EncryptedTokenStore(store_dir=str(tmp_path / "auth"))
+        providers = [f"p{i}" for i in range(10)]
+        await asyncio.gather(*(store.save_token(p, {"access_token": p}) for p in providers))
+        # Fresh store re-reads the on-disk key; every token must decrypt.
+        store2 = EncryptedTokenStore(store_dir=str(tmp_path / "auth"))
+        for p in providers:
+            assert (await store2.load_token(p)) == {"access_token": p}

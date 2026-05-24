@@ -129,3 +129,38 @@ class TestFileExperienceStore:
         assert loaded is not None
         assert loaded.session_id == "sess-1"
         assert loaded.mission.startswith("mission ")
+
+    async def test_delete_experience_releases_lock(self, store):
+        """delete_experience must drop the per-session lock to bound memory.
+
+        Regression test for the lock-dict leak: long-running daemons that
+        churn through unique session ids would otherwise accumulate one
+        asyncio.Lock per session forever.
+        """
+        for i in range(50):
+            await store.save_experience(_make_experience(f"sess-{i}"))
+            await store.delete_experience(f"sess-{i}")
+        assert store._locks == {}
+
+        # Deleting a never-seen session must not leak either.
+        await store.delete_experience("never-existed")
+        assert store._locks == {}
+
+    async def test_lock_key_sanitized_serializes_aliased_ids(self, store):
+        """Session ids that sanitize to the same file must share a lock.
+
+        Without sanitizing the lock key, ``"a/b"`` and ``"a_b"`` would
+        map to the same file but to two different asyncio.Locks, so
+        concurrent writes could interleave atomic_write_text calls and
+        leave a torn temp-file scenario behind.
+        """
+        await asyncio.gather(
+            store.save_experience(_make_experience("a/b", mission="slash")),
+            store.save_experience(_make_experience("a_b", mission="underscore")),
+        )
+        loaded = await store.load_experience("a/b")
+        assert loaded is not None
+        assert loaded.mission in {"slash", "underscore"}
+        # Only one lock entry for the aliased pair.
+        assert "a_b" in store._locks
+        assert "a/b" not in store._locks
