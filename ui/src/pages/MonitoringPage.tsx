@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
+import {
+  ArrowTrendingLines20Regular,
+  Money20Regular,
+} from "@fluentui/react-icons";
+import { Badge, Button } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Coins, TrendingUp } from "lucide-react";
-
 import { useCostSummary, useTokenUsage } from "@/api/queries";
 import { KpiCard, formatTokens, formatUsd } from "@/features/monitoring/KpiCard";
 import { TokenUsageChart } from "@/features/monitoring/TokenUsageChart";
@@ -58,6 +59,7 @@ export default function MonitoringPage() {
 
   return (
     <div className="space-y-6">
+      {/* Card primitive stays shadcn — Buttons + Badges inside are Fluent. */}
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <div>
@@ -71,12 +73,15 @@ export default function MonitoringPage() {
               ) : null}
             </CardDescription>
           </div>
+          {/* Range switcher: three subtle Buttons with an active-state
+           *  className override. Fluent doesn't ship a segmented-control
+           *  primitive — TabList would change semantics here. */}
           <div className="flex flex-wrap gap-1 rounded-md bg-muted p-1">
             {RANGES.map((r) => (
               <Button
                 key={r.id}
-                variant="ghost"
-                size="sm"
+                appearance="subtle"
+                size="small"
                 onClick={() => setRange(r.id)}
                 className={cn(
                   "h-7 px-3 text-xs",
@@ -98,28 +103,28 @@ export default function MonitoringPage() {
           label="Tokens"
           value={formatTokens(tokensInRange)}
           hint={rangeDef.label.toLowerCase()}
-          icon={TrendingUp}
+          icon={ArrowTrendingLines20Regular}
           loading={tokenUsage.isLoading}
         />
         <KpiCard
           label="Cost"
           value={formatUsd(costInRange)}
           hint={`approx. via ${rangeDef.granularity}-buckets`}
-          icon={Coins}
+          icon={Money20Regular}
           loading={tokenUsage.isLoading}
         />
         <KpiCard
           label="LLM calls"
           value={String(tokenUsage.data?.buckets.reduce((a, b) => a + b.call_count, 0) ?? 0)}
           hint={rangeDef.label.toLowerCase()}
-          icon={TrendingUp}
+          icon={ArrowTrendingLines20Regular}
           loading={tokenUsage.isLoading}
         />
         <KpiCard
           label="Cost (today)"
           value={formatUsd(costSummary.data?.today_usd ?? 0)}
           hint="rolling"
-          icon={Coins}
+          icon={Money20Regular}
           loading={costSummary.isLoading}
         />
       </div>
@@ -167,7 +172,7 @@ export default function MonitoringPage() {
             <CardTitle>Active runs</CardTitle>
             <CardDescription>Refreshes every 4 seconds.</CardDescription>
           </div>
-          <Badge variant="outline">live</Badge>
+          <Badge appearance="outline">live</Badge>
         </CardHeader>
         <CardContent>
           <ActiveRunsTable intervalMs={4_000} />

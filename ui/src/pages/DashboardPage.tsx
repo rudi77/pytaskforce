@@ -1,10 +1,14 @@
 import { useMemo } from "react";
-import { Activity, Bot, Coins, MessageSquare } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import {
+  Bot20Regular,
+  Chat20Regular,
+  Money20Regular,
+  Pulse20Regular,
+} from "@fluentui/react-icons";
+import { Badge, Button } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   useActiveRuns,
   useConversations,
@@ -22,6 +26,7 @@ function todayIso(): string {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const fromIso = useMemo(() => todayIso(), []);
   const tokenUsage = useTokenUsage({ granularity: "hour", from: fromIso });
   const costSummary = useCostSummary();
@@ -52,41 +57,50 @@ export default function DashboardPage() {
           label="Tokens today"
           value={formatTokens(tokensToday)}
           hint="prompt + completion"
-          icon={Activity}
+          icon={Pulse20Regular}
           loading={tokenUsage.isLoading}
         />
         <KpiCard
           label="Cost today"
           value={formatUsd(costSummary.data?.today_usd ?? 0)}
           hint={`week: ${formatUsd(costSummary.data?.week_usd ?? 0)}`}
-          icon={Coins}
+          icon={Money20Regular}
           loading={costSummary.isLoading}
         />
         <KpiCard
           label="Active runs"
           value={String(activeRuns.data?.runs.length ?? 0)}
           hint="currently executing"
-          icon={Bot}
+          icon={Bot20Regular}
           loading={activeRuns.isLoading}
         />
         <KpiCard
           label="Conversations"
           value={String(conversations.data?.length ?? 0)}
           hint="active sessions"
-          icon={MessageSquare}
+          icon={Chat20Regular}
           loading={conversations.isLoading}
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        {/* Card primitive stays shadcn — Fluent's slot-based Card is its own
+         *  migration. Buttons + Badges inside are Fluent. */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div>
               <CardTitle>Token usage today</CardTitle>
               <CardDescription>Hourly buckets · stacked prompt + completion</CardDescription>
             </div>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/monitoring">Open monitoring →</Link>
+            {/* Fluent Button can't host a React Router Link via asChild —
+             *  use onClick + navigate. Loses right-click "open in new tab"
+             *  (internal nav, accepted). */}
+            <Button
+              appearance="outline"
+              size="small"
+              onClick={() => navigate("/monitoring")}
+            >
+              Open monitoring →
             </Button>
           </CardHeader>
           <CardContent>
@@ -110,7 +124,7 @@ export default function DashboardPage() {
                     <span className="truncate font-mono text-xs">{m.model}</span>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{formatTokens(m.total_tokens)}</span>
-                      <Badge variant="outline">{formatUsd(m.cost_usd)}</Badge>
+                      <Badge appearance="outline">{formatUsd(m.cost_usd)}</Badge>
                     </div>
                   </li>
                 ))}
@@ -128,8 +142,12 @@ export default function DashboardPage() {
             <CardTitle>Active runs</CardTitle>
             <CardDescription>Live snapshot · refreshes every few seconds</CardDescription>
           </div>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/monitoring">View all →</Link>
+          <Button
+            appearance="outline"
+            size="small"
+            onClick={() => navigate("/monitoring")}
+          >
+            View all →
           </Button>
         </CardHeader>
         <CardContent>
