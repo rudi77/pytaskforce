@@ -22,8 +22,16 @@ def service() -> LiteLLMService:
     """
     import structlog
 
+    from taskforce.core.domain.lean_agent_components.message_sanitizer import (
+        MessageSanitizer,
+    )
+
     instance = LiteLLMService.__new__(LiteLLMService)
     instance.logger = structlog.get_logger("test")  # type: ignore[attr-defined]
+    # ``_sanitizer`` is normally wired by ``LiteLLMService.__init__`` and is
+    # used by the ``tool_results_only`` recovery stage to drop orphan tool
+    # messages. Tests bypass __init__ via __new__, so wire it explicitly.
+    instance._sanitizer = MessageSanitizer(instance.logger)  # type: ignore[attr-defined]
 
     async def _noop_trace(*_args, **_kwargs) -> None:
         return None

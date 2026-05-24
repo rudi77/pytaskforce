@@ -2,7 +2,7 @@
 feature: content-filter-recovery
 status: shipped
 since: 2026-05-10
-last_verified: 2026-05-16
+last_verified: 2026-05-24
 owner: rudi77
 adr: ADR-025
 ---
@@ -79,7 +79,6 @@ On terminal failure, the stream's `error` event carries `error_kind="content_fil
 - **Orphan `tool_calls` after `tool_results_only` strip.** The strip drops `role="tool"` messages and assistant turns whose only purpose was emitting tool calls, then sanitises orphans — but a mixed assistant turn that carries both `content` AND `tool_calls` is preserved as-is, which can leave dangling tool-call IDs the provider then rejects on retry. Tracked in #325.
 - **Double-stripping when `tool_results_only` reduces the list to the same length as `aggressive`.** The current guard `len(aggressive) < len(stages[-1][1])` skips the aggressive stage when it doesn't shrink further, but on certain message shapes the cascade still queues two stages that send byte-identical requests. Tracked in #343.
 - **Rephrase stage uses the same model that just got filtered.** It calls `litellm.acompletion(model=resolved_model, ...)` directly with no router hint, so a deployment with a single Azure model behind every alias will rephrase using the same filter profile that rejected the original. The `metadata={"phase": "filter_recovery_rephrase"}` tag is present so a future router rule can divert to a cheaper / less-filtered model, but no such rule ships today.
-- **Recovery on the `complete()` (blocking) path is a two-stage cascade only** — `aggressive` and `rephrase`. The streaming path runs the full four stages (`tool_results_only` → `aggressive` → `no_tools` → `rephrase`). The blocking path predates the staged cascade and was not back-ported.
 - **No `@pytest.mark.spec` markers exist yet** — the Tests section asserts the target, not current state. Spec-check will flag every marker as "asserted but missing test" on first run.
 
 ## Cross-references

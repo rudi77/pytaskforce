@@ -33,7 +33,42 @@ from pathlib import Path
 
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 
-_API_PREFIX = "/api/v1"  # convention from server.py
+_API_PREFIX = "/api/v1"  # default; overridden per-router by server.py mount
+
+
+def _extract_server_mounts(server_py: Path) -> dict[str, str]:
+    """Parse server.py for `app.include_router(<module>.router, prefix=...)`.
+
+    Returns {<router-module-stem>: <mount-prefix>}. Defaults to "" if no prefix=
+    keyword is present.
+    """
+    mounts: dict[str, str] = {}
+    if not server_py.exists():
+        return mounts
+    try:
+        tree = ast.parse(server_py.read_text(encoding="utf-8"), filename=str(server_py))
+    except SyntaxError:
+        return mounts
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "include_router"):
+            continue
+        if not node.args:
+            continue
+        first = node.args[0]
+        # Expect <name>.router
+        if not (isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name)
+                and first.attr == "router"):
+            continue
+        module = first.value.id  # e.g. "execution", "acp", "health"
+        prefix = ""
+        for kw in node.keywords:
+            if kw.arg == "prefix":
+                got = _string_value(kw.value)
+                if got is not None:
+                    prefix = got
+        mounts[module] = prefix
+    return mounts
 
 
 def _string_value(node: ast.AST) -> str | None:
@@ -175,7 +210,7 @@ def _extract_route_from_decorator(
     }
 
 
-def _scan_file(path: Path) -> list[dict]:
+def _scan_file(path: Path, mount_prefix: str) -> list[dict]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -188,15 +223,45 @@ def _scan_file(path: Path) -> list[dict]:
     prefixes = _extract_router_prefixes(tree)
     if not prefixes:
         return []
-    return _extract_routes(tree, str(path), prefixes)
+    # Inject the server mount as the global prefix used by the route assembler.
+    # We adjust _extract_route_from_decorator's reliance on _API_PREFIX by
+    # passing the mount prefix in via a wrapper: re-walk and emit per-route
+    # with full_path = mount_prefix + router_prefix + path.
+    routes: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for deco in node.decorator_list:
+            r = _extract_route_from_decorator(deco, prefixes)
+            if r is None:
+                continue
+            # _extract_route_from_decorator already prepended _API_PREFIX;
+            # strip it and replace with the real mount.
+            stripped = r["path"]
+            if stripped.startswith(_API_PREFIX):
+                stripped = stripped[len(_API_PREFIX):]
+            r["path"] = (mount_prefix + stripped).rstrip("/") or "/"
+            r["file"] = str(path)
+            r["line"] = node.lineno
+            r["function"] = node.name
+            routes.append(r)
+    return routes
 
 
 def scan(root: Path) -> list[dict]:
     """Walk all .py files under root and extract routes."""
+    # Pull mount prefixes from server.py (if reachable from the routes dir)
+    routes_dir = root if root.is_dir() else root.parent
+    server_py = (routes_dir.parent / "server.py")
+    mounts = _extract_server_mounts(server_py)
+
     all_routes: list[dict] = []
     files = sorted(root.rglob("*.py")) if root.is_dir() else [root]
     for path in files:
-        for route in _scan_file(path):
+        # Map filename stem → server mount prefix; default to /api/v1 if unknown.
+        stem = path.stem
+        mount = mounts.get(stem, _API_PREFIX) if mounts else _API_PREFIX
+        for route in _scan_file(path, mount):
             if "error" in route:
                 # Surface parse errors but don't crash
                 continue

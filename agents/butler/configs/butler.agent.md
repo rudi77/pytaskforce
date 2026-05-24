@@ -53,6 +53,23 @@ notifications:
 event_sources: []
 rules: []
 
+# Proactive layer (ADR-024, docs/spec/standing-goals.md) -------------------
+# Disabled by default — set enabled: true and add entries under standing_goals
+# to let the Butler revisit recurring intentions on its own schedule.
+# heartbeat_minutes: upper bound on goal-evaluation latency (default 15).
+# standing_goals: seeded on daemon startup; entries that already exist by
+# goal_id are skipped (idempotent), so editing this list is safe.
+proactive:
+  enabled: false
+  heartbeat_minutes: 15
+  standing_goals: []
+  # Example entry (uncomment + customise; cron is in proactive.timezone, default UTC):
+  # - description: Weekly coding summary
+  #   evaluation_prompt: |
+  #     Prepare last week's coding summary using the wiki tool. $NOW
+  #   frequency: "0 9 * * 1"   # Mondays 09:00
+  #   priority: 4
+
 # Technical settings ---------------------------------------------------------
 # Inherit butler-wide tuning from the preset; deviations go in `technical:`.
 extends: butler-defaults
@@ -66,6 +83,11 @@ technical:
     enable_fast_path: true
     planning_strategy: native_react
     max_parallel_tools: 3
+    # Tools that skip the approval gate even when their class declares
+    # requires_approval=True. Operator's per-profile allowlist; combined
+    # UNION with the tenant-wide `approval.bypass_tools` settings section
+    # (see docs/spec/approval-gating.md). Empty list = use defaults only.
+    approval_bypass_tools: []
 ---
 
 # Butler Coordinator
