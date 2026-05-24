@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft20Regular,
   Bot20Regular,
@@ -133,6 +133,7 @@ function relTime(iso: string, base: Date): string {
 }
 
 export default function RunDetailPage() {
+  const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
   const trace = useRunTrace(sessionId);
 
@@ -151,11 +152,9 @@ export default function RunDetailPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/monitoring">
-            <ArrowLeft20Regular className="h-4 w-4" />
-            Monitoring
-          </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/monitoring")}>
+          <ArrowLeft20Regular className="h-4 w-4" />
+          Monitoring
         </Button>
         <div className="ml-auto flex items-center gap-2">
           {trace.data ? (

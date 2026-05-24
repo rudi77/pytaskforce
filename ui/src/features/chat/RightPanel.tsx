@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import {
-  CheckCircle2,
-  ChevronDown,
-  FolderOpen,
-  Layers,
-  Wrench,
-  Loader2,
-} from "lucide-react";
+  CheckmarkCircle20Regular,
+  CheckmarkCircle16Regular,
+  ChevronDown20Regular,
+  FolderOpen20Regular,
+  Stack20Regular,
+  Wrench20Regular,
+  Wrench16Regular,
+  ArrowSync20Regular,
+  ArrowSync16Regular,
+} from "@fluentui/react-icons";
 
 import { cn, pathBasename } from "@/lib/utils";
 import type { ToolCallView, PlanStepView } from "@/features/chat/useChatStream";
@@ -81,7 +84,7 @@ function Card({
         </span>
         <span className="flex-1 text-left">{title}</span>
         {headerExtra}
-        <ChevronDown
+        <ChevronDown20Regular
           className={cn(
             "h-4 w-4 text-muted-foreground transition-transform",
             !open && "-rotate-90",
@@ -121,7 +124,7 @@ function ProgressCard({
   const steps = hasPlan ? planSteps : fallbackSteps;
 
   return (
-    <Card title="Progress" icon={<Layers className="h-4 w-4" />}>
+    <Card title="Progress" icon={<Stack20Regular className="h-4 w-4" />}>
       {steps.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">
           {streaming ? "Planning…" : "No steps yet."}
@@ -171,11 +174,11 @@ function ProgressCard({
                 title={tc.name}
               >
                 {tc.pending ? (
-                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                  <ArrowSync16Regular className="h-3 w-3 shrink-0 animate-spin text-primary" />
                 ) : (
-                  <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+                  <CheckmarkCircle16Regular className="h-3 w-3 shrink-0 text-success" />
                 )}
-                <Wrench className="h-3 w-3 shrink-0" />
+                <Wrench16Regular className="h-3 w-3 shrink-0" />
                 <span className="truncate font-mono">{tc.name}</span>
               </li>
             ))}
@@ -197,7 +200,7 @@ function StepIcon({
 }) {
   if (done) {
     return (
-      <CheckCircle2
+      <CheckmarkCircle20Regular
         className="mt-0.5 h-4 w-4 shrink-0 text-primary"
         aria-label="Done"
       />
@@ -209,7 +212,7 @@ function StepIcon({
         className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center"
         aria-label="In progress"
       >
-        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        <ArrowSync20Regular className="h-4 w-4 animate-spin text-primary" />
       </span>
     );
   }
@@ -368,7 +371,7 @@ function FilesCard({
   return (
     <Card
       title={projectName || "Workspace"}
-      icon={<FolderOpen className="h-4 w-4" />}
+      icon={<FolderOpen20Regular className="h-4 w-4" />}
       headerExtra={
         files.length > 0 ? (
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -467,7 +470,7 @@ function ContextCard({
   return (
     <Card
       title="Context"
-      icon={<Wrench className="h-4 w-4" />}
+      icon={<Wrench20Regular className="h-4 w-4" />}
       defaultOpen={false}
     >
       {stats.total === 0 ? (

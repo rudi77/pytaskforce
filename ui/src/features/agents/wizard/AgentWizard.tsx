@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import yaml from "js-yaml";
 import {
   Warning20Regular,
@@ -187,17 +187,13 @@ export function AgentWizard() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/agents">
-            <ChevronLeft20Regular className="mr-1 h-4 w-4" />
-            Back to list
-          </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/agents")}>
+          <ChevronLeft20Regular className="mr-1 h-4 w-4" />
+          Back to list
         </Button>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/agents/new?advanced=1">
-            <Settings20Regular className="mr-2 h-4 w-4" />
-            Open advanced editor
-          </Link>
+        <Button variant="outline" size="sm" onClick={() => navigate("/agents/new?advanced=1")}>
+          <Settings20Regular className="mr-2 h-4 w-4" />
+          Open advanced editor
         </Button>
       </div>
 

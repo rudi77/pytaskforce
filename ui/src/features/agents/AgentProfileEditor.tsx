@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import yaml from "js-yaml";
@@ -175,11 +175,9 @@ export function AgentProfileEditor({ mode, profileName }: Props) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="sm" type="button">
-          <Link to="/agents">
-            <ArrowLeft20Regular className="h-4 w-4" />
-            All agents
-          </Link>
+        <Button variant="ghost" size="sm" type="button" onClick={() => navigate("/agents")}>
+          <ArrowLeft20Regular className="h-4 w-4" />
+          All agents
         </Button>
         <div className="ml-auto flex items-center gap-2">
           {savedAt ? (

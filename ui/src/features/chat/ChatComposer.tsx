@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Paperclip, Send, Square, Trash2, UploadCloud } from "lucide-react";
+import {
+  Attach20Regular,
+  Send20Regular,
+  Stop16Regular,
+  Delete16Regular,
+  CloudArrowUp20Regular,
+} from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -160,7 +166,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
       <input {...getInputProps()} />
       {isDragActive ? (
         <div className="flex items-center gap-2 px-1 pb-2 text-xs text-primary">
-          <UploadCloud className="h-4 w-4" />
+          <CloudArrowUp20Regular className="h-4 w-4" />
           <span>Drop files to attach…</span>
         </div>
       ) : null}
@@ -178,7 +184,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
                   className="text-muted-foreground hover:text-destructive"
                   onClick={() => removeAttachment(att.file_id)}
                 >
-                  <Trash2 className="h-3 w-3" />
+                  <Delete16Regular className="h-3 w-3" />
                 </button>
               </Badge>
             </li>
@@ -249,7 +255,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
         >
-          <Paperclip className="h-4 w-4" />
+          <Attach20Regular className="h-4 w-4" />
           Attach
         </Button>
         <span className="text-xs text-muted-foreground">
@@ -266,12 +272,12 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
               }}
               title="Ask the running agent to pause cooperatively"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Stop16Regular className="h-3.5 w-3.5" />
               Stop
             </Button>
           ) : null}
           <Button type="button" size="sm" onClick={() => void submit()} disabled={disabled || isStreaming}>
-            <Send className="h-4 w-4" />
+            <Send20Regular className="h-4 w-4" />
             Send
           </Button>
         </div>

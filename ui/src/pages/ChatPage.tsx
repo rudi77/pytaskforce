@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Archive,
-  Bot,
-  ChevronDown,
-  Eye,
-  GitBranch,
-  Hash,
-  MessageSquarePlus,
-  Minimize2,
-  PanelRightClose,
-  PanelRightOpen,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+  Archive20Regular,
+  Bot20Regular,
+  ChevronDown16Regular,
+  Eye20Regular,
+  BranchFork20Regular,
+  NumberSymbol20Regular,
+  ChatAdd20Regular,
+  ArrowMinimize20Regular,
+  PanelRightContract20Regular,
+  PanelRightExpand20Regular,
+  Edit20Regular,
+  Delete20Regular,
+} from "@fluentui/react-icons";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -215,14 +215,14 @@ function ChatHeader({
           >
             {primary}
           </h2>
-          <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />
+          <ChevronDown16Regular className="h-3 w-3 shrink-0" aria-hidden />
         </nav>
         {idShort ? (
           <p
             className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"
             title={conversationId ?? undefined}
           >
-            <Hash className="h-3 w-3" />
+            <NumberSymbol20Regular className="h-3 w-3" />
             <span className="font-mono">{idShort}</span>
           </p>
         ) : null}
@@ -244,7 +244,7 @@ function ChatHeader({
             disabled={compactPending || isStreaming}
             title="Summarize earlier messages to reclaim context window space"
           >
-            <Minimize2 className="h-4 w-4" />
+            <ArrowMinimize20Regular className="h-4 w-4" />
             <span className="hidden xl:inline">
               {compactPending ? "Compacting…" : "Compact"}
             </span>
@@ -256,7 +256,7 @@ function ChatHeader({
             disabled={forkPending}
             title="Create a copy of this conversation to replay or branch"
           >
-            <GitBranch className="h-4 w-4" />
+            <BranchFork20Regular className="h-4 w-4" />
             <span className="hidden xl:inline">Fork</span>
           </Button>
           <Button
@@ -266,7 +266,7 @@ function ChatHeader({
             disabled={renamePending}
             title="Rename this conversation"
           >
-            <Pencil className="h-4 w-4" />
+            <Edit20Regular className="h-4 w-4" />
             <span className="hidden xl:inline">Rename</span>
           </Button>
           <Button
@@ -276,7 +276,7 @@ function ChatHeader({
             disabled={archivePending}
             title="Archive this conversation"
           >
-            <Archive className="h-4 w-4" />
+            <Archive20Regular className="h-4 w-4" />
             <span className="hidden xl:inline">Archive</span>
           </Button>
           <Button
@@ -287,7 +287,7 @@ function ChatHeader({
             title="Permanently delete this conversation"
             className="text-muted-foreground hover:text-destructive"
           >
-            <Trash2 className="h-4 w-4" />
+            <Delete20Regular className="h-4 w-4" />
             <span className="hidden xl:inline">Delete</span>
           </Button>
           {/* Only visible at lg+; that's the breakpoint where the right
@@ -303,9 +303,9 @@ function ChatHeader({
             className="hidden lg:inline-flex"
           >
             {rightPanelOpen ? (
-              <PanelRightClose className="h-4 w-4" />
+              <PanelRightContract20Regular className="h-4 w-4" />
             ) : (
-              <PanelRightOpen className="h-4 w-4" />
+              <PanelRightExpand20Regular className="h-4 w-4" />
             )}
           </Button>
         </div>
@@ -329,7 +329,7 @@ function AgentPicker({
 }) {
   return (
     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Bot className="h-4 w-4" aria-hidden />
+      <Bot20Regular className="h-4 w-4" aria-hidden />
       <span className="sr-only">Agent</span>
       <select
         className={cn(
@@ -369,7 +369,7 @@ function ViewModePicker({
       className="flex items-center gap-1.5 text-xs text-muted-foreground"
       title={current ? `${current.label}: ${current.hint}` : "Transcript detail level"}
     >
-      <Eye className="h-4 w-4" aria-hidden />
+      <Eye20Regular className="h-4 w-4" aria-hidden />
       <span className="sr-only">Transcript view</span>
       <select
         aria-label="Transcript view"
@@ -822,7 +822,7 @@ function NoConversationPicker() {
             }}
             disabled={create.isPending}
           >
-            <MessageSquarePlus className="h-4 w-4" />
+            <ChatAdd20Regular className="h-4 w-4" />
             Start conversation
           </Button>
         }

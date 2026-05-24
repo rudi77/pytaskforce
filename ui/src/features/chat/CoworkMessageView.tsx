@@ -16,13 +16,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ChevronRight,
-  Wrench,
-  Bot,
-  FileEdit,
-  Terminal as TerminalIcon,
-  Globe,
-} from "lucide-react";
+  ChevronRight16Regular,
+  Wrench16Regular,
+  Bot16Regular,
+  DocumentEdit16Regular,
+  WindowConsole20Regular,
+  Globe20Regular,
+} from "@fluentui/react-icons";
 
 import { cn } from "@/lib/utils";
 import type { ChatMessage, FileMetadata } from "@/api/queries";
@@ -224,14 +224,14 @@ function ToolSummary({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <Wrench className="h-3.5 w-3.5" aria-hidden />
+        <Wrench16Regular className="h-3.5 w-3.5" aria-hidden />
         <span>{parts.join(", ")}</span>
         {stillRunning ? (
           <Badge variant="warning" className="px-1 py-0 text-[10px]">
             running
           </Badge>
         ) : null}
-        <ChevronRight
+        <ChevronRight16Regular
           className={cn(
             "ml-auto h-3.5 w-3.5 transition-transform",
             open && "rotate-90",
@@ -252,15 +252,15 @@ function ToolSummary({
 
 function ToolIcon({ name }: { name: string }) {
   if (name === "shell" || name === "bash" || name === "powershell") {
-    return <TerminalIcon className="h-3 w-3 text-muted-foreground" />;
+    return <WindowConsole20Regular className="h-3 w-3 text-muted-foreground" />;
   }
   if (name === "file_write" || name === "edit") {
-    return <FileEdit className="h-3 w-3 text-muted-foreground" />;
+    return <DocumentEdit16Regular className="h-3 w-3 text-muted-foreground" />;
   }
   if (name === "web_search" || name === "web_fetch") {
-    return <Globe className="h-3 w-3 text-muted-foreground" />;
+    return <Globe20Regular className="h-3 w-3 text-muted-foreground" />;
   }
-  return <Wrench className="h-3 w-3 text-muted-foreground" />;
+  return <Wrench16Regular className="h-3 w-3 text-muted-foreground" />;
 }
 
 function ToolRow({ call }: { call: ToolCallView }) {
@@ -272,7 +272,7 @@ function ToolRow({ call }: { call: ToolCallView }) {
     >
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="h-3 w-3 text-muted-foreground transition-transform group-open:rotate-90" />
+          <ChevronRight16Regular className="h-3 w-3 text-muted-foreground transition-transform group-open:rotate-90" />
           <ToolIcon name={call.name} />
           <span className="font-mono">{call.name}</span>
           {depth > 0 ? <SubAgentBadge path={call.agentPath ?? []} /> : null}
@@ -315,7 +315,7 @@ function SubAgentBadge({ path }: { path: string[] }) {
       className="gap-1 border-primary/40 px-1 py-0 text-[10px] font-normal text-primary"
       title={`Sub-agent: ${path.join(" › ")}`}
     >
-      <Bot className="h-2.5 w-2.5" />
+      <Bot16Regular className="h-2.5 w-2.5" />
       <span className="font-mono">{path.join(" › ")}</span>
     </Badge>
   );

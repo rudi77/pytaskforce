@@ -1,2 +1,7 @@
 allowBuilds:
+  abort-controller-es5: set this to true or false
+  core-js: set this to true or false
+  core-js-pure: set this to true or false
   esbuild: true
+  markdown-it-attrs-es5: set this to true or false
+  p-defer-es5: set this to true or false

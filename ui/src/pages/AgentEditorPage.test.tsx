@@ -67,10 +67,9 @@ describe("AgentEditorPage create permission gate", () => {
     expect(screen.getByText(/Forbidden/i)).toBeInTheDocument();
     expect(screen.queryByTestId("agent-wizard")).not.toBeInTheDocument();
     expect(screen.queryByTestId("agent-profile-editor")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Back to agents/i })).toHaveAttribute(
-      "href",
-      "/agents",
-    );
+    // After the asChild→onClick migration the element is now a <button>
+    // that calls navigate("/agents") instead of an <a href="/agents">.
+    expect(screen.getByRole("button", { name: /Back to agents/i })).toBeInTheDocument();
   });
 
   it("renders the wizard when the user has agent:create", () => {

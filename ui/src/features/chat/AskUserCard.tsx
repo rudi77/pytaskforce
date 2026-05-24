@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { CornerDownRight, HelpCircle, Send } from "lucide-react";
+import {
+  ArrowEnter16Regular,
+  QuestionCircle20Regular,
+  Send16Regular,
+} from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +84,7 @@ export function AskUserCard({ prompt, onAnswer, disabled }: AskUserCardProps) {
           className="flex h-7 w-7 items-center justify-center rounded-full border border-amber-500/60 bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200"
           aria-hidden
         >
-          <HelpCircle className="h-4 w-4" />
+          <QuestionCircle20Regular className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
@@ -145,7 +149,7 @@ export function AskUserCard({ prompt, onAnswer, disabled }: AskUserCardProps) {
         />
         <div className="flex items-center justify-end gap-2">
           <span className="mr-auto text-[11px] text-muted-foreground">
-            <CornerDownRight className="mr-1 inline h-3 w-3" />
+            <ArrowEnter16Regular className="mr-1 inline h-3 w-3" />
             ⌘/Ctrl + Enter to send
           </span>
           <Button
@@ -154,7 +158,7 @@ export function AskUserCard({ prompt, onAnswer, disabled }: AskUserCardProps) {
             onClick={handleSubmit}
             disabled={disabled || draft.trim().length === 0}
           >
-            <Send className="h-3.5 w-3.5" />
+            <Send16Regular className="h-3.5 w-3.5" />
             Send answer
           </Button>
         </div>

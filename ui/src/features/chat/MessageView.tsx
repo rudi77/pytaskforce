@@ -1,5 +1,14 @@
 import { useMemo } from "react";
-import { Bot, ChevronRight, Download, FileText, ImageIcon, User, Wrench } from "lucide-react";
+import {
+  Bot20Regular,
+  Bot16Regular,
+  ChevronRight16Regular,
+  ArrowDownload20Regular,
+  DocumentText16Regular,
+  Image20Regular,
+  Person20Regular,
+  Wrench16Regular,
+} from "@fluentui/react-icons";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -102,7 +111,7 @@ function Avatar({ isUser }: { isUser: boolean }) {
       )}
       aria-hidden
     >
-      {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+      {isUser ? <Person20Regular className="h-4 w-4" /> : <Bot20Regular className="h-4 w-4" />}
     </div>
   );
 }
@@ -127,8 +136,8 @@ function ToolCallList({
           >
             <details className="group/tool" open={defaultOpen}>
               <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 [&::-webkit-details-marker]:hidden">
-                <ChevronRight className="h-3 w-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />
-                <Wrench className="h-3 w-3 text-muted-foreground" />
+                <ChevronRight16Regular className="h-3 w-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />
+                <Wrench16Regular className="h-3 w-3 text-muted-foreground" />
                 <span className="font-mono">{call.name}</span>
                 {depth > 0 ? <SubAgentBadge path={call.agentPath ?? []} /> : null}
                 {call.pending ? (
@@ -179,7 +188,7 @@ function SubAgentBadge({ path }: { path: string[] }) {
       className="gap-1 border-primary/40 px-1 py-0 text-[10px] font-normal text-primary"
       title={`Sub-agent: ${path.join(" › ")}`}
     >
-      <Bot className="h-2.5 w-2.5" />
+      <Bot16Regular className="h-2.5 w-2.5" />
       <span className="font-mono">{path.join(" › ")}</span>
     </Badge>
   );
@@ -229,7 +238,7 @@ function useAttachmentDownload() {
 function AttachmentChip({ attachment }: { attachment: FileMetadata }) {
   const download = useAttachmentDownload();
   const isImage = attachment.mime.startsWith("image/");
-  const Icon = isImage ? ImageIcon : FileText;
+  const Icon = isImage ? Image20Regular : DocumentText16Regular;
   return (
     <button
       type="button"
@@ -240,7 +249,7 @@ function AttachmentChip({ attachment }: { attachment: FileMetadata }) {
       <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
       <span className="font-medium">{attachment.name}</span>
       <span className="text-muted-foreground">{formatBytes(attachment.size)}</span>
-      <Download className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
+      <ArrowDownload20Regular className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
     </button>
   );
 }

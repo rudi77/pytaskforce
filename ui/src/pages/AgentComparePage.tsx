@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ArrowLeft20Regular, BranchCompare20Regular } from "@fluentui/react-icons";
 
 import {
@@ -48,6 +48,7 @@ function ProfilePicker({
 }
 
 export default function AgentComparePage() {
+  const navigate = useNavigate();
   const profiles = useProfiles();
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
@@ -78,11 +79,9 @@ export default function AgentComparePage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/agents">
-            <ArrowLeft20Regular className="h-4 w-4" />
-            All agents
-          </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/agents")}>
+          <ArrowLeft20Regular className="h-4 w-4" />
+          All agents
         </Button>
         <h2 className="ml-1 flex items-center gap-2 text-base font-semibold">
           <BranchCompare20Regular className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Open16Regular, Stop16Regular } from "@fluentui/react-icons";
 
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,7 @@ function Row({
   onCancel: () => void;
   cancelDisabled: boolean;
 }) {
+  const navigate = useNavigate();
   return (
     <tr className="border-t border-border align-top hover:bg-accent/30">
       <td className="max-w-[280px] px-3 py-2">
@@ -102,11 +103,14 @@ function Row({
       </td>
       <td className="px-3 py-2 text-right">
         <div className="flex items-center justify-end gap-1">
-          <Button asChild variant="ghost" size="sm" title="Open trace">
-            <Link to={`/monitoring/runs/${encodeURIComponent(run.session_id)}`}>
-              <Open16Regular className="h-3 w-3" />
-              Trace
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Open trace"
+            onClick={() => navigate(`/monitoring/runs/${encodeURIComponent(run.session_id)}`)}
+          >
+            <Open16Regular className="h-3 w-3" />
+            Trace
           </Button>
           <Button variant="outline" size="sm" onClick={onCancel} disabled={cancelDisabled}>
             <Stop16Regular className="h-3 w-3" />
