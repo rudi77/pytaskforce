@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Input } from "@fluentui/react-components";
+import { Badge, Button, Field, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -160,10 +160,13 @@ export default function LLMProvidersTab() {
             </CardHeader>
             <CardContent className="space-y-3">
               {p.fields.map((field) => (
-                <div key={field.name} className="space-y-1.5">
-                  <label className="text-sm font-medium" htmlFor={`${p.id}-${field.name}`}>
-                    {field.label}
-                  </label>
+                <Field
+                  key={field.name}
+                  label={{
+                    children: field.label,
+                    htmlFor: `${p.id}-${field.name}`,
+                  }}
+                >
                   <Input
                     id={`${p.id}-${field.name}`}
                     type={field.secret ? "password" : "text"}
@@ -178,7 +181,7 @@ export default function LLMProvidersTab() {
                     value={current[field.name] ?? ""}
                     onChange={(_, data) => setField(p.id, field.name, data.value)}
                   />
-                </div>
+                </Field>
               ))}
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button
