@@ -5,6 +5,7 @@ import {
   Wand20Regular,
   Wand16Regular,
 } from "@fluentui/react-icons";
+import { Field } from "@fluentui/react-components";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -110,8 +111,10 @@ export function Step4Personality({ state, onChange }: Props) {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="wizard-rules">Wichtige Regeln (optional)</Label>
+        <Field
+          label="Wichtige Regeln (optional)"
+          hint="Diese Regeln werden dem Agenten als verbindliche Anweisungen mitgegeben."
+        >
           <Textarea
             id="wizard-rules"
             value={state.rules}
@@ -121,10 +124,7 @@ export function Step4Personality({ state, onChange }: Props) {
             }
             rows={6}
           />
-          <p className="text-xs text-muted-foreground">
-            Diese Regeln werden dem Agenten als verbindliche Anweisungen mitgegeben.
-          </p>
-        </div>
+        </Field>
 
         {composeError ? (
           <div

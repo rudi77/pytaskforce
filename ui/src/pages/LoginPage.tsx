@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "@taskforce/ui-shell";
-import { Button, Input, Label } from "@fluentui/react-components";
+import { Button, Field, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSettings } from "@/lib/settings";
@@ -68,9 +68,8 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="tenant_id">Tenant</Label>
+          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+            <Field label="Tenant">
               <Input
                 id="tenant_id"
                 autoComplete="organization"
@@ -79,9 +78,8 @@ export default function LoginPage() {
                 disabled={submitting}
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+            </Field>
+            <Field label="Email">
               <Input
                 id="email"
                 type="email"
@@ -91,9 +89,8 @@ export default function LoginPage() {
                 disabled={submitting}
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            </Field>
+            <Field label="Password">
               <Input
                 id="password"
                 type="password"
@@ -103,7 +100,7 @@ export default function LoginPage() {
                 disabled={submitting}
                 required
               />
-            </div>
+            </Field>
             {error ? (
               <p className="text-sm text-destructive" role="alert">
                 {error}
