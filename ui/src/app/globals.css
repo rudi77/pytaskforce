@@ -3,27 +3,42 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * Token bridge: shadcn-named CSS variables now carry FluentUI v9's
+   * neutral palette values (as HSL triplets so Tailwind utilities like
+   * `bg-card`, `text-muted-foreground`, `border-border` keep working).
+   *
+   * The brand axis (--primary, --ring) keeps the project's blue ramp
+   * (matches the FluentProvider brand variants derived from Tailwind
+   * blue-600 / blue-500). The semantic axis (--destructive, --success,
+   * --warning) stays domain-specific.
+   *
+   * Net effect: every page surface that uses Tailwind tokens shifts
+   * from shadcn's slate-tinted neutrals to Fluent's neutral grey
+   * palette — sidebar, cards, hover states, muted text, borders all
+   * pick up the Fluent look without per-page changes.
+   */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    --background: 0 0% 100%;             /* Fluent neutralBackground1 (#ffffff) */
+    --foreground: 0 0% 14%;              /* Fluent neutralForeground1 (#242424) */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 0 0% 100%;                   /* neutralBackground1 */
+    --card-foreground: 0 0% 14%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 0 0% 14%;
 
-    --primary: 221 83% 53%;
+    --primary: 221 83% 53%;              /* brand blue-600 (kept) */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 0 0% 96%;               /* neutralBackground3 (#f5f5f5) */
+    --secondary-foreground: 0 0% 14%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 0 0% 96%;                   /* neutralBackground3 */
+    --muted-foreground: 0 0% 38%;        /* neutralForeground3 (#616161) */
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 0 0% 96%;                  /* neutralBackground3 */
+    --accent-foreground: 0 0% 14%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -34,46 +49,49 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 214 26% 84%;
-    --input: 214 26% 84%;
-    --ring: 221 83% 53%;
+    --border: 0 0% 88%;                  /* neutralStroke2 (#e0e0e0) */
+    --input: 0 0% 82%;                   /* neutralStroke1 (#d1d1d1) */
+    --ring: 221 83% 53%;                 /* brand blue-600 */
 
-    --radius: 0.6rem;
+    --radius: 0.4rem;                    /* Fluent uses 4px corners; pre-Fluent
+                                            was 0.6rem (~9.6px). Tighter radius
+                                            is the most recognisable Fluent
+                                            silhouette change. */
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    --background: 0 0% 12%;              /* Fluent dark neutralBackground2 (#1f1f1f) */
+    --foreground: 0 0% 100%;             /* neutralForeground1 (white) */
 
-    --card: 222 40% 9%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 16%;                    /* neutralBackground1 (#292929) */
+    --card-foreground: 0 0% 100%;
 
-    --popover: 222 40% 9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 16%;
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
+    --primary: 217 91% 60%;              /* brand blue-500 in dark */
+    --primary-foreground: 0 0% 14%;
 
-    --secondary: 217 32% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 0 0% 20%;               /* slightly raised neutral */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 217 32% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 68%;        /* neutralForeground3 (#adadad) */
 
-    --accent: 217 32% 17%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
     --success: 142 65% 45%;
-    --success-foreground: 222 47% 11%;
+    --success-foreground: 0 0% 14%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 0 0% 14%;
 
-    --border: 217 32% 18%;
-    --input: 217 32% 18%;
+    --border: 0 0% 24%;                  /* neutralStroke2 dark (#3d3d3d) */
+    --input: 0 0% 32%;                   /* neutralStroke1 dark (#525252) */
     --ring: 217 91% 60%;
   }
 
