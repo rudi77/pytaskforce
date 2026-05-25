@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Input, Tab, TabList } from "@fluentui/react-components";
+import { Button, Field, Input, Tab, TabList } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTheme } from "@/app/theme-provider";
@@ -58,10 +58,9 @@ function GeneralTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="api-base-url">
-              API base URL
-            </label>
+          <Field
+            label={{ children: "API base URL", htmlFor: "api-base-url" }}
+          >
             <Input
               id="api-base-url"
               value={draftUrl}
@@ -69,11 +68,16 @@ function GeneralTab() {
               placeholder="http://localhost:8070"
               autoComplete="off"
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="api-token">
-              API token (optional)
-            </label>
+          </Field>
+          <Field
+            label={{ children: "API token (optional)", htmlFor: "api-token" }}
+            hint={
+              <>
+                Fallback for headless / CI use. Interactive users sign in via{" "}
+                <code>/login</code> instead.
+              </>
+            }
+          >
             <Input
               id="api-token"
               type="password"
@@ -82,11 +86,7 @@ function GeneralTab() {
               placeholder="Bearer token, sent as Authorization header"
               autoComplete="off"
             />
-            <p className="text-xs text-muted-foreground">
-              Fallback for headless / CI use. Interactive users sign in via{" "}
-              <code>/login</code> instead.
-            </p>
-          </div>
+          </Field>
           <div className="flex items-center gap-3">
             <Button appearance="primary" onClick={handleSave}>Save</Button>
             {saved ? <span className="text-xs text-success">Saved.</span> : null}

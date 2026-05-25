@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Badge, Button, Input } from "@fluentui/react-components";
+import { Badge, Button, Field, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -221,10 +221,7 @@ function BotForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium" htmlFor="bot-id">
-            Bot id (slug)
-          </label>
+        <Field label={{ children: "Bot id (slug)", htmlFor: "bot-id" }}>
           <Input
             id="bot-id"
             value={draft.id}
@@ -233,14 +230,16 @@ function BotForm({
             disabled={isEdit}
             autoComplete="off"
           />
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Channel type</label>
+        <Field
+          label={{ children: "Channel type", htmlFor: "bot-channel-type" }}
+        >
           {/* Raw <select> kept — Fluent Dropdown has a different
            *  controlled-state API (selectedOptions array + onOptionSelect)
            *  that's a separate primitive migration. */}
           <select
+            id="bot-channel-type"
             value={draft.channel_type}
             onChange={(e) => setDraft({ ...draft, channel_type: e.target.value })}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -251,12 +250,9 @@ function BotForm({
               </option>
             ))}
           </select>
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium" htmlFor="bot-token">
-            Bot token
-          </label>
+        <Field label={{ children: "Bot token", htmlFor: "bot-token" }}>
           <Input
             id="bot-token"
             type="password"
@@ -265,7 +261,7 @@ function BotForm({
             placeholder="123456:ABC-…"
             autoComplete="off"
           />
-        </div>
+        </Field>
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Owner</label>
@@ -297,10 +293,13 @@ function BotForm({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium" htmlFor="bot-default-agent">
-            Default agent (optional)
-          </label>
+        <Field
+          label={{
+            children: "Default agent (optional)",
+            htmlFor: "bot-default-agent",
+          }}
+          hint="Which agent answers messages on this bot. Empty = tenant default."
+        >
           <Input
             id="bot-default-agent"
             value={draft.default_agent}
@@ -308,14 +307,14 @@ function BotForm({
             placeholder="butler"
             autoComplete="off"
           />
-          <p className="text-xs text-muted-foreground">
-            Which agent answers messages on this bot. Empty = tenant default.
-          </p>
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Pairing mode</label>
+        <Field
+          label={{ children: "Pairing mode", htmlFor: "bot-pairing-mode" }}
+          hint={draft.pairing_mode ? PAIRING_HINTS[draft.pairing_mode] : undefined}
+        >
           <select
+            id="bot-pairing-mode"
             value={draft.pairing_mode}
             onChange={(e) =>
               setDraft({ ...draft, pairing_mode: e.target.value as PairingMode | "" })
@@ -330,10 +329,7 @@ function BotForm({
             <option value="paired">paired — /link required</option>
             <option value="anonymous">anonymous — no per-user routing</option>
           </select>
-          {draft.pairing_mode ? (
-            <p className="text-xs text-muted-foreground">{PAIRING_HINTS[draft.pairing_mode]}</p>
-          ) : null}
-        </div>
+        </Field>
 
         <label className="flex items-center gap-2 text-sm">
           <input
