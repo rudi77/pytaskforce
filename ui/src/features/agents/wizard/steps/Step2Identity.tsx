@@ -61,7 +61,12 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
         </div>
       </div>
 
-      <Field label="Wie soll dein Agent heißen?">
+      <Field
+        label={{
+          children: "Wie soll dein Agent heißen?",
+          htmlFor: "wizard-displayname",
+        }}
+      >
         <Input
           id="wizard-displayname"
           ref={nameRef}
@@ -90,7 +95,12 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
         </div>
       </Field>
 
-      <Field label="Was soll er für dich tun?">
+      <Field
+        label={{
+          children: "Was soll er für dich tun?",
+          htmlFor: "wizard-description",
+        }}
+      >
         <Textarea
           id="wizard-description"
           value={state.description}

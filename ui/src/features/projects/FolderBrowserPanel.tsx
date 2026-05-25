@@ -42,7 +42,10 @@ export function FolderBrowserPanel({
   return (
     <div className="flex flex-col gap-3">
       <form onSubmit={onPathSubmit} className="flex items-end gap-2">
-        <Field label="Aktueller Pfad" className="flex-1">
+        <Field
+          label={{ children: "Aktueller Pfad", htmlFor: "browse-path" }}
+          className="flex-1"
+        >
           <Input
             id="browse-path"
             value={pathDraft}

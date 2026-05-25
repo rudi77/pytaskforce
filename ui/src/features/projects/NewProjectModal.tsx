@@ -196,7 +196,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
               <DialogDescription>{activeMeta.description}</DialogDescription>
             </DialogHeader>
 
-            <Field label="Name" required>
+            <Field label={{ children: "Name", htmlFor: "project-name" }} required>
               <Input
                 id="project-name"
                 value={name}
@@ -208,7 +208,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
             </Field>
 
             <Field
-              label="Verzeichnis"
+              label={{ children: "Verzeichnis", htmlFor: "project-path" }}
               required
               hint={
                 mode === "scratch"

@@ -112,7 +112,10 @@ export function Step4Personality({ state, onChange }: Props) {
         </div>
 
         <Field
-          label="Wichtige Regeln (optional)"
+          label={{
+            children: "Wichtige Regeln (optional)",
+            htmlFor: "wizard-rules",
+          }}
           hint="Diese Regeln werden dem Agenten als verbindliche Anweisungen mitgegeben."
         >
           <Textarea

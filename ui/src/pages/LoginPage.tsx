@@ -69,7 +69,7 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <Field label="Tenant">
+            <Field label={{ children: "Tenant", htmlFor: "tenant_id" }}>
               <Input
                 id="tenant_id"
                 autoComplete="organization"
@@ -79,7 +79,7 @@ export default function LoginPage() {
                 required
               />
             </Field>
-            <Field label="Email">
+            <Field label={{ children: "Email", htmlFor: "email" }}>
               <Input
                 id="email"
                 type="email"
@@ -90,7 +90,7 @@ export default function LoginPage() {
                 required
               />
             </Field>
-            <Field label="Password">
+            <Field label={{ children: "Password", htmlFor: "password" }}>
               <Input
                 id="password"
                 type="password"
