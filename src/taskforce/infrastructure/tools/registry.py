@@ -191,6 +191,11 @@ _BUILTIN_REGISTRY: dict[str, ToolSpec] = {
         "module": "taskforce.infrastructure.tools.orchestration.acp_agent_tool",
         "params": {},
     },
+    "call_a2a_agent": {
+        "type": "A2aAgentTool",
+        "module": "taskforce.infrastructure.tools.orchestration.a2a_agent_tool",
+        "params": {},
+    },
     # RAG tools - Semantic search and document retrieval
     "rag_semantic_search": {
         "type": "SemanticSearchTool",

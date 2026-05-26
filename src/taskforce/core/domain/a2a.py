@@ -55,9 +55,11 @@ class A2aTaskState(str, Enum):
     SUBMITTED = "submitted"
     WORKING = "working"
     INPUT_REQUIRED = "input-required"
+    AUTH_REQUIRED = "auth-required"
     COMPLETED = "completed"
     CANCELED = "canceled"
     FAILED = "failed"
+    REJECTED = "rejected"
     UNKNOWN = "unknown"
 
 
