@@ -1,0 +1,63 @@
+profile: a2a_peer
+specialist: butler
+
+persistence:
+  type: file
+  work_dir: .taskforce
+
+runtime:
+  enabled: true
+  store: file
+  work_dir: .taskforce
+
+agent:
+  planning_strategy: native_react
+  max_steps: 30
+
+llm:
+  config_path: src/taskforce/configs/llm_config.yaml
+  default_model: main
+
+logging:
+  level: INFO
+  format: console
+
+context_policy:
+  max_items: 10
+  max_chars_per_item: 3000
+  max_total_chars: 15000
+
+tools:
+  - web_search
+  - web_fetch
+  - file_read
+  - file_write
+  - python
+  - ask_user
+  - call_a2a_agent
+
+a2a:
+  server:
+    enabled: true
+    host: 0.0.0.0
+    port: 9000
+    agent_name: taskforce_peer
+    expose_profile: true
+    auth:
+      type: none
+  peers:
+    # Example A2A peer — replace with your deployment.
+    - name: sample_coder
+      base_url: http://localhost:9001
+      description: Example A2A peer; override in deployment
+      preferred_transport: json_rpc
+      auth:
+        type: none
+  artifacts:
+    retention_days: 7
+  push:
+    enabled: false
+    # Set when this deployment has a public URL the remote A2A peer can
+    # POST to once an async task completes. Falls back to tasks/get
+    # polling at peer.poll_interval_seconds when omitted.
+    # public_callback_url: https://my-host.example/api/v1/a2a/webhooks
