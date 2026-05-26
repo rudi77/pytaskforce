@@ -46,18 +46,32 @@ class A2aService:
         *,
         work_dir: str = ".taskforce",
         tenant_id_provider: Callable[[], str] | None = None,
+        auth_manager: Any | None = None,
     ) -> None:
         self._config = config
         self._work_dir = work_dir
         self._file_registry = FileA2aPeerRegistry(work_dir=work_dir)
         self._peers = EnvA2aPeerRegistry(self._file_registry)
         server = self._build_server_if_enabled(config)
+        client = self._build_client(config, work_dir, auth_manager)
         self._runtime = A2aRuntime(
             server=server,
+            client=client,
             peers=self._peers,
             tenant_id_provider=tenant_id_provider,
         )
         self._load_peers_from_config(config.peers)
+
+    @staticmethod
+    def _build_client(
+        config: A2aConfigSchema,
+        work_dir: str,
+        auth_manager: Any | None,
+    ) -> Any:
+        from taskforce.infrastructure.a2a.a2a_client import A2aClient
+
+        artifact_dir = config.artifacts.work_dir or f"{work_dir.rstrip('/')}/a2a_artifacts"
+        return A2aClient(auth_manager=auth_manager, artifact_dir=artifact_dir)
 
     @staticmethod
     def _build_server_if_enabled(config: A2aConfigSchema) -> Any | None:
@@ -135,13 +149,19 @@ def build_a2a_service(
     *,
     work_dir: str = ".taskforce",
     tenant_id_provider: Callable[[], str] | None = None,
+    auth_manager: Any | None = None,
 ) -> A2aService | None:
     """Factory used by higher-level builders / CLI commands."""
     if config is None:
         return None
     if isinstance(config, dict):
         config = A2aConfigSchema(**config)
-    return A2aService(config, work_dir=work_dir, tenant_id_provider=tenant_id_provider)
+    return A2aService(
+        config,
+        work_dir=work_dir,
+        tenant_id_provider=tenant_id_provider,
+        auth_manager=auth_manager,
+    )
 
 
 def a2a_server_schema_from_dict(data: dict[str, Any]) -> A2aServerSchema:
@@ -263,6 +283,7 @@ def build_a2a_runtime_for_tools(
     base_config: dict[str, Any] | None,
     *,
     work_dir: str = ".taskforce",
+    auth_manager: Any | None = None,
 ) -> A2aRuntime | None:
     """Build a client-only ``A2aRuntime`` from a profile config.
 
@@ -284,6 +305,7 @@ def build_a2a_runtime_for_tools(
         raw,
         work_dir=work_dir,
         tenant_id_provider=get_acp_tenant_id_provider(),
+        auth_manager=auth_manager,
     )
     if service is None or not service.list_peers():
         return None

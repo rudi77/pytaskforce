@@ -492,7 +492,7 @@ class AgentFactory:
         from taskforce.application.acp_service import build_acp_runtime_for_tools
 
         acp_runtime = build_acp_runtime_for_tools(base_config)
-        a2a_runtime = build_a2a_runtime_for_tools(base_config)
+        a2a_runtime = build_a2a_runtime_for_tools(base_config, auth_manager=self._auth_manager)
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,

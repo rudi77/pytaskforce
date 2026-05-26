@@ -98,11 +98,22 @@ class A2aAgentTool(BaseTool):
                 stream=stream,
                 push=push,
             )
+            state_value = handle.state.value
+            needs_user_input = state_value == "input-required"
+            needs_auth = state_value == "auth-required"
             return {
-                "success": True,
+                "success": state_value in ("completed", "input-required", "auth-required"),
                 "peer": handle.peer,
                 "task_id": handle.task_id,
-                "state": handle.state.value,
+                "state": state_value,
+                "needs_user_input": needs_user_input,
+                "needs_auth": needs_auth,
+                "resume_hint": (
+                    f"Call call_a2a_agent again with session_id={handle.task_id!r} "
+                    f"and the user's reply as mission to continue."
+                    if needs_user_input
+                    else None
+                ),
                 "stream": stream,
                 "output_text": handle.output_text,
                 "output_artifacts": [

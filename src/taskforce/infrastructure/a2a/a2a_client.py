@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -45,7 +46,14 @@ class A2aClient:
     one httpx session and one resolved card.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        auth_manager: Any | None = None,
+        artifact_dir: str | None = None,
+    ) -> None:
+        self._auth_manager = auth_manager
+        self._artifact_dir = Path(artifact_dir) if artifact_dir else None
         self._httpx_pool: dict[str, Any] = {}
         self._card_pool: dict[str, A2aAgentCard] = {}
         self._raw_card_pool: dict[str, Any] = {}
@@ -70,7 +78,21 @@ class A2aClient:
         events: list[Any] = []
         async for raw in self._send_message(peer, mission, session_id, metadata, push):
             events.append(raw)
-        return _events_to_handle(peer, events, raw_history=events)
+        handle = _events_to_handle(peer, events, raw_history=events)
+        if self._artifact_dir and handle.artifacts:
+            persisted = self._persist_artifacts(handle.task_id or "unknown", events)
+            if persisted:
+                handle = A2aTaskHandle(
+                    task_id=handle.task_id,
+                    peer=handle.peer,
+                    state=handle.state,
+                    started_at=handle.started_at,
+                    output_text=handle.output_text,
+                    artifacts=persisted,
+                    history=handle.history,
+                    raw=handle.raw,
+                )
+        return handle
 
     async def run_stream(
         self,
@@ -162,6 +184,76 @@ class A2aClient:
         config = client_config_cls(httpx_client=http)
         return await create_client(agent=card, client_config=config)
 
+    async def _build_auth_headers(self, peer: A2aPeer) -> dict[str, str]:
+        auth = peer.auth
+        headers: dict[str, str] = {}
+        if auth.type == A2aAuthType.BEARER and auth.token:
+            headers["Authorization"] = f"Bearer {auth.token}"
+        elif auth.type == A2aAuthType.API_KEY and auth.token:
+            headers[auth.api_key_header or "X-API-Key"] = auth.token
+        elif auth.type in (A2aAuthType.OAUTH2, A2aAuthType.OIDC):
+            token = await self._fetch_oauth_token(peer)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            else:
+                logger.warning(
+                    "a2a.client.oauth_token_missing",
+                    peer=peer.name,
+                    provider=auth.provider,
+                    hint=(
+                        "AuthManager returned no token. Run the authenticate "
+                        "tool for this provider or configure token_env as a "
+                        "static fallback."
+                    ),
+                )
+        return headers
+
+    async def _fetch_oauth_token(self, peer: A2aPeer) -> str | None:
+        if self._auth_manager is None or not peer.auth.provider:
+            if peer.auth.token:
+                return peer.auth.token
+            return None
+        try:
+            token_data = await self._auth_manager.get_token(peer.auth.provider)
+        except Exception as exc:  # noqa: BLE001 - surfaced as warning
+            logger.warning(
+                "a2a.client.auth_manager_failed",
+                peer=peer.name,
+                provider=peer.auth.provider,
+                error=str(exc),
+            )
+            return None
+        if token_data is None:
+            return None
+        return getattr(token_data, "access_token", None)
+
+    def _persist_artifacts(self, task_id: str, events: list[Any]) -> tuple[A2aArtifact, ...]:
+        if self._artifact_dir is None:
+            return ()
+        out: list[A2aArtifact] = []
+        target_dir = self._artifact_dir / task_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for event in events:
+            if _which_oneof(event) != "artifact_update":
+                continue
+            artifact = event.artifact_update.artifact
+            artifact_name = (
+                str(getattr(artifact, "name", ""))
+                or str(getattr(artifact, "artifact_id", ""))
+                or "artifact"
+            )
+            path, size, mime_type = _write_artifact_to_disk(target_dir, artifact_name, artifact)
+            out.append(
+                A2aArtifact(
+                    name=artifact_name,
+                    mime_type=mime_type,
+                    path=str(path) if path else "",
+                    size=size,
+                    description=str(getattr(artifact, "description", "") or ""),
+                )
+            )
+        return tuple(out)
+
     async def _ensure_card(self, peer: A2aPeer) -> None:
         lock = self._locks.setdefault(peer.name, asyncio.Lock())
         async with lock:
@@ -187,7 +279,7 @@ class A2aClient:
                         hint="Tokens over plain HTTP are readable on the wire; use HTTPS.",
                     )
             httpx = load_httpx()
-            headers = _auth_headers(peer)
+            headers = await self._build_auth_headers(peer)
             http = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(30.0))
             self._httpx_pool[peer.name] = http
             resolver_cls = load_card_resolver()
@@ -212,15 +304,53 @@ def _card_path(peer: A2aPeer) -> str:
     return rel if rel.startswith("/") else f"/{rel}"
 
 
-def _auth_headers(peer: A2aPeer) -> dict[str, str]:
-    auth = peer.auth
-    headers: dict[str, str] = {}
-    if auth.type == A2aAuthType.BEARER and auth.token:
-        headers["Authorization"] = f"Bearer {auth.token}"
-    elif auth.type == A2aAuthType.API_KEY and auth.token:
-        header_name = auth.api_key_header or "X-API-Key"
-        headers[header_name] = auth.token
-    return headers
+def _write_artifact_to_disk(
+    target_dir: Path, name: str, artifact: Any
+) -> tuple[Path | None, int, str]:
+    """Persist artifact parts to disk; return (path, size, mime_type)."""
+    parts = list(getattr(artifact, "parts", []) or [])
+    if not parts:
+        return None, 0, ""
+    mime_type = ""
+    blobs: list[bytes] = []
+    for part in parts:
+        media = getattr(part, "media_type", "")
+        if media and not mime_type:
+            mime_type = media
+        try:
+            if part.HasField("text"):
+                blobs.append(part.text.encode("utf-8"))
+                if not mime_type:
+                    mime_type = "text/plain"
+                continue
+        except (ValueError, AttributeError):
+            pass
+        try:
+            if part.HasField("raw"):
+                blobs.append(bytes(part.raw))
+                continue
+        except (ValueError, AttributeError):
+            pass
+        try:
+            if part.HasField("data"):
+                blobs.append(_proto_to_json_bytes(part.data))
+                if not mime_type:
+                    mime_type = "application/json"
+                continue
+        except (ValueError, AttributeError):
+            pass
+    if not blobs:
+        return None, 0, mime_type
+    safe_name = name.replace("/", "_") or "artifact"
+    path = target_dir / safe_name
+    path.write_bytes(b"".join(blobs))
+    return path, path.stat().st_size, mime_type
+
+
+def _proto_to_json_bytes(data_part: Any) -> bytes:
+    import json
+
+    return json.dumps(_proto_to_dict(data_part)).encode("utf-8")
 
 
 def _card_to_domain(raw_card: Any, base_url: str) -> A2aAgentCard:
