@@ -160,7 +160,7 @@ class A2aClient:
         card = self._raw_card_pool[peer.name]
         http = self._httpx_pool[peer.name]
         config = client_config_cls(httpx_client=http)
-        return create_client(agent=card, client_config=config)
+        return await create_client(agent=card, client_config=config)
 
     async def _ensure_card(self, peer: A2aPeer) -> None:
         lock = self._locks.setdefault(peer.name, asyncio.Lock())
@@ -332,28 +332,36 @@ def _events_to_handle(
             text = _extract_text_from_message(event.message)
             if text:
                 output_text_parts.append(text)
+
+    state: A2aTaskState
+    task_id = ""
+    history: tuple[dict[str, Any], ...] = ()
+    raw: dict[str, Any] = {}
+    if last_status is not None:
+        state = _state_from_status(last_status)
+    elif final_task is not None:
+        state = _task_state_from_proto(getattr(final_task.status, "state", 0))
+    else:
+        state = A2aTaskState.UNKNOWN
     if final_task is not None:
-        handle = _task_to_handle(peer, final_task)
-        if output_text_parts and not handle.output_text:
-            return A2aTaskHandle(
-                task_id=handle.task_id,
-                peer=handle.peer,
-                state=handle.state,
-                started_at=handle.started_at,
-                output_text="\n".join(output_text_parts),
-                artifacts=handle.artifacts,
-                history=handle.history,
-                raw=handle.raw,
-            )
-        return handle
-    state = _state_from_status(last_status) if last_status is not None else A2aTaskState.UNKNOWN
+        task_id = str(getattr(final_task, "id", ""))
+        history = tuple(_proto_to_dict(m) for m in getattr(final_task, "history", []) or [])
+        raw = _proto_to_dict(final_task)
+        if not output_text_parts:
+            task_text = _extract_text_from_task(final_task)
+            if task_text:
+                output_text_parts.append(task_text)
+    if not history:
+        history = tuple(_proto_to_dict(e) for e in raw_history)
+    output_artifacts = tuple(_artifact_to_domain(a) for a in artifacts)
     return A2aTaskHandle(
-        task_id="",
+        task_id=task_id,
         peer=peer.name,
         state=state,
         output_text="\n".join(output_text_parts),
-        artifacts=tuple(_artifact_to_domain(a) for a in artifacts),
-        history=tuple(_proto_to_dict(e) for e in raw_history),
+        artifacts=output_artifacts,
+        history=history,
+        raw=raw,
     )
 
 
@@ -391,8 +399,16 @@ def _task_state_from_proto(value: int) -> A2aTaskState:
     return _TASK_STATE_MAP.get(int(value), A2aTaskState.UNKNOWN)
 
 
-def _state_from_status(status: Any) -> A2aTaskState:
-    state = getattr(status, "state", None)
+def _state_from_status(event: Any) -> A2aTaskState:
+    """Extract task state from a ``TaskStatusUpdateEvent``.
+
+    The event wraps a ``TaskStatus`` under ``.status``; for raw
+    ``TaskStatus`` values we fall back to ``.state`` directly.
+    """
+    status = getattr(event, "status", None)
+    if status is not None:
+        return _task_state_from_proto(int(getattr(status, "state", 0)))
+    state = getattr(event, "state", None)
     if state is None:
         return A2aTaskState.UNKNOWN
     return _task_state_from_proto(int(state))
@@ -423,8 +439,17 @@ def _extract_text_from_message(message: Any) -> str:
     return "\n".join(chunks)
 
 
-def _extract_text_from_status(status: Any) -> str:
-    message = getattr(status, "message", None)
+def _extract_text_from_status(event: Any) -> str:
+    """Extract message text from a ``TaskStatusUpdateEvent``.
+
+    The event's ``status.message`` carries the text parts. For raw
+    ``TaskStatus`` instances the ``message`` is reachable directly.
+    """
+    status = getattr(event, "status", None)
+    if status is not None:
+        message = getattr(status, "message", None)
+    else:
+        message = getattr(event, "message", None)
     if message is None:
         return ""
     return _extract_text_from_message(message)

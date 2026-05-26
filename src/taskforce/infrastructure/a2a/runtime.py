@@ -62,6 +62,19 @@ class A2aRuntime:
     def register_peer(self, peer: A2aPeer) -> None:
         self._peers.register(peer)
 
+    def register_agent(self, card: Any, handler: Any) -> None:
+        """Proxy to ``server.register_agent`` for convenience.
+
+        Raises ``RuntimeError`` when no server was configured (client-only
+        runtime built via ``build_a2a_runtime_for_tools``).
+        """
+        if self._server is None:
+            raise RuntimeError(
+                "A2A runtime has no server configured — enable a2a.server in "
+                "the profile to expose this agent."
+            )
+        self._server.register_agent(card, handler)
+
     async def start(self) -> None:
         if self._started:
             return

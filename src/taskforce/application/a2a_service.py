@@ -51,11 +51,21 @@ class A2aService:
         self._work_dir = work_dir
         self._file_registry = FileA2aPeerRegistry(work_dir=work_dir)
         self._peers = EnvA2aPeerRegistry(self._file_registry)
+        server = self._build_server_if_enabled(config)
         self._runtime = A2aRuntime(
+            server=server,
             peers=self._peers,
             tenant_id_provider=tenant_id_provider,
         )
         self._load_peers_from_config(config.peers)
+
+    @staticmethod
+    def _build_server_if_enabled(config: A2aConfigSchema) -> Any | None:
+        if not config.server.enabled:
+            return None
+        from taskforce.infrastructure.a2a.a2a_server import A2aServer
+
+        return A2aServer(host=config.server.host, port=config.server.port)
 
     @property
     def runtime(self) -> A2aRuntime:
@@ -74,6 +84,35 @@ class A2aService:
 
     def list_peers(self) -> list[A2aPeer]:
         return self._peers.list()
+
+    def register_profile_agent(
+        self,
+        handler: Any,
+        *,
+        profile_name: str,
+        description: str = "",
+        tools: list[str] | None = None,
+    ) -> None:
+        """Expose the profile's main agent via A2A if configured to do so.
+
+        Builds the AgentCard from profile metadata + server config and
+        registers it together with the mission handler on the embedded
+        A2A server. No-op when ``a2a.server.expose_profile`` is False or
+        the server is disabled.
+        """
+        if not self._config.server.expose_profile or not self._config.server.enabled:
+            return
+        from taskforce.infrastructure.a2a.agent_card_builder import build_agent_card
+
+        base_url = f"http://{self._config.server.host}:{self._config.server.port}"
+        card = build_agent_card(
+            profile_name=profile_name,
+            description=description,
+            base_url=base_url,
+            server_config=self._config.server,
+            tools=tools or [],
+        )
+        self._runtime.register_agent(card, handler)
 
     async def call_peer(
         self,
