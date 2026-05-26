@@ -5,6 +5,7 @@ from rich.console import Console
 
 # Framework commands (always available)
 from taskforce.api.cli.commands import (
+    a2a,
     acp,
     chat,
     config,
@@ -12,6 +13,7 @@ from taskforce.api.cli.commands import (
     goals,
     memory,
     missions,
+    remote,
     run,
     runtimes,
     skills,
@@ -44,6 +46,8 @@ app.add_typer(memory.app, name="memory", help="Memory management")
 app.add_typer(missions.app, name="missions", help="Mission templates and runtime control")
 app.add_typer(goals.app, name="goals", help="Standing-goal management (proactive layer)")
 app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
+app.add_typer(a2a.app, name="a2a", help="Agent-to-Agent (A2A) protocol")
+app.add_typer(remote.app, name="remote", help="Cross-protocol remote agent discovery")
 app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
 app.add_typer(daemon.app, name="daemon", help="Generic agent daemon management")
 app.add_typer(serve.app, name="serve", help="Run Taskforce as a REST webservice")
