@@ -59,6 +59,7 @@ from fastapi.staticfiles import StaticFiles
 
 from taskforce.api.exception_handlers import taskforce_http_exception_handler
 from taskforce.api.routes import (
+    a2a,
     acp,
     agent_deployments,
     agent_templates,
@@ -81,6 +82,7 @@ from taskforce.api.routes import (
     planning_strategies,
     profiles,
     projects,
+    remote_agents,
     runs,
     settings as settings_route,
     skills,
@@ -336,6 +338,8 @@ def create_app(plugin_config: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])
     app.include_router(workflows.router, prefix="/api/v1", tags=["workflows"])
     app.include_router(acp.router, tags=["acp"])
+    app.include_router(a2a.router, tags=["a2a"])
+    app.include_router(remote_agents.router, tags=["remote-agents"])
     app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"])
     app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
     app.include_router(skills.router, prefix="/api/v1", tags=["skills"])

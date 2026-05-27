@@ -66,6 +66,7 @@ class ToolRegistry:
         auth_manager: Any | None = None,
         tool_result_store: Any | None = None,
         acp_runtime: Any | None = None,
+        a2a_runtime: Any | None = None,
     ) -> None:
         """
         Initialize the tool registry.
@@ -81,6 +82,7 @@ class ToolRegistry:
             auth_manager: Authentication manager for AuthTool.
             tool_result_store: Store for retrieving full tool results by handle.
             acp_runtime: ACP runtime providing peers/client for AcpAgentTool.
+            a2a_runtime: A2A runtime providing peers/client for A2aAgentTool.
         """
         self._llm_provider = llm_provider
         self._user_context = user_context
@@ -91,6 +93,7 @@ class ToolRegistry:
         self._auth_manager = auth_manager
         self._tool_result_store = tool_result_store
         self._acp_runtime = acp_runtime
+        self._a2a_runtime = a2a_runtime
         self._logger = logger.bind(component="ToolRegistry")
         # Caches: avoid re-instantiating the same tool and re-listing all tools.
         self._tool_cache: dict[str, ToolProtocol] = {}
@@ -535,6 +538,16 @@ class ToolRegistry:
                     return None
                 tool_params["runtime"] = self._acp_runtime
 
+            if tool_type == "A2aAgentTool":
+                if self._a2a_runtime is None:
+                    self._logger.debug(
+                        "tool_instantiation_skipped_no_runtime",
+                        tool_name=tool_name,
+                        hint="Pass a2a_runtime to ToolRegistry to enable call_a2a_agent",
+                    )
+                    return None
+                tool_params["runtime"] = self._a2a_runtime
+
             # Special handling for ScheduleTool / ReminderTool
             if tool_type in ("ScheduleTool", "ReminderTool") and self._scheduler:
                 tool_params["scheduler"] = self._scheduler
@@ -591,6 +604,7 @@ def get_tool_registry(
     scheduler: Any | None = None,
     auth_manager: Any | None = None,
     acp_runtime: Any | None = None,
+    a2a_runtime: Any | None = None,
 ) -> ToolRegistry:
     """Get a tool registry instance.
 
@@ -608,6 +622,8 @@ def get_tool_registry(
         gateway: Optional communication gateway for SendNotificationTool.
         scheduler: Optional scheduler for ScheduleTool and ReminderTool.
         auth_manager: Optional authentication manager for AuthTool.
+        acp_runtime: Optional ACP runtime for AcpAgentTool.
+        a2a_runtime: Optional A2A runtime for A2aAgentTool.
 
     Returns:
         ToolRegistry instance.
@@ -620,6 +636,7 @@ def get_tool_registry(
         or scheduler is not None
         or auth_manager is not None
         or acp_runtime is not None
+        or a2a_runtime is not None
     )
     if has_params:
         # Always return a fresh, request-scoped instance when DI params given.
@@ -631,6 +648,7 @@ def get_tool_registry(
             scheduler=scheduler,
             auth_manager=auth_manager,
             acp_runtime=acp_runtime,
+            a2a_runtime=a2a_runtime,
         )
 
     # Catalog-only path: reuse a shared lightweight instance.

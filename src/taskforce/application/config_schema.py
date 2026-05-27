@@ -296,6 +296,136 @@ class AcpConfigSchema(BaseModel):
     message_bus: AcpMessageBusSchema = Field(default_factory=AcpMessageBusSchema)
 
 
+class A2aAuthSchema(BaseModel):
+    """A2A peer authentication block.
+
+    Extends the ACP auth schema with OAuth2/OIDC fields: ``provider``
+    resolves through the existing ``AuthManager``, ``scopes`` declares
+    the scopes the client must request, and ``client_id_env`` /
+    ``token_url`` are escape hatches for non-OAuth providers.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = Field(
+        "none",
+        pattern="^(none|api_key|bearer|oauth2|oidc|mtls)$",
+        description="A2A auth scheme",
+    )
+    token_env: str | None = Field(None, description="Env var holding the bearer token / API key")
+    token: str | None = Field(None, description="Literal token (prefer token_env)")
+    api_key_header: str | None = Field(
+        None, description="Header name for api_key scheme (e.g. X-API-Key)"
+    )
+    provider: str | None = Field(None, description="AuthManager provider id for oauth2/oidc")
+    scopes: list[str] = Field(default_factory=list, description="OAuth2 scopes")
+    client_id_env: str | None = Field(None, description="Env var for OAuth2 client id")
+    token_url: str | None = Field(None, description="OAuth2 token endpoint")
+    cert_path: str | None = Field(None, description="mTLS client certificate path")
+    key_path: str | None = Field(None, description="mTLS client key path")
+
+
+class A2aPeerSchema(BaseModel):
+    """Remote A2A peer descriptor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, pattern="^[a-zA-Z0-9_:-]+$")
+    base_url: str = Field(..., min_length=1)
+    agent_card_url: str | None = Field(
+        None,
+        description=(
+            "Override for the agent card URL (default: " "{base_url}/.well-known/agent-card.json)"
+        ),
+    )
+    description: str = Field("", max_length=1024)
+    tenant_id: str = "default"
+    allow_cross_tenant: bool = False
+    preferred_transport: str = Field(
+        "json_rpc",
+        pattern="^(json_rpc|rest|grpc)$",
+        description="Transport selector (iter 1: json_rpc supported)",
+    )
+    poll_interval_seconds: int = Field(
+        5, gt=0, le=300, description="Polling fallback interval when push is unavailable"
+    )
+    auth: A2aAuthSchema = Field(default_factory=A2aAuthSchema)
+
+
+class A2aArtifactSchema(BaseModel):
+    """Artifact retention policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retention_days: int = Field(
+        7, ge=0, le=3650, description="Days to keep artifacts (0 = forever)"
+    )
+    work_dir: str | None = Field(
+        None,
+        description="Override directory for stored artifacts (default: <work_dir>/a2a_artifacts)",
+    )
+
+
+class A2aPushSchema(BaseModel):
+    """Push-notification webhook settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(False, description="Enable webhook reception")
+    public_callback_url: str | None = Field(
+        None,
+        description=(
+            "Publicly reachable URL pytaskforce advertises to remote peers as its "
+            "push-notification target (default: derived from server.host:port)"
+        ),
+    )
+
+
+class A2aServerSchema(BaseModel):
+    """Local A2A server settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = Field(9000, gt=0, lt=65536)
+    public_url: str | None = Field(
+        None,
+        description=(
+            "Externally-reachable origin advertised in the AgentCard "
+            "(e.g. https://agent.example.com). Required when ``host`` is "
+            "0.0.0.0 — otherwise remote peers cannot route to the "
+            "published base_url."
+        ),
+    )
+    agent_name: str | None = Field(
+        None,
+        description="Card name (defaults to the profile name)",
+    )
+    agent_description: str | None = Field(
+        None, description="Card description (defaults to the profile description)"
+    )
+    expose_profile: bool = Field(
+        True,
+        description="Expose the configured profile agent over A2A",
+    )
+    auth: A2aAuthSchema = Field(
+        default_factory=A2aAuthSchema,
+        description="Auth scheme advertised in our AgentCard",
+    )
+
+
+class A2aConfigSchema(BaseModel):
+    """Top-level A2A configuration block for a profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    server: A2aServerSchema = Field(default_factory=A2aServerSchema)
+    peers: list[A2aPeerSchema] = Field(default_factory=list)
+    artifacts: A2aArtifactSchema = Field(default_factory=A2aArtifactSchema)
+    push: A2aPushSchema = Field(default_factory=A2aPushSchema)
+
+
 class ProfileConfigSchema(BaseModel):
     """
     Schema for profile configuration files (configs/*.yaml).
@@ -351,6 +481,10 @@ class ProfileConfigSchema(BaseModel):
     acp: AcpConfigSchema | None = Field(
         None,
         description="ACP (Agent Communication Protocol) configuration",
+    )
+    a2a: A2aConfigSchema | None = Field(
+        None,
+        description="A2A (Agent-to-Agent protocol) configuration",
     )
 
     # Agent-runtime selector (multi-runtime support).

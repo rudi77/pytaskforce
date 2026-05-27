@@ -17,12 +17,14 @@ except ImportError:
     from rich.console import Console
 
     from taskforce.api.cli.commands import (
+        a2a,
         acp,
         chat,
         config,
         goals,
         memory,
         missions,
+        remote,
         run,
         runtimes,
         skills,
@@ -49,6 +51,8 @@ except ImportError:
     app.add_typer(missions.app, name="missions", help="Mission templates and runtime control")
     app.add_typer(goals.app, name="goals", help="Standing-goal management (proactive layer)")
     app.add_typer(acp.app, name="acp", help="Agent Communication Protocol")
+    app.add_typer(a2a.app, name="a2a", help="Agent-to-Agent (A2A) protocol")
+    app.add_typer(remote.app, name="remote", help="Cross-protocol remote agent discovery")
     app.add_typer(runtimes.app, name="runtimes", help="Agent runtime management")
 
     @app.callback()

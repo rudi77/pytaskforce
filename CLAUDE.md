@@ -371,6 +371,8 @@ them. The `ButlerProtocol` and butler-only contracts remain inside the
 | `EmbeddingsProtocol` | `embeddings.py` | Text embeddings |
 | `ContextManagerProtocol`, `ContextSnapshot`, `ContextItem`, `SubAgentContextEntry` | `context_manager.py` | Unified LLM context (messages, tools, snapshots) |
 | `AcpServerProtocol`, `AcpClientProtocol`, `AcpPeerRegistryProtocol`, `AcpRuntimeProtocol` | `acp.py` | Agent Communication Protocol (ADR-018) |
+| `A2aServerProtocol`, `A2aClientProtocol`, `A2aPeerRegistryProtocol`, `A2aRuntimeProtocol` | `a2a.py` | Agent-to-Agent protocol (ADR-029) |
+| `RemoteAgentDiscoveryProtocol` | `remote_agent_discovery.py` | Hybrid ACP+A2A discovery facade (ADR-029) |
 | `EventSourceProtocol` | `event_source.py` | External event ingestion (polling/webhook) |
 | `SchedulerProtocol` | `scheduler.py` | Time-based job scheduling (cron, interval, one-shot) |
 | `RuleEngineProtocol` | `rule_engine.py` | Trigger-rule evaluation against agent events |
@@ -585,6 +587,7 @@ corresponding package is installed.
 |------------|-------|--------|-------------|
 | `call_agents_parallel` | ParallelAgentTool | `parallel_agent_tool` | Run multiple sub-agents in parallel (ADR-015) |
 | `call_acp_agent` | AcpAgentTool | `acp_agent_tool` | Invoke a remote agent over ACP (ADR-018) |
+| `call_a2a_agent` | A2aAgentTool | `a2a_agent_tool` | Invoke a remote agent over A2A (ADR-029) |
 
 > The legacy `call_agent` / `agent_tool` primitive still exists in
 > `orchestration/agent_tool.py` and `sub_agent_tool.py` but is not registered by
@@ -1517,6 +1520,7 @@ opt-ins:
 | `evals` | Inspect AI + SWE-Bench evaluation framework | `uv sync --extra evals` |
 | `build` | Package building and publishing | `uv sync --extra build` |
 | `acp` | Agent Communication Protocol (IBM/Linux Foundation) SDK | `uv sync --extra acp` |
+| `a2a` | Agent-to-Agent (Linux Foundation) SDK | `uv sync --extra a2a` |
 
 > The `personal-assistant` group has been removed — Google Workspace integration
 > now ships with the `taskforce-butler` agent package instead of as an extra on

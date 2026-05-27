@@ -483,14 +483,16 @@ class AgentFactory:
         )
 
         # Auto-create AuthManager when auth-aware tools are requested.
-        _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive"}
+        _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive", "call_a2a_agent"}
         requested_names = {t if isinstance(t, str) else t.get("type", "") for t in definition.tools}
         if requested_names & _AUTH_TOOLS:
             self._ensure_auth_manager()
 
+        from taskforce.application.a2a_service import build_a2a_runtime_for_tools
         from taskforce.application.acp_service import build_acp_runtime_for_tools
 
         acp_runtime = build_acp_runtime_for_tools(base_config)
+        a2a_runtime = build_a2a_runtime_for_tools(base_config, auth_manager=self._auth_manager)
         tool_registry = ToolRegistry(
             llm_provider=llm_provider,
             user_context=user_context,
@@ -501,6 +503,7 @@ class AgentFactory:
             auth_manager=self._auth_manager,
             tool_result_store=infra.get("tool_result_store"),
             acp_runtime=acp_runtime,
+            a2a_runtime=a2a_runtime,
         )
         self._tool_builder.set_resolver(tool_registry)
         native_tools = tool_registry.resolve(definition.tools)

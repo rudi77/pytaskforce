@@ -139,6 +139,9 @@ acp = [
     # the last compatible release until acp-sdk catches up.
     "uvicorn>=0.30,<0.36",
 ]
+a2a = [
+    "a2a-sdk>=1.0.3,<2.0.0",
+]
 
 [dependency-groups]
 dev = [

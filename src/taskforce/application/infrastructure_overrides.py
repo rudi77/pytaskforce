@@ -813,6 +813,27 @@ def get_cross_tenant_acp_authorizer() -> Callable[[str, str, Any], bool] | None:
     return _cross_tenant_acp_authorizer
 
 
+_cross_tenant_a2a_authorizer: Callable[[str, str, Any], bool] | None = None
+
+
+def set_cross_tenant_a2a_authorizer(
+    authorizer: Callable[[str, str, Any], bool] | None,
+) -> None:
+    """Install (or clear) the policy check for cross-tenant A2A calls.
+
+    Same contract as :func:`set_cross_tenant_acp_authorizer` but the
+    third argument is an ``A2aPeer`` (passed untyped to avoid a
+    core/infra cycle).
+    """
+    global _cross_tenant_a2a_authorizer
+    _cross_tenant_a2a_authorizer = authorizer
+
+
+def get_cross_tenant_a2a_authorizer() -> Callable[[str, str, Any], bool] | None:
+    """Return the installed cross-tenant A2A authorizer, if any."""
+    return _cross_tenant_a2a_authorizer
+
+
 def set_mission_lifecycle_hook(hook: Any | None) -> None:
     """Install (or clear) a mission lifecycle hook.
 
@@ -951,6 +972,7 @@ def clear_infrastructure_overrides() -> None:
     global _agent_lookup_override
     global _workflow_lookup_override
     global _cross_tenant_acp_authorizer
+    global _cross_tenant_a2a_authorizer
     global _mission_lifecycle_hook
     global _approval_service
     global _approval_bypass_override
@@ -987,6 +1009,7 @@ def clear_infrastructure_overrides() -> None:
     _workflow_lookup_override = None
     _webhook_workflow_resolver = None
     _cross_tenant_acp_authorizer = None
+    _cross_tenant_a2a_authorizer = None
     _mission_lifecycle_hook = None
     _approval_service = None
     _approval_bypass_override = frozenset()
