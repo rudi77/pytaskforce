@@ -389,6 +389,15 @@ class A2aServerSchema(BaseModel):
     enabled: bool = False
     host: str = "0.0.0.0"
     port: int = Field(9000, gt=0, lt=65536)
+    public_url: str | None = Field(
+        None,
+        description=(
+            "Externally-reachable origin advertised in the AgentCard "
+            "(e.g. https://agent.example.com). Required when ``host`` is "
+            "0.0.0.0 — otherwise remote peers cannot route to the "
+            "published base_url."
+        ),
+    )
     agent_name: str | None = Field(
         None,
         description="Card name (defaults to the profile name)",

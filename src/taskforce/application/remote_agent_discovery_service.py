@@ -70,7 +70,32 @@ class RemoteAgentDiscoveryService:
             *[_probe_descriptor(d) for d in descriptors],
             return_exceptions=True,
         )
-        return [r for r in results if isinstance(r, RemoteAgentDescriptor)]
+        out: list[RemoteAgentDescriptor] = []
+        for descriptor, result in zip(descriptors, results, strict=True):
+            if isinstance(result, RemoteAgentDescriptor):
+                out.append(result)
+                continue
+            logger.warning(
+                "remote_agent_discovery.probe_failed",
+                peer=descriptor.name,
+                protocol=descriptor.protocol.value,
+                error=str(result),
+            )
+            out.append(
+                RemoteAgentDescriptor(
+                    name=descriptor.name,
+                    protocol=descriptor.protocol,
+                    base_url=descriptor.base_url,
+                    agent=descriptor.agent,
+                    description=descriptor.description,
+                    capabilities=descriptor.capabilities,
+                    auth_schemes=descriptor.auth_schemes,
+                    reachable=False,
+                    latency_ms=None,
+                    raw={**descriptor.raw, "probe_error": str(result)},
+                )
+            )
+        return out
 
 
 def _describe_acp(peer: AcpPeer) -> RemoteAgentDescriptor:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import uuid4
 
 import structlog
 
@@ -166,7 +167,11 @@ class _TaskforceAgentExecutor:
         load_server_agent_execution()
         mission = _extract_mission_text(context)
         session_id = getattr(context, "context_id", None)
-        task_id = getattr(context, "task_id", None) or ""
+        # Synthesise a unique task_id when the SDK did not supply one;
+        # an empty string collides across concurrent missions (the
+        # cancellation set would match all of them and the Task proto
+        # would be uncorrelatable).
+        task_id = getattr(context, "task_id", None) or uuid4().hex
         context_id = session_id or task_id
 
         task = types.Task(id=task_id, context_id=context_id)

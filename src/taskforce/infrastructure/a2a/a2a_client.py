@@ -57,7 +57,12 @@ class A2aClient:
         self._httpx_pool: dict[str, Any] = {}
         self._card_pool: dict[str, A2aAgentCard] = {}
         self._raw_card_pool: dict[str, Any] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        # Locks are keyed by (peer.name, loop_id) so a cached lock bound
+        # to a closed loop (e.g. across test cases or successive
+        # asyncio.run() calls reusing the same A2aClient) is replaced
+        # rather than re-acquired and crashing with 'attached to a
+        # different loop'.
+        self._locks: dict[tuple[str, int], asyncio.Lock] = {}
 
     async def fetch_agent_card(self, peer: A2aPeer) -> A2aAgentCard:
         cached = self._card_pool.get(peer.name)
@@ -148,6 +153,7 @@ class A2aClient:
         self._httpx_pool.clear()
         self._card_pool.clear()
         self._raw_card_pool.clear()
+        self._locks.clear()
 
     async def _send_message(
         self,
@@ -179,34 +185,34 @@ class A2aClient:
         await self._ensure_card(peer)
         create_client = load_client_factory()
         client_config_cls = load_client_config()
-        card = self._raw_card_pool[peer.name]
+        card = _routing_card(self._raw_card_pool[peer.name], peer.base_url)
         http = self._httpx_pool[peer.name]
         config = client_config_cls(httpx_client=http)
         return await create_client(agent=card, client_config=config)
 
-    async def _build_auth_headers(self, peer: A2aPeer) -> dict[str, str]:
+    def _static_auth_headers(self, peer: A2aPeer) -> dict[str, str]:
+        """Static headers — bearer/api_key with a literal/env-resolved token.
+
+        OAuth2/OIDC tokens are NOT set here; they are resolved per-request
+        through :class:`_DynamicBearerAuth` so an expired token does not
+        get baked into the cached httpx.AsyncClient (the cache lives for
+        the lifetime of the runtime, which exceeds typical OAuth TTLs).
+        """
         auth = peer.auth
         headers: dict[str, str] = {}
         if auth.type == A2aAuthType.BEARER and auth.token:
             headers["Authorization"] = f"Bearer {auth.token}"
         elif auth.type == A2aAuthType.API_KEY and auth.token:
             headers[auth.api_key_header or "X-API-Key"] = auth.token
-        elif auth.type in (A2aAuthType.OAUTH2, A2aAuthType.OIDC):
-            token = await self._fetch_oauth_token(peer)
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            else:
-                logger.warning(
-                    "a2a.client.oauth_token_missing",
-                    peer=peer.name,
-                    provider=auth.provider,
-                    hint=(
-                        "AuthManager returned no token. Run the authenticate "
-                        "tool for this provider or configure token_env as a "
-                        "static fallback."
-                    ),
-                )
         return headers
+
+    def _build_dynamic_auth(self, peer: A2aPeer) -> Any | None:
+        """Return an httpx.Auth that re-fetches the OAuth2/OIDC token
+        per request, or ``None`` when no dynamic auth is needed.
+        """
+        if peer.auth.type not in (A2aAuthType.OAUTH2, A2aAuthType.OIDC):
+            return None
+        return _DynamicBearerAuth(self, peer)
 
     async def _fetch_oauth_token(self, peer: A2aPeer) -> str | None:
         if self._auth_manager is None or not peer.auth.provider:
@@ -254,8 +260,26 @@ class A2aClient:
             )
         return tuple(out)
 
+    def _lock_for(self, peer_name: str) -> asyncio.Lock:
+        """Return a lock bound to the current running loop.
+
+        Caching a single ``asyncio.Lock`` per peer name would crash with
+        ``RuntimeError: ... attached to a different loop`` when the same
+        A2aClient instance is reused across distinct event loops (tests
+        running asyncio.run per case, repeated CLI invocations against
+        a long-lived runtime). Keying by ``(name, loop_id)`` keeps
+        single-loop usage fast and self-heals across loops.
+        """
+        loop = asyncio.get_running_loop()
+        key = (peer_name, id(loop))
+        lock = self._locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[key] = lock
+        return lock
+
     async def _ensure_card(self, peer: A2aPeer) -> None:
-        lock = self._locks.setdefault(peer.name, asyncio.Lock())
+        lock = self._lock_for(peer.name)
         async with lock:
             if peer.name in self._card_pool:
                 return
@@ -279,29 +303,101 @@ class A2aClient:
                         hint="Tokens over plain HTTP are readable on the wire; use HTTPS.",
                     )
             httpx = load_httpx()
-            headers = await self._build_auth_headers(peer)
-            http = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(30.0))
-            self._httpx_pool[peer.name] = http
+            headers = self._static_auth_headers(peer)
+            dyn_auth = self._build_dynamic_auth(peer)
+            client_kwargs: dict[str, Any] = {
+                "headers": headers,
+                "timeout": httpx.Timeout(30.0),
+            }
+            if dyn_auth is not None:
+                client_kwargs["auth"] = dyn_auth
+            http = httpx.AsyncClient(**client_kwargs)
             resolver_cls = load_card_resolver()
+            resolver_base_url, card_path = _card_resolver_target(peer)
             resolver = resolver_cls(
                 httpx_client=http,
-                base_url=peer.base_url,
-                agent_card_path=_card_path(peer),
+                base_url=resolver_base_url,
+                agent_card_path=card_path,
             )
-            raw_card = await resolver.get_agent_card()
+            try:
+                raw_card = await resolver.get_agent_card()
+            except Exception:
+                # Don't leak the httpx client when card resolution fails.
+                # The next call will rebuild with a fresh one rather than
+                # overwriting a populated _httpx_pool slot.
+                try:
+                    await http.aclose()
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+                raise
+            self._httpx_pool[peer.name] = http
             self._raw_card_pool[peer.name] = raw_card
             self._card_pool[peer.name] = _card_to_domain(raw_card, peer.base_url)
 
 
-def _card_path(peer: A2aPeer) -> str:
+def _card_resolver_target(peer: A2aPeer) -> tuple[str, str]:
+    """Return (base_url, card_path) tuple for the SDK's card resolver.
+
+    Handles three cases:
+      1. No override: card path stays at the well-known location.
+      2. Override starts with '/' or is bare: relative to peer.base_url.
+      3. Override is absolute and on a DIFFERENT host: switch the
+         resolver's base_url to that host's origin (otherwise the SDK
+         concatenates and produces a mangled URL like
+         '/https://other.example/card.json').
+    """
     if not peer.agent_card_url:
-        return "/.well-known/agent-card.json"
+        return peer.base_url, "/.well-known/agent-card.json"
     rel = peer.agent_card_url
-    if rel.startswith("http://") or rel.startswith("https://"):
-        base = peer.base_url.rstrip("/")
-        if rel.startswith(base):
-            return rel[len(base) :] or "/.well-known/agent-card.json"
-    return rel if rel.startswith("/") else f"/{rel}"
+    if rel.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(rel)
+        override_origin = f"{parsed.scheme}://{parsed.netloc}"
+        peer_origin = _origin_of(peer.base_url)
+        if override_origin != peer_origin:
+            path = parsed.path or "/.well-known/agent-card.json"
+            if parsed.query:
+                path = f"{path}?{parsed.query}"
+            return override_origin, path
+        # Same origin: strip the origin prefix.
+        path = rel[len(override_origin) :] or "/.well-known/agent-card.json"
+        return peer.base_url, path
+    return peer.base_url, rel if rel.startswith("/") else f"/{rel}"
+
+
+def _origin_of(url: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url.rstrip("/"))
+    if not parsed.scheme or not parsed.netloc:
+        return url.rstrip("/")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _routing_card(raw_card: Any, peer_base_url: str) -> Any:
+    """Return a card copy whose supported_interfaces point at peer_base_url.
+
+    The card advertised by the remote server may carry a public URL
+    (the operator's ``a2a.server.public_url``) that is correct for
+    public discovery but unroutable from this caller — e.g. when the
+    same instance speaks to itself via 127.0.0.1, or when the public
+    URL is fronted by a proxy this caller bypasses. Rewriting the URL
+    here keeps the local httpx pool (configured for peer.base_url) and
+    the SDK's outbound routing aligned without re-fetching the card.
+    """
+    if not getattr(raw_card, "supported_interfaces", None):
+        return raw_card
+    target = peer_base_url.rstrip("/")
+    if all(
+        getattr(iface, "url", "").rstrip("/") == target for iface in raw_card.supported_interfaces
+    ):
+        return raw_card
+    routing = type(raw_card)()
+    routing.CopyFrom(raw_card)
+    for iface in routing.supported_interfaces:
+        iface.url = target
+    return routing
 
 
 def _write_artifact_to_disk(
@@ -457,7 +553,10 @@ def _events_to_handle(
             if text:
                 output_text_parts.append(text)
         elif kind == "artifact_update":
-            artifacts.append(event.artifact_update)
+            # TaskArtifactUpdateEvent wraps the actual Artifact under
+            # .artifact — _artifact_to_domain reads .parts/.name/.description
+            # which only exist on the inner Artifact, not the wrapper.
+            artifacts.append(event.artifact_update.artifact)
         elif kind == "message":
             text = _extract_text_from_message(event.message)
             if text:
@@ -599,3 +698,34 @@ def _artifact_to_domain(artifact: Any) -> A2aArtifact:
         size=0,
         description=str(getattr(artifact, "description", "") or ""),
     )
+
+
+class _DynamicBearerAuth:
+    """httpx.Auth that re-resolves a Bearer token per request.
+
+    Implements the ``httpx.Auth`` async flow contract via duck typing —
+    we don't import ``httpx.Auth`` directly to keep ``httpx`` an
+    optional, lazily-imported dependency. The SDK and the card resolver
+    both honour the ``auth`` parameter on ``httpx.AsyncClient`` and
+    invoke ``async_auth_flow`` on each outbound request, so a token
+    that expired between requests is refreshed without rebuilding the
+    cached client.
+    """
+
+    requires_request_body = False
+    requires_response_body = False
+
+    def __init__(self, client: A2aClient, peer: A2aPeer) -> None:
+        self._client = client
+        self._peer = peer
+
+    def auth_flow(self, request: Any) -> Any:
+        # Sync flow — not used because we install on AsyncClient, but
+        # required to satisfy the httpx.Auth contract on some paths.
+        yield request
+
+    async def async_auth_flow(self, request: Any) -> Any:
+        token = await self._client._fetch_oauth_token(self._peer)
+        if token:
+            request.headers["Authorization"] = f"Bearer {token}"
+        yield request

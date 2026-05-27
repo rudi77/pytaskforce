@@ -179,6 +179,7 @@ def _peer_to_dict(peer: A2aPeer) -> dict:
         "auth": {
             "type": peer.auth.type.value,
             "token_env": peer.auth.token_env,
+            "token": peer.auth.token,
             "api_key_header": peer.auth.api_key_header,
             "provider": peer.auth.provider,
             "scopes": list(peer.auth.scopes),
@@ -196,6 +197,7 @@ def _peer_from_dict(data: dict) -> A2aPeer | None:
         auth = A2aAuth(
             type=A2aAuthType(auth_data.get("type", "none")),
             token_env=auth_data.get("token_env"),
+            token=auth_data.get("token"),
             api_key_header=auth_data.get("api_key_header"),
             provider=auth_data.get("provider"),
             scopes=tuple(auth_data.get("scopes") or ()),

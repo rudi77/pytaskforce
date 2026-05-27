@@ -86,16 +86,21 @@ class A2aRuntime:
     async def stop(self) -> None:
         if not self._started:
             return
-        if self._server is not None:
-            await self._server.stop()
-        close = getattr(self._client, "close", None)
-        if callable(close):
-            try:
-                await close()
-            except Exception:  # pragma: no cover - best-effort cleanup
-                logger.warning("a2a.runtime.client_close_failed", exc_info=True)
-        self._started = False
-        logger.info("a2a.runtime.stopped")
+        try:
+            if self._server is not None:
+                try:
+                    await self._server.stop()
+                except Exception:  # pragma: no cover - best-effort
+                    logger.warning("a2a.runtime.server_stop_failed", exc_info=True)
+            close = getattr(self._client, "close", None)
+            if callable(close):
+                try:
+                    await close()
+                except Exception:  # pragma: no cover - best-effort
+                    logger.warning("a2a.runtime.client_close_failed", exc_info=True)
+        finally:
+            self._started = False
+            logger.info("a2a.runtime.stopped")
 
     async def call(
         self,
@@ -111,34 +116,15 @@ class A2aRuntime:
         if peer is None:
             raise KeyError(f"Unknown A2A peer: {peer_name!r}")
         self._enforce_tenant(peer, tenant_id)
-        if stream:
-            return await self._call_stream(peer, mission, session_id, push)
+        # Both stream and non-stream go through run_sync — the SDK's
+        # send_message returns the same AsyncIterator either way and
+        # A2aClient.run_sync accumulates raw events through
+        # _events_to_handle, which preserves task_id, the final state
+        # (INPUT_REQUIRED / FAILED / CANCELED / AUTH_REQUIRED) and the
+        # artifact list. A separate _call_stream that re-implemented
+        # this aggregation against the dict-wrapped events lost all of
+        # that information.
         return await self._client.run_sync(peer, mission, session_id=session_id, push=push)
-
-    async def _call_stream(
-        self,
-        peer: A2aPeer,
-        mission: str,
-        session_id: str | None,
-        push: A2aPushConfig | None,
-    ) -> A2aTaskHandle:
-        events: list[dict[str, Any]] = []
-        last_text = ""
-        async for event in self._client.run_stream(peer, mission, session_id=session_id, push=push):
-            events.append(event)
-            raw = event.get("raw") if isinstance(event, dict) else None
-            text = _last_text_from_raw(raw)
-            if text:
-                last_text = text
-        from taskforce.core.domain.a2a import A2aTaskState
-
-        return A2aTaskHandle(
-            task_id="",
-            peer=peer.name,
-            state=A2aTaskState.COMPLETED if events else A2aTaskState.UNKNOWN,
-            output_text=last_text,
-            history=tuple(events),
-        )
 
     def _enforce_tenant(self, peer: A2aPeer, tenant_id: str | None) -> None:
         caller_tenant_id = tenant_id or self._current_tenant_id()
@@ -164,23 +150,3 @@ class A2aRuntime:
         if self._tenant_id_provider is None:
             return "default"
         return self._tenant_id_provider() or "default"
-
-
-def _last_text_from_raw(raw: Any) -> str:
-    if not isinstance(raw, dict):
-        return ""
-    status_update = raw.get("status_update") or raw.get("statusUpdate") or {}
-    if isinstance(status_update, dict):
-        message = status_update.get("message") or {}
-        if isinstance(message, dict):
-            parts = message.get("parts") or []
-            chunks = [p.get("text") for p in parts if isinstance(p, dict) and p.get("text")]
-            if chunks:
-                return "\n".join(chunks)
-    message = raw.get("message") or {}
-    if isinstance(message, dict):
-        parts = message.get("parts") or []
-        chunks = [p.get("text") for p in parts if isinstance(p, dict) and p.get("text")]
-        if chunks:
-            return "\n".join(chunks)
-    return ""

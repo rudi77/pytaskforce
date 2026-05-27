@@ -483,7 +483,7 @@ class AgentFactory:
         )
 
         # Auto-create AuthManager when auth-aware tools are requested.
-        _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive"}
+        _AUTH_TOOLS = {"authenticate", "gmail", "calendar", "google_drive", "call_a2a_agent"}
         requested_names = {t if isinstance(t, str) else t.get("type", "") for t in definition.tools}
         if requested_names & _AUTH_TOOLS:
             self._ensure_auth_manager()

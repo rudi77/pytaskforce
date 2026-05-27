@@ -972,6 +972,7 @@ def clear_infrastructure_overrides() -> None:
     global _agent_lookup_override
     global _workflow_lookup_override
     global _cross_tenant_acp_authorizer
+    global _cross_tenant_a2a_authorizer
     global _mission_lifecycle_hook
     global _approval_service
     global _approval_bypass_override

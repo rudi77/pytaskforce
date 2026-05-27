@@ -118,7 +118,7 @@ class A2aService:
             return
         from taskforce.infrastructure.a2a.agent_card_builder import build_agent_card
 
-        base_url = f"http://{self._config.server.host}:{self._config.server.port}"
+        base_url = _resolve_advertised_base_url(self._config.server)
         card = build_agent_card(
             profile_name=profile_name,
             description=description,
@@ -214,11 +214,15 @@ async def ping_peer(
     *,
     work_dir: str = ".taskforce",
     timeout: float = 5.0,
+    auth_manager: Any | None = None,
 ) -> dict[str, Any]:
     """Best-effort connectivity check — fetches the AgentCard.
 
     Returns a serialisable dict so the API route can pass it through
     unchanged. A successful card resolution counts as "reachable".
+    Pass ``auth_manager`` when the peer uses OAuth2/OIDC so the card
+    fetch can acquire a valid bearer token (otherwise OAuth-protected
+    peers always report ok=False even when they are healthy).
     """
     import time
 
@@ -231,7 +235,7 @@ async def ping_peer(
     try:
         from taskforce.infrastructure.a2a.a2a_client import A2aClient
 
-        client = A2aClient()
+        client = A2aClient(auth_manager=auth_manager)
         try:
             card = await client.fetch_agent_card(resolved)
         finally:
@@ -251,6 +255,30 @@ async def ping_peer(
             "error": str(exc),
             "latency_ms": int((time.perf_counter() - start) * 1000),
         }
+
+
+def _resolve_advertised_base_url(server: A2aServerSchema) -> str:
+    """Pick the URL to advertise in the AgentCard.
+
+    Order: explicit ``server.public_url`` wins. Otherwise build from
+    ``host:port`` with a warning when the host is the bind-only
+    placeholder ``0.0.0.0`` — remote peers cannot route to that.
+    """
+    if server.public_url:
+        return server.public_url.rstrip("/")
+    host = server.host
+    if host == "0.0.0.0":
+        logger.warning(
+            "a2a.server.host_unroutable",
+            host=host,
+            hint=(
+                "Set a2a.server.public_url to the externally-reachable "
+                "origin (e.g. https://agent.example.com); '0.0.0.0' in "
+                "the AgentCard is a bind-only address that remote A2A "
+                "clients cannot resolve."
+            ),
+        )
+    return f"http://{host}:{server.port}"
 
 
 def _peer_from_schema(schema: A2aPeerSchema) -> A2aPeer:

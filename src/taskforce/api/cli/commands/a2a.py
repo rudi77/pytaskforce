@@ -147,12 +147,13 @@ def card(
     if config is None:
         console.print(f"[yellow]Profile {profile!r} has no A2A configuration.[/yellow]")
         raise typer.Exit(code=1)
+    from taskforce.application.a2a_service import _resolve_advertised_base_url
     from taskforce.application.infrastructure_builder import InfrastructureBuilder
 
     builder = InfrastructureBuilder()
     profile_dict = builder.load_profile(profile)
     tools = [t for t in profile_dict.get("tools", []) if isinstance(t, str)]
-    base_url = f"http://{config.server.host}:{config.server.port}"
+    base_url = _resolve_advertised_base_url(config.server)
     card_proto = build_agent_card(
         profile_name=profile,
         description=str(profile_dict.get("description", "")),
