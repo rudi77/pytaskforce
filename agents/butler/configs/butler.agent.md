@@ -70,6 +70,24 @@ proactive:
   #   frequency: "0 9 * * 1"   # Mondays 09:00
   #   priority: 4
 
+# Context-manager backend (docs/spec/context-manager-ctxman.md) --------------
+# Delegate context bookkeeping (token accounting, compaction, eviction, frames
+# for sub-agents) to the external ctxman service. Deep-merges over the preset's
+# context_management block, so summary_threshold/compression_trigger are kept.
+# on_unavailable: degrade — if ctxman is unreachable the Butler keeps running on
+# its locally cached context instead of aborting the mission.
+context_management:
+  backend: ctxman
+  ctxman:
+    base_url: http://localhost:5291
+    provider: openai          # render format for azure/gpt-5.4-mini
+    auth_mode: none            # matches the service's /healthz auth_mode
+    on_unavailable: degrade
+    turn_advance: true
+    archive_on_close: true     # terminal promotion (durable facts) on close
+    frames:
+      enabled: true            # sequential sub-agents run as frames in the session
+
 # Technical settings ---------------------------------------------------------
 # Inherit butler-wide tuning from the preset; deviations go in `technical:`.
 extends: butler-defaults
