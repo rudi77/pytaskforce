@@ -5,7 +5,7 @@ import {
   FolderOpen20Regular,
   FolderSearch20Regular,
 } from "@fluentui/react-icons";
-import { Button, Input, Label } from "@fluentui/react-components";
+import { Button, Field, Input } from "@fluentui/react-components";
 
 import {
   Dialog,
@@ -196,8 +196,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
               <DialogDescription>{activeMeta.description}</DialogDescription>
             </DialogHeader>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="project-name">Name</Label>
+            <Field label={{ children: "Name", htmlFor: "project-name" }} required>
               <Input
                 id="project-name"
                 value={name}
@@ -206,10 +205,17 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
                 autoFocus
                 required
               />
-            </div>
+            </Field>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="project-path">Verzeichnis</Label>
+            <Field
+              label={{ children: "Verzeichnis", htmlFor: "project-path" }}
+              required
+              hint={
+                mode === "scratch"
+                  ? "Absoluter Pfad. Wenn das Verzeichnis nicht existiert, wird es angelegt."
+                  : "Absoluter Pfad. Das Verzeichnis muss bereits existieren."
+              }
+            >
               <div className="flex items-center gap-2">
                 <Input
                   id="project-path"
@@ -230,12 +236,7 @@ export function NewProjectModal({ open, onOpenChange, onCreated }: Props) {
                   Durchsuchen…
                 </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Absoluter Pfad. {mode === "scratch"
-                  ? "Wenn das Verzeichnis nicht existiert, wird es angelegt."
-                  : "Das Verzeichnis muss bereits existieren."}
-              </p>
-            </div>
+            </Field>
 
             {error ? (
               <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">

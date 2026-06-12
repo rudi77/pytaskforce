@@ -56,6 +56,26 @@ context_policy:
   max_chars_per_item: 3000
   max_total_chars: 15000
 
+# Context-manager backend (hexagonal seam).
+#   local  — in-process ContextManager (default, no extra service needed)
+#   ctxman — external ctxman context-management service (REST)
+context_management:
+  backend: local
+  # Settings below only apply when backend: ctxman
+  # ctxman:
+  #   base_url: http://localhost:5291
+  #   provider: openai          # render provider: openai | anthropic
+  #   auth_mode: none           # none | api_key
+  #   api_key: null             # env TASKFORCE_CTXMAN_API_KEY wins
+  #   tenant_id: null           # sent as X-Tenant-Id header
+  #   timeout_seconds: 30
+  #   turn_advance: true
+  #   on_unavailable: degrade   # degrade (keep local context) | fail (abort mission)
+  #   gc_on_hard_watermark: true
+  #   archive_on_close: true    # archive session (terminal promotion) on agent close
+  #   frames:
+  #     enabled: true           # sequential sub-agents run as frames in the parent session
+
 tools:
   - web_search
   - web_fetch

@@ -28,10 +28,7 @@ class SubAgentTool:
         self._agent_tool = agent_tool
         self._specialist = specialist
         self._name = name
-        self._description = (
-            description
-            or f"Delegate a mission to the '{specialist}' sub-agent."
-        )
+        self._description = description or f"Delegate a mission to the '{specialist}' sub-agent."
         self._planning_strategy = planning_strategy
         self._auto_approve = auto_approve
 
@@ -50,9 +47,7 @@ class SubAgentTool:
             "properties": {
                 "mission": {
                     "type": "string",
-                    "description": (
-                        "Clear, specific mission description for the sub-agent."
-                    ),
+                    "description": ("Clear, specific mission description for the sub-agent."),
                 },
             },
             "required": ["mission"],
@@ -74,6 +69,10 @@ class SubAgentTool:
     def requires_parent_session(self) -> bool:
         """Marker: this tool needs _parent_session_id injection."""
         return True
+
+    def set_parent_context_ref(self, context_manager: Any) -> None:
+        """Forward the parent context manager to the wrapped AgentTool."""
+        self._agent_tool.set_parent_context_ref(context_manager)
 
     async def execute(
         self,

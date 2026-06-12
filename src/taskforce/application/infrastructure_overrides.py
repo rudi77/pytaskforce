@@ -90,6 +90,10 @@ _runtime_checkpoint_store_override: Callable[[str], Any] | None = None
 _pending_channel_question_store_override: Callable[[str], Any] | None = None
 _tool_result_store_override: Callable[[str], Any] | None = None
 _project_store_override: Callable[[str], Any] | None = None
+# Context-manager backend factory. Receives the merged base config and
+# returns either a factory callable for Agent(context_manager_factory=...)
+# or None to use the default local ContextManager.
+_context_manager_factory_override: Callable[[dict[str, Any]], Any] | None = None
 # Butler agent-package state directory (gmail seen ids, future butler
 # per-tool state). Override-hook callable returning the directory the
 # butler tools should write to for the current request scope. See
@@ -377,6 +381,24 @@ def set_tool_result_store_override(
 def get_tool_result_store_override() -> Callable[[str], Any] | None:
     """Return the currently installed tool-result-store override, if any."""
     return _tool_result_store_override
+
+
+def set_context_manager_factory_override(
+    provider: Callable[[dict[str, Any]], Any] | None,
+) -> None:
+    """Install (or clear) an override for ``build_context_manager_factory``.
+
+    The provider receives the merged base config and returns either a
+    context-manager factory callable (passed to ``Agent`` as
+    ``context_manager_factory``) or None for the default local backend.
+    """
+    global _context_manager_factory_override
+    _context_manager_factory_override = provider
+
+
+def get_context_manager_factory_override() -> Callable[[dict[str, Any]], Any] | None:
+    """Return the currently installed context-manager-factory override, if any."""
+    return _context_manager_factory_override
 
 
 def set_butler_state_dir_override(
@@ -982,6 +1004,7 @@ def clear_infrastructure_overrides() -> None:
     global _pending_channel_question_store_override
     global _tool_result_store_override
     global _project_store_override
+    global _context_manager_factory_override
     global _butler_state_dir_override
     global _sub_agent_result_dir_override
     global _upload_storage_dir_override
@@ -1019,6 +1042,7 @@ def clear_infrastructure_overrides() -> None:
     _pending_channel_question_store_override = None
     _tool_result_store_override = None
     _project_store_override = None
+    _context_manager_factory_override = None
     _butler_state_dir_override = None
     _sub_agent_result_dir_override = None
     _upload_storage_dir_override = None

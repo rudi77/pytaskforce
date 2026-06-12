@@ -5,7 +5,7 @@ import {
   FolderOpen20Regular,
   Storage20Regular,
 } from "@fluentui/react-icons";
-import { Button, Input, Label } from "@fluentui/react-components";
+import { Button, Field, Input } from "@fluentui/react-components";
 
 import { useBrowseFilesystem } from "@/api/queries";
 import { cn } from "@/lib/utils";
@@ -42,8 +42,10 @@ export function FolderBrowserPanel({
   return (
     <div className="flex flex-col gap-3">
       <form onSubmit={onPathSubmit} className="flex items-end gap-2">
-        <div className="flex flex-1 flex-col gap-1">
-          <Label htmlFor="browse-path">Aktueller Pfad</Label>
+        <Field
+          label={{ children: "Aktueller Pfad", htmlFor: "browse-path" }}
+          className="flex-1"
+        >
           <Input
             id="browse-path"
             value={pathDraft}
@@ -51,7 +53,7 @@ export function FolderBrowserPanel({
             spellCheck={false}
             placeholder="Pfad eingeben oder unten auswählen"
           />
-        </div>
+        </Field>
         <Button type="submit" appearance="outline" size="small">
           Gehe zu
         </Button>

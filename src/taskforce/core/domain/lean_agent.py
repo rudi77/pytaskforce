@@ -115,6 +115,7 @@ class Agent:
         approval_bypass_provider: Callable[[], frozenset[str]] | None = None,
         react_no_progress_threshold: int | None = None,
         react_signature_repeat_threshold: int | None = None,
+        context_manager_factory: Callable[..., Any] | None = None,
     ):
         """
         Initialize Agent with injected dependencies.
@@ -264,8 +265,12 @@ class Agent:
             assistant_message_max_chars=assistant_message_max_chars,
         )
 
-        # Context manager — single source of truth for the LLM context
-        self.context = ContextManager(
+        # Context manager — single source of truth for the LLM context.
+        # An injected factory (hexagonal seam) may swap in an alternative
+        # backend (e.g. the ctxman service adapter); the default path is
+        # the local ContextManager, unchanged.
+        _context_factory = context_manager_factory or (lambda **kwargs: ContextManager(**kwargs))
+        self.context = _context_factory(
             message_history_manager=self.message_history_manager,
             openai_tools=self._openai_tools,
             token_budgeter=self.token_budgeter,
@@ -1009,6 +1014,13 @@ class Agent:
         # Clean up MCP client contexts if they were attached by factory
         mcp_contexts = getattr(self, "_mcp_contexts", [])
         await self.resource_closer.close_mcp_contexts(mcp_contexts)
+        # Remote context-manager backends (e.g. ctxman) hold an HTTP client
+        context_aclose = getattr(self.context, "aclose", None)
+        if context_aclose is not None:
+            try:
+                await context_aclose()
+            except Exception as exc:  # noqa: BLE001 — close must not fail shutdown
+                self.logger.warning("context_manager_close_failed", error=str(exc))
         self.logger.debug("agent_closed")
 
 

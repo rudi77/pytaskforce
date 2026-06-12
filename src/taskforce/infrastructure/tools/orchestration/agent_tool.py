@@ -80,7 +80,15 @@ class AgentTool:
         self._summarize_results = summarize_results
         self._summary_max_length = summary_max_length
         self._auto_approve = auto_approve
+        # Late-bound parent context manager (set by the factory). When it
+        # is a ctxman adapter with frames enabled, sequential sub-agents
+        # run inside a frame of the parent's ctxman session.
+        self._parent_context_manager: Any | None = None
         self.logger = structlog.get_logger().bind(component="agent_tool")
+
+    def set_parent_context_ref(self, context_manager: Any) -> None:
+        """Late-bind the parent agent's context manager (frames support)."""
+        self._parent_context_manager = context_manager
 
     @property
     def name(self) -> str:
@@ -257,6 +265,13 @@ class AgentTool:
         """
         Execute mission in sub-agent with isolated context.
 
+        When the parent uses the ctxman context backend with frames
+        enabled, the sub-agent runs inside a frame of the parent's
+        ctxman session: the frame is pushed before the spawn, published
+        via a task-local binding so the sub-agent's context manager
+        attaches to the shared session, and popped afterwards (ctxman
+        promotes and evicts the frame's segments server-side).
+
         Args:
             mission: Mission description for sub-agent
             specialist: Optional specialist profile ("coding", "rag", "wiki")
@@ -272,18 +287,65 @@ class AgentTool:
             - steps_taken: int - Number of execution steps
             - error: str - Error message (if failed)
         """
+        parent_cm = self._parent_context_manager
+        if parent_cm is None or not getattr(parent_cm, "frames_supported", False):
+            return await self._execute_sub_agent(mission, specialist, planning_strategy, **kwargs)
+
+        from taskforce.infrastructure.context.frame_binding import (
+            reset_frame_binding,
+            set_frame_binding,
+        )
+
+        label = specialist or "sub_agent"
+        try:
+            # Returns None when ctxman is unavailable and on_unavailable=
+            # degrade — the sub-agent then runs with its own session.
+            frame_binding = await parent_cm.push_frame(label)
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": f"ctxman frame push failed: {exc}",
+                "error_type": type(exc).__name__,
+            }
+        if frame_binding is None:
+            return await self._execute_sub_agent(mission, specialist, planning_strategy, **kwargs)
+
+        token = set_frame_binding(frame_binding)
+        result: dict[str, Any] | None = None
+        try:
+            result = await self._execute_sub_agent(mission, specialist, planning_strategy, **kwargs)
+            return result
+        finally:
+            reset_frame_binding(token)
+            outcome = "completed" if result and result.get("success") else "failed"
+            try:
+                await parent_cm.pop_frame(
+                    frame_binding,
+                    return_content=f"Sub-agent {label} {outcome}",
+                )
+            except Exception as exc:  # noqa: BLE001 — never mask the result
+                self.logger.warning(
+                    "ctxman_frame_pop_failed",
+                    frame_id=frame_binding.frame_id,
+                    error=str(exc),
+                )
+
+    async def _execute_sub_agent(
+        self,
+        mission: str,
+        specialist: str | None = None,
+        planning_strategy: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Spawn and run the sub-agent (frame-agnostic inner path)."""
         # Get parent session from kwargs (injected by ToolExecutor)
         parent_session = kwargs.get("_parent_session_id", "unknown")
-        parent_event_sink: asyncio.Queue[StreamEvent] | None = kwargs.get(
-            "_parent_event_sink"
-        )
+        parent_event_sink: asyncio.Queue[StreamEvent] | None = kwargs.get("_parent_event_sink")
         parent_agent_path: list[str] = list(kwargs.get("_parent_agent_path", []) or [])
 
         # Generate unique session ID for sub-agent
         sub_session_suffix = specialist or "generic"
-        sub_session_id = (
-            f"{parent_session}--sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
-        )
+        sub_session_id = f"{parent_session}--sub_{sub_session_suffix}_{uuid.uuid4().hex[:8]}"
 
         try:
             if self._spawner:
@@ -440,14 +502,10 @@ class AgentTool:
 
         return True, None
 
-
     def _maybe_summarize_result_text(self, message: str | None) -> str:
         """Return sub-agent message, optionally truncated for token efficiency."""
         result_text = message or "No result"
-        if (
-            not self._summarize_results
-            or len(result_text) <= self._summary_max_length
-        ):
+        if not self._summarize_results or len(result_text) <= self._summary_max_length:
             return result_text
 
         self.logger.debug(
@@ -471,9 +529,7 @@ class AgentTool:
         success = getattr(result, "success", False)
         return {
             "success": success,
-            "result": self._maybe_summarize_result_text(
-                getattr(result, "final_message", "")
-            ),
+            "result": self._maybe_summarize_result_text(getattr(result, "final_message", "")),
             "session_id": getattr(result, "session_id", "unknown"),
             "status": getattr(result, "status", "unknown"),
             "error": None if success else getattr(result, "error", None),

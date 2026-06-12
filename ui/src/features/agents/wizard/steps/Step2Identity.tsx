@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Field } from "@fluentui/react-components";
 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,8 +61,12 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="wizard-displayname">Wie soll dein Agent heißen?</Label>
+      <Field
+        label={{
+          children: "Wie soll dein Agent heißen?",
+          htmlFor: "wizard-displayname",
+        }}
+      >
         <Input
           id="wizard-displayname"
           ref={nameRef}
@@ -71,7 +76,7 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
           aria-invalid={slugConflict || undefined}
           aria-describedby="wizard-displayname-help"
         />
-        <div id="wizard-displayname-help" className="text-xs">
+        <div id="wizard-displayname-help" className="mt-1 text-xs">
           {state.displayName ? (
             <p className="text-muted-foreground">
               Interner Name (wird automatisch erzeugt):{" "}
@@ -88,10 +93,14 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
             </p>
           ) : null}
         </div>
-      </div>
+      </Field>
 
-      <div className="space-y-2">
-        <Label htmlFor="wizard-description">Was soll er für dich tun?</Label>
+      <Field
+        label={{
+          children: "Was soll er für dich tun?",
+          htmlFor: "wizard-description",
+        }}
+      >
         <Textarea
           id="wizard-description"
           value={state.description}
@@ -102,7 +111,7 @@ export function Step2Identity({ state, onChange, slugConflict }: Props) {
           }
           rows={4}
         />
-      </div>
+      </Field>
     </div>
   );
 }

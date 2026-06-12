@@ -350,6 +350,7 @@ class AgentFactory:
             )
 
         context_mgmt = base_config.get("context_management", {})
+        cm_factory, expand_tool = self._setup_context_backend(base_config, all_tools)
         agent = self._instantiate_agent(
             infra=infra,
             all_tools=all_tools,
@@ -360,7 +361,9 @@ class AgentFactory:
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
             agent_id=definition.agent_id or definition.specialist or definition.base_profile,
+            context_manager_factory=cm_factory,
         )
+        self._finalize_context_backend(agent, expand_tool)
 
         if activate_skill_tool is not None:
             activate_skill_tool.set_agent_ref(agent)
@@ -589,6 +592,7 @@ class AgentFactory:
         compression_trigger: int | None = None,
         max_input_tokens: int | None = None,
         agent_id: str | None = None,
+        context_manager_factory: Any | None = None,
     ) -> Agent:
         """Create an Agent instance from resolved infrastructure and settings."""
         agent_logger = structlog.get_logger().bind(
@@ -622,7 +626,51 @@ class AgentFactory:
             approval_bypass_provider=get_approval_bypass_override,
             react_no_progress_threshold=settings.get("react_no_progress_threshold"),
             react_signature_repeat_threshold=settings.get("react_signature_repeat_threshold"),
+            context_manager_factory=context_manager_factory,
         )
+
+    def _setup_context_backend(
+        self,
+        base_config: dict[str, Any],
+        all_tools: list[ToolProtocol],
+    ) -> tuple[Any | None, Any | None]:
+        """Resolve the context-manager backend for this agent.
+
+        For non-local backends (ctxman) this also registers the
+        ``expand_context_ref`` page-fault tool in ``all_tools`` *before*
+        agent instantiation so it reaches ``_openai_tools`` and the tool
+        executor.
+
+        Returns:
+            (context_manager_factory, expand_context_ref_tool) — both None
+            for the default local backend.
+        """
+        cm_factory = self.infra_builder.build_context_manager_factory(base_config)
+        if cm_factory is None:
+            return None, None
+        from taskforce.infrastructure.context.expand_context_ref_tool import (
+            ExpandContextRefTool,
+        )
+
+        expand_tool = ExpandContextRefTool()
+        all_tools.append(expand_tool)
+        return cm_factory, expand_tool
+
+    @staticmethod
+    def _finalize_context_backend(agent: Agent, expand_tool: Any | None) -> None:
+        """Late-bind context-backend references after agent construction.
+
+        Binds the page-fault tool to the agent's context manager and hands
+        orchestration tools a reference to the parent context manager so
+        sequential sub-agents can run as ctxman frames.
+        """
+        if expand_tool is None:
+            return
+        expand_tool.set_context_manager_ref(agent.context)
+        for tool in agent.tools:
+            bind = getattr(tool, "set_parent_context_ref", None)
+            if callable(bind):
+                bind(agent.context)
 
     async def _load_plugin_tools_for_definition(
         self,
@@ -1364,6 +1412,7 @@ class AgentFactory:
         skill_manager = self._build_plugin_skill_manager(manifest, plugin_config)
 
         context_mgmt = merged_config.get("context_management", {})
+        cm_factory, expand_tool = self._setup_context_backend(merged_config, all_tools)
         agent = self._instantiate_agent(
             infra=infra,
             all_tools=all_tools,
@@ -1374,7 +1423,9 @@ class AgentFactory:
             compression_trigger=context_mgmt.get("compression_trigger"),
             max_input_tokens=context_mgmt.get("max_input_tokens"),
             agent_id=manifest.name,
+            context_manager_factory=cm_factory,
         )
+        self._finalize_context_backend(agent, expand_tool)
 
         _set_mcp_contexts(agent, mcp_contexts)
         _set_plugin_manifest(agent, manifest)
