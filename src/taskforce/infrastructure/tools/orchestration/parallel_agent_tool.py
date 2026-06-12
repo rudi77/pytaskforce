@@ -91,8 +91,7 @@ class ParallelAgentTool(BaseTool):
             "max_concurrency": {
                 "type": "integer",
                 "description": (
-                    "Maximum number of sub-agents running at the same time. "
-                    "Defaults to 3."
+                    "Maximum number of sub-agents running at the same time. " "Defaults to 3."
                 ),
                 "default": 3,
             },
@@ -154,30 +153,44 @@ class ParallelAgentTool(BaseTool):
             parent_session=parent_session,
         )
 
-        semaphore = asyncio.Semaphore(max_concurrency)
-        tasks = [
-            self._run_with_semaphore(
-                semaphore,
-                mission_spec,
-                parent_session,
-                parent_event_sink,
-                parent_agent_path,
-            )
-            for mission_spec in missions
-        ]
+        # ctxman frames are LIFO-only: concurrent siblings cannot share the
+        # parent's session as frames. Clear any inherited frame binding so
+        # each parallel sub-agent gets its own ctxman session instead.
+        from taskforce.infrastructure.context.frame_binding import (
+            reset_frame_binding,
+            set_frame_binding,
+        )
 
-        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        binding_token = set_frame_binding(None)
+        try:
+            semaphore = asyncio.Semaphore(max_concurrency)
+            tasks = [
+                self._run_with_semaphore(
+                    semaphore,
+                    mission_spec,
+                    parent_session,
+                    parent_event_sink,
+                    parent_agent_path,
+                )
+                for mission_spec in missions
+            ]
+
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            reset_frame_binding(binding_token)
 
         results = []
         for i, raw in enumerate(raw_results):
             if isinstance(raw, BaseException):
-                results.append({
-                    "mission": missions[i].get("mission", ""),
-                    "specialist": missions[i].get("specialist"),
-                    "success": False,
-                    "error": str(raw),
-                    "error_kind": "exception",
-                })
+                results.append(
+                    {
+                        "mission": missions[i].get("mission", ""),
+                        "specialist": missions[i].get("specialist"),
+                        "success": False,
+                        "error": str(raw),
+                        "error_kind": "exception",
+                    }
+                )
             else:
                 results.append(raw)
 
@@ -247,9 +260,7 @@ class ParallelAgentTool(BaseTool):
             )
         return Path(self._work_dir or ".taskforce") / "sub_agent_results"
 
-    def _compact_result(
-        self, result: dict[str, Any], parent_session: str
-    ) -> dict[str, Any]:
+    def _compact_result(self, result: dict[str, Any], parent_session: str) -> dict[str, Any]:
         """Compact a sub-agent result for the calling agent's context.
 
         If the result text is small enough, return it inline unchanged.

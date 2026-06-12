@@ -385,6 +385,63 @@ class InfrastructureBuilder:
             return ContextPolicy.conservative_default()
 
     # -------------------------------------------------------------------------
+    # Context Manager Backend
+    # -------------------------------------------------------------------------
+
+    def build_context_manager_factory(
+        self,
+        config: dict[str, Any],
+    ) -> Any | None:
+        """Build the context-manager factory for the configured backend.
+
+        Returns None for the default local backend (Agent builds its own
+        ContextManager), or a factory callable passed to
+        ``Agent(context_manager_factory=...)`` for alternative backends
+        (currently: ``ctxman``).
+
+        Args:
+            config: Merged base/profile configuration dictionary.
+
+        Returns:
+            Factory callable or None.
+
+        Raises:
+            ValueError: On an unknown ``context_management.backend`` value.
+        """
+        from taskforce.application.infrastructure_overrides import (
+            get_context_manager_factory_override,
+        )
+
+        override = get_context_manager_factory_override()
+        if override is not None:
+            return override(config)
+
+        cm_config = config.get("context_management") or {}
+        backend = str(cm_config.get("backend", "local"))
+        if backend == "local":
+            return None
+        if backend != "ctxman":
+            raise ValueError(
+                f"Unknown context_management.backend: {backend!r} " "(expected 'local' or 'ctxman')"
+            )
+
+        # Lazy import: the infrastructure adapter (and aiohttp) is only
+        # loaded when the ctxman backend is actually configured.
+        from taskforce.infrastructure.context.ctxman_context_manager import (
+            CtxmanConfig,
+            build_ctxman_context_manager_factory,
+        )
+
+        ctxman_config = CtxmanConfig.from_dict(cm_config.get("ctxman"))
+        self._logger.info(
+            "context_manager_backend_ctxman",
+            base_url=ctxman_config.base_url,
+            provider=ctxman_config.provider,
+            on_unavailable=ctxman_config.on_unavailable,
+        )
+        return build_ctxman_context_manager_factory(ctxman_config)
+
+    # -------------------------------------------------------------------------
     # Communication Gateway
     # -------------------------------------------------------------------------
 
