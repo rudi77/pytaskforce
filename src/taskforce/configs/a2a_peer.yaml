@@ -5,7 +5,7 @@ persistence:
   type: file
   work_dir: .taskforce
 
-runtime:
+runtime_tracking:
   enabled: true
   store: file
   work_dir: .taskforce
