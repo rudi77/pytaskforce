@@ -66,7 +66,12 @@ class _RecordingConversationManager:
 class _StreamingExecutor:
     """Plain executor double exposing an async-iterating mission stream."""
 
+    def __init__(self) -> None:
+        self.last_kwargs: dict[str, Any] = {}
+
     def execute_mission_streaming(self, **_kwargs) -> AsyncIterator[_Update]:
+        self.last_kwargs = _kwargs
+
         async def _stream() -> AsyncIterator[_Update]:
             yield _Update(event_type=EventType.STARTED.value, message="started")
             yield _Update(event_type=EventType.LLM_TOKEN.value, details={"token": "Hello "})
@@ -129,6 +134,19 @@ def test_streaming_persists_user_and_assistant(
     assert [m["role"] for m in persisted] == ["user", "assistant"]
     assert persisted[0]["content"] == "hi"
     assert persisted[1]["content"] == "Hello world"
+
+
+def test_streaming_pins_session_to_conversation(
+    client: TestClient, streaming_executor: _StreamingExecutor
+) -> None:
+    """#453 — the streaming executor must receive ``session_id ==
+    conversation_id`` so the conversation maps to one stable session."""
+    response = client.post(
+        "/api/v1/conversations/conv-1/messages/stream",
+        json={"message": "hi", "profile": "default"},
+    )
+    assert response.status_code == 200
+    assert streaming_executor.last_kwargs.get("session_id") == "conv-1"
 
 
 def test_streaming_with_attachment(
