@@ -60,6 +60,14 @@ ctxman only manages what goes into the context window.
   cancellation results and retried, never silently dropped.
 - Restoring a paused execution attaches to a fresh ctxman session seeded
   with the full restored history.
+- A new turn in an existing conversation reattaches to that conversation's
+  ctxman session — its id and flush cursor are persisted in the agent's
+  per-conversation state (session id == conversation id) — instead of
+  creating a new session each turn. On reattach only the current user turn
+  is staged (prior turns already live server-side) and the saved flush
+  sequence is continued, so per-turn append idempotency keys never collide.
+  An expired/GC'd session (ctxman's idempotency retention) falls back to a
+  fresh session with the full history re-staged.
 - Frames are strictly sequential: a sub-agent frame is pushed only after
   the parent's pending messages are flushed, is popped even when the
   sub-agent fails, and concurrent sub-agents never share a session.
@@ -108,6 +116,10 @@ All keys live under the profile-root `context_management:` block.
 - spec("context-manager-ctxman.outbox_flushed_as_single_batch")
 - spec("context-manager-ctxman.failed_flush_replays_same_key")
 - spec("context-manager-ctxman.restore_creates_fresh_session")
+- spec("context-manager-ctxman.fresh_session_persists_record_into_state")
+- spec("context-manager-ctxman.resume_attaches_without_recreating_session")
+- spec("context-manager-ctxman.resume_stages_only_the_new_user_turn")
+- spec("context-manager-ctxman.gone_session_recreated_with_full_history")
 - spec("context-manager-ctxman.compress_and_preflight_are_noops")
 - spec("context-manager-ctxman.budget_413_triggers_gc_and_retry")
 - spec("context-manager-ctxman.degrade_keeps_local_context")
@@ -132,8 +144,11 @@ All keys live under the profile-root `context_management:` block.
   Terminal promotion calls ctxman's compaction LLM; a ctxman instance
   without compaction credentials answers 503 `promotion_failed` — frames
   then degrade to isolated sessions and archive is skipped with a warning.
-- **Resume always starts a fresh ctxman session.** The previous session is
-  orphaned (until ctxman retention sweeps it) instead of being re-attached.
+- **Only paused-execution restore starts a fresh ctxman session.** Normal
+  turn-to-turn continuation reattaches to the conversation's session (see the
+  reattach invariant). The ask_user/HITL `restore` path still seeds a fresh
+  session with the full restored history; that session is orphaned until
+  ctxman retention sweeps it.
 - **Tool definitions sent to the LLM bypass the render result.** The agent
   uses its locally built tool list; the server's rendered tool section is
   ignored, so a server-side tool diff is not reflected mid-mission.

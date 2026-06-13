@@ -134,6 +134,17 @@ class CtxmanContextManager(ContextManager):
         self._last_watermark: str = "ok"
         self._sync_lock = asyncio.Lock()
 
+        # Conversation-scoped session reuse (#457). The ctxman session id is
+        # persisted in the agent's per-conversation state dict — viable because
+        # the executor session_id == conversation_id since #453/#454. On a
+        # follow-up turn we attach to the existing session and stage only the
+        # new user turn instead of re-creating a session and re-staging the
+        # full history (which would collide/duplicate, since ctxman dedups
+        # appends per batch key, not per segment).
+        self._persist_state: dict[str, Any] | None = None
+        self._mission: str = ""
+        self._resuming: bool = False
+
     # ------------------------------------------------------------------
     # Lifecycle (sync — stage locally, defer remote I/O)
     # ------------------------------------------------------------------
@@ -146,31 +157,98 @@ class CtxmanContextManager(ContextManager):
     ) -> None:
         super().initialize(mission, state, base_system_prompt)
         self._base_system_prompt = base_system_prompt
+        self._persist_state = state
+        self._mission = mission
         self._reset_remote_state()
         self._stage_history()
 
     def restore(self, messages: list[dict[str, Any]]) -> None:
         super().restore(messages)
         self._base_system_prompt = self._last_system_prompt
-        self._reset_remote_state()
+        # ask_user resume mid-turn rebuilds a fresh session from the restored
+        # messages — conversation-scoped reuse (#457) only applies to a new
+        # turn via ``initialize``.
+        self._reset_remote_state(allow_resume=False)
         self._stage_history()
 
-    def _reset_remote_state(self) -> None:
+    def _reset_remote_state(self, *, allow_resume: bool = True) -> None:
         # A fresh session is created lazily on the next prepare_for_llm;
         # frame-bound adapters attach to the parent's session instead.
+        self._resuming = False
+        saved = self._persisted_session() if allow_resume else None
         if self._frame_binding is not None:
             self._session_id = self._frame_binding.session_id
+            self._flush_seq = 0
+        elif saved is not None:
+            # Conversation already has a ctxman session (#457): attach to it
+            # and continue its flush sequence so append idempotency keys don't
+            # collide with earlier turns (ctxman replays a colliding key and
+            # silently drops the new payload).
+            self._session_id = saved["session_id"]
+            self._flush_seq = int(saved.get("flush_seq", 0))
+            self._resuming = True
         else:
             self._session_id = None
+            self._flush_seq = 0
         self._static_hash = None
         self._outbox.clear()
         self._pending_batch = None
-        self._flush_seq = 0
         self._last_tokens_total = None
         self._last_watermark = "ok"
 
+    def _persisted_session(self) -> dict[str, Any] | None:
+        """Return the saved ctxman session record for this conversation, if any.
+
+        Frame-bound adapters never own a persisted session (they ride the
+        parent's), and a missing/empty state dict means a fresh session.
+        """
+        if self._frame_binding is not None or self._persist_state is None:
+            return None
+        record = self._persist_state.get("_ctxman_session")
+        if isinstance(record, dict) and record.get("session_id"):
+            return record
+        return None
+
+    def _persist_session_record(self) -> None:
+        """Persist the ctxman session id + flush cursor into the conversation
+        state so the next turn reuses the same session (#457)."""
+        if (
+            self._frame_binding is not None
+            or self._persist_state is None
+            or self._session_id is None
+        ):
+            return
+        self._persist_state["_ctxman_session"] = {
+            "session_id": self._session_id,
+            "flush_seq": self._flush_seq,
+        }
+
+    def _discard_persisted_session(self) -> None:
+        """Forget the persisted session and re-stage the full history into a
+        fresh session — used when the saved session expired / was GC'd."""
+        self._session_id = None
+        self._flush_seq = 0
+        self._resuming = False
+        self._static_hash = None
+        self._outbox.clear()
+        self._pending_batch = None
+        if self._persist_state is not None:
+            self._persist_state.pop("_ctxman_session", None)
+        self._stage_history()
+
     def _stage_history(self) -> None:
-        """Queue all non-system messages for the first remote flush."""
+        """Queue messages for the first remote flush.
+
+        Fresh session: stage the full non-system history. Resumed session
+        (#457): the prior turns already live in the ctxman session, so stage
+        only the current user turn (``mission``). Re-staging the full history
+        would collide on the per-turn append idempotency key or duplicate the
+        segments, because ctxman dedups appends per batch key, not per segment.
+        """
+        if self._resuming:
+            if self._mission:
+                self._outbox.append({"role": "user", "content": self._mission})
+            return
         self._outbox.extend(m for m in self._messages if m.get("role") != "system")
 
     # ------------------------------------------------------------------
@@ -222,6 +300,33 @@ class CtxmanContextManager(ContextManager):
                 await self._maybe_update_static()
                 await self._flush_outbox()
                 result = await self._render_with_recovery()
+            except CtxmanGoneError as exc:
+                # The persisted session expired / was GC'd (#457 — ctxman's
+                # idempotency store has 24h retention). Drop it, fall back to
+                # a fresh session with the full history re-staged, and retry
+                # once before degrading.
+                self._logger.warning(
+                    "ctxman_session_gone_recreating",
+                    error=str(exc),
+                    session_id=self._session_id,
+                )
+                self._discard_persisted_session()
+                try:
+                    await self._ensure_session()
+                    await self._maybe_update_static()
+                    await self._flush_outbox()
+                    result = await self._render_with_recovery()
+                except CtxmanError as retry_exc:
+                    if self._on_unavailable == "fail":
+                        raise
+                    self._logger.warning(
+                        "ctxman_degraded_to_local_context",
+                        error=str(retry_exc),
+                        error_type=type(retry_exc).__name__,
+                        session_id=self._session_id,
+                    )
+                    self.set_system_prompt(full_prompt)
+                    return
             except CtxmanError as exc:
                 if self._on_unavailable == "fail":
                     raise
@@ -276,6 +381,7 @@ class CtxmanContextManager(ContextManager):
             idempotency_key=new_idempotency_key(),
         )
         self._static_hash = self._hash_static()
+        self._persist_session_record()
         self._logger.info(
             "ctxman_session_created",
             session_id=self._session_id,
@@ -360,6 +466,7 @@ class CtxmanContextManager(ContextManager):
             )
         self._pending_batch = None
         self._flush_seq += 1
+        self._persist_session_record()
 
     async def _externalize_oversized(
         self,
