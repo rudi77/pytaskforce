@@ -412,14 +412,10 @@ async def test_stream_restart_resets_accumulators_and_yields_downstream_event() 
     )
 
     events: list[StreamEvent] = []
-    async for evt in _react_loop(
-        agent, "summarise", "sess-159a", messages, {}, 0, logger
-    ):
+    async for evt in _react_loop(agent, "summarise", "sess-159a", messages, {}, 0, logger):
         events.append(evt)
 
-    restart_events = [
-        e for e in events if e.event_type == EventType.LLM_STREAM_RESTART
-    ]
+    restart_events = [e for e in events if e.event_type == EventType.LLM_STREAM_RESTART]
     assert len(restart_events) == 1
     assert restart_events[0].data == {
         "reason": "content_filter",
@@ -433,3 +429,70 @@ async def test_stream_restart_resets_accumulators_and_yields_downstream_event() 
     assert assistant_msgs, "expected an assistant message after stream end"
     final_assistant = assistant_msgs[-1]
     assert final_assistant.get("content") == "Saubere Antwort.", final_assistant
+
+
+@pytest.mark.asyncio
+async def test_tool_call_without_name_is_dropped_not_emitted() -> None:
+    """A tool_call accumulated without a usable function name must be dropped
+    rather than emitted. Sending it would make the provider reject the whole
+    messages array ("Invalid type for 'messages[N].tool_calls[0].function.name'")
+    and, once stored in history, break every subsequent call (issue #455).
+    """
+    agent = _make_agent(max_steps=3)
+    logger = _make_logger()
+
+    call_count = 0
+
+    def stream_factory(**kwargs: Any):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # The model streamed content + a tool call whose name never
+            # arrived (empty in both start and end).
+            return _make_stream(
+                [
+                    {"type": "token", "content": "Let me look that up."},
+                    {
+                        "type": "tool_call_end",
+                        "index": 0,
+                        "id": "call_noname",
+                        "name": "",
+                        "arguments": '{"q":"x"}',
+                    },
+                    {"type": "done", "usage": {}},
+                ]
+            )
+        return _make_stream(
+            [
+                {"type": "token", "content": "Done."},
+                {"type": "done", "usage": {}},
+            ]
+        )
+
+    agent.llm_provider = MagicMock()
+    agent.llm_provider.complete_stream = MagicMock(side_effect=stream_factory)
+
+    messages = agent.context.messages
+    messages.extend(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "Do something"},
+        ]
+    )
+
+    async for _ in _react_loop(agent, "Do something", "sess-455", messages, {}, 0, logger):
+        pass
+
+    # The malformed tool_call must NOT have executed.
+    assert agent._execute_tool.await_count == 0
+    # No assistant message in history may carry a tool_call with an empty name.
+    for m in messages:
+        for tc in m.get("tool_calls", []) or []:
+            assert (tc.get("function", {}).get("name") or "").strip(), m
+    # And the drop was logged.
+    dropped = [
+        c
+        for c in logger.warning.call_args_list
+        if c.args and c.args[0] == "react_loop.toolcall_dropped_missing_name"
+    ]
+    assert dropped, "expected a toolcall_dropped_missing_name warning"
