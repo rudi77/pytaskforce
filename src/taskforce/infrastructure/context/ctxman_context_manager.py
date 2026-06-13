@@ -138,12 +138,14 @@ class CtxmanContextManager(ContextManager):
         # persisted in the agent's per-conversation state dict — viable because
         # the executor session_id == conversation_id since #453/#454. On a
         # follow-up turn we attach to the existing session and stage only the
-        # new user turn instead of re-creating a session and re-staging the
-        # full history (which would collide/duplicate, since ctxman dedups
-        # appends per batch key, not per segment).
+        # history delta not yet sent (the prior assistant reply + the new user
+        # turn), continuing the saved flush sequence so append idempotency keys
+        # don't collide (ctxman dedups appends per batch key, not per segment).
         self._persist_state: dict[str, Any] | None = None
-        self._mission: str = ""
         self._resuming: bool = False
+        # Number of (non-system) conversation_history messages already staged
+        # to the ctxman session — the resume cursor (#461).
+        self._staged_history_count: int = 0
 
     # ------------------------------------------------------------------
     # Lifecycle (sync — stage locally, defer remote I/O)
@@ -158,7 +160,6 @@ class CtxmanContextManager(ContextManager):
         super().initialize(mission, state, base_system_prompt)
         self._base_system_prompt = base_system_prompt
         self._persist_state = state
-        self._mission = mission
         self._reset_remote_state()
         self._stage_history()
 
@@ -179,17 +180,21 @@ class CtxmanContextManager(ContextManager):
         if self._frame_binding is not None:
             self._session_id = self._frame_binding.session_id
             self._flush_seq = 0
+            self._staged_history_count = 0
         elif saved is not None:
             # Conversation already has a ctxman session (#457): attach to it
             # and continue its flush sequence so append idempotency keys don't
             # collide with earlier turns (ctxman replays a colliding key and
-            # silently drops the new payload).
+            # silently drops the new payload). The staged cursor lets us stage
+            # only the history delta not yet sent (#461).
             self._session_id = saved["session_id"]
             self._flush_seq = int(saved.get("flush_seq", 0))
+            self._staged_history_count = int(saved.get("staged_count", 0))
             self._resuming = True
         else:
             self._session_id = None
             self._flush_seq = 0
+            self._staged_history_count = 0
         self._static_hash = None
         self._outbox.clear()
         self._pending_batch = None
@@ -221,6 +226,7 @@ class CtxmanContextManager(ContextManager):
         self._persist_state["_ctxman_session"] = {
             "session_id": self._session_id,
             "flush_seq": self._flush_seq,
+            "staged_count": self._staged_history_count,
         }
 
     def _discard_persisted_session(self) -> None:
@@ -228,6 +234,7 @@ class CtxmanContextManager(ContextManager):
         fresh session — used when the saved session expired / was GC'd."""
         self._session_id = None
         self._flush_seq = 0
+        self._staged_history_count = 0
         self._resuming = False
         self._static_hash = None
         self._outbox.clear()
@@ -237,19 +244,25 @@ class CtxmanContextManager(ContextManager):
         self._stage_history()
 
     def _stage_history(self) -> None:
-        """Queue messages for the first remote flush.
+        """Queue the not-yet-sent conversation history for the first flush.
 
         Fresh session: stage the full non-system history. Resumed session
-        (#457): the prior turns already live in the ctxman session, so stage
-        only the current user turn (``mission``). Re-staging the full history
-        would collide on the per-turn append idempotency key or duplicate the
-        segments, because ctxman dedups appends per batch key, not per segment.
+        (#457/#461): stage only the delta past the saved cursor — typically
+        the prior turn's assistant reply plus the new user turn. ``conversation
+        _history`` (the route's source of truth) carries BOTH user and
+        assistant messages, so the assistant replies are preserved; staging
+        only the user turn dropped them (#461). The cursor + continued flush
+        sequence keep the per-turn append idempotency key from colliding, and
+        the delta never re-sends what ctxman already has.
         """
-        if self._resuming:
-            if self._mission:
-                self._outbox.append({"role": "user", "content": self._mission})
-            return
-        self._outbox.extend(m for m in self._messages if m.get("role") != "system")
+        history = [m for m in self._messages if m.get("role") != "system"]
+        start = self._staged_history_count if self._resuming else 0
+        # Guard against a shrunk history (e.g. after /compact) — never index
+        # past the end, and fall back to staging nothing rather than negative
+        # slicing.
+        start = max(0, min(start, len(history)))
+        self._outbox.extend(history[start:])
+        self._staged_history_count = len(history)
 
     # ------------------------------------------------------------------
     # Mutations
