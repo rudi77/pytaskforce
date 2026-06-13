@@ -358,28 +358,36 @@ async def test_resume_attaches_without_recreating_session(
     assert fake_client.renders[-1]["session_id"] == "sess-existing"
 
 
-@pytest.mark.spec("context-manager-ctxman.resume_stages_only_the_new_user_turn")
-async def test_resume_stages_only_the_new_user_turn(
+def _history_mock(messages: list[dict[str, Any]]) -> Mock:
+    history = Mock(spec=MessageHistoryManager)
+    history.build_initial_messages = Mock(return_value=messages)
+    history.compress_messages = AsyncMock(side_effect=lambda m: m)
+    history.preflight_budget_check = Mock(side_effect=lambda m: m)
+    return history
+
+
+@pytest.mark.spec("context-manager-ctxman.resume_stages_only_the_unsent_delta")
+async def test_resume_stages_only_the_unsent_delta(
     fake_client: FakeCtxmanClient,
     mock_logger: Mock,
 ) -> None:
-    """On resume only the current user turn is staged — the prior history is
-    already in the ctxman session, and re-staging it would collide/duplicate
-    (ctxman dedups appends per batch key, not per segment) (#457). The append
-    key continues the saved flush sequence so it cannot collide with the
-    earlier turn's ``sess:0`` key."""
-    history = Mock(spec=MessageHistoryManager)
-    history.build_initial_messages = Mock(
-        return_value=[
+    """On resume only the history past the saved cursor is staged — the prior
+    turns already live in the ctxman session, and re-staging would collide /
+    duplicate (ctxman dedups appends per batch key, not per segment). The
+    append key continues the saved flush sequence so it cannot collide with
+    the earlier turn's ``sess:0`` key (#457)."""
+    history = _history_mock(
+        [
             {"role": "system", "content": "base"},
             {"role": "user", "content": "u1"},
             {"role": "assistant", "content": "a1"},
             {"role": "user", "content": "u2 the new turn"},
         ]
     )
-    history.compress_messages = AsyncMock(side_effect=lambda m: m)
-    history.preflight_budget_check = Mock(side_effect=lambda m: m)
-    state: dict[str, Any] = {"_ctxman_session": {"session_id": "sess-existing", "flush_seq": 2}}
+    # Cursor at 2 → u1 + a1 already sent; only u2 is the unsent delta.
+    state: dict[str, Any] = {
+        "_ctxman_session": {"session_id": "sess-existing", "flush_seq": 2, "staged_count": 2}
+    }
     adapter = _make_adapter(fake_client, history, mock_logger)
     adapter.initialize("u2 the new turn", state, "base")
     await adapter.prepare_for_llm(rebuild_system_prompt=False)
@@ -387,6 +395,39 @@ async def test_resume_stages_only_the_new_user_turn(
     assert [s["kind"] for s in segments] == ["user_msg"]
     assert segments[0]["content"] == "u2 the new turn"
     assert key == "sess-existing:2"
+    assert state["_ctxman_session"]["staged_count"] == 3
+
+
+@pytest.mark.spec("context-manager-ctxman.resume_delta_includes_prior_assistant_reply")
+async def test_resume_delta_includes_prior_assistant_reply(
+    fake_client: FakeCtxmanClient,
+    mock_logger: Mock,
+) -> None:
+    """Regression (#461): the prior turn's assistant reply lives in
+    conversation_history but was never flushed live (no prepare_for_llm fires
+    after the final answer). Staging only the new user turn dropped it; the
+    delta from the cursor must include it so the model sees the assistant."""
+    history = _history_mock(
+        [
+            {"role": "system", "content": "base"},
+            {"role": "user", "content": "Hallo Butler"},
+            {"role": "assistant", "content": "Hallo Rudi"},
+            {"role": "user", "content": "Wie ist das Wetter?"},
+        ]
+    )
+    # Turn 1 staged only [user "Hallo Butler"] (cursor 1); the assistant reply
+    # was persisted to conversation_history afterwards by the route.
+    state: dict[str, Any] = {
+        "_ctxman_session": {"session_id": "sess-1", "flush_seq": 1, "staged_count": 1}
+    }
+    adapter = _make_adapter(fake_client, history, mock_logger)
+    adapter.initialize("Wie ist das Wetter?", state, "base")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    _, segments, _ = fake_client.appended[-1]
+    assert [s["kind"] for s in segments] == ["assistant_msg", "user_msg"]
+    assert segments[0]["content"] == "Hallo Rudi"
+    assert segments[1]["content"] == "Wie ist das Wetter?"
+    assert state["_ctxman_session"]["staged_count"] == 3
 
 
 async def test_flush_cursor_persisted_and_advances(
