@@ -10,7 +10,10 @@
 # Values here layer on top of the framework defaults.yaml and can still be
 # overridden by a per-agent ``technical:`` block.
 
-runtime:
+# Runtime tracking (heartbeats / checkpoints). Keyed as ``runtime_tracking``
+# so it doesn't collide with the top-level ``runtime`` agent-runtime selector
+# (issue #456).
+runtime_tracking:
   enabled: true
   store: file
   work_dir: .taskforce

@@ -234,6 +234,20 @@ class TestProfileConfigSchema:
         config = ProfileConfigSchema(tools=[{"type": "WebSearchTool"}, "python"])
         assert len(config.tools) == 2
 
+    def test_runtime_selector_defaults_to_string(self) -> None:
+        """The ``runtime`` field is the agent-runtime selector (a string)."""
+        config = ProfileConfigSchema()
+        assert config.runtime == "taskforce"
+
+    def test_runtime_tracking_accepts_dict(self) -> None:
+        """Issue #456: runtime-tracking config validates under its own key
+        without colliding with the ``runtime`` selector — no warning."""
+        config = ProfileConfigSchema(
+            runtime_tracking={"enabled": True, "store": "file", "work_dir": ".taskforce"}
+        )
+        assert config.runtime == "taskforce"
+        assert config.runtime_tracking["enabled"] is True
+
 
 class TestConfigValidationError:
     """Tests for ConfigValidationError exception."""

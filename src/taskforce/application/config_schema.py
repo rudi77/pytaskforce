@@ -501,6 +501,15 @@ class ProfileConfigSchema(BaseModel):
         None,
         description="Adapter-specific configuration passed verbatim to the runtime factory",
     )
+    # Runtime-tracking (heartbeats / checkpoints) config. Distinct from the
+    # ``runtime`` selector above — kept as a separate key to avoid the
+    # type collision that previously warned on every butler load (issue #456).
+    # Consumed by InfrastructureBuilder.build_runtime_tracker (enabled/store/
+    # work_dir). A legacy dict-valued ``runtime`` is still honoured there.
+    runtime_tracking: dict[str, Any] | None = Field(
+        None,
+        description="Runtime tracking (heartbeats/checkpoints) config: enabled, store, work_dir",
+    )
 
     # Raw technical block (used by .agent.md files before the loader flattens
     # it onto the top level). Retained so Pydantic doesn't reject it during

@@ -505,7 +505,14 @@ class InfrastructureBuilder:
         Raises:
             ValueError: If store type is unknown.
         """
-        runtime_config = config.get("runtime", {})
+        # Runtime-tracking config lives under ``runtime_tracking`` (issue
+        # #456). The bare ``runtime`` key is reserved for the agent-runtime
+        # selector (a string). Honour a legacy dict-valued ``runtime`` for
+        # back-compat; a string selector value is not tracking config.
+        runtime_config = config.get("runtime_tracking")
+        if runtime_config is None:
+            legacy = config.get("runtime")
+            runtime_config = legacy if isinstance(legacy, dict) else {}
         if not runtime_config.get("enabled", False):
             return None
 

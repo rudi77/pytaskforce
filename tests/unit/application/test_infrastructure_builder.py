@@ -595,6 +595,43 @@ class TestBuildRuntimeTracker:
         with pytest.raises(ValueError, match="Unknown runtime store type: redis"):
             builder.build_runtime_tracker(config)
 
+    def test_runtime_tracking_key_builds_tracker(self, builder: InfrastructureBuilder) -> None:
+        """Issue #456: tracking config now lives under ``runtime_tracking``."""
+        config: dict[str, Any] = {
+            "runtime_tracking": {"enabled": True, "store": "file", "work_dir": "/tmp/rt"}
+        }
+        with (
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker") as mock_tracker,
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore"),
+            patch("taskforce.infrastructure.runtime.FileCheckpointStore") as mock_cp,
+        ):
+            mock_tracker.return_value = MagicMock()
+            result = builder.build_runtime_tracker(config)
+            mock_cp.assert_called_once_with("/tmp/rt")
+            assert result is mock_tracker.return_value
+
+    def test_string_runtime_selector_is_not_tracking(self, builder: InfrastructureBuilder) -> None:
+        """Issue #456: a string ``runtime`` (the agent-runtime selector) must
+        NOT be read as tracking config — it has no ``enabled`` key."""
+        config: dict[str, Any] = {"runtime": "hermes"}
+        assert builder.build_runtime_tracker(config) is None
+
+    def test_runtime_tracking_takes_precedence_over_legacy(
+        self, builder: InfrastructureBuilder
+    ) -> None:
+        """When both keys exist, the new ``runtime_tracking`` wins."""
+        config: dict[str, Any] = {
+            "runtime": {"enabled": False},
+            "runtime_tracking": {"enabled": True, "store": "memory"},
+        }
+        with (
+            patch("taskforce.infrastructure.runtime.AgentRuntimeTracker") as mock_tracker,
+            patch("taskforce.infrastructure.runtime.InMemoryHeartbeatStore"),
+            patch("taskforce.infrastructure.runtime.InMemoryCheckpointStore"),
+        ):
+            mock_tracker.return_value = MagicMock()
+            assert builder.build_runtime_tracker(config) is mock_tracker.return_value
+
 
 # ---------------------------------------------------------------------------
 # Simple Builder Methods (delegation tests)
