@@ -130,9 +130,7 @@ async def _collect_result(session_id: str, events: AsyncIterator[StreamEvent]) -
             # mission did not succeed — propagate that distinction.
             if e.data.get("salvaged"):
                 salvaged = True
-                salvage_reason = str(
-                    e.data.get("salvage_reason") or salvage_reason or "salvaged"
-                )
+                salvage_reason = str(e.data.get("salvage_reason") or salvage_reason or "salvaged")
         elif event_type == EventType.ASK_USER:
             pending = dict(e.data)
             final_msg = final_msg or e.data.get("question", "Waiting for input")
@@ -345,17 +343,11 @@ async def _react_loop(
         # the check (avoids stat-ing the workspace every step).
         if deliverables and pivot_nudge_count < _PIVOT_MAX:
             offset = pivot_nudge_count * _PIVOT_INTERVAL
-            research_trigger = research_calls_since_check >= (
-                _PIVOT_RESEARCH_THRESHOLD + offset
-            )
-            nonwrite_trigger = nonwrite_calls_since_check >= (
-                _PIVOT_NONWRITE_THRESHOLD + offset
-            )
+            research_trigger = research_calls_since_check >= (_PIVOT_RESEARCH_THRESHOLD + offset)
+            nonwrite_trigger = nonwrite_calls_since_check >= (_PIVOT_NONWRITE_THRESHOLD + offset)
             step_trigger = step >= (_PIVOT_STEP_FALLBACK + offset)
             if research_trigger or nonwrite_trigger or step_trigger:
-                if _find_missing_deliverables(
-                    deliverables, deliverable_search_roots
-                ):
+                if _find_missing_deliverables(deliverables, deliverable_search_roots):
                     pivot_nudge_count += 1
                     agent.context.append_message(
                         {
@@ -588,17 +580,37 @@ async def _react_loop(
             consecutive_llm_errors = 0
 
             if tc_acc:
-                tool_calls = [
-                    {
-                        "id": v["id"],
-                        "type": "function",
-                        "function": {
-                            "name": v["name"],
-                            "arguments": v["arguments"],
-                        },
-                    }
-                    for v in tc_acc.values()
-                ]
+                for v in tc_acc.values():
+                    name = (v.get("name") or "").strip()
+                    if not name:
+                        # A tool_call accumulated without a usable function
+                        # name would be rejected by the provider as a
+                        # malformed messages array (e.g. Azure: "Invalid type
+                        # for 'messages[N].tool_calls[0].function.name'") and,
+                        # once in the message log, breaks every subsequent
+                        # call. Drop it rather than poison the history (#455).
+                        logger.warning(
+                            "react_loop.toolcall_dropped_missing_name",
+                            session_id=session_id,
+                            tool_call_id=v.get("id", ""),
+                            step=step,
+                        )
+                        continue
+                    tool_calls.append(
+                        {
+                            "id": v["id"],
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": v["arguments"],
+                            },
+                        }
+                    )
+                # Every accumulated tool_call was malformed — fall back to the
+                # plain content the model produced instead of an empty/broken
+                # tool turn.
+                if not tool_calls:
+                    content = content_acc
             else:
                 content = content_acc
         else:
@@ -663,9 +675,7 @@ async def _react_loop(
                 normalized_path = _extract_file_read_path(tc)
                 if not normalized_path:
                     continue
-                file_read_counts[normalized_path] = (
-                    file_read_counts.get(normalized_path, 0) + 1
-                )
+                file_read_counts[normalized_path] = file_read_counts.get(normalized_path, 0) + 1
                 if (
                     file_read_counts[normalized_path] == 2
                     and normalized_path not in file_read_nudges
@@ -750,15 +760,14 @@ async def _react_loop(
             # escalation options. Gives the agent one last chance to
             # call browser(action=restart_headed) or otherwise pivot
             # before the salvage path kicks in.
-            approaching_no_progress_kill = (
-                consecutive_no_progress_steps == max(no_progress_threshold - 1, 1)
+            approaching_no_progress_kill = consecutive_no_progress_steps == max(
+                no_progress_threshold - 1, 1
             )
-            approaching_signature_kill = (
-                repeated_signature_count == max(signature_repeat_threshold - 1, 1)
+            approaching_signature_kill = repeated_signature_count == max(
+                signature_repeat_threshold - 1, 1
             )
-            if (
-                not pre_stall_nudge_injected
-                and (approaching_no_progress_kill or approaching_signature_kill)
+            if not pre_stall_nudge_injected and (
+                approaching_no_progress_kill or approaching_signature_kill
             ):
                 pre_stall_nudge_injected = True
                 has_browser_tool = "browser" in getattr(agent, "tools", {})
@@ -792,9 +801,7 @@ async def _react_loop(
                 if (
                     deliverables
                     and pivot_nudge_count < _PIVOT_MAX
-                    and _find_missing_deliverables(
-                        deliverables, deliverable_search_roots
-                    )
+                    and _find_missing_deliverables(deliverables, deliverable_search_roots)
                 ):
                     pivot_nudge_count = _PIVOT_MAX  # last chance — burn the budget
                     consecutive_no_progress_steps = 0
@@ -815,9 +822,7 @@ async def _react_loop(
                         session_id=session_id,
                         step=step,
                         deliverables=deliverables,
-                        consecutive_no_progress_steps=(
-                            consecutive_no_progress_steps
-                        ),
+                        consecutive_no_progress_steps=(consecutive_no_progress_steps),
                     )
                     step += 1
                     continue
@@ -830,9 +835,7 @@ async def _react_loop(
                     session_id=session_id,
                 )
                 # Salvage: force a final answer from the LLM with available context
-                salvage, content_filter_blocked = await _salvage_answer(
-                    agent, messages, logger
-                )
+                salvage, content_filter_blocked = await _salvage_answer(agent, messages, logger)
                 if salvage:
                     agent.context.append_message(
                         {"role": MessageRole.ASSISTANT.value, "content": salvage},
@@ -880,13 +883,8 @@ async def _react_loop(
             # still missing on disk → escalate the nudge up to
             # ``_DELIVERABLE_MAX_NUDGES`` times instead of accepting
             # this as the final answer.
-            if (
-                deliverables
-                and deliverable_nudge_count < _DELIVERABLE_MAX_NUDGES
-            ):
-                missing = _find_missing_deliverables(
-                    deliverables, deliverable_search_roots
-                )
+            if deliverables and deliverable_nudge_count < _DELIVERABLE_MAX_NUDGES:
+                missing = _find_missing_deliverables(deliverables, deliverable_search_roots)
                 if missing:
                     deliverable_nudge_count += 1
                     agent.context.append_message(
@@ -918,9 +916,7 @@ async def _react_loop(
             # "exhausted 3 nudges" — the latter is the hard-block path.
             answer_data: dict[str, Any] = {"content": content}
             if deliverable_nudge_count > 0 and deliverables:
-                still_missing = _find_missing_deliverables(
-                    deliverables, deliverable_search_roots
-                )
+                still_missing = _find_missing_deliverables(deliverables, deliverable_search_roots)
                 if still_missing:
                     answer_data["salvaged"] = True
                     exhausted = deliverable_nudge_count >= _DELIVERABLE_MAX_NUDGES
@@ -985,9 +981,7 @@ async def _react_loop(
                 },
             )
         else:
-            error_data: dict[str, Any] = {
-                "message": f"Exceeded max steps ({agent.max_steps})"
-            }
+            error_data: dict[str, Any] = {"message": f"Exceeded max steps ({agent.max_steps})"}
             if content_filter_blocked:
                 error_data["error_kind"] = "content_filter"
             else:
@@ -1093,9 +1087,7 @@ async def _llm_call_and_process(
                     if e.data.get("terminal_failure"):
                         tool_failure_counts[tool_name] = 3
                     else:
-                        tool_failure_counts[tool_name] = (
-                            tool_failure_counts.get(tool_name, 0) + 1
-                        )
+                        tool_failure_counts[tool_name] = tool_failure_counts.get(tool_name, 0) + 1
                     kind = e.data.get("error_kind")
                     if isinstance(kind, str):
                         failure_error_kinds[tool_name] = kind
@@ -1104,9 +1096,7 @@ async def _llm_call_and_process(
             events.append(e)
         if not paused and failed_tool_names:
             agent.context.append_message(
-                _build_retry_nudge(
-                    failed_tool_names, error_kinds=failure_error_kinds
-                )
+                _build_retry_nudge(failed_tool_names, error_kinds=failure_error_kinds)
             )
         yield ("paused" if paused else "tool_calls", events)
         return

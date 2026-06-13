@@ -58,6 +58,25 @@ def test_is_content_filter_error_ignores_unrelated_errors() -> None:
     assert LiteLLMService._is_content_filter_error(err) is False
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        # LiteLLM wraps a malformed-messages Azure 400 as
+        # ContentPolicyViolationError — the class name contains "contentpolicy"
+        # but this is a schema error, not a content filter (issue #455).
+        "litellm.ContentPolicyViolationError: AzureException - Invalid type for "
+        "'messages[5].tool_calls[0].function.name': expected a string, but got null",
+        "ContentPolicyViolationError: invalid_request_error: messages is not of type array",
+    ],
+)
+def test_is_content_filter_error_excludes_structural_badrequests(message: str) -> None:
+    """Structural / schema BadRequests must NOT be treated as content filters,
+    otherwise the tool-result-stripping recovery loops on an unfixable error
+    (issue #455)."""
+    err = RuntimeError(message)
+    assert LiteLLMService._is_content_filter_error(err) is False
+
+
 async def test_handle_stream_error_tags_content_filter(service: LiteLLMService) -> None:
     err = RuntimeError("Azure content_policy violation: harmful content blocked")
     event = await service._handle_stream_error(err, "main", messages=[])

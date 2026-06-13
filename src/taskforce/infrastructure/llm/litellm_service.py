@@ -125,6 +125,20 @@ _NON_RETRYABLE_PHRASES = (
 # Keywords that indicate content filter — recoverable by stripping history
 _CONTENT_FILTER_KEYWORDS = ("content_policy", "contentpolicy", "content filter", "content manage")
 
+# Markers of a structural / schema BadRequest (malformed messages array, e.g.
+# a tool_call whose function.name is not a string). LiteLLM sometimes wraps
+# these Azure 400s as ``ContentPolicyViolationError`` whose class name contains
+# "contentpolicy" — without this guard they would be misclassified as content
+# filters and trigger the (destructive) tool-result-stripping recovery loop
+# (issue #455). A genuine Azure content-policy violation never references the
+# request schema, so these markers do not overlap with real filter messages.
+_STRUCTURAL_REQUEST_ERROR_MARKERS = (
+    "invalid type for",
+    "expected a string",
+    "is not of type",
+    "invalid_request_error",
+)
+
 
 class LiteLLMService:
     """
@@ -1157,8 +1171,16 @@ class LiteLLMService:
 
     @staticmethod
     def _is_content_filter_error(error: Exception) -> bool:
-        """Check if an error is an Azure content-policy violation."""
+        """Check if an error is an Azure content-policy violation.
+
+        Structural BadRequests (malformed messages array — e.g. a tool_call
+        with a non-string ``function.name``) are explicitly excluded: LiteLLM
+        may wrap them as ``ContentPolicyViolationError``, but stripping tool
+        results does not fix a schema error — it just loops (issue #455).
+        """
         error_msg = str(error).lower()
+        if any(m in error_msg for m in _STRUCTURAL_REQUEST_ERROR_MARKERS):
+            return False
         return any(kw in error_msg for kw in _CONTENT_FILTER_KEYWORDS)
 
     def _strip_messages_for_content_recovery(
