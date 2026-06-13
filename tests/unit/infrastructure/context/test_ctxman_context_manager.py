@@ -366,16 +366,16 @@ def _history_mock(messages: list[dict[str, Any]]) -> Mock:
     return history
 
 
-@pytest.mark.spec("context-manager-ctxman.resume_stages_only_the_unsent_delta")
-async def test_resume_stages_only_the_unsent_delta(
+@pytest.mark.spec("context-manager-ctxman.resume_stages_only_the_new_user_turn")
+async def test_resume_stages_only_the_new_user_turn(
     fake_client: FakeCtxmanClient,
     mock_logger: Mock,
 ) -> None:
-    """On resume only the history past the saved cursor is staged — the prior
-    turns already live in the ctxman session, and re-staging would collide /
-    duplicate (ctxman dedups appends per batch key, not per segment). The
-    append key continues the saved flush sequence so it cannot collide with
-    the earlier turn's ``sess:0`` key (#457)."""
+    """On resume only the new user turn is staged — the prior turns already
+    live in the ctxman session (every turn flushes its final answer on close,
+    #463). Re-staging the full history would collide on the per-turn append
+    idempotency key or duplicate (ctxman dedups per batch key, not per
+    segment). The append key continues the saved flush sequence (#457)."""
     history = _history_mock(
         [
             {"role": "system", "content": "base"},
@@ -384,10 +384,7 @@ async def test_resume_stages_only_the_unsent_delta(
             {"role": "user", "content": "u2 the new turn"},
         ]
     )
-    # Cursor at 2 → u1 + a1 already sent; only u2 is the unsent delta.
-    state: dict[str, Any] = {
-        "_ctxman_session": {"session_id": "sess-existing", "flush_seq": 2, "staged_count": 2}
-    }
+    state: dict[str, Any] = {"_ctxman_session": {"session_id": "sess-existing", "flush_seq": 2}}
     adapter = _make_adapter(fake_client, history, mock_logger)
     adapter.initialize("u2 the new turn", state, "base")
     await adapter.prepare_for_llm(rebuild_system_prompt=False)
@@ -395,39 +392,27 @@ async def test_resume_stages_only_the_unsent_delta(
     assert [s["kind"] for s in segments] == ["user_msg"]
     assert segments[0]["content"] == "u2 the new turn"
     assert key == "sess-existing:2"
-    assert state["_ctxman_session"]["staged_count"] == 3
 
 
-@pytest.mark.spec("context-manager-ctxman.resume_delta_includes_prior_assistant_reply")
-async def test_resume_delta_includes_prior_assistant_reply(
+@pytest.mark.spec("context-manager-ctxman.final_answer_flushed_on_close")
+async def test_aclose_flushes_final_assistant_answer(
+    adapter: CtxmanContextManager,
     fake_client: FakeCtxmanClient,
-    mock_logger: Mock,
 ) -> None:
-    """Regression (#461): the prior turn's assistant reply lives in
-    conversation_history but was never flushed live (no prepare_for_llm fires
-    after the final answer). Staging only the new user turn dropped it; the
-    delta from the cursor must include it so the model sees the assistant."""
-    history = _history_mock(
-        [
-            {"role": "system", "content": "base"},
-            {"role": "user", "content": "Hallo Butler"},
-            {"role": "assistant", "content": "Hallo Rudi"},
-            {"role": "user", "content": "Wie ist das Wetter?"},
-        ]
-    )
-    # Turn 1 staged only [user "Hallo Butler"] (cursor 1); the assistant reply
-    # was persisted to conversation_history afterwards by the route.
-    state: dict[str, Any] = {
-        "_ctxman_session": {"session_id": "sess-1", "flush_seq": 1, "staged_count": 1}
-    }
-    adapter = _make_adapter(fake_client, history, mock_logger)
-    adapter.initialize("Wie ist das Wetter?", state, "base")
+    """Regression (#463): the final assistant answer has no subsequent
+    prepare_for_llm to flush it, so without an explicit flush on close it never
+    reaches the session — the render then shows the user turns with no
+    assistant reply. aclose must flush the pending outbox before archiving."""
+    adapter.initialize("the mission", {}, "base prompt")
     await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    appended_before = len(fake_client.appended)
+    adapter.append_message({"role": "assistant", "content": "Final reply"})
+    await adapter.aclose()
+    assert len(fake_client.appended) == appended_before + 1
     _, segments, _ = fake_client.appended[-1]
-    assert [s["kind"] for s in segments] == ["assistant_msg", "user_msg"]
-    assert segments[0]["content"] == "Hallo Rudi"
-    assert segments[1]["content"] == "Wie ist das Wetter?"
-    assert state["_ctxman_session"]["staged_count"] == 3
+    assert any(
+        s.get("kind") == "assistant_msg" and s.get("content") == "Final reply" for s in segments
+    )
 
 
 async def test_flush_cursor_persisted_and_advances(
