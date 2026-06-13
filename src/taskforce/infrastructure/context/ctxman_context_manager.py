@@ -138,14 +138,13 @@ class CtxmanContextManager(ContextManager):
         # persisted in the agent's per-conversation state dict — viable because
         # the executor session_id == conversation_id since #453/#454. On a
         # follow-up turn we attach to the existing session and stage only the
-        # history delta not yet sent (the prior assistant reply + the new user
-        # turn), continuing the saved flush sequence so append idempotency keys
-        # don't collide (ctxman dedups appends per batch key, not per segment).
+        # new user turn; ctxman already holds the prior turns because every
+        # turn flushes its final assistant answer on close (#463). The saved
+        # flush sequence is continued so append idempotency keys don't collide
+        # (ctxman dedups appends per batch key, not per segment).
         self._persist_state: dict[str, Any] | None = None
+        self._mission: str = ""
         self._resuming: bool = False
-        # Number of (non-system) conversation_history messages already staged
-        # to the ctxman session — the resume cursor (#461).
-        self._staged_history_count: int = 0
 
     # ------------------------------------------------------------------
     # Lifecycle (sync — stage locally, defer remote I/O)
@@ -160,6 +159,7 @@ class CtxmanContextManager(ContextManager):
         super().initialize(mission, state, base_system_prompt)
         self._base_system_prompt = base_system_prompt
         self._persist_state = state
+        self._mission = mission
         self._reset_remote_state()
         self._stage_history()
 
@@ -180,21 +180,17 @@ class CtxmanContextManager(ContextManager):
         if self._frame_binding is not None:
             self._session_id = self._frame_binding.session_id
             self._flush_seq = 0
-            self._staged_history_count = 0
         elif saved is not None:
             # Conversation already has a ctxman session (#457): attach to it
             # and continue its flush sequence so append idempotency keys don't
             # collide with earlier turns (ctxman replays a colliding key and
-            # silently drops the new payload). The staged cursor lets us stage
-            # only the history delta not yet sent (#461).
+            # silently drops the new payload).
             self._session_id = saved["session_id"]
             self._flush_seq = int(saved.get("flush_seq", 0))
-            self._staged_history_count = int(saved.get("staged_count", 0))
             self._resuming = True
         else:
             self._session_id = None
             self._flush_seq = 0
-            self._staged_history_count = 0
         self._static_hash = None
         self._outbox.clear()
         self._pending_batch = None
@@ -226,7 +222,6 @@ class CtxmanContextManager(ContextManager):
         self._persist_state["_ctxman_session"] = {
             "session_id": self._session_id,
             "flush_seq": self._flush_seq,
-            "staged_count": self._staged_history_count,
         }
 
     def _discard_persisted_session(self) -> None:
@@ -234,7 +229,6 @@ class CtxmanContextManager(ContextManager):
         fresh session — used when the saved session expired / was GC'd."""
         self._session_id = None
         self._flush_seq = 0
-        self._staged_history_count = 0
         self._resuming = False
         self._static_hash = None
         self._outbox.clear()
@@ -244,25 +238,21 @@ class CtxmanContextManager(ContextManager):
         self._stage_history()
 
     def _stage_history(self) -> None:
-        """Queue the not-yet-sent conversation history for the first flush.
+        """Queue messages for the first remote flush.
 
-        Fresh session: stage the full non-system history. Resumed session
-        (#457/#461): stage only the delta past the saved cursor — typically
-        the prior turn's assistant reply plus the new user turn. ``conversation
-        _history`` (the route's source of truth) carries BOTH user and
-        assistant messages, so the assistant replies are preserved; staging
-        only the user turn dropped them (#461). The cursor + continued flush
-        sequence keep the per-turn append idempotency key from colliding, and
-        the delta never re-sends what ctxman already has.
+        Fresh session: stage the full non-system history (e.g. turn 1, or a
+        session that expired and was re-created). Resumed session (#457): the
+        prior turns already live in the ctxman session — each turn flushes its
+        final assistant answer on close (#463) and intra-turn tool segments are
+        flushed live — so stage only the new user turn (``mission``). Re-staging
+        the full history would collide on the per-turn append idempotency key or
+        duplicate, because ctxman dedups appends per batch key, not per segment.
         """
-        history = [m for m in self._messages if m.get("role") != "system"]
-        start = self._staged_history_count if self._resuming else 0
-        # Guard against a shrunk history (e.g. after /compact) — never index
-        # past the end, and fall back to staging nothing rather than negative
-        # slicing.
-        start = max(0, min(start, len(history)))
-        self._outbox.extend(history[start:])
-        self._staged_history_count = len(history)
+        if self._resuming:
+            if self._mission:
+                self._outbox.append({"role": "user", "content": self._mission})
+            return
+        self._outbox.extend(m for m in self._messages if m.get("role") != "system")
 
     # ------------------------------------------------------------------
     # Mutations
@@ -695,6 +685,19 @@ class CtxmanContextManager(ContextManager):
         """
         if not self._owns_client:
             return
+        # Flush any pending segments — notably the final assistant answer,
+        # which has no subsequent prepare_for_llm to flush it (the last LLM
+        # call of a turn produces the answer and the loop ends). Without this
+        # the conversation's session is missing every turn's reply (#463).
+        if self._session_id is not None and (self._outbox or self._pending_batch):
+            try:
+                await self._flush_outbox()
+            except CtxmanError as exc:
+                self._logger.warning(
+                    "ctxman_final_flush_failed",
+                    session_id=self._session_id,
+                    error=str(exc),
+                )
         if self._archive_on_close and self._session_id is not None:
             try:
                 await self._client.archive_session(

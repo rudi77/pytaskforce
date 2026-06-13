@@ -63,13 +63,15 @@ ctxman only manages what goes into the context window.
 - A new turn in an existing conversation reattaches to that conversation's
   ctxman session — its id and flush cursor are persisted in the agent's
   per-conversation state (session id == conversation id) — instead of
-  creating a new session each turn. On reattach only the history delta past
-  the saved cursor is staged — the prior turn's assistant reply plus the new
-  user turn — and the saved flush sequence is continued, so per-turn append
-  idempotency keys never collide. The delta is taken from `conversation_history`
-  (which carries both user and assistant messages), so assistant replies are
-  never dropped. An expired/GC'd session (ctxman's idempotency retention)
-  falls back to a fresh session with the full history re-staged.
+  creating a new session each turn. On reattach only the new user turn is
+  staged (the prior turns already live in the session) and the saved flush
+  sequence is continued, so per-turn append idempotency keys never collide.
+  An expired/GC'd session (ctxman's idempotency retention) falls back to a
+  fresh session with the full history re-staged.
+- Every turn flushes its pending segments — notably the final assistant
+  answer, which has no subsequent `prepare_for_llm` to flush it — before the
+  agent closes, so a reused conversation session always contains each turn's
+  reply (not just the user messages).
 - Frames are strictly sequential: a sub-agent frame is pushed only after
   the parent's pending messages are flushed, is popped even when the
   sub-agent fails, and concurrent sub-agents never share a session.
@@ -120,8 +122,8 @@ All keys live under the profile-root `context_management:` block.
 - spec("context-manager-ctxman.restore_creates_fresh_session")
 - spec("context-manager-ctxman.fresh_session_persists_record_into_state")
 - spec("context-manager-ctxman.resume_attaches_without_recreating_session")
-- spec("context-manager-ctxman.resume_stages_only_the_unsent_delta")
-- spec("context-manager-ctxman.resume_delta_includes_prior_assistant_reply")
+- spec("context-manager-ctxman.resume_stages_only_the_new_user_turn")
+- spec("context-manager-ctxman.final_answer_flushed_on_close")
 - spec("context-manager-ctxman.gone_session_recreated_with_full_history")
 - spec("context-manager-ctxman.compress_and_preflight_are_noops")
 - spec("context-manager-ctxman.budget_413_triggers_gc_and_retry")
