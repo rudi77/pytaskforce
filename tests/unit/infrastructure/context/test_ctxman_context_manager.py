@@ -319,6 +319,122 @@ async def test_restore_creates_fresh_session_and_bulk_appends(
 
 
 # ---------------------------------------------------------------------------
+# Conversation-scoped session reuse (#457)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.spec("context-manager-ctxman.fresh_session_persists_record_into_state")
+async def test_fresh_session_persists_record_into_state(
+    fake_client: FakeCtxmanClient,
+    mock_history_manager: Mock,
+    mock_logger: Mock,
+) -> None:
+    """First turn creates a session and writes its id + flush cursor into the
+    conversation state dict so the next turn can reuse it (#457)."""
+    state: dict[str, Any] = {}
+    adapter = _make_adapter(fake_client, mock_history_manager, mock_logger)
+    adapter.initialize("the mission", state, "base prompt")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    assert len(fake_client.created_sessions) == 1
+    record = state["_ctxman_session"]
+    assert record["session_id"] == adapter._session_id
+    assert record["flush_seq"] >= 1
+
+
+@pytest.mark.spec("context-manager-ctxman.resume_attaches_without_recreating_session")
+async def test_resume_attaches_without_recreating_session(
+    fake_client: FakeCtxmanClient,
+    mock_history_manager: Mock,
+    mock_logger: Mock,
+) -> None:
+    """A turn whose state already carries a ctxman session attaches to it —
+    no new session is created, and the render targets the saved id (#457)."""
+    state: dict[str, Any] = {"_ctxman_session": {"session_id": "sess-existing", "flush_seq": 5}}
+    adapter = _make_adapter(fake_client, mock_history_manager, mock_logger)
+    adapter.initialize("the mission", state, "base prompt")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    assert fake_client.created_sessions == []
+    assert adapter._session_id == "sess-existing"
+    assert fake_client.renders[-1]["session_id"] == "sess-existing"
+
+
+@pytest.mark.spec("context-manager-ctxman.resume_stages_only_the_new_user_turn")
+async def test_resume_stages_only_the_new_user_turn(
+    fake_client: FakeCtxmanClient,
+    mock_logger: Mock,
+) -> None:
+    """On resume only the current user turn is staged — the prior history is
+    already in the ctxman session, and re-staging it would collide/duplicate
+    (ctxman dedups appends per batch key, not per segment) (#457). The append
+    key continues the saved flush sequence so it cannot collide with the
+    earlier turn's ``sess:0`` key."""
+    history = Mock(spec=MessageHistoryManager)
+    history.build_initial_messages = Mock(
+        return_value=[
+            {"role": "system", "content": "base"},
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "u2 the new turn"},
+        ]
+    )
+    history.compress_messages = AsyncMock(side_effect=lambda m: m)
+    history.preflight_budget_check = Mock(side_effect=lambda m: m)
+    state: dict[str, Any] = {"_ctxman_session": {"session_id": "sess-existing", "flush_seq": 2}}
+    adapter = _make_adapter(fake_client, history, mock_logger)
+    adapter.initialize("u2 the new turn", state, "base")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    _, segments, key = fake_client.appended[-1]
+    assert [s["kind"] for s in segments] == ["user_msg"]
+    assert segments[0]["content"] == "u2 the new turn"
+    assert key == "sess-existing:2"
+
+
+async def test_flush_cursor_persisted_and_advances(
+    fake_client: FakeCtxmanClient,
+    mock_history_manager: Mock,
+    mock_logger: Mock,
+) -> None:
+    """The flush cursor is persisted and advances so a later turn's append
+    key never reuses an earlier turn's (#457)."""
+    state: dict[str, Any] = {}
+    adapter = _make_adapter(fake_client, mock_history_manager, mock_logger)
+    adapter.initialize("the mission", state, "base prompt")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    first = state["_ctxman_session"]["flush_seq"]
+    adapter.append_message({"role": "assistant", "content": "more"})
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    assert state["_ctxman_session"]["flush_seq"] > first
+
+
+@pytest.mark.spec("context-manager-ctxman.gone_session_recreated_with_full_history")
+async def test_gone_session_is_recreated_with_full_history(
+    fake_client: FakeCtxmanClient,
+    mock_history_manager: Mock,
+    mock_logger: Mock,
+) -> None:
+    """If the saved session has expired (410 Gone), drop it, create a fresh
+    one, and recover (#457)."""
+    state: dict[str, Any] = {"_ctxman_session": {"session_id": "sess-gone", "flush_seq": 9}}
+    adapter = _make_adapter(fake_client, mock_history_manager, mock_logger)
+    adapter.initialize("the mission", state, "base prompt")
+
+    original_render = fake_client.render
+    fail_next = {"value": True}
+
+    async def gone_then_ok(session_id: str, **kwargs: Any) -> RenderResult:
+        if fail_next["value"] and session_id == "sess-gone":
+            fail_next["value"] = False
+            raise CtxmanGoneError("session gone")
+        return await original_render(session_id, **kwargs)
+
+    fake_client.render = gone_then_ok  # type: ignore[method-assign]
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    assert len(fake_client.created_sessions) == 1
+    assert adapter._session_id != "sess-gone"
+    assert state["_ctxman_session"]["session_id"] == adapter._session_id
+
+
+# ---------------------------------------------------------------------------
 # Budget machinery is server-side
 # ---------------------------------------------------------------------------
 
