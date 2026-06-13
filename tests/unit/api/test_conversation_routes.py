@@ -221,6 +221,19 @@ class TestAppendMessage:
         )
         assert resp.status_code == 400
 
+    def test_session_id_pinned_to_conversation(self, client, mock_executor):
+        """#453 — the executor must receive ``session_id == conversation_id``
+        so one conversation maps to one stable session (no fresh UUID per
+        turn)."""
+        conv_id = "abc123def456789012345678abcdef00"
+        resp = client.post(
+            f"/api/v1/conversations/{conv_id}/messages",
+            json={"message": "Hi"},
+        )
+        assert resp.status_code == 200
+        _, kwargs = mock_executor.execute_mission.call_args
+        assert kwargs["session_id"] == conv_id
+
     @pytest.mark.spec("conversations.project_bound_conversation_routes_workdir_to_project_path")
     @pytest.mark.spec("cowork.conversation_with_project_id_routes_to_project_path")
     def test_runs_with_project_work_dir(

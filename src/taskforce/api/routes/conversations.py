@@ -434,11 +434,14 @@ async def append_message(
     # see ``_default_profile`` for why butler isn't a good fit here.
     resolved_profile = request.profile or _default_profile(in_project=work_dir is not None)
 
-    # Execute agent with conversation history.
+    # Execute agent with conversation history. Pin the session to the
+    # conversation so one conversation == one stable session (otherwise the
+    # executor generates a fresh UUID per turn — see issue #453).
     result = await executor.execute_mission(
         mission=mission,
         profile=resolved_profile,
         agent_id=request.agent_id,
+        session_id=conversation_id,
         conversation_history=history,
         work_dir=work_dir,
     )
@@ -529,6 +532,7 @@ async def stream_message(
                     mission=mission,
                     profile=resolved_profile,
                     agent_id=request.agent_id,
+                    session_id=conversation_id,
                     conversation_history=history,
                     work_dir=work_dir,
                 ):
