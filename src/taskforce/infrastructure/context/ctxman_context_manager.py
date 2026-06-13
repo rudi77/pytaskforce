@@ -675,6 +675,33 @@ class CtxmanContextManager(ContextManager):
     # Resource management
     # ------------------------------------------------------------------
 
+    async def flush(self) -> None:
+        """Flush pending segments to the session without rendering.
+
+        Called synchronously at turn end (#465) so the final assistant answer
+        — which has no subsequent ``prepare_for_llm`` to flush it — reaches the
+        session promptly, rather than relying on the deferred ``aclose`` (which
+        can hang behind post-mission work or be cancelled by the next turn).
+        Best-effort under ``degrade``: a ctxman outage leaves the segments
+        staged for the next flush.
+        """
+        if self._frame_binding is not None or not self._initialized:
+            return
+        if not (self._outbox or self._pending_batch):
+            return
+        async with self._sync_lock:
+            try:
+                await self._ensure_session()
+                await self._flush_outbox()
+            except CtxmanError as exc:
+                if self._on_unavailable == "fail":
+                    raise
+                self._logger.warning(
+                    "ctxman_flush_failed",
+                    session_id=self._session_id,
+                    error=str(exc),
+                )
+
     async def aclose(self) -> None:
         """Archive the session (terminal promotion) and close the client.
 

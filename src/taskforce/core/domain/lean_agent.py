@@ -498,12 +498,31 @@ class Agent:
             {"mission_length": len(mission)},
         )
         result = await self.planning_strategy.execute(self, mission, session_id)
+        # Flush the context backend synchronously at turn end (see
+        # execute_stream for the rationale — #465).
+        await self._flush_context_backend()
         await self.mark_finished(
             session_id,
             result.status,
             {"final_message_length": len(result.final_message or "")},
         )
         return result
+
+    async def _flush_context_backend(self) -> None:
+        """Best-effort flush of the context manager's pending remote state.
+
+        No-op for context backends that don't expose ``flush`` (the local
+        ContextManager keeps everything in-process). Flushing must never break
+        the turn, so all errors are swallowed and logged.
+        """
+        context = getattr(self, "context", None)
+        flush = getattr(context, "flush", None)
+        if not callable(flush):
+            return
+        try:
+            await flush()
+        except Exception as exc:  # noqa: BLE001 — flush must never break the turn
+            self.logger.warning("context_flush_failed", error=str(exc))
 
     async def execute_stream(
         self,
@@ -568,6 +587,13 @@ class Agent:
                 status = ExecutionStatus.PAUSED.value
                 interrupt_info = dict(event.data)
                 final_message = final_message or "Execution paused by user."
+
+        # Flush the context backend's pending segments now — synchronously, at
+        # turn end — so the final assistant answer reaches the session before
+        # post-mission work / the deferred close, which can hang or be
+        # cancelled when the next turn arrives and would then drop the reply
+        # (#465). No-op for the in-process local backend.
+        await self._flush_context_backend()
 
         # When the planning strategy errored without producing a
         # FINAL_ANSWER, build a user-facing message from the structured

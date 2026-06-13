@@ -394,6 +394,30 @@ async def test_resume_stages_only_the_new_user_turn(
     assert key == "sess-existing:2"
 
 
+@pytest.mark.spec("context-manager-ctxman.final_answer_flushed_at_turn_end")
+async def test_flush_sends_pending_final_answer(
+    adapter: CtxmanContextManager,
+    fake_client: FakeCtxmanClient,
+) -> None:
+    """flush() pushes the pending outbox (the final assistant answer) to the
+    session synchronously at turn end, so it doesn't depend on the deferred
+    close — which can hang behind post-mission work or be cancelled by the
+    next turn (#465)."""
+    adapter.initialize("the mission", {}, "base prompt")
+    await adapter.prepare_for_llm(rebuild_system_prompt=False)
+    appended_before = len(fake_client.appended)
+    adapter.append_message({"role": "assistant", "content": "Final reply"})
+    await adapter.flush()
+    assert len(fake_client.appended) == appended_before + 1
+    _, segments, _ = fake_client.appended[-1]
+    assert any(
+        s.get("kind") == "assistant_msg" and s.get("content") == "Final reply" for s in segments
+    )
+    # Idempotent: a second flush with nothing pending is a no-op.
+    await adapter.flush()
+    assert len(fake_client.appended) == appended_before + 1
+
+
 @pytest.mark.spec("context-manager-ctxman.final_answer_flushed_on_close")
 async def test_aclose_flushes_final_assistant_answer(
     adapter: CtxmanContextManager,
