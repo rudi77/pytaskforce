@@ -14,6 +14,7 @@ import {
   Edit16Regular,
   Flow16Regular,
   FolderOpen16Regular,
+  MoreHorizontal16Regular,
   Navigation20Regular,
   PanelLeftContract16Regular,
   PanelLeftExpand16Regular,
@@ -33,10 +34,26 @@ import {
   DrawerBody,
   DrawerHeader,
   DrawerHeaderTitle,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  SearchBox,
 } from "@fluentui/react-components";
 
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button as UIButton } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useTheme } from "@/app/theme-provider";
 import { HealthIndicator } from "@/components/HealthIndicator";
 import { useSettings } from "@/lib/settings";
@@ -53,6 +70,10 @@ import {
 } from "@/api/queries";
 import { toast } from "@/components/ui/toast";
 import { formatRelativeTime } from "@/lib/utils";
+import {
+  CommandPalette,
+  type PaletteNavTarget,
+} from "@/features/command-palette/CommandPalette";
 
 interface NavItem {
   to: string;
@@ -246,6 +267,32 @@ function NewTaskButton({
   );
 }
 
+// Time buckets for the history list. Rendered in this order; empty
+// buckets are skipped.
+const HISTORY_BUCKETS = [
+  "Today",
+  "Yesterday",
+  "Previous 7 days",
+  "Older",
+] as const;
+type HistoryBucket = (typeof HISTORY_BUCKETS)[number];
+
+function bucketOf(iso: string): HistoryBucket {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "Older";
+  const now = new Date();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const DAY = 86_400_000;
+  if (t >= startOfToday) return "Today";
+  if (t >= startOfToday - DAY) return "Yesterday";
+  if (t >= startOfToday - 7 * DAY) return "Previous 7 days";
+  return "Older";
+}
+
 function RecentsSection({
   collapsed,
   activeId,
@@ -257,38 +304,70 @@ function RecentsSection({
 }) {
   const conversations = useConversations();
   const archived = useArchivedConversations(10);
+  const [query, setQuery] = useState("");
 
   if (collapsed) return null;
 
-  const recent = (conversations.data ?? []).slice(0, 8);
+  const q = query.trim().toLowerCase();
+  const all = conversations.data ?? [];
+  const filtered = q
+    ? all.filter((c) =>
+        (c.topic || c.channel || c.conversation_id).toLowerCase().includes(q),
+      )
+    : all;
+  // Newest first, then split into time buckets for scannability.
+  const sorted = [...filtered].sort(
+    (a, b) =>
+      new Date(b.last_activity).getTime() - new Date(a.last_activity).getTime(),
+  );
+  const groups = new Map<HistoryBucket, ConversationInfo[]>();
+  for (const c of sorted) {
+    const b = bucketOf(c.last_activity);
+    const list = groups.get(b);
+    if (list) list.push(c);
+    else groups.set(b, [c]);
+  }
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        Recents
-      </p>
+      <div className="px-1 pb-2">
+        <SearchBox
+          size="small"
+          placeholder="Search conversations"
+          value={query}
+          onChange={(_, data) => setQuery(data.value)}
+          className="w-full"
+        />
+      </div>
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {conversations.isLoading ? (
           <div className="space-y-1 px-1">
-            <Skeleton className="h-8" />
-            <Skeleton className="h-8" />
-            <Skeleton className="h-8" />
+            <Skeleton className="h-9" />
+            <Skeleton className="h-9" />
+            <Skeleton className="h-9" />
           </div>
-        ) : recent.length > 0 ? (
-          <ul className="space-y-0.5">
-            {recent.map((c) => (
-              <li key={c.conversation_id}>
-                <RecentItem
-                  conversation={c}
-                  active={c.conversation_id === activeId}
-                  onNavigate={onNavigate}
-                />
-              </li>
-            ))}
-          </ul>
+        ) : sorted.length > 0 ? (
+          HISTORY_BUCKETS.filter((b) => groups.has(b)).map((bucket) => (
+            <div key={bucket} className="mb-2">
+              <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {bucket}
+              </p>
+              <ul className="space-y-0.5">
+                {groups.get(bucket)!.map((c) => (
+                  <li key={c.conversation_id}>
+                    <RecentItem
+                      conversation={c}
+                      active={c.conversation_id === activeId}
+                      onNavigate={onNavigate}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
         ) : (
           <p className="px-2.5 text-xs text-muted-foreground">
-            No conversations yet.
+            {q ? "No matching conversations." : "No conversations yet."}
           </p>
         )}
 
@@ -342,26 +421,17 @@ function RecentItem({
   const rename = useRenameConversation();
   const del = useDeleteConversation();
   const title = c.topic || c.channel || c.conversation_id;
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [draft, setDraft] = useState(c.topic ?? "");
 
-  // Rename / delete use `window.prompt` + `window.confirm` so we don't
-  // pull in a dropdown / dialog primitive just for two actions — matches
-  // the existing chat-header pattern (`window.confirm` in onArchive /
-  // onCompact). Clicking either button must not also follow the <Link>;
-  // each handler stops propagation and prevents the default href nav.
-  const stop = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const onRename = async (e: React.MouseEvent) => {
-    stop(e);
-    const next = window.prompt("Rename conversation", c.topic ?? "");
-    if (next === null) return; // user cancelled
-    const trimmed = next.trim();
+  const submitRename = async () => {
+    const trimmed = draft.trim();
     if (!trimmed) {
       toast.error("Rename failed", "Title must not be empty.");
       return;
     }
+    setRenameOpen(false);
     if (trimmed === c.topic) return; // no-op
     try {
       await rename.mutateAsync({ id: c.conversation_id, title: trimmed });
@@ -371,15 +441,8 @@ function RecentItem({
     }
   };
 
-  const onDelete = async (e: React.MouseEvent) => {
-    stop(e);
-    if (
-      !window.confirm(
-        `Permanently delete "${title}"? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+  const submitDelete = async () => {
+    setDeleteOpen(false);
     try {
       await del.mutateAsync({ id: c.conversation_id });
       if (active) {
@@ -407,35 +470,104 @@ function RecentItem({
       <Link
         to={`/chat/${encodeURIComponent(c.conversation_id)}`}
         onClick={onNavigate}
-        className="block min-w-0 flex-1 truncate px-2.5 py-1.5 text-sm"
+        className="block min-w-0 flex-1 px-2.5 py-1.5"
         title={`${title} · ${formatRelativeTime(c.last_activity)}`}
       >
-        {title}
+        <div className="truncate text-sm leading-snug">{title}</div>
+        <div className="truncate text-[11px] text-muted-foreground/80">
+          {formatRelativeTime(c.last_activity)}
+        </div>
       </Link>
-      {/* Hover-revealed actions — opacity-0 keeps the row lean by default,
-       *  group-hover/focus-within reveals on pointer or keyboard reach. */}
-      <div className="flex shrink-0 items-center gap-0.5 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          onClick={onRename}
-          disabled={rename.isPending}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Rename conversation"
-          title="Rename"
-        >
-          <Edit16Regular />
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={del.isPending}
-          className="rounded p-1 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-          aria-label="Delete conversation"
-          title="Delete"
-        >
-          <Delete16Regular />
-        </button>
+      {/* Hover-revealed overflow menu — opacity-0 keeps the row lean by
+       *  default, group-hover/focus-within reveals on pointer or keyboard
+       *  reach. Rename/Delete open Fluent dialogs (no window.prompt). */}
+      <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Conversation actions"
+              title="Actions"
+            >
+              <MoreHorizontal16Regular />
+            </button>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem
+                icon={<Edit16Regular />}
+                onClick={() => {
+                  setDraft(c.topic ?? "");
+                  setRenameOpen(true);
+                }}
+              >
+                Rename
+              </MenuItem>
+              <MenuItem
+                icon={<Delete16Regular />}
+                onClick={() => setDeleteOpen(true)}
+                className="text-destructive"
+              >
+                Delete
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </div>
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename conversation</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Conversation title"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submitRename();
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <UIButton variant="ghost" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </UIButton>
+            <UIButton onClick={() => void submitRename()} disabled={rename.isPending}>
+              Save
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete conversation</DialogTitle>
+            <DialogDescription>
+              “{title}” will be permanently deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <UIButton variant="ghost" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </UIButton>
+            <UIButton
+              variant="destructive"
+              onClick={() => void submitDelete()}
+              disabled={del.isPending}
+              className="!bg-destructive !text-destructive-foreground hover:!bg-destructive/90"
+            >
+              Delete
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -740,6 +872,7 @@ export function AppShell() {
   // navigation is handled via the ``onNavigate`` callback threaded into
   // the sidebar body.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Auto-close the mobile drawer whenever the route changes. Without
   // this, navigating from the drawer would leave it open behind the
@@ -747,6 +880,19 @@ export function AppShell() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+
+  // Global Cmd/Ctrl-K toggles the command palette — the "find anything"
+  // shortcut. Bound once at the shell so it works from any page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { primaryItems, workspaceItems, adminItems, pageTitles } = useMemo(() => {
     // Plugin nav items that don't explicitly target the admin section
@@ -789,6 +935,17 @@ export function AppShell() {
   }, [plugins, activeCapabilities, permissions]);
 
   const title = getPageTitle(pathname, pageTitles);
+  // Flat, de-duplicated nav targets for the command palette.
+  const paletteNavTargets = useMemo<PaletteNavTarget[]>(() => {
+    const seen = new Set<string>();
+    const out: PaletteNavTarget[] = [];
+    for (const item of [...primaryItems, ...workspaceItems, ...adminItems]) {
+      if (seen.has(item.to)) continue;
+      seen.add(item.to);
+      out.push({ to: item.to, label: item.label });
+    }
+    return out;
+  }, [primaryItems, workspaceItems, adminItems]);
   // On the Cowork-style pages (Chat, Projects) we hide the global header
   // — each page renders its own breadcrumb / title inline. Other pages
   // keep the lean top bar so users always know where they are.
@@ -868,6 +1025,12 @@ export function AppShell() {
           )}
         </main>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        navTargets={paletteNavTargets}
+      />
     </div>
   );
 }
