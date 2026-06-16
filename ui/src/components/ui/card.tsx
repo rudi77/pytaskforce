@@ -2,34 +2,31 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Card primitive — Fluent-tokenized but shadcn-API compatible.
+ * Card primitive — shadcn-API compatible, Tailwind-tokenized.
  *
- * The outer Card consumes FluentUI v9 CSS variables (set by
- * <FluentProvider> at root) for surface, border and text colors so it
- * visually belongs to the Fluent system. The composition pattern stays
- * shadcn-shaped (Card / CardHeader / CardTitle / CardDescription /
- * CardContent / CardFooter) so existing pages don't need to be
- * restructured — Fluent's slot-based <CardHeader header description>
- * stays out of the import path.
+ * The composition pattern stays shadcn-shaped (Card / CardHeader /
+ * CardTitle / CardDescription / CardContent / CardFooter) so existing
+ * pages don't need restructuring — Fluent's slot-based
+ * <CardHeader header description> stays out of the import path.
  *
  * Why a styled <div> instead of Fluent's <Card>?
  *   Fluent's Card applies its own padding via Griffel; our header /
  *   content sub-components apply their own (`p-5`). Stacking both
- *   produces double-padding. A styled <div> consuming Fluent tokens
- *   avoids the conflict while keeping the Fluent neutral palette.
+ *   produces double-padding. A styled <div> avoids the conflict.
  *
- * Token mapping (all set by <FluentProvider>):
- *   - --colorNeutralBackground1 → card surface
- *   - --colorNeutralStroke2     → card border
- *   - --colorNeutralForeground1 → primary text
- *   - --colorNeutralForeground3 → subtle text (CardDescription)
+ * Colors use the shared Tailwind token namespace (`bg-card`,
+ * `border-border`, `text-foreground`, `text-muted-foreground`) — the
+ * same tokens the 51 consumer files use — so the primitive layer can't
+ * drift from its consumers. Those tokens are kept value-identical to the
+ * custom Fluent theme in `theme/themes.ts` (see P0), so styled-div
+ * primitives and Fluent-native components render the same slate surface.
  */
 export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "rounded-lg border border-[var(--colorNeutralStroke2)] bg-[var(--colorNeutralBackground1)] text-[var(--colorNeutralForeground1)] shadow-sm",
+        "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
         className,
       )}
       {...props}
@@ -64,7 +61,7 @@ export const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-[var(--colorNeutralForeground3)]", className)}
+    className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
 ));
