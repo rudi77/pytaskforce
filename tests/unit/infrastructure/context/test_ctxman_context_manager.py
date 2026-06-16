@@ -391,7 +391,9 @@ async def test_resume_stages_only_the_new_user_turn(
     _, segments, key = fake_client.appended[-1]
     assert [s["kind"] for s in segments] == ["user_msg"]
     assert segments[0]["content"] == "u2 the new turn"
-    assert key == "sess-existing:2"
+    # Key continues the saved flush sequence (#457) and carries a payload-hash
+    # suffix so a stale cursor can never collide a distinct payload.
+    assert key.startswith("sess-existing:2:")
 
 
 @pytest.mark.spec("context-manager-ctxman.final_answer_flushed_at_turn_end")
@@ -454,6 +456,61 @@ async def test_flush_cursor_persisted_and_advances(
     adapter.append_message({"role": "assistant", "content": "more"})
     await adapter.prepare_for_llm(rebuild_system_prompt=False)
     assert state["_ctxman_session"]["flush_seq"] > first
+
+
+async def test_final_answer_slot_reserved_so_next_turn_user_not_dropped(
+    fake_client: FakeCtxmanClient,
+    mock_logger: Mock,
+) -> None:
+    """Regression: the next turn's new user message must not collide with the
+    previous turn's final-answer append key.
+
+    The executor saves conversation state at the end of the react loop and only
+    flushes the final assistant answer afterwards (#465). So the persisted flush
+    cursor must already reserve the final answer's slot — otherwise the next
+    turn resumes one behind, its first append reuses the key the final flush
+    consumed, and ctxman (dedup per batch key) replays that batch and silently
+    drops the new user turn (the user sees their question answered as if it were
+    the previous one)."""
+    import copy
+
+    # --- turn 1: ask "u1", answer "a1" ---
+    history1 = _history_mock(
+        [
+            {"role": "system", "content": "base"},
+            {"role": "user", "content": "u1"},
+        ]
+    )
+    state: dict[str, Any] = {}
+    adapter1 = _make_adapter(fake_client, history1, mock_logger)
+    adapter1.initialize("u1", state, "base")
+    await adapter1.prepare_for_llm(rebuild_system_prompt=False)  # flush u1
+    adapter1.append_message({"role": "assistant", "content": "a1"})
+    # The executor persists conversation state HERE — before the turn-end flush.
+    saved_state = copy.deepcopy(state)
+    await adapter1.flush()  # turn-end flush of the final answer a1
+    final_answer_key = fake_client.appended[-1][2]
+
+    # --- turn 2: a fresh adapter resumes from the SAVED state and asks "u2" ---
+    history2 = _history_mock(
+        [
+            {"role": "system", "content": "base"},
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "u2"},
+        ]
+    )
+    adapter2 = _make_adapter(fake_client, history2, mock_logger)
+    adapter2.initialize("u2", saved_state, "base")
+    await adapter2.prepare_for_llm(rebuild_system_prompt=False)  # flush u2
+    new_user_key = fake_client.appended[-1][2]
+    new_user_segments = fake_client.appended[-1][1]
+
+    # The new user turn was actually appended ...
+    assert [s["kind"] for s in new_user_segments] == ["user_msg"]
+    assert new_user_segments[0]["content"] == "u2"
+    # ... under a key distinct from the prior turn's final answer (no replay).
+    assert new_user_key != final_answer_key
 
 
 @pytest.mark.spec("context-manager-ctxman.gone_session_recreated_with_full_history")

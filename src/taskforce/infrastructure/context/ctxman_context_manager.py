@@ -212,16 +212,30 @@ class CtxmanContextManager(ContextManager):
 
     def _persist_session_record(self) -> None:
         """Persist the ctxman session id + flush cursor into the conversation
-        state so the next turn reuses the same session (#457)."""
+        state so the next turn reuses the same session (#457).
+
+        The persisted cursor must *reserve* a slot for any not-yet-flushed
+        batch — typically the turn's final assistant answer. That answer is
+        appended after the last ``prepare_for_llm`` flush and only reaches the
+        session via the turn-end ``flush()``, which the executor runs AFTER the
+        conversation state has already been saved (#465). Persisting the raw
+        ``flush_seq`` would therefore leave the next turn one behind: its first
+        append would reuse the idempotency key the final flush is about to
+        consume, and ctxman (dedup per batch key) would replay that batch and
+        silently drop the new user turn. Reserving the slot keeps the next
+        turn's append key collision-free; an un-flushed reservation only leaves
+        a harmless gap in the key sequence (keys are dedup tokens, not a
+        contiguous counter)."""
         if (
             self._frame_binding is not None
             or self._persist_state is None
             or self._session_id is None
         ):
             return
+        pending = 1 if (self._outbox or self._pending_batch is not None) else 0
         self._persist_state["_ctxman_session"] = {
             "session_id": self._session_id,
-            "flush_seq": self._flush_seq,
+            "flush_seq": self._flush_seq + pending,
         }
 
     def _discard_persisted_session(self) -> None:
@@ -261,6 +275,12 @@ class CtxmanContextManager(ContextManager):
     def append_message(self, message: dict[str, Any]) -> None:
         super().append_message(message)
         self._outbox.append(message)
+        # Re-persist the (now-reserved) flush cursor. The turn's final answer
+        # lands here and is flushed only at turn end — after the conversation
+        # state is saved — so the reservation must be recorded synchronously on
+        # append, not at flush time, or the next turn resumes one cursor behind
+        # and its first append collides with this answer's idempotency key.
+        self._persist_session_record()
 
     # ------------------------------------------------------------------
     # Budget management — server-side in ctxman
@@ -426,6 +446,35 @@ class CtxmanContextManager(ContextManager):
         self._static_hash = current
         self._logger.info("ctxman_static_region_updated", session_id=self._session_id)
 
+    def _batch_idempotency_key(self, segments: list[dict[str, Any]]) -> str:
+        """Build the append idempotency key for a batch of segments.
+
+        The key combines the session id, the flush sequence, AND a hash of the
+        batch's payload. The payload hash is essential: ctxman dedups appends
+        per batch key, and the persisted flush sequence can lag reality (the
+        turn's final answer is flushed *after* the conversation state is saved,
+        so the next turn resumes one behind). With a bare ``session:seq`` key
+        that stale cursor makes a new turn's first append collide with the prior
+        turn's final-answer key — ctxman replays the old batch and silently
+        drops the new user turn (the user sees the follow-up answered as the
+        previous one). Hashing the content makes a collision possible only for a
+        byte-identical payload — i.e. a genuine retry, which is exactly when a
+        replay is safe."""
+        digest = hashlib.sha256()
+        for segment in segments:
+            digest.update(
+                repr(
+                    (
+                        segment.get("kind"),
+                        segment.get("role"),
+                        segment.get("tool_call_id"),
+                        segment.get("content"),
+                    )
+                ).encode("utf-8")
+            )
+            digest.update(b"\x1e")
+        return f"{self._session_id}:{self._flush_seq}:{digest.hexdigest()[:16]}"
+
     async def _flush_outbox(self) -> None:
         """Flush staged messages as one batched, idempotent segment append."""
         assert self._session_id is not None
@@ -435,7 +484,7 @@ class CtxmanContextManager(ContextManager):
             segments = messages_to_segments(self._outbox)
             self._outbox.clear()
             if segments:
-                key = f"{self._session_id}:{self._flush_seq}"
+                key = self._batch_idempotency_key(segments)
                 self._pending_batch = (key, segments)
         if self._pending_batch is None:
             return
@@ -450,7 +499,7 @@ class CtxmanContextManager(ContextManager):
             )
         except CtxmanIncompleteUnitError as exc:
             # Close open units with synthetic results and retry once with a
-            # fresh key (payload changed).
+            # fresh key — the payload changed, so the content hash changes too.
             for open_id in exc.open_tool_call_ids:
                 segments.append(
                     {
@@ -460,7 +509,7 @@ class CtxmanContextManager(ContextManager):
                         "content": "[tool call cancelled]",
                     }
                 )
-            key = f"{self._session_id}:{self._flush_seq}:repair"
+            key = f"{self._batch_idempotency_key(segments)}:repair"
             self._pending_batch = (key, segments)
             _, self._context_version = await self._client.append_segments(
                 self._session_id,

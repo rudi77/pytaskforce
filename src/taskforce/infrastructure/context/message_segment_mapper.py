@@ -76,18 +76,22 @@ def message_to_segments(message: dict[str, Any]) -> list[dict[str, Any]]:
             segments.append({"kind": "assistant_msg", "role": "assistant", "content": content})
         for tool_call in tool_calls:
             function = tool_call.get("function", {}) or {}
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                arguments = json.dumps(arguments or {}, ensure_ascii=False)
             segments.append(
                 {
                     "kind": "tool_call",
                     "role": "assistant",
                     "tool_call_id": tool_call.get("id"),
-                    "content": json.dumps(
-                        {
-                            "name": function.get("name"),
-                            "arguments": function.get("arguments"),
-                        },
-                        ensure_ascii=False,
-                    ),
+                    # ctxman reconstructs the OpenAI tool_call from dedicated
+                    # fields, NOT a JSON blob: function.name <- segment.source and
+                    # function.arguments <- segment.content (RenderPlanner.ToBlock
+                    # + OpenAiChatAdapter.BuildToolCall). Packing the name into
+                    # content leaves source null, so the rendered function.name is
+                    # null and the provider rejects the request.
+                    "source": function.get("name"),
+                    "content": arguments,
                 }
             )
         return segments

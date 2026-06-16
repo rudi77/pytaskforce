@@ -50,10 +50,13 @@ def test_assistant_with_tool_calls_maps_to_tool_call_segments() -> None:
     }
     assert segments[1]["kind"] == "tool_call"
     assert segments[1]["tool_call_id"] == "call_1"
-    assert json.loads(segments[1]["content"]) == {
-        "name": "file_read",
-        "arguments": '{"path": "a.txt"}',
-    }
+    # ctxman renders function.name <- source and function.arguments <- content
+    # (RenderPlanner.ToBlock / OpenAiChatAdapter.BuildToolCall), so the name must
+    # live in `source` and the raw arguments string in `content`.
+    assert segments[1]["source"] == "file_read"
+    assert segments[1]["content"] == '{"path": "a.txt"}'
+    assert segments[2]["source"] == "web_search"
+    assert segments[2]["content"] == '{"query": "x"}'
     assert segments[2]["tool_call_id"] == "call_2"
 
 

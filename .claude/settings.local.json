@@ -211,7 +211,14 @@
       "Bash(git push *)",
       "PowerShell(Get-Command *)",
       "PowerShell(gh project *)",
-      "PowerShell(gh label *)"
+      "PowerShell(gh label *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\rudi\\\\source\\\\pytaskforce\\\\ui\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "PowerShell(head -30)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\rudi\\\\source\\\\pytaskforce\\\\ui\\\\src\\\\features\" -Directory)",
+      "Bash(Select-Object Name)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ],
     "deny": [
       ".env",

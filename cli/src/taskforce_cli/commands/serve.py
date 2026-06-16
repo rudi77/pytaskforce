@@ -15,12 +15,44 @@ Examples::
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 
 app = typer.Typer(help="Run Taskforce as a REST webservice.", invoke_without_command=True)
 
 console = Console()
+
+
+def _resolve_reload_dirs() -> list[str] | None:
+    """Scope ``--reload`` to the Python source tree(s).
+
+    uvicorn's fallback reloader (``StatReload``, used when ``watchfiles`` is
+    absent) walks the entire CWD for ``*.py``. In a dev checkout that includes
+    ``ui/node_modules``, whose pnpm symlink farm has phantom paths (e.g. a
+    missing ``fsevents`` directory on Windows), the ``rglob`` raises
+    ``FileNotFoundError`` and the reloader process dies — hot-reload silently
+    stops working and edits never load. Restricting the watch to the editable
+    package source dir(s) sidesteps ``node_modules`` entirely and makes reload
+    faster. Returns ``None`` (leaving uvicorn's default behaviour intact) when
+    no source dir can be located, e.g. an installed-wheel deployment.
+    """
+    dirs: list[str] = []
+    # Watch the parent ``src`` dir of each editable package we can import, so a
+    # monorepo checkout hot-reloads core, CLI, and enterprise code alike.
+    for module_name in ("taskforce", "taskforce_cli", "taskforce_enterprise"):
+        try:
+            module = __import__(module_name)
+        except Exception:  # noqa: BLE001 — best-effort discovery
+            continue
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        src_dir = Path(module_file).resolve().parent.parent  # .../src/<pkg> -> .../src
+        if src_dir.is_dir() and str(src_dir) not in dirs:
+            dirs.append(str(src_dir))
+    return dirs or None
 
 
 @app.callback(invoke_without_command=True)
@@ -94,12 +126,18 @@ def serve(
 
     # When --reload is set uvicorn requires the app as an import string and
     # ignores ``workers``. We pass the string form unconditionally so both
-    # modes behave consistently.
+    # modes behave consistently. ``reload_dirs`` scopes the file watcher to the
+    # source tree(s) so it never descends into ``ui/node_modules`` (whose pnpm
+    # symlink farm crashes the fallback reloader on Windows).
+    reload_dirs = _resolve_reload_dirs() if reload else None
+    if reload and reload_dirs:
+        console.print(f"[dim]watching for changes in: {', '.join(reload_dirs)}[/dim]")
     uvicorn.run(
         app_path,
         host=host,
         port=port,
         reload=reload,
+        reload_dirs=reload_dirs,
         workers=workers if not reload else 1,
         log_level=log_level,
     )
