@@ -49,6 +49,20 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
     setMention(ctx);
   };
 
+  /** Grow the textarea with its content, from one line up to ~10 lines,
+   *  then scroll. A fixed 3-row box wastes vertical space when empty and
+   *  feels clunky; auto-grow reads as a modern composer. */
+  const autoGrow = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
+  };
+
+  // Fit any restored draft on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(autoGrow, []);
+
   const onPickMention = (entry: WorkspaceEntry) => {
     const ta = textareaRef.current;
     if (!ta || !mention) return;
@@ -121,6 +135,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
     setText("");
     setAttachments([]);
     textareaRef.current?.focus();
+    requestAnimationFrame(autoGrow);
   };
 
   const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
@@ -212,10 +227,11 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         ) : null}
         <Textarea
           ref={textareaRef}
-          rows={3}
+          rows={1}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            autoGrow();
             // Defer one frame: ``selectionStart`` reflects the post-change
             // cursor after React commits, but onChange fires before that.
             requestAnimationFrame(refreshMention);
@@ -230,8 +246,8 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
             // uses ``onMouseDown`` for the same reason. We leave blur
             // alone here.
           }}
-          placeholder="Ask the agent…  (type @ to mention a file; drag files in or paste images)"
-          className="resize-none border-0 bg-transparent p-0 font-sans text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+          placeholder="Ask the agent…"
+          className="min-h-[2.75rem] resize-none border-0 bg-transparent p-0 font-sans text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
           disabled={disabled}
         />
       </div>
@@ -251,17 +267,18 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
         <Button
           type="button"
           variant="ghost"
-          size="sm"
+          size="icon"
+          aria-label="Attach files"
+          title="Attach files"
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
         >
           <Attach20Regular className="h-4 w-4" />
-          Attach
         </Button>
-        <span className="text-xs text-muted-foreground">
-          ⌘/Ctrl + Enter to send
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3">
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            ⌘/Ctrl + Enter to send
+          </span>
           {isStreaming && onCancel ? (
             <Button
               type="button"
@@ -276,7 +293,7 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
               Stop
             </Button>
           ) : null}
-          <Button type="button" size="sm" onClick={() => void submit()} disabled={disabled || isStreaming}>
+          <Button type="button" onClick={() => void submit()} disabled={disabled || isStreaming}>
             <Send20Regular className="h-4 w-4" />
             Send
           </Button>
