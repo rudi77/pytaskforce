@@ -4,16 +4,23 @@ import {
   Archive20Regular,
   Bot20Regular,
   ChevronDown16Regular,
-  Eye20Regular,
   BranchFork20Regular,
   NumberSymbol20Regular,
   ChatAdd20Regular,
   ArrowMinimize20Regular,
+  MoreHorizontal20Regular,
   PanelRightContract20Regular,
   PanelRightExpand20Regular,
   Edit20Regular,
   Delete20Regular,
 } from "@fluentui/react-icons";
+import {
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
+} from "@fluentui/react-components";
 import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -43,7 +50,6 @@ import { ChatComposer } from "@/features/chat/ChatComposer";
 import { CoworkMessage } from "@/features/chat/CoworkMessageView";
 import { RightPanel } from "@/features/chat/RightPanel";
 import { useChatStream } from "@/features/chat/useChatStream";
-import { TaskforceWebChat } from "@/features/chat/webchat/TaskforceWebChat";
 import {
   CHAT_VIEW_MODES,
   useChatPreferences,
@@ -167,8 +173,6 @@ interface ChatHeaderProps {
   onViewModeChange: (mode: ChatViewMode) => void;
   rightPanelOpen: boolean;
   onRightPanelToggle: () => void;
-  useWebChatRenderer: boolean;
-  onUseWebChatRendererToggle: () => void;
 }
 
 function ChatHeader({
@@ -194,8 +198,6 @@ function ChatHeader({
   onViewModeChange,
   rightPanelOpen,
   onRightPanelToggle,
-  useWebChatRenderer,
-  onUseWebChatRendererToggle,
 }: ChatHeaderProps) {
   const topic = activeConversation?.topic;
   const channel = activeConversation?.channel;
@@ -241,75 +243,62 @@ function ChatHeader({
             loading={agentsLoading}
             disabled={isStreaming}
           />
-          <ViewModePicker value={viewMode} onChange={onViewModeChange} />
-          <Button
-            variant={useWebChatRenderer ? "default" : "ghost"}
-            size="sm"
-            onClick={onUseWebChatRendererToggle}
-            title={
-              useWebChatRenderer
-                ? "Switch to the classic chat renderer (Cowork-style scroller)"
-                : "Switch to the FluentUI + botframework-webchat renderer (experimental)"
-            }
-          >
-            <span className="hidden xl:inline">
-              {useWebChatRenderer ? "WebChat (on)" : "WebChat"}
-            </span>
-            <span className="xl:hidden">WC</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCompact}
-            disabled={compactPending || isStreaming}
-            title="Summarize earlier messages to reclaim context window space"
-          >
-            <ArrowMinimize20Regular className="h-4 w-4" />
-            <span className="hidden xl:inline">
-              {compactPending ? "Compacting…" : "Compact"}
-            </span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onFork}
-            disabled={forkPending}
-            title="Create a copy of this conversation to replay or branch"
-          >
-            <BranchFork20Regular className="h-4 w-4" />
-            <span className="hidden xl:inline">Fork</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRename}
-            disabled={renamePending}
-            title="Rename this conversation"
-          >
-            <Edit20Regular className="h-4 w-4" />
-            <span className="hidden xl:inline">Rename</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onArchive}
-            disabled={archivePending}
-            title="Archive this conversation"
-          >
-            <Archive20Regular className="h-4 w-4" />
-            <span className="hidden xl:inline">Archive</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDelete}
-            disabled={deletePending}
-            title="Permanently delete this conversation"
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Delete20Regular className="h-4 w-4" />
-            <span className="hidden xl:inline">Delete</span>
-          </Button>
+          <ViewModeToggle value={viewMode} onChange={onViewModeChange} />
+          {/* Conversation actions collapse into one overflow menu so the
+           *  header stays uncluttered. Compact/Fork/Rename/Archive/Delete
+           *  are infrequent; a row of buttons for each was noise. */}
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Conversation actions"
+                title="Conversation actions"
+              >
+                <MoreHorizontal20Regular className="h-4 w-4" />
+              </Button>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem
+                  icon={<ArrowMinimize20Regular />}
+                  disabled={compactPending || isStreaming}
+                  onClick={onCompact}
+                >
+                  {compactPending ? "Compacting…" : "Compact"}
+                </MenuItem>
+                <MenuItem
+                  icon={<BranchFork20Regular />}
+                  disabled={forkPending}
+                  onClick={onFork}
+                >
+                  Fork
+                </MenuItem>
+                <MenuItem
+                  icon={<Edit20Regular />}
+                  disabled={renamePending}
+                  onClick={onRename}
+                >
+                  Rename
+                </MenuItem>
+                <MenuItem
+                  icon={<Archive20Regular />}
+                  disabled={archivePending}
+                  onClick={onArchive}
+                >
+                  Archive
+                </MenuItem>
+                <MenuItem
+                  icon={<Delete20Regular />}
+                  disabled={deletePending}
+                  onClick={onDelete}
+                  className="text-destructive"
+                >
+                  Delete
+                </MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
           {/* Only visible at lg+; that's the breakpoint where the right
            *  panel itself starts rendering — hiding the toggle below it
            *  avoids dangling controls on tablet widths. */}
@@ -376,37 +365,43 @@ function AgentPicker({
   );
 }
 
-function ViewModePicker({
+/**
+ * Segmented control for the transcript detail level. Replaces the old
+ * icon + native <select>; a segmented toggle exposes all three modes at a
+ * glance and reads as a deliberate control rather than a form input.
+ */
+function ViewModeToggle({
   value,
   onChange,
 }: {
   value: ChatViewMode;
   onChange: (mode: ChatViewMode) => void;
 }) {
-  const current = CHAT_VIEW_MODES.find((m) => m.value === value);
   return (
-    <label
-      className="flex items-center gap-1.5 text-xs text-muted-foreground"
-      title={current ? `${current.label}: ${current.hint}` : "Transcript detail level"}
+    <div
+      role="group"
+      aria-label="Transcript view"
+      className="flex items-center overflow-hidden rounded-md border border-border"
     >
-      <Eye20Regular className="h-4 w-4" aria-hidden />
-      <span className="sr-only">Transcript view</span>
-      <select
-        aria-label="Transcript view"
-        className={cn(
-          "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
-          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        )}
-        value={value}
-        onChange={(e) => onChange(e.target.value as ChatViewMode)}
-      >
-        {CHAT_VIEW_MODES.map((mode) => (
-          <option key={mode.value} value={mode.value}>
-            {mode.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      {CHAT_VIEW_MODES.map((mode, i) => (
+        <button
+          key={mode.value}
+          type="button"
+          onClick={() => onChange(mode.value)}
+          aria-pressed={value === mode.value}
+          title={`${mode.label}: ${mode.hint}`}
+          className={cn(
+            "px-2.5 py-1 text-xs transition-colors",
+            i > 0 && "border-l border-border",
+            value === mode.value
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {mode.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -513,8 +508,6 @@ export default function ChatPage() {
   );
   const viewMode = useChatPreferences((s) => s.viewMode);
   const setViewMode = useChatPreferences((s) => s.setViewMode);
-  const useWebChatRenderer = useChatPreferences((s) => s.useWebChatRenderer);
-  const setUseWebChatRenderer = useChatPreferences((s) => s.setUseWebChatRenderer);
 
   // Right-panel toggle. Persists per-browser so the user's preference
   // survives page reloads but isn't synced across devices (it's a
@@ -756,8 +749,6 @@ export default function ChatPage() {
           onViewModeChange={setViewMode}
           rightPanelOpen={rightPanelOpen}
           onRightPanelToggle={() => setRightPanelOpen((o) => !o)}
-          useWebChatRenderer={useWebChatRenderer}
-          onUseWebChatRendererToggle={() => setUseWebChatRenderer(!useWebChatRenderer)}
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -775,40 +766,23 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              {useWebChatRenderer ? (
-                // Experimental opt-in: render the message list via
-                // FluentUI v9 + botframework-webchat. Default off
-                // (Cowork-style scroller below stays the proven path).
-                // Toggle via the chat-preferences "WebChat" button in
-                // the header above.
-                <TaskforceWebChat
-                  conversationId={conversationId}
-                  messages={messages}
-                  pending={
-                    isStreaming || (!stream.state.completed && stream.state.text)
-                      ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
-                      : undefined
-                  }
-                />
-              ) : (
-                <MessageList
-                  messages={messages}
-                  pending={
-                    // Show the live streaming entry only while the agent
-                    // is still working OR the assistant reply hasn't been
-                    // persisted yet. Once the ``completed`` flag flips, the
-                    // persisted reply takes over via ``messages`` and the
-                    // pending entry would otherwise duplicate it. Tool
-                    // calls + plan steps survive in the store and surface
-                    // via RightPanel — they're not lost, just rendered
-                    // through the side panel instead of the chat bubble.
-                    isStreaming || (!stream.state.completed && stream.state.text)
-                      ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
-                      : undefined
-                  }
-                  viewMode={viewMode}
-                />
-              )}
+              <MessageList
+                messages={messages}
+                pending={
+                  // Show the live streaming entry only while the agent
+                  // is still working OR the assistant reply hasn't been
+                  // persisted yet. Once the ``completed`` flag flips, the
+                  // persisted reply takes over via ``messages`` and the
+                  // pending entry would otherwise duplicate it. Tool
+                  // calls + plan steps survive in the store and surface
+                  // via RightPanel — they're not lost, just rendered
+                  // through the side panel instead of the chat bubble.
+                  isStreaming || (!stream.state.completed && stream.state.text)
+                    ? { text: stream.state.text, toolCalls: stream.state.toolCalls }
+                    : undefined
+                }
+                viewMode={viewMode}
+              />
               {stream.error ? (
                 <p className="border-t border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">
                   {stream.error}

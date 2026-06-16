@@ -11,7 +11,7 @@
 
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ChatPage from "./ChatPage";
@@ -129,7 +129,7 @@ describe("ChatPage redesign", () => {
     expect(screen.getByText("abc12345…")).toBeInTheDocument();
   });
 
-  it("renders the transcript view-mode dropdown in the header", () => {
+  it("renders the transcript view-mode segmented toggle in the header", () => {
     mocks.conversations = [
       {
         conversation_id: "view-mode-1",
@@ -144,15 +144,18 @@ describe("ChatPage redesign", () => {
 
     renderAt("/chat/view-mode-1");
 
-    const picker = screen.getByLabelText("Transcript view") as HTMLSelectElement;
-    expect(picker).toBeInTheDocument();
-    // All three Cowork-style modes are listed.
-    expect(picker.options).toHaveLength(3);
-    expect(
-      Array.from(picker.options).map((o) => o.value),
-    ).toEqual(["normal", "verbose", "summary"]);
-    // Default is "normal" (zustand store's initial value).
-    expect(picker.value).toBe("normal");
+    const toggle = screen.getByRole("group", { name: "Transcript view" });
+    expect(toggle).toBeInTheDocument();
+    // All three Cowork-style modes are listed as segments.
+    const segments = within(toggle).getAllByRole("button");
+    expect(segments.map((b) => b.textContent)).toEqual([
+      "Normal",
+      "Verbose",
+      "Summary",
+    ]);
+    // Default is "normal" (zustand store's initial value) → pressed.
+    expect(segments[0]).toHaveAttribute("aria-pressed", "true");
+    expect(segments[1]).toHaveAttribute("aria-pressed", "false");
   });
 
   it("renders the assistant empty state via <EmptyState/> when messages are empty", () => {
