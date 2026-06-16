@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { useProfile, useProfiles } from "@/api/queries";
@@ -31,18 +32,14 @@ function ProfilePicker({
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <select
-        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">— select profile —</option>
         {options.map((name) => (
           <option key={name} value={name}>
             {name}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }

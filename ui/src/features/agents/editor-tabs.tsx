@@ -16,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { FormField } from "@/components/FormField";
@@ -387,9 +388,8 @@ export function SubAgentsTab({ form, mode }: TabProps) {
                 error={fieldError(form, `sub_agents.${index}.specialist`)}
                 required
               >
-                <select
+                <Select
                   id={`sa-${index}-specialist`}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   {...form.register(`sub_agents.${index}.specialist`)}
                 >
                   <option value="">— select —</option>
@@ -399,7 +399,7 @@ export function SubAgentsTab({ form, mode }: TabProps) {
                       {c.specialist ? ` (${c.specialist})` : ""}
                     </option>
                   ))}
-                </select>
+                </Select>
               </FormField>
               <FormField
                 label="Description"
@@ -531,14 +531,13 @@ function MCPRow({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FormField label="Type" htmlFor={`mcp-${index}-type`}>
-            <select
+            <Select
               id={`mcp-${index}-type`}
-              className="flex h-8 rounded-md border border-input bg-transparent px-2 text-sm"
               {...reg(`mcp_servers.${index}.type`)}
             >
               <option value="stdio">stdio</option>
               <option value="sse">sse</option>
-            </select>
+            </Select>
           </FormField>
           <FormField label="Description" htmlFor={`mcp-${index}-desc`}>
             <Input
@@ -743,9 +742,8 @@ export function PlanningTab({ form }: TabProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <FormField label="Strategy" htmlFor="planning_strategy">
-        <select
+        <Select
           id="planning_strategy"
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
           {...form.register("planning_strategy")}
         >
           {strategies.map((s) => (
@@ -756,7 +754,7 @@ export function PlanningTab({ form }: TabProps) {
           {strategies.length === 0 ? (
             <option value="native_react">Native ReAct</option>
           ) : null}
-        </select>
+        </Select>
       </FormField>
       <FormField
         label="Max steps"
@@ -803,9 +801,8 @@ export function LLMTab({ form }: TabProps) {
         htmlFor="llm_default_model"
         description="Alias from llm_config.yaml"
       >
-        <select
+        <Select
           id="llm_default_model"
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
           {...form.register("llm_default_model")}
         >
           <option value="">— inherit from base profile —</option>
@@ -814,7 +811,7 @@ export function LLMTab({ form }: TabProps) {
               {m.alias} → {m.model_id}
             </option>
           ))}
-        </select>
+        </Select>
       </FormField>
       <FormField
         label="Config path"

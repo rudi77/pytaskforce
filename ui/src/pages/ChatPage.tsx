@@ -25,6 +25,7 @@ import { toast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import {
@@ -340,12 +341,8 @@ function AgentPicker({
     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <Bot20Regular className="h-4 w-4" aria-hidden />
       <span className="sr-only">Agent</span>
-      <select
-        className={cn(
-          "h-8 max-w-[10rem] rounded-md border border-input bg-background px-2 text-xs outline-none transition-colors",
-          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-        )}
+      <Select
+        className="max-w-[11rem]"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled || loading}
@@ -360,7 +357,7 @@ function AgentPicker({
             </option>
           ))
         )}
-      </select>
+      </Select>
     </label>
   );
 }

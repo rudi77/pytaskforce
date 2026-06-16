@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge, Button, Field, Input } from "@fluentui/react-components";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useChannelBots,
@@ -235,21 +236,17 @@ function BotForm({
         <Field
           label={{ children: "Channel type", htmlFor: "bot-channel-type" }}
         >
-          {/* Raw <select> kept — Fluent Dropdown has a different
-           *  controlled-state API (selectedOptions array + onOptionSelect)
-           *  that's a separate primitive migration. */}
-          <select
+          <Select
             id="bot-channel-type"
             value={draft.channel_type}
             onChange={(e) => setDraft({ ...draft, channel_type: e.target.value })}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
             {CHANNEL_TYPES.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
 
         <Field label={{ children: "Bot token", htmlFor: "bot-token" }}>
@@ -313,13 +310,12 @@ function BotForm({
           label={{ children: "Pairing mode", htmlFor: "bot-pairing-mode" }}
           hint={draft.pairing_mode ? PAIRING_HINTS[draft.pairing_mode] : undefined}
         >
-          <select
+          <Select
             id="bot-pairing-mode"
             value={draft.pairing_mode}
             onChange={(e) =>
               setDraft({ ...draft, pairing_mode: e.target.value as PairingMode | "" })
             }
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
             <option value="">
               auto (
@@ -328,7 +324,7 @@ function BotForm({
             <option value="implicit">implicit — owner only, no /link</option>
             <option value="paired">paired — /link required</option>
             <option value="anonymous">anonymous — no per-user routing</option>
-          </select>
+          </Select>
         </Field>
 
         <label className="flex items-center gap-2 text-sm">

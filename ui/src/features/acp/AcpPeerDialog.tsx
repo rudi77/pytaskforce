@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/FormField";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/api/client";
@@ -145,18 +146,17 @@ export function AcpPeerDialog({ open, mode, initial, onClose, onSubmit }: Props)
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label="Auth type" htmlFor="acp-auth-type">
-              <select
+              <Select
                 id="acp-auth-type"
                 value={authType}
                 onChange={(e) =>
                   setAuthType(e.target.value as "none" | "bearer" | "mtls")
                 }
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
                 <option value="none">none</option>
                 <option value="bearer">bearer</option>
                 <option value="mtls">mTLS</option>
-              </select>
+              </Select>
             </FormField>
             {authType === "bearer" ? (
               <FormField label="Token env var" htmlFor="acp-token-env">

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/FormField";
 import { ApiError } from "@/api/client";
@@ -295,18 +296,17 @@ export function WorkflowEditor({ open, mode, initial, onClose, onSubmit }: Props
               htmlFor="wf-trigger"
               description="When does this workflow run?"
             >
-              <select
+              <Select
                 id="wf-trigger"
                 value={trigger}
                 onChange={(e) => setTrigger(e.target.value as TriggerKind)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
                 {TRIGGER_KINDS.map((kind) => (
                   <option key={kind} value={kind}>
                     {kind}
                   </option>
                 ))}
-              </select>
+              </Select>
             </FormField>
 
             {trigger === "schedule" ? (
@@ -375,18 +375,17 @@ export function WorkflowEditor({ open, mode, initial, onClose, onSubmit }: Props
                     />
                   </FormField>
                   <FormField label="Algorithm" htmlFor="wf-algo">
-                    <select
+                    <Select
                       id="wf-algo"
                       value={signatureAlgo}
                       onChange={(e) => setSignatureAlgo(e.target.value)}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
                       {SIGNATURE_ALGOS.map((algo) => (
                         <option key={algo} value={algo}>
                           {algo}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </FormField>
                 </div>
               </div>
