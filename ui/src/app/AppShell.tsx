@@ -478,10 +478,11 @@ function RecentItem({
           {formatRelativeTime(c.last_activity)}
         </div>
       </Link>
-      {/* Hover-revealed overflow menu — opacity-0 keeps the row lean by
-       *  default, group-hover/focus-within reveals on pointer or keyboard
-       *  reach. Rename/Delete open Fluent dialogs (no window.prompt). */}
-      <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {/* Overflow menu. On pointer devices (md+) it hover/focus-reveals to
+       *  keep rows lean; on touch (mobile Drawer, no hover) it stays
+       *  visible so Rename/Delete remain reachable. Both open Fluent
+       *  dialogs (no window.prompt). */}
+      <div className="shrink-0 pr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <button

@@ -88,9 +88,12 @@ const darkNeutral: Partial<Theme> = {
   colorSubtleBackgroundHover: slate[800],
   colorSubtleBackgroundPressed: slate[700],
   colorSubtleBackgroundSelected: slate[800],
-  colorNeutralStroke1: slate[800],
-  colorNeutralStroke2: slate[800],
-  colorNeutralStroke3: darkBase,
+  // Strokes sit one ramp step lighter than the slate-800 raised surfaces
+  // (and lighter than darkBase) so borders/dividers stay visible — equal
+  // hex would make them vanish on raised cards, menus and open selects.
+  colorNeutralStroke1: slate[700],
+  colorNeutralStroke2: slate[700],
+  colorNeutralStroke3: slate[800],
   colorNeutralStrokeAccessible: slate[400],
 };
 

@@ -59,7 +59,8 @@ export function ChatComposer({ onSend, onCancel, isStreaming, disabled }: ChatCo
     ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
   };
 
-  // Fit any restored draft on mount.
+  // Normalize the textarea height on mount (no-op for an empty field;
+  // keeps the initial single-line height deterministic across browsers).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(autoGrow, []);
 

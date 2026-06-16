@@ -121,7 +121,7 @@ export function CommandPalette({ open, onClose, navTargets }: CommandPaletteProp
 
   if (!open) return null;
 
-  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+  const onKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
@@ -146,6 +146,7 @@ export function CommandPalette({ open, onClose, navTargets }: CommandPaletteProp
       <div
         className="w-full max-w-xl overflow-hidden rounded-lg border border-border bg-card shadow-lg"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
@@ -156,7 +157,6 @@ export function CommandPalette({ open, onClose, navTargets }: CommandPaletteProp
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
             placeholder="Search conversations and actions…"
             className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             aria-label="Search conversations and actions"
